@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days, handle_portfolio
@@ -26,7 +28,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class BreadthTechnicals:
     """
-    Breadth and volume indicators: the McClellan oscillator, advancers and decliners, on-balance volume (and Archer's version), the price volume trend, the accumulation/distribution line (Chaikin's and Williams'), the Chaikin oscillator and money flow, Twiggs money flow, the Klinger volume oscillator, the market facilitation index, the ease of movement, the negative and positive volume index, relative volume, the volume flow indicator, finite volume elements, the volume zone oscillator, the cumulative force index, price-volume and its rank, buying and selling pressure, the volume profile, TRIN, new highs and lows and the market breadth.
+    Breadth and volume indicators: the McClellan oscillator, advancers and decliners, on-balance volume (and Archer's version), the price volume trend, the accumulation/distribution line (Chaikin's and Williams'), the Chaikin oscillator and money flow (and Twiggs money flow), the Klinger volume oscillator, the market facilitation index, the ease of movement, the negative and positive volume index (`get_volume_index`), relative volume, the volume flow indicator, finite volume elements, the volume zone oscillator, the cumulative force index, price-volume and its rank, buying and selling pressure, the volume profile, TRIN, new highs and lows and the market breadth.
     """
 
     @handle_errors
@@ -157,12 +159,12 @@ class BreadthTechnicals:
             period=period, close_column=close_column
         )
 
-        breadth_indicators["Negative Volume Index"] = self.get_negative_volume_index(
+        breadth_indicators["Negative Volume Index"] = self.get_volume_index(
             period=period, close_column=close_column
         )
 
-        breadth_indicators["Positive Volume Index"] = self.get_positive_volume_index(
-            period=period, close_column=close_column
+        breadth_indicators["Positive Volume Index"] = self.get_volume_index(
+            period=period, close_column=close_column, method="positive"
         )
 
         klinger_volume_oscillator = self.get_klinger_volume_oscillator(
@@ -190,8 +192,8 @@ class BreadthTechnicals:
         breadth_indicators["Finite Volume Elements"] = self.get_finite_volume_elements(
             period=period, close_column=close_column
         )
-        breadth_indicators["Twiggs Money Flow"] = self.get_twiggs_money_flow(
-            period=period, close_column=close_column
+        breadth_indicators["Twiggs Money Flow"] = self.get_chaikin_money_flow(
+            period=period, close_column=close_column, method="twiggs"
         )
         breadth_indicators["Volume Zone Oscillator"] = self.get_volume_zone_oscillator(
             period=period, close_column=close_column
@@ -1057,15 +1059,17 @@ class BreadthTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 20,
+        window: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: Literal["standard", "twiggs"] = "standard",
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chaikin Money Flow (CMF) for a given price series.
+        Calculate the Chaikin Money Flow (CMF) for a given price series, or Colin Twiggs' Money
+        Flow (TMF).
 
         The Chaikin Money Flow sums the same Money Flow Volume used by the Accumulation/
         Distribution Line over a rolling window and normalizes it by the window's total
@@ -1074,17 +1078,30 @@ class BreadthTechnicals:
         (accumulation) is dominating over the window, while sustained readings below zero
         indicate selling pressure (distribution).
 
-        The formula is as follows:
+        Twiggs Money Flow (method="twiggs") refines the Chaikin Money Flow. It places the close
+        within the true range (which includes a gap from the previous close) instead of the
+        high-low range, so a gap does not show up as a close at the top or bottom of a narrow
+        range, and it smooths the money flow volume and the volume with Wilder's moving average
+        instead of summing them over a window, so a large volume does not distort the result when
+        it leaves the window. Twiggs used crossings of zero and divergences from price as signals.
 
-        - Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low)
-        - Money Flow Volume = Money Flow Multiplier * Volume
-        - CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
+        The formula is as follows, per method:
+
+        - "standard": Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low),
+          Money Flow Volume = Money Flow Multiplier * Volume and
+          CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
+        - "twiggs": True High = max(High, Close(t-1)), True Low = min(Low, Close(t-1)),
+          Money Flow Volume = Volume * ((Close — True Low) — (True High — Close)) /
+          (True High — True Low) and TMF = Wilder MA(Money Flow Volume, window) /
+          Wilder MA(Volume, window)
 
         For more information, see the following sources:
 
         - Referenced against TA-Lib's CMF (https://ta-lib.org/functions/cmf.html).
+        - Twiggs, C. (2003). "Twiggs Money Flow." Incredible Charts
+          (https://www.incrediblecharts.com/indicators/twiggs_money_flow.php).
 
-        Also known as: CMF, Chaikin Money Flow.
+        Also known as: CMF, Chaikin Money Flow, TMF, Twiggs Money Flow.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1092,8 +1109,9 @@ class BreadthTechnicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            window (int, optional): Number of periods to sum the Money Flow Volume and
-                volume over. Defaults to 20.
+            window (int | None, optional): Number of periods to sum the Money Flow Volume and
+                volume over, or of Wilder's moving average with method="twiggs". Defaults to None,
+                which uses 20 for "standard" and 21 for "twiggs".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Chaikin Money Flow.
@@ -1103,13 +1121,16 @@ class BreadthTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): "standard" for the Chaikin Money Flow or "twiggs" for Twiggs
+                Money Flow. Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Chaikin Money Flow values, bounded between -1 and 1.
+            pd.Series or pd.DataFrame: Chaikin Money Flow (or Twiggs Money Flow) values, bounded
+            between -1 and 1.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -1118,6 +1139,10 @@ class BreadthTechnicals:
           textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial
           Markets." New York Institute of Finance.
         - The Chaikin Money Flow agrees with TA-Lib's CMF.
+        - "twiggs": TA-Lib, pandas-ta-classic, ta and Tulip Indicators do not have it, and finta's
+          TMF is an unfinished stub, so it follows Twiggs' definition. Wilder's moving average starts
+          from the simple average of its first `window` values, and the first period, without a
+          previous close, uses its own high-low range.
         - If `growth` is set to True, the method calculates the growth of the Chaikin Money
           Flow using the specified `lag`.
 
@@ -1146,6 +1171,11 @@ class BreadthTechnicals:
         | 2025-12-30 |  -0.1279 |  -0.0749 |      0.0614 |
         | 2025-12-31 |  -0.1646 |  -0.1521 |      0.017  |
         """
+        methods = ("standard", "twiggs")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -1164,12 +1194,19 @@ class BreadthTechnicals:
                 )
             close_column = "Close"
 
+        if window is None:
+            window = 21 if method == "twiggs" else 20
+
         historical_data = self._get_historical_data(period, close_column)
 
         chaikin_money_flow = calculate_per_ticker(
             historical_data,
             ["High", "Low", close_column, "Volume"],
-            breadth_model.get_chaikin_money_flow,
+            (
+                breadth_model.get_twiggs_money_flow
+                if method == "twiggs"
+                else breadth_model.get_chaikin_money_flow
+            ),
             window,
         ).loc[self._start_date : self._end_date]
         return finalize_dataset(
@@ -1324,7 +1361,7 @@ class BreadthTechnicals:
 
     @handle_portfolio
     @handle_errors
-    def get_negative_volume_index(
+    def get_volume_index(
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
@@ -1333,10 +1370,12 @@ class BreadthTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: Literal["negative", "positive"] = "negative",
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Negative Volume Index (NVI) for a given price series.
+        Calculate the Negative Volume Index (NVI) or the Positive Volume Index (PVI) for a given
+        price series.
 
         The Negative Volume Index is a cumulative index that only updates on days where
         volume decreases from the prior period, compounding that day's percentage price
@@ -1344,14 +1383,27 @@ class BreadthTechnicals:
         index is carried forward unchanged. The premise, per Fosback, is that "smart money"
         tends to be active on low-volume (quiet) days, so tracking price behaviour
         specifically on those days isolates informed trading from the noise of high-volume,
-        crowd-driven days.
+        crowd-driven days. The Positive Volume Index (method="positive") mirrors it: it only updates
+        on days where volume increases from the prior period, and is carried forward unchanged on
+        days where volume decreases (or stays flat). Per Fosback, it isolates price behaviour on
+        high-volume (crowd-driven) days, which is traditionally read as tracking less-informed,
+        sentiment-driven trading.
 
-        The formula is as follows:
+        The formula is as follows, per method:
 
-        - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) < Volume(t-1)
-        - Index(t) = Index(t-1) otherwise
+        - "negative": Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
+          Volume(t) < Volume(t-1), and Index(t) = Index(t-1) otherwise
+        - "positive": Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
+          Volume(t) > Volume(t-1), and Index(t) = Index(t-1) otherwise
 
-        Also known as: NVI, Negative Volume Index.
+        For more information, see the following sources:
+
+        - Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to Profits on Wall
+          Street." The Institute for Econometric Research.
+        - Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html) and PVI
+          (https://ta-lib.org/functions/pvi.html).
+
+        Also known as: NVI, Negative Volume Index, PVI, Positive Volume Index, volume index.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1362,30 +1414,30 @@ class BreadthTechnicals:
                 Defaults to 1000.0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the Negative Volume Index.
+            growth (bool, optional): Whether to calculate the growth of the volume index.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
                 Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): "negative" for the Negative Volume Index or "positive" for the
+                Positive Volume Index. Defaults to "negative".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Negative Volume Index values.
+            pd.Series or pd.DataFrame: Negative (or Positive) Volume Index values.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the Negative Volume Index for each asset in the Toolkit instance.
-        - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
-          Profits on Wall Street." The Institute for Econometric Research.
-        - Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html).
-        - With the default `start_value` of 1,000, the Negative Volume Index agrees with TA-Lib's NVI.
-        - If `growth` is set to True, the method calculates the growth of the Negative Volume
-          Index using the specified `lag`.
+          the volume index for each asset in the Toolkit instance.
+        - With the default `start_value` of 1,000, the Negative Volume Index agrees with TA-Lib's NVI
+          and the Positive Volume Index with TA-Lib's PVI.
+        - If `growth` is set to True, the method calculates the growth of the volume index using
+          the specified `lag`.
 
         As an example:
 
@@ -1400,7 +1452,7 @@ class BreadthTechnicals:
             benchmark_ticker=None,
         )
 
-        toolkit.technicals.get_negative_volume_index().tail(5)
+        toolkit.technicals.get_volume_index().tail(5)
         ```
 
         Which returns:
@@ -1413,6 +1465,11 @@ class BreadthTechnicals:
         | 2025-12-30 | 5433.84 | 4468.59 |
         | 2025-12-31 | 5433.84 | 4468.59 |
         """
+        methods = ("negative", "positive")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -1434,145 +1491,18 @@ class BreadthTechnicals:
         # A running total starts at the start date, not at the earlier prices.
         historical_data = self._historical_data[period].loc[self._start_date :]
 
-        negative_volume_index = calculate_per_ticker(
+        volume_index = calculate_per_ticker(
             historical_data,
             [close_column, "Volume"],
-            breadth_model.get_negative_volume_index,
+            (
+                breadth_model.get_positive_volume_index
+                if method == "positive"
+                else breadth_model.get_negative_volume_index
+            ),
             start_value,
         ).loc[self._start_date : self._end_date]
         return finalize_dataset(
-            dataset=negative_volume_index,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_positive_volume_index(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        start_value: float = 1000.0,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Positive Volume Index (PVI) for a given price series.
-
-        The Positive Volume Index mirrors the Negative Volume Index: it is a cumulative
-        index that only updates on days where volume increases from the prior period,
-        compounding that day's percentage price change onto the running index; on days where
-        volume decreases (or stays flat), the index is carried forward unchanged. Per
-        Fosback, the Positive Volume Index isolates price behaviour on high-volume
-        (crowd-driven) days, which is traditionally read as tracking less-informed,
-        sentiment-driven trading.
-
-        The formula is as follows:
-
-        - Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if Volume(t) > Volume(t-1)
-        - Index(t) = Index(t-1) otherwise
-
-        Also known as: PVI, Positive Volume Index.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            start_value (float, optional): The index value to start the series at.
-                Defaults to 1000.0.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the Positive Volume Index.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Positive Volume Index values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the Positive Volume Index for each asset in the Toolkit instance.
-        - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
-          Profits on Wall Street." The Institute for Econometric Research.
-        - Referenced against TA-Lib's PVI (https://ta-lib.org/functions/pvi.html).
-        - With the default `start_value` of 1,000, the Positive Volume Index agrees with TA-Lib's PVI.
-        - If `growth` is set to True, the method calculates the growth of the Positive Volume
-          Index using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["SPY", "IWM"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-            benchmark_ticker=None,
-        )
-
-        toolkit.technicals.get_positive_volume_index().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     SPY |     IWM |
-        |:-----------|--------:|--------:|
-        | 2025-12-24 | 368.611 | 308.515 |
-        | 2025-12-26 | 368.574 | 306.942 |
-        | 2025-12-29 | 367.26  | 305.061 |
-        | 2025-12-30 | 367.26  | 305.061 |
-        | 2025-12-31 | 364.539 | 302.758 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        # A running total starts at the start date, not at the earlier prices.
-        historical_data = self._historical_data[period].loc[self._start_date :]
-
-        positive_volume_index = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            breadth_model.get_positive_volume_index,
-            start_value,
-        ).loc[self._start_date : self._end_date]
-        return finalize_dataset(
-            dataset=positive_volume_index,
+            dataset=volume_index,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -2736,143 +2666,6 @@ class BreadthTechnicals:
 
         return finalize_dataset(
             dataset=finite_volume_elements,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_twiggs_money_flow(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 21,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate Colin Twiggs' Money Flow (TMF) for a given price series.
-
-        Twiggs Money Flow refines the Chaikin Money Flow. It places the close within the true range (which
-        includes a gap from the previous close) instead of the high-low range, so a gap does not show up as
-        a close at the top or bottom of a narrow range, and it smooths the money flow volume and the volume
-        with Wilder's moving average instead of summing them over a window, so a large volume does not
-        distort the result when it leaves the window.
-
-        The formula is as follows:
-
-        - True High = max(High, Close(t-1)), True Low = min(Low, Close(t-1))
-        - Money Flow Volume = Volume * ((Close — True Low) — (True High — Close)) / (True High — True Low)
-        - TMF = Wilder MA(Money Flow Volume, window) / Wilder MA(Volume, window)
-
-        Readings above zero show buying pressure, below zero selling pressure; Twiggs used crossings of
-        zero and divergences from price as signals. As a ratio between -1 and 1 it is comparable across
-        tickers.
-
-        For more information, see the following sources:
-
-        - Twiggs, C. (2003). "Twiggs Money Flow." Incredible Charts (https://www.incrediblecharts.com/indicators/twiggs_money_flow.php).
-
-        Also known as: TMF, Twiggs Money Flow.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            window (int, optional): The number of periods for Wilder's moving average. Defaults to 21.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the indicator values.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Twiggs Money Flow values, bounded between -1 and 1.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the Twiggs
-          Money Flow for each asset in the Toolkit instance.
-        - TA-Lib, pandas-ta-classic, ta and Tulip Indicators do not have it, and finta's TMF is an
-          unfinished stub, so it follows Twiggs' definition. Wilder's moving average starts from the simple
-          average of its first `window` values, and the first period, without a previous close, uses its
-          own high-low range.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_twiggs_money_flow().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-24 | 0.0697 | 0.075  |      0.1291 |
-        | 2025-12-26 | 0.0554 | 0.0847 |      0.1227 |
-        | 2025-12-29 | 0.0642 | 0.0918 |      0.1121 |
-        | 2025-12-30 | 0.06   | 0.0876 |      0.0925 |
-        | 2025-12-31 | 0.0314 | 0.0557 |      0.0462 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        twiggs_money_flow = calculate_per_ticker(
-            historical_data,
-            ["High", "Low", close_column, "Volume"],
-            breadth_model.get_twiggs_money_flow,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=twiggs_money_flow,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

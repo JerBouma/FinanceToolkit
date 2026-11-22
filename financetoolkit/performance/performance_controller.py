@@ -67,7 +67,7 @@ FACTOR_COLLECTIONS = {
         "get_treynor_ratio",
         "get_information_ratio",
         "get_tracking_error",
-        "get_alpha:jensen",
+        ("get_alpha", {"method": "jensen"}),
         "get_calmar_ratio",
         "get_omega_ratio",
         "get_win_rate",

@@ -7,6 +7,7 @@ from typing import Literal
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
+from financetoolkit.technicals.cycle import cycle_model
 from financetoolkit.technicals.helpers import calculate_per_ticker
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
@@ -23,12 +24,30 @@ from financetoolkit.utilities.statistics_model import (
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 
+# The moving averages of get_moving_average besides the window-only ones of
+# volatility_model.MOVING_AVERAGES, with their own default window (None for those without one).
+# The others default to 14 periods.
+MOVING_AVERAGE_WINDOWS = {
+    "kaufman_adaptive": 10,
+    "t3": 5,
+    "arnaud_legoux": 9,
+    "volume_weighted": 14,
+    "mcginley": 14,
+    "variable_index_dynamic": 12,
+    "fractal_adaptive": 16,
+    "holt_winters": None,
+    "elastic_volume_weighted": 20,
+    "volume_adjusted": 8,
+    "super_smoother": 10,
+    "hilbert_trendline": None,
+}
+
 
 @filter_shown_columns
 @track_sources
 class OverlapTechnicals:
     """
-    Overlap indicators drawn over the price: the moving averages (including the Kaufman adaptive moving average, Tillson T3, Arnaud Legoux moving average, volume weighted, elastic volume weighted and volume adjusted moving averages, McGinley Dynamic, variable index dynamic average, fractal adaptive moving average and the Holt-Winters moving average and channel), the price transforms and midpoints, TRIX, VWAP, the parabolic SAR, the Gann HiLo Activator, the Zig Zag, pivot points, support and resistance levels and Fibonacci retracement levels.
+    Overlap indicators drawn over the price: the moving averages (`get_moving_average`, including the Kaufman adaptive moving average, Tillson T3, Arnaud Legoux moving average, volume weighted, elastic volume weighted and volume adjusted moving averages, McGinley Dynamic, variable index dynamic average, fractal adaptive moving average, Holt-Winters moving average, Ehlers' SuperSmoother filter and the Hilbert transform instantaneous trendline), the Holt-Winters channel, the price transforms and midpoints, TRIX, VWAP, the parabolic SAR, the Gann HiLo Activator, the Zig Zag, pivot points, support and resistance levels and Fibonacci retracement levels.
     """
 
     @handle_errors
@@ -224,49 +243,62 @@ class OverlapTechnicals:
         )
 
         overlap_indicators["Kaufman Adaptive Moving Average (KAMA)"] = (
-            self.get_kaufman_adaptive_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="kaufman_adaptive",
             )
         )
 
-        overlap_indicators["Tillson T3 Moving Average (T3)"] = (
-            self.get_t3_moving_average(
-                period=period, close_column=close_column, window=window
-            )
+        overlap_indicators["Tillson T3 Moving Average (T3)"] = self.get_moving_average(
+            period=period, close_column=close_column, window=window, method="t3"
         )
 
         overlap_indicators["Arnaud Legoux Moving Average (ALMA)"] = (
-            self.get_arnaud_legoux_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="arnaud_legoux",
             )
         )
 
         overlap_indicators["Volume Weighted Moving Average (VWMA)"] = (
-            self.get_volume_weighted_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="volume_weighted",
             )
         )
 
-        overlap_indicators["McGinley Dynamic"] = self.get_mcginley_dynamic(
-            period=period, close_column=close_column, window=window
+        overlap_indicators["McGinley Dynamic"] = self.get_moving_average(
+            period=period, close_column=close_column, window=window, method="mcginley"
         )
 
         overlap_indicators["Variable Index Dynamic Average (VIDYA)"] = (
-            self.get_variable_index_dynamic_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="variable_index_dynamic",
             )
         )
 
         # FRAMA splits its window in two halves, so an odd window is rounded down to an even one.
         overlap_indicators["Fractal Adaptive Moving Average (FRAMA)"] = (
-            self.get_fractal_adaptive_moving_average(
-                period=period, close_column=close_column, window=max(window // 2 * 2, 2)
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=max(window // 2 * 2, 2),
+                method="fractal_adaptive",
             )
         )
 
         overlap_indicators["Holt-Winters Moving Average (HWMA)"] = (
-            self.get_holt_winters_moving_average(
-                period=period, close_column=close_column
+            self.get_moving_average(
+                period=period, close_column=close_column, method="holt_winters"
             )
         )
 
@@ -282,14 +314,20 @@ class OverlapTechnicals:
         ]
 
         overlap_indicators["Elastic Volume Weighted Moving Average (EVWMA)"] = (
-            self.get_elastic_volume_weighted_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="elastic_volume_weighted",
             )
         )
 
         overlap_indicators["Volume Adjusted Moving Average (VAMA)"] = (
-            self.get_volume_adjusted_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="volume_adjusted",
             )
         )
 
@@ -395,18 +433,59 @@ class OverlapTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 14,
+        window: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        method: str = "simple",
+        method: Literal[
+            "simple",
+            "exponential",
+            "double_exponential",
+            "triple_exponential",
+            "zero_lag",
+            "wilder",
+            "triangular",
+            "weighted",
+            "hull",
+            "sine",
+            "fibonacci",
+            "pascal",
+            "kaufman_adaptive",
+            "t3",
+            "arnaud_legoux",
+            "volume_weighted",
+            "mcginley",
+            "variable_index_dynamic",
+            "fractal_adaptive",
+            "holt_winters",
+            "elastic_volume_weighted",
+            "volume_adjusted",
+            "super_smoother",
+            "hilbert_trendline",
+        ] = "simple",
+        fast_window: int = 2,
+        slow_window: int = 30,
+        volume_factor: float = 0.7,
+        sigma: float = 6.0,
+        offset: float = 0.85,
+        constant: float = 1.0,
+        cmo_window: int = 9,
+        level_smoothing: float = 0.2,
+        velocity_smoothing: float = 0.1,
+        acceleration_smoothing: float = 0.1,
+        poles: int = 2,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate a Moving Average (MA) of a given price series: the simple, exponential,
         double exponential, triple exponential, zero lag exponential, Wilder, triangular,
-        weighted, Hull, sine weighted, Fibonacci weighted or Pascal's weighted moving average.
+        weighted, Hull, sine weighted, Fibonacci weighted or Pascal's weighted moving average,
+        an adaptive average (Kaufman's, Tillson's T3, the Arnaud Legoux, McGinley Dynamic,
+        variable index dynamic, fractal adaptive and Holt-Winters moving averages), a volume
+        weighted average (the volume weighted, elastic volume weighted and volume adjusted
+        moving averages) or one of Ehlers' filters (the SuperSmoother filter and the Hilbert
+        transform instantaneous trendline).
 
         A Moving Average smooths out price data by averaging the price over a specified
         number of periods. The variants differ in how they weight the prices within the
@@ -414,7 +493,16 @@ class OverlapTechnicals:
         triple exponential, zero lag exponential and Wilder), with weights that peak in the
         middle of the window (triangular, sine and Pascal's weighted), with linearly increasing
         weights (weighted), with weights that grow with the Fibonacci numbers (Fibonacci
-        weighted) or with a combination of weighted averages that reduces the lag (Hull).
+        weighted), with a Gaussian curve (Arnaud Legoux), with a combination of weighted
+        averages that reduces the lag (Hull) or with the volume traded (volume weighted,
+        elastic volume weighted and volume adjusted). The adaptive averages change their speed
+        with the market: with the efficiency of the price move (Kaufman), the strength of the
+        trend (variable index dynamic), the fractal dimension of the prices (fractal adaptive),
+        the distance of the price from the average (McGinley Dynamic) or the velocity and
+        acceleration of the price (Holt-Winters). Tillson's T3 applies a generalized DEMA three
+        times for a smooth average with little lag, Ehlers' SuperSmoother is a low-pass filter
+        that removes the cycles shorter than the window, and his instantaneous trendline
+        averages the price over its dominant cycle, measured with the Hilbert transform.
 
         The formula is as follows, per method:
 
@@ -440,6 +528,56 @@ class OverlapTechnicals:
           numbers 1, 1, 2, 3, 5, ... from the oldest to the latest price
         - "pascal": PWMA = (Sum of (Price * Weight)) / (Sum of Weights), with the binomial
           coefficients of row Window - 1 of Pascal's triangle
+        - "kaufman_adaptive": Change = |Close(t) — Close(t - Window)|, Volatility =
+          Sum(|Close(i) — Close(i - 1)|, Window), Efficiency Ratio (ER) = Change / Volatility,
+          Fastest SC = 2 / (Fast Window + 1), Slowest SC = 2 / (Slow Window + 1), Smoothing
+          Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2 and
+          KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
+        - "t3": E1 = EMA(Close, Window), E2 = EMA(E1, Window), ..., E6 = EMA(E5, Window),
+          c1 = -a^3, c2 = 3a^2 + 3a^3, c3 = -6a^2 - 3a - 3a^3, c4 = 1 + 3a + a^3 + 3a^2 with a
+          the Volume Factor, and T3 = c1 * E6 + c2 * E5 + c3 * E4 + c4 * E3
+        - "arnaud_legoux": m = floor(Offset * (Window - 1)), s = Window / Sigma,
+          Weight(i) = exp(-(i - m)^2 / (2 * s^2)) for i = 0 (the oldest price) to Window - 1, and
+          ALMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
+        - "volume_weighted": VWMA = Sum(Close * Volume, Window) / Sum(Volume, Window)
+        - "mcginley": the first MD is SMA(Close, Window), on the Window-th period, and
+          MD(t) = MD(t-1) + (Close(t) - MD(t-1)) / (Constant * Window * (Close(t) / MD(t-1))^4)
+        - "variable_index_dynamic": Gains = Sum(max(Close(t) - Close(t-1), 0), CMO Window),
+          Losses = Sum(max(Close(t-1) - Close(t), 0), CMO Window), |CMO| = |Gains - Losses| /
+          (Gains + Losses) and 0 when prices did not move, Alpha = 2 / (Window + 1), and
+          VIDYA(t) = Alpha * |CMO(t)| * Close(t) + (1 - Alpha * |CMO(t)|) * VIDYA(t-1)
+        - "fractal_adaptive": Price = (High + Low) / 2, N1 = (Highest High - Lowest Low) /
+          (Window / 2) over the latest Window / 2 periods, N2 the same over the Window / 2
+          periods before, N3 = (Highest High - Lowest Low) / Window over the whole window,
+          D = (log(N1 + N2) - log(N3)) / log(2), Alpha = exp(-4.6 * (D - 1)) limited to between
+          0.01 and 1, and FRAMA(t) = Alpha(t) * Price(t) + (1 - Alpha(t)) * FRAMA(t-1)
+        - "holt_winters": F(t) = (1 - Level Smoothing) * (F(t-1) + V(t-1) + 0.5 * A(t-1)) +
+          Level Smoothing * Close(t), V(t) = (1 - Velocity Smoothing) * (V(t-1) + A(t-1)) +
+          Velocity Smoothing * (F(t) - F(t-1)), A(t) = (1 - Acceleration Smoothing) * A(t-1) +
+          Acceleration Smoothing * (V(t) - V(t-1)) and HWMA(t) = F(t) + V(t) + 0.5 * A(t), with F
+          starting at the first close and V and A at 0
+        - "elastic_volume_weighted": Volume Sum = Sum(Volume, Window) and
+          eVWMA(t) = ((Volume Sum - Volume(t)) * eVWMA(t-1) + Volume(t) * Close(t)) / Volume Sum
+        - "volume_adjusted": Weight(t) = Close(t) * Volume(t) / SMA(Volume, Window)(t) and
+          VAMA = Sum(Weight * Close, Window) / Sum(Weight, Window)
+        - "super_smoother" with two poles: a = exp(-√2 * π / Window), b = 2 * a * cos(√2 * 180 /
+          Window), c2 = b, c3 = -a², c1 = 1 - c2 - c3 and Filter = c1 * (Price + Price(t-1)) / 2 +
+          c2 * Filter(t-1) + c3 * Filter(t-2); with three poles: a = exp(-π / Window),
+          b = 2 * a * cos(√3 * 180 / Window), c = a², c2 = b + c, c3 = -(c + b * c), c4 = c²,
+          c1 = 1 - c2 - c3 - c4 and Filter = c1 * Price + c2 * Filter(t-1) + c3 * Filter(t-2) +
+          c4 * Filter(t-3)
+        - "hilbert_trendline": Smooth = (4 * Price + 3 * Price(t-1) + 2 * Price(t-2) +
+          Price(t-3)) / 10, H(x) = (0.0962 * x + 0.5769 * x(t-2) - 0.5769 * x(t-4) - 0.0962 *
+          x(t-6)) * (0.075 * Period(t-1) + 0.54), Detrender = H(Smooth), Q1 = H(Detrender),
+          I1 = Detrender(t-3), I2 = 0.2 * (I1 - H(Q1)) + 0.8 * I2(t-1), Q2 = 0.2 * (Q1 + H(I1)) +
+          0.8 * Q2(t-1), Re = 0.2 * (I2 * I2(t-1) + Q2 * Q2(t-1)) + 0.8 * Re(t-1),
+          Im = 0.2 * (I2 * Q2(t-1) - Q2 * I2(t-1)) + 0.8 * Im(t-1), Period = 360 / arctan(Im / Re)
+          in degrees, limited to between 0.67 and 1.5 times Period(t-1) and to between 6 and 50
+          periods, then smoothed as 0.2 * Period + 0.8 * Period(t-1), Dominant Cycle Period =
+          0.33 * Period + 0.67 * Dominant Cycle Period(t-1), N = the Dominant Cycle Period
+          rounded to the nearest whole period, Average = the simple average of the latest N
+          prices, and Trendline = (4 * Average + 3 * Average(t-1) + 2 * Average(t-2) +
+          Average(t-3)) / 10
 
         Seeding the EMA with a simple average, as TA-Lib and StockCharts do, leaves the first
         Window - 1 periods of the price history empty. The DEMA, TRIX, MACD, Percentage Price
@@ -448,13 +586,8 @@ class OverlapTechnicals:
         period 3 * (Window - 1) and ZLEMA at period Lag + Window - 1. Wilder's average is the
         smoothing of the RSI, ATR and ADX, an EMA with a smoothing factor of 1 / Window instead
         of 2 / (Window + 1). The triangular moving average is also the symmetric weighted moving
-        average, with weights 1, 2, ..., 2, 1. The averages with further parameters are separate
-        methods: the Kaufman Adaptive Moving Average (`get_kaufman_adaptive_moving_average`), the
-        Tillson T3 (`get_t3_moving_average`), the Arnaud Legoux Moving Average
-        (`get_arnaud_legoux_moving_average`), the Volume Weighted Moving Average
-        (`get_volume_weighted_moving_average`), the McGinley Dynamic (`get_mcginley_dynamic`),
-        the Variable Index Dynamic Average (`get_variable_index_dynamic_average`) and the
-        Fractal Adaptive Moving Average (`get_fractal_adaptive_moving_average`).
+        average, with weights 1, 2, ..., 2, 1. The MESA Adaptive Moving Average, which returns
+        MAMA and FAMA, is `get_mesa_adaptive_moving_average`.
 
         For more information, see the following sources:
 
@@ -467,22 +600,76 @@ class OverlapTechnicals:
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
         - Hull, A. (2005). "Hull Moving Average."
         - Everget (2018). "Sine Weighted Moving Average." TradingView script.
-        - TA-Lib: SMA, EMA, DEMA, TEMA, ZLEMA, RMA, TRIMA, WMA and HMA, the reference
-          implementations (https://ta-lib.org/functions/).
-        - Referenced against pandas-ta-classic's swma, sinwma, fwma and pwma of the
-          symmetric, sine, Fibonacci and Pascal's weighted averages
-          (https://github.com/xgboosted/pandas-ta-classic). The Fibonacci and Pascal's weighted averages
-          are defined in pandas-ta by Kevin Johnson.
+        - Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
+        - Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals." Technical Analysis
+          of Stocks & Commodities, 16(1).
+        - Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving Average."
+          arnaudlegoux.com.
+        - Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
+        - McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis (Market
+          Technicians Association).
+        - Chande, T.S. (1992). "Adapting Moving Averages to Market Volatility." Technical Analysis
+          of Stocks & Commodities, 10(3).
+        - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+        - Ehlers, J.F. (2005). "Fractal Adaptive Moving Averages." Technical Analysis of Stocks &
+          Commodities, 23(10), 81-82.
+        - Holt, C.C. (1957). "Forecasting Seasonals and Trends by Exponentially Weighted Moving
+          Averages." ONR Memorandum 52, Carnegie Institute of Technology (reprinted in the
+          International Journal of Forecasting, 20(1), 2004).
+        - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
+          Management Science, 6(3), 324-342.
+        - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
+        - Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks & Commodities,
+          19(6), 52-56 (https://www.christian-fries.de/evwma/).
+        - Arms, R.W. Jr. (1983). "Volume Cycles in the Stock Market: Market Timing Through
+          Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume traded.
+        - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
+          Applications." John Wiley & Sons.
+        - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons.
+        - Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading
+          Concepts." John Wiley & Sons.
+        - Ehlers, J.F. (2014). "Predictive And Successful Indicators." Technical Analysis of
+          Stocks & Commodities, 32(1), 16-25.
+        - TA-Lib: SMA, EMA, DEMA, TEMA, ZLEMA, RMA, TRIMA, WMA, HMA, KAMA, T3, ALMA, VWMA, MCGD,
+          VIDYA, FRAMA and HT_TRENDLINE, the reference implementations
+          (https://ta-lib.org/functions/).
+        - Referenced against pandas-ta-classic's swma, sinwma, fwma, pwma, t3, alma, vwma, mcgd,
+          vidya, hwma, ssf and ht_trendline (https://github.com/xgboosted/pandas-ta-classic). The
+          Fibonacci and Pascal's weighted averages are defined in pandas-ta by Kevin Johnson.
+        - Referenced against finta's FRAMA, EVWMA and VAMA (https://github.com/peerchemist/finta).
+          The volume adjusted moving average is defined in finta by Peerchemist; it has no
+          published source.
+        - Tulip Indicators: vwma (https://tulipindicators.org/vwma).
 
-        Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double exponential moving average, TEMA, triple exponential moving average, ZLEMA, ZLMA, zero lag moving average, RMA, SMMA, Wilder's smoothing, smoothed moving average, running moving average, TMA, TRIMA, triangular moving average, SWMA, symmetric weighted moving average, WMA, linearly weighted moving average, HMA, Hull moving average, SINWMA, sine weighted moving average, FWMA, Fibonacci weighted moving average, PWMA, Pascal's weighted moving average.
+        Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double
+        exponential moving average, TEMA, triple exponential moving average, ZLEMA, ZLMA, zero lag
+        moving average, RMA, SMMA, Wilder's smoothing, smoothed moving average, TRIMA, TMA,
+        triangular moving average, SWMA, symmetric weighted moving average, WMA, weighted moving
+        average, linear weighted moving average, HMA, Hull moving average, SINWMA, sine weighted
+        moving average, FWMA, Fibonacci weighted moving average, PWMA, Pascal's weighted moving
+        average, KAMA, Kaufman Adaptive Moving Average, Kaufman's Adaptive Moving Average, T3,
+        Tillson T3, T3 moving average, ALMA, Arnaud Legoux moving average, VWMA, volume weighted
+        moving average, MCGD, McGinley Dynamic, McGinley Dynamic Indicator, VIDYA, variable index
+        dynamic average, Chande's dynamic average, FRAMA, fractal adaptive moving average, HWMA,
+        Holt-Winters moving average, Holt-Winter moving average, eVWMA, EVWMA, elastic volume
+        weighted moving average, VAMA, volume adjusted moving average, SSF, SuperSmoother, super
+        smoother filter, Ehlers' SuperSmoother, HT_TRENDLINE, Hilbert transform instantaneous
+        trendline, instantaneous trendline.
 
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
-            window (int, optional): Number of periods to consider for the moving average.
-                The number of periods (time intervals) over which to calculate the MA. Defaults to 14.
+            window (int | None, optional): Number of periods to consider for the moving average:
+                the number of periods of the Efficiency Ratio ("kaufman_adaptive"), of each of the six
+                EMAs ("t3"), of the volume sum ("elastic_volume_weighted"), over which the fractal
+                dimension is measured, an even number ("fractal_adaptive"), and the critical period
+                below which cycles are removed ("super_smoother"). Not used by "holt_winters" and
+                "hilbert_trendline". Defaults to None, which uses the window of each method: 10 for
+                "kaufman_adaptive" and "super_smoother", 5 for "t3", 9 for "arnaud_legoux", 12 for
+                "variable_index_dynamic", 16 for "fractal_adaptive", 20 for "elastic_volume_weighted",
+                8 for "volume_adjusted" and 14 for the others.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MA.
@@ -494,7 +681,38 @@ class OverlapTechnicals:
                 values. Defaults to False.
             method (str, optional): The moving average: "simple", "exponential",
                 "double_exponential", "triple_exponential", "zero_lag", "wilder", "triangular",
-                "weighted", "hull", "sine", "fibonacci" or "pascal". Defaults to "simple".
+                "weighted", "hull", "sine", "fibonacci", "pascal", "kaufman_adaptive", "t3",
+                "arnaud_legoux", "volume_weighted", "mcginley", "variable_index_dynamic",
+                "fractal_adaptive", "holt_winters", "elastic_volume_weighted", "volume_adjusted",
+                "super_smoother" or "hilbert_trendline". Defaults to "simple".
+            fast_window (int, optional): The number of periods that corresponds to the fastest EMA
+                constant, used when the Efficiency Ratio is at its maximum (1.0). Only used when
+                method="kaufman_adaptive". Defaults to 2.
+            slow_window (int, optional): The number of periods that corresponds to the slowest EMA
+                constant, used when the Efficiency Ratio is at its minimum (0.0). Only used when
+                method="kaufman_adaptive". Defaults to 30.
+            volume_factor (float, optional): The volume factor a of the T3, between 0 and 1. Only
+                used when method="t3". Defaults to 0.7, Tillson's value.
+            sigma (float, optional): The width of the Gaussian curve of the ALMA, as the number of
+                standard deviations that fit in the window. Only used when method="arnaud_legoux".
+                Defaults to 6.0.
+            offset (float, optional): The position of the peak of the ALMA's curve in the window,
+                from 0 (the oldest price) to 1 (the latest price). Only used when
+                method="arnaud_legoux". Defaults to 0.85.
+            constant (float, optional): The constant k of the McGinley Dynamic that multiplies the
+                window. Only used when method="mcginley". Defaults to 1.0, as in TA-Lib and
+                pandas-ta-classic; McGinley suggested 0.6 to follow the price more closely.
+            cmo_window (int, optional): The number of periods of the Chande Momentum Oscillator of
+                the VIDYA. Only used when method="variable_index_dynamic". Defaults to 9, TA-Lib's
+                default.
+            level_smoothing (float, optional): The smoothing factor of the level of the HWMA,
+                between 0 and 1. Only used when method="holt_winters". Defaults to 0.2.
+            velocity_smoothing (float, optional): The smoothing factor of the velocity of the HWMA,
+                between 0 and 1. Only used when method="holt_winters". Defaults to 0.1.
+            acceleration_smoothing (float, optional): The smoothing factor of the acceleration of
+                the HWMA, between 0 and 1. Only used when method="holt_winters". Defaults to 0.1.
+            poles (int, optional): The number of poles of the SuperSmoother filter, 2 or 3. Only
+                used when method="super_smoother". Defaults to 2.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -502,7 +720,7 @@ class OverlapTechnicals:
 
         Returns:
             pd.DataFrame or pd.Series:
-            Moving Average (MA) values.
+            Moving Average (MA) values in price units.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
@@ -514,6 +732,71 @@ class OverlapTechnicals:
         - finta's TEMA, SMMA and SSMA start their exponential averages on the first price (with
           pandas' ewm) instead of seeding them with a simple average over the window, so they
           differ during the warm-up and converge afterwards.
+        - "kaufman_adaptive": with the default `fast_window` of 2 and `slow_window` of 30, which
+          TA-Lib fixes, the KAMA agrees with TA-Lib's KAMA.
+        - "t3": each of the six EMAs is seeded with the simple average of its first `window`
+          values, so the T3 starts at period 6 * (window - 1). It agrees with TA-Lib's T3 and
+          pandas-ta-classic's t3.
+        - "arnaud_legoux": the peak m is rounded down to a whole period, and the ALMA agrees with
+          TA-Lib's ALMA. pandas-ta-classic's alma measures the offset from the latest price and
+          keeps m unrounded: its alma(offset=0.85) equals this ALMA with an offset of 0.15 and an
+          unrounded peak, so it puts the weight on the older prices.
+        - "volume_weighted": the VWMA differs from the rolling VWAP
+          (`get_volume_weighted_average_price`) only in the price it averages: the close instead
+          of the typical price (High + Low + Close) / 3. It agrees with TA-Lib's VWMA and
+          pandas-ta-classic's vwma. A window without any volume has no average (NaN).
+        - "mcginley": the recursion is seeded with the simple average of the first `window`
+          prices, as the Toolkit seeds its exponential moving averages. TA-Lib's MCGD and
+          pandas-ta-classic's mcgd start the recursion from the first price instead. The
+          difference fades by about a factor 1 - 1 / window per period: with the default window
+          of 14 the two agree to 0.01% within about 70 periods.
+        - "variable_index_dynamic": the volatility index is the absolute Chande Momentum
+          Oscillator over unsmoothed sums (Chande & Kroll, 1994), as in TA-Lib and
+          pandas-ta-classic. Chande's 1992 article and Tulip Indicators' vidya use the ratio of a
+          short to a long standard deviation instead. The recursion is seeded with the simple
+          average of `window` prices on the period before the first oscillator value that follows
+          a full window, as the Toolkit seeds its exponential moving averages. With equal windows
+          it agrees with pandas-ta-classic's vidya. TA-Lib starts the recursion from the first
+          price, with the oscillator over the changes available so far, and shows it from period
+          `cmo_window` on. The difference fades by a factor 1 - Alpha * |CMO| per period: with the
+          defaults the two agree to 0.01% within about 100 periods.
+        - "fractal_adaptive": FRAMA averages the median price of the high and low, which with the
+          default `close_column` of "Adj Close" are adjusted for dividends in the same way as the
+          close. The recursion is seeded with the simple average of the first `window` median
+          prices, on the window-th period, as the Toolkit seeds its exponential moving averages.
+          Ehlers and TA-Lib start from the median price of that period, which TA-Lib does not
+          show, so TA-Lib's FRAMA starts one period later. The difference fades by a factor
+          1 - Alpha per period: with the default window of 16 the two agree to 0.01% within about
+          45 periods. A half without a range still gives a dimension, as in TA-Lib: a flat latest
+          half next to a moving earlier one is a dimension of 1, so FRAMA moves to the price.
+          Without any range in the window, or in both halves, the last dimension is kept.
+        - "holt_winters": the HWMA agrees with pandas-ta-classic's hwma. The recursion starts on
+          each ticker's first close, as in the MQL5 indicator, so there is no warm-up: the weight
+          of the start fades by a factor 1 - Level Smoothing per period, and the first values of
+          the price history lean on that close. The channel around it is
+          `get_holt_winters_channel`.
+        - "elastic_volume_weighted": Fries divides by the number of shares outstanding (the
+          float); the volume over the window stands in for it, as in finta. The recursion is
+          seeded with the simple average of the first `window` closes, as the Toolkit seeds its
+          exponential moving averages. finta starts it from 0, so its eVWMA climbs from 0 to the
+          price; after that start has faded, about 300 periods with the default window, the two
+          are equal. A window without any volume keeps the last average.
+        - "volume_adjusted": the VAMA agrees with finta's VAMA; its weight multiplies the volume
+          ratio by the close as well, so it is the traded value relative to the average volume.
+          A window without any volume has no average (NaN).
+        - "super_smoother": the two-pole filter (Ehlers, 2013) also averages the last two prices,
+          which removes the two-period cycle completely; the three-pole filter (Ehlers, 2004) is
+          smoother at the cost of more lag. The filter equals the price on the first two (three)
+          periods of each ticker's own history and runs from there, as pandas-ta-classic starts
+          it; Ehlers' listing starts it from zero. The three-pole filter agrees with
+          pandas-ta-classic's ssf. Its two-pole ssf filters the price itself rather than the
+          average of the last two prices, which differs by up to 2% on daily prices; applied to
+          that average the two are equal. √2, √3 and π are exact, where Ehlers' listings write
+          1.414 and 3.14159.
+        - "hilbert_trendline": equals TA-Lib's HT_TRENDLINE and pandas-ta-classic's ht_trendline.
+          The recursion starts from zero on the 37th period of each ticker's own history, as in
+          TA-Lib, and the first 63 periods (TA-Lib's lookback) are NaN. Ehlers compares the
+          trendline with the smoothed price (or MAMA) to tell a trend from a cycle.
         - If `growth` is set to True, the method calculates the growth of the MA
           using the specified `lag`.
 
@@ -543,9 +826,10 @@ class OverlapTechnicals:
         | 2025-12-31 | 6802.55 |     671.566 |
         """
         moving_averages = volatility_model.MOVING_AVERAGES
-        if method not in moving_averages:
+        methods = (*moving_averages, *MOVING_AVERAGE_WINDOWS)
+        if method not in methods:
             raise ValueError(
-                f"Method must be one of {', '.join(moving_averages)}, not {method}."
+                f"Method must be one of {', '.join(methods)}, not {method}."
             )
         if period not in [
             "intraday",
@@ -565,10 +849,83 @@ class OverlapTechnicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        if window is None:
+            window = MOVING_AVERAGE_WINDOWS.get(method) or 14
+
+        # The prices each average takes, its calculation and its parameters.
+        columns, function, arguments = {
+            "kaufman_adaptive": (
+                [close_column],
+                overlap_model.get_kaufman_adaptive_moving_average,
+                (window, fast_window, slow_window),
+            ),
+            "t3": (
+                [close_column],
+                overlap_model.get_t3_moving_average,
+                (window, volume_factor),
+            ),
+            "arnaud_legoux": (
+                [close_column],
+                overlap_model.get_arnaud_legoux_moving_average,
+                (window, sigma, offset),
+            ),
+            "volume_weighted": (
+                [close_column, "Volume"],
+                overlap_model.get_volume_weighted_moving_average,
+                (window,),
+            ),
+            "mcginley": (
+                [close_column],
+                overlap_model.get_mcginley_dynamic,
+                (window, constant),
+            ),
+            "variable_index_dynamic": (
+                [close_column],
+                overlap_model.get_variable_index_dynamic_average,
+                (window, cmo_window),
+            ),
+            "fractal_adaptive": (
+                ["High", "Low"],
+                overlap_model.get_fractal_adaptive_moving_average,
+                (window,),
+            ),
+            "holt_winters": (
+                [close_column],
+                overlap_model.get_holt_winters_moving_average,
+                (level_smoothing, velocity_smoothing, acceleration_smoothing),
+            ),
+            "elastic_volume_weighted": (
+                [close_column, "Volume"],
+                overlap_model.get_elastic_volume_weighted_moving_average,
+                (window,),
+            ),
+            "volume_adjusted": (
+                [close_column, "Volume"],
+                overlap_model.get_volume_adjusted_moving_average,
+                (window,),
+            ),
+            "super_smoother": (
+                [close_column],
+                cycle_model.get_super_smoother_filter,
+                (window, poles),
+            ),
+            "hilbert_trendline": (
+                [close_column],
+                cycle_model.get_hilbert_instantaneous_trendline,
+                (),
+            ),
+        }.get(method, ([close_column], moving_averages.get(method), (window,)))
+
+        # FRAMA takes the high and low, which like the close of Ehlers' filters are adjusted
+        # for dividends with the adjusted close.
+        historical_data = (
+            self._get_historical_data(period, close_column)
+            if method in ("fractal_adaptive", "super_smoother", "hilbert_trendline")
+            else self._historical_data[period]
+        )
 
         moving_average = calculate_per_ticker(
-            historical_data, [close_column], moving_averages[method], window
+            historical_data, columns, function, *arguments
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -720,998 +1077,6 @@ class OverlapTechnicals:
 
         return finalize_dataset(
             dataset=trix,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_kaufman_adaptive_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 10,
-        fast_window: int = 2,
-        slow_window: int = 30,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Kaufman Adaptive Moving Average (KAMA) for a given price series.
-
-        The Kaufman Adaptive Moving Average adjusts its own responsiveness to price changes
-        based on how "efficiently" price is moving. It compares the net directional move
-        over the window to the total (sum of absolute) movement over that same window — the
-        Efficiency Ratio. When price trends strongly in one direction (an efficient move),
-        the Efficiency Ratio is close to 1 and KAMA tracks price closely, behaving like a
-        fast EMA. When price whipsaws sideways (an inefficient move), the Efficiency Ratio is
-        close to 0 and KAMA flattens out, behaving like a slow EMA — reducing whipsaw signals
-        in choppy markets while still reacting quickly during strong trends.
-
-        The formula is as follows:
-
-        - Change = |Close(t) — Close(t - window)|
-        - Volatility = Sum(|Close(i) — Close(i - 1)|, window)
-        - Efficiency Ratio (ER) = Change / Volatility
-        - Fastest SC = 2 / (fast_window + 1), Slowest SC = 2 / (slow_window + 1)
-        - Smoothing Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2
-        - KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
-
-        Also known as: KAMA, Kaufman's Adaptive Moving Average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods over which the Efficiency Ratio is
-                calculated. Defaults to 10.
-            fast_window (int, optional): The number of periods that corresponds to the
-                fastest EMA constant used when the Efficiency Ratio is at its maximum (1.0).
-                Defaults to 2.
-            slow_window (int, optional): The number of periods that corresponds to the
-                slowest EMA constant used when the Efficiency Ratio is at its minimum (0.0).
-                Defaults to 30.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the KAMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: KAMA values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the KAMA for each asset in the Toolkit instance.
-        - Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
-        - Referenced against TA-Lib's KAMA (https://ta-lib.org/functions/kama.html).
-        - With the default `fast_window` of 2 and `slow_window` of 30, which TA-Lib fixes, the KAMA
-          agrees with TA-Lib's KAMA.
-        - If `growth` is set to True, the method calculates the growth of the KAMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["^STOXX50E"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_kaufman_adaptive_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   ^STOXX50E |   Benchmark |
-        |:-----------|------------:|------------:|
-        | 2025-12-24 |      nan    |     674.145 |
-        | 2025-12-26 |      nan    |     674.285 |
-        | 2025-12-29 |     5725.07 |     674.644 |
-        | 2025-12-30 |     5726.77 |     674.963 |
-        | 2025-12-31 |      nan    |     674.999 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        kaufman_adaptive_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_kaufman_adaptive_moving_average,
-            window,
-            fast_window,
-            slow_window,
-        ).loc[self._start_date : self._end_date]
-        return finalize_dataset(
-            dataset=kaufman_adaptive_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_t3_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 5,
-        volume_factor: float = 0.7,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Tillson T3 Moving Average for a given price series.
-
-        The T3 applies Tillson's Generalized DEMA, GD(x) = (1 + a) * EMA(x) - a * EMA(EMA(x)),
-        three times in a row. The volume factor a sets how much of DEMA's lag correction is
-        used: 0 gives an EMA of an EMA of an EMA and 1 three DEMAs in a row. The result is a
-        smooth average with little lag and little overshoot.
-
-        The formula is as follows:
-
-        - E1 = EMA(Close, Window), E2 = EMA(E1, Window), ..., E6 = EMA(E5, Window)
-        - c1 = -a^3, c2 = 3a^2 + 3a^3, c3 = -6a^2 - 3a - 3a^3, c4 = 1 + 3a + a^3 + 3a^2
-        - T3 = c1 * E6 + c2 * E5 + c3 * E4 + c4 * E3
-
-        For more information, see the following sources:
-
-        - Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals." Technical Analysis
-          of Stocks & Commodities, 16(1).
-        - Referenced against TA-Lib's T3 (https://ta-lib.org/functions/t3.html).
-        - pandas-ta-classic: t3 (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: T3, Tillson T3, T3 moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods of each of the six exponential moving
-                averages. Defaults to 5, TA-Lib's default.
-            volume_factor (float, optional): The volume factor a, between 0 and 1. Defaults to 0.7,
-                Tillson's value.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the T3.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Tillson T3 Moving Average values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the T3 for each asset in the Toolkit instance.
-        - Each of the six EMAs is seeded with the simple average of its first `window` values,
-          so the T3 starts at period 6 * (window - 1). It agrees with TA-Lib's T3 and
-          pandas-ta-classic's t3.
-        - If `growth` is set to True, the method calculates the growth of the T3 using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["^DJI"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_t3_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    ^DJI |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 48312.7 |     676.353 |
-        | 2025-12-26 | 48425.2 |     679.107 |
-        | 2025-12-29 | 48504.8 |     681.236 |
-        | 2025-12-30 | 48534.1 |     682.521 |
-        | 2025-12-31 | 48490.9 |     682.528 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        t3_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_t3_moving_average,
-            window,
-            volume_factor,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=t3_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_arnaud_legoux_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 9,
-        sigma: float = 6.0,
-        offset: float = 0.85,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Arnaud Legoux Moving Average (ALMA) for a given price series.
-
-        ALMA weights the prices in the window with a Gaussian curve whose peak sits at `offset`
-        of the way from the oldest to the latest price. An offset close to 1 puts the weight on
-        recent prices (less lag) and one close to 0 on older prices (more smoothing), while
-        `sigma` sets how narrow the curve is.
-
-        The formula is as follows:
-
-        - m = floor(Offset * (Window - 1)), s = Window / Sigma
-        - Weight(i) = exp(-(i - m)^2 / (2 * s^2)), for i = 0 (the oldest price) to Window - 1
-        - ALMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
-
-        For more information, see the following sources:
-
-        - Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving Average."
-          arnaudlegoux.com.
-        - Referenced against TA-Lib's ALMA (https://ta-lib.org/functions/alma.html).
-        - pandas-ta-classic: alma (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: ALMA, Arnaud Legoux moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods to consider. Defaults to 9.
-            sigma (float, optional): The width of the Gaussian curve, as the number of standard
-                deviations that fit in the window. Defaults to 6.0.
-            offset (float, optional): The position of the peak of the curve in the window, from 0
-                (the oldest price) to 1 (the latest price). Defaults to 0.85.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ALMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Arnaud Legoux Moving Average (ALMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the ALMA for each asset in the Toolkit instance.
-        - The peak m is rounded down to a whole period, and the ALMA agrees with TA-Lib's ALMA.
-          pandas-ta-classic's alma measures the offset from the latest price and keeps m
-          unrounded: its alma(offset=0.85) equals this ALMA with an offset of 0.15 and an
-          unrounded peak, so it puts the weight on the older prices.
-        - If `growth` is set to True, the method calculates the growth of the ALMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["NVDA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_arnaud_legoux_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    NVDA |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 182.824 |     678.086 |
-        | 2025-12-26 | 185.894 |     681.239 |
-        | 2025-12-29 | 187.703 |     683.046 |
-        | 2025-12-30 | 188.3   |     683.49  |
-        | 2025-12-31 | 187.983 |     682.463 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        arnaud_legoux_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_arnaud_legoux_moving_average,
-            window,
-            sigma,
-            offset,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=arnaud_legoux_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_volume_weighted_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Volume Weighted Moving Average (VWMA) for a given price series.
-
-        The Volume Weighted Moving Average weights every closing price in the window by the
-        volume traded in its period, so prices at which much was traded count more than those
-        of quiet periods. The VWMA rises above the simple moving average when the volume is
-        heavier on the up days and falls below it when the volume is heavier on the down days.
-
-        The formula is as follows:
-
-        - VWMA = Sum(Close * Volume, Window) / Sum(Volume, Window)
-
-        For more information, see the following sources:
-
-        - Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
-        - Referenced against TA-Lib's VWMA (https://ta-lib.org/functions/vwma.html).
-        - pandas-ta-classic: vwma (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: vwma (https://tulipindicators.org/vwma).
-
-        Also known as: VWMA, volume weighted moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods to consider. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the VWMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Volume Weighted Moving Average (VWMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the VWMA for each asset in the Toolkit instance.
-        - The VWMA differs from the rolling VWAP (`get_volume_weighted_average_price`) only in
-          the price it averages: the close instead of the typical price (High + Low + Close) / 3.
-          It agrees with TA-Lib's VWMA and pandas-ta-classic's vwma.
-        - A window without any volume has no average (NaN).
-        - If `growth` is set to True, the method calculates the growth of the VWMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["QQQ"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-            benchmark_ticker=None,
-        )
-
-        toolkit.technicals.get_volume_weighted_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     QQQ |
-        |:-----------|--------:|
-        | 2025-12-24 | 614.136 |
-        | 2025-12-26 | 613.814 |
-        | 2025-12-29 | 613.577 |
-        | 2025-12-30 | 613.29  |
-        | 2025-12-31 | 612.312 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        volume_weighted_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            overlap_model.get_volume_weighted_moving_average,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=volume_weighted_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_mcginley_dynamic(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        constant: float = 1.0,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the McGinley Dynamic for a given price series.
-
-        The McGinley Dynamic is a moving average that adjusts its own speed to the market: the
-        step towards the price is divided by (Price / MD)^4, so the average moves slowly while
-        the price runs above it and quickly when the price falls below it, following the price
-        more closely than an average with a fixed speed and with fewer whipsaws.
-
-        The formula is as follows:
-
-        - First MD = SMA(Close, Window), on the Window-th period
-        - MD(t) = MD(t-1) + (Close(t) - MD(t-1)) / (Constant * Window * (Close(t) / MD(t-1))^4)
-
-        For more information, see the following sources:
-
-        - McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis (Market
-          Technicians Association).
-        - Referenced against TA-Lib's MCGD (https://ta-lib.org/functions/mcgd.html).
-        - pandas-ta-classic: mcgd (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: MCGD, McGinley Dynamic Indicator.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods, the N of the formula. Defaults to 14,
-                TA-Lib's default.
-            constant (float, optional): The constant k that multiplies the window. Defaults to 1.0,
-                as in TA-Lib and pandas-ta-classic; McGinley suggested 0.6 to follow the price more
-                closely.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the McGinley Dynamic.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: McGinley Dynamic values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the McGinley Dynamic for each asset in the Toolkit instance.
-        - The recursion is seeded with the simple average of the first `window` prices, as the
-          Toolkit seeds its exponential moving averages. TA-Lib's MCGD and pandas-ta-classic's
-          mcgd start the recursion from the first price instead. The difference fades by about a
-          factor 1 - 1 / window per period: with the default window of 14 the two agree to 0.01%
-          within about 70 periods.
-        - If `growth` is set to True, the method calculates the growth of the McGinley Dynamic using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["^FTSE"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_mcginley_dynamic().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   ^FTSE |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 9725.8  |     672.687 |
-        | 2025-12-26 |  nan    |     673.502 |
-        | 2025-12-29 | 9735.29 |     674.113 |
-        | 2025-12-30 | 9748.78 |     674.63  |
-        | 2025-12-31 | 9760.89 |     674.772 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        mcginley_dynamic = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_mcginley_dynamic,
-            window,
-            constant,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=mcginley_dynamic,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_variable_index_dynamic_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 12,
-        cmo_window: int = 9,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Variable Index Dynamic Average (VIDYA) for a given price series.
-
-        VIDYA is an exponential moving average whose smoothing factor is scaled by the strength
-        of the trend, measured by the absolute Chande Momentum Oscillator: in a strong trend
-        (|CMO| near 1) it moves like an EMA of `window` periods, and in a market that goes
-        nowhere (|CMO| near 0) it hardly moves at all.
-
-        The formula is as follows:
-
-        - Gains = Sum(max(Close(t) - Close(t-1), 0), CMO Window)
-        - Losses = Sum(max(Close(t-1) - Close(t), 0), CMO Window)
-        - |CMO| = |Gains - Losses| / (Gains + Losses), and 0 when prices did not move
-        - Alpha = 2 / (Window + 1)
-        - VIDYA(t) = Alpha * |CMO(t)| * Close(t) + (1 - Alpha * |CMO(t)|) * VIDYA(t-1)
-
-        For more information, see the following sources:
-
-        - Chande, T.S. (1992). "Adapting Moving Averages to Market Volatility." Technical Analysis
-          of Stocks & Commodities, 10(3).
-        - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's VIDYA (https://ta-lib.org/functions/vidya.html).
-        - pandas-ta-classic: vidya (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: VIDYA, variable index dynamic average, Chande's dynamic average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods of the exponential moving average.
-                Defaults to 12, TA-Lib's default.
-            cmo_window (int, optional): The number of periods of the Chande Momentum Oscillator.
-                Defaults to 9, TA-Lib's default.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the VIDYA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Variable Index Dynamic Average (VIDYA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the VIDYA for each asset in the Toolkit instance.
-        - The volatility index is the absolute Chande Momentum Oscillator over unsmoothed sums
-          (Chande & Kroll, 1994), as in TA-Lib and pandas-ta-classic. Chande's 1992 article and
-          Tulip Indicators' vidya use the ratio of a short to a long standard deviation instead.
-        - The recursion is seeded with the simple average of `window` prices on the period before
-          the first oscillator value that follows a full window, as the Toolkit seeds its
-          exponential moving averages. With equal windows it agrees with pandas-ta-classic's vidya.
-          TA-Lib starts the recursion from the first price, with the oscillator over the changes
-          available so far, and shows it from period `cmo_window` on. The difference fades by a
-          factor 1 - Alpha * |CMO| per period: with the defaults the two agree to 0.01% within
-          about 100 periods.
-        - If `growth` is set to True, the method calculates the growth of the VIDYA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["GLD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_variable_index_dynamic_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     GLD |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 397.569 |     670.332 |
-        | 2025-12-26 | 399.971 |     671.09  |
-        | 2025-12-29 | 399.957 |     671.58  |
-        | 2025-12-30 | 399.946 |     672.076 |
-        | 2025-12-31 | 399.908 |     672.374 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        variable_index_dynamic_average = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_variable_index_dynamic_average,
-            window,
-            cmo_window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=variable_index_dynamic_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_fractal_adaptive_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 16,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Fractal Adaptive Moving Average (FRAMA) for a given price series.
-
-        FRAMA is an exponential moving average of the median price whose smoothing factor
-        follows the fractal dimension of the prices over the window. The dimension compares the
-        ranges of the two halves of the window with the range of the whole: in a trend the
-        ranges of the halves add up to the range of the whole (a dimension of 1) and FRAMA
-        follows the price closely, while in a range-bound market each half covers most of the
-        range (a dimension towards 2) and FRAMA barely moves.
-
-        The formula is as follows:
-
-        - Price = (High + Low) / 2
-        - N1 = (Highest High - Lowest Low) / (Window / 2) over the latest Window / 2 periods
-        - N2 = (Highest High - Lowest Low) / (Window / 2) over the Window / 2 periods before
-        - N3 = (Highest High - Lowest Low) / Window over the whole window
-        - D = (log(N1 + N2) - log(N3)) / log(2)
-        - Alpha = exp(-4.6 * (D - 1)), limited to between 0.01 and 1
-        - FRAMA(t) = Alpha(t) * Price(t) + (1 - Alpha(t)) * FRAMA(t-1)
-
-        For more information, see the following sources:
-
-        - Ehlers, J.F. (2005). "Fractal Adaptive Moving Averages." Technical Analysis of Stocks & Commodities,
-          23(10), 81-82.
-        - Referenced against TA-Lib's FRAMA (https://ta-lib.org/functions/frama.html).
-        - finta: FRAMA (https://github.com/peerchemist/finta).
-
-        Also known as: FRAMA, fractal adaptive moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods over which the fractal dimension is
-                measured, an even number. Defaults to 16, Ehlers' window.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the FRAMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Fractal Adaptive Moving Average (FRAMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the FRAMA for each asset in the Toolkit instance.
-        - With the default `close_column` of "Adj Close" the high and low are adjusted for
-          dividends in the same way.
-        - The recursion is seeded with the simple average of the first `window` median prices,
-          on the window-th period, as the Toolkit seeds its exponential moving averages. Ehlers
-          and TA-Lib start from the median price of that period, which TA-Lib does not show, so
-          TA-Lib's FRAMA starts one period later. The difference fades by a factor 1 - Alpha per
-          period: with the default window of 16 the two agree to 0.01% within about 45 periods.
-        - A half without a range still gives a dimension, as in TA-Lib: a flat latest half next
-          to a moving earlier one is a dimension of 1, so FRAMA moves to the price. Without any
-          range in the window, or in both halves, the last dimension is kept.
-        - If `growth` is set to True, the method calculates the growth of the FRAMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_fractal_adaptive_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    MSFT |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 481.61  |     676.384 |
-        | 2025-12-26 | 481.639 |     677.132 |
-        | 2025-12-29 | 481.659 |     677.331 |
-        | 2025-12-30 | 481.764 |     677.517 |
-        | 2025-12-31 | 481.759 |     677.645 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        fractal_adaptive_moving_average = calculate_per_ticker(
-            historical_data,
-            ["High", "Low"],
-            overlap_model.get_fractal_adaptive_moving_average,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=fractal_adaptive_moving_average,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -2006,157 +1371,6 @@ class OverlapTechnicals:
 
     @handle_portfolio
     @handle_errors
-    def get_holt_winters_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        level_smoothing: float = 0.2,
-        velocity_smoothing: float = 0.1,
-        acceleration_smoothing: float = 0.1,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Holt-Winters Moving Average (HWMA) for a given price series.
-
-        The HWMA applies Holt's exponential smoothing with a trend, extended with an
-        acceleration term, to the price: it smooths the level of the price, its velocity (the
-        change of the level) and its acceleration (the change of the velocity), and adds the
-        expected velocity and acceleration of one period to the level. It follows a trend
-        with less lag than an exponential moving average of similar smoothness, at the cost of
-        overshooting when the trend turns.
-
-        The formula is as follows:
-
-        - F(t) = (1 - Level Smoothing) * (F(t-1) + V(t-1) + 0.5 * A(t-1)) + Level Smoothing * Close(t)
-        - V(t) = (1 - Velocity Smoothing) * (V(t-1) + A(t-1)) + Velocity Smoothing * (F(t) - F(t-1))
-        - A(t) = (1 - Acceleration Smoothing) * A(t-1) + Acceleration Smoothing * (V(t) - V(t-1))
-        - HWMA(t) = F(t) + V(t) + 0.5 * A(t)
-
-        with F starting at the first close and V and A at 0.
-
-        For more information, see the following sources:
-
-        - Holt, C.C. (1957). "Forecasting Seasonals and Trends by Exponentially Weighted Moving
-          Averages." ONR Memorandum 52, Carnegie Institute of Technology (reprinted in the
-          International Journal of Forecasting, 20(1), 2004).
-        - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
-          Management Science, 6(3), 324-342.
-        - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
-        - Referenced against pandas-ta-classic's hwma (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: HWMA, Holt-Winters moving average, Holt-Winter moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            level_smoothing (float, optional): The smoothing factor of the level, between 0 and 1.
-                Defaults to 0.2.
-            velocity_smoothing (float, optional): The smoothing factor of the velocity, between 0
-                and 1. Defaults to 0.1.
-            acceleration_smoothing (float, optional): The smoothing factor of the acceleration,
-                between 0 and 1. Defaults to 0.1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the HWMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Holt-Winters Moving Average (HWMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the HWMA for each asset in the Toolkit instance.
-        - The HWMA agrees with pandas-ta-classic's hwma. The recursion starts on each ticker's
-          first close, as in the MQL5 indicator, so there is no warm-up: the weight of the
-          start fades by a factor 1 - Level Smoothing per period, and the first values of the
-          price history lean on that close.
-        - If `growth` is set to True, the method calculates the growth of the HWMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["META"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_holt_winters_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    META |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 692.018 |     682.098 |
-        | 2025-12-26 | 693.203 |     683.972 |
-        | 2025-12-29 | 692.76  |     685.018 |
-        | 2025-12-30 | 693.472 |     685.68  |
-        | 2025-12-31 | 692.298 |     685.065 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        holt_winters_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            overlap_model.get_holt_winters_moving_average,
-            level_smoothing,
-            velocity_smoothing,
-            acceleration_smoothing,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=holt_winters_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
     def get_holt_winters_channel(
         self,
         period: str = "daily",
@@ -2182,7 +1396,7 @@ class OverlapTechnicals:
 
         The formula is as follows:
 
-        - Middle Band = HWMA (see `get_holt_winters_moving_average`)
+        - Middle Band = HWMA (see `get_moving_average` with method="holt_winters")
         - Var(t) = (1 - Deviation Smoothing) * Var(t-1) + Deviation Smoothing * (Close(t-1) - HWMA(t-1))^2,
           starting at 0
         - Upper Band = HWMA(t) + Multiplier * sqrt(Var(t-1))
@@ -2295,276 +1509,6 @@ class OverlapTechnicals:
 
         return finalize_dataset(
             dataset=holt_winters_channel,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_elastic_volume_weighted_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 20,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Elastic Volume Weighted Moving Average (eVWMA) for a given price series.
-
-        The eVWMA approximates the average price paid per share over the latest window. Every
-        period the shares traded replace the same number of shares held at the previous
-        average, out of all shares traded over the window, so the average moves towards the
-        close by the share of the window's volume traded in that period: quickly on heavy
-        volume and hardly at all on light volume. Unlike a moving average over a fixed number
-        of periods, it stretches in time with the trading activity.
-
-        The formula is as follows:
-
-        - Volume Sum = Sum(Volume, Window)
-        - eVWMA(t) = ((Volume Sum - Volume(t)) * eVWMA(t-1) + Volume(t) * Close(t)) / Volume Sum
-
-        For more information, see the following sources:
-
-        - Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks & Commodities, 19(6),
-          52-56 (https://www.christian-fries.de/evwma/).
-        - Referenced against finta's EVWMA (https://github.com/peerchemist/finta).
-
-        Also known as: eVWMA, EVWMA, elastic volume weighted moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods of the volume sum. Defaults to 20.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the eVWMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Elastic Volume Weighted Moving Average (eVWMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the eVWMA for each asset in the Toolkit instance.
-        - Fries divides by the number of shares outstanding (the float); the volume over the
-          window stands in for it, as in finta.
-        - The recursion is seeded with the simple average of the first `window` closes, as the
-          Toolkit seeds its exponential moving averages. finta starts it from 0, so its eVWMA
-          climbs from 0 to the price; after that start has faded, about 300 periods with the
-          default window, the two are equal.
-        - A window without any volume keeps the last average.
-        - If `growth` is set to True, the method calculates the growth of the eVWMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["TSLA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_elastic_volume_weighted_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    TSLA |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 449.617 |     669.122 |
-        | 2025-12-26 | 450.621 |     669.555 |
-        | 2025-12-29 | 451.012 |     670.084 |
-        | 2025-12-30 | 451.144 |     670.443 |
-        | 2025-12-31 | 451.098 |     670.743 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        elastic_volume_weighted_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            overlap_model.get_elastic_volume_weighted_moving_average,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=elastic_volume_weighted_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_volume_adjusted_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 8,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Volume Adjusted Moving Average (VAMA) for a given price series.
-
-        The VAMA weights every close in the window by its traded value relative to the
-        average volume of the window ending on that period, so a period that trades more
-        than usual counts more than a quiet one, and the average leans towards the prices at
-        which the market was most active.
-
-        The formula is as follows:
-
-        - Weight(t) = Close(t) * Volume(t) / SMA(Volume, Window)(t)
-        - VAMA = Sum(Weight * Close, Window) / Sum(Weight, Window)
-
-        For more information, see the following sources:
-
-        - Arms, R.W. Jr. (1983). "Volume Cycles in the Stock Market: Market Timing Through
-          Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume traded.
-        - Referenced against finta's VAMA (https://github.com/peerchemist/finta), by Peerchemist,
-          which defines the indicator; it has no published source.
-
-        Also known as: VAMA, volume adjusted moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 8.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the VAMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: Volume Adjusted Moving Average (VAMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the VAMA for each asset in the Toolkit instance.
-        - The VAMA agrees with finta's VAMA, which has no published source; its weight multiplies
-          the volume ratio by the close as well, so it is the traded value relative to the
-          average volume.
-        - A window without any volume has no average (NaN).
-        - If `growth` is set to True, the method calculates the growth of the VAMA using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["NFLX"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_volume_adjusted_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    NFLX |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 94.0732 |     673.34  |
-        | 2025-12-26 | 94.1407 |     674.161 |
-        | 2025-12-29 | 94.1058 |     675.793 |
-        | 2025-12-30 | 93.9638 |     678.813 |
-        | 2025-12-31 | 93.9337 |     680.139 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        volume_adjusted_moving_average = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            overlap_model.get_volume_adjusted_moving_average,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=volume_adjusted_moving_average,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

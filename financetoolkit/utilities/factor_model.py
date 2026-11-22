@@ -412,26 +412,56 @@ def get_horizons(period: str, horizons: list[int] | int | None) -> list[int]:
     return [int(horizon) for horizon in horizon_list]
 
 
-def select_metrics(
-    metrics: str | list[str], collections: dict[str, list[str]]
-) -> list[str]:
+def get_metric_label(metric: str | tuple[str, dict]) -> str:
     """
-    Returns the names of the metrics to analyse: a collection is replaced by its metrics,
-    and a text may name several metrics or collections separated by commas.
+    Returns the name of a metric in the factor analysis: the method name, or for a variant of
+    a method the method with its parameters, e.g. "get_moving_average(method='t3')".
 
     Args:
-        metrics (str | list[str]): The metric names and collections.
-        collections (dict[str, list[str]]): The metrics of each collection of the module.
+        metric (str | tuple[str, dict]): The method name, or the method name with the
+            parameters of the variant.
 
     Returns:
-        list[str]: The metric names, each once, in the order given.
+        str: The label of the metric.
+    """
+    if isinstance(metric, str):
+        return metric
+
+    name, parameters = metric
+    arguments = ", ".join(f"{key}={value!r}" for key, value in parameters.items())
+
+    return f"{name}({arguments})"
+
+
+def select_metrics(
+    metrics: str | list[str], collections: dict[str, list]
+) -> list[str | tuple[str, dict]]:
+    """
+    Returns the metrics to analyse: a collection is replaced by its metrics, and a text may
+    name several metrics or collections separated by commas. A metric of a collection is a
+    method name or a method name with the parameters of one of its variants, such as
+    ("get_moving_average", {"method": "t3"}), which can also be named by its label,
+    "get_moving_average(method='t3')".
+
+    Args:
+        metrics (str | list[str]): The metric names, labels and collections.
+        collections (dict[str, list]): The metrics of each collection of the module.
+
+    Returns:
+        list[str | tuple[str, dict]]: The metrics, each once, in the order given.
     """
     if isinstance(metrics, str):
         metrics = [metric.strip() for metric in metrics.split(",") if metric.strip()]
 
-    names: list[str] = []
+    variants = {
+        get_metric_label(metric): metric
+        for collection in collections.values()
+        for metric in collection
+    }
+
+    names: list[str | tuple[str, dict]] = []
     for metric in metrics:
-        for name in collections.get(metric, [metric]):
+        for name in collections.get(metric, [variants.get(metric, metric)]):
             if name not in names:
                 names.append(name)
 
@@ -443,7 +473,7 @@ def select_metrics(
 
 def get_daily_factors(
     module: object,
-    names: list[str],
+    names: list[str] | list[str | tuple[str, dict]],
     parameters: dict,
     defaults: dict,
     tickers: list[str],
@@ -456,13 +486,15 @@ def get_daily_factors(
 
     Each metric is called unrounded with the parameters it takes: the module's defaults
     (such as show_daily for the ratios) and the parameters given, which must be taken by at least one
-    of the metrics so that none is silently ignored. A metric with variants is named with its method
-    after a colon, e.g. "get_alpha:jensen" for get_alpha(method="jensen"). A metric that returns no data, such as
-    one missing a statement line item, is left out with a warning in the log of its own.
+    of the metrics so that none is silently ignored. A variant of a metric, a method name with
+    parameters, is called with those parameters in place of the ones given. A metric that
+    returns no data, such as one missing a statement line item, is left out with a warning in
+    the log of its own.
 
     Args:
         module (object): The module (Ratios, Technicals, Models, Risk or Performance).
-        names (list[str]): The metric (method) names.
+        names (list[str] | list[str | tuple[str, dict]]): The metric (method) names, or a
+            method name with the parameters of a variant (see select_metrics).
         parameters (dict): The parameters given for the metrics, e.g. window=14.
         defaults (dict): The module's own parameters, passed to the metrics that take them.
         tickers (list[str]): The tickers to compare.
@@ -472,31 +504,28 @@ def get_daily_factors(
             period's figures apply per ticker. Defaults to None.
 
     Returns:
-        dict[str, pd.DataFrame]: The daily factor of each metric that returned data.
+        dict[str, pd.DataFrame]: The daily factor of each metric that returned data, by the
+        label of the metric (see get_metric_label).
     """
     methods = {}
-    variants = {}
     unused = set(parameters)
-    for name in names:
-        method_name, _, variant = name.partition(":")
-        method = getattr(module, method_name, None)
+    for metric in names:
+        name, variant = (metric, {}) if isinstance(metric, str) else metric
+        method = getattr(module, name, None)
         if (
             method is None
-            or not method_name.startswith("get_")
-            or method_name in ("get_factor_analysis", "get_indicator_summary")
-            or (variant and "method" not in inspect.signature(method).parameters)
+            or not name.startswith("get_")
+            or name in ("get_factor_analysis", "get_indicator_summary")
         ):
             raise ValueError(
                 f"{name} is not a metric of the {type(module).__name__} module."
             )
-        methods[name] = method
-        if variant:
-            variants[name] = {"method": variant}
+        methods[get_metric_label(metric)] = (method, variant)
         unused -= set(inspect.signature(method).parameters)
 
     if unused:
         raise ValueError(
-            f"{', '.join(sorted(unused))} is not a parameter of {', '.join(names)}."
+            f"{', '.join(sorted(unused))} is not a parameter of {', '.join(methods)}."
         )
 
     # Unrounded values, as rounding ties small values (an Amihud illiquidity of 1e-10 rounds
@@ -504,13 +533,13 @@ def get_daily_factors(
     arguments = {"rounding": 15, **defaults, **parameters}
 
     factors = {}
-    for name, method in methods.items():
+    for name, (method, variant) in methods.items():
         accepted = inspect.signature(method).parameters
-        # The variant in the name wins over a method given for all the metrics.
         values = method(
             **{
-                **{key: value for key, value in arguments.items() if key in accepted},
-                **variants.get(name, {}),
+                key: value
+                for key, value in {**arguments, **variant}.items()
+                if key in accepted
             }
         )
         if values.empty:

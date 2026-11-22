@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -25,7 +27,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class CycleTechnicals:
     """
-    Cycle indicators of John Ehlers: those built on his Hilbert transform (the dominant cycle period and phase, the phasor components, the sine wave, the trend vs cycle mode, the instantaneous trendline and the MESA adaptive moving average, MAMA and FAMA) and his filters and cycle oscillators (the Swiss Army Knife filters, the SuperSmoother, the Even Better Sinewave, the Detrended Synthetic Price, the MESA Sine Wave, the Center of Gravity Oscillator and the Laguerre RSI).
+    Cycle indicators of John Ehlers: those built on his Hilbert transform (the dominant cycle period and phase, the phasor components, the sine wave and the MESA Sine Wave, the trend vs cycle mode and the MESA adaptive moving average, MAMA and FAMA) and his filters and cycle oscillators (the Swiss Army Knife filters, the Even Better Sinewave, the Detrended Synthetic Price and the Center of Gravity Oscillator). His instantaneous trendline and SuperSmoother filter are methods of `get_moving_average` and his Laguerre RSI a method of `get_relative_strength_index`, which `collect_cycle_indicators` includes.
 
     The indicators are John Ehlers' (his books MESA and Trading Market Cycles, 1992, Rocket Science for Traders,
     2001, Cybernetic Analysis for Stocks and Futures, 2004, and Cycle Analytics for Traders, 2013, and his articles
@@ -152,10 +154,8 @@ class CycleTechnicals:
         cycle_indicators["Hilbert Trend Mode"] = self.get_hilbert_trend_mode(
             period=period, close_column=close_column
         )
-        cycle_indicators["Hilbert Instantaneous Trendline"] = (
-            self.get_hilbert_instantaneous_trendline(
-                period=period, close_column=close_column
-            )
+        cycle_indicators["Hilbert Instantaneous Trendline"] = self.get_moving_average(
+            period=period, close_column=close_column, method="hilbert_trendline"
         )
 
         mesa_adaptive_moving_average = self.get_mesa_adaptive_moving_average(
@@ -171,8 +171,8 @@ class CycleTechnicals:
         cycle_indicators["Swiss Army Knife Filter"] = self.get_swiss_army_knife_filter(
             period=period, close_column=close_column
         )
-        cycle_indicators["SuperSmoother Filter"] = self.get_super_smoother_filter(
-            period=period, close_column=close_column
+        cycle_indicators["SuperSmoother Filter"] = self.get_moving_average(
+            period=period, close_column=close_column, method="super_smoother"
         )
         cycle_indicators["Even Better Sinewave"] = self.get_even_better_sinewave(
             period=period, close_column=close_column
@@ -181,8 +181,8 @@ class CycleTechnicals:
             self.get_detrended_synthetic_price(period=period, close_column=close_column)
         )
 
-        mesa_sine_wave = self.get_mesa_sine_wave(
-            period=period, close_column=close_column
+        mesa_sine_wave = self.get_hilbert_sine_wave(
+            period=period, close_column=close_column, method="mesa"
         )
         cycle_indicators["MESA Sine Wave Sine"] = mesa_sine_wave["Sine"]
         cycle_indicators["MESA Sine Wave Lead Sine"] = mesa_sine_wave["Lead Sine"]
@@ -195,8 +195,8 @@ class CycleTechnicals:
         ]
         cycle_indicators["Center of Gravity Trigger"] = center_of_gravity["Trigger"]
 
-        cycle_indicators["Laguerre RSI"] = self.get_laguerre_relative_strength_index(
-            period=period, close_column=close_column
+        cycle_indicators["Laguerre RSI"] = self.get_relative_strength_index(
+            period=period, close_column=close_column, method="laguerre"
         )
 
         cycle_collection = pd.concat(cycle_indicators, axis=1)
@@ -647,17 +647,26 @@ class CycleTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: Literal["standard", "mesa"] = "standard",
+        median_price: bool = True,
+        window: int = 5,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform SineWave (HT_SINE) for a given price series.
+        Calculate the Hilbert Transform SineWave (HT_SINE) for a given price series, or the MESA
+        Sine Wave over a fixed window.
 
         The sine wave is the sine of the dominant cycle phase and the lead sine the sine of the phase
         advanced by 45 degrees. While the price cycles, the two lines cross shortly before the turning
         points of the cycle: the sine crossing above the lead sine marks a low, crossing below a high.
         While the price trends, the phase barely moves and the two lines run apart without crossing.
+        The MESA Sine Wave (method="mesa") is Ehlers' sinewave indicator over a fixed window: the
+        phase of the price within a cycle of that window, measured with a discrete Fourier transform,
+        where the Hilbert Transform SineWave measures the window as the dominant cycle.
 
-        The formula is as follows:
+        The formula is as follows, per method:
+
+        "standard":
 
         - Smooth = (4 * Price + 3 * Price(t-1) + 2 * Price(t-2) + Price(t-3)) / 10
         - H(x) = (0.0962 * x + 0.5769 * x(t-2) - 0.5769 * x(t-4) - 0.0962 * x(t-6)) * (0.075 * Period(t-1) + 0.54)
@@ -675,18 +684,33 @@ class CycleTechnicals:
         - Sine = sin(Dominant Cycle Phase)
         - Lead Sine = sin(Dominant Cycle Phase + 45 degrees)
 
+        "mesa":
+
+        - Real = Σ sin(360 * i / Window) * Price(t-i) and Imaginary = Σ cos(360 * i / Window) * Price(t-i) for
+          i = 0 to Window - 1
+        - Phase = arctan(Real / Imaginary) + 90 degrees, plus 180 when Imaginary is negative, or 90 * sign(Real) + 90
+          when |Imaginary| is at most 0.001
+        - Sine = sin(Phase)
+        - Lead Sine = sin(Phase + 45 degrees)
+
         For more information, see the following sources:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
         - Referenced against TA-Lib's HT_SINE (https://ta-lib.org/functions/ht_sine.html).
         - pandas-ta-classic: ht_sine (https://github.com/xgboosted/pandas-ta-classic).
+        - Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
+        - Referenced against Tulip Indicators' msw (https://tulipindicators.org/msw) and pandas-ta-classic's msw
+          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Also known as: HT_SINE, Hilbert Transform SineWave, sine wave, lead sine, MSW, MESA Sine Wave, MESA sinewave.
 
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close", in which case the high and low of the median price are
+                adjusted for dividends in the same way.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the sine wave.
@@ -696,6 +720,13 @@ class CycleTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): "standard" for the Hilbert Transform SineWave or "mesa" for the
+                MESA Sine Wave over a fixed window. Defaults to "standard".
+            median_price (bool, optional): Whether to filter the median price (High + Low) / 2, as
+                Ehlers does, or the close of `close_column`, as Tulip Indicators and
+                pandas-ta-classic do. Only used when method="mesa". Defaults to True.
+            window (int, optional): The number of periods of the cycle. Only used when
+                method="mesa". Defaults to 5.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -710,6 +741,11 @@ class CycleTechnicals:
         - Equals TA-Lib's HT_SINE and pandas-ta-classic's ht_sine.
         - The recursion starts from zero on the 37th period of each ticker's own history, as in TA-Lib,
           and the first 63 periods (TA-Lib's lookback) are NaN.
+        - "mesa": equals pandas-ta-classic's msw on the close (`median_price=False`), and Tulip
+          Indicators' msw to 1e-4, as Tulip takes 3.1415926 for π. Both start one period later, on the
+          period after the first full window. Without an imaginary part the phase is 90 degrees times
+          the sign of the real part, as in Ehlers' sinewave indicator, where Tulip Indicators and
+          pandas-ta-classic take 180 degrees.
         - If `growth` is set to True, the method calculates the growth of the sine wave using the
           specified `lag`.
 
@@ -738,6 +774,11 @@ class CycleTechnicals:
         | 2025-12-30 |      0.9658 | 0.4995 |
         | 2025-12-31 |      0.9788 | 0.5474 |
         """
+        methods = ("standard", "mesa")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -758,11 +799,22 @@ class CycleTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        sine_wave = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            cycle_model.get_hilbert_sine_wave,
-        ).loc[self._start_date : self._end_date]
+        if method == "mesa":
+            # The median price (High + Low) / 2, or the close: the average of the price columns.
+            sine_wave = calculate_per_ticker(
+                historical_data,
+                ["High", "Low"] if median_price else [close_column],
+                lambda *prices: cycle_model.get_mesa_sine_wave(
+                    sum(prices) / len(prices), window
+                ),
+            )
+        else:
+            sine_wave = calculate_per_ticker(
+                historical_data,
+                [close_column],
+                cycle_model.get_hilbert_sine_wave,
+            )
+        sine_wave = sine_wave.loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=sine_wave,
@@ -898,144 +950,6 @@ class CycleTechnicals:
 
         return finalize_dataset(
             dataset=trend_mode,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_hilbert_instantaneous_trendline(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Hilbert Transform Instantaneous Trendline (HT_TRENDLINE) for a given price series.
-
-        The instantaneous trendline is the price averaged over its dominant cycle period. An average
-        over exactly one cycle removes the cycle and leaves the trend, so the window of the average
-        adapts to the cycle the Hilbert transform measures. The averages are smoothed with a 4-period
-        weighted moving average. Ehlers compares the trendline with the smoothed price (or MAMA) to
-        tell a trend from a cycle.
-
-        The formula is as follows:
-
-        - Smooth = (4 * Price + 3 * Price(t-1) + 2 * Price(t-2) + Price(t-3)) / 10
-        - H(x) = (0.0962 * x + 0.5769 * x(t-2) - 0.5769 * x(t-4) - 0.0962 * x(t-6)) * (0.075 * Period(t-1) + 0.54)
-        - Detrender = H(Smooth), Q1 = H(Detrender), I1 = Detrender(t-3)
-        - I2 = 0.2 * (I1 - H(Q1)) + 0.8 * I2(t-1) and Q2 = 0.2 * (Q1 + H(I1)) + 0.8 * Q2(t-1)
-        - Re = 0.2 * (I2 * I2(t-1) + Q2 * Q2(t-1)) + 0.8 * Re(t-1)
-        - Im = 0.2 * (I2 * Q2(t-1) - Q2 * I2(t-1)) + 0.8 * Im(t-1)
-        - Period = 360 / arctan(Im / Re) in degrees, limited to between 0.67 and 1.5 times Period(t-1) and to
-          between 6 and 50 periods, then smoothed as 0.2 * Period + 0.8 * Period(t-1)
-        - Dominant Cycle Period = 0.33 * Period + 0.67 * Dominant Cycle Period(t-1)
-        - N = the Dominant Cycle Period rounded to the nearest whole period
-        - Average = the simple average of the latest N prices
-        - Trendline = (4 * Average + 3 * Average(t-1) + 2 * Average(t-2) + Average(t-3)) / 10
-
-        For more information, see the following sources:
-
-        - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
-          John Wiley & Sons.
-        - Referenced against TA-Lib's HT_TRENDLINE (https://ta-lib.org/functions/ht_trendline.html).
-        - pandas-ta-classic: ht_trendline (https://github.com/xgboosted/pandas-ta-classic).
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the instantaneous trendline.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: The instantaneous trendline in price units.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the instantaneous trendline for each asset in the Toolkit instance.
-        - Equals TA-Lib's HT_TRENDLINE and pandas-ta-classic's ht_trendline.
-        - The recursion starts from zero on the 37th period of each ticker's own history, as in TA-Lib,
-          and the first 63 periods (TA-Lib's lookback) are NaN.
-        - If `growth` is set to True, the method calculates the growth of the instantaneous trendline using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_hilbert_instantaneous_trendline().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-24 | 276.361 | 478.795 |     675.592 |
-        | 2025-12-26 | 276.11  | 478.963 |     676.053 |
-        | 2025-12-29 | 275.772 | 479.28  |     676.534 |
-        | 2025-12-30 | 275.284 | 479.428 |     676.984 |
-        | 2025-12-31 | 274.885 | 479.285 |     677.249 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        instantaneous_trendline = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            cycle_model.get_hilbert_instantaneous_trendline,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=instantaneous_trendline,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -1359,147 +1273,6 @@ class CycleTechnicals:
 
     @handle_portfolio
     @handle_errors
-    def get_super_smoother_filter(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 10,
-        poles: int = 2,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate Ehlers' SuperSmoother filter for a given price series.
-
-        The SuperSmoother of Ehlers is a low-pass filter derived from an analog Butterworth filter. It removes the
-        cycles shorter than the window, the aliasing noise of sampled prices, with less lag than a moving average
-        of the same length. The two-pole filter (Ehlers, 2013) also averages the last two prices, which removes the
-        two-period cycle completely; the three-pole filter (Ehlers, 2004) is smoother at the cost of more lag.
-
-        The formula is as follows:
-
-        - Two poles: a = exp(-√2 * π / Window), b = 2 * a * cos(√2 * 180 / Window), c2 = b, c3 = -a² and
-          c1 = 1 - c2 - c3
-        - Filter = c1 * (Price + Price(t-1)) / 2 + c2 * Filter(t-1) + c3 * Filter(t-2)
-        - Three poles: a = exp(-π / Window), b = 2 * a * cos(√3 * 180 / Window), c = a², c2 = b + c,
-          c3 = -(c + b * c), c4 = c² and c1 = 1 - c2 - c3 - c4
-        - Filter = c1 * Price + c2 * Filter(t-1) + c3 * Filter(t-2) + c4 * Filter(t-3)
-
-        For more information, see the following sources:
-
-        - Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading Concepts." John Wiley & Sons.
-        - Ehlers, J.F. (2014). "Predictive And Successful Indicators." Technical Analysis of Stocks & Commodities,
-          32(1), 16-25.
-        - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons.
-        - Referenced against pandas-ta-classic's ssf (https://github.com/xgboosted/pandas-ta-classic).
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The critical period: the cycles shorter than it are removed. Defaults to 10.
-            poles (int, optional): The number of poles, 2 or 3. Defaults to 2.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the SuperSmoother filter.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: The smoothed prices in price units.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the SuperSmoother filter for each asset in the Toolkit instance.
-        - The filter equals the price on the first two (three) periods of each ticker's own history and runs from
-          there, as pandas-ta-classic starts it; Ehlers' listing starts it from zero.
-        - The three-pole filter agrees with pandas-ta-classic's ssf. Its two-pole ssf filters the price itself rather
-          than the average of the last two prices, which differs by up to 2% on daily prices; applied to that
-          average the two are equal.
-        - √2, √3 and π are exact, where Ehlers' listings write 1.414 and 3.14159.
-        - If `growth` is set to True, the method calculates the growth of the SuperSmoother filter using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_super_smoother_filter().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    AAPL |    MSFT |   Benchmark |
-        |:-----------|--------:|--------:|------------:|
-        | 2025-12-24 | 271.251 | 481.469 |     678.191 |
-        | 2025-12-26 | 271.629 | 482.811 |     681.408 |
-        | 2025-12-29 | 272.038 | 483.512 |     683.321 |
-        | 2025-12-30 | 272.316 | 483.742 |     683.8   |
-        | 2025-12-31 | 272.229 | 483.284 |     682.822 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        super_smoother_filter = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            cycle_model.get_super_smoother_filter,
-            window,
-            poles,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=super_smoother_filter,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
     def get_even_better_sinewave(
         self,
         period: str = "daily",
@@ -1767,151 +1540,6 @@ class CycleTechnicals:
 
     @handle_portfolio
     @handle_errors
-    def get_mesa_sine_wave(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        median_price: bool = True,
-        window: int = 5,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the MESA Sine Wave for a given price series.
-
-        The MESA Sine Wave is the sine of the phase of the price within a cycle of a fixed window, measured with a
-        discrete Fourier transform over that window, and the lead sine the sine of the phase advanced by 45
-        degrees. While the price cycles, the two lines cross shortly before the turning points; while it trends,
-        they run side by side. It is Ehlers' sinewave indicator over a fixed window, where the Hilbert Transform
-        SineWave measures the window as the dominant cycle.
-
-        The formula is as follows:
-
-        - Real = Σ sin(360 * i / Window) * Price(t-i) and Imaginary = Σ cos(360 * i / Window) * Price(t-i) for
-          i = 0 to Window - 1
-        - Phase = arctan(Real / Imaginary) + 90 degrees, plus 180 when Imaginary is negative, or 90 * sign(Real) + 90
-          when |Imaginary| is at most 0.001
-        - Sine = sin(Phase)
-        - Lead Sine = sin(Phase + 45 degrees)
-
-        For more information, see the following sources:
-
-        - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
-          John Wiley & Sons.
-        - Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
-        - Referenced against Tulip Indicators' msw (https://tulipindicators.org/msw) and pandas-ta-classic's msw
-          (https://github.com/xgboosted/pandas-ta-classic).
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the high and low prices are adjusted
-                for dividends in the same way.
-            median_price (bool, optional): Whether to filter the median price (High + Low) / 2, as Ehlers does,
-                or the close of `close_column`, as Tulip Indicators and pandas-ta-classic do. Defaults to True.
-            window (int, optional): The number of periods of the cycle. Defaults to 5.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the MESA Sine Wave.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: The Sine and Lead Sine, between -1 and 1.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the MESA Sine Wave for each asset in the Toolkit instance.
-        - Equals pandas-ta-classic's msw on the close (`median_price=False`), and Tulip Indicators' msw to 1e-4,
-          as Tulip takes 3.1415926 for π. Both start one period later, on the period after the first full window.
-        - Without an imaginary part the phase is 90 degrees times the sign of the real part, as in Ehlers' sinewave
-          indicator, where Tulip Indicators and pandas-ta-classic take 180 degrees.
-        - If `growth` is set to True, the method calculates the growth of the MESA Sine Wave using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_mesa_sine_wave().xs("AAPL", level=1, axis="columns").tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   Lead Sine |    Sine |
-        |:-----------|------------:|--------:|
-        | 2025-12-24 |     -0.0344 |  0.6824 |
-        | 2025-12-26 |      0.5244 |  0.9729 |
-        | 2025-12-29 |     -0.3939 |  0.3714 |
-        | 2025-12-30 |     -0.993  | -0.6187 |
-        | 2025-12-31 |     -0.0523 | -0.7431 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        # The median price (High + Low) / 2, or the close: the average of the price columns.
-        price_columns = ["High", "Low"] if median_price else [close_column]
-
-        mesa_sine_wave = calculate_per_ticker(
-            historical_data,
-            price_columns,
-            lambda *prices: cycle_model.get_mesa_sine_wave(
-                sum(prices) / len(prices), window
-            ),
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=mesa_sine_wave,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
     def get_center_of_gravity_oscillator(
         self,
         period: str = "daily",
@@ -2038,145 +1666,6 @@ class CycleTechnicals:
 
         return finalize_dataset(
             dataset=center_of_gravity,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_laguerre_relative_strength_index(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        gamma: float = 0.5,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate Ehlers' Laguerre Relative Strength Index (Laguerre RSI) for a given price series.
-
-        The Laguerre RSI of Ehlers (2004) is an RSI over the four elements of a Laguerre filter instead of four
-        prices. The first element is an exponential moving average and each next one an all-pass element that
-        delays the low frequencies more than the high ones. That warps time: four elements look as far back as a
-        much longer window, so the RSI is smooth yet reacts quickly. It moves between 0 and 1, and Ehlers buys when
-        it crosses back above 0.2 and sells when it crosses back below 0.8.
-
-        The formula is as follows:
-
-        - L0 = (1 - Gamma) * Price + Gamma * L0(t-1)
-        - L1 = -Gamma * L0 + L0(t-1) + Gamma * L1(t-1)
-        - L2 = -Gamma * L1 + L1(t-1) + Gamma * L2(t-1)
-        - L3 = -Gamma * L2 + L2(t-1) + Gamma * L3(t-1)
-        - CU = the sum of L0 - L1, L1 - L2 and L2 - L3 where positive
-        - CD = the sum of L1 - L0, L2 - L1 and L3 - L2 where positive
-        - Laguerre RSI = CU / (CU + CD)
-
-        For more information, see the following sources:
-
-        - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons, chapter 14,
-          "Time Warp - Without Space Travel."
-        - Referenced against pandas-ta-classic's lrsi (https://github.com/xgboosted/pandas-ta-classic).
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            gamma (float, optional): The damping factor of the Laguerre filter, at least 0 and below 1: a higher value
-                smooths more and lags more. Defaults to 0.5.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the Laguerre RSI.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame or pd.Series: The Laguerre RSI, between 0 and 1.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the Laguerre RSI for each asset in the Toolkit instance.
-        - A decimal between 0 and 1, as in Ehlers' listing, where pandas-ta-classic's lrsi multiplies it by 100;
-          otherwise the two are equal.
-        - The filter elements start on the first price of each ticker's own history, as pandas-ta-classic starts
-          them, so the first period is NaN; Ehlers' listing starts them from zero.
-        - When the four elements are equal (CU + CD is zero) the value before is kept, as in Ehlers' listing,
-          where pandas-ta-classic gives 0.
-        - If `growth` is set to True, the method calculates the growth of the Laguerre RSI using the
-          specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_laguerre_relative_strength_index().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-24 | 0.1145 | 0.9544 |      0.6572 |
-        | 2025-12-26 | 0.1222 | 1      |      0.825  |
-        | 2025-12-29 | 0.203  | 1      |      1      |
-        | 2025-12-30 | 0.2628 | 1      |      1      |
-        | 2025-12-31 | 0.3273 | 0.7549 |      0.7525 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        laguerre_rsi = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            cycle_model.get_laguerre_relative_strength_index,
-            gamma,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=laguerre_rsi,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -1085,7 +1085,8 @@ class PatternTechnicals:
 
         Args:
             metric (str, optional): The indicator method name, e.g. "get_stochastic_oscillator"
-                or "get_rate_of_change". Defaults to "get_relative_strength_index".
+                or "get_rate_of_change", with method= among the other parameters for a variant
+                (e.g. method="connors"). Defaults to "get_relative_strength_index".
             below (float | None, optional): The line the indicator falls below, e.g. 30 for an
                 oversold RSI. Defaults to None.
             above (float | None, optional): The line the indicator rises above, e.g. 70 for an
@@ -1183,9 +1184,10 @@ class PatternTechnicals:
         factors = factor_model.get_daily_factors(
             self, names, kwargs, {}, self._tickers, column
         )
+        label = factor_model.get_metric_label(names[0])
         if not factors:
-            raise ValueError(f"{names[0]} returned no data.")
-        values = factors[names[0]]
+            raise ValueError(f"{label} returned no data.")
+        values = factors[label]
 
         period = kwargs.get("period", "daily")
         prices = factor_model.to_daily_factor(

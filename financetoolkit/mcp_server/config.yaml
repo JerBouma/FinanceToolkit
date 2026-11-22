@@ -544,7 +544,7 @@ tool_groups:
       - "get_price_to_tangible_book_ratio"
       - "get_factor_analysis"
 
-  # ── Technicals (4 sub-groups) ────────────────────────────────────────────
+  # ── Technicals (5 sub-groups) ────────────────────────────────────────────
   - tool_name:      "breadth"
     display_name:   "Breadth Indicators"
     description:    "Market breadth technical indicators (McClellan Oscillator, OBV, Price Volume Trend, Advance/Decline Line, Chaikin, TRIN, new highs and lows). Applied to price data automatically — no need to fetch prices first. TRIN treats the given tickers as one market, so every column holds the same value; pass the market's constituents for a meaningful figure. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty and quarterly or yearly periods with long windows can be empty on short histories; start earlier to warm up. Requires tickers='AAPL' — use comma-separated values for multiple tickers. get_market_breadth measures the breadth of all tickers together (advancers and decliners, the advance-decline line, the McClellan oscillator and summation index, the share above the 50 and 200-period averages and new highs and lows), meant for many tickers such as an index's constituents (discovery get_index_constituents). For the predictive power of these indicators across tickers (factor analysis), use the momentum tool with indicator='get_factor_analysis' and metrics='breadth'."
@@ -647,6 +647,30 @@ tool_groups:
       - "get_keltner_channels"
       - "get_donchian_channels"
       - "get_volatility_cone"
+
+  - tool_name:      "statistics"
+    display_name:   "Statistical Indicators"
+    description:    "Statistical technical indicators of the price over a rolling window: get_linear_regression (the end point of the least-squares line over the window with its Slope in price per period, Intercept, Angle in degrees and Time Series Forecast one period ahead), get_slope (average change per period, as_angle=true for degrees), the Correlation Trend Indicator (-1 to 1), the Forecast Oscillator (the error of the previous period's forecast as a decimal of the price), the Projection Oscillator (the close within Widner's Projection Bands, 0 to 1), get_rolling_correlation (the Pearson correlation of the price with the benchmark by default; against= another ticker or a price column such as 'Low'), the rolling median, percentile (percentile= as a decimal, method='nearest_rank' or 'linear'), percent rank (share of the previous prices below the latest, 0 to 1), z-score, mean absolute deviation, standard error and Shannon entropy, and get_standard_deviation_channel (one regression line through the whole date range with bands at 1, 2 and 3 standard deviations; it is redrawn as the range changes). Applied to price data automatically — no need to fetch prices first. Each indicator needs its window of history before it produces values, so the first periods after start_date can be empty; start earlier to warm up. Requires tickers='AAPL' — use comma-separated values for multiple tickers."
+    module_name:    "technicals"
+    category:       "ticker"
+    # The Standard Deviation Channel is fitted over the whole date range, so
+    # collect_statistics_indicators leaves it out; method_override replaces the discovered
+    # list wholesale, so anything added to that collect_* method must be added here too.
+    method_override:
+      - "get_linear_regression"
+      - "get_slope"
+      - "get_correlation_trend_indicator"
+      - "get_forecast_oscillator"
+      - "get_projection_oscillator"
+      - "get_rolling_correlation"
+      - "get_rolling_median"
+      - "get_rolling_percentile"
+      - "get_percent_rank"
+      - "get_rolling_z_score"
+      - "get_rolling_mean_absolute_deviation"
+      - "get_rolling_standard_error"
+      - "get_rolling_entropy"
+      - "get_standard_deviation_channel"
 
   # ── Single-module ticker tools ───────────────────────────────────────────
   - tool_name:    "models"

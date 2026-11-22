@@ -20,6 +20,7 @@ import pytest
 from financetoolkit.technicals.breadth import breadth_model as breadth
 from financetoolkit.technicals.momentum import momentum_model as momentum
 from financetoolkit.technicals.overlap import overlap_model as overlap
+from financetoolkit.technicals.statistics import statistics_model as statistics
 from financetoolkit.technicals.volatility import volatility_model as volatility
 
 WINDOW = 14
@@ -253,6 +254,59 @@ PER_SECURITY_INDICATORS = {
         lambda high, low, close, opening, volume: breadth.get_positive_volume_index(
             close, volume
         )
+    ),
+    "get_linear_regression": lambda high, low, close, opening, volume: statistics.get_linear_regression(
+        close, WINDOW
+    ),
+    "get_slope": lambda high, low, close, opening, volume: statistics.get_slope(
+        close, 5
+    ),
+    "get_correlation_trend_indicator": (
+        lambda high, low, close, opening, volume: statistics.get_correlation_trend_indicator(
+            close, 20
+        )
+    ),
+    "get_forecast_oscillator": (
+        lambda high, low, close, opening, volume: statistics.get_forecast_oscillator(
+            close, 5
+        )
+    ),
+    "get_projection_oscillator": (
+        lambda high, low, close, opening, volume: statistics.get_projection_oscillator(
+            high, low, close, WINDOW
+        )
+    ),
+    "get_rolling_correlation": (
+        lambda high, low, close, opening, volume: statistics.get_rolling_correlation(
+            high, low, 30
+        )
+    ),
+    "get_rolling_median": lambda high, low, close, opening, volume: statistics.get_rolling_median(
+        close, 30
+    ),
+    "get_rolling_percentile": (
+        lambda high, low, close, opening, volume: statistics.get_rolling_percentile(
+            close, 100, 0.5
+        )
+    ),
+    "get_percent_rank": lambda high, low, close, opening, volume: statistics.get_percent_rank(
+        close, 100
+    ),
+    "get_rolling_z_score": lambda high, low, close, opening, volume: statistics.get_rolling_z_score(
+        close, 30
+    ),
+    "get_rolling_mean_absolute_deviation": (
+        lambda high, low, close, opening, volume: statistics.get_rolling_mean_absolute_deviation(
+            close, WINDOW
+        )
+    ),
+    "get_rolling_standard_error": (
+        lambda high, low, close, opening, volume: statistics.get_rolling_standard_error(
+            close, WINDOW
+        )
+    ),
+    "get_rolling_entropy": lambda high, low, close, opening, volume: statistics.get_rolling_entropy(
+        close, 10
     ),
 }
 

@@ -92,6 +92,8 @@ FACTOR_PRICE_LINES = (
     "get_donchian_channels",
     "get_pivot_points",
     "get_fibonacci_retracement_levels",
+    "get_rolling_median",
+    "get_rolling_percentile",
 )
 FACTOR_PRICE_DIFFERENCES = (
     "get_true_range",
@@ -101,6 +103,9 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_elder_ray_index",
     "get_detrended_price_oscillator",
     "get_force_index",
+    "get_slope",
+    "get_rolling_mean_absolute_deviation",
+    "get_rolling_standard_error",
 )
 
 

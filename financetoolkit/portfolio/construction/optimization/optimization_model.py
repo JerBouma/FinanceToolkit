@@ -17,6 +17,7 @@ from financetoolkit.performance import performance_model
 from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.portfolio.helpers import (
     get_cutting_plane_solution,
+    get_regularized_covariance,
     get_view_vector,
 )
 from financetoolkit.risk import risk_model
@@ -1383,9 +1384,20 @@ def get_minimum_variance_weights(
     gross_exposure: float | None = None,
     current_weights: pd.Series | None = None,
     maximum_turnover: float | None = None,
+    l2_regularization: float = 0.0,
 ) -> pd.Series:
     """
-    The fully invested portfolio with the lowest variance (Markowitz, 1952).
+    The fully invested portfolio with the lowest variance (Markowitz, 1952). An L2
+    regularization γ adds the penalty γ w'w, so the variance minimized is w'(Σ + γI)w, a
+    ridge on the weights: with weights summing to one, w'w is the squared distance from
+    the equal weights plus 1/N, so a higher γ moves the portfolio towards equal weights.
+
+    See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
+    Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
+    Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
+    (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
+    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
+    objective_functions.L2_reg.
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -1409,12 +1421,16 @@ def get_minimum_variance_weights(
             turnover is measured from. Defaults to None.
         maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
             from the current weights. Defaults to None, no limit.
+        l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+            the weights, in the units of the covariance matrix (annualized variance for
+            an annualized one), which pulls the portfolio towards equal weights and
+            spreads it over more assets. Defaults to 0, no penalty.
 
     Returns:
         pd.Series: The weight per asset.
     """
     _validate_covariance(covariance, positive=False)
-    sigma = covariance.to_numpy()
+    sigma = get_regularized_covariance(covariance.to_numpy(), l2_regularization)
     constraints = get_weight_constraints(
         covariance.index,
         minimum_weight,
@@ -1449,12 +1465,23 @@ def get_maximum_sharpe_weights(
     current_weights: pd.Series | None = None,
     maximum_turnover: float | None = None,
     transaction_cost: float = 0.0,
+    l2_regularization: float = 0.0,
 ) -> pd.Series:
     """
     The fully invested portfolio with the highest Sharpe ratio, the tangency portfolio of
     the efficient frontier (Sharpe, 1966; Tobin, 1958). A transaction cost c lowers the
     expected return by c Σ |w_i - w0_i|, so the ratio maximized is
-    (w'μ - r_f - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|.
+    (w'μ - r_f - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|. An L2 regularization γ
+    replaces Σ by Σ + γI in the denominator, √(w'Σw + γ w'w), which pulls the portfolio
+    towards equal weights. It equals adding γ y'y to the variance y'Σy that the
+    homogeneous form of the problem minimizes (y = κw with (μ - r_f)'y = 1).
+
+    See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
+    Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
+    Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
+    (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
+    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
+    objective_functions.L2_reg.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1483,13 +1510,17 @@ def get_maximum_sharpe_weights(
             current weights, e.g. 0.001 for 10 basis points, subtracted once from the
             annualized expected return, which spreads it over a year of holding the
             portfolio. Needs current weights. Defaults to 0.
+        l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+            the weights, in the units of the covariance matrix (annualized variance for
+            an annualized one), which pulls the portfolio towards equal weights and
+            spreads it over more assets. Defaults to 0, no penalty.
 
     Returns:
         pd.Series: The weight per asset.
     """
     _validate_covariance(covariance)
     mu = expected_returns.to_numpy() - risk_free_rate
-    sigma = covariance.to_numpy()
+    sigma = get_regularized_covariance(covariance.to_numpy(), l2_regularization)
     constraints = get_weight_constraints(
         covariance.index,
         minimum_weight,
@@ -1549,6 +1580,7 @@ def get_mean_variance_weights(
     maximum_turnover: float | None = None,
     transaction_cost: float = 0.0,
     target_volatility: float | None = None,
+    l2_regularization: float = 0.0,
 ) -> pd.Series:
     """
     A mean-variance efficient portfolio (Markowitz, 1952). With a target return, the
@@ -1564,6 +1596,18 @@ def get_mean_variance_weights(
     See Markowitz, H. (1952), "Portfolio Selection", The Journal of Finance, 7(1), 77-91,
     and Merton, R. C. (1972), "An Analytic Derivation of the Efficient Portfolio
     Frontier", Journal of Financial and Quantitative Analysis, 7(4), 1851-1872.
+
+    An L2 regularization γ adds the penalty γ w'w, which pulls the portfolio towards equal
+    weights: with a target return the variance minimized becomes w'(Σ + γI)w, the utility
+    maximized w'μ - c Σ d_i - (λ/2) w'Σw - γ w'w and with a target volatility the
+    objective w'μ - c Σ d_i - γ w'w, with the volatility limit still on w'Σw.
+
+    See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
+    Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
+    Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
+    (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
+    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
+    objective_functions.L2_reg.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1602,6 +1646,10 @@ def get_mean_variance_weights(
             volatility of the minimum variance portfolio within the constraints. Cannot
             be combined with a target return. Defaults to None, which uses the target
             return or the risk aversion instead.
+        l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+            the weights, in the units of the covariance matrix (annualized variance for
+            an annualized one), which pulls the portfolio towards equal weights and
+            spreads it over more assets. Defaults to 0, no penalty.
 
     Returns:
         pd.Series: The weight per asset.
@@ -1618,6 +1666,9 @@ def get_mean_variance_weights(
     # average variance the objective is of order one, with the same minimum.
     variance_scale = np.mean(np.diag(sigma)) or 1.0
     scaled = sigma / variance_scale
+    # The penalty γ w'w in the same units, folded into the variance for a target return.
+    penalty = l2_regularization / variance_scale
+    regularized = get_regularized_covariance(scaled, penalty)
     constraints = get_weight_constraints(
         covariance.index,
         minimum_weight,
@@ -1643,8 +1694,8 @@ def get_mean_variance_weights(
                 f"constraints ({lowest:.4f} to {highest:.4f})."
             )
         weights = _solve(
-            lambda w: w @ scaled @ w,
-            lambda w: 2 * scaled @ w,
+            lambda w: w @ regularized @ w,
+            lambda w: 2 * regularized @ w,
             constraints,
             [_target_return(mu, target_return)],
         )
@@ -1664,11 +1715,13 @@ def get_mean_variance_weights(
 
         def return_gradient(x):
             slope = costs.copy()
-            slope[:count] -= mu
+            slope[:count] += -mu + 2 * l2_regularization * x[:count]
             return slope
 
         weights = _solve(
-            lambda x: -(x[:count] @ mu) + costs @ x,
+            lambda x: -(x[:count] @ mu)
+            + costs @ x
+            + l2_regularization * (x[:count] @ x[:count]),
             return_gradient,
             constraints,
             # The variance budget sigma*^2 - w'Sigma w >= 0, with a target that falls
@@ -1690,13 +1743,18 @@ def get_mean_variance_weights(
 
         def gradient(x):
             slope = costs.copy()
-            slope[:count] += -mu + risk_aversion * (sigma @ x[:count])
+            slope[:count] += (
+                -mu
+                + risk_aversion * (sigma @ x[:count])
+                + 2 * l2_regularization * x[:count]
+            )
             return slope
 
         weights = _solve(
             lambda x: -(x[:count] @ mu)
             + costs @ x
-            + risk_aversion / 2 * (x[:count] @ sigma @ x[:count]),
+            + risk_aversion / 2 * (x[:count] @ sigma @ x[:count])
+            + l2_regularization * (x[:count] @ x[:count]),
             gradient,
             constraints,
             all_variables=True,
@@ -1718,11 +1776,21 @@ def get_efficient_frontier(
     gross_exposure: float | None = None,
     current_weights: pd.Series | None = None,
     maximum_turnover: float | None = None,
+    l2_regularization: float = 0.0,
 ) -> pd.DataFrame:
     """
     The efficient frontier: for evenly spaced target returns between the minimum variance
     portfolio and the highest return the constraints allow, the portfolio with the lowest
-    variance (Markowitz, 1952).
+    variance (Markowitz, 1952). An L2 regularization γ minimizes w'(Σ + γI)w instead,
+    which pulls each portfolio towards equal weights; the volatility and Sharpe ratio
+    reported are those of w'Σw.
+
+    See DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009), "A Generalized
+    Approach to Portfolio Optimization: Improving Performance by Constraining Portfolio
+    Norms", Management Science, 55(5), 798-812, and Hoerl, A. E. and Kennard, R. W.
+    (1970), "Ridge Regression: Biased Estimation for Nonorthogonal Problems",
+    Technometrics, 12(1), 55-67. The penalty shares similar logic as PyPortfolioOpt's
+    objective_functions.L2_reg.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1751,6 +1819,10 @@ def get_efficient_frontier(
             turnover is measured from. Defaults to None.
         maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
             from the current weights. Defaults to None, no limit.
+        l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+            the weights, in the units of the covariance matrix (annualized variance for
+            an annualized one), which pulls the portfolio towards equal weights and
+            spreads it over more assets. Defaults to 0, no penalty.
 
     Returns:
         pd.DataFrame: Per portfolio its Expected Return, Volatility, Sharpe Ratio and the
@@ -1772,6 +1844,7 @@ def get_efficient_frontier(
         gross_exposure,
         current_weights,
         maximum_turnover,
+        l2_regularization,
     )
     lowest = float(minimum_variance @ expected_returns)
 
@@ -1793,7 +1866,9 @@ def get_efficient_frontier(
     targets = np.linspace(lowest, highest, points)
 
     # In units of the average variance, as in get_minimum_variance_weights.
-    scaled = sigma / (np.mean(np.diag(sigma)) or 1.0)
+    scaled = get_regularized_covariance(sigma, l2_regularization) / (
+        np.mean(np.diag(sigma)) or 1.0
+    )
     rows = []
     for number, target in enumerate(targets, start=1):
         try:

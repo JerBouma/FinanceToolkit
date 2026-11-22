@@ -1129,6 +1129,97 @@ def test_transaction_costs_match_pyportfolioopt_and_skfolio():
     )
 
 
+def test_l2_regularization_matches_pyportfolioopt():
+    returns, _ = _reference_returns()
+    annual_returns, annual_covariance = returns.mean() * 252, returns.cov() * 252
+    gamma = 0.05
+
+    # PyPortfolioOpt 1.6.0 (cvxpy 1.9.3): EfficientFrontier(annual_returns, annual_covariance)
+    # with add_objective(objective_functions.L2_reg, gamma=0.05) and min_volatility,
+    # max_sharpe(risk_free_rate=0.02), max_quadratic_utility(risk_aversion=2.5),
+    # efficient_return(0.125), efficient_risk(0.17) and, with weight_bounds=(0, 0.3),
+    # min_volatility.
+    references = {
+        "variance": [0.22216723, 0.16755499, 0.14540449, 0.14219593, 0.32267736],
+        "sharpe": [0.1438285, 0.16539811, 0.22202917, 0.10335151, 0.3653927],
+        "utility": [0.12147089, 0.16059729, 0.23952789, 0.08493295, 0.39347098],
+        "return": [0.12750838, 0.16494878, 0.23799221, 0.09525915, 0.37429149],
+        "volatility": [0.02205758, 0.19235481, 0.37081239, 0.09629266, 0.31848255],
+        "bounded": [0.22955601, 0.17309792, 0.15039289, 0.14695319, 0.3],
+    }
+    weights = {
+        "variance": optimization_model.get_minimum_variance_weights(
+            annual_covariance, l2_regularization=gamma
+        ),
+        "sharpe": optimization_model.get_maximum_sharpe_weights(
+            annual_returns, annual_covariance, 0.02, l2_regularization=gamma
+        ),
+        "utility": optimization_model.get_mean_variance_weights(
+            annual_returns, annual_covariance, l2_regularization=gamma
+        ),
+        "return": optimization_model.get_mean_variance_weights(
+            annual_returns, annual_covariance, 0.125, l2_regularization=gamma
+        ),
+        "volatility": optimization_model.get_mean_variance_weights(
+            annual_returns,
+            annual_covariance,
+            target_volatility=0.17,
+            l2_regularization=gamma,
+        ),
+        "bounded": optimization_model.get_minimum_variance_weights(
+            annual_covariance, 0, 0.3, l2_regularization=gamma
+        ),
+    }
+    for name, reference in references.items():
+        np.testing.assert_allclose(weights[name], reference, atol=1e-5, err_msg=name)
+
+    # The first point of the frontier is the regularized minimum variance portfolio,
+    # with the volatility of the covariance itself.
+    frontier = optimization_model.get_efficient_frontier(
+        annual_returns, annual_covariance, points=3, l2_regularization=gamma
+    )
+    np.testing.assert_allclose(
+        frontier.loc[1, list("ABCDE")], references["variance"], atol=1e-6
+    )
+    statistics = optimization_model.get_portfolio_statistics(
+        frontier.loc[1, list("ABCDE")], annual_returns, annual_covariance
+    )
+    assert frontier.loc[1, "Volatility"] == pytest.approx(statistics["Volatility"])
+
+
+def test_l2_regularization_moves_towards_equal_weights():
+    returns, _ = _reference_returns()
+    covariance = returns.cov() * 252
+    equal = np.full(5, 0.2)
+    distances = [
+        np.abs(
+            optimization_model.get_minimum_variance_weights(
+                covariance, l2_regularization=gamma
+            )
+            - equal
+        ).sum()
+        for gamma in (0.0, 0.01, 0.1, 100.0)
+    ]
+
+    assert distances == sorted(distances, reverse=True)
+    assert distances[-1] < 1e-3
+    # The penalty is in the units of the covariance: a per-period covariance with γ / 252
+    # gives the same portfolio as the annualized one with γ.
+    np.testing.assert_allclose(
+        optimization_model.get_minimum_variance_weights(
+            returns.cov(), l2_regularization=0.05 / 252
+        ),
+        optimization_model.get_minimum_variance_weights(
+            covariance, l2_regularization=0.05
+        ),
+        atol=1e-8,
+    )
+    with pytest.raises(ValueError, match="L2 regularization cannot be negative"):
+        optimization_model.get_minimum_variance_weights(
+            covariance, l2_regularization=-0.1
+        )
+
+
 def test_a_high_transaction_cost_keeps_the_current_weights():
     expected_returns, covariance = EXPECTED_RETURNS, COVARIANCE
     weights = optimization_model.get_mean_variance_weights(

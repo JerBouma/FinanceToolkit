@@ -157,6 +157,7 @@ class OptimizationConstruction:
         gross_exposure: float | None = None,
         current_weights: dict[str, float] | None = None,
         maximum_turnover: float | None = None,
+        l2_regularization: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -171,9 +172,22 @@ class OptimizationConstruction:
         the minimum and maximum weight, where Σ is the annualized covariance matrix of the
         returns.
 
-        For more information, see the following paper:
+        An L2 regularization γ adds the penalty γ w'w, so the weights minimize
+        w'(Σ + γI)w, a ridge on the weights. With the weights summing to one, w'w is the
+        squared distance from the equal weights plus 1/N, so a higher γ moves the
+        portfolio towards equal weights, which tempers the estimation error in Σ.
+
+        For more information, see the following papers:
 
         - Markowitz, H. (1952). "Portfolio Selection." The Journal of Finance, 7(1), 77-91.
+        - DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009). "A Generalized
+          Approach to Portfolio Optimization: Improving Performance by Constraining
+          Portfolio Norms." Management Science, 55(5), 798-812.
+        - Hoerl, A. E. and Kennard, R. W. (1970). "Ridge Regression: Biased Estimation for
+          Nonorthogonal Problems." Technometrics, 12(1), 55-67.
+        - PyPortfolioOpt: objective_functions.L2_reg
+          (https://github.com/robertmartin8/PyPortfolioOpt), which the L2 regularization
+          shares similar logic with and is referenced against.
 
         Also known as: global minimum variance portfolio, GMV, lowest risk portfolio.
 
@@ -238,6 +252,12 @@ class OptimizationConstruction:
             maximum_turnover (float | None, optional): The highest turnover
                 Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
                 of the portfolio each way. Defaults to None, no limit.
+            l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+                the weights, in annualized variance units, which pulls the portfolio
+                towards equal weights and spreads it over more assets, e.g. 0.05. It is
+                PyPortfolioOpt's L2_reg gamma on an annualized covariance matrix; on a
+                covariance matrix per period, that gamma is γ divided by the number of
+                periods in a year. Defaults to 0, no penalty.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -315,6 +335,7 @@ class OptimizationConstruction:
             gross_exposure=gross_exposure,
             current_weights=current,
             maximum_turnover=maximum_turnover,
+            l2_regularization=l2_regularization,
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -338,6 +359,7 @@ class OptimizationConstruction:
         current_weights: dict[str, float] | None = None,
         maximum_turnover: float | None = None,
         transaction_cost: float = 0.0,
+        l2_regularization: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -352,12 +374,23 @@ class OptimizationConstruction:
         and lying between the minimum and maximum weight, with μ the annualized expected
         returns, Σ the annualized covariance matrix and r_f the risk free rate.
 
+        An L2 regularization γ adds the penalty γ w'w to the variance in the denominator,
+        (w'μ - r_f) / sqrt(w'(Σ + γI)w), which moves the portfolio towards equal weights.
+
         For more information, see the following papers:
 
         - Tobin, J. (1958). "Liquidity Preference as Behavior Towards Risk." The Review of
           Economic Studies, 25(2), 65-86.
         - Sharpe, W.F. (1966). "Mutual Fund Performance." The Journal of Business, 39(1),
           119-138.
+        - DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009). "A Generalized
+          Approach to Portfolio Optimization: Improving Performance by Constraining
+          Portfolio Norms." Management Science, 55(5), 798-812.
+        - Hoerl, A. E. and Kennard, R. W. (1970). "Ridge Regression: Biased Estimation for
+          Nonorthogonal Problems." Technometrics, 12(1), 55-67.
+        - PyPortfolioOpt: objective_functions.L2_reg
+          (https://github.com/robertmartin8/PyPortfolioOpt), which the L2 regularization
+          shares similar logic with and is referenced against.
 
         Also known as: tangency portfolio, optimal risky portfolio, max Sharpe.
 
@@ -436,6 +469,12 @@ class OptimizationConstruction:
             transaction_cost (float, optional): The cost per unit of weight traded
                 from the current weights, e.g. 0.001 for 10 basis points, subtracted once
                 from the portfolio's annualized expected return. Defaults to 0.
+            l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+                the weights, in annualized variance units, which pulls the portfolio
+                towards equal weights and spreads it over more assets, e.g. 0.05. It is
+                PyPortfolioOpt's L2_reg gamma on an annualized covariance matrix; on a
+                covariance matrix per period, that gamma is γ divided by the number of
+                periods in a year. Defaults to 0, no penalty.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -515,6 +554,7 @@ class OptimizationConstruction:
             gross_exposure=gross_exposure,
             current_weights=current,
             maximum_turnover=maximum_turnover,
+            l2_regularization=l2_regularization,
             transaction_cost=transaction_cost,
         )
         table = self._weights_table(
@@ -542,6 +582,7 @@ class OptimizationConstruction:
         maximum_turnover: float | None = None,
         transaction_cost: float = 0.0,
         target_volatility: float | None = None,
+        l2_regularization: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -557,11 +598,24 @@ class OptimizationConstruction:
         A risk aversion of 2 to 4 is typical; 2.5 is the value commonly used for the
         market as a whole.
 
+        An L2 regularization γ adds the penalty γ w'w, which moves the portfolio towards
+        equal weights: with a target return the weights minimize w'(Σ + γI)w, the utility
+        becomes w'μ - (λ/2) w'Σw - γ w'w and with a target volatility the weights
+        maximize w'μ - γ w'w, with the volatility limit still on w'Σw.
+
         For more information, see the following papers:
 
         - Markowitz, H. (1952). "Portfolio Selection." The Journal of Finance, 7(1), 77-91.
         - Merton, R. C. (1972). "An Analytic Derivation of the Efficient Portfolio
           Frontier." Journal of Financial and Quantitative Analysis, 7(4), 1851-1872.
+        - DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009). "A Generalized
+          Approach to Portfolio Optimization: Improving Performance by Constraining
+          Portfolio Norms." Management Science, 55(5), 798-812.
+        - Hoerl, A. E. and Kennard, R. W. (1970). "Ridge Regression: Biased Estimation for
+          Nonorthogonal Problems." Technometrics, 12(1), 55-67.
+        - PyPortfolioOpt: objective_functions.L2_reg
+          (https://github.com/robertmartin8/PyPortfolioOpt), which the L2 regularization
+          shares similar logic with and is referenced against.
 
         Also known as: Markowitz portfolio, efficient portfolio, quadratic utility
         portfolio.
@@ -652,6 +706,12 @@ class OptimizationConstruction:
                 number of periods in a year), e.g. 0.15 for 15%. Cannot be combined with
                 a target return. Defaults to None, which uses the target return or the
                 risk aversion.
+            l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+                the weights, in annualized variance units, which pulls the portfolio
+                towards equal weights and spreads it over more assets, e.g. 0.05. It is
+                PyPortfolioOpt's L2_reg gamma on an annualized covariance matrix; on a
+                covariance matrix per period, that gamma is γ divided by the number of
+                periods in a year. Defaults to 0, no penalty.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -731,6 +791,7 @@ class OptimizationConstruction:
             gross_exposure=gross_exposure,
             current_weights=current,
             maximum_turnover=maximum_turnover,
+            l2_regularization=l2_regularization,
             transaction_cost=transaction_cost,
             target_volatility=target_volatility,
         )
@@ -756,6 +817,7 @@ class OptimizationConstruction:
         gross_exposure: float | None = None,
         current_weights: dict[str, float] | None = None,
         maximum_turnover: float | None = None,
+        l2_regularization: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -766,9 +828,20 @@ class OptimizationConstruction:
         highest return the weight bounds allow. Every portfolio below the frontier takes
         more risk than needed for its return.
 
-        For more information, see the following paper:
+        An L2 regularization γ minimizes w'(Σ + γI)w for each target return, which moves
+        every portfolio towards equal weights; the volatility shown stays √(w'Σw).
+
+        For more information, see the following papers:
 
         - Markowitz, H. (1952). "Portfolio Selection." The Journal of Finance, 7(1), 77-91.
+        - DeMiguel, V., Garlappi, L., Nogales, F. J. and Uppal, R. (2009). "A Generalized
+          Approach to Portfolio Optimization: Improving Performance by Constraining
+          Portfolio Norms." Management Science, 55(5), 798-812.
+        - Hoerl, A. E. and Kennard, R. W. (1970). "Ridge Regression: Biased Estimation for
+          Nonorthogonal Problems." Technometrics, 12(1), 55-67.
+        - PyPortfolioOpt: objective_functions.L2_reg
+          (https://github.com/robertmartin8/PyPortfolioOpt), which the L2 regularization
+          shares similar logic with and is referenced against.
 
         Also known as: Markowitz frontier, mean-variance frontier, risk-return frontier.
 
@@ -847,6 +920,12 @@ class OptimizationConstruction:
             maximum_turnover (float | None, optional): The highest turnover
                 Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
                 of the portfolio each way. Defaults to None, no limit.
+            l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
+                the weights, in annualized variance units, which pulls the portfolio
+                towards equal weights and spreads it over more assets, e.g. 0.05. It is
+                PyPortfolioOpt's L2_reg gamma on an annualized covariance matrix; on a
+                covariance matrix per period, that gamma is γ divided by the number of
+                periods in a year. Defaults to 0, no penalty.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -914,6 +993,7 @@ class OptimizationConstruction:
             gross_exposure=gross_exposure,
             current_weights=current,
             maximum_turnover=maximum_turnover,
+            l2_regularization=l2_regularization,
         )
         return self._round(frontier, rounding)
 

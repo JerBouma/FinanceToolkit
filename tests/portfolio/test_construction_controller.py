@@ -1630,3 +1630,135 @@ def test_hierarchical_weights_on_the_dbht(recorder, portfolio_module):
             linkage_method="dbht", codependence="distance", include_benchmark=True
         )
     )
+
+
+def _synthetic_construction(
+    index: pd.PeriodIndex, assets: int = 3, end_date: str | None = None
+) -> tuple[PortfolioConstruction, pd.DataFrame]:
+    """A Portfolio Construction module on random daily returns and a 3% risk free rate."""
+    rng = np.random.default_rng(5)
+    returns = pd.DataFrame(
+        rng.normal(0.0008, 0.015, (len(index), assets)),
+        index=index,
+        columns=["A", "B", "C"][:assets],
+    )
+    construction = PortfolioConstruction(
+        tickers=returns.columns.tolist(),
+        historical_data={"daily": pd.concat({"Return": returns}, axis=1)},
+        risk_free_rate_data={"daily": pd.Series(0.03, index=index)},
+        rounding=None,
+        end_date=end_date,
+    )
+    return construction, returns
+
+
+def test_a_net_exposure_other_than_one_holds_the_rest_in_cash():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    assets = ["A", "B", "C"]
+    full = construction.get_maximum_sharpe_weights(maximum_weight=2.0)
+
+    for net_exposure in (0.5, 1.5):
+        table = construction.get_maximum_sharpe_weights(
+            maximum_weight=2.0, net_exposure=net_exposure
+        )
+        weights = table.loc[assets, "Weight"]
+        np.testing.assert_allclose(
+            weights, net_exposure * full.loc[assets, "Weight"], atol=1e-6
+        )
+        assert table.loc["Cash", "Weight"] == pytest.approx(1 - net_exposure)
+        assert table.loc["Cash", "Expected Return"] == pytest.approx(0.03)
+        assert table.loc["Portfolio", "Weight"] == pytest.approx(1)
+        assert table.loc["Portfolio", "Expected Return"] == pytest.approx(
+            weights @ table.loc[assets, "Expected Return"] + (1 - net_exposure) * 0.03
+        )
+        # The same mix of assets has the same Sharpe ratio, the one maximized.
+        assert table.loc["Portfolio", "Sharpe Ratio"] == pytest.approx(
+            full.loc["Portfolio", "Sharpe Ratio"], rel=1e-6
+        )
+    assert "Cash" not in full.index
+
+
+def test_the_transaction_cost_is_shown_and_taken_from_the_expected_return():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    current = {"A": 0.6, "B": 0.4}
+    gross = construction.get_maximum_sharpe_weights(current_weights=current)
+    table = construction.get_maximum_sharpe_weights(
+        current_weights=current, transaction_cost=0.02
+    )
+    portfolio = table.loc["Portfolio"]
+    assets = ["A", "B", "C"]
+    cost = 0.02 * portfolio["Turnover"]
+    before_cost = table.loc[assets, "Weight"] @ table.loc[assets, "Expected Return"]
+
+    assert "Transaction Cost" not in gross.columns
+    assert cost > 0
+    assert portfolio["Transaction Cost"] == pytest.approx(cost)
+    np.testing.assert_allclose(
+        table.loc[assets, "Transaction Cost"], 0.02 * table.loc[assets, "Turnover"]
+    )
+    assert portfolio["Expected Return"] == pytest.approx(before_cost - cost)
+    assert portfolio["Sharpe Ratio"] == pytest.approx(
+        (before_cost - cost - 0.03) / portfolio["Volatility"]
+    )
+
+
+def test_returns_on_every_calendar_day_are_annualized_with_365_days():
+    construction, returns = _synthetic_construction(
+        pd.period_range("2023-01-01", "2024-12-31", freq="D"), assets=2
+    )
+    table = construction.get_maximum_sharpe_weights()
+    np.testing.assert_allclose(
+        table.loc[["A", "B"], "Expected Return"], returns.mean() * 365
+    )
+
+    options = {"methods": "equal_weight", "lookback": 20, "rebalancing": "yearly"}
+    path = construction.get_optimization_backtest(output="returns", **options)[
+        "Equal Weight"
+    ].dropna()
+    summary = construction.get_optimization_backtest(**options).loc["Equal Weight"]
+    assert summary["Annualized Return"] == pytest.approx(
+        (1 + path).prod() ** (365 / len(path)) - 1
+    )
+    assert summary["Annualized Volatility"] == pytest.approx(path.std() * np.sqrt(365))
+
+
+def test_the_backtest_runs_to_the_end_of_the_data(caplog):
+    index = pd.bdate_range("2022-01-03", periods=200).to_period("D")
+    construction, returns = _synthetic_construction(index)
+    daily = construction._historical_data["daily"]
+    # One market is closed on the last day, the others are open.
+    daily.loc[index[-1], ("Return", "A")] = np.nan
+    options = {"methods": "equal_weight", "lookback": 40, "output": "returns"}
+
+    path = construction.get_optimization_backtest(**options)["Equal Weight"]
+    assert path.index[-1] == index[-1]
+    # Equal weights from the last month end, drifted, with A at 0% on the last day.
+    held = daily["Return"].loc[path.index[path.index > "2022-09-30"]].fillna(0)
+    value = (1 + held).cumprod().sum(axis=1)
+    assert path.iloc[-1] == pytest.approx(value.iloc[-1] / value.iloc[-2] - 1)
+    assert "has no returns after" not in caplog.text
+
+    # An asset whose returns stop months before the end is held at 0% and said so.
+    daily.loc[index[-80:], ("Return", "C")] = np.nan
+    path = construction.get_optimization_backtest(**options)["Equal Weight"]
+    assert path.index[-1] == index[-1]
+    assert "C has no returns after" in caplog.text
+
+
+def test_a_backtest_strategy_whose_bounds_cannot_be_met_has_no_returns(caplog):
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=200).to_period("D")
+    )
+    options = {"methods": "minimum_variance", "lookback": 40, "maximum_weight": 0.3}
+
+    summary = construction.get_optimization_backtest(**options)
+    weights = construction.get_optimization_backtest(output="weights", **options)
+
+    assert summary.loc["Minimum Variance"].isna().all()
+    assert weights["Minimum Variance"].isna().all().all()
+    assert summary.loc["Equal Weight"].notna().any()
+    assert "Minimum Variance found no weights on any of the" in caplog.text

@@ -14,12 +14,16 @@ from financetoolkit.portfolio.construction.optimization import (
     optimization_model,
 )
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
+from financetoolkit.risk.helpers import get_observations_per_year
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 # ruff: noqa: E501
+
+logger = get_logger()
 
 # The optimizers a backtest can compare, with the names they are shown under.
 BACKTEST_METHODS = {
@@ -534,7 +538,7 @@ class AnalysisConstruction:
             series[BENCHMARK_TICKER] = benchmark.reindex(returns.index)
         metrics = optimization_model.get_portfolio_risk_metrics(
             pd.DataFrame(series),
-            PERIODS_PER_YEAR[period],
+            self._get_periods_per_year(period, returns.index),
             self._get_risk_free_rate(period, returns.index),
             confidence_level,
         )
@@ -812,11 +816,21 @@ class AnalysisConstruction:
         - The returns are daily total returns (from adjusted closing prices). The
           estimates use the days on which every asset has a return; the portfolios earn
           the returns of every day, so a day on which one market is closed (its assets
-          return 0%, the next day covers both) still counts for the others. Each
-          portfolio and the benchmark are measured over the days they have a return.
+          return 0%, the next day covers both) still counts for the others, up to the
+          last day of the data. An asset whose returns end earlier (delisted or
+          acquired) ends the estimates and rebalancing on its last return; the portfolios
+          then hold it at 0% up to the end, and a warning says so. Each portfolio and the
+          benchmark are measured over the days they have a return.
+        - Returns on every calendar day (such as those of cryptocurrencies, with returns
+          on Saturdays and Sundays) are annualized with 365 days a year, returns on
+          trading days with 252, for the estimates and for each portfolio and the
+          benchmark on its own.
         - When an optimizer finds no weights on a rebalancing date (e.g. the maximum Sharpe
           ratio when no asset beat the risk free rate over the lookback), the portfolio
           keeps its drifted weights until the next date, and a warning says how often.
+          Before its first weights it holds nothing and has no returns, so it starts
+          later than the others, and with weight bounds no portfolio meets it has no
+          returns at all.
         - The In-Sample Return is the average over the rebalancing dates of w · mu, the
           annualized return the weights set on a date expected from the estimates of
           their own window (with the chosen expected return and covariance estimators),
@@ -883,17 +897,40 @@ class AnalysisConstruction:
             raise ValueError("The CAPM expected returns need a benchmark.")
         if covariance == "ledoit_wolf_single_factor" and benchmark is None:
             raise ValueError("The single factor covariance needs a benchmark.")
-        periods_per_year = PERIODS_PER_YEAR["daily"]
-        # The portfolios earn every day's return: a day on which only some markets traded
-        # is a 0% return for the others, whose next return covers both days. A day on
-        # which none of the assets traded (only the benchmark's market was open) is no
-        # day of the portfolios.
+        periods_per_year = self._get_periods_per_year("daily", returns.index)
+        # The portfolios earn every day's return up to the end of the data: a day on
+        # which only some markets traded is a 0% return for the others, whose next return
+        # covers both days. A day on which none of the assets traded (only the benchmark's
+        # market was open) is no day of the portfolios.
         holding_returns = (
             self._historical_data["daily"]["Return"]
-            .loc[returns.index[0] : returns.index[-1], returns.columns]
+            .loc[returns.index[0] : self._end_date, returns.columns]
             .dropna(how="all")
-            .fillna(0)
         )
+        # An asset whose returns stop early (delisted or acquired) ends the estimates and
+        # the rebalancing on its last return, which is worth a warning once a rebalancing
+        # date of the data falls after it.
+        if any(
+            date > returns.index[-1]
+            for date in backtest_model.get_rebalancing_dates(
+                holding_returns.index, rebalancing, 1
+            )
+        ):
+            ended = [
+                asset
+                for asset in returns.columns
+                if holding_returns[asset].last_valid_index() <= returns.index[-1]
+            ]
+            logger.warning(
+                "%s has no returns after %s, the last day on which every asset has a "
+                "return, so the portfolios set no new weights after it and hold %s at a "
+                "0%% return up to %s.",
+                ", ".join(ended),
+                returns.index[-1],
+                "them" if len(ended) > 1 else "it",
+                holding_returns.index[-1],
+            )
+        holding_returns = holding_returns.fillna(0)
         factors = self._get_factor_returns("daily") if covariance == "factor" else None
         # The estimates of a window are the same for every method, so they are made once.
         estimates: dict = {}
@@ -1031,10 +1068,12 @@ class AnalysisConstruction:
         if output == "returns":
             return self._round(net_returns, rounding)
 
+        # Each column is annualized with its own days: 365 a year for a path with
+        # returns on weekends (cryptocurrencies) and 252 for one on trading days only.
         summary = backtest_model.get_backtest_statistics(
             net_returns,
             turnover,
-            periods_per_year,
+            get_observations_per_year(net_returns),
             self._get_risk_free_rate("daily", net_returns.index),
             transaction_cost,
         )
@@ -1175,7 +1214,7 @@ class AnalysisConstruction:
                     name, name
                 ): optimization_model.get_expected_returns(
                     returns,
-                    PERIODS_PER_YEAR[period],
+                    self._get_periods_per_year(period, returns.index),
                     name,
                     span,
                     benchmark,
@@ -1439,7 +1478,9 @@ class AnalysisConstruction:
         if correlation:
             volatility = np.sqrt(np.diag(matrix.to_numpy()))
             return self._round(matrix / np.outer(volatility, volatility), rounding)
-        return self._round(matrix * PERIODS_PER_YEAR[period], rounding)
+        return self._round(
+            matrix * self._get_periods_per_year(period, returns.index), rounding
+        )
 
     @handle_errors
     def get_codependence_matrix(
@@ -2033,8 +2074,9 @@ class AnalysisConstruction:
             raise ValueError(
                 f"The output must be expected_returns or covariance, not '{output}'."
             )
+        returns = self._get_returns(period, include_benchmark)
         table, lower, upper = estimation_model.get_bootstrap_estimates(
-            self._get_returns(period, include_benchmark),
+            returns,
             method,
             simulations,
             block_size,
@@ -2043,7 +2085,9 @@ class AnalysisConstruction:
         )
         if output == "covariance":
             table = pd.concat({"Lower": lower, "Upper": upper}, axis=1)
-        return self._round(table * PERIODS_PER_YEAR[period], rounding)
+        return self._round(
+            table * self._get_periods_per_year(period, returns.index), rounding
+        )
 
     @handle_errors
     def get_factor_loadings(
@@ -2177,7 +2221,7 @@ class AnalysisConstruction:
         _, _, residual_variance = estimation_model.get_factor_model(
             returns, factor_returns, loadings
         )
-        periods_per_year = PERIODS_PER_YEAR[period]
+        periods_per_year = self._get_periods_per_year(period, returns.index)
         table = pd.concat(
             [
                 (loadings["Intercept"] * periods_per_year).rename("Alpha"),
@@ -2341,7 +2385,7 @@ class AnalysisConstruction:
         assets = self._get_risk_contribution_table(
             resolved,
             returns,
-            returns.cov() * PERIODS_PER_YEAR[period],
+            returns.cov() * self._get_periods_per_year(period, returns.index),
             risk_measure,
             confidence_level,
         )
@@ -2506,7 +2550,7 @@ class AnalysisConstruction:
                 f"The output must be one of {', '.join(outputs)}, not '{output}'."
             )
         returns = self._get_returns(period, include_benchmark)
-        periods_per_year = PERIODS_PER_YEAR[period]
+        periods_per_year = self._get_periods_per_year(period, returns.index)
 
         def per_period(views: dict | None, scale) -> dict | None:
             # The views are annualized; the scenarios are returns per period.

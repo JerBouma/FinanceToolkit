@@ -85,8 +85,10 @@ def get_walk_forward_backtest(
 
     When a strategy finds no weights on a rebalancing date (for example the maximum
     Sharpe ratio portfolio when no asset beat the risk free rate over the window), it
-    keeps its drifted weights until the next date, or holds equal weights when that
-    happens on the first date.
+    keeps its drifted weights until the next date. Before the first date on which it
+    finds weights it holds nothing and has no returns (NaN), so it starts later than the
+    others rather than with weights its constraints may not allow, and a strategy that
+    finds no weights on any date has no returns at all.
 
     See DeMiguel, V., Garlappi, L. and Uppal, R. (2009), "Optimal Versus Naive
     Diversification: How Inefficient Is the 1/N Portfolio Strategy?", The Review of
@@ -110,9 +112,10 @@ def get_walk_forward_backtest(
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: The returns per period after
-        costs from the day after the first rebalancing date, one column per strategy;
-        the weights set on each rebalancing date, one column per strategy and asset; and
-        the turnover of each rebalancing per strategy (NaN for the first investment).
+        costs from the day after the first rebalancing date, one column per strategy
+        (NaN before its first weights); the weights set on each rebalancing date, one
+        column per strategy and asset (NaN before its first weights); and the turnover of
+        each rebalancing per strategy (NaN for the first investment).
     """
     if not rebalancing_dates:
         raise ValueError(
@@ -139,9 +142,9 @@ def get_walk_forward_backtest(
 
     net_returns, weight_rows, turnover_rows = {}, {}, {}
     for name, strategy in strategies.items():
-        path = np.empty(len(data) - positions[0] - 1)
+        path = np.full(len(data) - positions[0] - 1, np.nan)
         held = None
-        targets, turnovers, failures = [], [], 0
+        targets, turnovers, failures, reason = [], [], 0, ""
         for window, position, end in zip(windows, positions, ends, strict=True):
             try:
                 target = (
@@ -152,12 +155,16 @@ def get_walk_forward_backtest(
                 )
                 if not np.all(np.isfinite(target)):
                     raise ValueError("The weights are not finite.")
-            except ValueError:
+            except ValueError as error:
                 failures += 1
-                target = (
-                    held if held is not None else np.full(len(assets), 1 / len(assets))
-                )
+                reason = reason or str(error)
+                target = held
 
+            if target is None:
+                # Nothing is held before the first weights, so there is no return yet.
+                targets.append(np.full(len(assets), np.nan))
+                turnovers.append(np.nan)
+                continue
             if held is None:
                 weights, turnover = target, np.nan
             else:
@@ -185,13 +192,28 @@ def get_walk_forward_backtest(
             path[start : start + len(period_returns)] = period_returns
             held = growth[-1] / value[-1]
 
-        if failures:
+        if failures == len(positions):
             logger.warning(
-                "%s found no weights on %d of the %d rebalancing dates and kept its "
-                "weights on those dates.",
+                "%s found no weights on any of the %d rebalancing dates (%s), so it has "
+                "no returns.",
+                name,
+                failures,
+                reason,
+            )
+        elif failures:
+            logger.warning(
+                "%s found no weights on %d of the %d rebalancing dates (%s); it starts "
+                "with its first weights, on %s, and keeps its weights on the later dates "
+                "without new ones.",
                 name,
                 failures,
                 len(positions),
+                reason,
+                next(
+                    date
+                    for date, target in zip(rebalancing_dates, targets, strict=True)
+                    if not np.isnan(target).all()
+                ),
             )
         net_returns[name] = path
         weight_rows[name] = pd.DataFrame(
@@ -211,7 +233,7 @@ def get_walk_forward_backtest(
 def get_backtest_statistics(
     returns: pd.DataFrame,
     turnover: pd.DataFrame,
-    periods_per_year: int,
+    periods_per_year: float | pd.Series,
     risk_free_rate: float = 0.0,
     transaction_cost: float = 0.0,
 ) -> pd.DataFrame:
@@ -230,7 +252,9 @@ def get_backtest_statistics(
             strategy.
         turnover (pd.DataFrame): The turnover of each rebalancing per strategy, NaN for
             the first investment; a strategy without turnover (a benchmark) has none.
-        periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
+        periods_per_year (float | pd.Series): The number of periods in a year, e.g. 252
+            for daily data, or per strategy (365 for a strategy with returns on every
+            calendar day).
         risk_free_rate (float, optional): The average annualized risk free rate over the
             periods. Defaults to 0.
         transaction_cost (float, optional): The cost per unit of weight traded. Defaults
@@ -294,6 +318,9 @@ def get_in_sample_expectations(weights: pd.DataFrame, estimates: dict) -> pd.Dat
         returns, sharpe_ratios = [], []
 
         for date, row in weights[strategy].iterrows():
+            # A strategy holds nothing before its first weights.
+            if row.isna().all():
+                continue
             risk_free_rate, mu, sigma = estimates[date]
             weight = row.reindex(mu.index).fillna(0).to_numpy(dtype=float)
             expected = float(weight @ mu.to_numpy(dtype=float))
@@ -306,8 +333,10 @@ def get_in_sample_expectations(weights: pd.DataFrame, estimates: dict) -> pd.Dat
             )
 
         expectations[strategy] = {
-            "In-Sample Return": np.nanmean(returns),
-            "In-Sample Sharpe Ratio": np.nanmean(sharpe_ratios),
+            "In-Sample Return": np.nanmean(returns) if returns else np.nan,
+            "In-Sample Sharpe Ratio": (
+                np.nanmean(sharpe_ratios) if sharpe_ratios else np.nan
+            ),
         }
 
     return pd.DataFrame(expectations).T

@@ -473,8 +473,9 @@ class TechnicalsBase:
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
-              Management.
+            - Inspired by the factor analysis of alphalens (Quantopian); the information
+              coefficient is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -558,8 +559,15 @@ class Technicals(
     TechnicalsBase,
 ):
     """
-    The Technicals Module contains 50+ Technical Indicators that can
-    be used to analyse companies. These ratios are divided into 4
-    categories which are breadth, momentum, overlap and volatility.
-    Each indicator is calculated using the data from the Toolkit module.
+    The Technicals Module contains the technical indicators of the Toolkit, grouped by topic
+    (breadth, momentum, overlap, volatility, patterns, cycles and more) and calculated from the
+    historical data of the Toolkit.
+
+    The indicators are those of the technical analysis literature, such as Wilder, Appel, Lane,
+    Bollinger, Chande, Ehlers and Nison, whose work each method cites. Their calculation is
+    referenced against the established libraries: TA-Lib (Mario Fortier), pandas-ta-classic (the
+    continuation of Kevin Johnson's pandas-ta), ta (Dario Lopez Padial), finta (Peerchemist) and
+    Tulip Indicators (Lewis Van Winkle). Where an indicator is defined by one of these libraries,
+    or where a method deliberately differs from them (such as the seeding of an average), its
+    docstring says so.
     """

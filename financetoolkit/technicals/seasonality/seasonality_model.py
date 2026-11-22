@@ -105,7 +105,7 @@ def get_relative_strength(
     For more information, see the following book:
 
     - Weinstein, S. (1988). "Stan Weinstein's Secrets for Profiting in Bull and Bear
-      Markets." McGraw-Hill.
+      Markets." Dow Jones-Irwin.
 
     Args:
         prices (pd.Series | pd.DataFrame): The prices, a column each.

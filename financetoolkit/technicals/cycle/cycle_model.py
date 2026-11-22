@@ -12,8 +12,8 @@ HILBERT_A = 0.0962
 HILBERT_B = 0.5769
 
 # The bar on which the recursion starts and the bars without a value (the lookback) of
-# TA-Lib's functions: those that only need the period start after 12 bars (Ehlers'
-# TradeStation code) and show a value from bar 32, those that also need the phase over a
+# TA-Lib's functions: those that only need the period start after 12 bars (as in Ehlers'
+# EasyLanguage listings) and show a value from bar 32, those that also need the phase over a
 # full cycle of up to 50 bars start after 37 and show a value from bar 63.
 PERIOD_START, PERIOD_LOOKBACK = 12, 32
 PHASE_START, PHASE_LOOKBACK = 37, 63
@@ -22,7 +22,7 @@ PHASE_START, PHASE_LOOKBACK = 37, 63
 def _get_hilbert_transform(prices: pd.Series, start: int) -> pd.DataFrame:
     """
     The Hilbert transform and homodyne discriminator of Ehlers (2001) that the HT
-    indicators and MAMA share, calculated bar by bar as in TA-Lib.
+    indicators and MAMA share, calculated bar by bar as in TA-Lib (Mario Fortier).
 
     The prices are smoothed with a 4-bar weighted moving average and detrended with a
     discrete Hilbert transform whose gain follows the period of the bar before. The
@@ -191,7 +191,7 @@ def get_hilbert_dominant_cycle_period(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_DCPERIOD, the reference implementation
+    Referenced against TA-Lib's HT_DCPERIOD
     (https://ta-lib.org/functions/ht_dcperiod.html).
 
     Notes:
@@ -232,7 +232,7 @@ def get_hilbert_dominant_cycle_phase(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_DCPHASE, the reference implementation
+    Referenced against TA-Lib's HT_DCPHASE
     (https://ta-lib.org/functions/ht_dcphase.html).
 
     Notes:
@@ -274,7 +274,7 @@ def get_hilbert_phasor_components(prices: pd.Series) -> pd.DataFrame:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_PHASOR, the reference implementation
+    Referenced against TA-Lib's HT_PHASOR
     (https://ta-lib.org/functions/ht_phasor.html).
 
     Notes:
@@ -312,7 +312,7 @@ def get_hilbert_sine_wave(prices: pd.Series) -> pd.DataFrame:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_SINE, the reference implementation
+    Referenced against TA-Lib's HT_SINE
     (https://ta-lib.org/functions/ht_sine.html).
 
     Notes:
@@ -355,7 +355,7 @@ def get_hilbert_instantaneous_trendline(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_TRENDLINE, the reference implementation
+    Referenced against TA-Lib's HT_TRENDLINE
     (https://ta-lib.org/functions/ht_trendline.html).
 
     Notes:
@@ -397,7 +397,7 @@ def get_hilbert_trend_mode(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    TA-Lib: HT_TRENDMODE, the reference implementation
+    Referenced against TA-Lib's HT_TRENDMODE
     (https://ta-lib.org/functions/ht_trendmode.html).
 
     Notes:
@@ -478,14 +478,14 @@ def get_mesa_adaptive_moving_average(
     - MAMA = Alpha * Price + (1 - Alpha) * MAMA(t-1)
     - FAMA = 0.5 * Alpha * MAMA + (1 - 0.5 * Alpha) * FAMA(t-1)
 
-    Reference: Ehlers, J.F. (2001). "MAMA - The Mother of Adaptive Moving Averages."
-    Technical Analysis of Stocks & Commodities, September 2001.
+    Reference: Ehlers, J.F. (2001). "MESA Adaptive Moving Averages." Technical Analysis of
+    Stocks & Commodities, September 2001.
 
-    TA-Lib: MAMA, the reference implementation (https://ta-lib.org/functions/mama.html).
+    Referenced against TA-Lib's MAMA (https://ta-lib.org/functions/mama.html).
 
     Notes:
         - Equals TA-Lib's MAMA: the recursion, MAMA and FAMA start from zero on bar 12 of
-          the series, as in TA-Lib and Ehlers' code, and the first 32 bars are NaN, TA-Lib's
+          the series, as in TA-Lib and Ehlers' article, and the first 32 bars are NaN, TA-Lib's
           lookback. FAMA is then still several percent below the price and settles to within
           0.1% after about 80 bars.
 

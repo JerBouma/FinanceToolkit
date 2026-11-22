@@ -143,7 +143,7 @@ def get_on_balance_volume(
     Reference: Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
-    TA-Lib: OBV, the reference implementation (https://ta-lib.org/functions/obv.html), whose
+    Referenced against TA-Lib's OBV (https://ta-lib.org/functions/obv.html), whose
     running total starts at the first volume instead of 0.
 
     Args:
@@ -195,7 +195,7 @@ def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Se
     "Granville's New Key to Stock Market Profits." Prentice-Hall) by weighting volume with
     the percentage change in price.
 
-    TA-Lib: PVT, the reference implementation (https://ta-lib.org/functions/pvt.html).
+    Referenced against TA-Lib's PVT (https://ta-lib.org/functions/pvt.html).
 
     Notes:
         - The running total starts at 0 on the first observation with both a close and a
@@ -279,7 +279,7 @@ def get_accumulation_distribution_line(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    TA-Lib: AD, the reference implementation (https://ta-lib.org/functions/ad.html).
+    Referenced against TA-Lib's AD (https://ta-lib.org/functions/ad.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -315,7 +315,7 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
 
     Reference: Arms, R.W. (1967). Originally published as a short-term breadth/volume
     indicator; see Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
-    Analysis of Stock and Bond Markets." Business One Irwin, for the definitive treatment.
+    Analysis of Stock and Bond Markets." Dow Jones-Irwin, for the definitive treatment.
 
     Args:
         prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns,
@@ -407,12 +407,12 @@ def get_chaikin_oscillator(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    TA-Lib: ADOSC, the reference implementation (https://ta-lib.org/functions/adosc.html).
+    Referenced against TA-Lib's ADOSC (https://ta-lib.org/functions/adosc.html).
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
           `overlap_model.get_exponential_moving_average`), as StockCharts calculates them, so
-          the oscillator starts on period `long_window` - 1. TA-Lib's `ta_ADOSC.c` seeds both
+          the oscillator starts on period `long_window` - 1. TA-Lib's ADOSC seeds both
           with the first Accumulation/Distribution value instead, which only changes the
           first values.
 
@@ -464,7 +464,7 @@ def get_chaikin_money_flow(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    TA-Lib: CMF, the reference implementation (https://ta-lib.org/functions/cmf.html).
+    Referenced against TA-Lib's CMF (https://ta-lib.org/functions/cmf.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -529,9 +529,9 @@ def get_ease_of_movement(
     Also known as: EMV, Ease of Movement.
 
     Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
-    Analysis of Stock and Bond Markets." Business One Irwin.
+    Analysis of Stock and Bond Markets." Dow Jones-Irwin.
 
-    TA-Lib: EMV, the reference implementation (https://ta-lib.org/functions/emv.html).
+    Referenced against TA-Lib's EMV (https://ta-lib.org/functions/emv.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -626,7 +626,7 @@ def get_negative_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
-    TA-Lib: NVI, the reference implementation (https://ta-lib.org/functions/nvi.html).
+    Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -668,7 +668,7 @@ def get_positive_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
-    TA-Lib: PVI, the reference implementation (https://ta-lib.org/functions/pvi.html).
+    Referenced against TA-Lib's PVI (https://ta-lib.org/functions/pvi.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -878,7 +878,7 @@ def get_klinger_volume_oscillator(
     Reference: Klinger, S.J. (1997). "Identifying Trends With Volume Analysis." Technical
     Analysis of Stocks & Commodities, 15(12).
 
-    TA-Lib: KVO, the reference implementation (https://ta-lib.org/functions/kvo.html).
+    Referenced against TA-Lib's KVO (https://ta-lib.org/functions/kvo.html).
 
     Notes:
         - The Volume Force is TA-Lib's and Tulip Indicators' (`kvo`), with |2 * dm / cm - 1|.
@@ -969,7 +969,7 @@ def get_market_facilitation_index(
     Reference: Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to
     Maximize Your Profits." John Wiley & Sons.
 
-    TA-Lib: MARKETFI, the reference implementation
+    Referenced against TA-Lib's MARKETFI
     (https://ta-lib.org/functions/marketfi.html).
 
     Notes:
@@ -1017,7 +1017,7 @@ def get_williams_accumulation_distribution(
     Reference: Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading
     Commodities." Windsor Books.
 
-    TA-Lib: WAD, the reference implementation (https://ta-lib.org/functions/wad.html).
+    Referenced against TA-Lib's WAD (https://ta-lib.org/functions/wad.html).
 
     Notes:
         - It equals TA-Lib's WAD and Tulip Indicators' `wad` (which starts on the second
@@ -1076,7 +1076,7 @@ def get_relative_volume(volumes: pd.Series, window: int) -> pd.Series:
     T.N. (2005). "Encyclopedia of Chart Patterns." 2nd ed. John Wiley & Sons, for the role
     of above-average volume in breakouts.
 
-    TA-Lib: RVOL, the reference implementation (https://ta-lib.org/functions/rvol.html).
+    Referenced against TA-Lib's RVOL (https://ta-lib.org/functions/rvol.html).
 
     Notes:
         - It equals TA-Lib's RVOL. An average volume of zero (a series without volume, such
@@ -1135,13 +1135,13 @@ def get_volume_flow_indicator(
     Analysis of Stocks & Commodities, 22(6), and Katsanos, M. (2004). "Volume Flow Indicator
     Performance." Technical Analysis of Stocks & Commodities, 22(7).
 
-    pandas-ta-classic: vfi, the reference implementation
+    Referenced against pandas-ta-classic's vfi
     (https://github.com/xgboosted/pandas-ta-classic); finta: VFI
     (https://github.com/peerchemist/finta).
 
     Notes:
         - The volatility is the population standard deviation (ddof=0) of the logarithmic
-          change in the typical price, as in Katsanos' MetaStock code (whose Stdev divides by
+          change in the typical price, as in Katsanos' MetaStock formula (whose Stdev divides by
           n): the deviation only sets the cutoff of the indicator's definition, so it follows
           the primary source, as the Bollinger Bands do. The VFI therefore equals
           pandas-ta-classic's `vfi` exactly. finta uses the sample deviation (ddof=1), a
@@ -1234,7 +1234,7 @@ def get_finite_volume_elements(
     Analysis of Stocks & Commodities, 21(9), and Katsanos, M. (2003). "Detecting Breakouts."
     Technical Analysis of Stocks & Commodities, 21(4).
 
-    finta: FVE, the reference implementation (https://github.com/peerchemist/finta).
+    Referenced against finta's FVE (https://github.com/peerchemist/finta).
 
     Notes:
         - The FVE is a decimal between -1 and 1 (0.25 is 25% net buying volume); Katsanos and
@@ -1359,7 +1359,7 @@ def get_volume_zone_oscillator(
     Reference: Khalil, W. and Steckler, D. (2011). "In The Volume Zone." Technical Analysis
     of Stocks & Commodities, 29(5).
 
-    finta: VZO, the reference implementation (https://github.com/peerchemist/finta).
+    Referenced against finta's VZO (https://github.com/peerchemist/finta).
 
     Notes:
         - The VZO is a decimal between -1 and 1; Khalil and Steckler and finta multiply it by
@@ -1411,9 +1411,10 @@ def get_cumulative_force_index(
     window of 1).
 
     Reference: Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money
-    Management." John Wiley & Sons, for the Force Index.
+    Management." John Wiley & Sons, for the Force Index. The cumulative form and the Weighted
+    On-Balance Volume are defined in finta (Peerchemist).
 
-    finta: CFI and WOBV, the reference implementations (https://github.com/peerchemist/finta).
+    Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta).
 
     Notes:
         - With a window of 1 it equals finta's WOBV. With a larger window it equals finta's
@@ -1465,7 +1466,7 @@ def get_price_volume(
     Returns: Cross-Section and Time-Series Effects." Journal of Financial Markets, 5(1),
     31-56, which scales returns by the dollar volume.
 
-    pandas-ta-classic: pvol, the reference implementation
+    Referenced against pandas-ta-classic's pvol
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -1511,7 +1512,7 @@ def get_price_volume_rank(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     Reference: Fulks Maxwell Laboratories (fmlabs), "Price Volume Rank," Technical Indicators
     Reference.
 
-    pandas-ta-classic: pvr, the reference implementation
+    Referenced against pandas-ta-classic's pvr
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -1562,7 +1563,7 @@ def get_volume_profile(
     Press, for the Market Profile; StockCharts ChartSchool, "Volume by Price," for the
     volume form.
 
-    pandas-ta-classic: vp, the reference implementation
+    Referenced against pandas-ta-classic's vp
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -1642,12 +1643,12 @@ def get_buying_selling_pressure(
 
     Also known as: BASP, BASPN (normalized Buying and Selling Pressure).
 
-    Reference: finta's BASP and BASPN, which cite no primary source. The split of a bar into
-    buying (Close - Low) and selling (High - Close) pressure is that of Bill Williams' and
-    Larry Williams' work; see Williams, L.R. (1973). "How I Made One Million Dollars Last
-    Year Trading Commodities." Windsor Books.
+    Reference: BASP and BASPN are defined in finta (Peerchemist), which cites no primary
+    source. The buying pressure resembles that of Larry Williams' Ultimate Oscillator
+    (Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks &
+    Commodities, 3(4)), which measures it from the lower of the low and the previous close.
 
-    finta: BASP and BASPN, the reference implementations
+    Referenced against finta's BASP and BASPN
     (https://github.com/peerchemist/finta).
 
     Notes:
@@ -1723,7 +1724,7 @@ def get_archer_on_balance_volume(
     paper), built on Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
-    pandas-ta-classic: aobv, the reference implementation
+    Referenced against pandas-ta-classic's aobv
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:

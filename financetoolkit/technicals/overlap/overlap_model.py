@@ -30,7 +30,7 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of
     Stock Returns." Journal of Finance, 47(5), 1731-1764.
 
-    TA-Lib: SMA, the reference implementation (https://ta-lib.org/functions/sma.html).
+    Referenced against TA-Lib's SMA (https://ta-lib.org/functions/sma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -66,12 +66,12 @@ def get_exponential_moving_average(
     standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
     Financial Markets." New York Institute of Finance.
 
-    TA-Lib: EMA, the reference implementation (https://ta-lib.org/functions/ema.html).
+    Referenced against TA-Lib's EMA (https://ta-lib.org/functions/ema.html).
 
     Notes:
         - The recursion is seeded with the Simple Moving Average of the first `window`
           values, placed on the last of them, and the periods before it are missing. This
-          is the convention of TA-Lib (`ta_EMA.c`) and StockCharts. Seeding with the first
+          is the convention of TA-Lib's EMA and StockCharts. Seeding with the first
           price instead gives every early value a weight on that single price that a
           `window`-period average does not have.
         - A missing value has no average: the period is missing, and the recursion
@@ -124,7 +124,7 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Faster Moving Averages." Technical
     Analysis of Stocks & Commodities, 12(1).
 
-    TA-Lib: DEMA, the reference implementation (https://ta-lib.org/functions/dema.html).
+    Referenced against TA-Lib's DEMA (https://ta-lib.org/functions/dema.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -134,7 +134,7 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
         pd.Series: DEMA values.
     """
     # The second EMA is seeded on the first `window` values of the first, so DEMA starts
-    # at period 2 * (window - 1), as in TA-Lib's ta_DEMA.c.
+    # at period 2 * (window - 1), as TA-Lib's DEMA does.
     ema_first = get_exponential_moving_average(prices, window)
     ema_second = get_exponential_moving_average(ema_first, window)
     dema = 2 * ema_first - ema_second
@@ -166,10 +166,10 @@ def get_trix(
 
     Also known as: TRIX, Triple Exponential Average, TRIXH, TRIX histogram.
 
-    Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
-    Technical Analysis of Stocks & Commodities, 1(5).
+    Reference: Hutson, J.K. (1983). "Good TRIX." Technical Analysis of Stocks & Commodities,
+    1(5), 105-108.
 
-    TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
+    Referenced against TA-Lib's TRIX (https://ta-lib.org/functions/trix.html).
     pandas-ta-classic: trixh, the signal line and histogram
     (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -228,7 +228,7 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
 
-    TA-Lib: TRIMA, the reference implementation (https://ta-lib.org/functions/trima.html).
+    Referenced against TA-Lib's TRIMA (https://ta-lib.org/functions/trima.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -269,7 +269,7 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
 
-    TA-Lib: WMA, the reference implementation (https://ta-lib.org/functions/wma.html).
+    Referenced against TA-Lib's WMA (https://ta-lib.org/functions/wma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -345,13 +345,12 @@ def get_kaufman_adaptive_moving_average(
 
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
 
-    TA-Lib: KAMA, the reference implementation (https://ta-lib.org/functions/kama.html).
+    Referenced against TA-Lib's KAMA (https://ta-lib.org/functions/kama.html).
 
     Notes:
         - The recursion is seeded with the closing price of the period before the first
           period where the Efficiency Ratio is defined, and the first KAMA value is one
-          update of that seed, matching TA-Lib's `ta_KAMA.c` (`prevKAMA = inReal[today-1]`
-          followed by one step). StockCharts instead describes seeding with a Simple Moving
+          update of that seed, the convention of TA-Lib's KAMA. StockCharts instead describes seeding with a Simple Moving
           Average; the two conventions differ only in a transient that decays geometrically
           over the periods that follow, and neither affects the steady-state values.
 
@@ -377,7 +376,7 @@ def get_kaufman_adaptive_moving_average(
     volatility = prices.diff().abs().rolling(window=window).sum()
     # When the path is no longer than the net move (only possible with equal values, as on
     # flat prices where both are 0) the move is fully efficient and the ratio is 1, as in
-    # TA-Lib's ta_KAMA.c (sumROC1 <= change). Dividing would give 0 / 0 on flat prices and
+    # TA-Lib's KAMA. Dividing would give 0 / 0 on flat prices and
     # stall the average; the ratio stays NaN only where prices are missing.  # noqa: E501
     efficiency_ratio = (change / volatility).where(volatility > change, 1.0)
     efficiency_ratio = efficiency_ratio.where(change.notna() & volatility.notna())
@@ -444,7 +443,7 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: Hull, A. (2005). "Hull Moving Average."
 
-    TA-Lib: HMA, the reference implementation (https://ta-lib.org/functions/hma.html).
+    Referenced against TA-Lib's HMA (https://ta-lib.org/functions/hma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -481,11 +480,11 @@ def get_triple_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Less Lag." Technical Analysis of
     Stocks & Commodities, 12(2).
 
-    TA-Lib: TEMA, the reference implementation (https://ta-lib.org/functions/tema.html).
+    Referenced against TA-Lib's TEMA (https://ta-lib.org/functions/tema.html).
 
     Notes:
         - Each EMA is seeded with the simple average of its first `window` values, so TEMA
-          starts at period 3 * (window - 1), as in TA-Lib's `ta_TEMA.c`.
+          starts at period 3 * (window - 1), as in TA-Lib's TEMA.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -523,11 +522,11 @@ def get_t3_moving_average(
     Reference: Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals."
     Technical Analysis of Stocks & Commodities, 16(1).
 
-    TA-Lib: T3, the reference implementation (https://ta-lib.org/functions/t3.html).
+    Referenced against TA-Lib's T3 (https://ta-lib.org/functions/t3.html).
 
     Notes:
         - Each of the six EMAs is seeded with the simple average of its first `window`
-          values, so T3 starts at period 6 * (window - 1), as in TA-Lib's `ta_T3.c`.
+          values, so T3 starts at period 6 * (window - 1), as in TA-Lib's T3.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -571,7 +570,7 @@ def get_zero_lag_exponential_moving_average(
     Reference: Ehlers, J.F. & Way, R. (2010). "Zero Lag (Well, Almost)." Technical Analysis
     of Stocks & Commodities, November 2010.
 
-    TA-Lib: ZLEMA, the reference implementation (https://ta-lib.org/functions/zlema.html).
+    Referenced against TA-Lib's ZLEMA (https://ta-lib.org/functions/zlema.html).
 
     Notes:
         - The EMA is seeded with the simple average of the first `window` de-lagged prices,
@@ -611,7 +610,7 @@ def get_arnaud_legoux_moving_average(
     Reference: Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving
     Average." arnaudlegoux.com.
 
-    TA-Lib: ALMA, the reference implementation (https://ta-lib.org/functions/alma.html).
+    Referenced against TA-Lib's ALMA (https://ta-lib.org/functions/alma.html).
 
     Notes:
         - The peak of the curve m is rounded down to a whole period, as in TA-Lib.
@@ -657,7 +656,7 @@ def get_volume_weighted_moving_average(
 
     Reference: Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
 
-    TA-Lib: VWMA, the reference implementation (https://ta-lib.org/functions/vwma.html).
+    Referenced against TA-Lib's VWMA (https://ta-lib.org/functions/vwma.html).
 
     Args:
         prices (pd.Series): Series of closing prices.
@@ -695,7 +694,7 @@ def get_mcginley_dynamic(
     Reference: McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis
     (Market Technicians Association).
 
-    TA-Lib: MCGD, the reference implementation (https://ta-lib.org/functions/mcgd.html).
+    Referenced against TA-Lib's MCGD (https://ta-lib.org/functions/mcgd.html).
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` prices, as
@@ -771,7 +770,7 @@ def get_variable_index_dynamic_average(
       Analysis of Stocks & Commodities, 10(3).
     - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: VIDYA, the reference implementation (https://ta-lib.org/functions/vidya.html).
+    Referenced against TA-Lib's VIDYA (https://ta-lib.org/functions/vidya.html).
 
     Notes:
         - The volatility index is the absolute Chande Momentum Oscillator over unsmoothed
@@ -832,10 +831,10 @@ def get_fractal_adaptive_moving_average(
 
     Also known as: FRAMA.
 
-    Reference: Ehlers, J.F. (2005). "FRAMA - Fractal Adaptive Moving Average." Technical
-    Analysis of Stocks & Commodities, October 2005.
+    Reference: Ehlers, J.F. (2005). "Fractal Adaptive Moving Averages." Technical Analysis of
+    Stocks & Commodities, 23(10), 81-82.
 
-    TA-Lib: FRAMA, the reference implementation (https://ta-lib.org/functions/frama.html).
+    Referenced against TA-Lib's FRAMA (https://ta-lib.org/functions/frama.html).
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` median
@@ -845,7 +844,7 @@ def get_fractal_adaptive_moving_average(
           difference fades by a factor 1 - Alpha per period.
         - A half without a range still gives a dimension, as in TA-Lib: a flat latest half
           next to a moving earlier one is a dimension of 1, so FRAMA moves to the price.
-          Ehlers' code keeps the last dimension whenever one of the ranges is zero. Without
+          Ehlers' formula keeps the last dimension whenever one of the ranges is zero. Without
           any range in the window, or in both halves, the last dimension is kept.
 
     Args:
@@ -939,7 +938,9 @@ def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.
 
     Also known as: FWMA.
 
-    pandas-ta-classic: fwma, the reference implementation
+    Reference: defined in pandas-ta by Kevin Johnson, without a published primary source.
+
+    Referenced against pandas-ta-classic's fwma
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Args:
@@ -973,7 +974,9 @@ def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Ser
 
     Also known as: PWMA.
 
-    pandas-ta-classic: pwma, the reference implementation
+    Reference: defined in pandas-ta by Kevin Johnson, without a published primary source.
+
+    Referenced against pandas-ta-classic's pwma
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Args:
@@ -1016,9 +1019,9 @@ def get_price_transform(
     Also known as: AVGPRICE, OHLC4, MEDPRICE, HL2, TYPPRICE, HLC3, WCLPRICE, HLCC4.
 
     Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
-    Trends." Commodities (Futures) Magazine, the typical price of the CCI.
+    Trends." Commodities, October 1980, the typical price of the CCI.
 
-    TA-Lib: AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE, the reference implementations
+    Referenced against TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE
     (https://ta-lib.org/functions/).
 
     Args:
@@ -1067,10 +1070,10 @@ def get_midpoint(
 
     Also known as: MIDPOINT, MIDPRICE, midpoint price, Donchian middle line.
 
-    Reference: Donchian, R.D. (1960). "High Finance in Copper." Financial Analysts
-    Journal, 16(6), the channel of the highest high and lowest low.
+    Reference: Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial
+    Analysts Journal, 16(6), 133-142, the channel of the highest high and lowest low.
 
-    TA-Lib: MIDPOINT and MIDPRICE, the reference implementations
+    Referenced against TA-Lib's MIDPOINT and MIDPRICE
     (https://ta-lib.org/functions/midpoint.html, https://ta-lib.org/functions/midprice.html).
 
     Args:
@@ -1122,7 +1125,7 @@ def get_holt_winters_moving_average(
       Management Science, 6(3), 324-342.
     - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
 
-    pandas-ta-classic: hwma, the reference implementation
+    Referenced against pandas-ta-classic's hwma
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -1203,7 +1206,7 @@ def get_holt_winters_channel(
       Management Science, 6(3), 324-342.
     - MQL5 Code Base: HWC (https://www.mql5.com/en/code/20857).
 
-    pandas-ta-classic: hwc, the reference implementation
+    Referenced against pandas-ta-classic's hwc
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -1265,11 +1268,11 @@ def get_elastic_volume_weighted_moving_average(
 
     Also known as: eVWMA, EVWMA, elastic volume weighted moving average.
 
-    Reference: Fries, C.P. (2001). "Elastic Volume Weighted Moving Average."
-    (https://www.christian-fries.de/evwma/), which takes the number of shares outstanding
+    Reference: Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks &
+    Commodities, 19(6), 52-56 (https://www.christian-fries.de/evwma/), which takes the number of shares outstanding
     (the float) as the volume sum; the sum of the volume over a window stands in for it.
 
-    finta: EVWMA, the reference implementation (https://github.com/peerchemist/finta).
+    Referenced against finta's EVWMA (https://github.com/peerchemist/finta).
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` prices, as
@@ -1311,14 +1314,14 @@ def get_volume_adjusted_moving_average(
 
     Also known as: VAMA, volume adjusted moving average.
 
-    Reference: Arms, R.W. Jr. (1994). "Volume Cycles in the Stock Market: Market Timing
+    Reference: Arms, R.W. Jr. (1983). "Volume Cycles in the Stock Market: Market Timing
     Through Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume
-    traded; the VAMA itself has no published source.
+    traded; the VAMA itself is defined in finta (Peerchemist), without a published source.
 
-    finta: VAMA, the reference implementation (https://github.com/peerchemist/finta).
+    Referenced against finta's VAMA (https://github.com/peerchemist/finta).
 
     Notes:
-        - The weights follow finta, which multiplies the volume ratio by the price as well,
+        - The weights are finta's, which multiplies the volume ratio by the price as well,
           so the weight is the traded value (in currency) relative to the average volume.
 
     Args:
@@ -1441,7 +1444,7 @@ def get_zigzag(
 
     Reference: Merrill, A.A. (1977). "Filtered Waves: Basic Theory." Analysis Press.
 
-    TA-Lib: ZIGZAG, the reference implementation (https://ta-lib.org/functions/zigzag.html).
+    Referenced against TA-Lib's ZIGZAG (https://ta-lib.org/functions/zigzag.html).
 
     Notes:
         - Every period shows what is known at its close: the extreme of the current leg,
@@ -1544,7 +1547,7 @@ def get_volume_weighted_average_price(
     - Shannon, B. (2023). "Maximum Trading Gains With Anchored VWAP." Alphatrends
       Publishing.
 
-    TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html), which
+    Referenced against TA-Lib's VWAP (https://ta-lib.org/functions/vwap.html), which
     accumulates from the first period (anchor "all"). pandas-ta-classic: vwap with an anchor
     per calendar period (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -1653,11 +1656,11 @@ def get_parabolic_sar(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: SAR and SAREXT, the reference implementations
+    Referenced against TA-Lib's SAR and SAREXT
     (https://ta-lib.org/functions/sar.html, https://ta-lib.org/functions/sarext.html).
 
     Notes:
-        - The start follows TA-Lib's `ta_SAR.c`: the first bar only sets the direction
+        - The start is TA-Lib's convention: the first bar only sets the direction
           and the starting SAR, so the first value is on the second bar. The trade starts
           short when the second bar's low fell by more than its high rose (a positive -DM),
           otherwise long, with the SAR at the first bar's low (long) or high (short) and
@@ -1714,8 +1717,8 @@ def get_parabolic_sar(
     high = prices_high.to_numpy(dtype="float64").tolist()
     low = prices_low.to_numpy(dtype="float64").tolist()
 
-    # The direction comes from the directional movement of the second bar, as in TA-Lib's
-    # ta_SAR.c: a short when the low fell by more than the high rose, otherwise a long. The
+    # The direction comes from the directional movement of the second bar, TA-Lib's SAR
+    # convention: a short when the low fell by more than the high rose, otherwise a long. The
     # SAR starts at the first bar's extreme on the other side of the trade.
     up_move = high[1] - high[0]
     down_move = low[0] - low[1]
@@ -1824,8 +1827,9 @@ def get_pivot_points(
       practice rather than a published paper.
     - Scott, N. (1989). The Camarilla equation, as published by Camarilla Levels.
     - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
-    - Ochoa, F. (2010). "Secrets of a Pivot Boss." Pivot Boss, the central pivot range.
-    - pandas-ta-classic: cpr, the reference implementation of the classic, Fibonacci,
+    - Ochoa, F. (2010). "Secrets of a Pivot Boss: Revealing Proven Methods for Profiting in
+      the Market." 311 Publishing, the central pivot range.
+    - Referenced against pandas-ta-classic's cpr of the classic, Fibonacci,
       Camarilla and Woodie variants and the central pivot range
       (https://github.com/xgboosted/pandas-ta-classic).
     - finta: PIVOT and PIVOT_FIB (https://github.com/peerchemist/finta).

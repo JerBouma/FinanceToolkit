@@ -93,12 +93,12 @@ def get_money_flow_index(
     Reference: Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow."
     Technical Analysis of Stocks & Commodities, 7(3), 76-77.
 
-    TA-Lib: MFI, the reference implementation (https://ta-lib.org/functions/mfi.html).
+    Referenced against TA-Lib's MFI (https://ta-lib.org/functions/mfi.html).
 
     Notes:
         - The first period has no prior typical price and therefore no money flow, so the
           first MFI value is on period `window` and covers the flows of periods 1 to
-          `window`, as in TA-Lib's `ta_MFI.c`. A missing price or volume leaves its flow
+          `window`, the same start as TA-Lib's MFI. A missing price or volume leaves its flow
           missing rather than counting it as zero.
 
     Args:
@@ -153,10 +153,10 @@ def get_williams_percent_r(
 
     Also known as: %R, Williams %R.
 
-    Reference: Williams, L.R. (1973). "How I Made One Million Dollars... Last Year Trading
+    Reference: Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading
     Commodities." Windsor Books.
 
-    TA-Lib: WILLR, the reference implementation (https://ta-lib.org/functions/willr.html).
+    Referenced against TA-Lib's WILLR (https://ta-lib.org/functions/willr.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -198,17 +198,16 @@ def get_aroon_indicator(
 
     Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC.
 
-    Reference: Chande, T.S. (1995). "A Time Price Oscillator." Technical Analysis of Stocks &
-    Commodities, 13(9); Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+    Reference: Chande, T.S. (1995). "The Time Price Oscillator." Technical Analysis of Stocks
+    & Commodities, 13(9), 369-374; Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: AROON and AROONOSC, the reference implementations
+    Referenced against TA-Lib's AROON and AROONOSC
     (https://ta-lib.org/functions/aroon.html, https://ta-lib.org/functions/aroonosc.html).
 
     Notes:
         - The lookback spans `window + 1` bars — the current period plus the previous
-          `window` — which is what TA-Lib's `ta_AROON.c` scans (`trailingIdx = startIdx -
-          optInTimePeriod`, inclusive of `today`). A plain `window`-bar rolling lookback can
-          never return 0 and mis-scales every reading.
+          `window` — the span TA-Lib's AROON scans as well. A plain `window`-bar rolling
+          lookback can never return 0 and mis-scales every reading.
         - Ties are broken on the most recent occurrence of the extreme, so a repeated high
           resets Aroon Up to 100 rather than leaving it decaying from the first occurrence.
 
@@ -274,9 +273,10 @@ def get_commodity_channel_index(
     Also known as: CCI.
 
     Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
-    Trends." Technical Analysis of Stocks & Commodities, 1(5).
+    Trends." Commodities, October 1980; reprinted in Technical Analysis of Stocks &
+    Commodities, 1(5), 120-122.
 
-    TA-Lib: CCI, the reference implementation (https://ta-lib.org/functions/cci.html).
+    Referenced against TA-Lib's CCI (https://ta-lib.org/functions/cci.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -344,7 +344,7 @@ def get_relative_vigor_index(
     Also known as: RVI, RVGI, Relative Vigor Index.
 
     Reference: Ehlers, J.F. (2002). "Relative Vigor Index." Technical Analysis of Stocks &
-    Commodities.
+    Commodities, 20(1), 16-20.
 
     Notes:
         - The RVI is a fraction of the average range, so it usually lies between -1 and 1:
@@ -408,7 +408,7 @@ def get_force_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
-    TA-Lib: EFI, the reference implementation (https://ta-lib.org/functions/efi.html).
+    Referenced against TA-Lib's EFI (https://ta-lib.org/functions/efi.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -454,7 +454,7 @@ def get_ultimate_oscillator(
     Reference: Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks
     & Commodities, 3(4).
 
-    TA-Lib: ULTOSC, the reference implementation (https://ta-lib.org/functions/ultosc.html).
+    Referenced against TA-Lib's ULTOSC (https://ta-lib.org/functions/ultosc.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -532,7 +532,7 @@ def get_percentage_price_oscillator(
     (Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert
     Corp.).
 
-    TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html), with
+    Referenced against TA-Lib's PPO (https://ta-lib.org/functions/ppo.html), with
     the moving average as its `matype`; it returns the PPO in percent and no signal line.
     The signal line and histogram are those of ta's PercentagePriceOscillator, pandas-ta's
     ppo and finta's PPO.
@@ -610,7 +610,7 @@ def get_percentage_volume_oscillator(
     Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
     Convergence-Divergence Trading Method." Signalert Corp.).
 
-    TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html), with
+    Referenced against TA-Lib's PVO (https://ta-lib.org/functions/pvo.html), with
     the moving average as its `matype` (1 for the EMA, 0 for the SMA).
 
     Notes:
@@ -690,7 +690,7 @@ def get_detrended_price_oscillator(
     the Financial Markets." New York Institute of Finance; there is no single canonical
     academic paper behind DPO.
 
-    TA-Lib: DPO, the reference implementation (https://ta-lib.org/functions/dpo.html).
+    Referenced against TA-Lib's DPO (https://ta-lib.org/functions/dpo.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -751,7 +751,7 @@ def get_directional_movement_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI and DX, the reference implementations
+    Referenced against TA-Lib's PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI and DX
     (https://ta-lib.org/functions/plus_dm.html, https://ta-lib.org/functions/minus_dm.html,
     https://ta-lib.org/functions/plus_di.html, https://ta-lib.org/functions/minus_di.html,
     https://ta-lib.org/functions/dx.html).
@@ -782,7 +782,7 @@ def get_directional_movement_index(
     # The first period has no previous close or previous high and low, so it has no True
     # Range and no directional movement; starting both series on the second period gives
     # the first smoothed value on period `window` and the first ADX on period
-    # 2 * window - 1, as in TA-Lib's ta_ADX.c, instead of averaging in a High - Low range
+    # 2 * window - 1, the same start as TA-Lib's ADX, instead of averaging in a High - Low range
     # and two zero moves for the first period.
     has_previous_period = prices_close.shift(1).notna()
     true_range = get_true_range(prices_high, prices_low, prices_close).where(
@@ -854,7 +854,7 @@ def get_average_directional_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
+    Referenced against TA-Lib's ADX (https://ta-lib.org/functions/adx.html).
 
     Notes:
         - The True Range and both directional movements start on the second period, the
@@ -903,7 +903,7 @@ def get_average_directional_index_rating(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: ADXR, the reference implementation (https://ta-lib.org/functions/adxr.html).
+    Referenced against TA-Lib's ADXR (https://ta-lib.org/functions/adxr.html).
 
     Notes:
         - The ADX starts on period 2 * `window` - 1, so the ADXR starts on period
@@ -952,7 +952,7 @@ def get_chande_momentum_oscillator(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: CMOU and CMO, the reference implementations
+    Referenced against TA-Lib's CMOU and CMO
     (https://ta-lib.org/functions/cmou.html, https://ta-lib.org/functions/cmo.html): CMOU
     sums the gains and losses as Chande does, CMO smooths them with Wilder's method.
 
@@ -1016,7 +1016,7 @@ def get_ichimoku_cloud(
     Sanjin; the standard English treatment is Elliott, N. (2007). "Ichimoku Charts."
     Harriman House.
 
-    TA-Lib: ICHIMOKU, the reference implementation (https://ta-lib.org/functions/ichimoku.html),
+    Referenced against TA-Lib's ICHIMOKU (https://ta-lib.org/functions/ichimoku.html),
     which places the leading spans on the period they are calculated on.
 
     Notes:
@@ -1104,7 +1104,7 @@ def get_stochastic_oscillator(
     Reference: Lane, G.C. Developed in the late 1950s; see Lane, G.C. (1984). "Lane's
     Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
-    TA-Lib: STOCHF and STOCH, the reference implementations
+    Referenced against TA-Lib's STOCHF and STOCH
     (https://ta-lib.org/functions/stochf.html, https://ta-lib.org/functions/stoch.html).
 
     Args:
@@ -1167,12 +1167,14 @@ def get_moving_average_convergence_divergence(
     smoothing constants), VWMACD, volume weighted MACD, EVMACD, elastic volume weighted MACD.
 
     Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
-    Signalert Corp. The histogram is from Aspray, T. (1986). "Fine-tuning the MACD."
-    Technical Analysis of Stocks & Commodities, 4(4). The volume weighted MACD is from
+    Signalert Corp. The histogram is Thomas Aspray's (1986), described in Aspray, T. (1988).
+    "MACD Momentum." Technical Analysis of Stocks & Commodities, 6(8), 294-297. The volume
+    weighted MACD is from
     Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press, and the elastic one
-    builds on Fries, C.P. (2001). "Elastic Volume Weighted Moving Average."
+    builds on Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks &
+    Commodities, 19(6), 52-56.
 
-    TA-Lib: MACD, MACDEXT and MACDFIX, the reference implementations
+    Referenced against TA-Lib's MACD, MACDEXT and MACDFIX
     (https://ta-lib.org/functions/macd.html, https://ta-lib.org/functions/macdext.html,
     https://ta-lib.org/functions/macdfix.html). pandas-ta-classic: vwmacd and finta: VW_MACD
     and EV_MACD for the volume weighted ones.
@@ -1181,7 +1183,7 @@ def get_moving_average_convergence_divergence(
         - Every EMA is seeded with the Simple Moving Average of its first values (see
           `get_exponential_moving_average`), so the MACD line starts on period
           `long_window` - 1 and the signal line `signal_window` - 1 periods later, as on
-          StockCharts. TA-Lib's `ta_MACD.c` additionally starts the short EMA on the same
+          StockCharts. TA-Lib's MACD additionally starts the short EMA on the same
           period as the long one, which changes only the first values.
         - `moving_average` applies to both the short and the long average, as TA-Lib's
           MACDEXT with the same `fastmatype` and `slowmatype`.
@@ -1294,7 +1296,7 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: RSI, the reference implementation (https://ta-lib.org/functions/rsi.html).
+    Referenced against TA-Lib's RSI (https://ta-lib.org/functions/rsi.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1353,7 +1355,7 @@ def get_stochastic_relative_strength_index(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: STOCHRSI, the reference implementation (https://ta-lib.org/functions/stochrsi.html).
+    Referenced against TA-Lib's STOCHRSI (https://ta-lib.org/functions/stochrsi.html).
 
     Notes:
         - The RSI is that of `get_relative_strength_index`, seeded with a simple average of
@@ -1415,7 +1417,7 @@ def get_true_strength_index(
     in Blau, W. (1991). "True Strength Index." Technical Analysis of Stocks & Commodities,
     9(11).
 
-    TA-Lib: TSI, the reference implementation (https://ta-lib.org/functions/tsi.html).
+    Referenced against TA-Lib's TSI (https://ta-lib.org/functions/tsi.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -1483,11 +1485,11 @@ def get_balance_of_power(
     Reference: Created by Igor Livshin; featured in Kaufman, P.J. (2005). "New Trading
     Systems and Methods." 4th ed. Wiley.
 
-    TA-Lib: BOP, the reference implementation (https://ta-lib.org/functions/bop.html).
+    Referenced against TA-Lib's BOP (https://ta-lib.org/functions/bop.html).
 
     Notes:
         - A period whose high equals its low has no range to divide by and is set to 0, as
-          in TA-Lib's `ta_BOP.c`. A period with a missing price stays missing.
+          in TA-Lib's BOP. A period with a missing price stays missing.
 
     Args:
         prices_open (pd.Series): Series of opening prices.
@@ -1532,7 +1534,7 @@ def get_awesome_oscillator(
         - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
           Williams' indicators, it is a practitioner-developed tool rather than one derived from
           a published financial paper. The standard textbook source is Williams, B. (1995).
-          "Trading Chaos: Applying Expert Techniques to Maximize Your Profit." Wiley.
+          "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." Wiley.
         - A cross of the AO above zero occurs exactly when the short-window SMA of the median
           price crosses above the long-window SMA, and vice versa for a cross below zero.
 
@@ -1582,9 +1584,9 @@ def get_vortex_indicator(
     Also known as: VI, Vortex Indicator +/-, trend direction indicator.
 
     Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis of
-    Stocks & Commodities, 28(1), 20-25.
+    Stocks & Commodities, 28(1), 20-30.
 
-    TA-Lib: VORTEX, the reference implementation (https://ta-lib.org/functions/vortex.html).
+    Referenced against TA-Lib's VORTEX (https://ta-lib.org/functions/vortex.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1640,7 +1642,7 @@ def get_elder_ray_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
-    TA-Lib: ERI, the reference implementation (https://ta-lib.org/functions/eri.html).
+    Referenced against TA-Lib's ERI (https://ta-lib.org/functions/eri.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1686,7 +1688,7 @@ def get_rate_of_change(
     Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York
     Institute of Finance.
 
-    TA-Lib: ROCP, the reference implementation (https://ta-lib.org/functions/rocp.html).
+    Referenced against TA-Lib's ROCP (https://ta-lib.org/functions/rocp.html).
 
     Args:
         prices_close (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
@@ -1739,7 +1741,7 @@ def get_choppiness_index(
     there is no formal journal citation. The standard textbook treatment is Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
-    TA-Lib: CHOP and CHOPTR, the reference implementations
+    Referenced against TA-Lib's CHOP and CHOPTR
     (https://ta-lib.org/functions/chop.html, https://ta-lib.org/functions/choptr.html).
 
     Args:
@@ -1829,10 +1831,10 @@ def get_know_sure_thing(
 
     Also known as: KST, KSTEXT, Pring's Know Sure Thing, Summed Rate of Change.
 
-    Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks
-    & Commodities, 10(6).
+    Reference: Pring, M.J. (1992). "Summed Rate of Change (KST)." Technical Analysis of
+    Stocks & Commodities, 10(9), 365-369.
 
-    TA-Lib: KST and KSTEXT, the reference implementations
+    Referenced against TA-Lib's KST and KSTEXT
     (https://ta-lib.org/functions/kst.html, https://ta-lib.org/functions/kstext.html).
 
     Args:
@@ -1925,7 +1927,7 @@ def get_coppock_curve(
     Reference: Coppock, E.S.C. (1962). "Practical Relative Strength Charting." Trendex
     Research Group; first presented in Barron's, October 15, 1962.
 
-    TA-Lib: COPPOCK, the reference implementation (https://ta-lib.org/functions/coppock.html).
+    Referenced against TA-Lib's COPPOCK (https://ta-lib.org/functions/coppock.html).
 
     Notes:
         - The Rates of Change are decimals, as in `get_rate_of_change`, so the curve is a
@@ -1979,7 +1981,7 @@ def get_absolute_price_oscillator(
     Signalert Corp.; Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed.
     McGraw-Hill ("Price Oscillator").
 
-    TA-Lib: APO, the reference implementation (https://ta-lib.org/functions/apo.html), with
+    Referenced against TA-Lib's APO (https://ta-lib.org/functions/apo.html), with
     the moving average as its `matype` (EMA by default).
 
     Notes:
@@ -2030,7 +2032,7 @@ def get_momentum(prices_close: pd.Series, window: int) -> pd.Series:
     Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute
     of Finance.
 
-    TA-Lib: MOM, the reference implementation (https://ta-lib.org/functions/mom.html).
+    Referenced against TA-Lib's MOM (https://ta-lib.org/functions/mom.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -2069,7 +2071,7 @@ def get_accelerator_oscillator(
     Reference: Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in
     Stocks, Bonds, and Commodities." Wiley; Williams, B. (1995). "Trading Chaos." Wiley.
 
-    TA-Lib: AC, the reference implementation (https://ta-lib.org/functions/ac.html).
+    Referenced against TA-Lib's AC (https://ta-lib.org/functions/ac.html).
 
     Notes:
         - The AC starts on period `long_window` + `signal_window` - 2, the first full window
@@ -2112,10 +2114,10 @@ def get_internal_bar_strength(
 
     Also known as: IBS, close location value (as a 0 to 1 ratio).
 
-    Reference: Pagonidis, A.S. (2013). "The IBS Effect: Mean Reversion in Equity ETFs."
-    NAAIM Wagner Award paper.
+    Reference: Pagonidis, A.S. (2014). "The IBS Effect: Mean Reversion in Equity ETFs."
+    NAAIM Founders Award paper.
 
-    TA-Lib: IBS, the reference implementation (https://ta-lib.org/functions/ibs.html).
+    Referenced against TA-Lib's IBS (https://ta-lib.org/functions/ibs.html).
 
     Notes:
         - A period without a range (High equal to Low) has no IBS (NaN), where TA-Lib
@@ -2157,7 +2159,7 @@ def get_intraday_momentum_index(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: IMI, the reference implementation (https://ta-lib.org/functions/imi.html).
+    Referenced against TA-Lib's IMI (https://ta-lib.org/functions/imi.html).
 
     Notes:
         - A window in which every period closed at its open has no IMI (NaN), where TA-Lib
@@ -2198,7 +2200,7 @@ def get_qstick(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: QSTICK, the reference implementation (https://ta-lib.org/functions/qstick.html).
+    Referenced against TA-Lib's QSTICK (https://ta-lib.org/functions/qstick.html).
 
     Args:
         prices_open (pd.Series): Series of opening prices.
@@ -2232,7 +2234,7 @@ def get_efficiency_ratio(prices_close: pd.Series, window: int) -> pd.Series:
     Reference: Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing
     Markets." McGraw-Hill.
 
-    TA-Lib: ER, the reference implementation (https://ta-lib.org/functions/er.html).
+    Referenced against TA-Lib's ER (https://ta-lib.org/functions/er.html).
 
     Notes:
         - The ratio is the one `get_kaufman_adaptive_moving_average` uses, except that a
@@ -2271,7 +2273,7 @@ def get_vertical_horizontal_filter(prices_close: pd.Series, window: int) -> pd.S
     Reference: White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter."
     Futures Magazine, August 1991.
 
-    TA-Lib: VHF, the reference implementation (https://ta-lib.org/functions/vhf.html).
+    Referenced against TA-Lib's VHF (https://ta-lib.org/functions/vhf.html).
 
     Notes:
         - The range spans the last `window` closes and the path the last `window` changes,
@@ -2318,7 +2320,7 @@ def get_fisher_transform(
     - Trigger(t) = Fisher Transform(t - 1)
 
     Value and Fisher Transform start from 0 on the period before the first full window, as
-    in Ehlers' code.
+    in Ehlers' published formula.
 
     Also known as: Fisher, Ehlers Fisher Transform, FISHT.
 
@@ -2326,7 +2328,7 @@ def get_fisher_transform(
     Stocks & Commodities, 20(11); Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and
     Futures." Wiley.
 
-    TA-Lib: FISHER, the reference implementation (https://ta-lib.org/functions/fisher.html).
+    Referenced against TA-Lib's FISHER (https://ta-lib.org/functions/fisher.html).
 
     Notes:
         - A window in which the median price did not move has no range; its position is the
@@ -2472,7 +2474,7 @@ def get_kdj_indicator(
     Reference: The KDJ has no single primary source; it extends Lane's stochastic, see Lane,
     G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
-    TA-Lib: KDJ, the reference implementation (https://ta-lib.org/functions/kdj.html).
+    Referenced against TA-Lib's KDJ (https://ta-lib.org/functions/kdj.html).
 
     Notes:
         - Every Wilder average is seeded with the simple average of its first values (see
@@ -2537,7 +2539,7 @@ def get_premier_stochastic_oscillator(
     Reference: Leibfarth, L. (2008). "Premier Stochastic Oscillator." Technical Analysis of
     Stocks & Commodities, 26(8).
 
-    TA-Lib: PSO, the reference implementation (https://ta-lib.org/functions/pso.html).
+    Referenced against TA-Lib's PSO (https://ta-lib.org/functions/pso.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2601,7 +2603,7 @@ def get_stochastic_momentum_index(
     Reference: Blau, W. (1993). "Stochastic Momentum." Technical Analysis of Stocks &
     Commodities, 11(1); Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
 
-    TA-Lib: SMI, the reference implementation (https://ta-lib.org/functions/smi.html).
+    Referenced against TA-Lib's SMI (https://ta-lib.org/functions/smi.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2741,7 +2743,7 @@ def get_schaff_trend_cycle(
     - STC(t) = STC(t - 1) + factor * (Fraction 2(t) - STC(t - 1))
 
     A fraction over a window without a range keeps its previous value, and each smoothing
-    starts on its first input, as in Schaff's code. Schaff uses 23, 50 and 10 with a factor
+    starts on its first input, as in Schaff (2008). Schaff uses 23, 50 and 10 with a factor
     of 0.5.
 
     Also known as: STC, Schaff Trend Cycle indicator.
@@ -2750,7 +2752,7 @@ def get_schaff_trend_cycle(
     FX-Strategy.com; Schaff, D. (2002). "Catching Currency Moves with the Schaff Trend Cycle
     Indicator." Chartpoint, July/August 2002.
 
-    TA-Lib: STC, the reference implementation (https://ta-lib.org/functions/stc.html).
+    Referenced against TA-Lib's STC (https://ta-lib.org/functions/stc.html).
 
     Notes:
         - The EMAs of the MACD are seeded with the Simple Moving Average of their first
@@ -2845,7 +2847,7 @@ def get_wavetrend_oscillator(
 
     Reference: LazyBear (2014). "WaveTrend Oscillator [WT]." TradingView published script.
 
-    TA-Lib: WAVETREND, the reference implementation
+    Referenced against TA-Lib's WAVETREND
     (https://ta-lib.org/functions/wavetrend.html).
 
     Notes:
@@ -2913,7 +2915,7 @@ def get_derivative_oscillator(
     Problem." MTA Journal, 42; Brown, C.M. (1999). "Technical Analysis for the Trading
     Professional." McGraw-Hill.
 
-    TA-Lib: DOSC, the reference implementation (https://ta-lib.org/functions/dosc.html).
+    Referenced against TA-Lib's DOSC (https://ta-lib.org/functions/dosc.html).
 
     Notes:
         - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
@@ -2977,7 +2979,7 @@ def get_swing_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research, section VIII "The Swing Index."
 
-    TA-Lib: SI and ASI, the reference implementations (https://ta-lib.org/functions/si.html,
+    Referenced against TA-Lib's SI and ASI (https://ta-lib.org/functions/si.html,
     https://ta-lib.org/functions/asi.html).
 
     Notes:
@@ -3081,7 +3083,7 @@ def get_quantitative_qualitative_estimation(
           `window` + `smooth_window` - 1 and the QQE on period `window` + `smooth_window` +
           2 * (2 * `window` - 1) - 2, at the RSI Moving Average minus the distance.
         - The QQE line switches sides on the period the RSI Moving Average crosses it, as
-          in the MetaTrader code. pandas-ta-classic's qqe switches when the RSI Moving
+          in the original MetaTrader indicator. pandas-ta-classic's qqe switches when the RSI Moving
           Average crosses the band on the other side, which can keep its line on the old
           side for a few more periods; otherwise the two are equal.
 
@@ -3301,7 +3303,7 @@ def get_connors_relative_strength_index(
     ConnorsRSI." Connors Research Trading Strategy Series; Connors, L. & Alvarez, C. (2009).
     "Short Term Trading Strategies That Work." TradingMarkets Publishing.
 
-    TA-Lib: CRSI, the reference implementation (https://ta-lib.org/functions/crsi.html).
+    Referenced against TA-Lib's CRSI (https://ta-lib.org/functions/crsi.html).
 
     Notes:
         - Equals TA-Lib's CRSI.
@@ -3436,9 +3438,10 @@ def get_bias(
     Also known as: BIAS, deviation rate, BIAS ratio, distance to the moving average.
 
     Reference: no single primary source; it is a standard indicator on Asian trading
-    platforms (pandas-ta-classic notes the same).
+    platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
+    which notes the same.
 
-    pandas-ta-classic: bias, the reference implementation
+    Referenced against pandas-ta-classic's bias
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -3490,9 +3493,10 @@ def get_brar(
     Also known as: BRAR, AR BR, popularity and willingness indicators, sentiment indicator.
 
     Reference: no single primary source; it is a standard sentiment indicator on Asian
-    trading platforms (pandas-ta-classic notes the same).
+    trading platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
+    which notes the same.
 
-    pandas-ta-classic: brar, the reference implementation
+    Referenced against pandas-ta-classic's brar
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -3557,7 +3561,7 @@ def get_pretty_good_oscillator(
     Reference: Johnson, M. "Pretty Good Oscillator", as documented in FM Labs' technical
     analysis library (https://www.fmlabs.com/reference/default.htm?url=PGO.htm).
 
-    pandas-ta-classic: pgo, the reference implementation
+    Referenced against pandas-ta-classic's pgo
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -3607,9 +3611,10 @@ def get_psychological_line(
     Also known as: PSL, PSY, psychological line, psychological index.
 
     Reference: no single primary source; it is a standard sentiment indicator on Asian
-    trading platforms (pandas-ta-classic notes the same).
+    trading platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
+    which notes the same.
 
-    pandas-ta-classic: psl, the reference implementation
+    Referenced against pandas-ta-classic's psl
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -3664,13 +3669,14 @@ def get_volatility_based_momentum(
 
     Also known as: VBM, volatility-based momentum, volatility adjusted momentum.
 
-    Reference: no primary source beyond the libraries; the measure is the momentum of Pring
-    (1991) normalized by Wilder's (1978) Average True Range.
+    Reference: the VBM is defined in finta (Peerchemist), without a published primary source;
+    the measure is the momentum of Pring (1991) normalized by Wilder's (1978) Average True
+    Range.
 
     finta: VBM (https://github.com/peerchemist/finta).
 
     Notes:
-        - finta documents this formula, but its code subtracts the earlier close twice
+        - finta documents this formula, but its VBM subtracts the earlier close twice
           (Close.diff(n) - Close.shift(n)) and averages the true range with a simple moving
           average, so its values differ.
 
@@ -3719,9 +3725,10 @@ def get_archer_moving_average_trends(
 
     Also known as: AMAT, Archer Moving Averages Trends.
 
-    Reference: Archer's TradingView script; there is no published primary source.
+    Reference: Archer's TradingView script "Archer Moving Averages Trends", which defines the
+    indicator; there is no published primary source.
 
-    pandas-ta-classic: amat, the reference implementation
+    Referenced against pandas-ta-classic's amat
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -3788,7 +3795,7 @@ def get_ttm_trend(
     Reference: Carter, J.F. (2005). "Mastering the Trade: Proven Techniques for Profiting
     from Intraday and Swing Trading Setups." McGraw-Hill.
 
-    pandas-ta-classic: ttm_trend, the reference implementation
+    Referenced against pandas-ta-classic's ttm_trend
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:

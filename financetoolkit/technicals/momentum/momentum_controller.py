@@ -538,7 +538,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: MFI, the reference implementation (https://ta-lib.org/functions/mfi.html).
+        - Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow." Technical Analysis of Stocks &
+          Commodities, 7(3), 76-77.
+        - Referenced against TA-Lib's MFI (https://ta-lib.org/functions/mfi.html).
 
         Also known as: MFI, volume-weighted RSI.
 
@@ -664,7 +666,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: WILLR, the reference implementation (https://ta-lib.org/functions/willr.html).
+        - Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading Commodities." Windsor Books.
+        - Referenced against TA-Lib's WILLR (https://ta-lib.org/functions/willr.html).
 
         Also known as: Williams percent R, overbought oversold oscillator.
 
@@ -795,9 +798,10 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - Chande, T.S. (1995). "A Time Price Oscillator." Technical Analysis of Stocks & Commodities, 13(9).
-        - TA-Lib: AROON, the reference implementation (https://ta-lib.org/functions/aroon.html).
-        - TA-Lib: AROONOSC, the reference implementation (https://ta-lib.org/functions/aroonosc.html).
+        - Chande, T.S. (1995). "The Time Price Oscillator." Technical Analysis of Stocks & Commodities, 13(9),
+          369-374.
+        - Referenced against TA-Lib's AROON (https://ta-lib.org/functions/aroon.html).
+        - Referenced against TA-Lib's AROONOSC (https://ta-lib.org/functions/aroonosc.html).
 
         Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC, trend strength.
 
@@ -921,7 +925,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: CCI, the reference implementation (https://ta-lib.org/functions/cci.html).
+        - Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic Trends." Commodities, October
+          1980; reprinted in Technical Analysis of Stocks & Commodities, 1(5), 120-122.
+        - Referenced against TA-Lib's CCI (https://ta-lib.org/functions/cci.html).
 
         Also known as: CCI, cyclical trend indicator.
 
@@ -1057,6 +1063,10 @@ class MomentumTechnicals:
         price warns that a move lacks conviction. See `momentum_model.get_relative_vigor_index`
         for the full formula.
 
+        For more information, see the following sources:
+
+        - Ehlers, J.F. (2002). "Relative Vigor Index." Technical Analysis of Stocks & Commodities, 20(1), 16-20.
+
         Also known as: RVI, RVGI, vigor index.
 
         Args:
@@ -1180,7 +1190,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: EFI, the reference implementation (https://ta-lib.org/functions/efi.html).
+        - Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money Management." John Wiley &
+          Sons.
+        - Referenced against TA-Lib's EFI (https://ta-lib.org/functions/efi.html).
 
         Also known as: FI, Elder's Force Index.
 
@@ -1309,7 +1321,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: ULTOSC, the reference implementation (https://ta-lib.org/functions/ultosc.html).
+        - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4), 140-141.
+        - Referenced against TA-Lib's ULTOSC (https://ta-lib.org/functions/ultosc.html).
 
         Also known as: UO, ultimate momentum oscillator. See
         `momentum_model.get_ultimate_oscillator` for the Buying Pressure and True Range
@@ -1456,7 +1469,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Appel, G. (2005). "Technical Analysis: Power Tools for Active Investors." FT Press.
-        - TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html).
+        - Referenced against TA-Lib's PPO (https://ta-lib.org/functions/ppo.html).
         - pandas-ta-classic: ppo, with `mamode="ema"` (https://github.com/xgboosted/pandas-ta-classic).
         - ta: PercentagePriceOscillator (https://github.com/bukosabino/ta).
         - finta: PPO (https://github.com/peerchemist/finta).
@@ -1610,7 +1623,7 @@ class MomentumTechnicals:
 
         - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp.
         - Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed. McGraw-Hill.
-        - TA-Lib: APO, the reference implementation (https://ta-lib.org/functions/apo.html).
+        - Referenced against TA-Lib's APO (https://ta-lib.org/functions/apo.html).
 
         Also known as: APO, absolute price oscillator, price oscillator.
 
@@ -1760,7 +1773,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html).
+        - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp., the
+          MACD of which the PVO is the volume counterpart in percent.
+        - Referenced against TA-Lib's PVO (https://ta-lib.org/functions/pvo.html).
         - pandas-ta-classic: vosc, the Simple Moving Average form (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: vosc, the Simple Moving Average form (https://tulipindicators.org/vosc).
 
@@ -1903,7 +1918,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: DPO, the reference implementation (https://ta-lib.org/functions/dpo.html).
+        - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
+        - Referenced against TA-Lib's DPO (https://ta-lib.org/functions/dpo.html).
 
         Also known as: DPO, detrended price oscillator. Note the moving average itself is not
         shifted — only the close price used for the comparison is looked up further back in
@@ -2036,7 +2052,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Referenced against TA-Lib's ADX (https://ta-lib.org/functions/adx.html).
 
         Also known as: ADX, trend strength indicator. See `momentum_model.get_average_directional_index`
         for the full formula, which uses Wilder's smoothing (not a plain SMA) throughout.
@@ -2181,11 +2198,11 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - TA-Lib: PLUS_DM, the reference implementation (https://ta-lib.org/functions/plus_dm.html).
-        - TA-Lib: MINUS_DM, the reference implementation (https://ta-lib.org/functions/minus_dm.html).
-        - TA-Lib: PLUS_DI, the reference implementation (https://ta-lib.org/functions/plus_di.html).
-        - TA-Lib: MINUS_DI, the reference implementation (https://ta-lib.org/functions/minus_di.html).
-        - TA-Lib: DX, the reference implementation (https://ta-lib.org/functions/dx.html).
+        - Referenced against TA-Lib's PLUS_DM (https://ta-lib.org/functions/plus_dm.html).
+        - Referenced against TA-Lib's MINUS_DM (https://ta-lib.org/functions/minus_dm.html).
+        - Referenced against TA-Lib's PLUS_DI (https://ta-lib.org/functions/plus_di.html).
+        - Referenced against TA-Lib's MINUS_DI (https://ta-lib.org/functions/minus_di.html).
+        - Referenced against TA-Lib's DX (https://ta-lib.org/functions/dx.html).
 
         Also known as: DMI, Directional Movement System, +DM, -DM, +DI, -DI, DX, PLUS_DM, MINUS_DM,
         PLUS_DI, MINUS_DI, directional indicators.
@@ -2327,7 +2344,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - TA-Lib: ADXR, the reference implementation (https://ta-lib.org/functions/adxr.html).
+        - Referenced against TA-Lib's ADXR (https://ta-lib.org/functions/adxr.html).
 
         Also known as: ADXR, Average Directional Movement Rating.
 
@@ -2466,8 +2483,8 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - TA-Lib: CMOU, the reference implementation (https://ta-lib.org/functions/cmou.html).
-        - TA-Lib: CMO, the reference implementation (https://ta-lib.org/functions/cmo.html).
+        - Referenced against TA-Lib's CMOU (https://ta-lib.org/functions/cmou.html).
+        - Referenced against TA-Lib's CMO (https://ta-lib.org/functions/cmo.html).
 
         Also known as: CMO, CMOU, Chande momentum.
 
@@ -2605,7 +2622,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - TA-Lib: IMI, the reference implementation (https://ta-lib.org/functions/imi.html).
+        - Referenced against TA-Lib's IMI (https://ta-lib.org/functions/imi.html).
 
         Also known as: IMI, intraday momentum.
 
@@ -2745,7 +2762,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: ICHIMOKU, the reference implementation (https://ta-lib.org/functions/ichimoku.html).
+        - Hosoda, G. (1969). "Ichimoku Kinko Hyo." Published under the pen name Ichimoku Sanjin.
+        - Elliott, N. (2007). "Ichimoku Charts." Harriman House.
+        - Referenced against TA-Lib's ICHIMOKU (https://ta-lib.org/functions/ichimoku.html).
 
         Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
         are Goichi Hosoda's original values, both leading spans are conventionally displaced
@@ -2896,8 +2915,8 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Lane, G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
-        - TA-Lib: STOCHF, the reference implementation (https://ta-lib.org/functions/stochf.html).
-        - TA-Lib: STOCH, the reference implementation (https://ta-lib.org/functions/stoch.html).
+        - Referenced against TA-Lib's STOCHF (https://ta-lib.org/functions/stochf.html).
+        - Referenced against TA-Lib's STOCH (https://ta-lib.org/functions/stoch.html).
 
         Also known as: stochastic oscillator, percent K, percent D, fast stochastic, slow stochastic.
 
@@ -3063,12 +3082,14 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp.
-        - Aspray, T. (1986). "Fine-tuning the MACD." Technical Analysis of Stocks & Commodities, 4(4).
-        - TA-Lib: MACD, the reference implementation (https://ta-lib.org/functions/macd.html).
-        - TA-Lib: MACDEXT, the reference implementation (https://ta-lib.org/functions/macdext.html).
-        - TA-Lib: MACDFIX, the reference implementation (https://ta-lib.org/functions/macdfix.html).
+        - Aspray, T. (1988). "MACD Momentum." Technical Analysis of Stocks & Commodities, 6(8), 294-297, for
+          the MACD histogram.
+        - Referenced against TA-Lib's MACD (https://ta-lib.org/functions/macd.html).
+        - Referenced against TA-Lib's MACDEXT (https://ta-lib.org/functions/macdext.html).
+        - Referenced against TA-Lib's MACDFIX (https://ta-lib.org/functions/macdfix.html).
         - Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
-        - Fries, C.P. (2001). "Elastic Volume Weighted Moving Average." (https://www.christian-fries.de/evwma/).
+        - Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks & Commodities, 19(6), 52-56
+          (https://www.christian-fries.de/evwma/).
         - pandas-ta-classic: vwmacd, the Volume Weighted MACD (https://github.com/xgboosted/pandas-ta-classic).
         - finta: VW_MACD and EV_MACD (https://github.com/peerchemist/finta).
 
@@ -3257,7 +3278,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: RSI, the reference implementation (https://ta-lib.org/functions/rsi.html).
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Referenced against TA-Lib's RSI (https://ta-lib.org/functions/rsi.html).
 
         Also known as: RSI, momentum oscillator, overbought, oversold.
 
@@ -3397,7 +3419,7 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: STOCHRSI, the reference implementation (https://ta-lib.org/functions/stochrsi.html).
+        - Referenced against TA-Lib's STOCHRSI (https://ta-lib.org/functions/stochrsi.html).
 
         Also known as: StochRSI, Stoch RSI.
 
@@ -3546,7 +3568,7 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: TSI, the reference implementation (https://ta-lib.org/functions/tsi.html).
+        - Referenced against TA-Lib's TSI (https://ta-lib.org/functions/tsi.html).
 
         Also known as: TSI, double smoothed momentum.
 
@@ -3681,7 +3703,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: BOP, the reference implementation (https://ta-lib.org/functions/bop.html).
+        - Igor Livshin, who created the indicator; described in Kaufman, P.J. (2005). "New Trading Systems and
+          Methods." 4th ed. Wiley.
+        - Referenced against TA-Lib's BOP (https://ta-lib.org/functions/bop.html).
 
         Also known as: BOP, bull bear power.
 
@@ -3806,8 +3830,8 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - Pagonidis, A.S. (2013). "The IBS Effect: Mean Reversion in Equity ETFs." NAAIM Wagner Award paper.
-        - TA-Lib: IBS, the reference implementation (https://ta-lib.org/functions/ibs.html).
+        - Pagonidis, A.S. (2014). "The IBS Effect: Mean Reversion in Equity ETFs." NAAIM Founders Award paper.
+        - Referenced against TA-Lib's IBS (https://ta-lib.org/functions/ibs.html).
 
         Also known as: IBS, internal bar strength.
 
@@ -3934,7 +3958,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - TA-Lib: QSTICK, the reference implementation (https://ta-lib.org/functions/qstick.html).
+        - Referenced against TA-Lib's QSTICK (https://ta-lib.org/functions/qstick.html).
 
         Also known as: Qstick, QSTICK, Q-stick.
 
@@ -4063,7 +4087,7 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: AO, the reference implementation (https://ta-lib.org/functions/ao.html).
+        - Referenced against TA-Lib's AO (https://ta-lib.org/functions/ao.html).
 
         Also known as: AO, Bill Williams Awesome Oscillator.
 
@@ -4099,7 +4123,7 @@ class MomentumTechnicals:
         - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
           Williams' indicators, it is a practitioner-developed tool rather than one derived from
           a published financial paper. The standard textbook source is Williams, B. (1995).
-          "Trading Chaos: Applying Expert Techniques to Maximize Your Profit." Wiley.
+          "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." Wiley.
         - A cross of the AO above zero occurs exactly when the short-window SMA of the median
           price crosses above the long-window SMA, and vice versa for a cross below zero.
         - The AO equals TA-Lib's AO.
@@ -4207,7 +4231,7 @@ class MomentumTechnicals:
 
         - Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in Stocks, Bonds, and
           Commodities." Wiley.
-        - TA-Lib: AC, the reference implementation (https://ta-lib.org/functions/ac.html).
+        - Referenced against TA-Lib's AC (https://ta-lib.org/functions/ac.html).
 
         Also known as: AC, Acceleration/Deceleration Oscillator, AC oscillator.
 
@@ -4376,8 +4400,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Vortex Indicator values for each asset in the Toolkit instance.
         - Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis
-          of Stocks & Commodities, 28(1), 20-25.
-        - TA-Lib: VORTEX, the reference implementation (https://ta-lib.org/functions/vortex.html).
+          of Stocks & Commodities, 28(1), 20-30.
+        - Referenced against TA-Lib's VORTEX (https://ta-lib.org/functions/vortex.html).
         - VI+ and VI- equal TA-Lib's VORTEX.
         - If `growth` is set to True, the method calculates the growth of the VI+ and VI-
           using the specified `lag`.
@@ -4508,7 +4532,7 @@ class MomentumTechnicals:
           Power moves toward zero from below; when the close is below the EMA (downtrend), both
           tend to be negative.
         - Reference: Elder, A. (1993). "Trading for a Living." Wiley.
-        - TA-Lib: ERI, the reference implementation (https://ta-lib.org/functions/eri.html).
+        - Referenced against TA-Lib's ERI (https://ta-lib.org/functions/eri.html).
         - Bull Power and Bear Power equal TA-Lib's ERI.
         - If `growth` is set to True, the method calculates the growth of the Bull and Bear Power
           using the specified `lag`.
@@ -4635,7 +4659,7 @@ class MomentumTechnicals:
           the Rate of Change for each asset in the Toolkit instance.
         - Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New
           York Institute of Finance.
-        - TA-Lib: ROCP, the reference implementation (https://ta-lib.org/functions/rocp.html).
+        - Referenced against TA-Lib's ROCP (https://ta-lib.org/functions/rocp.html).
         - The Rate of Change is a decimal and equals TA-Lib's ROCP; TA-Lib's ROC is the same in
           percent.
         - If `growth` is set to True, the method calculates the growth of the Rate of Change
@@ -4733,7 +4757,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill.
-        - TA-Lib: MOM, the reference implementation (https://ta-lib.org/functions/mom.html).
+        - Referenced against TA-Lib's MOM (https://ta-lib.org/functions/mom.html).
 
         Also known as: MOM, price momentum, momentum oscillator.
 
@@ -4869,8 +4893,8 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Kaufman, P.J. (2013). "Trading Systems and Methods." 5th ed. Wiley.
-        - TA-Lib: CHOP, the reference implementation (https://ta-lib.org/functions/chop.html).
-        - TA-Lib: CHOPTR, the reference implementation (https://ta-lib.org/functions/choptr.html).
+        - Referenced against TA-Lib's CHOP (https://ta-lib.org/functions/chop.html).
+        - Referenced against TA-Lib's CHOPTR (https://ta-lib.org/functions/choptr.html).
 
         Also known as: CHOP, CHOPTR, Choppiness Index.
 
@@ -5012,7 +5036,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing Markets." McGraw-Hill.
-        - TA-Lib: ER, the reference implementation (https://ta-lib.org/functions/er.html).
+        - Referenced against TA-Lib's ER (https://ta-lib.org/functions/er.html).
 
         Also known as: ER, Kaufman Efficiency Ratio, fractal efficiency.
 
@@ -5141,7 +5165,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter." Futures Magazine.
-        - TA-Lib: VHF, the reference implementation (https://ta-lib.org/functions/vhf.html).
+        - Referenced against TA-Lib's VHF (https://ta-lib.org/functions/vhf.html).
 
         Also known as: VHF, vertical horizontal filter.
 
@@ -5284,9 +5308,10 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks & Commodities, 10(6).
-        - TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
-        - TA-Lib: KSTEXT, the reference implementation (https://ta-lib.org/functions/kstext.html).
+        - Pring, M.J. (1992). "Summed Rate of Change (KST)." Technical Analysis of Stocks & Commodities, 10(9),
+          365-369.
+        - Referenced against TA-Lib's KST (https://ta-lib.org/functions/kst.html).
+        - Referenced against TA-Lib's KSTEXT (https://ta-lib.org/functions/kstext.html).
 
         Also known as: KST, KSTEXT, Pring's Know Sure Thing, Summed Rate of Change.
 
@@ -5448,7 +5473,7 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: COPPOCK, the reference implementation (https://ta-lib.org/functions/coppock.html).
+        - Referenced against TA-Lib's COPPOCK (https://ta-lib.org/functions/coppock.html).
 
         Also known as: Coppock Indicator, Coppock Guide.
 
@@ -5591,7 +5616,7 @@ class MomentumTechnicals:
         - Fisher Transform(t) = 0.5 * ln((1 + Value(t)) / (1 — Value(t))) + 0.5 * Fisher Transform(t - 1)
         - Trigger(t) = Fisher Transform(t - 1)
 
-        Value and Fisher Transform start from 0, as in Ehlers' code. The transform is centred on
+        Value and Fisher Transform start from 0, as in Ehlers' published formula. The transform is centred on
         zero and bounded by ln(1999), about -7.6 and 7.6.
 
         For more information, see the following sources:
@@ -5599,7 +5624,7 @@ class MomentumTechnicals:
         - Ehlers, J.F. (2002). "Using the Fisher Transform." Technical Analysis of Stocks &
           Commodities, 20(11).
         - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." Wiley.
-        - TA-Lib: FISHER, the reference implementation (https://ta-lib.org/functions/fisher.html).
+        - Referenced against TA-Lib's FISHER (https://ta-lib.org/functions/fisher.html).
         - pandas-ta-classic: fisher (https://github.com/xgboosted/pandas-ta-classic).
         - finta: FISH (https://github.com/peerchemist/finta).
 
@@ -5888,7 +5913,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Lane, G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
-        - TA-Lib: KDJ, the reference implementation (https://ta-lib.org/functions/kdj.html).
+        - Referenced against TA-Lib's KDJ (https://ta-lib.org/functions/kdj.html).
         - pandas-ta-classic: kdj (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: KDJ, KDJ stochastic, random index.
@@ -6038,7 +6063,7 @@ class MomentumTechnicals:
 
         - Leibfarth, L. (2008). "Premier Stochastic Oscillator." Technical Analysis of Stocks &
           Commodities, 26(8).
-        - TA-Lib: PSO, the reference implementation (https://ta-lib.org/functions/pso.html).
+        - Referenced against TA-Lib's PSO (https://ta-lib.org/functions/pso.html).
 
         Also known as: PSO, Premier Stochastic.
 
@@ -6184,7 +6209,7 @@ class MomentumTechnicals:
 
         - Blau, W. (1993). "Stochastic Momentum." Technical Analysis of Stocks & Commodities, 11(1).
         - Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
-        - TA-Lib: SMI, the reference implementation (https://ta-lib.org/functions/smi.html).
+        - Referenced against TA-Lib's SMI (https://ta-lib.org/functions/smi.html).
 
         Also known as: SMI, Blau's stochastic momentum.
 
@@ -6479,7 +6504,7 @@ class MomentumTechnicals:
         - STC(t) = STC(t - 1) + factor * (Fraction 2(t) — STC(t - 1))
 
         A fraction over a window without a range keeps its previous value and each smoothing
-        starts on its first input, as in Schaff's code. Schaff uses 23, 50 and 10 with a factor
+        starts on its first input, as in Schaff (2008). Schaff uses 23, 50 and 10 with a factor
         of 0.5.
 
         For more information, see the following sources:
@@ -6487,7 +6512,7 @@ class MomentumTechnicals:
         - Schaff, D. (2008). "Releasing the Code to the Schaff Trend Cycle." FX-Strategy.com.
         - Schaff, D. (2002). "Catching Currency Moves with the Schaff Trend Cycle Indicator."
           Chartpoint, July/August 2002.
-        - TA-Lib: STC, the reference implementation (https://ta-lib.org/functions/stc.html).
+        - Referenced against TA-Lib's STC (https://ta-lib.org/functions/stc.html).
         - pandas-ta-classic: stc (https://github.com/xgboosted/pandas-ta-classic).
         - ta: STCIndicator (https://github.com/bukosabino/ta).
         - finta: STC (https://github.com/peerchemist/finta).
@@ -6644,7 +6669,7 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - LazyBear (2014). "WaveTrend Oscillator [WT]." TradingView published script.
-        - TA-Lib: WAVETREND, the reference implementation (https://ta-lib.org/functions/wavetrend.html).
+        - Referenced against TA-Lib's WAVETREND (https://ta-lib.org/functions/wavetrend.html).
         - finta: WTO (https://github.com/peerchemist/finta).
 
         Also known as: WaveTrend, WT, WTO, WT1 and WT2.
@@ -6794,7 +6819,7 @@ class MomentumTechnicals:
         - Brown, C.M. (1994). "The Derivative Oscillator: A New Approach for an Old Problem." MTA
           Journal, 42.
         - Brown, C.M. (1999). "Technical Analysis for the Trading Professional." McGraw-Hill.
-        - TA-Lib: DOSC, the reference implementation (https://ta-lib.org/functions/dosc.html).
+        - Referenced against TA-Lib's DOSC (https://ta-lib.org/functions/dosc.html).
 
         Also known as: DOSC, Brown's Derivative Oscillator.
 
@@ -6944,7 +6969,7 @@ class MomentumTechnicals:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research,
           section VIII "The Swing Index."
-        - TA-Lib: SI and ASI, the reference implementations (https://ta-lib.org/functions/si.html,
+        - Referenced against TA-Lib's SI and ASI (https://ta-lib.org/functions/si.html,
           https://ta-lib.org/functions/asi.html).
 
         Also known as: SI, ASI, Wilder Swing Index, Accumulation Swing Index.
@@ -7132,7 +7157,7 @@ class MomentumTechnicals:
         - The RSI Moving Average and QQE equal pandas-ta-classic's qqe, except that its line switches sides
           when the RSI Moving Average crosses the band on the other side, which can keep it on the
           old side for a few more periods (3 of 757 days on the test data); this follows the
-          MetaTrader code, which switches on the period of the crossing.
+          original MetaTrader indicator, which switches on the period of the crossing.
         - If `growth` is set to True, the method calculates the growth of the QQE and RSI Moving Average
           using the specified `lag`.
 
@@ -7533,7 +7558,7 @@ class MomentumTechnicals:
           Research Trading Strategy Series.
         - Connors, L. & Alvarez, C. (2009). "Short Term Trading Strategies That Work."
           TradingMarkets Publishing.
-        - TA-Lib: CRSI, the reference implementation (https://ta-lib.org/functions/crsi.html).
+        - Referenced against TA-Lib's CRSI (https://ta-lib.org/functions/crsi.html).
 
         Also known as: CRSI, ConnorsRSI, Connors RSI.
 
@@ -7678,7 +7703,7 @@ class MomentumTechnicals:
           Commodities, 13(9).
         - Dorsey, D. (1993). "The Relative Volatility Index." Technical Analysis of Stocks &
           Commodities, 11(6).
-        - pandas-ta-classic: inertia, the reference implementation
+        - Referenced against pandas-ta-classic's inertia
           (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: INERTIA, Dorsey Inertia.
@@ -7821,9 +7846,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - pandas-ta-classic: bias, the reference implementation
-          (https://github.com/xgboosted/pandas-ta-classic), which notes that the indicator has no
-          single primary source.
+        - pandas-ta-classic: bias (https://github.com/xgboosted/pandas-ta-classic). The definition is the
+          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
+          has no single primary source; it is a standard indicator on Asian trading platforms.
 
         Also known as: BIAS, deviation rate, BIAS ratio, distance to the moving average.
 
@@ -7955,9 +7980,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - pandas-ta-classic: brar, the reference implementation
-          (https://github.com/xgboosted/pandas-ta-classic), which notes that the indicator has no
-          single primary source.
+        - pandas-ta-classic: brar (https://github.com/xgboosted/pandas-ta-classic). The definition is the
+          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
+          has no single primary source; it is a standard indicator on Asian trading platforms.
 
         Also known as: BRAR, AR and BR, popularity and willingness indicators, sentiment indicator.
 
@@ -8089,7 +8114,7 @@ class MomentumTechnicals:
 
         - Johnson, M. "Pretty Good Oscillator." FM Labs technical analysis library
           (https://www.fmlabs.com/reference/default.htm?url=PGO.htm).
-        - pandas-ta-classic: pgo, the reference implementation
+        - Referenced against pandas-ta-classic's pgo
           (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: PGO, Pretty Good Oscillator.
@@ -8222,9 +8247,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - pandas-ta-classic: psl, the reference implementation
-          (https://github.com/xgboosted/pandas-ta-classic), which notes that the indicator has no
-          single primary source.
+        - pandas-ta-classic: psl (https://github.com/xgboosted/pandas-ta-classic). The definition is the
+          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
+          has no single primary source; it is a standard indicator on Asian trading platforms.
 
         Also known as: PSL, PSY, psychological line, psychological index.
 
@@ -8359,7 +8384,7 @@ class MomentumTechnicals:
         - Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill (momentum).
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research
           (Average True Range).
-        - finta: VBM (https://github.com/peerchemist/finta).
+        - finta: VBM (https://github.com/peerchemist/finta), by Peerchemist, which defines the indicator.
 
         Also known as: VBM, volatility-based momentum, volatility adjusted momentum.
 
@@ -8390,7 +8415,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the VBM for each asset in the Toolkit instance.
-        - finta documents this formula, but its code subtracts the earlier close twice
+        - finta documents this formula, but its VBM subtracts the earlier close twice
           (Close.diff(n) — Close.shift(n)) and averages the true range with a simple moving average,
           so its values differ.
         - If `growth` is set to True, the method calculates the growth of the VBM
@@ -8498,9 +8523,9 @@ class MomentumTechnicals:
 
         For more information, see the following sources:
 
-        - pandas-ta-classic: amat, the reference implementation
-          (https://github.com/xgboosted/pandas-ta-classic), after Archer's TradingView script; there
+        - Archer's TradingView script "Archer Moving Averages Trends", which defines the indicator; there
           is no published primary source.
+        - Referenced against pandas-ta-classic's amat (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: AMAT, Archer Moving Averages Trends.
 
@@ -8638,7 +8663,7 @@ class MomentumTechnicals:
 
         - Carter, J.F. (2005). "Mastering the Trade: Proven Techniques for Profiting from Intraday
           and Swing Trading Setups." McGraw-Hill.
-        - pandas-ta-classic: ttm_trend, the reference implementation
+        - Referenced against pandas-ta-classic's ttm_trend
           (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: TTM Trend, TTM_TRND.

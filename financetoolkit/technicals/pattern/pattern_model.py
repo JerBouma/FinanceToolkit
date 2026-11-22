@@ -9,7 +9,7 @@ from financetoolkit.technicals.momentum import momentum_model
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
 
-# TA-Lib's default candle settings (ta_global.c): what a candle part is measured against, over how many
+# TA-Lib's default candle settings (Mario Fortier's): what a candle part is measured against, over how many
 # previous candles it is averaged and the factor applied. "Shadows" averages are halved, as in TA-Lib, so they
 # measure one shadow against the average of a candle's two.
 CANDLE_SETTINGS = {
@@ -26,7 +26,7 @@ CANDLE_SETTINGS = {
     "Equal": ("HighLow", 5, 0.05),
 }
 
-# The candles TA-Lib needs before a pattern's first value (each function's _Lookback).
+# The candles TA-Lib needs before a pattern's first value (its lookback per function).
 PATTERN_LOOKBACK = {
     "Doji": 10,
     "Hammer": 11,
@@ -166,7 +166,7 @@ def get_candlestick_patterns(
     high-wave, long line and short line candle and an inside bar take the colour of the candle
     (1 white, -1 black).
 
-    Sizes are relative, as in TA-Lib (ta_global.c): a real body is long when it is longer than
+    Sizes are relative, as TA-Lib defines them: a real body is long when it is longer than
     the average real body of the 10 previous candles and short when it is shorter; it is a
     doji's body when it is at most 10% of the average high-low range of the 10 previous
     candles; a shadow is very short when it is shorter than 10% of that range, short when it
@@ -249,9 +249,10 @@ def get_candlestick_patterns(
 
     Reference: Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
-    thresholds are TA-Lib's (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c).
+    measurable rules and thresholds are TA-Lib's definitions of these patterns (Mario
+    Fortier), which turn the descriptions of Nison and others into candle-size comparisons.
 
-    TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/);
+    Referenced against TA-Lib's the CDL functions (https://ta-lib.org/functions/);
     pandas-ta-classic: cdl_inside for the inside bar
     (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -603,7 +604,7 @@ def get_heikin_ashi(
     Reference: Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of
     Stocks & Commodities, 22(2).
 
-    TA-Lib: HA, the reference implementation (https://ta-lib.org/functions/);
+    Referenced against TA-Lib's HA (https://ta-lib.org/functions/);
     pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
@@ -664,7 +665,7 @@ def get_williams_fractal(
     Reference: Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize
     Your Profits." Wiley.
 
-    TA-Lib: FRACTAL, the reference implementation (https://ta-lib.org/functions/); finta:
+    Referenced against TA-Lib's FRACTAL (https://ta-lib.org/functions/); finta:
     WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
 
     Notes:

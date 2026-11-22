@@ -3111,6 +3111,33 @@ def test_finite_difference_risk_contributions_match_riskfolio():
         )
 
 
+def test_finite_difference_risk_contributions_add_up_at_tied_drawdowns():
+    # Three drawdowns of 10% each, driven by A, by B and by all three assets: at this kink
+    # the central differences average the one-sided slopes, (0.15, 0.15, 0.05), whose
+    # weighted sum of 0.1167 overshoots the measure, so the contributions are scaled to 0.1.
+    returns = pd.DataFrame(
+        {
+            "A": [-0.3, 0.3, 0.0, 0.0, -0.1, 0.1],
+            "B": [0.0, 0.0, -0.3, 0.3, -0.1, 0.1],
+            "C": [0.0, 0.0, 0.0, 0.0, -0.1, 0.1],
+        }
+    )
+    weights = pd.Series(1 / 3, index=returns.columns)
+    table = optimization_model.get_finite_difference_risk_contributions(
+        weights, returns, "maximum_drawdown"
+    )
+    assert table["Risk Contribution"].sum() == pytest.approx(0.1, rel=1e-6)
+    scale = 0.1 / (0.35 / 3)
+    assert np.allclose(
+        table["Marginal Contribution"], np.array([0.15, 0.15, 0.05]) * scale, rtol=1e-5
+    )
+    assert np.allclose(
+        table["Risk Contribution"],
+        table["Weight"] * table["Marginal Contribution"],
+        rtol=1e-9,
+    )
+
+
 def test_factor_risk_contributions_match_riskfolio():
     returns, _ = _reference_returns()
     factors = _reference_factors()
@@ -3442,6 +3469,21 @@ def test_mean_risk_weights_take_constraints_and_refuse_bad_input():
         optimization_model.get_risk_budgeting_weights(
             returns, "mad", minimum_acceptable_return=0.001
         )
+
+
+def test_risk_budgets_name_unknown_and_missing_assets():
+    returns = _long_short_returns()
+    covariance = returns.cov()
+    budgets = {
+        "not in the portfolio: FOO": pd.Series(1.0, index=[*"ABCDEF", "FOO"]),
+        "without a risk budget: C, D, E, F": pd.Series({"A": 0.5, "B": 0.5}),
+        "not positive: F": pd.Series([1, 1, 1, 1, 1, 0.0], index=list("ABCDEF")),
+    }
+    for message, budget in budgets.items():
+        with pytest.raises(ValueError, match=message):
+            optimization_model.get_risk_parity_weights(covariance, budget)
+        with pytest.raises(ValueError, match=message):
+            optimization_model.get_risk_budgeting_weights(returns, "cvar", budget)
 
 
 def test_critical_line_corners_match_pyportfolioopt():

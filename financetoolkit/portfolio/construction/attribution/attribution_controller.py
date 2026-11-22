@@ -181,8 +181,13 @@ class AttributionConstruction:
         table[numeric] = table[numeric].astype(float)
         return self._round(table, rounding)
 
-    def _get_exposures(self, assets: list[str], by: str) -> dict[str, pd.Series]:
-        """The sector, country or holding exposure of every asset."""
+    def _get_exposures(
+        self, assets: list[str], by: str, alternative: str = ""
+    ) -> dict[str, pd.Series]:
+        """
+        The sector, country or holding exposure of every asset; the alternative is named
+        when the company profiles the sectors and countries of stocks come from are missing.
+        """
         if self._fund_function is None:
             raise ValueError("Fund data is not available for this Toolkit.")
 
@@ -204,7 +209,9 @@ class AttributionConstruction:
                     exposures[asset] = pd.Series({asset: 1.0})
             else:
                 classification = self._get_classification(
-                    stocks, "Sector" if by == "sector" else "Country"
+                    stocks,
+                    "Sector" if by == "sector" else "Country",
+                    alternative,
                 )
                 for asset, value in classification.dropna().items():
                     exposures[asset] = pd.Series({value: 1.0})
@@ -288,7 +295,10 @@ class AttributionConstruction:
         assets = self._get_assets()
         resolved = self._resolve_weights(weights, assets)
         exposure = attribution_model.get_look_through_exposure(
-            resolved, self._get_exposures(assets, by)
+            resolved,
+            self._get_exposures(
+                assets, by, 'look through to the holdings with by="holdings"'
+            ),
         ).to_frame()
 
         if self._benchmark_name and by != "holdings" and self._fund_function:

@@ -2536,11 +2536,15 @@ class AnalysisConstruction:
             equal ones) and the number of Scenarios.
 
         Notes:
-        - The posterior covariance is weighted with the probabilities and the ddof=1
-          correction for weights, 1 / (1 - Σ p_t²) (numpy's cov with aweights, as
-          skfolio), so it equals the sample covariance with equal probabilities; a
-          volatility view holds the variance without that correction, which is
-          Σ p_t² ≈ 1 / T (about 0.1% for daily data) lower.
+        - The posterior covariance is the probability-weighted covariance Σ p_t (r_t - μ)
+          (r_t - μ)' with μ = Σ p_t r_t, without a small-sample correction, the basis on
+          which the views are imposed, so a volatility view comes back exactly. skfolio
+          applies numpy's correction for weights, 1 / (1 - Σ p_t²), on top, which raises
+          the variance by about 1 / T (0.1% for daily data, 3% for 36 monthly returns).
+        - The prior volatility is the sample standard deviation of the returns (ddof=1),
+          as elsewhere in the Finance Toolkit. With equal probabilities the posterior's
+          basis gives a volatility √((T - 1) / T) times the prior's, so without views
+          the two columns differ by that factor.
         - Referenced against skfolio's EntropyPooling: with mean and volatility views the
           probabilities agree to 1e-9; with correlation views the views are met here more
           tightly and the posterior lies at least as close to the prior (a lower relative
@@ -2568,10 +2572,10 @@ class AnalysisConstruction:
 
         |      |   Prior Return |   Posterior Return |   Prior Volatility |   Posterior Volatility |
         |:-----|---------------:|-------------------:|-------------------:|-----------------------:|
-        | AAPL |         0.1932 |             0.05   |             0.2786 |                 0.3152 |
-        | MSFT |         0.2017 |             0.118  |             0.2571 |                 0.3001 |
-        | JNJ  |         0.0987 |             0.0697 |             0.1673 |                 0.1696 |
-        | XOM  |         0.2911 |             0.264  |             0.2702 |                 0.2764 |
+        | AAPL |         0.1932 |             0.05   |             0.2786 |                 0.3151 |
+        | MSFT |         0.2017 |             0.118  |             0.2571 |                 0.3    |
+        | JNJ  |         0.0987 |             0.0698 |             0.1673 |                 0.1696 |
+        | XOM  |         0.2911 |             0.264  |             0.2702 |                 0.2762 |
         """
         outputs = ("moments", "covariance", "probabilities", "summary")
         if output not in outputs:
@@ -2656,7 +2660,7 @@ class AnalysisConstruction:
             )
         else:
             covariance = pd.DataFrame(
-                np.cov(returns.to_numpy(), rowvar=False, aweights=weights),
+                np.cov(returns.to_numpy(), rowvar=False, aweights=weights, bias=True),
                 index=returns.columns,
                 columns=returns.columns,
             )
@@ -2737,7 +2741,10 @@ class AnalysisConstruction:
         - Matches PerformanceAnalytics' to.period.contributions of the daily contributions;
           with given weights these are rebalanced every day (Return.portfolio with
           rebalance_on="days"), not left to drift.
-        - A day on which an asset has no return (it did not trade) is a contribution of 0.
+        - With fixed weights (given, or equal ones) the periods start on the first day on
+          which every asset held has a return, so an asset that was not listed yet does not
+          count as a return of 0, as in get_portfolio_risk_metrics. Within the sample a day
+          on which an asset has no return (it did not trade) is a contribution of 0.
 
         As an example:
 
@@ -2772,7 +2779,8 @@ class AnalysisConstruction:
             )
         resolved = self._get_held_weights(weights, "daily", include_benchmark)
         assets = resolved.index.tolist()
-        if weights is None and self._portfolio_weights:
+        fixed_weights = not (weights is None and self._portfolio_weights)
+        if not fixed_weights:
             assets = self._get_loaded_assets("daily", include_benchmark)
         # The first day of the data has no return, as there is no close before it.
         returns = (
@@ -2781,6 +2789,15 @@ class AnalysisConstruction:
             .loc[self._start_date : self._end_date, assets]
             .dropna(how="all")
         )
+        if fixed_weights:
+            # Fixed weights hold every asset from the first day, which an asset that is not
+            # listed yet cannot be; as in get_portfolio_risk_metrics, the sample starts on the
+            # first day every asset held has a return, rather than counting the days before
+            # its listing as returns of 0. Days without a trade later on stay a return of 0.
+            complete = returns.notna().all(axis=1)
+            if not complete.any():
+                raise ValueError("No day has a return for every asset held.")
+            returns = returns.loc[complete.idxmax() :]
         held = self._get_weights_over_time(weights, "daily", assets, returns.index)
         daily = (held * returns.fillna(0)).loc[:, (held != 0).any()]
         table = attribution_model.get_period_contributions(

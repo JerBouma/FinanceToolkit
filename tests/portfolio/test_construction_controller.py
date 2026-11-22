@@ -1533,6 +1533,13 @@ def test_get_entropy_pooling(recorder, portfolio_module):
         views={"AAPL": 0.05}, volatility_views={"MSFT": 0.3}, rounding=6
     )
     recorder.capture(table)
+    # The posterior covariance is on the basis the views are imposed on, so the volatility
+    # view comes back exactly, on daily as on monthly returns.
+    assert table.loc["MSFT", "Posterior Volatility"] == pytest.approx(0.3, abs=1e-6)
+    monthly = portfolio_module.get_entropy_pooling(
+        volatility_views={"MSFT": 0.3}, period="monthly", rounding=10
+    )
+    assert monthly.loc["MSFT", "Posterior Volatility"] == pytest.approx(0.3, abs=1e-7)
     recorder.capture(
         portfolio_module.get_entropy_pooling(
             views={"AAPL": 0.05}, output="summary", rounding=6
@@ -1681,6 +1688,75 @@ def _synthetic_construction(
     return construction, returns
 
 
+def test_without_company_profiles_the_error_names_the_api_key(monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    calls = []
+    construction._profile_function = lambda: calls.append(1)
+    construction._fund_function = lambda by, assets: None
+    cases = [
+        (
+            lambda: construction.get_black_litterman_weights(views={"A": 0.1}),
+            "market_weights",
+        ),
+        (
+            lambda: construction.get_minimum_variance_weights(
+                sector_bounds={"Technology": (0, 0.4)}
+            ),
+            "minimum_weight and maximum_weight",
+        ),
+        (
+            lambda: construction.get_minimum_variance_weights(
+                country_bounds={"US": (0, 0.4)}
+            ),
+            "minimum_weight and maximum_weight",
+        ),
+        (construction.get_look_through_exposure, 'by="holdings"'),
+    ]
+    for call, alternative in cases:
+        with pytest.raises(ValueError, match="API key") as error:
+            call()
+        assert alternative in str(error.value)
+    # Nothing is cached, so every call asks for the profiles again.
+    assert len(calls) == len(cases)
+    assert construction._profile is None
+    # The alternatives work without the profiles.
+    assert not construction.get_black_litterman_weights(
+        views={"A": 0.1}, market_weights={"A": 1, "B": 1, "C": 1}
+    ).empty
+    assert not construction.get_look_through_exposure(by="holdings").empty
+
+
+def test_return_contributions_start_when_every_asset_held_has_a_return():
+    index = pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    construction, returns = _synthetic_construction(index)
+    # C is listed on the 101st day; B has no trade on one day after that.
+    returns.iloc[:100, 2] = np.nan
+    returns.iloc[150, 1] = np.nan
+    construction._historical_data["daily"] = pd.concat({"Return": returns}, axis=1)
+    table = construction.get_return_contributions(
+        weights={"A": 0.5, "B": 0.3, "C": 0.2}, period="daily"
+    )
+    # The days before C's listing are left out instead of counting as returns of 0.
+    assert table.index[0] == returns.index[100]
+    assert len(table) == len(returns) - 100
+    np.testing.assert_allclose(
+        table["Portfolio"], returns.iloc[100:].fillna(0) @ [0.5, 0.3, 0.2]
+    )
+    assert table.loc[returns.index[150], "B"] == 0
+    # Without C the sample is the whole range.
+    assert (
+        len(
+            construction.get_return_contributions(
+                weights={"A": 0.5, "B": 0.5}, period="daily"
+            )
+        )
+        == len(returns) - 1
+    )
+
+
 def test_a_net_exposure_other_than_one_holds_the_rest_in_cash():
     construction, _ = _synthetic_construction(
         pd.bdate_range("2022-01-03", periods=300).to_period("D")
@@ -1707,6 +1783,28 @@ def test_a_net_exposure_other_than_one_holds_the_rest_in_cash():
             full.loc["Portfolio", "Sharpe Ratio"], rel=1e-6
         )
     assert "Cash" not in full.index
+
+
+def test_a_market_neutral_minimum_risk_portfolio_holds_nothing():
+    construction, _ = _synthetic_construction(
+        pd.bdate_range("2022-01-03", periods=300).to_period("D")
+    )
+    assets = ["A", "B", "C"]
+    neutral = {"minimum_weight": -1.0, "net_exposure": 0.0, "gross_exposure": 2.0}
+    tables = [
+        construction.get_minimum_variance_weights(**neutral),
+        construction.get_mean_risk_weights(risk_measure="mad", **neutral),
+        construction.get_mean_risk_weights(risk_measure="cvar", **neutral),
+        construction.get_distributionally_robust_cvar_weights(**neutral),
+    ]
+    for table in tables:
+        # The least risky market neutral portfolio holds nothing: it has no volatility to
+        # share out, so the risk contributions and the Sharpe ratio are NaN.
+        np.testing.assert_allclose(table.loc[assets, "Weight"], 0, atol=1e-6)
+        assert table.loc["Cash", "Weight"] == pytest.approx(1)
+        assert table.loc["Portfolio", "Volatility"] == pytest.approx(0, abs=1e-9)
+        assert table["Risk Contribution"].isna().all()
+        assert np.isnan(table.loc["Portfolio", "Sharpe Ratio"])
 
 
 def test_the_transaction_cost_is_shown_and_taken_from_the_expected_return():

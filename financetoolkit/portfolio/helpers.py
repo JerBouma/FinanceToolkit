@@ -282,6 +282,41 @@ def get_view_vector(view: str, names: pd.Index) -> np.ndarray:
     return row
 
 
+def get_risk_budget(risk_budget: pd.Series | None, assets: pd.Index) -> np.ndarray:
+    """
+    The share of the risk every asset should contribute, scaled to sum to one, equal
+    shares without a risk budget. A budget that names an asset outside the portfolio, or
+    leaves an asset without a positive budget, is refused with the assets named, rather
+    than silently dropping or optimizing without them.
+
+    Args:
+        risk_budget (pd.Series | None): The risk budget per asset.
+        assets (pd.Index): The assets of the portfolio.
+
+    Returns:
+        np.ndarray: The risk budget per asset, in the order of assets, summing to one.
+    """
+    if risk_budget is None:
+        return np.full(len(assets), 1 / len(assets))
+    unknown = risk_budget.index.difference(assets)
+    budget = risk_budget.reindex(assets).astype(float)
+    problems = [
+        f"{description}: {', '.join(map(str, names))}"
+        for description, names in (
+            ("not in the portfolio", unknown),
+            ("without a risk budget", budget.index[budget.isna()]),
+            ("with a risk budget that is not positive", budget.index[budget <= 0]),
+        )
+        if len(names)
+    ]
+    if problems:
+        raise ValueError(
+            "The risk budget needs a positive share for every asset of the portfolio and "
+            f"no other; assets {'; assets '.join(problems)}."
+        )
+    return (budget / budget.sum()).to_numpy()
+
+
 def get_regularized_covariance(
     covariance: np.ndarray, l2_regularization: float
 ) -> np.ndarray:

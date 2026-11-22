@@ -26,6 +26,7 @@ from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.portfolio.helpers import (
     get_cutting_plane_solution,
     get_regularized_covariance,
+    get_risk_budget,
     get_view_vector,
 )
 from financetoolkit.risk import risk_model
@@ -1960,7 +1961,9 @@ def get_risk_parity_weights(
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         risk_budget (pd.Series | None, optional): The share of the risk each asset should
-            contribute; it is scaled to sum to one. Defaults to None, an equal share each.
+            contribute, positive for every asset; it is scaled to sum to one. A budget for
+            an asset outside the portfolio, or an asset without one, raises a ValueError
+            that names them. Defaults to None, an equal share each.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -1979,14 +1982,7 @@ def get_risk_parity_weights(
     sigma = covariance.to_numpy()
     assets = len(sigma)
 
-    budget = (
-        np.full(assets, 1 / assets)
-        if risk_budget is None
-        else risk_budget.reindex(covariance.index).to_numpy(dtype=float)
-    )
-    if np.any(np.isnan(budget)) or np.any(budget <= 0):
-        raise ValueError("Every asset needs a positive risk budget.")
-    budget = budget / budget.sum()
+    budget = get_risk_budget(risk_budget, covariance.index)
 
     def objective(y):
         return 0.5 * y @ sigma @ y - budget @ np.log(y)
@@ -4746,7 +4742,9 @@ def get_risk_budgeting_weights(
         risk_measure (str, optional): A key of RISK_BUDGETING_MEASURES. Defaults to
             "cvar".
         risk_budget (pd.Series | None, optional): The share of the risk each asset should
-            contribute; it is scaled to sum to one. Defaults to None, an equal share each.
+            contribute, positive for every asset; it is scaled to sum to one. A budget for
+            an asset outside the portfolio, or an asset without one, raises a ValueError
+            that names them. Defaults to None, an equal share each.
         confidence_level (float, optional): The confidence level of the tail measures.
             Defaults to 0.95.
         minimum_acceptable_return (float | str, optional): The threshold of the
@@ -4783,14 +4781,7 @@ def get_risk_budgeting_weights(
         raise ValueError(
             "At least two periods with a return for every asset are needed."
         )
-    budget = (
-        np.full(assets, 1 / assets)
-        if risk_budget is None
-        else risk_budget.reindex(returns.columns).to_numpy(dtype=float)
-    )
-    if np.any(np.isnan(budget)) or np.any(budget <= 0):
-        raise ValueError("Every asset needs a positive risk budget.")
-    budget = budget / budget.sum()
+    budget = get_risk_budget(risk_budget, returns.columns)
 
     constraints = get_weight_constraints(
         returns.columns, minimum_weight, maximum_weight, groups, group_bounds
@@ -6339,7 +6330,7 @@ def get_risk_contributions(
     weights = weights.reindex(covariance.index).fillna(0)
     sigma = covariance.to_numpy()
     volatility = float(np.sqrt(weights @ sigma @ weights))
-    if volatility == 0:
+    if volatility <= ZERO_VOLATILITY_TOLERANCE:
         raise ValueError("The portfolio has no volatility.")
 
     marginal = sigma @ weights.to_numpy() / volatility
@@ -6629,6 +6620,16 @@ def get_finite_difference_risk_contributions(
     The measure is taken of the portfolio's returns, see get_risk_measure; every measure is
     per period (e.g. daily), not annualized.
 
+    Notes:
+        At an optimum several periods often tie (two drawdowns of the same depth, two
+        equally bad realizations), and there the measure has a kink: the central difference
+        averages the slopes on either side, and the contributions no longer add up to the
+        measure. The contributions are therefore scaled so that they add up to the
+        portfolio's measure ρ(w), contribution_i × ρ(w) / Σ contribution_j (whenever that
+        sum is not zero), and the marginal contributions are scaled by the same factor, so
+        that Σ w_i ∂ρ/∂w_i / k = ρ(w) holds for the reported values. Away from a kink the
+        factor is one up to the finite-difference error.
+
     See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
     math/0104190, and Riskfolio-Lib's Risk_Contribution
     (https://github.com/dcajasn/Riskfolio-Lib).
@@ -6662,16 +6663,26 @@ def get_finite_difference_risk_contributions(
     assets = len(weights)
     # Every column holds the weights with one asset's weight moved up or down a step.
     shifts = np.hstack([np.eye(assets), -np.eye(assets)]) * step
-    shifted = weights.to_numpy(dtype=float)[:, np.newaxis] + shifts
+    # The last column holds the weights themselves, for the portfolio's own measure.
+    shifted = weights.to_numpy(dtype=float)[:, np.newaxis] + np.hstack(
+        [shifts, np.zeros((assets, 1))]
+    )
     measures = get_risk_measure(
         pd.DataFrame(returns.to_numpy(dtype=float) @ shifted, index=returns.index),
         risk_measure,
         confidence_level,
     ).to_numpy()
-    marginal = (measures[:assets] - measures[assets:]) / (2 * step)
+    measure = measures[-1]
+    marginal = (measures[:assets] - measures[assets : 2 * assets]) / (2 * step)
     contribution = (
         weights.to_numpy() * marginal / FINITE_DIFFERENCE_RISK_MEASURES[risk_measure]
     )
+    # Where periods tie (a kink of the measure) the central difference averages the left and
+    # right slopes, so the contributions are scaled to add up to the measure itself.
+    if contribution.sum() != 0:
+        scale = measure / contribution.sum()
+        marginal = marginal * scale
+        contribution = contribution * scale
     total = contribution.sum()
     if total == 0:
         raise ValueError(f"The portfolio has no {risk_measure} to decompose.")

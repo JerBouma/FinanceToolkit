@@ -140,6 +140,7 @@ def test_get_loan_payment_follows_the_mortgage_rate(weekly_mortgage_rates):
         "Payment",
         "Total Interest",
         "First Payment Interest",
+        "Change",
     ]
     assert payments["Payment"].iloc[0] == pytest.approx(1611.8552, abs=1e-4)
     assert payments["Payment"].iloc[-1] == pytest.approx(2709.7393, abs=1e-4)
@@ -147,6 +148,9 @@ def test_get_loan_payment_follows_the_mortgage_rate(weekly_mortgage_rates):
     assert payments["First Payment Interest"].iloc[0] == pytest.approx(
         883.3333, abs=1e-4
     )
+    # The Change is relative to the payment at the first date, as in get_affordable_loan.
+    assert payments["Change"].iloc[0] == 0
+    assert payments["Change"].iloc[-1] == pytest.approx(2709.7393 / 1611.8552 - 1)
 
 
 def test_get_affordable_loan_keeps_the_first_payment(weekly_mortgage_rates):

@@ -3045,6 +3045,21 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "get_request",
         lambda url, timeout: type("Response", (), {"content": content})(),
     )
+    # The weekly 30-year rate on a new mortgage: only the surveys dated in 2026 Q2 make its
+    # quarterly average, 6.5%.
+    from financetoolkit.economics.sources import freddie_mac_model
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    surveys = pd.PeriodIndex(
+        ["2026-03-26", "2026-04-02", "2026-05-14", "2026-06-25", "2026-07-02"], freq="D"
+    )
+    monkeypatch.setattr(
+        freddie_mac_model,
+        "get_mortgage_rate_30_year",
+        lambda: pd.DataFrame(
+            {"United States": [0.07, 0.064, 0.065, 0.066, 0.06]}, index=surveys
+        ),
+    )
     economics = Economics(
         start_date="2026-04-01",
         end_date="2026-06-30",
@@ -3069,8 +3084,12 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "5% to 6%",
         "6% and Above",
         "Average Rate",
+        "Market Rate",
+        "Market Rate Gap",
     ]
-    assert buckets.iloc[0].tolist() == [0.192, 0.299, 0.165, 0.12, 0.225, 0.044]
+    assert buckets.iloc[0].tolist() == pytest.approx(
+        [0.192, 0.299, 0.165, 0.12, 0.225, 0.044, 0.065, 0.021]
+    )
     # The shares below 4% and 6% the lock-in is reported with: 49.1% and 77.6%.
     assert lock_in.iloc[0].to_dict() == {
         "Below 3%": 0.192,
@@ -3078,6 +3097,8 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
         "Below 5%": 0.656,
         "Below 6%": 0.776,
         "Average Rate": 0.044,
+        "Market Rate": 0.065,
+        "Market Rate Gap": 0.021,
     }
     assert by_balance.iloc[0]["Below 3%"] == pytest.approx(0.202)
     assert unknown.empty

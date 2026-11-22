@@ -519,6 +519,9 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "denoised_spectral",
         "denoised_shrink",
         "gerber",
+        "jlogo",
+        "geodesic",
+        "regime_adjusted_ew",
     ],
 )
 def test_the_optimizers_take_a_covariance_estimator(
@@ -1263,6 +1266,37 @@ def test_get_covariance_estimate_factor(recorder, portfolio_module, fama_french)
     )
     weights = portfolio_module.get_minimum_variance_weights(
         covariance="factor", rounding=8
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_covariance_estimate_robust(recorder, portfolio_module):
+    for method in (
+        "minimum_covariance_determinant",
+        "jlogo",
+        "geodesic",
+        "regime_adjusted_ew",
+    ):
+        recorder.capture(
+            portfolio_module.get_covariance_estimate(
+                method=method, include_benchmark=True, rounding=8
+            )
+        )
+    recorder.capture(
+        portfolio_module.get_covariance_estimate(
+            method="regime_adjusted_ew", half_life=20, rounding=8
+        )
+    )
+    # With three assets the TMFG links every pair, so j-LoGo is the sample covariance.
+    assert np.allclose(
+        portfolio_module.get_covariance_estimate(
+            method="jlogo", include_benchmark=True, rounding=10
+        ),
+        portfolio_module.get_covariance_estimate(include_benchmark=True, rounding=10),
+    )
+    # The robust estimate is reproducible and feeds the optimizers.
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="minimum_covariance_determinant", period="weekly", rounding=8
     )
     assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
 

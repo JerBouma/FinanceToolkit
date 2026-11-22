@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy import linalg, stats
 from scipy.optimize import minimize
 from scipy.spatial.distance import pdist, squareform
 from scipy.special import logsumexp
@@ -311,6 +312,463 @@ def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.Dat
         correlation * np.outer(volatility, volatility),
         index=returns.columns,
         columns=returns.columns,
+    )
+
+
+def get_minimum_covariance_determinant(
+    returns: pd.DataFrame,
+    support_fraction: float | None = None,
+    reweight: bool = True,
+    seed: int | None = 0,
+) -> pd.DataFrame:
+    """
+    The Minimum Covariance Determinant (MCD) covariance matrix: the covariance of the h
+    periods whose covariance matrix has the smallest determinant, so that the periods far
+    from the bulk of the returns (crashes, squeezes, data errors) do not inflate it. With
+    T periods and N assets, h = ⌈(T + N + 1) / 2⌉ by default, the largest share of
+    outliers the estimator withstands.
+
+    The FastMCD algorithm of Rousseeuw and Van Driessen (1999) finds that subset with
+    C-steps: from a subset with mean μ and covariance S, the next subset is the h periods
+    with the smallest Mahalanobis distance d²_t = (r_t - μ)' S⁻¹ (r_t - μ), which never
+    raises the determinant. It starts from random subsets, keeps the 10 best after two
+    C-steps and iterates those to convergence; above 500 periods it first does so within
+    random parts of about 300 periods and merges the best subsets of each part.
+
+    The raw estimate is then made consistent at the normal distribution and reweighted:
+    the distances are divided by c(N, h / T) with c(N, α) = α / F_(N+2)(χ²_N(α)) (Croux and
+    Haesbroeck, 1999), the periods with a distance below the 97.5% quantile of χ²_N are
+    kept, and their covariance is multiplied by c(N, 0.975).
+
+    This equals scikit-learn's MinCovDet(random_state=seed).fit(returns).covariance_ for the
+    same seed (it draws the random subsets with numpy's RandomState in the same order).
+    With reweight=False it is the raw covariance of the best subset, without the
+    consistency factor, which PyPortfolioOpt's risk_models.min_cov_determinant returns.
+    Both divide the covariances by the number of periods (ddof=0), on which the
+    consistency factors are based, and so does this function.
+
+    See Rousseeuw, P. J. and Van Driessen, K. (1999), "A Fast Algorithm for the Minimum
+    Covariance Determinant Estimator", Technometrics, 41(3), 212-223, and Croux, C. and
+    Haesbroeck, G. (1999), "Influence Function and Efficiency of the Minimum Covariance
+    Determinant Scatter Matrix Estimator", Journal of Multivariate Analysis, 71(2), 161-190.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, at least two assets, without missing
+            values.
+        support_fraction (float | None, optional): The share of the periods h / T in the
+            subset, between 0 and 1. Defaults to None, ⌈(T + N + 1) / 2⌉ periods.
+        reweight (bool, optional): Whether to make the estimate consistent and reweight
+            it. Defaults to True.
+        seed (int | None, optional): The seed of the random subsets, so the same returns
+            give the same estimate. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    data = returns.to_numpy(dtype=float)
+    periods, assets = data.shape
+    if assets < 2:  # noqa: PLR2004
+        raise ValueError(
+            "The minimum covariance determinant needs at least two assets."
+        )
+    if support_fraction is None:
+        size = min(int(np.ceil(0.5 * (periods + assets + 1))), periods)
+    elif 0 < support_fraction <= 1:
+        size = int(support_fraction * periods)
+    else:
+        raise ValueError("The support fraction must lie between 0 and 1.")
+    if size <= assets:
+        raise ValueError(
+            "The minimum covariance determinant needs more periods than assets."
+        )
+    generator = np.random.RandomState(seed)  # noqa: NPY002 (scikit-learn's draws)
+
+    def log_determinant(covariance: np.ndarray) -> float:
+        sign, value = np.linalg.slogdet(covariance)
+        return value if sign > 0 else -np.inf
+
+    def c_steps(sample: np.ndarray, size: int, iterations: int, start=None) -> tuple:
+        # The C-steps of scikit-learn's _c_step, from a random subset or from a location and
+        # covariance; the distances it returns use the covariance before the last step.
+        if start is None:
+            selected = generator.permutation(len(sample))[:size]
+        else:
+            centred = sample - start[0]
+            distance = ((centred @ linalg.pinvh(start[1])) * centred).sum(axis=1)
+            selected = np.argpartition(distance, size - 1)[:size]
+        location = sample[selected].mean(axis=0)
+        covariance = np.cov(sample[selected].T, bias=True)
+        determinant = log_determinant(covariance)
+        precision = linalg.pinvh(covariance)
+        previous = (location, covariance, np.inf)
+        while determinant < previous[2] and iterations > 0 and np.isfinite(determinant):
+            previous = (location, covariance, determinant)
+            precision = linalg.pinvh(covariance)
+            centred = sample - location
+            distance = ((centred @ precision) * centred).sum(axis=1)
+            selected = np.argpartition(distance, size - 1)[:size]
+            location = sample[selected].mean(axis=0)
+            covariance = np.cov(sample[selected].T, bias=True)
+            determinant = log_determinant(covariance)
+            iterations -= 1
+        if (
+            iterations > 0
+            and determinant > previous[2]
+            and not np.isclose(determinant, previous[2])
+        ):
+            location, covariance, determinant = previous
+        centred = sample - location
+        return (
+            location,
+            covariance,
+            determinant,
+            ((centred @ precision) * centred).sum(1),
+        )
+
+    def select(
+        sample: np.ndarray, size: int, starts, keep: int, iterations: int
+    ) -> list:
+        # The `keep` results with the smallest determinant, from random or given starts.
+        if isinstance(starts, int):
+            results = [c_steps(sample, size, iterations) for _ in range(starts)]
+        else:
+            results = [c_steps(sample, size, iterations, start) for start in starts]
+        order = np.argsort([result[2] for result in results])[:keep]
+        return [results[index] for index in order]
+
+    if periods > 500:  # noqa: PLR2004
+        parts = periods // 300
+        part_size = periods // parts
+        shuffle = generator.permutation(periods)
+        part_support = int(np.ceil(part_size * (size / float(periods))))
+        candidates = []
+        for part in range(parts):
+            candidates += select(
+                data[shuffle[part * part_size : (part + 1) * part_size]],
+                part_support,
+                max(10, 500 // parts),
+                10,
+                2,
+            )
+        merged_size = min(1500, periods)
+        selection = generator.permutation(periods)[:merged_size]
+        merged = select(
+            data[selection],
+            int(np.ceil(merged_size * (size / float(periods)))),
+            [result[:2] for result in candidates],
+            10 if periods > 1500 else 1,  # noqa: PLR2004
+            30,
+        )
+        if periods < 1500:  # noqa: PLR2004
+            location, covariance, _, merged_distance = merged[0]
+            distance = np.zeros(periods)
+            distance[selection] = merged_distance
+        else:
+            location, covariance, _, distance = select(
+                data, size, [result[:2] for result in merged], 1, 30
+            )[0]
+    else:
+        best = select(data, size, 30, 10, 2)
+        location, covariance, _, distance = select(
+            data, size, [result[:2] for result in best], 1, 30
+        )[0]
+
+    if reweight:
+        alpha = size / periods
+        distance = distance / (
+            alpha / stats.chi2.cdf(stats.chi2.ppf(alpha, assets), assets + 2)
+        )
+        kept = distance < stats.chi2(assets).isf(0.025)
+        covariance = (
+            np.cov(data[kept].T, bias=True)
+            * 0.975
+            / stats.chi2.cdf(stats.chi2.ppf(0.975, assets), assets + 2)
+        )
+    return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
+
+
+def get_triangulated_maximally_filtered_graph(
+    weights: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The Triangulated Maximally Filtered Graph (TMFG) of a matrix of non-negative weights
+    (such as similarities between assets): a planar graph that keeps the strongest links,
+    3(N - 2) of the N(N - 1) / 2, built from 4-cliques (tetrahedra) joined by 3-cliques
+    (triangles, the separators).
+
+    It starts from the tetrahedron of the four vertices with the largest strength (the
+    sum of their weights above the average weight) and inserts the other vertices one by
+    one: each time the vertex and triangular face with the largest gain (the sum of the
+    weights from the vertex to the three corners of the face) are joined, which turns the
+    face into a separator, adds the 4-clique of the face and the vertex and splits the face
+    into three new ones.
+
+    This is a port of Riskfolio-Lib's PMFG_T2s (DBHT.py, BSD 3-Clause License, Copyright
+    (c) 2020-2026 Dany Cajas, after Tomaso Aste's MATLAB code), with the same order of
+    insertion and the same tie-breaking (the gains rounded to six decimals).
+
+    See Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Network Filtering for Big Data:
+    Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Args:
+        weights (np.ndarray): A symmetric N × N matrix of non-negative weights, N ≥ 4.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The N - 3 4-cliques (rows of four vertex indices)
+        and the N - 4 separators (rows of three vertex indices).
+    """
+    vertices = len(weights)
+    if vertices < 4:  # noqa: PLR2004
+        raise ValueError("The TMFG needs at least four vertices.")
+    strength = np.sum(weights * (weights > np.mean(weights)), axis=1)
+    inserted = list(np.argsort(strength)[::-1][:4])
+    remaining = np.setdiff1d(np.arange(vertices), inserted)
+    first, second, third, fourth = inserted
+    triangles = np.zeros((2 * vertices - 4, 3), dtype=int)
+    triangles[:4] = [
+        [first, second, third],
+        [second, third, fourth],
+        [first, second, fourth],
+        [first, third, fourth],
+    ]
+    separators = np.zeros((vertices - 4, 3), dtype=int)
+    gain = np.zeros((vertices, 2 * vertices - 4))
+    for face in range(4):
+        gain[remaining, face] = np.sum(
+            weights[np.ix_(remaining, triangles[face])], axis=1
+        )
+
+    last = 3
+    for step in range(4, vertices):
+        if len(remaining) == 1:
+            position, face = 0, int(np.argmax(gain[remaining, :]))
+        else:
+            best = np.argmax(gain[remaining, :], axis=0)
+            face = int(np.argmax(np.round(np.max(gain[remaining, :], axis=0), 6)))
+            position = best[face]
+        vertex = remaining[position]
+        remaining = np.delete(remaining, position)
+        inserted.append(vertex)
+        separators[step - 4] = triangles[face]
+        corner_one, corner_two, corner_three = triangles[face]
+        triangles[last + 1] = [corner_one, corner_three, vertex]
+        triangles[last + 2] = [corner_two, corner_three, vertex]
+        triangles[face] = [corner_one, corner_two, vertex]
+        gain[vertex, :] = 0
+        for new_face in (face, last + 1, last + 2):
+            gain[remaining, new_face] = np.sum(
+                weights[np.ix_(remaining, triangles[new_face])], axis=1
+            )
+        last += 2
+
+    cliques = np.vstack(
+        [np.array(inserted[:4]), np.column_stack([separators, inserted[4:]])]
+    ).astype(int)
+    return cliques, separators
+
+
+def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    The j-LoGo covariance matrix: the inverse of the sparse inverse covariance (precision
+    matrix) that the Local-Global (LoGo) method builds on the TMFG of the correlations.
+    Two assets that the planar graph does not link are conditionally independent given
+    the others, so most of the precision matrix is zero and far fewer parameters are
+    estimated than in the full matrix.
+
+    With S the sample covariance (ddof=1) and the TMFG of the similarities 1 - d²_ij =
+    (1 + ρ_ij) / 2 (see get_triangulated_maximally_filtered_graph), the precision matrix is
+    the sum of the local inverses over the 4-cliques C minus those over the separators S:
+
+    - J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ (each inverse added to the rows and columns of its
+      vertices), and Σ = J⁻¹.
+
+    With four or fewer assets the graph links every pair and the estimate is the sample
+    covariance.
+
+    This equals Riskfolio-Lib's covar_matrix(method="jlogo") and its j_LoGo with PMFG_T2s
+    (DBHT.py, BSD 3-Clause License, Copyright (c) 2020-2026 Dany Cajas), of which the
+    graph is a port.
+
+    See Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Parsimonious
+    Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    sample = returns.cov().to_numpy(dtype=float)
+    if len(sample) <= 4:  # noqa: PLR2004
+        return pd.DataFrame(sample, index=returns.columns, columns=returns.columns)
+    correlation = np.corrcoef(returns.to_numpy(dtype=float), rowvar=False)
+    cliques, separators = get_triangulated_maximally_filtered_graph(
+        1 - np.clip((1 - correlation) / 2, 0.0, 1.0)
+    )
+    precision = np.zeros_like(sample)
+    for vertices, sign in [(clique, 1) for clique in cliques] + [
+        (separator, -1) for separator in separators
+    ]:
+        precision[np.ix_(vertices, vertices)] += sign * np.linalg.inv(
+            sample[np.ix_(vertices, vertices)]
+        )
+    return pd.DataFrame(
+        np.linalg.inv(precision), index=returns.columns, columns=returns.columns
+    )
+
+
+def get_geodesic_shrinkage_covariance(
+    returns: pd.DataFrame, shrinkage: float = 0.1, target: str = "scaled_identity"
+) -> pd.DataFrame:
+    """
+    The covariance matrix shrunk towards a target along the geodesic of the positive
+    definite matrices rather than along a straight line. With S the sample covariance
+    (ddof=1), T the target and α the shrinkage intensity:
+
+    - Σ(α) = S^(1/2) (S^(-1/2) T S^(-1/2))^α S^(1/2), so Σ(0) = S and Σ(1) = T.
+    - For the scaled identity T = (tr(S) / N) I, the eigenvectors of S are kept and its
+      eigenvalues interpolated geometrically, λ_i^(1 - α) (tr(S) / N)^α, where linear
+      shrinkage (see get_shrunk_covariance) gives (1 - α) λ_i + α tr(S) / N. The condition
+      number becomes κ(S)^(1 - α), and the estimate stays positive definite for every α.
+    - For the diagonal target T = diag(S), the correlations shrink towards zero, and Σ(α)
+      = B Λ^(1 - α) B' with S V = T V Λ, V' T V = I and B = T V.
+
+    Unlike linear shrinkage, the trace is not kept at intermediate α. A sample covariance
+    that is not positive definite is first replaced by the nearest one (see
+    get_nearest_correlation).
+
+    This equals skfolio's GeodesicShrinkageCovariance on its default EmpiricalCovariance
+    (ddof=1), with the same default intensity of 0.1.
+
+    See Bhatia, R. (2007), Positive Definite Matrices, Princeton University Press, and
+    Musolas, A., Smith, S. T. and Marzouk, Y. (2021), "Geodesically Parameterized
+    Covariance Estimation", SIAM Journal on Matrix Analysis and Applications, 42(2),
+    528-556.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        shrinkage (float, optional): The shrinkage intensity α between 0 (the sample
+            covariance) and 1 (the target). Defaults to 0.1.
+        target (str, optional): The target: "scaled_identity" or "diagonal". Defaults to
+            "scaled_identity".
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    if not 0 <= shrinkage <= 1:
+        raise ValueError("The shrinkage intensity must lie between 0 and 1.")
+    if target not in ("scaled_identity", "diagonal"):
+        raise ValueError("The target must be 'scaled_identity' or 'diagonal'.")
+    sample = returns.cov().to_numpy(dtype=float)
+    try:
+        np.linalg.cholesky(sample)
+    except np.linalg.LinAlgError:
+        volatility = np.sqrt(np.diag(sample))
+        sample = get_nearest_correlation(
+            sample / np.outer(volatility, volatility)
+        ) * np.outer(volatility, volatility)
+    if target == "scaled_identity":
+        end = np.trace(sample) / len(sample) * np.eye(len(sample))
+    else:
+        end = np.diag(np.diag(sample))
+    if shrinkage in (0, 1):
+        covariance = sample if shrinkage == 0 else end
+    elif target == "scaled_identity":
+        eigenvalues, eigenvectors = np.linalg.eigh(sample)
+        eigenvalues = eigenvalues ** (1 - shrinkage) * end[0, 0] ** shrinkage
+        covariance = (eigenvectors * eigenvalues) @ eigenvectors.T
+    else:
+        eigenvalues, eigenvectors = linalg.eigh(sample, end)
+        basis = end @ eigenvectors
+        covariance = (basis * eigenvalues ** (1 - shrinkage)) @ basis.T
+    return pd.DataFrame(
+        (covariance + covariance.T) / 2, index=returns.columns, columns=returns.columns
+    )
+
+
+def get_regime_adjusted_exponential_covariance(
+    returns: pd.DataFrame, half_life: float = 40
+) -> tuple[pd.DataFrame, float]:
+    """
+    The exponentially weighted covariance matrix rescaled by a short-term volatility
+    update (STVU): a multiplier φ that compares the risk the covariance predicted with the
+    risk that followed, so the estimate catches up when volatility changes faster than the
+    exponential average can follow.
+
+    With λ = 2^(-1 / half_life), the returns r_t taken around zero and the recursion
+    started at zero, the covariance after t periods is S_t = λ S_(t-1) + (1 - λ) r_t r_t',
+    divided by 1 - λ^t to remove the bias of the zero start. From period half_life on,
+    every period compares the return of the inverse volatility portfolio w_t (from the
+    covariance before that period) with its predicted volatility:
+
+    - z_t = |w_t' r_t| / √(w_t' S_(t-1) w_t) / √(2 / π), which averages 1 when the risk
+      is predicted well (E|Z| = √(2 / π) for a standard normal Z).
+    - φ is the exponential average of z_t with half-life half_life / 2, started at the
+      first z_t and used once there are half_life / 2 of them, clipped to [0.7, 1.6].
+    - Σ = φ² S_T.
+
+    The volatility of the portfolio is calibrated rather than every direction of the
+    covariance (the Mahalanobis distance), since the directions of the smallest
+    eigenvalues, which an inverse volatility portfolio hardly holds, are estimated worst.
+
+    This equals skfolio's RegimeAdjustedEWCovariance with its defaults (half_life=40, the
+    PORTFOLIO target with inverse volatility weights, the FIRST_MOMENT method, the
+    multiplier clipped to (0.7, 1.6), assume_centered=True, no HAC correction).
+
+    See Paleologo, G. A. (2025), The Elements of Quantitative Investing, Wiley Finance,
+    and Hawkins, D. M. and Maboudou-Tchao, E. M. (2008), "Multivariate Exponentially
+    Weighted Moving Covariance Matrix", Technometrics, 50(2), 155-166.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        half_life (float, optional): The half-life in periods of the exponential weights.
+            Defaults to 40.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the multiplier φ.
+    """
+    if half_life <= 0:
+        raise ValueError("The half-life must be positive.")
+    values = returns.to_numpy(dtype=float)
+    periods, assets = values.shape
+    if periods < max(1, int(half_life)):
+        raise ValueError(
+            f"The regime adjusted covariance needs at least {int(half_life)} periods."
+        )
+    decay = 2 ** (-1 / half_life)
+    regime_decay = 2 ** (-1 / (half_life / 2))
+    covariance = np.zeros((assets, assets))
+    multiplier, comparisons = 0.0, 0
+    for period, row in enumerate(values):
+        if period >= max(1, int(half_life)):
+            predicted = covariance / (1 - decay**period)
+            weights = 1 / np.sqrt(np.maximum(np.diag(predicted), 1e-12))
+            weights = weights / weights.sum()
+            variance = max(weights @ predicted @ weights, 1e-12)
+            surprise = abs(weights @ row) / np.sqrt(variance) / np.sqrt(2 / np.pi)
+            multiplier = (
+                surprise
+                if comparisons == 0
+                else regime_decay * multiplier + (1 - regime_decay) * surprise
+            )
+            comparisons += 1
+        covariance = decay * covariance + (1 - decay) * np.outer(row, row)
+    covariance = covariance / (1 - decay**periods)
+    multiplier = (
+        float(np.clip(multiplier, 0.7, 1.6))
+        if comparisons >= max(1, int(half_life / 2))
+        else 1.0
+    )
+    return (
+        pd.DataFrame(
+            multiplier**2 * (covariance + covariance.T) / 2,
+            index=returns.columns,
+            columns=returns.columns,
+        ),
+        multiplier,
     )
 
 

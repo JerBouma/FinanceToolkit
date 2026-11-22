@@ -179,8 +179,16 @@ class AnalysisConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -342,8 +350,16 @@ class AnalysisConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -718,8 +734,16 @@ class AnalysisConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1142,6 +1166,8 @@ class AnalysisConstruction:
         factor_selection: str = "ols",
         factors: pd.DataFrame | None = None,
         region: str = "United States",
+        half_life: float = 40,
+        seed: int | None = 0,
         correlation: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -1181,6 +1207,29 @@ class AnalysisConstruction:
           every factor, a stepwise selection or a principal components regression
           (factor_selection, see get_factor_loadings), on the periods both the assets and
           the factors have.
+        - "minimum_covariance_determinant": the covariance of the h = ⌈(T + N + 1) / 2⌉
+          periods whose covariance matrix has the smallest determinant, found with the
+          C-steps of FastMCD from random subsets (seed), made consistent at the normal
+          distribution and reweighted: the periods with a Mahalanobis distance below the
+          97.5% quantile of χ²_N are kept and their covariance is multiplied by
+          c = 0.975 / F_(N+2)(χ²_N(0.975)) (Rousseeuw and Van Driessen, 1999; Croux and
+          Haesbroeck, 1999; scikit-learn's MinCovDet). Crashes and data errors barely move
+          it.
+        - "jlogo": Σ = J⁻¹ with J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ the sparse inverse
+          covariance over the 4-cliques C and separators S of the Triangulated Maximally
+          Filtered Graph of the similarities (1 + ρ) / 2, a planar graph with 3(N - 2)
+          links (Massara et al., 2016; Barfuss et al., 2016; Riskfolio-Lib's
+          covar_matrix(method="jlogo")). With four or fewer assets every pair is linked and
+          it is the sample covariance.
+        - "geodesic": Σ = S^(1/2) (S^(-1/2) T S^(-1/2))^δ S^(1/2) with T = (tr(S) / N) I
+          and δ = shrinkage, which keeps the eigenvectors of S and interpolates its
+          eigenvalues geometrically, λ^(1 - δ) (tr(S) / N)^δ (Bhatia, 2007; Musolas et al.,
+          2021; skfolio's GeodesicShrinkageCovariance).
+        - "regime_adjusted_ew": φ² S_T with S_t = λ S_(t-1) + (1 - λ) r_t r_t' (around zero,
+          bias-corrected, λ = 2^(-1 / half_life)) and φ the exponential average (half-life
+          half_life / 2) of |w' r_t| / √(w' S_(t-1) w) / √(2 / π) for the inverse
+          volatility portfolio w, clipped to [0.7, 1.6] (Paleologo, 2025; skfolio's
+          RegimeAdjustedEWCovariance).
 
         For more information, see the following papers:
 
@@ -1196,6 +1245,21 @@ class AnalysisConstruction:
           Stocks and Bonds." Journal of Financial Economics, 33(1), 3-56.
         - Connor, G. (1995). "The Three Types of Factor Models: A Comparison of Their
           Explanatory Power." Financial Analysts Journal, 51(3), 42-46.
+        - Rousseeuw, P. J. and Van Driessen, K. (1999). "A Fast Algorithm for the Minimum
+          Covariance Determinant Estimator." Technometrics, 41(3), 212-223.
+        - Croux, C. and Haesbroeck, G. (1999). "Influence Function and Efficiency of the
+          Minimum Covariance Determinant Scatter Matrix Estimator." Journal of
+          Multivariate Analysis, 71(2), 161-190.
+        - Massara, G. P., Di Matteo, T. and Aste, T. (2016). "Network Filtering for Big
+          Data: Triangulated Maximally Filtered Graph." Journal of Complex Networks, 5(2),
+          161-178.
+        - Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016). "Parsimonious
+          Modeling with Information Filtering Networks." Physical Review E, 94(6), 062306.
+        - Bhatia, R. (2007). "Positive Definite Matrices." Princeton University Press.
+        - Musolas, A., Smith, S. T. and Marzouk, Y. (2021). "Geodesically Parameterized
+          Covariance Estimation." SIAM Journal on Matrix Analysis and Applications, 42(2),
+          528-556.
+        - Paleologo, G. A. (2025). "The Elements of Quantitative Investing." Wiley Finance.
         - skfolio: ShrunkCovariance, GerberCovariance, DenoiseCovariance,
           DetoneCovariance (https://github.com/skfolio/skfolio).
         - PyPortfolioOpt: risk_models.CovarianceShrinkage
@@ -1203,22 +1267,33 @@ class AnalysisConstruction:
         - Riskfolio-Lib: covar_matrix, denoiseCov, gerber_cov_stat0/1/2, risk_factors
           (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: TimeSeriesFactorModel (https://github.com/skfolio/skfolio).
+        - scikit-learn: covariance.MinCovDet
+          (https://scikit-learn.org/stable/modules/generated/sklearn.covariance.MinCovDet.html).
+        - PyPortfolioOpt: risk_models.min_cov_determinant, the raw estimate before the
+          consistency factor and the reweighting (https://github.com/robertmartin8/PyPortfolioOpt).
+        - Riskfolio-Lib: covar_matrix(method="jlogo"), j_LoGo and PMFG_T2s, of which the
+          TMFG here is a port (BSD 3-Clause License, https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: GeodesicShrinkageCovariance, RegimeAdjustedEWCovariance
+          (https://github.com/skfolio/skfolio).
 
         Also known as: covariance estimator, risk model, shrunk covariance, Gerber
         covariance, denoised covariance, detoned correlation, factor covariance, factor
-        risk model.
+        risk model, robust covariance, MCD, FastMCD, TMFG, LoGo, sparse inverse covariance,
+        geodesic shrinkage, regime adjusted EWMA covariance, short-term volatility update.
 
         Args:
             method (str, optional): The estimator: "sample", "ledoit_wolf",
                 "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor", "oas",
                 "shrunk", "semicovariance", "exponential", "denoised",
-                "denoised_spectral", "denoised_shrink", "gerber", "detoned" or "factor".
-                Defaults to "sample".
+                "denoised_spectral", "denoised_shrink", "gerber", "detoned", "factor",
+                "minimum_covariance_determinant", "jlogo", "geodesic" or
+                "regime_adjusted_ew". Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
-            shrinkage (float, optional): The fixed intensity δ of "shrunk", between 0
-                and 1. Defaults to 0.1 (PyPortfolioOpt defaults to 0.2).
+            shrinkage (float, optional): The fixed intensity δ of "shrunk" and "geodesic",
+                between 0 and 1. Defaults to 0.1 (PyPortfolioOpt defaults to 0.2 for
+                "shrunk").
             gerber_threshold (float, optional): The threshold of "gerber" in standard
                 deviations, between 0 and 1. Defaults to 0.5.
             gerber_statistic (int, optional): The Gerber statistic: 0, 1 or 2. Defaults
@@ -1237,6 +1312,12 @@ class AnalysisConstruction:
             region (str, optional): The region of the Fama and French factors: "United
                 States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific
                 ex Japan" or "North America". Defaults to "United States".
+            half_life (float, optional): The half-life in periods of the exponential
+                weights of "regime_adjusted_ew". Defaults to 40, as in skfolio.
+            seed (int | None, optional): The seed of the random subsets of
+                "minimum_covariance_determinant", so the same returns give the same
+                estimate; scikit-learn's random_state gives the same subsets. Defaults
+                to 0.
             correlation (bool, optional): Whether to return the correlation matrix of
                 the estimate instead. Defaults to False.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -1259,6 +1340,14 @@ class AnalysisConstruction:
           multiplied by √(T / (T - 1)) and the covariance by T / (T - 1).
         - "shrunk" shrinks the sample covariance with ddof=1 (as PyPortfolioOpt);
           skfolio, scikit-learn and Riskfolio-Lib shrink the one divided by T.
+        - "minimum_covariance_determinant" divides by the number of periods kept (ddof=0),
+          as scikit-learn does, since the consistency factors assume it. PyPortfolioOpt's
+          min_cov_determinant returns the raw estimate (scikit-learn's fast_mcd), without
+          the consistency factor and the reweighting.
+        - "jlogo", "geodesic" and "regime_adjusted_ew" equal Riskfolio-Lib's and skfolio's
+          estimates. "regime_adjusted_ew" takes the returns around zero, as skfolio does by
+          default, and uses the whole history, where "exponential" takes a span of 180
+          periods.
 
         As an example:
 
@@ -1307,6 +1396,8 @@ class AnalysisConstruction:
                 gerber_threshold,
                 gerber_statistic,
                 denoise_alpha,
+                half_life=half_life,
+                seed=seed,
             )
         if correlation:
             volatility = np.sqrt(np.diag(matrix.to_numpy()))

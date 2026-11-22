@@ -273,31 +273,42 @@ class UtilityToolRegistry:
     # ── Tool methods ──────────────────────────────────────────────────────────
     def list_categories(self) -> str:
         """Finance Toolkit: list the categories of what this server calculates (prices,
-        financial statements, ratios, models, risk, economics) and how many tools and indicators each has.
+        financial statements, ratios, models, risk, economics) and how many tools, indicators
+        and metrics each has.
+
+        An indicator counts as one metric per formula variant it offers through its
+        ``method`` parameter (``get_sharpe_ratio`` with method="smart" or "deflated"), so the
+        metrics are what the server calculates and the indicators what it can be asked for.
 
         Use this first to understand what is available, then call
         ``search_by_category`` with a specific category name.
 
         Returns:
-            str: Markdown table of categories, tool and indicator counts, and
+            str: Markdown table of categories, tool, indicator and metric counts, and
                 descriptions, with the totals.
         """
         index = self._registry.get_tool_index()
-        indicators_per_tool = Counter(
-            entry["tool"] for entry in self._registry.get_indicator_index()
-        )
+        indicators_per_tool: Counter[str] = Counter()
+        metrics_per_tool: Counter[str] = Counter()
+        for entry in self._registry.get_indicator_index():
+            indicators_per_tool[entry["tool"]] += 1
+            metrics_per_tool[entry["tool"]] += max(1, len(entry.get("variants", ())))
         lines = [
-            "| Category | Tools | Indicators | Description |",
-            "| --- | --- | --- | --- |",
+            "| Category | Tools | Indicators | Metrics | Description |",
+            "| --- | --- | --- | --- | --- |",
         ]
         for cat in sorted(index.keys()):
             tools = index.get(cat, [])
             indicators = sum(indicators_per_tool[tool["tool"]] for tool in tools)
+            metrics = sum(metrics_per_tool[tool["tool"]] for tool in tools)
             desc = self._category_descriptions.get(cat, "N/A")
-            lines.append(f"| `{cat}` | {len(tools)} | {indicators} | {desc} |")
+            lines.append(
+                f"| `{cat}` | {len(tools)} | {indicators} | {metrics} | {desc} |"
+            )
         total_tools = sum(len(v) for v in index.values())
         lines.append(
-            f"\n**Total: {sum(indicators_per_tool.values())} indicators in {total_tools} tools**"
+            f"\n**Total: {sum(metrics_per_tool.values())} metrics "
+            f"({sum(indicators_per_tool.values())} indicators) in {total_tools} tools**"
         )
         lines.append(
             "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "

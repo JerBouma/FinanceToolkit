@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -1229,7 +1230,26 @@ class AnalysisConstruction:
     @handle_errors
     def get_covariance_estimate(
         self,
-        method: str = "sample",
+        method: Literal[
+            "sample",
+            "ledoit_wolf",
+            "ledoit_wolf_constant_correlation",
+            "ledoit_wolf_single_factor",
+            "oas",
+            "shrunk",
+            "semicovariance",
+            "exponential",
+            "denoised",
+            "denoised_spectral",
+            "denoised_shrink",
+            "gerber",
+            "detoned",
+            "factor",
+            "minimum_covariance_determinant",
+            "jlogo",
+            "geodesic",
+            "regime_adjusted_ew",
+        ] = "sample",
         period: str = "daily",
         span: int = 180,
         shrinkage: float = 0.1,
@@ -1485,7 +1505,16 @@ class AnalysisConstruction:
     @handle_errors
     def get_codependence_matrix(
         self,
-        method: str = "pearson",
+        method: Literal[
+            "pearson",
+            "spearman",
+            "kendall",
+            "gerber",
+            "detoned",
+            "distance",
+            "mutual_information",
+            "lower_tail",
+        ] = "pearson",
         period: str = "daily",
         covariance: str = "sample",
         distance: bool = False,
@@ -1775,7 +1804,7 @@ class AnalysisConstruction:
     @handle_errors
     def get_coskewness_matrix(
         self,
-        method: str = "sample",
+        method: Literal["sample", "exponential", "semi"] = "sample",
         period: str = "daily",
         span: int = 180,
         standardize: bool = True,
@@ -1872,7 +1901,7 @@ class AnalysisConstruction:
     @handle_errors
     def get_cokurtosis_matrix(
         self,
-        method: str = "sample",
+        method: Literal["sample", "exponential", "semi"] = "sample",
         period: str = "daily",
         span: int = 180,
         standardize: bool = True,

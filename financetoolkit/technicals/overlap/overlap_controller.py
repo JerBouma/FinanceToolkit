@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -1727,7 +1729,7 @@ class OverlapTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        method: str = "typical",
+        method: Literal["average", "median", "typical", "weighted_close"] = "typical",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1871,7 +1873,7 @@ class OverlapTechnicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        method: str = "close",
+        method: Literal["close", "high_low"] = "close",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3199,7 +3201,13 @@ class OverlapTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        method: str = "classic",
+        method: Literal[
+            "classic",
+            "fibonacci",
+            "camarilla",
+            "woodie",
+            "demark",
+        ] = "classic",
         central_pivot_range: bool = False,
         rounding: int | None = None,
         growth: bool = False,

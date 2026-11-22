@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -2136,7 +2138,7 @@ class DistributionRisk:
         self,
         period: str | None = None,
         order: int = 4,
-        method: str = "msd",
+        method: Literal["msd", "mss", "crra"] = "msd",
         risk_aversion: float = 0.5,
         max_weight: float = 0.5,
         within_period: bool = False,

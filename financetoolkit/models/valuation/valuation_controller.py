@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 from functools import cache
+from typing import Literal
 
 import pandas as pd
 
@@ -1277,7 +1278,7 @@ class ValuationModels:
     @handle_errors
     def get_owner_earnings(
         self,
-        method: str = "total",
+        method: Literal["total", "greenwald"] = "total",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,

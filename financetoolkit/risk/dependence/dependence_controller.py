@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import itertools
 from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -131,7 +132,7 @@ class DependenceRisk:
         period: str | None = None,
         column: str = "Return",
         q: float = 0.95,
-        method: str = "empirical",
+        method: Literal["empirical", "gaussian", "student-t"] = "empirical",
         dof: float = 4.0,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,

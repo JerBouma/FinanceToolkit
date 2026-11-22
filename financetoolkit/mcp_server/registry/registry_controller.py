@@ -1,8 +1,8 @@
 """
 Dynamic tool registration for the Finance Toolkit MCP Server — Router Pattern.
 
-Consolidates 900+ individual methods into categorical master tools, each
-accepting an indicator parameter (Literal enum) that routes to the
+Consolidates the indicators (900+ metrics with their method= variants) into categorical
+master tools, each accepting an indicator parameter (Literal enum) that routes to the
 correct underlying method.
 """
 
@@ -1100,6 +1100,48 @@ def _describe_disputed_default(per_method: dict[str, Any]) -> str:
     return " ".join(sentences)
 
 
+def _formula_variants(method: Any) -> tuple[Any, ...]:
+    """
+    Return the formula variants of an indicator: the values of its ``method`` parameter
+    when that parameter is typed ``Literal[...]`` (``method: Literal["standard", "smart"]``),
+    also inside an Optional or other union. A plain ``str`` method (an interpolation or an
+    estimation option) and the other parameters (``model``, ``distribution``) select no
+    formula variant, so they give none.
+
+    The values are read from the controller's signature rather than from the MCP schema,
+    which turns a Literal into the type of its values.
+
+    Args:
+        method (Any): The controller method of the indicator.
+
+    Returns:
+        tuple[Any, ...]: The values of the Literal, or an empty tuple when the method has
+            no formula variants.
+    """
+    try:
+        parameter = inspect.signature(method).parameters.get("method")
+    except (TypeError, ValueError):
+        return ()
+    if parameter is None:
+        return ()
+
+    annotation = parameter.annotation
+    origin = typing.get_origin(annotation)
+    members = (
+        typing.get_args(annotation)
+        if origin is typing.Union or isinstance(annotation, types.UnionType)
+        else (annotation,)
+    )
+    values = [
+        value
+        for member in members
+        if typing.get_origin(member) is typing.Literal
+        for value in typing.get_args(member)
+    ]
+
+    return tuple(dict.fromkeys(values))
+
+
 def _simplify_annotation(ann: Any) -> Any:
     """Reduce complex union/collection annotations to JSON-schema-compatible scalars.
 
@@ -1114,12 +1156,19 @@ def _simplify_annotation(ann: Any) -> Any:
     - ``float | list | dict[str,float]`` → ``float``
     - ``float | str``                    → ``float | str``
     - ``DataFrame | ndarray | list[list[float]]`` → ``list[list[float]]``
+    - ``Literal["garch", "gjr"]``         → ``str``
     """
     if ann is inspect.Parameter.empty or ann is None:
         return str
 
     origin = typing.get_origin(ann)
     args = typing.get_args(ann)
+
+    # The values a method takes (method: Literal["garch", "gjr", "egarch"]) are those of one
+    # indicator, while the tool's parameter serves every indicator that has it (another
+    # indicator's method="smart"), so the parameter takes the type of the values.
+    if origin is typing.Literal:
+        return type(args[0])
 
     # Bare list[T] → T, except a list of objects (option strategy legs), which has no
     # single-value form.
@@ -1143,10 +1192,13 @@ def _simplify_annotation(ann: Any) -> Any:
 
     has_none = type(None) in args
     scalars: list[Any] = []
-    for a in args:
-        if a is type(None):
+    for member in args:
+        if member is type(None):
             continue
-        a_origin = typing.get_origin(a)
+        a_origin = typing.get_origin(member)
+        a = type(typing.get_args(member)[0]) if a_origin is typing.Literal else member
+        if a_origin is typing.Literal and a in scalars:
+            continue
         # Drop generic collections (list[str], dict[str, float], …)
         if a_origin in (list, dict, set, tuple):
             continue
@@ -1692,8 +1744,9 @@ class ToolRegistry:
         """Return every registered indicator with its tool, summary and aliases.
 
         Returns:
-            list[dict[str, str]]: One entry per indicator with the keys ``tool``,
-                ``indicator``, ``summary`` and ``aliases``.
+            list[dict[str, Any]]: One entry per indicator with the keys ``tool``,
+                ``indicator``, ``variants`` (the values of its formula-selecting ``method``),
+                ``summary`` and ``aliases``.
         """
         return self._indicator_index
 
@@ -3335,13 +3388,15 @@ class ToolRegistry:
         }
 
         # Each indicator by name, the first sentence of its docstring and its aliases, so
-        # search_metrics can point at the indicator itself rather than only its tool.
+        # search_metrics can point at the indicator itself rather than only its tool, and
+        # its formula variants, which search_metric_categories counts as metrics.
         for method_name in group_methods:
             owner = (method_to_cls or {}).get(method_name) or cls
             self._indicator_index.append(
                 {
                     "tool": spec.tool_name,
                     "indicator": method_name,
+                    "variants": _formula_variants(getattr(owner, method_name, None)),
                     **_summarize_docstring(
                         inspect.getdoc(getattr(owner, method_name, None)) or ""
                     ),

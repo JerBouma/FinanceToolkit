@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -1230,7 +1232,13 @@ class VolatilityRisk:
         self,
         period: str | None = None,
         rolling: int | None = None,
-        method: str = "close_to_close",
+        method: Literal[
+            "close_to_close",
+            "parkinson",
+            "garman_klass",
+            "rogers_satchell",
+            "yang_zhang",
+        ] = "close_to_close",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2022,7 +2030,7 @@ class VolatilityRisk:
         self,
         period: str | None = None,
         minimum_acceptable_return: float = 0.0,
-        method: str = "volatility",
+        method: Literal["volatility", "variability"] = "volatility",
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,

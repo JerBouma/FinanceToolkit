@@ -58,27 +58,63 @@ def test_the_search_tools_say_they_belong_to_the_finance_toolkit():
 
 
 def test_the_categories_count_the_indicators_of_every_tool():
-    """The total number of indicators is one call, per category and overall."""
-    result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
-    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
-
-    rows = [line.split("|") for line in text.splitlines() if line.startswith("| `")]
-    per_category = {row[1].strip(" `"): int(row[3]) for row in rows}
-    total = int(text.split("**Total: ")[1].split(" indicators")[0])
-
-    assert per_category["ratios"] > 100
-    assert per_category["technicals"] > 100
-    assert all(count > 0 for count in per_category.values())
-    assert sum(per_category.values()) == total
-
-
-def test_every_stated_number_of_metrics_is_the_same():
-    """The README, the package and the server state one total, rounded down to the hundred."""
+    """The total numbers of indicators and metrics are one call, per category and overall."""
     import re
 
     result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
     text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
-    total = int(text.split("**Total: ")[1].split(" indicators")[0])
+
+    rows = [line.split("|") for line in text.splitlines() if line.startswith("| `")]
+    indicators = {row[1].strip(" `"): int(row[3]) for row in rows}
+    metrics = {row[1].strip(" `"): int(row[4]) for row in rows}
+    total = re.search(
+        r"\*\*Total: (\d+) metrics \((\d+) indicators\) in \d+ tools", text
+    )
+
+    assert indicators["ratios"] > 100
+    assert indicators["technicals"] > 100
+    assert all(count > 0 for count in indicators.values())
+    assert all(metrics[name] >= count for name, count in indicators.items())
+    assert sum(metrics.values()) == int(total.group(1))
+    assert sum(indicators.values()) == int(total.group(2))
+    # The Sharpe ratio's formula variants count as metrics, beyond the indicators.
+    assert sum(metrics.values()) > sum(indicators.values())
+
+
+def test_an_indicator_counts_the_values_of_its_formula_selecting_method():
+    """Only a method= typed Literal selects formula variants; a plain str or model= does not."""
+    from typing import Literal
+
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _formula_variants,
+    )
+
+    def variants(method: Literal["standard", "smart", "lo"] = "standard"):
+        pass
+
+    def optional(method: Literal["a", "b"] | None = None):
+        pass
+
+    def text(method: str = "linear"):
+        pass
+
+    def model(model: Literal["garch", "gjr"] = "garch"):
+        pass
+
+    assert _formula_variants(variants) == ("standard", "smart", "lo")
+    assert _formula_variants(optional) == ("a", "b")
+    assert _formula_variants(text) == ()
+    assert _formula_variants(model) == ()
+
+
+def test_every_stated_number_of_metrics_is_the_same():
+    """The README, the package and the server state one total of metrics (the indicators
+    with their formula variants), rounded down to the hundred."""
+    import re
+
+    result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
+    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
+    total = int(text.split("**Total: ")[1].split(" metrics")[0])
     expected = f"{total // 100 * 100}+"
 
     files = [

@@ -14,11 +14,13 @@ from financetoolkit.performance import performance_model
 from financetoolkit.performance.helpers import determine_within_dataset
 from financetoolkit.risk.helpers import (
     determine_within_historical_data,
+    get_days_per_period,
     get_observations_per_year,
     get_risk_free_rate_per_date,
     get_risk_free_rate_per_ticker,
 )
 from financetoolkit.risk.risk_model import (
+    get_downside_deviation,
     get_kurtosis,
     get_max_drawdown,
     get_pain_index,
@@ -359,6 +361,131 @@ class Performance:
 
         return observations_per_year * float(bars_per_day)
 
+    def _get_ratio_observations_per_year(
+        self, period: str, rolling: int | None, columns: pd.Index
+    ) -> pd.Series:
+        """
+        The observations in a year of the returns a Sharpe or Sortino ratio is computed from,
+        per ticker, to annualize it with: the periods in a year for a rolling ratio (the daily
+        observations of each ticker for period="daily", as a ticker trading on weekends has
+        more), the daily (or intraday) returns within each period otherwise.
+
+        Args:
+            period (str): The period of the ratio.
+            rolling (int | None): The rolling window, None for a ratio per period.
+            columns (pd.Index): The tickers of the ratio.
+
+        Returns:
+            pd.Series: The observations per year, indexed by ticker.
+        """
+        if rolling:
+            observations_per_year = (
+                get_observations_per_year(self._daily_returns)
+                if period == "daily"
+                else pd.Series(float(PERIODS_PER_YEAR[period]), index=columns)
+            )
+        else:
+            observations_per_year = self._get_observations_per_year(period)
+
+        return observations_per_year.reindex(columns).fillna(
+            float(PERIODS_PER_YEAR["daily"])
+        )
+
+    def _get_whole_sample_returns(
+        self, benchmark: bool = False
+    ) -> tuple[pd.DataFrame | pd.Series, pd.Series | float]:
+        """
+        The daily returns over the date range and their annualized return over that whole
+        sample (see `performance_model.get_annualized_return`), the inputs of the reference
+        libraries' Calmar, Sterling and Active Premium. Each ticker is annualized with the
+        observations in a year of its own calendar, 252 or 365 for one that trades on
+        weekends.
+
+        Args:
+            benchmark (bool, optional): Whether to return the benchmark instead of the
+                tickers. Defaults to False.
+
+        Returns:
+            tuple: The daily returns and their annualized return.
+        """
+        daily_returns = self._get_column(
+            "daily", "Return", within_period=False, benchmark=benchmark
+        ).loc[self._start_date : self._end_date]
+
+        return daily_returns, performance_model.get_annualized_return(
+            daily_returns, get_observations_per_year(daily_returns)
+        )
+
+    def _get_benchmark_volatility(self, period: str, rolling: int | None) -> pd.Series:
+        """
+        The volatility of the benchmark per period, the systematic risk of the modified Treynor
+        ratio and the alternative Jensen's alpha divided by Beta: the standard deviation of its
+        daily returns within each period scaled to the period (see
+        `financetoolkit.risk.risk_model.get_volatility`), or of its period returns over the
+        rolling window.
+
+        Args:
+            period (str): The period of the ratio.
+            rolling (int | None): The rolling window, None for a ratio per period.
+
+        Returns:
+            pd.Series: The benchmark volatility, indexed by period.
+        """
+        if rolling:
+            return (
+                self._get_column(period, "Return", within_period=False, benchmark=True)
+                .rolling(rolling)
+                .std()
+            )
+
+        return get_volatility(
+            self._get_column("daily", "Return", within_period=False, benchmark=True),
+            period,
+        )
+
+    def _get_downside_deviation(
+        self,
+        period: str,
+        column: str,
+        minimum_acceptable_return: float = 0.0,
+        benchmark: bool = False,
+    ) -> pd.DataFrame | pd.Series:
+        """
+        The downside deviation of the daily returns within each period below a minimum
+        acceptable return, scaled to the period like a volatility: times the square root of
+        the daily returns in a period (252 a year, 365 for a ticker that trades on weekends,
+        see `financetoolkit.risk.helpers.get_days_per_period`).
+
+        Args:
+            period (str): The period to measure the downside deviation over.
+            column (str): "Return" or "Excess Return", the latter for a downside deviation
+                below the risk-free rate.
+            minimum_acceptable_return (float, optional): The minimum acceptable return per
+                day. Defaults to 0.0.
+            benchmark (bool, optional): Whether to return the benchmark instead of the
+                tickers. Defaults to False.
+
+        Returns:
+            pd.DataFrame | pd.Series: The downside deviation per period (and ticker).
+        """
+        within_returns = self._get_column(
+            period, column, within_period=True, benchmark=benchmark
+        )
+        downside_deviation = get_downside_deviation(
+            within_returns.to_frame() if benchmark else within_returns,
+            minimum_acceptable_return,
+        )
+        # The calendar of each ticker, which the daily returns hold.
+        days_per_period = get_days_per_period(
+            self._get_column(
+                "daily", "Return", within_period=False, benchmark=benchmark
+            ),
+            period,
+        )
+        downside_deviation = downside_deviation * np.sqrt(days_per_period)
+
+        return downside_deviation.iloc[:, 0] if benchmark else downside_deviation
+
     def _get_within_historical_data(self, period: str) -> pd.DataFrame:
         """
         The within-period historical data for `period`, with the one impossible
@@ -456,13 +583,13 @@ class Performance:
 
         Which returns:
 
-        |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Safety-First Ratio |   Sortino Ratio |   Upside Potential Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Pain Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
-        |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|---------------------:|----------------:|-------------------------:|--------------------------:|---------------:|-----------------:|--------------:|-------------:|--------------:|--------------:|---------------------:|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
-        | 2022 |  -0.0823 | 1.3027 |  -0.2457 |          -0.0184 |         -0.2253 |        -0.0483 |              -0.0431 |         -0.0676 |                   0.5071 |                   -1.7999 |        -0.87   |          -1.067  |       -0.1136 |      -1.9984 |        0.8941 |       -0.0521 |              -0.1059 |     0.4781 |                 1.3037 |                   1.3243 |    -0.1699 |           0.0115 |             -0.025  |           -0.1106 |       -0.4074 |         1.0649 |   -0.264  |         -0.2935 |
-        | 2023 |   0.2283 | 1.1139 |   0.2871 |           0.203  |          0.4045 |         0.1191 |               0.1312 |          0.1843 |                   0.6867 |                    8.175  |         3.282  |           3.3708 |        0.517  |      12.346  |        1.4108 |        0.1286 |               0.4108 |     0.588  |                 1.1755 |                   0.9847 |     0.3297 |           0.009  |              0.0797 |            1.4414 |        1.0738 |         1.0942 |    0.4901 |          0.4505 |
-        | 2024 |   0.0582 | 0.9687 |   0.2424 |           0.0647 |          0.2732 |         0.0701 |               0.0815 |          0.1072 |                   0.6117 |                    4.1633 |         1.9997 |           1.971  |        0.2623 |       5.4831 |        1.251  |        0.0767 |               0.251  |     0.504  |                 1.1048 |                   1.0687 |     0.1891 |           0.0121 |              0.0208 |            0.3379 |        0.5637 |         1.1444 |    0.3071 |          0.2646 |
-        | 2025 |  -0.0867 | 1.2551 |   0.2114 |          -0.1209 |          0.0379 |         0.0189 |               0.027  |          0.0283 |                   0.4827 |                    0.3943 |         0.2913 |           0.4451 |        0.0249 |       0.4983 |        1.0903 |        0.0187 |               0.0903 |     0.472  |                 1.015  |                   1.1072 |     0.0715 |           0.0139 |             -0.0126 |           -0.5667 |        0.0659 |         1.0731 |    0.0905 |          0.0476 |
-        | 2021 | nan      | 1.3195 | nan      |         nan      |        nan      |         0.0858 |               0.0894 |          0.1289 |                   0.642  |                  nan      |       nan      |         nan      |      nan      |     nan      |        1.2629 |        0.0942 |               0.2629 |     0.494  |                 1.3706 |                   1.4316 |   nan      |           0.0118 |              0.0267 |          nan      |      nan      |         0.9961 |    0.3806 |          0.3663 |
+        |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Safety-First Ratio |   Sortino Ratio |   Upside Potential Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Pain Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   d Ratio |   Prospect Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Omega Excess Return |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
+        |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|---------------------:|----------------:|-------------------------:|--------------------------:|---------------:|-----------------:|--------------:|-------------:|--------------:|--------------:|---------------------:|----------:|-----------------:|-----------:|-----------------------:|-------------------------:|-----------:|----------------------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
+        | 2022 |  -0.0823 | 1.3027 |  -0.2457 |          -0.0184 |         -0.2253 |        -0.0483 |              -0.0431 |         -0.0676 |                   0.5071 |                   -1.7999 |        -0.87   |          -1.067  |       -0.1136 |      -1.9984 |        0.8941 |       -0.0521 |              -0.1059 |    1.2511 |          -0.7774 |     0.4781 |                 1.3037 |                   1.3243 |    -0.1699 |               -0.3974 |           0.0115 |             -0.025  |           -0.1106 |       -0.4074 |         1.0649 |   -0.264  |         -0.2935 |
+        | 2023 |   0.2283 | 1.1139 |   0.2871 |           0.203  |          0.4045 |         0.1191 |               0.1312 |          0.1843 |                   0.6867 |                    8.175  |         3.282  |           3.3708 |        0.517  |      12.346  |        1.4108 |        0.1286 |               0.4108 |    0.5519 |          -0.4187 |     0.588  |                 1.1755 |                   0.9847 |     0.3297 |                0.4572 |           0.009  |              0.0797 |            1.4414 |        1.0738 |         1.0942 |    0.4901 |          0.4505 |
+        | 2024 |   0.0582 | 0.9687 |   0.2424 |           0.0647 |          0.2732 |         0.0701 |               0.0815 |          0.1072 |                   0.6117 |                    4.1633 |         1.9997 |           1.971  |        0.2623 |       5.4831 |        1.251  |        0.0767 |               0.251  |    0.6136 |          -0.5007 |     0.504  |                 1.1048 |                   1.0687 |     0.1891 |                0.2688 |           0.0121 |              0.0208 |            0.3379 |        0.5637 |         1.1444 |    0.3071 |          0.2646 |
+        | 2025 |  -0.0867 | 1.2551 |   0.2114 |          -0.1209 |          0.0379 |         0.0189 |               0.027  |          0.0283 |                   0.4827 |                    0.3943 |         0.2913 |           0.4451 |        0.0249 |       0.4983 |        1.0903 |        0.0187 |               0.0903 |    0.8331 |          -0.5231 |     0.472  |                 1.015  |                   1.1072 |     0.0715 |                0.0073 |           0.0139 |             -0.0126 |           -0.5667 |        0.0659 |         1.0731 |    0.0905 |          0.0476 |
+        | 2021 | nan      | 1.3195 | nan      |         nan      |        nan      |         0.0858 |               0.0894 |          0.1289 |                   0.642  |                  nan      |       nan      |         nan      |      nan      |     nan      |        1.2629 |        0.0942 |               0.2629 |    0.6913 |          -0.5054 |     0.494  |                 1.3706 |                   1.4316 |   nan      |              nan      |           0.0118 |              0.0267 |          nan      |      nan      |         0.9961 |    0.3806 |          0.3663 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding is not None else self._rounding
@@ -587,6 +714,20 @@ class Performance:
                 lag=lag,
                 standardize=standardize,
             ),
+            "d Ratio": self.get_d_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Prospect Ratio": self.get_prospect_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
             "Win Rate": self.get_win_rate(
                 period=period,
                 rounding=rounding,
@@ -609,6 +750,13 @@ class Performance:
                 standardize=standardize,
             ),
             "M2 Ratio": self.get_m2_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Omega Excess Return": self.get_omega_excess_return(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -2171,6 +2319,7 @@ class Performance:
         period: str | None = None,
         show_full_results: bool = False,
         rolling: int | None = None,
+        method: str = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2186,9 +2335,26 @@ class Performance:
 
             - Alpha = Asset's Actual Return — Benchmark's Actual Return
 
+        With method="annualized" it is the Active Premium (or annualized active return) of Bacon
+        (2008) instead, one value per ticker over the whole date range:
+
+            - Active Premium = Annualized Return of the Asset − Annualized Return of the Benchmark
+            - Annualized Return = PRODUCT(1 + Daily Return) ^ (Observations per Year / N) − 1
+
+        Where N is the number of daily returns and the observations per year are 252 (365 for a
+        ticker that trades on weekends, such as a cryptocurrency). The benchmark is annualized over
+        the dates from the first to the last return of each ticker, so a ticker listed later is
+        compared over its own history.
+
         See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
 
-        Also known as: excess return, outperformance, active return.
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - PerformanceAnalytics: ActivePremium (ActiveReturn) (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: excess return, outperformance, active return, active premium.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -2198,6 +2364,10 @@ class Performance:
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Alpha is calculated as the rolling mean excess return over this many periods across
             the full return history instead of per `period`. Defaults to None.
+            method (str, optional): "standard" for the difference of the returns of each period, or
+            "annualized" for the Active Premium, the difference of the annualized returns over the
+            whole date range, one value per ticker (`period` and `rolling` are then not used).
+            Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2211,10 +2381,15 @@ class Performance:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Alpha values.
+            pd.DataFrame: Alpha values. With method="annualized" a Series with the Active Premium per
+            ticker, or with show_full_results=True a DataFrame with the annualized return of each
+            ticker and of the benchmark next to it.
 
         Notes:
         - The method retrieves historical data and calculates the Alpha for each asset in the Toolkit instance.
+        - method="annualized" equals PerformanceAnalytics' ActivePremium on the daily returns (252 observations
+        a year). PerformanceAnalytics compares on the dates both have a return; the Toolkit annualizes each on
+        its own calendar within the ticker's history, so a cryptocurrency keeps its weekend returns.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2242,6 +2417,53 @@ class Performance:
         | 2024   |  0.1474 |  0.4911 | -0.2715 |
         | 2025   | -0.2311 |  0.0677 | -0.4221 |
         """
+        if method not in ("standard", "annualized"):
+            raise ValueError("Method must be standard or annualized.")
+
+        if method == "annualized":
+            daily_returns, annualized_return = self._get_whole_sample_returns()
+            benchmark_daily_returns, _ = self._get_whole_sample_returns(benchmark=True)
+            benchmark_observations_per_year = get_observations_per_year(
+                benchmark_daily_returns
+            )
+
+            # The benchmark over the history of each ticker.
+            benchmark_annualized_return = pd.Series(
+                {
+                    ticker: performance_model.get_annualized_return(
+                        benchmark_daily_returns.loc[
+                            daily_returns[ticker]
+                            .first_valid_index() : daily_returns[ticker]
+                            .last_valid_index()
+                        ],
+                        benchmark_observations_per_year,
+                    )
+                    for ticker in daily_returns.columns
+                },
+                dtype=float,
+            )
+            active_premium = annualized_return - benchmark_annualized_return
+
+            if show_full_results:
+                active_premium = pd.concat(
+                    {
+                        "Annualized Return": annualized_return,
+                        "Benchmark Annualized Return": benchmark_annualized_return,
+                        "Active Premium": active_premium,
+                    },
+                    axis=1,
+                )
+
+            return finalize_dataset(
+                dataset=active_premium,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                rounding=rounding,
+                # One number per ticker over the whole date range, with no dates to slice.
+                apply_slice=False,
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=False)
         benchmark_returns = self._get_column(
@@ -2421,6 +2643,7 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        modified: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2438,7 +2661,25 @@ class Performance:
 
         - Treynor Ratio = (Portfolio's Return — Risk-Free Rate) / Portfolio Beta
 
+        The modified Treynor ratio of Bacon (2008) divides by the systematic risk instead, Beta times
+        the volatility of the benchmark, which expresses the excess return per unit of market-driven
+        volatility like a Sharpe ratio:
+
+        - Modified Treynor Ratio = (Portfolio's Return — Risk-Free Rate) / (Portfolio Beta × Benchmark Volatility)
+
+        Where the benchmark volatility is the standard deviation of its daily returns within the
+        period scaled to the period (SQRT(252) for a year), or the standard deviation of its returns
+        over the rolling window.
+
         See definition: https://en.wikipedia.org/wiki/Treynor_ratio
+
+        For more information, see the following sources:
+
+        - Treynor, J.L. (1965). "How to Rate Management of Investment Funds." Harvard Business
+        Review, 43(1), 63-75.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 77.
+        - PerformanceAnalytics: TreynorRatio (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: reward-to-volatility ratio.
 
@@ -2448,6 +2689,8 @@ class Performance:
             rolling (int, optional): The rolling window size to use for the Beta component of the
             calculation. If set, Beta is estimated over a rolling window of this many periods across
             the full return history instead of per `period`. Defaults to None.
+            modified (bool, optional): Whether to return the modified Treynor ratio, the excess return
+            divided by Beta times the benchmark volatility. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2467,6 +2710,9 @@ class Performance:
         - Daily Treynor Ratio is not an option as the standard deviation for 1 day is close to zero. Therefore,
         it does not give any useful insights.
         - The method retrieves historical data and calculates the TR for each asset in the Toolkit instance.
+        - PerformanceAnalytics' TreynorRatio annualizes the excess return over the whole sample and estimates
+        Beta on excess returns; the Toolkit takes the return and Beta of each period (Beta on the daily returns
+        within it). The modified ratio follows the same formula.
         - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
         textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
         the Toolkit uses when initialised with risk_free_rate="13w".
@@ -2520,7 +2766,10 @@ class Performance:
         risk_free_rate = self._risk_free_rate_data[period]
 
         treynor_ratio = performance_model.get_treynor_ratio(
-            period_returns, risk_free_rate, beta
+            period_returns,
+            risk_free_rate,
+            beta,
+            self._get_benchmark_volatility(period, rolling) if modified else None,
         )
 
         return finalize_dataset(
@@ -2594,8 +2843,19 @@ class Performance:
 
         The plain Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
         assuming Gaussian, i.i.d. returns and ignoring how much uncertainty surrounds the estimate
-        itself. The `method` parameter selects one of four corrections for that, each keeping the
+        itself. The `method` parameter selects one of five corrections for that, each keeping the
         same excess returns and therefore the same underlying Sharpe ratio as its starting point:
+
+        - `"smart"` — the Smart Sharpe ratio of quantstats, which divides the Sharpe ratio by an
+        autocorrelation penalty so that serially correlated returns (whose standard deviation
+        understates the risk over several periods) no longer flatter it:
+
+            - Smart Sharpe Ratio = SR / SQRT( 1 + 2 · Σ_{k=1}^{n−1} ((n − k) / n) · |ρ|^k )
+
+        where n is the number of excess returns and ρ their first order autocorrelation (see
+        `performance_model.get_autocorrelation_penalty`). It is a simplification of `"lo"`, which
+        uses the autocorrelation at every lag rather than powers of the first one, and unlike
+        `"lo"` it is not annualized unless annualize=True.
 
         - `"lo"` — the annualized Sharpe ratio of Lo (2002), which corrects the annualization for
         serially correlated returns. SQRT(q) * SR assumes independent returns; with
@@ -2674,10 +2934,11 @@ class Performance:
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
             Defaults to None, which calculates the Sharpe ratio within each period.
-            method (str, optional): Which Sharpe ratio to calculate, one of "standard", "lo",
+            method (str, optional): Which Sharpe ratio to calculate, one of "standard", "smart", "lo",
             "adjusted", "probabilistic" or "deflated", as described above. Defaults to "standard".
             benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
             (SR*) to test the observed Sharpe ratio against. Only used when method="probabilistic".
+            It is a per-observation Sharpe ratio, or an annualized one when annualize=True.
             Defaults to 0.0, i.e. testing whether the strategy has any skill at all above doing nothing.
             trials_window (int, optional): The window size of the auxiliary rolling Sharpe ratio
             series that approximates `Var[SR_trials]` and the default `n_trials`, see above. Only
@@ -2712,9 +2973,12 @@ class Performance:
                 days times the median number of bars per day for the intraday returns within a
                 day (period="daily" with an intraday_period), or the periods in a year for a
                 rolling Sharpe ratio (e.g. 12 for monthly, and the daily observations per year
-                of each ticker for daily). Only for method="standard" and "adjusted", since the
-                probabilistic and deflated methods return probabilities; method="lo" is annualized
-                either way. Defaults to False.
+                of each ticker for daily). This applies to method="standard", "smart" and
+                "adjusted"; method="lo" is annualized either way. The probabilistic and deflated
+                methods return probabilities, which do not depend on the time scale as long as the
+                observed and the benchmark Sharpe ratio share it (Bailey and López de Prado, 2012),
+                so annualize=True returns the same probability; for method="probabilistic" it reads
+                `benchmark_sharpe_ratio` as an annualized Sharpe ratio. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2737,6 +3001,9 @@ class Performance:
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
         - `get_sharpe_ratio(method="probabilistic")` returns the probability that each Sharpe ratio is genuine,
         i.e. above `benchmark_sharpe_ratio` once the sample length, skewness and kurtosis are accounted for.
+        - method="smart" equals quantstats' smart_sharpe (stats.smart_sharpe, https://github.com/ranaroussi/quantstats)
+        on the same excess returns; quantstats returns a penalty of 1 where the autocorrelation is undefined
+        (fewer than two returns, or returns without variation), the Toolkit NaN.
 
         As an example:
 
@@ -2764,15 +3031,16 @@ class Performance:
         | 2024   |  1.5037 | -0.811  |  1.3751 |   1.666  |
         | 2025   |  0.7247 |  0.0591 |  2.3919 |  -0.0457 |
         """
-        if method not in ("standard", "lo", "adjusted", "probabilistic", "deflated"):
+        if method not in (
+            "standard",
+            "smart",
+            "lo",
+            "adjusted",
+            "probabilistic",
+            "deflated",
+        ):
             raise ValueError(
-                "Method must be standard, lo, adjusted, probabilistic, or deflated."
-            )
-
-        if annualize and method in ("probabilistic", "deflated"):
-            raise ValueError(
-                "Only a standard or adjusted Sharpe ratio can be annualized, since the "
-                "probabilistic and deflated ones are probabilities."
+                "Method must be standard, smart, lo, adjusted, probabilistic, or deflated."
             )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -2795,26 +3063,20 @@ class Performance:
             )
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
-        # The observations in a year of the returns the ratio is computed from, per ticker:
-        # the periods in a year for a rolling ratio (the daily observations of each ticker
-        # for period="daily", as a ticker trading on weekends has more), the daily (or
-        # intraday) returns within each period otherwise.
-        if rolling:
-            observations_per_year = (
-                get_observations_per_year(self._daily_returns)
-                if period == "daily"
-                else pd.Series(
-                    float(PERIODS_PER_YEAR[period]), index=excess_return.columns
-                )
-            )
-        else:
-            observations_per_year = self._get_observations_per_year(period)
-        observations_per_year = observations_per_year.reindex(
-            excess_return.columns
-        ).fillna(float(PERIODS_PER_YEAR["daily"]))
+        observations_per_year = self._get_ratio_observations_per_year(
+            period, rolling, excess_return.columns
+        )
 
         if method == "standard":
             result = sharpe_ratio
+        elif method == "smart":
+            result = sharpe_ratio / (
+                performance_model.get_rolling_autocorrelation_penalty(
+                    excess_return, rolling
+                )
+                if rolling
+                else performance_model.get_autocorrelation_penalty(excess_return)
+            )
         elif method == "lo":
             # Lo's ratio is annualized by construction, with q the observations in a year
             # of each ticker.
@@ -2855,9 +3117,16 @@ class Performance:
                     kurtosis=kurtosis,
                 )
             elif method == "probabilistic":
+                # The probability is the same on any time scale as long as both Sharpe
+                # ratios share it, so an annualized benchmark is taken to the
+                # per-observation scale of the Sharpe ratio of each ticker.
                 result = performance_model.get_probabilistic_sharpe_ratio(
                     sharpe_ratio=sharpe_ratio,
-                    benchmark_sharpe_ratio=benchmark_sharpe_ratio,
+                    benchmark_sharpe_ratio=(
+                        benchmark_sharpe_ratio / np.sqrt(observations_per_year)
+                        if annualize
+                        else benchmark_sharpe_ratio
+                    ),
                     skewness=skewness,
                     kurtosis=kurtosis,
                     n_observations=n_observations,
@@ -2911,7 +3180,9 @@ class Performance:
                     kurtosis=kurtosis,
                 )
 
-        if annualize and method != "lo":
+        if annualize and method in ("standard", "smart", "adjusted"):
+            # The probabilistic and deflated ratios are probabilities, which annualizing
+            # does not change, and Lo's ratio is annualized by construction.
             # The rolling ratio uses the returns of each period, the one per period the
             # observations within it: daily returns, or intraday bars within a day.
             result = result * np.sqrt(
@@ -2938,10 +3209,12 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        method: str = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        annualize: bool = False,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -2977,12 +3250,46 @@ class Performance:
         A period needs at least two observations for a Sortino ratio, with a single one the ratio
         would only show its sign, so such periods are left out.
 
-        As with the Sharpe Ratio, the result is **not annualized**: it is a per-observation
-        ratio, so multiply by SQRT(252), SQRT(52), SQRT(12) or SQRT(4) for daily, weekly,
-        monthly or quarterly returns respectively before comparing against published
-        annualized figures.
+        As with the Sharpe Ratio, the result is **not annualized** by default: it is a
+        per-observation ratio, roughly SQRT(252), SQRT(52), SQRT(12) or SQRT(4) smaller than the
+        annualized figure for daily, weekly, monthly or quarterly returns respectively. Set
+        annualize=True to multiply by that factor.
+
+        The `method` parameter selects a variant of the same ratio:
+
+        - `"smart"` — the Smart Sortino ratio of quantstats, the Sortino ratio divided by the
+        autocorrelation penalty that also gives the Smart Sharpe ratio, so that serially
+        correlated returns no longer flatter it (see `performance_model.get_autocorrelation_penalty`):
+
+            - Smart Sortino Ratio = Sortino Ratio / SQRT( 1 + 2 · Σ_{k=1}^{n−1} ((n − k) / n) · |ρ|^k )
+
+        - `"adjusted"` — the Sortino ratio divided by SQRT(2), as Jack Schwager proposed to make it
+        comparable with the Sharpe ratio: for symmetric returns the downside deviation is about
+        1 / SQRT(2) times the standard deviation, so the plain Sortino ratio is about SQRT(2)
+        times the Sharpe ratio.
+
+        - `"probabilistic"` and `"probabilistic_adjusted"` — the probability that the true Sortino
+        (or adjusted Sortino) ratio is above 0, with the standard error of the Probabilistic Sharpe
+        Ratio of Bailey and López de Prado (2012) applied to it, as quantstats does:
+
+            - PSR = Φ( SoR · sqrt(n − 1) / sqrt(1 − γ₃·SoR + ((γ₄ − 1) / 4)·SoR²) )
+
+        where SoR is the per-observation (adjusted) Sortino ratio, γ₃ the skewness and γ₄ the
+        non-excess kurtosis of the excess returns and n their number. That standard error was
+        derived for the Sharpe ratio; for the Sortino ratio it has no formal justification and
+        is an approximation, so read the probability as indicative.
 
         See definition: https://en.wikipedia.org/wiki/Sortino_ratio
+
+        For more information, see the following sources:
+
+        - Sortino, F.A., & Price, L.N. (1994). "Performance Measurement in a Downside Risk
+        Framework." Journal of Investing, 3(3), 59-64.
+        - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
+        Journal of Risk, 15(2), 3-44.
+        - quantstats: stats.sortino, stats.smart_sortino, stats.adjusted_sortino,
+        stats.probabilistic_sortino_ratio and stats.probabilistic_adjusted_sortino_ratio, the
+        reference implementation of the variants (https://github.com/ranaroussi/quantstats).
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -2990,6 +3297,9 @@ class Performance:
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             the Sortino ratio is calculated over a rolling window of this many periods across the
             full return history instead of per `period`. Defaults to None.
+            method (str, optional): Which Sortino ratio to calculate, one of "standard", "smart",
+            "adjusted", "probabilistic" or "probabilistic_adjusted", as described above.
+            Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -2997,13 +3307,19 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            annualize (bool, optional): Whether to annualize the Sortino ratio, multiplying it by
+                the square root of the number of observations in a year, as `get_sharpe_ratio`
+                does (252 for the daily returns within each period, 365 for a ticker that trades
+                on weekends, or the periods in a year for a rolling ratio). The probabilistic
+                methods return probabilities, which annualizing does not change. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Sortino ratio values.
+            pd.DataFrame: Sortino ratio values. For method="probabilistic" and
+            "probabilistic_adjusted" these are probabilities between 0 and 1.
 
         Notes:
         - period="daily" needs intraday data (initialise the Toolkit with an intraday_period): the ratio per day
@@ -3014,6 +3330,9 @@ class Performance:
         textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
         the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+        - The variants equal quantstats' sortino, smart_sortino, adjusted_sortino and the probabilistic Sortino
+        ratios (with annualize=False) on the same excess returns. quantstats returns a penalty of 1 where the
+        autocorrelation is undefined (fewer than two returns, or returns without variation), the Toolkit NaN.
 
         As an example:
 
@@ -3040,6 +3359,18 @@ class Performance:
         | 2024   |  0.0911 |  0.1066 |  0.1909 |
         | 2025   |  0.0374 |  0.0273 |  0.0726 |
         """
+        if method not in (
+            "standard",
+            "smart",
+            "adjusted",
+            "probabilistic",
+            "probabilistic_adjusted",
+        ):
+            raise ValueError(
+                "Method must be standard, smart, adjusted, probabilistic, or "
+                "probabilistic_adjusted."
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
@@ -3057,6 +3388,41 @@ class Performance:
             )
 
             sortino_ratio = performance_model.get_sortino_ratio(excess_return)
+
+        if method == "smart":
+            sortino_ratio = sortino_ratio / (
+                performance_model.get_rolling_autocorrelation_penalty(
+                    excess_return, rolling
+                )
+                if rolling
+                else performance_model.get_autocorrelation_penalty(excess_return)
+            )
+        elif method in ("adjusted", "probabilistic_adjusted"):
+            sortino_ratio = sortino_ratio / np.sqrt(2)
+
+        if method in ("probabilistic", "probabilistic_adjusted"):
+            if rolling:
+                skewness = get_rolling_skewness(excess_return, rolling)
+                kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+                n_observations = rolling
+            else:
+                skewness = get_skewness(excess_return)
+                kurtosis = get_kurtosis(excess_return, fisher=False)
+                n_observations = excess_return.groupby(level=0).count()
+
+            sortino_ratio = performance_model.get_probabilistic_sharpe_ratio(
+                sharpe_ratio=sortino_ratio,
+                benchmark_sharpe_ratio=0.0,
+                skewness=skewness,
+                kurtosis=kurtosis,
+                n_observations=n_observations,
+            )
+        elif annualize:
+            sortino_ratio = sortino_ratio * np.sqrt(
+                self._get_ratio_observations_per_year(
+                    period, rolling, sortino_ratio.columns
+                ).to_numpy()
+            )
 
         return finalize_dataset(
             dataset=sortino_ratio,
@@ -3479,6 +3845,7 @@ class Performance:
         self,
         period: str | None = None,
         within_period: bool = True,
+        method: str = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3497,7 +3864,25 @@ class Performance:
 
         - Calmar Ratio = Return / |Maximum Drawdown|
 
+        With method="annualized" it is the definition of the reference libraries instead, one value
+        per ticker over the whole date range:
+
+        - Calmar Ratio = Annualized Return / |Maximum Drawdown|
+        - Annualized Return = PRODUCT(1 + Daily Return) ^ (Observations per Year / N) − 1
+
+        Where both are measured over the daily returns of the whole date range, N is their number and
+        the observations per year are 252 (365 for a ticker that trades on weekends, such as a
+        cryptocurrency). Young (1991) measured it over the last 36 months.
+
         See definition: https://en.wikipedia.org/wiki/Calmar_ratio
+
+        For more information, see the following sources:
+
+        - Young, T.W. (1991). "Calmar Ratio: A Smoother Tool." Futures, 20(1), 40.
+        - PerformanceAnalytics: CalmarRatio (https://github.com/braverock/PerformanceAnalytics).
+        - empyrical: calmar_ratio (https://github.com/stefan-jansen/empyrical-reloaded).
+        - quantstats: stats.calmar (https://github.com/ranaroussi/quantstats).
+        - ffn: calc_calmar_ratio (https://github.com/pmorissette/ffn).
 
         Also known as: Drawdown ratio.
 
@@ -3508,6 +3893,10 @@ class Performance:
             specified period or for the entire period. Thus whether to look at the Maximum Drawdown
             within a specific year (if period = 'yearly') or look at the entirety of all years.
             Defaults to True.
+            method (str, optional): "standard" for the ratio per period, or "annualized" for the
+            annualized return over the whole date range divided by the Maximum Drawdown over it,
+            one value per ticker (`period` and `within_period` are then not used). Defaults to
+            "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3521,11 +3910,15 @@ class Performance:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Calmar Ratio values.
+            pd.DataFrame: Calmar Ratio values, or with method="annualized" a Series with one value
+            per ticker.
 
         Notes:
         - The method retrieves historical data and calculates the Calmar Ratio for each asset in
         the Toolkit instance.
+        - method="annualized" equals PerformanceAnalytics' CalmarRatio, empyrical's calmar_ratio and quantstats'
+        calmar on the daily returns (252 observations a year). ffn (calc_calmar_ratio) counts the years of the
+        annualized return in calendar days, which differs slightly.
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -3554,6 +3947,24 @@ class Performance:
         | 2024   |  2.7771 |  0.3321 |  1.1734 |
         | 2025   |  0.8851 |  2.6195 |  1.7646 |
         """
+        if method not in ("standard", "annualized"):
+            raise ValueError("Method must be standard or annualized.")
+
+        if method == "annualized":
+            daily_returns, annualized_return = self._get_whole_sample_returns()
+
+            return finalize_dataset(
+                dataset=performance_model.get_calmar_ratio(
+                    annualized_return, get_max_drawdown(daily_returns)
+                ),
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                rounding=rounding,
+                # One number per ticker over the whole date range, with no dates to slice.
+                apply_slice=False,
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = self._get_column(period, "Return", within_period=within_period)
@@ -3587,6 +3998,7 @@ class Performance:
         period: str | None = None,
         within_period: bool = True,
         adjustment: float = 0.1,
+        method: str = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3608,7 +4020,23 @@ class Performance:
 
         Where the Average Drawdown is the mean drawdown from the running peak over all observations
         on which the asset is below that peak (by default every such day within the period), not the
-        average of the largest drawdowns.
+        average of the largest drawdowns. This is the average drawdown form of Bacon (2008).
+
+        With method="annualized" it is the definition of PerformanceAnalytics (SterlingRatio, after
+        Kestner, 1996) instead, one value per ticker over the whole date range:
+
+        - Sterling Ratio = Annualized Return / (|Maximum Drawdown| + Adjustment)
+        - Annualized Return = PRODUCT(1 + Daily Return) ^ (Observations per Year / N) − 1
+
+        Where both are measured over the daily returns of the whole date range, N is their number and
+        the observations per year are 252 (365 for a ticker that trades on weekends).
+
+        For more information, see the following sources:
+
+        - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 89.
+        - PerformanceAnalytics: SterlingRatio (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: Sterling-Calmar ratio.
 
@@ -3621,6 +4049,10 @@ class Performance:
             Defaults to True.
             adjustment (float, optional): The fixed adjustment added to the Average Drawdown,
             conventionally 0.1 (10%). Defaults to 0.1.
+            method (str, optional): "standard" for the ratio per period with the Average Drawdown,
+            or "annualized" for the annualized return over the whole date range divided by the
+            Maximum Drawdown over it plus the adjustment, one value per ticker (`period` and
+            `within_period` are then not used). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3634,11 +4066,14 @@ class Performance:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Sterling Ratio values.
+            pd.DataFrame: Sterling Ratio values, or with method="annualized" a Series with one value
+            per ticker.
 
         Notes:
         - The method retrieves historical data and calculates the Sterling Ratio for each asset in
         the Toolkit instance.
+        - method="annualized" equals PerformanceAnalytics' SterlingRatio on the daily returns (252
+        observations a year, excess = `adjustment`).
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -3667,6 +4102,24 @@ class Performance:
         | 2024   |  1.307  |  1.1541 | 1.5685 |
         | 2025   |  0.9868 |  0.9407 | 0.6777 |
         """
+        if method not in ("standard", "annualized"):
+            raise ValueError("Method must be standard or annualized.")
+
+        if method == "annualized":
+            daily_returns, annualized_return = self._get_whole_sample_returns()
+
+            return finalize_dataset(
+                dataset=performance_model.get_sterling_ratio(
+                    annualized_return, get_max_drawdown(daily_returns), adjustment
+                ),
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                rounding=rounding,
+                # One number per ticker over the whole date range, with no dates to slice.
+                apply_slice=False,
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = self._get_column(period, "Return", within_period=within_period)
@@ -3699,6 +4152,7 @@ class Performance:
         self,
         period: str | None = None,
         within_period: bool = True,
+        modified: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3722,12 +4176,27 @@ class Performance:
         the time spent under water as well as the depth, so the ratio differs from the version that
         sums one drawdown per episode.
 
+        The modified Burke ratio of Bacon (2008) divides by the root mean square drawdown instead,
+        so that it does not shrink as the number of observations N grows:
+
+        - Modified Burke Ratio = (Return — Risk-Free Rate) / SQRT(SUM(Drawdown_d^2) / N) = Burke Ratio * SQRT(N)
+
+        For more information, see the following sources:
+
+        - Burke, G. (1994). "A Sharper Sharpe Ratio." Futures, 23(3), 56.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, pp. 90-91.
+        - PerformanceAnalytics: BurkeRatio (https://github.com/braverock/PerformanceAnalytics).
+
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
             within_period (bool, optional): Whether to calculate the drawdowns within the specified
             period or for the entire period. Thus whether to look at the drawdowns within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to True.
+            modified (bool, optional): Whether to return the modified Burke ratio, the Burke ratio
+            times the square root of the number of observations the drawdowns are measured over.
+            Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3746,6 +4215,9 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Burke Ratio for each asset in
         the Toolkit instance.
+        - PerformanceAnalytics' BurkeRatio sums one drawdown per episode (consecutive negative returns) and
+        annualizes the return over the whole sample, so its values differ; the modified ratio relates to the
+        plain one by the same factor SQRT(N) in both.
         - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
         textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
         the Toolkit uses when initialised with risk_free_rate="13w".
@@ -3789,7 +4261,13 @@ class Performance:
         )
 
         burke_ratio = performance_model.get_burke_ratio(
-            excess_return, burke_drawdown_measure
+            excess_return,
+            burke_drawdown_measure,
+            n_observations=(
+                (returns.groupby(level=0).count() if within_period else returns.count())
+                if modified
+                else None
+            ),
         )
 
         return finalize_dataset(
@@ -3939,6 +4417,8 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        method: str = "standard",
+        excess: str | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3965,7 +4445,33 @@ class Performance:
         actual return. Requires a `benchmark_ticker` to be set on the Toolkit instance,
         since the benchmark's standard deviation is part of the formula.
 
+        With method="sortino" it is the M2 for Sortino of Bacon (2008), which matches the
+        downside risk of the benchmark instead of its total risk:
+
+            - M2 for Sortino = Risk-Free Rate + Sortino Ratio × Benchmark Downside Deviation
+            - Sortino Ratio = (Portfolio's Return — Risk-Free Rate) / Portfolio Downside Deviation
+
+        Where the downside deviations are those of the daily excess returns within the period below 0
+        (below the risk-free rate), scaled to the period. This equals Bacon's form
+        Return + Sortino Ratio × (Benchmark Downside Deviation − Portfolio Downside Deviation) with
+        the risk-free rate as the minimum acceptable return.
+
+        With `excess` the result is the M2 excess return, the M2 measure above the benchmark's
+        return (Bacon, 2008):
+
+            - Arithmetic M2 Excess Return = M2 − Benchmark Return
+            - Geometric M2 Excess Return = (1 + M2) / (1 + Benchmark Return) − 1
+
         See definition: https://en.wikipedia.org/wiki/Modigliani_risk-adjusted_performance
+
+        For more information, see the following sources:
+
+        - Modigliani, F., & Modigliani, L. (1997). "Risk-Adjusted Performance." Journal of
+        Portfolio Management, 23(2), 45-54.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, pp. 68 and 102-103.
+        - PerformanceAnalytics: MSquared, M2Sortino and MSquaredExcess
+        (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: Modigliani-Modigliani measure, M2, risk-adjusted performance.
 
@@ -3974,7 +4480,11 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             the M2 ratio is calculated over a rolling window of this many periods across the full
-            return history instead of per `period`. Defaults to None.
+            return history instead of per `period`. Only for method="standard". Defaults to None.
+            method (str, optional): "standard" to match the benchmark's total risk, or "sortino" to
+            match its downside risk, as described above. Defaults to "standard".
+            excess (str | None, optional): None for the M2 measure itself, or "arithmetic" or
+            "geometric" for the M2 excess return over the benchmark. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3994,6 +4504,11 @@ class Performance:
         - Daily M2 is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
         not give any useful insights.
         - The method retrieves historical data and calculates the M2 for each asset in the Toolkit instance.
+        - PerformanceAnalytics annualizes over the whole sample and uses population standard deviations;
+        the Toolkit uses the return of each period and sample standard deviations. Its M2Sortino multiplies
+        the per-observation Sortino ratio by the difference of the annualized downside deviations; the
+        Toolkit keeps return, Sortino ratio and downside deviations on the scale of the period, which on
+        PerformanceAnalytics' own example data gives 0.1023 instead of 0.1035.
         - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
         textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
         the Toolkit uses when initialised with risk_free_rate="13w".
@@ -4024,6 +4539,15 @@ class Performance:
         | 2024   |  0.1084 |  0.0923 |
         | 2025   | -0.0718 |  0.0056 |
         """
+        if method not in ("standard", "sortino"):
+            raise ValueError("Method must be standard or sortino.")
+        if excess not in (None, "arithmetic", "geometric"):
+            raise ValueError("Excess must be None, arithmetic or geometric.")
+        if rolling and method == "sortino":
+            raise ValueError(
+                "The M2 for Sortino is calculated per period, not rolling."
+            )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
         period_returns = self._get_column(period, "Return", within_period=False)
         benchmark_period_returns = self._get_column(
@@ -4031,7 +4555,14 @@ class Performance:
         )
         risk_free_rate = self._risk_free_rate_data[period][period_returns.columns]
 
-        if rolling:
+        if method == "sortino":
+            m2_ratio = performance_model.get_m2_ratio(
+                period_returns,
+                risk_free_rate,
+                self._get_downside_deviation(period, "Excess Return"),
+                self._get_downside_deviation(period, "Excess Return", benchmark=True),
+            )
+        elif rolling:
             m2_ratio = performance_model.get_rolling_m2_ratio(
                 period_returns, risk_free_rate, benchmark_period_returns, rolling
             )
@@ -4050,6 +4581,11 @@ class Performance:
                 risk_free_rate,
                 period_standard_deviation,
                 benchmark_standard_deviation,
+            )
+
+        if excess:
+            m2_ratio = performance_model.get_m2_excess_return(
+                m2_ratio, benchmark_period_returns, excess
             )
 
         return finalize_dataset(
@@ -5123,6 +5659,7 @@ class Performance:
         self,
         period: str | None = None,
         within_period: bool = True,
+        minimum_acceptable_return: float = 0.0,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -5140,6 +5677,22 @@ class Performance:
 
         - Gain-to-Pain Ratio = SUM(Returns) / SUM(|Losses|)
 
+        Measured against a minimum acceptable return (MAR) it is the Omega-Sharpe ratio of Kazemi,
+        Schneeweis and Gupta (2004), which is the Omega Ratio (see `get_omega_ratio`) minus 1:
+
+        - Omega-Sharpe Ratio = SUM(Returns − MAR) / SUM(MAX(MAR − Returns, 0)) = Omega Ratio − 1
+
+        For more information, see the following sources:
+
+        - Schwager, J.D. (2012). "Hedge Fund Market Wizards: How Winning Traders Win." John Wiley &
+        Sons.
+        - Kazemi, H., Schneeweis, T., & Gupta, R. (2004). "Omega as a Performance Measure."
+        Journal of Performance Measurement, 8(3), 16-25.
+        - PerformanceAnalytics: OmegaSharpeRatio (https://github.com/braverock/PerformanceAnalytics).
+        - quantstats: stats.gain_to_pain_ratio (https://github.com/ranaroussi/quantstats).
+
+        Also known as: Omega-Sharpe ratio.
+
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
@@ -5147,6 +5700,9 @@ class Performance:
             specified period or for the entire period. Thus whether to look at the Gain-to-Pain Ratio
             within a specific year (if period = 'yearly') or look at the entirety of all years.
             Defaults to True.
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per
+            daily return (per period return with within_period=False), which turns the ratio into
+            the Omega-Sharpe ratio. Defaults to 0.0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5165,6 +5721,8 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Gain-to-Pain Ratio for each asset
         in the Toolkit instance.
+        - Equals quantstats' gain_to_pain_ratio and, with a minimum acceptable return, PerformanceAnalytics'
+        OmegaSharpeRatio on the same returns.
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -5197,7 +5755,9 @@ class Performance:
 
         returns = self._get_column(period, "Return", within_period=within_period)
 
-        gain_to_pain_ratio = performance_model.get_gain_to_pain_ratio(returns)
+        gain_to_pain_ratio = performance_model.get_gain_to_pain_ratio(
+            returns, minimum_acceptable_return
+        )
 
         return finalize_dataset(
             dataset=gain_to_pain_ratio,
@@ -5212,6 +5772,340 @@ class Performance:
             row_slice=True,
             # Over the whole period the ratio is one number per ticker, with no dates to slice.
             apply_slice=within_period,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_d_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the d ratio of an investment portfolio or asset's returns, the size of its losses
+        relative to its gains, each weighted by how often they occur.
+
+        The formula is as follows:
+
+        - d Ratio = (n_d × SUM(|Returns| where Returns < 0)) / (n_u × SUM(Returns where Returns > 0))
+
+        Where n_d is the number of negative and n_u the number of positive daily returns within the
+        period. It is the inverse of the gain-loss (Bernardo-Ledoit) ratio weighted by the frequencies
+        of the losses and gains. Lower is better: 0 means there was no loss at all, and a value
+        above 1 means the losses weigh more than the gains.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 95.
+        - PerformanceAnalytics: DRatio (https://github.com/braverock/PerformanceAnalytics).
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the ratio from the daily returns
+            within each period or from the period returns of the entirety of all periods, one value
+            per ticker. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: d ratio values, or with within_period=False a Series with one value per ticker.
+
+        Notes:
+        - The method retrieves historical data and calculates the d ratio for each asset in the Toolkit instance.
+        - Equals PerformanceAnalytics' DRatio on the same returns. Without a positive return the ratio is NaN,
+        where PerformanceAnalytics reports infinity.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_d_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |     KO |    PEP |   MDLZ |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.6675 | 0.5798 | 0.6805 |
+        | 2022   | 0.7072 | 0.8231 | 0.8447 |
+        | 2023   | 0.9899 | 1.0095 | 0.7533 |
+        | 2024   | 0.7724 | 1.1237 | 1.3704 |
+        | 2025   | 0.8631 | 1.0868 | 1.038  |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+
+        d_ratio = performance_model.get_d_ratio(returns)
+
+        return finalize_dataset(
+            dataset=d_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_prospect_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        minimum_acceptable_return: float = 0.0,
+        loss_aversion: float = 2.25,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Prospect Ratio of an investment portfolio or asset's returns, a Sortino-type
+        ratio in which losses weigh more heavily than gains, following the loss aversion of prospect
+        theory: people feel a loss about 2.25 times as strongly as a gain of the same size.
+
+        The formula is as follows:
+
+        - Prospect Ratio = ((1 / N) × SUM(MAX(Returns, 0) + λ × MIN(Returns, 0)) − MAR) / Downside Deviation
+        - Downside Deviation = SQRT( (1 / N) × SUM( MIN(Returns − MAR, 0)^2 ) )
+
+        Where N is the number of daily returns within the period, MAR the minimum acceptable return
+        per day and λ the loss aversion (2.25, Tversky and Kahneman, 1992). Like the Sortino ratio it
+        is a per-observation ratio, not annualized.
+
+        For more information, see the following sources:
+
+        - Watanabe, Y. (2006). "Is Sharpe Ratio Still Effective?" Journal of Performance Measurement,
+        11(1), 55-66.
+        - Tversky, A., & Kahneman, D. (1992). "Advances in Prospect Theory: Cumulative Representation
+        of Uncertainty." Journal of Risk and Uncertainty, 5(4), 297-323.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 100.
+        - PerformanceAnalytics: ProspectRatio (https://github.com/braverock/PerformanceAnalytics).
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the ratio from the daily returns
+            within each period or from the period returns of the entirety of all periods, one value
+            per ticker. Defaults to True.
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per daily
+            return (per period return with within_period=False). Defaults to 0.0.
+            loss_aversion (float, optional): The weight λ of the losses relative to the gains.
+            Defaults to 2.25.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Prospect Ratio values, or with within_period=False a Series with one value per ticker.
+
+        Notes:
+        - The method retrieves historical data and calculates the Prospect Ratio for each asset in the Toolkit
+        instance.
+        - Equals PerformanceAnalytics' ProspectRatio for a MAR of 0 (the default). For another MAR the
+        PerformanceAnalytics code subtracts MAR / N instead of the MAR from the average return, unlike the
+        formula in its documentation and in Bacon (2008), which the Toolkit follows.
+        - Without a return below the MAR the downside deviation is 0 and the ratio is undefined (NaN).
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "BAC", "WFC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_prospect_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |     JPM |     BAC |     WFC |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -0.5512 | -0.4938 | -0.475  |
+        | 2022   | -0.7413 | -0.7963 | -0.715  |
+        | 2023   | -0.4453 | -0.6298 | -0.5457 |
+        | 2024   | -0.3686 | -0.5124 | -0.4513 |
+        | 2025   | -0.4087 | -0.4111 | -0.4329 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+
+        prospect_ratio = performance_model.get_prospect_ratio(
+            returns, minimum_acceptable_return, loss_aversion
+        )
+
+        return finalize_dataset(
+            dataset=prospect_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_omega_excess_return(
+        self,
+        period: str | None = None,
+        minimum_acceptable_return: float = 0.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Omega Excess Return of an investment portfolio or asset, its return minus a
+        charge for its downside risk, priced at the downside risk of the benchmark.
+
+        The formula is as follows:
+
+        - Omega Excess Return = Return − 3 × β_S × σ_DB^2 = Return − 3 × σ_D × σ_DB
+        - β_S = σ_D / σ_DB
+
+        Where Return is the return of the period, σ_D and σ_DB are the downside deviations of the daily
+        returns of the asset and of the benchmark within the period below the minimum acceptable
+        return, scaled to the period (times SQRT(252) for a year, SQRT(365) for a ticker that trades on
+        weekends), and β_S is the style beta. The higher the downside risk of the asset relative to the
+        benchmark, the more of its return is given up.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 103.
+        - PerformanceAnalytics: OmegaExcessReturn (https://github.com/braverock/PerformanceAnalytics).
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per daily
+            return that the downside deviations are measured below. Defaults to 0.0.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Omega Excess Return values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Omega Excess Return for each asset in the
+        Toolkit instance. It requires a benchmark_ticker.
+        - PerformanceAnalytics' OmegaExcessReturn uses the annualized return and downside deviations over the
+        whole sample; the Toolkit uses those of each period, with the same formula.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["XOM", "CVX", "COP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_omega_excess_return()
+        ```
+
+        Which returns:
+
+        | Date   |     XOM |     CVX |     COP |
+        |:-------|--------:|--------:|--------:|
+        | 2022   |  0.7502 |  0.468  |  0.563  |
+        | 2023   | -0.1068 | -0.18   | -0.0297 |
+        | 2024   |  0.0781 | -0.024  | -0.1731 |
+        | 2025   |  0.0928 |  0.0292 | -0.1214 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        omega_excess_return = performance_model.get_omega_excess_return(
+            self._get_column(period, "Return", within_period=False),
+            self._get_downside_deviation(period, "Return", minimum_acceptable_return),
+            self._get_downside_deviation(
+                period, "Return", minimum_acceptable_return, benchmark=True
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=omega_excess_return,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_errors
@@ -5991,6 +6885,7 @@ class Performance:
         self,
         period: str | None = None,
         rolling: int | None = None,
+        method: str = "appraisal",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -6018,7 +6913,25 @@ class Performance:
         CAPM regression residuals (Asset Excess Return − Beta * Benchmark Excess Return),
         reusing the exact same CAPM regression formula as `get_jensens_alpha`.
 
+        Bacon (2008) scales Jensen's Alpha by two other risk measures as well, which `method`
+        selects:
+
+        - Modified Jensen's Alpha = Jensen's Alpha / Beta
+        - Alternative Jensen's Alpha = Jensen's Alpha / (Beta × Benchmark Volatility)
+
+        Where Beta × Benchmark Volatility is the systematic risk, with the benchmark volatility the
+        standard deviation of its daily returns within the period scaled to the period, or of its
+        returns over the rolling window.
+
         See definition: https://en.wikipedia.org/wiki/Information_ratio
+
+        For more information, see the following sources:
+
+        - Treynor, J.L., & Black, F. (1973). "How to Use Security Analysis to Improve Portfolio
+        Selection." Journal of Business, 46(1), 66-86.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 77.
+        - PerformanceAnalytics: AppraisalRatio (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: Treynor-Black Appraisal Ratio.
 
@@ -6030,6 +6943,9 @@ class Performance:
             across the full return history instead of per `period`, the residuals of each window from
             the regression over that window (see `performance_model.get_rolling_appraisal_ratio`).
             Defaults to None.
+            method (str, optional): "appraisal" for Jensen's Alpha per unit of residual risk,
+            "modified" for Jensen's Alpha per unit of Beta or "alternative" for Jensen's Alpha per
+            unit of systematic risk, as described above. Defaults to "appraisal".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -6051,6 +6967,9 @@ class Performance:
         - The method retrieves historical data and calculates Jensen's Alpha and the CAPM
         regression residuals for each asset in the Toolkit instance, reusing the same Beta and
         CAPM formula as `get_jensens_alpha`.
+        - PerformanceAnalytics' AppraisalRatio annualizes the returns over the whole sample and takes the
+        population standard deviation of the residuals; the Toolkit uses the return, Beta and residuals of
+        each period. The three methods follow the same formulas.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -6078,6 +6997,9 @@ class Performance:
         | 2024   | -1.6888 | -0.1942 |  0.9947 |
         | 2025   | -1.415  | -1.4877 | -0.1032 |
         """
+        if method not in ("appraisal", "modified", "alternative"):
+            raise ValueError("Method must be appraisal, modified, or alternative.")
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if rolling:
@@ -6126,6 +7048,29 @@ class Performance:
         jensens_alpha = performance_model.get_jensens_alpha(
             period_returns, risk_free_rate, beta, benchmark_period_returns
         )
+
+        if method in ("modified", "alternative"):
+            return finalize_dataset(
+                dataset=performance_model.get_modified_jensens_alpha(
+                    jensens_alpha,
+                    beta,
+                    (
+                        self._get_benchmark_volatility(period, rolling)
+                        if method == "alternative"
+                        else None
+                    ),
+                ),
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                standardize=standardize,
+                axis="rows",
+                row_slice=True,
+                dropna=True,
+            )
 
         # A rolling Alpha is divided by the residual standard deviation of the regression
         # over the same window, so each ratio only uses the returns of its own window.

@@ -1230,26 +1230,7 @@ class AnalysisConstruction:
     @handle_errors
     def get_covariance_estimate(
         self,
-        method: Literal[
-            "sample",
-            "ledoit_wolf",
-            "ledoit_wolf_constant_correlation",
-            "ledoit_wolf_single_factor",
-            "oas",
-            "shrunk",
-            "semicovariance",
-            "exponential",
-            "denoised",
-            "denoised_spectral",
-            "denoised_shrink",
-            "gerber",
-            "detoned",
-            "factor",
-            "minimum_covariance_determinant",
-            "jlogo",
-            "geodesic",
-            "regime_adjusted_ew",
-        ] = "sample",
+        method: str = "sample",
         period: str = "daily",
         span: int = 180,
         shrinkage: float = 0.1,
@@ -1804,7 +1785,7 @@ class AnalysisConstruction:
     @handle_errors
     def get_coskewness_matrix(
         self,
-        method: Literal["sample", "exponential", "semi"] = "sample",
+        method: str = "sample",
         period: str = "daily",
         span: int = 180,
         standardize: bool = True,
@@ -1901,7 +1882,7 @@ class AnalysisConstruction:
     @handle_errors
     def get_cokurtosis_matrix(
         self,
-        method: Literal["sample", "exponential", "semi"] = "sample",
+        method: str = "sample",
         period: str = "daily",
         span: int = 180,
         standardize: bool = True,

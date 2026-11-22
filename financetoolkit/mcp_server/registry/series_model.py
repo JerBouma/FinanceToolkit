@@ -54,7 +54,8 @@ def parse_series_references(text: str) -> list[SeriesReference]:
         list[SeriesReference]: The references in the order given.
 
     Raises:
-        ValueError: When a reference does not name an indicator and its tickers or countries.
+        ValueError: When a reference does not name an indicator and its tickers or countries,
+            or gives an argument more than once.
     """
     references = []
     for raw in str(text).replace("\n", ";").split(";"):
@@ -65,11 +66,19 @@ def parse_series_references(text: str) -> list[SeriesReference]:
         # The arguments of the indicator (cumulative=true) are taken out first, so the
         # other parts keep their places; a part that is not a parameter name and a value
         # stays a ticker, country or column.
-        arguments = {
-            match["name"]: match["value"].strip()
-            for part in parts[1:]
-            if (match := ARGUMENT.fullmatch(part))
-        }
+        matches = [match for part in parts[1:] if (match := ARGUMENT.fullmatch(part))]
+        arguments = {match["name"]: match["value"].strip() for match in matches}
+        # A name given twice (window=10:window=20) would otherwise keep the last value.
+        if len(arguments) < len(matches):
+            repeated = [
+                name
+                for name in arguments
+                if sum(match["name"] == name for match in matches) > 1
+            ]
+            raise ValueError(
+                f"The series '{reference}' gives {', '.join(repeated)} more than once; "
+                "give each argument once."
+            )
         parts = [parts[0]] + [
             part for part in parts[1:] if not ARGUMENT.fullmatch(part)
         ]

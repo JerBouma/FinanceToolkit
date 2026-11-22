@@ -309,6 +309,57 @@ def test_a_reference_passes_arguments_to_its_indicator(indicator_answers):
     assert "takes no argument cumulativ" in answer
 
 
+def test_a_reference_takes_only_the_arguments_its_tool_exposes(indicator_answers):
+    series = "rates:get_outstanding_mortgage_rates:United States"
+
+    # Parameters of the method the tool does not offer, or that are not parameters at all.
+    for argument in ("self=1", "rounding=1"):
+        answer = call_econometrics(
+            indicator="get_level_significance", series=f"{series}:{argument}"
+        )
+        assert f"takes no argument {argument.split('=')[0]}" in answer
+    assert "multiple values" not in answer
+
+    # Parameters the econometrics call sets for every reference.
+    answer = call_econometrics(
+        indicator="get_level_significance", series=f"{series}:start_date=2020-01-01"
+    )
+    assert "start_date is set by the tool, pass it as a tool parameter" in answer
+
+    # A name given twice, and one written with a capital.
+    answer = call_econometrics(
+        indicator="get_level_significance",
+        series=f"{series}:cumulative=true:cumulative=false",
+    )
+    assert "gives cumulative more than once" in answer
+    answer = call_econometrics(
+        indicator="get_level_significance", series=f"{series}:Cumulative=true"
+    )
+    assert "Write it as 'cumulative='" in answer
+    assert not indicator_answers
+
+
+def test_the_reason_a_referenced_indicator_has_no_values_is_given(monkeypatch):
+    from financetoolkit.utilities.logger_model import get_logger
+
+    def failing(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        get_logger().error(
+            "get_relative_strength_index could not be calculated. ValueError: Method "
+            "must be one of standard, connors, laguerre, dynamic, intraday, not bogus."
+        )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", failing)
+
+    answer = call_econometrics(
+        indicator="get_rolling_median",
+        series="momentum:get_relative_strength_index:AAPL:method=bogus",
+    )
+
+    assert "Method must be one of standard, connors" in answer
+    assert "returned no values over time" not in answer
+
+
 def test_a_requested_ticker_that_is_the_benchmark_is_kept():
     days = pd.period_range("2026-01-01", periods=3, freq="D")
     # The Toolkit holds SPY, the benchmark, under "Benchmark" rather than as a ticker.

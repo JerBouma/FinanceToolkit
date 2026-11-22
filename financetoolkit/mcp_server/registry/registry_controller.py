@@ -57,6 +57,7 @@ from financetoolkit.mcp_server.registry.coercion_model import (
 from financetoolkit.mcp_server.registry.diagnostics_model import (
     call_input_info,
     capture_call_messages,
+    current_call_messages,
     missing_data_notes,
     summarize_reasons,
 )
@@ -460,6 +461,27 @@ SHORT_WINDOW_DAYS = 3
 # hundreds would hold a worker for minutes on a server many people share.
 MAX_ENTITIES = 50
 
+# The parameters a series reference cannot set itself: the econometrics call sets them for
+# every reference from its own parameters.
+SERIES_TOOL_PARAMETERS = frozenset(
+    {
+        "tickers",
+        "countries",
+        "start_date",
+        "end_date",
+        "quarterly",
+        "benchmark_ticker",
+        "period",
+        "show_daily",
+        "show_columns",
+        "as_series",
+        "deflate_with",
+    }
+)
+
+# A part of a series reference written as an argument with capitals (Window=10).
+MISCASED_ARGUMENT = re.compile(r"\s*(?P<name>[A-Za-z_]\w*)\s*=")
+
 # How alike an unknown indicator name must be to a known one to be read as it.
 NEAR_CERTAIN_MATCH = 0.9
 
@@ -505,7 +527,9 @@ MAXIMUM_DESCRIPTION_VERSIONS = 3
 MAXIMUM_DOCUMENTED_CHARACTERS = 300
 
 
-def _docstring_arguments(docstring: str) -> dict[str, str]:
+def _docstring_arguments(
+    docstring: str, maximum_characters: int | None = MAXIMUM_DOCUMENTED_CHARACTERS
+) -> dict[str, str]:
     """The description of each argument in the Args section of a Google-style docstring.
 
     A "Defaults to ..." sentence is left out: the schema carries the default, and where the
@@ -513,6 +537,9 @@ def _docstring_arguments(docstring: str) -> dict[str, str]:
 
     Args:
         docstring (str): The cleaned docstring.
+        maximum_characters (int | None, optional): The longest description, cut at a word
+            with "..." beyond it. Defaults to MAXIMUM_DOCUMENTED_CHARACTERS; None keeps
+            every description whole.
 
     Returns:
         dict[str, str]: Per argument name, its description on one line.
@@ -542,8 +569,8 @@ def _docstring_arguments(docstring: str) -> dict[str, str]:
         ).strip()
         # Pointers to the rest of the docstring mean nothing in a tool schema.
         text = re.sub(r",? (?:as )?(?:described|listed|see) above", "", text)
-        if len(text) > MAXIMUM_DOCUMENTED_CHARACTERS:
-            text = text[: MAXIMUM_DOCUMENTED_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
+        if maximum_characters and len(text) > maximum_characters:
+            text = text[: maximum_characters - 3].rsplit(" ", 1)[0] + "..."
         if text:
             cleaned[argument] = text if text.endswith((".", "?", "...")) else f"{text}."
 
@@ -732,14 +759,25 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
         if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
         else sentence[: MAXIMUM_SUMMARY_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
     )
-    # The aliases run to the end of their paragraph, over as many lines as the width needs.
+    # The aliases run over as many lines as the width needs, up to the end of their list:
+    # a sentence after it ("Note that ...") is no alias, unless it names more ("The
+    # variants are also known as ...").
     aliases = re.search(
         r"Also known as:\s*(.+?)\s*(?:\n\s*\n|\Z)", docstring, re.DOTALL
+    )
+    sentences = (
+        re.split(r"(?<=[\w)]{2})\.\s+(?=[A-Z`])", " ".join(aliases.group(1).split()))
+        if aliases
+        else []
     )
 
     return {
         "summary": summary,
-        "aliases": " ".join(aliases.group(1).split()).rstrip(".") if aliases else "",
+        "aliases": ". ".join(
+            sentence
+            for position, sentence in enumerate(sentences)
+            if position == 0 or "known as" in sentence
+        ).rstrip("."),
     }
 
 
@@ -1145,6 +1183,34 @@ def _formula_variants(method: Any) -> tuple[Any, ...]:
     ]
 
     return tuple(dict.fromkeys(values))
+
+
+def _method_key(owner: type | None, method_name: str) -> str:
+    """
+    Return what identifies an indicator's method: the class that defines it and its name,
+    so a method inherited by several controllers is one method and two methods that share
+    a name in different classes are two.
+
+    Args:
+        owner (type | None): The controller class the indicator is served from.
+        method_name (str): The name of the indicator.
+
+    Returns:
+        str: The key, e.g. "financetoolkit.etf.etf_controller.ETF.get_profile".
+    """
+    defining = next(
+        (
+            klass
+            for klass in getattr(owner, "__mro__", ())
+            if method_name in vars(klass)
+        ),
+        owner,
+    )
+
+    return (
+        f"{getattr(defining, '__module__', '')}."
+        f"{getattr(defining, '__qualname__', '')}.{method_name}"
+    )
 
 
 def _simplify_annotation(ann: Any) -> Any:
@@ -1746,6 +1812,31 @@ class ToolRegistry:
         """
         return self._tool_index
 
+    def _offered_variants(self, method_name: str, method: Any) -> tuple[Any, ...]:
+        """
+        The formula variants of an indicator (see _formula_variants) that the server does
+        not refuse (config.yaml parameter_limits, refused_values), such as EGARCH.
+
+        Args:
+            method_name (str): The name of the indicator.
+            method (Any): The controller method of the indicator.
+
+        Returns:
+            tuple[Any, ...]: The values of its method parameter that can be asked for.
+        """
+        refused = {
+            str(value).lower()
+            for refusal in self._parameter_limits.get("refused_values", [])
+            if refusal["parameter"] == "method" and method_name in refusal["methods"]
+            for value in refusal["values"]
+        }
+
+        return tuple(
+            variant
+            for variant in _formula_variants(method)
+            if str(variant).lower() not in refused
+        )
+
     def get_indicator_index(self) -> list[dict[str, Any]]:
         """Return every registered indicator with its tool, summary and aliases.
 
@@ -1828,9 +1919,10 @@ class ToolRegistry:
             pd.DataFrame: The series, a column each, by date.
 
         Raises:
-            ValueError: When a reference names an unknown tool or indicator.
+            ValueError: When a reference names an unknown tool or indicator, an argument
+                its tool does not expose or a value over the server's limits, or when an
+                indicator answers without values for a reason it logged.
         """
-        frames = []
         parsed = series_model.parse_series_references(references)
         # Each reference collects its own tickers or countries, so together they are held
         # to the most one call may analyze.
@@ -1841,6 +1933,9 @@ class ToolRegistry:
                 f"The series name {count} tickers and countries together; at most "
                 f"{MAX_ENTITIES} can be analyzed in one call. Split them over several calls."
             )
+        # Every reference is checked before any is collected, so a refused one costs no
+        # data collection for the others.
+        prepared = []
         for reference in parsed:
             tools = (
                 [reference.tool]
@@ -1909,25 +2004,70 @@ class ToolRegistry:
             if deflate_with and "deflate_with" in parameters:
                 arguments["deflate_with"] = deflate_with
             # The reference's own arguments (cumulative=true), typed as the indicator takes them.
-            if reference.arguments:
-                signature = inspect.signature(
-                    getattr(self._module_class_map.get(module), reference.indicator)
-                ).parameters
-                if unknown := [
-                    name
-                    for name in reference.arguments
-                    if name not in signature or name in arguments
-                ]:
-                    raise ValueError(
-                        f"`{reference.indicator}` takes no argument {', '.join(unknown)} in "
-                        f"the series '{reference.text[:80]}'."
-                    )
-                arguments.update(
-                    {
-                        name: coerce_value(value, signature[name].annotation)
-                        for name, value in reference.arguments.items()
-                    }
+            # Only the parameters its tool exposes are taken: the others are the server's own
+            # (self, rounding) or set by the tool from its own parameters (start_date).
+            method = getattr(self._module_class_map.get(module), reference.indicator)
+            signature = inspect.signature(method).parameters
+            exposed = {
+                parameter.name
+                for parameter in self._inspector.extract_extra_params(method)
+            }
+            label = f"`{reference.indicator}` in the series '{reference.text[:80]}'"
+            if set_by_tool := [
+                name for name in reference.arguments if name in SERIES_TOOL_PARAMETERS
+            ]:
+                raise ValueError(
+                    f"{label}: {', '.join(set_by_tool)} "
+                    f"{'is' if len(set_by_tool) == 1 else 'are'} set by the tool, pass "
+                    f"{'it' if len(set_by_tool) == 1 else 'them'} as a tool parameter."
                 )
+            # Argument names are lower case, so Window=10 would be read as a ticker or column.
+            if miscased := [
+                match["name"]
+                for part in [*reference.entities, reference.column or ""]
+                if (match := MISCASED_ARGUMENT.match(part))
+                and match["name"] != match["name"].lower()
+                and match["name"].lower() in exposed
+            ]:
+                raise ValueError(
+                    f"{label}: argument names are lower case, so '{miscased[0]}=' is read "
+                    f"as a ticker or column. Write it as '{miscased[0].lower()}='."
+                )
+            if unknown := [name for name in reference.arguments if name not in exposed]:
+                raise ValueError(
+                    f"`{reference.indicator}` takes no argument {', '.join(unknown)} in "
+                    f"the series '{reference.text[:80]}'."
+                )
+            given = {
+                name: coerce_value(value, signature[name].annotation)
+                for name, value in reference.arguments.items()
+            }
+            # The same limits as a call of the indicator's own tool, with its own defaults
+            # for the parameters computed together.
+            if problem := size_limit_problem(
+                given,
+                {
+                    name: parameter.default
+                    for name, parameter in signature.items()
+                    if parameter.default is not inspect.Parameter.empty
+                },
+                self._parameter_limits,
+            ) or refused_value_problem(
+                reference.indicator, given, self._parameter_limits
+            ):
+                raise ValueError(
+                    f"`{tools[0]}` (`{reference.indicator}`) in the series "
+                    f"'{reference.text[:80]}': {problem}"
+                )
+            arguments.update(given)
+            prepared.append((reference, arguments, entities, by_ticker, parameters))
+
+        frames = []
+        for reference, arguments, entities, by_ticker, parameters in prepared:
+            # The messages logged while the indicator runs explain an empty answer, such as
+            # a method it does not know.
+            messages = current_call_messages()
+            logged = len(messages) if messages is not None else 0
             # The ratios of statement items have no period but show_daily, which maps every
             # period's figure onto the daily prices; a daily analysis asks for those.
             if period == "daily" and "show_daily" in parameters:
@@ -1939,6 +2079,17 @@ class ToolRegistry:
             # weekly) is read at its own frequency instead, which the analysis resamples.
             if result is None or getattr(result, "empty", False):
                 result = self._provider.call_method(**arguments)
+            if (
+                result is None
+                or getattr(result, "empty", False)
+                or (
+                    isinstance(result, pd.DataFrame | pd.Series)
+                    and not result.notna().to_numpy().any()
+                )
+            ) and (reason := summarize_reasons((messages or [])[logged:])):
+                raise ValueError(
+                    f"The series '{reference.text[:80]}' has no values: {reason}"
+                )
             # The Total of a basket is a series of its own, next to the tickers.
             resolved = reference._replace(
                 entities=entities + (["Total"] if arguments["toolkit_basket"] else [])
@@ -2858,7 +3009,16 @@ class ToolRegistry:
                         if row_selection > 0
                         else list(result[row_selection:])
                     )
-                if row_selection and isinstance(result, pd.DataFrame | pd.Series):
+                # An answer without values (an indicator that failed) is answered with
+                # why, without notes on selecting its rows or ranking it.
+                no_values = isinstance(result, pd.DataFrame | pd.Series) and not (
+                    result.notna().to_numpy().any()
+                )
+                if (
+                    row_selection
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and not no_values
+                ):
                     # One row per ticker (a figure over the whole period) has no first or
                     # last rows to speak of; cutting it would only drop tickers. The rows of
                     # the benchmark and of a portfolio of the tickers (component VaR) count
@@ -2998,7 +3158,7 @@ class ToolRegistry:
                                 "includes one more period."
                             )
                 # After the row selection, so limit=-1 ranks the latest period only.
-                if rank_tickers:
+                if rank_tickers and not no_values:
                     ranking = _rank_result(
                         result,
                         is_country=bool(countries),
@@ -3240,6 +3400,34 @@ class ToolRegistry:
             )
             for pname, texts in versions.items()
         }
+        # The values of method select a formula and differ per indicator, so with many
+        # versions each indicator's own values are listed (or its own description, for a
+        # method that is free text) rather than one indicator's.
+        if len(versions.get("method", {})) > MAXIMUM_DESCRIPTION_VERSIONS:
+            choices: dict[str, list[str]] = {}
+            for method_name in group_methods:
+                method = getattr(owning_class(method_name), method_name)
+                variants = self._offered_variants(method_name, method)
+                # A method that is free text lists its values in its docstring, whole, so
+                # none of them is cut off (the last of the covariance estimators).
+                choice = (
+                    ", ".join(f"'{variant}'" for variant in variants)
+                    if variants
+                    else _docstring_arguments(
+                        inspect.getdoc(method) or "", maximum_characters=None
+                    )
+                    .get("method", "")
+                    .removesuffix(".")
+                )
+                if choice:
+                    choices.setdefault(choice, []).append(method_name)
+            documented["method"] = (
+                "; ".join(
+                    f"{', '.join(indicators)}: {choice}"
+                    for choice, indicators in choices.items()
+                )
+                + "."
+            )
 
         for p in extra_params:
             ann = (
@@ -3406,7 +3594,13 @@ class ToolRegistry:
                 {
                     "tool": spec.tool_name,
                     "indicator": method_name,
-                    "variants": _formula_variants(getattr(owner, method_name, None)),
+                    # The method itself, so an indicator several tools serve counts once
+                    # and two methods that share a name (an ETF's and a company's
+                    # get_profile) count as two.
+                    "key": _method_key(owner, method_name),
+                    "variants": self._offered_variants(
+                        method_name, getattr(owner, method_name, None)
+                    ),
                     **_summarize_docstring(
                         inspect.getdoc(getattr(owner, method_name, None)) or ""
                     ),

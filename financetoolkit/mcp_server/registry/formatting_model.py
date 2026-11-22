@@ -736,8 +736,10 @@ def rebase_result(
     values = table.iloc[:, numeric].astype(float)
     base = values[in_window].mean()
     missing = base.isna()
-    zero = base == 0
-    rebased = values / base.where(~missing & ~zero) * 100
+    # A negative base would flip the sign of every value and a zero one has no ratio, so
+    # neither is indexed.
+    not_positive = base <= 0
+    rebased = values / base.where(~missing & ~not_positive) * 100
     for column, position in enumerate(numeric):
         table.isetitem(position, rebased.iloc[:, column])
 
@@ -754,12 +756,13 @@ def rebase_result(
             f"{'has' if missing.sum() == 1 else 'have'} no value in the base window of "
             f"rebase_to={text!r}, so {'it is' if missing.sum() == 1 else 'they are'} empty."
         )
-    if zero.any():
+    if not_positive.any():
+        one = not_positive.sum() == 1
         notes.append(
-            f"{_name_columns([labels[i] for i in range(len(labels)) if zero.iloc[i]])} "
-            f"{'averages' if zero.sum() == 1 else 'average'} zero in the base window of "
-            f"rebase_to={text!r}, which cannot be indexed, so "
-            f"{'it is' if zero.sum() == 1 else 'they are'} empty."
+            f"{_name_columns([labels[i] for i in range(len(labels)) if not_positive.iloc[i]])} "
+            f"{'has' if one else 'have'} an average over the base window of "
+            f"rebase_to={text!r} that is not positive, so {'it' if one else 'they'} can't be "
+            f"indexed to 100 and {'is' if one else 'are'} empty."
         )
     if len(numeric) < table.shape[1]:
         text_columns = [

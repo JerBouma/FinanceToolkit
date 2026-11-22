@@ -105,6 +105,30 @@ def test_get_money_weighted_return(recorder):
     recorder.capture(portfolio.get_money_weighted_return())
 
 
+def test_get_turnover(recorder):
+    daily = portfolio.get_turnover(rounding=8)
+    recorder.capture(daily[daily["Traded Value"] > 0])
+    # The first purchase is a turnover of 2: the gross value of the empty day before
+    # halves the average (up to the difference between the trade price and the close).
+    assert daily["Turnover"].iloc[0] == pytest.approx(2, rel=1e-4)
+    recorder.capture(portfolio.get_turnover(denominator="net_value", period="yearly"))
+
+
+def test_get_gross_leverage(recorder):
+    table = portfolio.get_gross_leverage(period="yearly")
+    recorder.capture(table)
+    # The portfolio holds no short positions.
+    assert np.allclose(table["Gross Leverage"].dropna(), 1)
+
+
+def test_get_return_contributions(recorder):
+    table = portfolio.get_return_contributions(period="yearly", rounding=8)
+    recorder.capture(table)
+    assert np.allclose(
+        table.drop(columns="Portfolio").sum(axis=1), table["Portfolio"], atol=1e-7
+    )
+
+
 def _offline_price_toolkit(self, tickers, start_date):  # noqa: ARG001
     self._toolkit = Toolkit(
         tickers=tickers,

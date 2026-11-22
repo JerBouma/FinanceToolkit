@@ -1210,3 +1210,149 @@ def test_the_optimizers_take_the_shrunk_and_compounded_expected_returns(
             method=expected_returns, include_benchmark=True, rounding=8
         ).iloc[:, 0],
     )
+
+
+@pytest.fixture
+def fama_french(monkeypatch, portfolio_module):
+    """
+    Offline daily Fama and French five factors (and the risk free rate) on the days of the
+    test data: the market factor follows the Benchmark, the others are noise.
+    """
+    from financetoolkit.performance import performance_model  # noqa: PLC0415
+
+    returns = portfolio_module._historical_data["daily"]["Return"].fillna(0)
+    rng = np.random.default_rng(11)
+    factors = pd.DataFrame(
+        rng.normal(0.0001, 0.005, (len(returns), 4)),
+        index=returns.index,
+        columns=["SMB", "HML", "RMW", "CMA"],
+    )
+    factors.insert(
+        0, "Mkt-RF", returns["Benchmark"] + rng.normal(0, 0.002, len(returns))
+    )
+    factors["HML"] += 0.3 * returns["MSFT"]
+    factors["RF"] = 0.0001
+    monkeypatch.setattr(
+        performance_model, "obtain_fama_and_french_dataset", lambda **_: factors
+    )
+    portfolio_module._factor_datasets.clear()
+    yield factors.drop(columns="RF")
+    portfolio_module._factor_datasets.clear()
+
+
+def test_get_factor_loadings(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_loadings(include_benchmark=True, rounding=6)
+    recorder.capture(table)
+    # The Benchmark is the market factor without the noise.
+    assert table.loc["Benchmark", "Mkt-RF"] == pytest.approx(1, abs=0.05)
+    recorder.capture(
+        portfolio_module.get_factor_loadings(
+            selection="forward", period="monthly", rounding=6
+        )
+    )
+    recorder.capture(portfolio_module.get_factor_loadings(selection="pcr", rounding=6))
+
+
+def test_get_covariance_estimate_factor(recorder, portfolio_module, fama_french):
+    covariance = portfolio_module.get_covariance_estimate(method="factor", rounding=8)
+    recorder.capture(covariance)
+    recorder.capture(
+        portfolio_module.get_covariance_estimate(
+            method="factor", factor_selection="backward", rounding=8
+        )
+    )
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="factor", rounding=8
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_risk_contributions_finite_differences(recorder, portfolio_module):
+    for measure in ("maximum_drawdown", "kurtosis", "evar"):
+        table = portfolio_module.get_risk_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure=measure, rounding=8
+        )
+        recorder.capture(table)
+        assert table.loc["Total", "Percentage Contribution"] == pytest.approx(1)
+
+
+def test_get_factor_risk_contributions(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_risk_contributions(rounding=8)
+    recorder.capture(table)
+    total = portfolio_module.get_risk_contributions(rounding=8)
+    assert table.loc["Total", "Risk Contribution"] == pytest.approx(
+        total.loc["Total", "Risk Contribution"], rel=1e-5
+    )
+    recorder.capture(
+        portfolio_module.get_factor_risk_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure="cvar", rounding=8
+        )
+    )
+
+
+def test_get_factor_attribution(recorder, portfolio_module, fama_french):
+    table = portfolio_module.get_factor_attribution(rounding=8)
+    recorder.capture(table.iloc[:20])
+    assert np.allclose(
+        table["Common Return"] + table["Specific Return"], table["Total Return"]
+    )
+    recorder.capture(
+        portfolio_module.get_factor_attribution(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="monthly", rounding=8
+        )
+    )
+
+
+def test_get_entropy_pooling(recorder, portfolio_module):
+    table = portfolio_module.get_entropy_pooling(
+        views={"AAPL": 0.05}, volatility_views={"MSFT": 0.3}, rounding=6
+    )
+    recorder.capture(table)
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            views={"AAPL": 0.05}, output="summary", rounding=6
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            opinions=[{"views": {"AAPL": 0.05}}, {"views": {"MSFT": (">=", 0.4)}}],
+            pooling="logarithmic",
+            rounding=6,
+        )
+    )
+
+
+def test_get_return_contributions(recorder, portfolio_module):
+    table = portfolio_module.get_return_contributions(period="yearly", rounding=8)
+    recorder.capture(table)
+    assert np.allclose(
+        table.drop(columns="Portfolio").sum(axis=1), table["Portfolio"], atol=1e-7
+    )
+    recorder.capture(
+        portfolio_module.get_return_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, period="quarterly", rounding=8
+        )
+    )
+
+
+def test_get_black_litterman_weights_with_factor_views(
+    recorder, portfolio_module, fama_french
+):
+    market = {"AAPL": 2.0, "MSFT": 1.5}
+    recorder.capture(
+        portfolio_module.get_black_litterman_weights(
+            market_weights=market,
+            method="augmented",
+            views={"MSFT": 0.2},
+            factor_views={"HML": 0.03},
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_black_litterman_weights(
+            method="bayesian", factor_views={"HML": 0.03, "SMB-HML": 0.01}
+        )
+    )
+    # Factor views need the augmented or Bayesian method.
+    assert portfolio_module.get_black_litterman_weights(
+        market_weights=market, factor_views={"HML": 0.03}
+    ).empty

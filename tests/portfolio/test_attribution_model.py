@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.portfolio.construction.attribution import attribution_model
+from financetoolkit.portfolio.construction.optimization import estimation_model
 
 
 def test_brinson_effects_add_up_to_the_excess_return():
@@ -364,3 +365,82 @@ def test_a_linked_sector_without_a_benchmark_return_in_one_sub_period():
         benchmark_returns.iloc[1:],
     )
     assert second.loc["Total"].notna().all()
+
+
+def test_factor_attribution_matches_empyrical():
+    rng = np.random.default_rng(42)
+    factor_data = rng.normal(0.0004, 0.01, size=(500, 2))
+    loadings = rng.uniform(0.2, 1.2, size=(2, 5))
+    data = factor_data @ loadings + rng.normal(0.0002, 0.012, size=(500, 5))
+    data = data - data.mean(axis=0) + np.array([0.10, 0.12, 0.14, 0.11, 0.13]) / 252
+    returns = pd.DataFrame(data, columns=list("ABCDE"))
+    noise = np.random.default_rng(7).normal(0.0001, 0.006, size=500)
+    factors = pd.DataFrame(
+        {"MKT": factor_data[:, 0], "SMB": factor_data[:, 1], "NOISE": noise}
+    )
+    weights = pd.DataFrame(
+        np.tile([0.3, 0.2, 0.2, 0.2, 0.1], (500, 1)), columns=returns.columns
+    )
+    factor_loadings = estimation_model.get_factor_loadings(returns, factors).drop(
+        columns="Intercept"
+    )
+    table = attribution_model.get_factor_attribution(
+        returns, weights, factor_loadings, factors
+    )
+    # empyrical 0.7.3 perf_attrib with these weights and loadings, first two periods:
+    # MKT, SMB, NOISE, Common, Specific and Total Return.
+    assert np.allclose(
+        table[
+            ["MKT", "SMB", "NOISE", "Common Return", "Specific Return", "Total Return"]
+        ]
+        .iloc[:2]
+        .to_numpy(),
+        [
+            [
+                2.0212717366e-03,
+                -6.2326103268e-03,
+                3.7559700912e-06,
+                -4.2075826202e-03,
+                -6.6433077724e-03,
+                -1.0850890393e-02,
+            ],
+            [
+                4.6348636464e-03,
+                6.1115749134e-03,
+                6.619493316e-05,
+                1.0812633493e-02,
+                -3.2383881638e-03,
+                7.5742453292e-03,
+            ],
+        ],
+        atol=1e-12,
+    )
+    assert np.allclose(table["Total Return"], returns @ weights.iloc[0])
+    assert np.allclose(
+        table["Common Return"] + table["Specific Return"], table["Total Return"]
+    )
+    # Static weights have no timing.
+    assert np.allclose(table["Timing Return"], 0)
+    assert np.allclose(table["Tilt Return"], table["Common Return"])
+
+
+def test_period_contributions_add_up_to_the_compounded_return():
+    rng = np.random.default_rng(3)
+    index = pd.period_range("2024-01-01", periods=90, freq="D")
+    contributions = pd.DataFrame(
+        rng.normal(0.0005, 0.004, size=(90, 3)), index=index, columns=list("ABC")
+    )
+    table = attribution_model.get_period_contributions(contributions, "M")
+    portfolio = contributions.sum(axis=1)
+    compounded = (1 + portfolio).groupby(index.asfreq("M")).prod() - 1
+    assert np.allclose(table["Portfolio"], compounded)
+    assert np.allclose(table[list("ABC")].sum(axis=1), compounded)
+    # Within a month the first day's contribution is not carried by any growth.
+    first = contributions.iloc[0]
+    second = contributions.iloc[1] * (1 + portfolio.iloc[0])
+    assert np.allclose(
+        attribution_model.get_period_contributions(contributions.iloc[:2], "M").iloc[
+            0, :3
+        ],
+        first + second,
+    )

@@ -2383,6 +2383,164 @@ def test_shrunk_and_gerber_covariances_match_the_libraries():
         estimation_model.get_gerber_covariance(returns, 0.5, 3)
 
 
+def test_robust_and_graph_covariances_match_the_libraries():
+    returns, _ = _reference_returns()
+    # scikit-learn 1.9.1 MinCovDet(random_state=0).fit(returns).covariance_
+    assert np.allclose(
+        estimation_model.get_minimum_covariance_determinant(returns).iloc[0],
+        [
+            0.000190424533,
+            5.883712985e-05,
+            5.165067873e-05,
+            8.27543892e-05,
+            2.750130636e-05,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    # PyPortfolioOpt 1.6.0 min_cov_determinant(random_state=0, frequency=1), the raw estimate
+    assert np.allclose(
+        estimation_model.get_minimum_covariance_determinant(
+            returns, reweight=False
+        ).iloc[0],
+        [
+            0.0001014014366,
+            1.846765387e-05,
+            7.493699012e-06,
+            3.005188387e-05,
+            -1.173463725e-06,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    # Riskfolio-Lib 7.4.1 covar_matrix(method="jlogo")
+    assert np.allclose(
+        estimation_model.get_logo_covariance(returns).iloc[0],
+        [
+            0.0002011995639,
+            7.447912618e-05,
+            7.463109262e-05,
+            9.244107878e-05,
+            1.799519061e-05,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    # skfolio 1.14.4 GeodesicShrinkageCovariance() and RegimeAdjustedEWCovariance()
+    assert np.allclose(
+        estimation_model.get_geodesic_shrinkage_covariance(returns).iloc[0],
+        [
+            0.0002007115225,
+            6.454682054e-05,
+            6.396514924e-05,
+            8.081259758e-05,
+            3.313288717e-05,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    covariance, multiplier = (
+        estimation_model.get_regime_adjusted_exponential_covariance(returns)
+    )
+    assert multiplier == pytest.approx(1.0317845797524008, rel=1e-10)
+    assert np.allclose(
+        covariance.iloc[0],
+        [
+            0.0002000370684,
+            8.56906179e-05,
+            7.54182817e-05,
+            8.877009717e-05,
+            3.262295314e-05,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+
+
+def test_the_tmfg_is_planar_and_the_logo_covariance_matches_riskfolio():
+    rng = np.random.default_rng(1)
+    data = rng.normal(0, 0.01, size=(300, 3)) @ rng.uniform(
+        -0.5, 1.5, size=(3, 9)
+    ) + rng.normal(0, 0.01, size=(300, 9))
+    returns = pd.DataFrame(data)
+    cliques, separators = estimation_model.get_triangulated_maximally_filtered_graph(
+        (1 + returns.corr().to_numpy()) / 2
+    )
+    links = {
+        tuple(sorted(pair))
+        for clique in cliques
+        for pair in itertools.combinations(clique, 2)
+    }
+    assert len(cliques) == 6 and len(separators) == 5 and len(links) == 3 * (9 - 2)
+
+    covariance = estimation_model.get_logo_covariance(returns)
+    # Riskfolio-Lib 7.4.1 covar_matrix(method="jlogo"), rows 0 and 4
+    assert np.allclose(
+        covariance.iloc[[0, 4]],
+        [
+            [
+                0.0001317249554,
+                7.418686351e-05,
+                2.072060258e-05,
+                4.365831013e-05,
+                5.587314601e-05,
+                5.972952688e-05,
+                8.486342137e-05,
+                7.24960195e-05,
+                3.670953614e-05,
+            ],
+            [
+                5.587314601e-05,
+                0.0002825002499,
+                6.181341499e-05,
+                0.0001318769107,
+                0.0004437460064,
+                0.0002494497729,
+                0.0002501185663,
+                0.0002157045381,
+                0.000109035685,
+            ],
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    # The precision matrix is zero for every pair the graph does not link.
+    precision = np.linalg.inv(covariance.to_numpy())
+    unlinked = [
+        pair for pair in itertools.combinations(range(9), 2) if pair not in links
+    ]
+    assert np.allclose([precision[pair] for pair in unlinked], 0, atol=1e-6)
+    # Four or fewer assets are all linked: the sample covariance.
+    assert np.allclose(
+        estimation_model.get_logo_covariance(returns.iloc[:, :4]),
+        returns.iloc[:, :4].cov(),
+    )
+
+
+def test_the_robust_estimators_reject_bad_input():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="two assets"):
+        estimation_model.get_minimum_covariance_determinant(returns[["A"]])
+    with pytest.raises(ValueError, match="support fraction"):
+        estimation_model.get_minimum_covariance_determinant(returns, 1.5)
+    with pytest.raises(ValueError, match="target"):
+        estimation_model.get_geodesic_shrinkage_covariance(returns, 0.1, "constant")
+    with pytest.raises(ValueError, match="at least 40 periods"):
+        estimation_model.get_regime_adjusted_exponential_covariance(returns.iloc[:30])
+    # The geodesic estimate runs from the sample covariance to the target.
+    assert np.allclose(
+        estimation_model.get_geodesic_shrinkage_covariance(returns, 0), returns.cov()
+    )
+    assert np.allclose(
+        estimation_model.get_geodesic_shrinkage_covariance(returns, 1, "diagonal"),
+        np.diag(returns.var()),
+    )
+    # The same seed gives the same estimate.
+    assert estimation_model.get_minimum_covariance_determinant(returns, seed=5).equals(
+        estimation_model.get_minimum_covariance_determinant(returns, seed=5)
+    )
+
+
 def test_the_nearest_correlation_is_positive_definite():
     broken = np.array([[1, 0.9, -0.9], [0.9, 1, 0.9], [-0.9, 0.9, 1]])
     repaired = estimation_model.get_nearest_correlation(broken)

@@ -981,6 +981,10 @@ COVARIANCE_METHODS = (
     "denoised_shrink",
     "gerber",
     "factor",
+    "minimum_covariance_determinant",
+    "jlogo",
+    "geodesic",
+    "regime_adjusted_ew",
 )
 
 EXPECTED_RETURN_METHODS = (
@@ -1005,6 +1009,8 @@ def get_covariance_matrix(
     gerber_statistic: int = 1,
     denoise_alpha: float = 0.0,
     factors: pd.DataFrame | None = None,
+    half_life: float = 40,
+    seed: int | None = 0,
 ) -> pd.DataFrame:
     """
     The covariance matrix per period of a set of returns, by one of the estimators.
@@ -1024,6 +1030,17 @@ def get_covariance_matrix(
     - "factor": the covariance a time series factor model implies, B Σ_f B' + D, with the
       OLS loadings on every factor, estimated on the periods both the returns and the
       factors have (see estimation_model.get_factor_model).
+    - "minimum_covariance_determinant": the reweighted covariance of the periods with the
+      smallest covariance determinant, robust to outliers (see
+      estimation_model.get_minimum_covariance_determinant).
+    - "jlogo": the inverse of the sparse LoGo precision matrix on the TMFG of the
+      correlations (see estimation_model.get_logo_covariance).
+    - "geodesic": shrinkage with a fixed intensity towards the scaled identity along the
+      geodesic of the positive definite matrices (see
+      estimation_model.get_geodesic_shrinkage_covariance).
+    - "regime_adjusted_ew": exponentially weighted, rescaled by the recent ratio of
+      realized to predicted risk (see
+      estimation_model.get_regime_adjusted_exponential_covariance).
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1033,8 +1050,8 @@ def get_covariance_matrix(
             Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
             market, for "ledoit_wolf_single_factor". Defaults to None.
-        shrinkage (float, optional): The fixed shrinkage intensity of "shrunk".
-            Defaults to 0.1.
+        shrinkage (float, optional): The fixed shrinkage intensity of "shrunk" and
+            "geodesic". Defaults to 0.1.
         gerber_threshold (float, optional): The threshold in standard deviations of
             "gerber". Defaults to 0.5.
         gerber_statistic (int, optional): The Gerber statistic (0, 1 or 2) of "gerber".
@@ -1043,6 +1060,10 @@ def get_covariance_matrix(
             "denoised_shrink". Defaults to 0.
         factors (pd.DataFrame | None, optional): The factor returns per period, for
             "factor". Defaults to None.
+        half_life (float, optional): The half-life in periods of "regime_adjusted_ew".
+            Defaults to 40.
+        seed (int | None, optional): The seed of the random subsets of
+            "minimum_covariance_determinant". Defaults to 0.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -1094,6 +1115,16 @@ def get_covariance_matrix(
         return estimation_model.get_factor_model(
             returns.loc[periods], factors.loc[periods], loadings
         )[1]
+    if method == "minimum_covariance_determinant":
+        return estimation_model.get_minimum_covariance_determinant(returns, seed=seed)
+    if method == "jlogo":
+        return estimation_model.get_logo_covariance(returns)
+    if method == "geodesic":
+        return estimation_model.get_geodesic_shrinkage_covariance(returns, shrinkage)
+    if method == "regime_adjusted_ew":
+        return estimation_model.get_regime_adjusted_exponential_covariance(
+            returns, half_life
+        )[0]
     raise ValueError(
         f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
         f"'{method}'."
@@ -1260,8 +1291,11 @@ def get_expected_returns_and_covariance(
             covariance the benchmark as a single factor implies), "oas", "shrunk" (a
             fixed intensity of 0.1 towards the scaled identity), "semicovariance" (below
             a zero return), "exponential", "denoised", "denoised_spectral",
-            "denoised_shrink" (Marčenko-Pastur), "gerber" (threshold 0.5, statistic 1) or
-            "factor" (a factor model with OLS loadings). Defaults to "sample".
+            "denoised_shrink" (Marčenko-Pastur), "gerber" (threshold 0.5, statistic 1),
+            "factor" (a factor model with OLS loadings), "minimum_covariance_determinant"
+            (robust, seed 0), "jlogo" (the LoGo sparse inverse on the TMFG), "geodesic" (10%
+            towards the scaled identity along the geodesic) or "regime_adjusted_ew"
+            (half-life 40, rescaled by the recent realized risk). Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
         expected_returns (str, optional): The estimator of the expected returns: "mean",

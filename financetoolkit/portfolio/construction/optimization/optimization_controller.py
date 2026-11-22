@@ -194,8 +194,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -369,8 +377,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -572,8 +588,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -765,8 +789,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -940,8 +972,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1091,8 +1131,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1243,8 +1291,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 clusters when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1416,8 +1472,10 @@ class OptimizationConstruction:
                 the scaled identity), "semicovariance" (the co-movement below a zero
                 return, Estrada, 2007), "exponential" (recent periods weigh most,
                 RiskMetrics), "denoised_spectral", "denoised_shrink" (López de Prado,
-                2020) or "gerber" (Gerber et al., 2022). Defaults to "denoised", as in
-                the paper.
+                2020), "gerber" (Gerber et al., 2022), "minimum_covariance_determinant"
+                (Rousseeuw and Van Driessen, 1999), "jlogo" (Barfuss et al., 2016), "geodesic"
+                (Bhatia, 2007) or "regime_adjusted_ew" (Paleologo, 2025). Defaults to
+                "denoised", as in the paper.
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1549,8 +1607,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -2324,8 +2390,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -2504,8 +2578,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2729,8 +2811,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2954,8 +3044,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3242,8 +3340,16 @@ class OptimizationConstruction:
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
                 2020), "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022) or "factor" (the covariance of the Fama and French five factor
-                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"

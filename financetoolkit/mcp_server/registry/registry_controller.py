@@ -1,7 +1,7 @@
 """
 Dynamic tool registration for the Finance Toolkit MCP Server — Router Pattern.
 
-Consolidates 500+ individual methods into categorical master tools, each
+Consolidates 900+ individual methods into categorical master tools, each
 accepting an indicator parameter (Literal enum) that routes to the
 correct underlying method.
 """

@@ -208,6 +208,61 @@ PER_SECURITY_INDICATORS = {
     "get_hull_moving_average": lambda high, low, close, opening, volume: overlap.get_hull_moving_average(
         close, WINDOW
     ),
+    "get_triple_exponential_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_triple_exponential_moving_average(
+            close, WINDOW
+        )
+    ),
+    "get_t3_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_t3_moving_average(
+            close, 5, 0.7
+        )
+    ),
+    "get_zero_lag_exponential_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_zero_lag_exponential_moving_average(
+            close, WINDOW
+        )
+    ),
+    "get_arnaud_legoux_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_arnaud_legoux_moving_average(
+            close, 9, 6.0, 0.85
+        )
+    ),
+    "get_volume_weighted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_volume_weighted_moving_average(
+            close, volume, WINDOW
+        )
+    ),
+    "get_mcginley_dynamic": (
+        lambda high, low, close, opening, volume: overlap.get_mcginley_dynamic(
+            close, WINDOW
+        )
+    ),
+    "get_variable_index_dynamic_average": (
+        lambda high, low, close, opening, volume: overlap.get_variable_index_dynamic_average(
+            close, 12, 9
+        )
+    ),
+    "get_fractal_adaptive_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_fractal_adaptive_moving_average(
+            high, low, 16
+        )
+    ),
+    "get_sine_weighted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_sine_weighted_moving_average(
+            close, WINDOW
+        )
+    ),
+    "get_fibonacci_weighted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_fibonacci_weighted_moving_average(
+            close, WINDOW
+        )
+    ),
+    "get_pascal_weighted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_pascal_weighted_moving_average(
+            close, WINDOW
+        )
+    ),
     "get_volume_weighted_average_price": (
         lambda high, low, close, opening, volume: overlap.get_volume_weighted_average_price(
             high, low, close, volume, WINDOW

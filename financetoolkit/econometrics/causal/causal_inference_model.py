@@ -82,7 +82,7 @@ def get_iv_2sls(
         dict: The 2SLS coefficients (on `x_exogenous` then `x_endogenous`, in that
         order), their standard errors/t-statistics/p-values, the actual-X residuals/
         fitted values, and related fit statistics -- see
-        `regression_model._from_statsmodels_ols` for the full key list. Call
+        `regression_model._to_regression_result` for the full key list. Call
         `regression_model.regression_summary_table` for a coefficient table.
         `design_matrix` holds the actual (not fitted/instrumented) `X`.
 
@@ -254,7 +254,7 @@ def get_difference_in_differences(
         dict: The fitted coefficients (`Treated`, `Post`, `Treated x Post`, then any
         controls), their standard errors/t-statistics/p-values, residuals, fitted
         values and related fit statistics -- see
-        `regression_model._from_statsmodels_ols` for the full key list. Call
+        `regression_model._to_regression_result` for the full key list. Call
         `regression_model.regression_summary_table` for a coefficient table -- the
         row labeled `"Treated x Post"` is the DiD treatment-effect estimate.
 

@@ -6,10 +6,10 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from statsmodels.tsa.adfvalues import mackinnoncrit, mackinnonp
 from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 
+from financetoolkit.econometrics.least_squares_model import fit_least_squares
 from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
 
 # The conventional 5% significance level used for the boolean "reject" flags.
@@ -266,8 +266,8 @@ def get_phillips_perron_test(
     Neither `statsmodels` nor `linearmodels` ships a Phillips-Perron implementation
     (the `arch` package does, but that is a separate, unrelated optional dependency
     this codebase does not otherwise use) -- this is the one test in this module that
-    remains hand-built, though the underlying Dickey-Fuller auxiliary regression is
-    still fit via `statsmodels.api.OLS` rather than raw linear algebra.
+    is built here, with the Dickey-Fuller auxiliary regression fit by
+    `least_squares_model.fit_least_squares`.
 
     The test runs the simple (non-augmented) Dickey-Fuller regression:
 
@@ -365,11 +365,11 @@ def get_phillips_perron_test(
         regressors.append(np.arange(n, dtype=float))
     x = np.column_stack(regressors)
 
-    sm_result = sm.OLS(y, x).fit()
-    rho_hat = sm_result.params[1]
-    residuals = np.asarray(sm_result.resid)
+    fit = fit_least_squares(y, x)
+    rho_hat = fit["coefficients"][1]
+    residuals = fit["residuals"]
     residual_sum_of_squares = float(np.sum(residuals**2))
-    standard_error_rho = float(sm_result.bse[1])
+    standard_error_rho = float(fit["standard_errors"][1])
     t_rho = (rho_hat - 1) / standard_error_rho
 
     sigma_squared = residual_sum_of_squares / (n - number_of_parameters)

@@ -1404,9 +1404,10 @@ class Toolkit:
     @property
     def econometrics(self) -> "Econometrics":
         """
-        This gives access to the Econometrics module, a thin wrapper that funnels this Toolkit's
-        price/return data through `statsmodels` and `linearmodels` -- regression (OLS/WLS/GLS/
-        Logit/Probit/Quantile), panel data (Fixed/Random Effects, Hausman), causal inference
+        This gives access to the Econometrics module, which runs this Toolkit's price/return data
+        through least squares and test statistics of its own and the estimators of `statsmodels`
+        and `linearmodels` -- regression (OLS/WLS/GLS/Logit/Probit/Quantile), panel data
+        (Fixed/Random Effects, Hausman), causal inference
         (IV-2SLS, Difference-in-Differences, Regression Discontinuity, Propensity Score Matching),
         specification/hypothesis tests (Breusch-Pagan, White, Durbin-Watson, VIF, RESET, Chow,
         t/F/LR/Wald tests), stationarity (Augmented Dickey-Fuller, KPSS, Phillips-Perron,

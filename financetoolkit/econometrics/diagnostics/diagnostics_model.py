@@ -2,14 +2,16 @@
 
 __docformat__ = "google"
 
-import warnings
-
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from scipy import stats
-from statsmodels.stats.diagnostic import acorr_ljungbox, breaks_cusumolsresid, het_arch
-from statsmodels.stats.stattools import jarque_bera
+
+from financetoolkit.econometrics.least_squares_model import (
+    fit_least_squares,
+    get_autocorrelations,
+    get_kolmogorov_survival,
+    get_lagged_values,
+)
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -17,12 +19,20 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 # The Variance Ratio test requires at least a two-period compounding horizon.
 MINIMUM_VARIANCE_RATIO_Q = 2
 
-# `statsmodels.stats.stattools.jarque_bera` requires at least 2 observations.
+# Skewness and kurtosis need at least 2 observations.
 MINIMUM_JARQUE_BERA_OBSERVATIONS = 2
 
 # The CUSUM test compares the path of the residuals with the asymptotic boundaries of a
 # Brownian bridge, which a handful of residuals cannot follow; shorter series return NaN.
 MINIMUM_CUSUM_OBSERVATIONS = 10
+
+# The 1%, 5% and 10% quantiles of sup|B(t)| of a Brownian bridge, to two decimals as
+# Ploberger and Krämer (1992) tabulate them.
+CUSUM_CRITICAL_VALUES = {1: 1.63, 5: 1.36, 10: 1.22}
+
+# A variance below the floating-point resolution of the mean squared counts as zero, so
+# a constant series has an undefined skewness rather than one made of rounding noise.
+FLOAT_RESOLUTION = 1e-15
 
 # The conventional 5% significance level used for the "Reject" boolean flags.
 SIGNIFICANCE_LEVEL = 0.05
@@ -32,13 +42,18 @@ def get_arch_lm_test(
     returns: pd.Series | pd.DataFrame, lags: int = 5
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects, via
-    `statsmodels.stats.diagnostic.het_arch`.
+    Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects.
 
-    The test regresses squared, mean-demeaned returns on `lags` of themselves and
-    tests whether the resulting R-squared is significantly different from zero. Under
-    the null hypothesis of no ARCH effects, `n * R-squared` is asymptotically
-    chi-squared distributed with `lags` degrees of freedom.
+    The test regresses squared, mean-demeaned returns on a constant and `lags` of
+    themselves and tests whether the resulting R-squared is significantly different from
+    zero. Under the null hypothesis of no ARCH effects, the LM statistic is asymptotically
+    chi-squared distributed with `lags` degrees of freedom:
+
+    - e_t = r_t - mean(r)
+    - e_t^2 = a_0 + SUM_{i=1}^{q}(a_i * e_(t-i)^2) + v_t, for t = q + 1, ..., n
+    - LM = (n - q) * R^2
+
+    Where `q` is `lags` and `n - q` the number of observations of the regression.
 
     A significant result (low p-value) indicates that the return series exhibits
     volatility clustering, and a GARCH-family model is an appropriate choice for it.
@@ -54,6 +69,9 @@ def get_arch_lm_test(
 
     Returns:
         pd.Series | pd.DataFrame: The ARCH-LM statistic and its p-value.
+
+    Notes:
+        Referenced against statsmodels' `het_arch`.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -82,17 +100,18 @@ def get_arch_lm_test(
         if len(residuals) <= lags + 1:
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
 
+        squared = residuals**2
+        design = np.column_stack(
+            [np.ones(len(squared) - lags), get_lagged_values(squared, lags)]
+        )
+
         try:
-            # het_arch calls acorr_lm, which on statsmodels 0.15 announces a result object for 0.16; the tuple used here is unaffected until then.  # noqa: E501
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="acorr_lm currently returns",
-                    category=FutureWarning,
-                )
-                lm_statistic, p_value, _, _ = het_arch(residuals, nlags=lags)
+            auxiliary = fit_least_squares(squared[lags:], design)
         except (ValueError, np.linalg.LinAlgError):
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
+
+        lm_statistic = (len(squared) - lags) * auxiliary["r_squared"]
+        p_value = stats.chi2.sf(lm_statistic, lags)
 
         return pd.Series({"ARCH-LM Statistic": lm_statistic, "P-Value": p_value})
 
@@ -101,8 +120,7 @@ def get_arch_lm_test(
 
 def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Jarque-Bera test for normality, via
-    `statsmodels.stats.stattools.jarque_bera`.
+    Calculate the Jarque-Bera test for normality.
 
     The test combines sample skewness and excess kurtosis into a single statistic
     that is asymptotically chi-squared distributed with 2 degrees of freedom under
@@ -110,8 +128,11 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
 
     - JB = (n / 6) * (S^2 + (K^2) / 4)
 
-    Where `S` is the skewness, `K` is the excess (Fisher) kurtosis and `n` is the
-    number of observations.
+    - S = m_3 / m_2^(3/2), K = m_4 / m_2^2 - 3, with m_j = SUM((x_t - mean(x))^j) / n
+
+    Where `S` is the skewness, `K` is the excess (Fisher) kurtosis, both from the
+    (biased) sample moments `m_j` as in Jarque and Bera, and `n` is the number of
+    observations. A series without variation has no skewness or kurtosis and returns NaN.
 
     A significant result (low p-value) indicates that returns are not normally
     distributed, which is relevant when choosing between e.g. gaussian and Student-T
@@ -127,6 +148,9 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
 
     Returns:
         pd.Series | pd.DataFrame: The Jarque-Bera statistic and its p-value.
+
+    Notes:
+        Referenced against statsmodels' `jarque_bera`.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -155,7 +179,16 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
         if len(values) < MINIMUM_JARQUE_BERA_OBSERVATIONS:
             return pd.Series({"Jarque-Bera Statistic": np.nan, "P-Value": np.nan})
 
-        jarque_bera_statistic, p_value, _, _ = jarque_bera(values)
+        deviations = values - values.mean()
+        second_moment = np.mean(deviations**2)
+
+        if second_moment <= (FLOAT_RESOLUTION * values.mean()) ** 2:
+            return pd.Series({"Jarque-Bera Statistic": np.nan, "P-Value": np.nan})
+
+        skewness = np.mean(deviations**3) / second_moment**1.5
+        excess_kurtosis = np.mean(deviations**4) / second_moment**2 - 3
+        jarque_bera_statistic = len(values) / 6 * (skewness**2 + excess_kurtosis**2 / 4)
+        p_value = stats.chi2.sf(jarque_bera_statistic, 2)
 
         return pd.Series(
             {"Jarque-Bera Statistic": jarque_bera_statistic, "P-Value": p_value}
@@ -168,8 +201,7 @@ def get_ljung_box_test(
     returns: pd.Series | pd.DataFrame, lags: int = 10, model_df: int = 0
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Ljung-Box test for autocorrelation, via
-    `statsmodels.stats.diagnostic.acorr_ljungbox`.
+    Calculate the Ljung-Box test for autocorrelation.
 
     The test aggregates the squared Autocorrelation Function up to lag `h` into a
     single statistic that is asymptotically chi-squared distributed with `h - model_df`
@@ -178,7 +210,10 @@ def get_ljung_box_test(
 
     - Q = n * (n + 2) * SUM_{k=1}^{h} (rho_k^2 / (n - k))
 
-    Where `rho_k` is the Autocorrelation at lag `k` and `n` is the number of observations.
+    - rho_k = SUM_{t=k+1}^{n}((x_t - mean(x)) * (x_(t-k) - mean(x))) / SUM_{t=1}^{n}((x_t - mean(x))^2)
+
+    Where `rho_k` is the Autocorrelation at lag `k` (every autocovariance divided by `n`)
+    and `n` is the number of observations.
 
     A significant result (low p-value) indicates that the series is autocorrelated, which is
     relevant both as a standalone diagnostic (e.g. to check whether a return series follows a
@@ -211,6 +246,9 @@ def get_ljung_box_test(
         TypeError: If `returns` is not a pd.DataFrame or pd.Series.
         ValueError: If `model_df` is negative or leaves no degrees of freedom
         (`model_df >= lags`).
+
+    Notes:
+        Referenced against statsmodels' `acorr_ljungbox`.
     """
     if model_df < 0:
         raise ValueError(f"model_df must be non-negative, received {model_df}.")
@@ -252,15 +290,15 @@ def get_ljung_box_test(
         if n <= lags + 1:
             return pd.Series({"Ljung-Box Statistic": np.nan, "P-Value": np.nan})
 
-        try:
-            result = acorr_ljungbox(values.to_numpy(), lags=[lags], model_df=model_df)
-        except (ValueError, np.linalg.LinAlgError):
-            return pd.Series({"Ljung-Box Statistic": np.nan, "P-Value": np.nan})
+        autocorrelations = get_autocorrelations(values.to_numpy(dtype=float), lags)
+        ljung_box_statistic = (
+            n * (n + 2) * np.sum(autocorrelations**2 / (n - np.arange(1, lags + 1)))
+        )
 
         return pd.Series(
             {
-                "Ljung-Box Statistic": float(result["lb_stat"].iloc[0]),
-                "P-Value": float(result["lb_pvalue"].iloc[0]),
+                "Ljung-Box Statistic": float(ljung_box_statistic),
+                "P-Value": float(stats.chi2.sf(ljung_box_statistic, lags - model_df)),
             }
         )
 
@@ -410,16 +448,24 @@ def get_variance_ratio_test(
 
 def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Calculate the CUSUM test for the stability of the mean of returns over time, via
-    `statsmodels.stats.diagnostic.breaks_cusumolsresid`.
+    Calculate the CUSUM test for the stability of the mean of returns over time.
 
-    The test fits a constant-mean model (`returns_t = mu + e_t`) via
-    `statsmodels.api.OLS` and cumulates the (scaled) OLS residuals into a path that,
-    under the null hypothesis of a stable mean, behaves asymptotically like a
-    Brownian Bridge. A shift in the mean partway through the series (a structural
-    break) drags the path away from zero; the test statistic is the maximum absolute
-    value of that path, compared against the asymptotic Brownian Bridge distribution
-    (Ploberger & Kramer, 1992) for an exact p-value.
+    The test fits a constant-mean model (`returns_t = mu + e_t`) by OLS and cumulates
+    the (scaled) OLS residuals into a path that, under the null hypothesis of a stable
+    mean, behaves asymptotically like a Brownian Bridge. A shift in the mean partway
+    through the series (a structural break) drags the path away from zero; the test
+    statistic is the maximum absolute value of that path, compared against the
+    asymptotic distribution of the supremum of a Brownian Bridge (Ploberger & Kramer,
+    1992) for its p-value:
+
+    - e_t = r_t - mean(r)
+    - sigma^2 = SUM(e_t^2) / (n - 1)
+    - B(j) = SUM_{t=1}^{j}(e_t) / (sigma * sqrt(n))
+    - CUSUM = max_j |B(j)|
+    - P-Value = P(sup|B(t)| > CUSUM) = 2 * SUM_{k>=1}((-1)^(k-1) * exp(-2 * k^2 * CUSUM^2))
+
+    The variance uses the `n - 1` degrees of freedom of the one estimated mean, and the
+    critical values are the 1.63, 1.36 and 1.22 Ploberger and Kramer (1992) tabulate.
 
     A significant result (low p-value) indicates that the mean of the return series
     is not stable over the sample period, e.g. due to a regime change or structural
@@ -442,6 +488,9 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         pd.Series | pd.DataFrame: The CUSUM statistic, its p-value, the number of
         observations used, the 1%/5%/10% critical boundary values, and whether
         stability is rejected at the 5% level.
+
+    Notes:
+        Referenced against statsmodels' `breaks_cusumolsresid` with `ddof=1`.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -480,16 +529,16 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         if n < MINIMUM_CUSUM_OBSERVATIONS:
             return nan_result
 
-        sm_result = sm.OLS(values, np.ones((n, 1))).fit()
+        residuals = fit_least_squares(values, np.ones((n, 1)))["residuals"]
+        scaled_sum_of_squares = np.sum(residuals**2) / (n - 1) * n
 
-        try:
-            cusum_statistic, p_value, critical_values = breaks_cusumolsresid(
-                sm_result.resid, ddof=1
+        # A series without variation has no scale, so its statistic and p-value are NaN.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            cusum_statistic = float(
+                np.max(np.abs(np.cumsum(residuals) / np.sqrt(scaled_sum_of_squares)))
             )
-        except (ValueError, ZeroDivisionError, np.linalg.LinAlgError):
-            return nan_result
-
-        critical_value_by_alpha = {alpha: value for alpha, value in critical_values}
+        p_value = get_kolmogorov_survival(cusum_statistic)
+        critical_value_by_alpha = CUSUM_CRITICAL_VALUES
 
         return pd.Series(
             {

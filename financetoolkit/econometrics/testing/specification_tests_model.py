@@ -4,12 +4,12 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
 from scipy import stats
-from statsmodels.stats.diagnostic import het_breuschpagan, het_white, linear_reset
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.stats.stattools import durbin_watson
 
+from financetoolkit.econometrics.least_squares_model import (
+    fit_least_squares,
+    get_wald_statistic,
+)
 from financetoolkit.econometrics.regression import regression_model
 
 # The conventional 5% level for the boolean 'reject' flags in this module.
@@ -22,14 +22,51 @@ DURBIN_WATSON_UPPER_BAND = 2.5
 # The nested F-test needs at least one added power term beyond the linear fit.
 MINIMUM_RESET_POWER = 2
 
-# `linear_reset` forwards covariance arguments under a name `fit()` does not accept, so the two estimators that need extra arguments cannot be honoured -- see `get_ramsey_reset_test`'s Notes.  # noqa: E501
+# The cluster labels and the HAC lag are not part of a regression result, so a RESET refit cannot reproduce those two estimators -- see `get_ramsey_reset_test`'s Notes.  # noqa: E501
 UNSUPPORTED_RESET_COV_TYPES = ("cluster", "HAC")
+
+# A heteroskedasticity test needs a constant and at least one other regressor.
+MINIMUM_HETEROSKEDASTICITY_REGRESSORS = 2
+
+
+def _with_constant(design: np.ndarray) -> np.ndarray:
+    """
+    Prepends a column of ones to `design` unless one of its columns already is a nonzero
+    constant, so an auxiliary regression always has an intercept. The check is on a
+    nonzero constant column only, as statsmodels' `add_constant(has_constant="skip")`.
+    """
+    column_maximum = design.max(axis=0)
+    if np.any((column_maximum == design.min(axis=0)) & (column_maximum != 0)):
+        return design
+    return np.column_stack([np.ones(design.shape[0]), design])
+
+
+def _get_heteroskedasticity_lm(
+    residuals: np.ndarray, auxiliary_design: np.ndarray, test_name: str
+) -> tuple[float, float]:
+    """
+    The LM statistic n * R² of the regression of the squared residuals on
+    `auxiliary_design` (which holds a constant) and its chi-squared p-value, with the
+    degrees of freedom the rank of the design minus the constant, so a duplicated
+    column (the square of a 0/1 dummy) is not counted twice.
+    """
+    if auxiliary_design.shape[1] < MINIMUM_HETEROSKEDASTICITY_REGRESSORS:
+        raise ValueError(
+            f"The {test_name} test requires exog to have at least two columns where "
+            "one is a constant."
+        )
+
+    auxiliary = fit_least_squares(residuals**2, auxiliary_design)
+    lm_statistic = len(residuals) * auxiliary["r_squared"]
+    p_value = stats.chi2.sf(lm_statistic, auxiliary["rank"] - 1)
+
+    return float(lm_statistic), float(p_value)
 
 
 def get_breusch_pagan_test(result: dict) -> pd.Series:
     """
     Calculate the Breusch-Pagan test for heteroskedasticity of a fitted OLS
-    regression's residuals, via `statsmodels.stats.diagnostic.het_breuschpagan`.
+    regression's residuals.
 
     Also known as: BP test, Breusch-Pagan-Godfrey test.
 
@@ -38,9 +75,10 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
     resulting R-squared of that auxiliary regression is significantly
     different from zero:
 
+    - e_t^2 = a_0 + SUM_i(a_i * x_it) + v_t
     - LM = n * R^2_auxiliary
 
-    This is the studentized form of Koenker (1981), the `statsmodels` default
+    This is the studentized form of Koenker (1981), which is also statsmodels' default
     (`robust=True`): unlike the original Breusch-Pagan statistic (half the explained
     sum of squares of the auxiliary regression on the scaled squared residuals), it
     does not assume normally distributed errors, which matters for fat-tailed returns.
@@ -73,6 +111,9 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
         pd.Series: The (studentized) Breusch-Pagan LM statistic, its p-value, and whether
         homoskedasticity is rejected at the 5% level.
 
+    Raises:
+        ValueError: If the design has no regressor besides the constant.
+
     Notes:
     - Uses `result["design_matrix"]` (the design matrix actually used to fit `result`) as
     the regressors of the auxiliary regression, exactly as specified in the original
@@ -80,12 +121,11 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
     - The auxiliary regression always includes a constant, also when `result` was fitted
     without one (`add_constant=False`): the LM statistic is built on the centered
     R-squared and its `k - 1` degrees of freedom count the non-constant regressors.
+    - Referenced against statsmodels' `het_breuschpagan` (with its default
+    `robust=True`).
     """
-    # het_breuschpagan assumes the design holds a constant (for R² and the degrees
-    # of freedom), so one is added when the original regression had none.
-    lm_statistic, p_value, _, _ = het_breuschpagan(
-        result["residuals"],
-        sm.add_constant(result["design_matrix"], has_constant="skip"),
+    lm_statistic, p_value = _get_heteroskedasticity_lm(
+        result["residuals"], _with_constant(result["design_matrix"]), "Breusch-Pagan"
     )
 
     return pd.Series(
@@ -100,7 +140,7 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 def get_white_test(result: dict) -> pd.Series:
     """
     Calculate White's test for heteroskedasticity of a fitted OLS regression's
-    residuals, via `statsmodels.stats.diagnostic.het_white`.
+    residuals.
 
     Also known as: White's general test.
 
@@ -112,9 +152,12 @@ def get_white_test(result: dict) -> pd.Series:
 
     - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
 
-    Same `LM = n * R^2_auxiliary` construction as Breusch-Pagan, chi-squared
-    distributed with degrees of freedom equal to the number of terms in the
-    polynomial expansion.
+    - LM = n * R^2_auxiliary
+
+    Same construction as Breusch-Pagan, chi-squared distributed with degrees of
+    freedom equal to the number of terms in the polynomial expansion (the rank of the
+    auxiliary design minus the constant, so a term that duplicates another, such as
+    the square of a 0/1 dummy, is counted once).
 
     Because it also picks up non-linear and cross-regressor heteroskedasticity
     patterns that Breusch-Pagan cannot (which only allows a linear relationship
@@ -138,18 +181,19 @@ def get_white_test(result: dict) -> pd.Series:
         rejected at the 5% level.
 
     Raises:
-        ValueError: If the polynomial-expanded auxiliary design is rank-deficient
-        (e.g. too few observations relative to the number of original regressors).
+        ValueError: If the design has no regressor besides the constant.
 
     Notes:
     - The auxiliary regression always includes a constant and the regressors' levels,
-    also when `result` was fitted without a constant (`add_constant=False`).
+    also when `result` was fitted without a constant (`add_constant=False`): the products
+    of every pair of columns of the design with a constant include the constant itself
+    and each level.
+    - Referenced against statsmodels' `het_white`.
     """
-    # het_white expands the design into its cross-products and assumes it holds a
-    # constant (so the levels are among them), so one is added when it has none.
-    lm_statistic, p_value, _, _ = het_white(
-        result["residuals"],
-        sm.add_constant(result["design_matrix"], has_constant="skip"),
+    design = _with_constant(result["design_matrix"])
+    first, second = np.triu_indices(design.shape[1])
+    lm_statistic, p_value = _get_heteroskedasticity_lm(
+        result["residuals"], design[:, first] * design[:, second], "White's"
     )
 
     return pd.Series(
@@ -164,7 +208,7 @@ def get_white_test(result: dict) -> pd.Series:
 def get_durbin_watson_test(result: dict) -> pd.Series:
     """
     Calculate the Durbin-Watson statistic for first-order autocorrelation of a
-    fitted OLS regression's residuals, via `statsmodels.stats.stattools.durbin_watson`.
+    fitted OLS regression's residuals.
 
     Also known as: DW statistic.
 
@@ -199,8 +243,12 @@ def get_durbin_watson_test(result: dict) -> pd.Series:
     therefore only an approximate rule of thumb (`DW < 1.5` -> "Positive Autocorrelation
     Likely", `DW > 2.5` -> "Negative Autocorrelation Likely", otherwise -> "No Strong
     Evidence"), not a formal hypothesis test at a stated significance level.
+    - Referenced against statsmodels' `durbin_watson`.
     """
-    durbin_watson_statistic = float(durbin_watson(result["residuals"]))
+    residuals = result["residuals"]
+    durbin_watson_statistic = float(
+        np.sum(np.diff(residuals) ** 2) / np.sum(residuals**2)
+    )
 
     if durbin_watson_statistic < DURBIN_WATSON_LOWER_BAND:
         interpretation = "Positive Autocorrelation Likely"
@@ -219,8 +267,7 @@ def get_durbin_watson_test(result: dict) -> pd.Series:
 
 def get_vif(x: pd.DataFrame) -> pd.Series:
     """
-    Calculate the Variance Inflation Factor (VIF) of each regressor in `x`, via
-    `statsmodels.stats.outliers_influence.variance_inflation_factor`.
+    Calculate the Variance Inflation Factor (VIF) of each regressor in `x`.
 
     Also known as: VIF.
 
@@ -232,8 +279,8 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
 
     - VIF_i = 1 / (1 - R^2_i)
 
-    Where `R^2_i` is the R-squared of regressing regressor `i` on all other
-    regressors in `x`. A VIF of 1 means no correlation with the other
+    Where `R^2_i` is the (centered) R-squared of regressing regressor `i` on a
+    constant and all other regressors in `x`. A VIF of 1 means no correlation with the other
     regressors; a VIF of `V` means that regressor's coefficient variance is `V`
     times larger than it would be under no multicollinearity.
 
@@ -259,17 +306,15 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
     - `VIF > 10` is the conventional rule-of-thumb threshold for concerning
     multicollinearity (`VIF > 5` is sometimes used as a stricter cutoff); `VIF < 1`
     is not possible by construction.
-    - The auxiliary constant is added with `has_constant="add"` rather than
-    `statsmodels`' `"skip"` default. `"skip"` returns `x` unchanged whenever it
-    ALREADY contains a constant column under some other name (an always-1 dummy, or
-    a column with no variation over the sample), which silently shifts every
-    regressor one position left of the index `variance_inflation_factor` is called
-    with -- mislabelling every VIF and then running off the end of the matrix on the
-    last one with an `IndexError`. Forcing the column keeps the positions aligned, so
-    the genuine regressors keep their correct VIFs. The constant column itself still
-    reports a degenerate value: a regressor with no variance has no variance to
-    inflate, so its VIF is undefined rather than merely large -- drop such a column
-    before reading the result.
+    - The auxiliary constant is always added, also when `x` already contains a
+    constant column under some other name (an always-1 dummy, or a column with no
+    variation over the sample), so every regressor is regressed on the same constant
+    and the others. Such a constant column itself reports NaN: a regressor with no
+    variance has no variance to inflate, so its VIF is undefined -- drop such a column
+    before reading the result. A regressor that is an exact linear combination of the
+    others has `R^2_i = 1` and a VIF of infinity.
+    - Referenced against statsmodels' `variance_inflation_factor`, on the design with
+    a constant prepended.
 
     For more information about the method, see the following paper:
 
@@ -280,12 +325,16 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
         raise TypeError(f"x must be a pd.DataFrame, received {type(x).__name__}.")
 
     regressor_names = [column for column in x.columns if column != "Intercept"]
-    design = sm.add_constant(x[regressor_names].to_numpy(), has_constant="add")
+    values = x[regressor_names].to_numpy(dtype=float)
+    ones = np.ones((len(values), 1))
 
-    vif_values = {
-        regressor: variance_inflation_factor(design, index + 1)
-        for index, regressor in enumerate(regressor_names)
-    }
+    vif_values = {}
+    for index, regressor in enumerate(regressor_names):
+        others = np.column_stack([ones, np.delete(values, index, axis=1)])
+        r_squared = np.float64(fit_least_squares(values[:, index], others)["r_squared"])
+        # A NumPy division, so an exact collinearity (R² = 1) gives inf rather than an error.  # noqa: E501
+        with np.errstate(divide="ignore"):
+            vif_values[regressor] = float(np.float64(1.0) / (1.0 - r_squared))
 
     return pd.Series(vif_values, name="VIF")
 
@@ -293,8 +342,7 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
 def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
     """
     Calculate Ramsey's Regression Equation Specification Error Test (RESET) for
-    functional form misspecification of a fitted OLS regression, via
-    `statsmodels.stats.diagnostic.linear_reset`.
+    functional form misspecification of a fitted OLS regression.
 
     Also known as: RESET test, Ramsey RESET.
 
@@ -306,7 +354,9 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
     whether those added terms are jointly significant via a standard nested F-test
     comparing the restricted (original) and unrestricted (augmented) model:
 
-    - F = ((RSS_r - RSS_u) / q) / (RSS_u / (n - k_u))
+    - y_t = x_t'beta + SUM_{j=2}^{power}(g_j * yhat_t^j) + u_t
+    - F = W / q, with W the Wald statistic of g_2 = ... = g_power = 0
+    - F = ((RSS_r - RSS_u) / q) / (RSS_u / (n - k_u)) for the classical covariance
 
     Where `RSS_r`/`RSS_u` are the restricted/unrestricted residual sums of
     squares, `q` is the number of added power terms (`power - 1`), `n` is the
@@ -348,16 +398,15 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
     worth -- exactly the reason the fit requested a robust covariance in the first
     place.
     - "cluster" and "HAC" fits are rejected rather than silently downgraded to the
-    classical statistic: `statsmodels`' `linear_reset` forwards its extra covariance
-    arguments to `fit()` under the name `cov_kwargs`, which `fit()` does not accept
-    (it takes `cov_kwds`), so the `groups`/`maxlags` those two estimators require
-    never arrive and the call fails. Refit with an "HC0".."HC3" covariance to run
-    RESET on it.
-    - The augmented model is always refit by ordinary least squares, so for a
-    `get_wls`/`get_gls` fit this is the RESET test of the OLS fit of the same `y` on
-    the same `X`, not of a weighted one -- `linear_reset` rebuilds the augmented
-    model from the design matrix alone and cannot carry weights or an error
-    covariance across either.
+    classical statistic: a regression result does not keep the cluster labels or the
+    HAC lag, so the augmented refit cannot reproduce those two estimators. Refit with an
+    "HC0".."HC3" covariance to run RESET on it.
+    - The augmented model is always refit by ordinary least squares on the design
+    matrix and the powers of the OLS fitted values, so for a `get_wls`/`get_gls` fit
+    this is the RESET test of the OLS fit of the same `y` on the same `X`, not of a
+    weighted one.
+    - Referenced against statsmodels' `linear_reset` with `test_type="fitted"` and
+    `use_f=True`.
     """
     if power < MINIMUM_RESET_POWER:
         raise ValueError(
@@ -368,28 +417,42 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
     if cov_type in UNSUPPORTED_RESET_COV_TYPES:
         raise ValueError(
             f"get_ramsey_reset_test cannot honour a {cov_type!r} covariance "
-            "estimator -- statsmodels' linear_reset cannot forward the "
-            "groups/maxlags it needs. Refit with an 'HC0'..'HC3' covariance (or "
+            "estimator -- the regression result does not keep the "
+            "clusters/maxlags it needs. Refit with an 'HC0'..'HC3' covariance (or "
             "'nonrobust') to run RESET on it."
         )
 
     # y is recoverable as fitted_values + residuals, by construction.
     target = result["fitted_values"] + result["residuals"]
 
+    design = result["design_matrix"]
+    fitted = fit_least_squares(target, design)["fitted_values"]
+    augmented = np.column_stack(
+        [design, *[fitted**exponent for exponent in range(2, power + 1)]]
+    )
+
     try:
-        sm_result = sm.OLS(target, result["design_matrix"]).fit()
-        reset_result = linear_reset(
-            sm_result, power=power, use_f=True, cov_type=cov_type
-        )
-    except (ValueError, np.linalg.LinAlgError) as error:
+        regression_model._validate_design(augmented, target)
+    except ValueError as error:
         raise ValueError(
             "Could not fit the RESET-augmented regression -- the augmented design "
             "may be rank-deficient or have too few observations relative to its "
             "parameters."
         ) from error
 
-    f_statistic = float(reset_result.fvalue)
-    p_value = float(reset_result.pvalue)
+    augmented_fit = fit_least_squares(target, augmented, cov_type=cov_type)
+    added_terms = power - 1
+    restriction_matrix = np.eye(added_terms, augmented.shape[1], k=design.shape[1])
+    wald_statistic, restrictions = get_wald_statistic(
+        augmented_fit["coefficients"],
+        augmented_fit["covariance_matrix"],
+        restriction_matrix,
+    )
+
+    f_statistic = wald_statistic / restrictions
+    p_value = float(
+        stats.f.sf(f_statistic, restrictions, augmented_fit["degrees_of_freedom"])
+    )
 
     return pd.Series(
         {
@@ -413,8 +476,7 @@ def get_chow_test(
     Also known as: Chow breakpoint test.
 
     Splits the sample into a "before" and "after" sub-sample at `break_index`,
-    fits OLS separately on each (via `regression_model.get_ols`, i.e.
-    `statsmodels.api.OLS`), and F-tests whether allowing the coefficients to
+    fits OLS separately on each (via `regression_model.get_ols`), and F-tests whether allowing the coefficients to
     differ across the two sub-samples significantly reduces the combined
     residual sum of squares relative to the single pooled regression
     (`result_full`, fit on the entire, unsplit sample):
@@ -428,10 +490,8 @@ def get_chow_test(
     observations. Under the null hypothesis of no structural break (the same
     coefficients apply throughout), `F` is F(k, n - 2k) distributed.
 
-    Neither `statsmodels` nor `linearmodels` ships a dedicated Chow test function
-    (unlike `get_ramsey_reset_test`'s `linear_reset` or the heteroskedasticity
-    tests above) -- this F-test combination remains hand-built, though all three
-    underlying OLS fits it combines are themselves `statsmodels`-backed.
+    Neither `statsmodels` nor `linearmodels` ships a dedicated Chow test function --
+    this F-test combines the three underlying OLS fits.
 
     A significant result (low p-value) indicates that the regression
     relationship differs meaningfully before versus after `break_index` --

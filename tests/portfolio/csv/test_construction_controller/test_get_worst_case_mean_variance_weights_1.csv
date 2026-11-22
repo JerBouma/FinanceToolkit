@@ -1,0 +1,5 @@
+,Weight,Expected Return,Volatility,Sharpe Ratio,Risk Contribution,Worst-Case Return,Worst-Case Sharpe Ratio
+AAPL,0.0982,0.2651,0.3691,0.6708,0.1229,-0.3301,-0.9421
+MSFT,0.0,0.2088,0.3473,0.5507,0.0,-0.3513,-1.0622
+Benchmark,0.9018,0.1046,0.2498,0.3482,0.8771,-0.2983,-1.2647
+Portfolio,1.0,0.1203,0.256,0.4014,1.0,-0.2925,-1.2115

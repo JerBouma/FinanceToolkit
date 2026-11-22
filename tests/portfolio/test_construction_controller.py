@@ -1492,3 +1492,52 @@ def test_get_black_litterman_weights_with_factor_views(
     assert portfolio_module.get_black_litterman_weights(
         market_weights=market, factor_views={"HML": 0.03}
     ).empty
+
+
+def test_get_critical_line_weights(recorder, portfolio_module):
+    table = portfolio_module.get_critical_line_weights(include_benchmark=True)
+    recorder.capture(table)
+    # The minimum variance portfolio is the last corner and the least volatile one.
+    assert (
+        table.loc["Minimum Variance", "Volatility"] <= table["Volatility"].min() + 1e-4
+    )
+    assert (
+        table.loc["Maximum Sharpe", "Sharpe Ratio"]
+        >= table["Sharpe Ratio"].max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_critical_line_weights(
+            maximum_weight=0.5, include_benchmark=True
+        )
+    )
+
+
+def test_get_worst_case_mean_variance_weights(recorder, portfolio_module):
+    table = portfolio_module.get_worst_case_mean_variance_weights(
+        confidence_level=0.5, include_benchmark=True
+    )
+    recorder.capture(table)
+    assert (table["Worst-Case Return"] <= table["Expected Return"] + 1e-4).all()
+    recorder.capture(
+        portfolio_module.get_worst_case_mean_variance_weights(
+            uncertainty="ellipsoid", objective="utility", include_benchmark=True
+        )
+    )
+    target = portfolio_module.get_worst_case_mean_variance_weights(
+        objective="minimum_variance", target_return=-0.16, include_benchmark=True
+    )
+    recorder.capture(target)
+    assert target.loc["Portfolio", "Worst-Case Return"] >= -0.16 - 1e-4
+
+
+def test_get_distributionally_robust_cvar_weights(recorder, portfolio_module):
+    table = portfolio_module.get_distributionally_robust_cvar_weights(
+        include_benchmark=True
+    )
+    recorder.capture(table)
+    assert (table["Worst-Case CVaR"] >= table["CVaR"] - 1e-4).all()
+    recorder.capture(
+        portfolio_module.get_distributionally_robust_cvar_weights(
+            wasserstein_radius=0.0, risk_aversion=5.0, include_benchmark=True
+        )
+    )

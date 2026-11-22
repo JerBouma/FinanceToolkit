@@ -3442,3 +3442,271 @@ def test_mean_risk_weights_take_constraints_and_refuse_bad_input():
         optimization_model.get_risk_budgeting_weights(
             returns, "mad", minimum_acceptable_return=0.001
         )
+
+
+def test_critical_line_corners_match_pyportfolioopt():
+    # PyPortfolioOpt 1.6.0's CLA on the annualized heavy-tailed returns, long only; it
+    # lists the first corner twice (at λ = ∞ and at the first λ).
+    returns = _heavy_tailed_returns()
+    table = optimization_model.get_critical_line_weights(
+        returns.mean() * 252, returns.cov() * 252
+    )
+    corners = table.loc[table.index.str.startswith("Corner"), list("ABCDEF")]
+    np.testing.assert_allclose(
+        corners,
+        [
+            [0, 0, 0, 0, 0, 1],
+            [0, 0, 0, 0.557402549, 0, 0.442597451],
+            [0, 0, 0, 0.5699268943, 0.1269427932, 0.3031303125],
+            [0.0151717076, 0, 0, 0.5656595361, 0.1337849149, 0.2853838413],
+            [0.0377655527, 0, 0.3379904172, 0.4036647881, 0.1090234485, 0.1115557936],
+            [
+                0.0420241622,
+                0.0188577777,
+                0.4796388873,
+                0.3317869026,
+                0.0946033341,
+                0.0330889361,
+            ],
+        ],
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        table.loc[table.index.str.startswith("Corner"), "Lambda"],
+        [0.4797924204, 0.0897615433, 0.034569539, 0.0302708325, 0.0090965035, 0],
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        table.loc["Maximum Sharpe", list("ABCDEF")],
+        [0, 0, 0, 0.5668398769, 0.0956537644, 0.3375063587],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        table.loc["Minimum Variance"], table.loc["Corner 6"], atol=1e-12
+    )
+
+
+def test_critical_line_corners_lie_on_the_efficient_frontier():
+    # With an upper bound of 0.3, PyPortfolioOpt's CLA agrees on the minimum variance
+    # and maximum Sharpe portfolios but skips the corners where B leaves and re-enters
+    # the portfolio. Every corner here is the SLSQP minimum variance portfolio at its
+    # expected return.
+    returns = _heavy_tailed_returns()
+    mu, sigma = returns.mean() * 252, returns.cov() * 252
+    table = optimization_model.get_critical_line_weights(mu, sigma, maximum_weight=0.3)
+    np.testing.assert_allclose(
+        table.loc["Minimum Variance", list("ABCDEF")],
+        [0.0811420496, 0.0652610238, 0.3, 0.3, 0.1616023354, 0.0919945912],
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        table.loc["Maximum Sharpe", list("ABCDEF")],
+        [0.1, 0, 0, 0.3, 0.3, 0.3],
+        atol=1e-9,
+    )
+    assert len(table) == 10  # noqa: PLR2004
+    for label in table.index[1:-2]:
+        weights = optimization_model.get_mean_variance_weights(
+            mu,
+            sigma,
+            target_return=table.loc[label, "Expected Return"],
+            maximum_weight=0.3,
+        )
+        np.testing.assert_allclose(weights, table.loc[label, list("ABCDEF")], atol=1e-6)
+    # The returns fall and λ falls from corner to corner.
+    corners = table.iloc[:-2]
+    assert corners["Expected Return"].is_monotonic_decreasing
+    assert corners["Lambda"].is_monotonic_decreasing
+
+    # On the four asset example the maximum Sharpe portfolio is that of SLSQP.
+    exact = optimization_model.get_critical_line_weights(
+        EXPECTED_RETURNS, COVARIANCE, risk_free_rate=0.02
+    )
+    np.testing.assert_allclose(
+        exact.loc["Maximum Sharpe", ASSETS],
+        optimization_model.get_maximum_sharpe_weights(
+            EXPECTED_RETURNS, COVARIANCE, 0.02
+        ),
+        atol=1e-6,
+    )
+
+
+def test_critical_line_refuses_a_singular_covariance():
+    singular = pd.DataFrame(
+        np.ones((2, 2)) * 0.04, index=["A", "B"], columns=["A", "B"]
+    )
+    with pytest.raises(ValueError, match="positive definite"):
+        optimization_model.get_critical_line_weights(
+            pd.Series([0.1, 0.2], index=["A", "B"]), singular
+        )
+
+
+def test_worst_case_mean_variance_matches_riskfolio_and_skfolio():
+    returns = _heavy_tailed_returns()
+    mu, sigma = returns.mean(), returns.cov()
+    uncertain = sigma / len(returns)
+    # Riskfolio-Lib 7.4.1's wc_optimization(Umu="box", Ucov=None) with the same box
+    # half-widths; its utility has l w'Σw, which is λ/2 with λ = 2.5.
+    np.testing.assert_allclose(
+        optimization_model.get_worst_case_mean_variance_weights(mu, sigma, uncertain),
+        [0, 0, 0, 0.6981680941, 0, 0.3018319059],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, "box", objective="utility"
+        ),
+        [0, 0, 0, 0.717850325, 0, 0.282149675],
+        atol=1e-6,
+    )
+    # skfolio 1.12.7's MeanRisk with EmpiricalMuUncertaintySet(diagonal=False).
+    np.testing.assert_allclose(
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, "ellipsoid", objective="utility"
+        ),
+        [0, 0, 0, 0.5677059283, 0.1044260114, 0.3278680602],
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu,
+            sigma,
+            uncertain,
+            "ellipsoid",
+            objective="minimum_variance",
+            target_return=-0.000308155090171875,
+        ),
+        [0.0349189784, 0, 0.2954033788, 0.4240730939, 0.1121447145, 0.1334598333],
+        atol=1e-5,
+    )
+    # With Σ_μ = Σ / T the ellipsoid lowers every Sharpe ratio by the same amount.
+    np.testing.assert_allclose(
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, "ellipsoid"
+        ),
+        optimization_model.get_critical_line_weights(mu, sigma).loc[
+            "Maximum Sharpe", list("ABCDEF")
+        ],
+        atol=1e-8,
+    )
+
+
+def test_worst_case_return_and_short_positions():
+    mu, sigma = EXPECTED_RETURNS, COVARIANCE
+    uncertain = sigma / 60
+    weights = pd.Series([0.5, -0.2, 0.4, 0.3], index=ASSETS)
+    half_width = 1.959963985 * np.sqrt(np.diag(uncertain))
+    assert np.isclose(
+        optimization_model.get_worst_case_return(weights, mu, uncertain, "box"),
+        weights @ mu - half_width @ weights.abs(),
+    )
+    assert np.isclose(
+        optimization_model.get_worst_case_return(weights, mu, uncertain, "ellipsoid"),
+        weights @ mu - np.sqrt(9.487729037) * np.sqrt(weights @ uncertain @ weights),
+    )
+    # A short position pays the box penalty on its absolute weight, so the worst-case
+    # utility is never above that of the long-only optimum by more than the extra room.
+    short = optimization_model.get_worst_case_mean_variance_weights(
+        mu, sigma, uncertain, "box", objective="utility", minimum_weight=-0.3
+    )
+    assert np.isclose(short.sum(), 1)
+    assert short.min() >= -0.3 - 1e-8
+    utility = optimization_model.get_worst_case_return(
+        short, mu, uncertain, "box"
+    ) - 1.25 * (short @ sigma @ short)
+    for candidate in [
+        pd.Series([0.25] * 4, index=ASSETS),
+        short.clip(lower=0) / short.clip(lower=0).sum(),
+    ]:
+        assert (
+            utility
+            >= optimization_model.get_worst_case_return(candidate, mu, uncertain, "box")
+            - 1.25 * (candidate @ sigma @ candidate)
+            - 1e-9
+        )
+    with pytest.raises(ValueError, match="uncertainty"):
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, "cube"
+        )
+    with pytest.raises(ValueError, match="target return"):
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, objective="minimum_variance"
+        )
+    with pytest.raises(ValueError, match="cannot be reached"):
+        optimization_model.get_worst_case_mean_variance_weights(
+            mu, sigma, uncertain, objective="minimum_variance", target_return=0.5
+        )
+
+
+@pytest.mark.parametrize(
+    ("radius", "risk_aversion", "expected"),
+    [
+        # skfolio 1.12.7's DistributionallyRobustCVaR(cvar_beta=0.95).
+        (
+            0.0,
+            1.0,
+            [0.1486216398, 0, 0.1600879639, 0.4425478359, 0.0518559898, 0.1968865703],
+        ),
+        (
+            0.0,
+            5.0,
+            [0.159984991, 0, 0.1907703424, 0.4722754639, 0.059826139, 0.1171430636],
+        ),
+        (
+            0.001,
+            1.0,
+            [
+                0.1844150639,
+                0.0616383107,
+                0.1884866563,
+                0.1884866563,
+                0.1884866563,
+                0.1884866563,
+            ],
+        ),
+        (
+            0.001,
+            5.0,
+            [
+                0.1887159401,
+                0.0578295433,
+                0.1964406636,
+                0.1964406636,
+                0.1964406634,
+                0.164132526,
+            ],
+        ),
+        (0.02, 1.0, [1 / 6] * 6),
+    ],
+)
+def test_distributionally_robust_cvar_weights_match_skfolio(
+    radius, risk_aversion, expected
+):
+    np.testing.assert_allclose(
+        optimization_model.get_distributionally_robust_cvar_weights(
+            _heavy_tailed_returns(), 0.95, radius, risk_aversion
+        ),
+        expected,
+        atol=1e-7,
+    )
+
+
+def test_worst_case_cvar_grows_with_the_radius_up_to_a_total_loss():
+    returns = _heavy_tailed_returns()
+    weights = pd.Series([0.5, 0.1, 0.1, 0.1, 0.1, 0.1], index=list("ABCDEF"))
+    historical = optimization_model.get_expected_tail_loss(-(returns @ weights), 0.95)
+    assert np.isclose(
+        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 0.0), historical
+    )
+    # For a small radius the worst case moves the asset with the largest weight down in
+    # the tail periods: the CVaR rises by ε max w / (1 - β).
+    assert np.isclose(
+        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 0.01),
+        historical + 0.01 * 0.5 / 0.05,
+    )
+    # Returns cannot fall below -100%, so no distribution loses more than everything.
+    assert np.isclose(
+        optimization_model.get_worst_case_cvar(returns, weights, 0.95, 2.0), 1
+    )
+    with pytest.raises(ValueError, match="radius"):
+        optimization_model.get_distributionally_robust_cvar_weights(returns, 0.95, -0.1)

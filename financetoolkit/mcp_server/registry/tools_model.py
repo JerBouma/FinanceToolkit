@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Annotated
 
 from mcp.server.fastmcp import FastMCP
@@ -272,22 +273,32 @@ class UtilityToolRegistry:
     # ── Tool methods ──────────────────────────────────────────────────────────
     def list_categories(self) -> str:
         """Finance Toolkit: list the categories of what this server calculates (prices,
-        financial statements, ratios, models, risk, economics) and how many tools each has.
+        financial statements, ratios, models, risk, economics) and how many tools and indicators each has.
 
         Use this first to understand what is available, then call
         ``search_by_category`` with a specific category name.
 
         Returns:
-            str: Markdown table of categories, tool counts, and descriptions.
+            str: Markdown table of categories, tool and indicator counts, and
+                descriptions, with the totals.
         """
         index = self._registry.get_tool_index()
-        lines = ["| Category | Tools | Description |", "| --- | --- | --- |"]
+        indicators_per_tool = Counter(
+            entry["tool"] for entry in self._registry.get_indicator_index()
+        )
+        lines = [
+            "| Category | Tools | Indicators | Description |",
+            "| --- | --- | --- | --- |",
+        ]
         for cat in sorted(index.keys()):
-            n = len(index.get(cat, []))
+            tools = index.get(cat, [])
+            indicators = sum(indicators_per_tool[tool["tool"]] for tool in tools)
             desc = self._category_descriptions.get(cat, "N/A")
-            lines.append(f"| `{cat}` | {n} | {desc} |")
-        total = sum(len(v) for v in index.values())
-        lines.append(f"\n**Total tools: {total}**")
+            lines.append(f"| `{cat}` | {len(tools)} | {indicators} | {desc} |")
+        total_tools = sum(len(v) for v in index.values())
+        lines.append(
+            f"\n**Total: {sum(indicators_per_tool.values())} indicators in {total_tools} tools**"
+        )
         lines.append(
             "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "
             "indicator and its tool."

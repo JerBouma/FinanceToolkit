@@ -57,6 +57,21 @@ def test_the_search_tools_say_they_belong_to_the_finance_toolkit():
     assert "search_categories" not in tools
 
 
+def test_the_categories_count_the_indicators_of_every_tool():
+    """The total number of indicators is one call, per category and overall."""
+    result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
+    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
+
+    rows = [line.split("|") for line in text.splitlines() if line.startswith("| `")]
+    per_category = {row[1].strip(" `"): int(row[3]) for row in rows}
+    total = int(text.split("**Total: ")[1].split(" indicators")[0])
+
+    assert per_category["ratios"] > 100
+    assert per_category["technicals"] > 100
+    assert all(count > 0 for count in per_category.values())
+    assert sum(per_category.values()) == total
+
+
 def test_a_category_of_one_tool_is_named_after_it():
     """An agent can go from a category straight to its tool."""
     from collections import defaultdict

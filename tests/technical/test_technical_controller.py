@@ -2140,3 +2140,27 @@ def test_get_relative_strength_index_laguerre(recorder, technical_module):
     recorder.capture(
         technical_module.get_relative_strength_index(method="laguerre", gamma=0.8)
     )
+
+
+def test_volume_profile_of_a_constant_close_keeps_the_other_tickers():
+    from financetoolkit.technicals.technicals_controller import Technicals
+
+    index = pd.period_range("2024-01-01", periods=4, freq="D")
+    columns = pd.MultiIndex.from_product([["Adj Close", "Volume"], ["A", "B"]])
+    data = pd.DataFrame(
+        [
+            [10.0, 20.0, 100.0, 300.0],
+            [10.0, 21.0, 200.0, 100.0],
+            [10.0, 22.0, 150.0, 200.0],
+            [10.0, 23.0, 50.0, 400.0],
+        ],
+        index=index,
+        columns=columns,
+    )
+    technicals = Technicals(["A", "B"], {"daily": data}, rounding=None)
+
+    profile = technicals.get_volume_profile(bins=3)
+
+    assert profile[("Total Volume", "A")].tolist() == [500.0, 0.0, 0.0]
+    # A close on an inner edge (21) belongs to the lower bin.
+    assert profile[("Total Volume", "B")].tolist() == [400.0, 200.0, 400.0]

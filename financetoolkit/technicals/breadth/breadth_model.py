@@ -1577,6 +1577,9 @@ def get_volume_profile(
           which has no change.
         - A close on an inner edge belongs to the lower bin, and the lowest close to the
           first bin.
+        - A constant close has no range to divide: every edge equals that close and all the
+          volume is in the first bin, the others are 0. Without any close and volume, the
+          prices are NaN and every bin has a volume of 0.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1592,7 +1595,12 @@ def get_volume_profile(
     direction = np.sign(close.diff())
 
     edges = np.linspace(close.min(), close.max(), bins + 1)
-    price_bin = pd.cut(close, edges, labels=False, include_lowest=True) + 1
+    if close.empty or close.min() == close.max():
+        # Without a range the edges coincide and no bin can be cut: a constant close puts
+        # all the volume in the first bin, and without closes every bin is empty.
+        price_bin = pd.Series(1, index=close.index)
+    else:
+        price_bin = pd.cut(close, edges, labels=False, include_lowest=True) + 1
 
     profile = (
         pd.DataFrame(

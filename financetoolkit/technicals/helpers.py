@@ -165,8 +165,10 @@ FACTOR_COLLECTIONS["all"] = [
 # Indicators in price units, which get_factor_analysis makes comparable across tickers: a
 # price line (an average, band or stop) as the distance of the close from it, close / line - 1,
 # and a price difference (a range or an oscillator of two averages) as a share of the close. A
-# method name covers every variant of the method, and a method with a method= parameter only
-# that variant.
+# method name covers every variant of the method, and a method with parameters, such as
+# ("get_swiss_army_knife_filter", {"filter": "butterworth"}), only that variant: the low-pass
+# filters of the Swiss Army Knife return smoothed prices, its high-pass and band-pass filters
+# oscillate around zero.
 FACTOR_PRICE_LINES = (
     "get_moving_average",
     "get_holt_winters_channel",
@@ -188,6 +190,8 @@ FACTOR_PRICE_LINES = (
     "get_pivot_points",
     "get_fibonacci_retracement_levels",
     "get_mesa_adaptive_moving_average",
+    ("get_swiss_army_knife_filter", {"filter": "butterworth"}),
+    ("get_swiss_army_knife_filter", {"filter": "gaussian"}),
 )
 FACTOR_PRICE_DIFFERENCES = (
     "get_true_range",
@@ -205,9 +209,38 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_detrended_price_oscillator",
     "get_force_index",
     "get_hilbert_phasor_components",
-    "get_swiss_army_knife_filter",
+    ("get_swiss_army_knife_filter", {"filter": "high_pass"}),
+    ("get_swiss_army_knife_filter", {"filter": "two_pole_high_pass"}),
+    ("get_swiss_army_knife_filter", {"filter": "band_pass"}),
     "get_detrended_synthetic_price",
 )
+
+
+def is_factor_listed(
+    entries: tuple[str | tuple[str, dict], ...], name: str, arguments: dict
+) -> bool:
+    """
+    Returns whether an indicator, called with the given arguments, is one of the entries of
+    FACTOR_PRICE_LINES or FACTOR_PRICE_DIFFERENCES: a method name covers every variant, and
+    a method with parameters only the calls whose arguments have those values.
+
+    Args:
+        entries (tuple[str | tuple[str, dict], ...]): The method names and variants.
+        name (str): The method name of the indicator.
+        arguments (dict): The value of each parameter of the call, the default where none
+            is given.
+
+    Returns:
+        bool: Whether the indicator is listed.
+    """
+    for entry in entries:
+        entry_name, variant = (entry, {}) if isinstance(entry, str) else entry
+        if entry_name == name and all(
+            arguments.get(key) == value for key, value in variant.items()
+        ):
+            return True
+
+    return False
 
 
 def calculate_per_ticker(

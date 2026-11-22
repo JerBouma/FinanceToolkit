@@ -1311,3 +1311,18 @@ def test_projection_oscillator_against_the_projected_bands():
     )
     assert result.first_valid_index() == 13
     assert result.dropna().between(0, 1).all()
+
+
+def test_dynamic_momentum_index_of_a_late_start_equals_its_own_history():
+    """A series that starts later (leading NaN) sums only its own Period price changes."""
+    closes = random_bars()["Close"]
+    late_start = closes.copy()
+    late_start.iloc[:40] = np.nan
+
+    result = momentum_model.get_dynamic_momentum_index(late_start, 14, 5, 10, 5, 30)
+    own_history = momentum_model.get_dynamic_momentum_index(
+        closes.iloc[40:], 14, 5, 10, 5, 30
+    )
+
+    pd.testing.assert_series_equal(result.iloc[40:], own_history)
+    assert result.iloc[:40].isna().all()

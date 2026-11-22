@@ -242,3 +242,29 @@ def test_an_oscillator_defaults_to_its_main_line():
     assert (
         factor_model.to_daily_factor(values, ["AAPL"], "Histogram")["AAPL"] == 1.0
     ).all()
+
+
+def test_a_metric_label_parses_into_the_method_and_its_parameters():
+    assert factor_model.parse_metric_label("get_moving_average(method='hull')") == (
+        "get_moving_average",
+        {"method": "hull"},
+    )
+    assert factor_model.parse_metric_label(
+        'get_moving_average(method="hull", window=10)'
+    ) == ("get_moving_average", {"method": "hull", "window": 10})
+    assert factor_model.parse_metric_label("get_moving_average") == (
+        "get_moving_average"
+    )
+    # Not a call with keyword arguments: left as it is, to be reported as unknown.
+    assert factor_model.parse_metric_label("get_moving_average('hull')") == (
+        "get_moving_average('hull')"
+    )
+
+    selected = factor_model.select_metrics(
+        "get_rate_of_change, get_moving_average(method='hull', window=10)",
+        {"momentum": ["get_rate_of_change"]},
+    )
+    assert selected == [
+        "get_rate_of_change",
+        ("get_moving_average", {"method": "hull", "window": 10}),
+    ]

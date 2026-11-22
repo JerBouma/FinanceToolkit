@@ -1,6 +1,9 @@
 """Factor Model"""
 
+import ast
 import inspect
+import re
+import typing
 
 import numpy as np
 import pandas as pd
@@ -433,15 +436,54 @@ def get_metric_label(metric: str | tuple[str, dict]) -> str:
     return f"{name}({arguments})"
 
 
+def parse_metric_label(label: str) -> str | tuple[str, dict]:
+    """
+    Returns the metric a label names: a method name as it is, and a method with parameters,
+    such as "get_moving_average(method='hull')" or 'get_moving_average(method="hull",
+    window=10)', as the method name with its parameters, ("get_moving_average", {"method":
+    "hull"}). The parameters are keyword arguments with literal values (text in single or
+    double quotes, numbers, booleans or None). A label that is not of this form is returned
+    as it is, so that it is reported as an unknown metric.
+
+    Args:
+        label (str): The method name or label.
+
+    Returns:
+        str | tuple[str, dict]: The method name, or the method name with the parameters.
+    """
+    try:
+        call = ast.parse(label.strip(), mode="eval").body
+    except SyntaxError:
+        return label
+
+    if (
+        not isinstance(call, ast.Call)
+        or not isinstance(call.func, ast.Name)
+        or call.args
+        or any(keyword.arg is None for keyword in call.keywords)
+    ):
+        return label
+
+    try:
+        parameters = {
+            str(keyword.arg): ast.literal_eval(keyword.value)
+            for keyword in call.keywords
+        }
+    except ValueError:
+        return label
+
+    return (call.func.id, parameters) if parameters else call.func.id
+
+
 def select_metrics(
     metrics: str | list[str], collections: dict[str, list]
 ) -> list[str | tuple[str, dict]]:
     """
     Returns the metrics to analyse: a collection is replaced by its metrics, and a text may
-    name several metrics or collections separated by commas. A metric of a collection is a
-    method name or a method name with the parameters of one of its variants, such as
-    ("get_moving_average", {"method": "t3"}), which can also be named by its label,
-    "get_moving_average(method='t3')".
+    name several metrics or collections separated by commas. A metric is a method name or a
+    method name with the parameters of one of its variants, such as ("get_moving_average",
+    {"method": "t3"}), which can also be named by its label, "get_moving_average(method='t3')"
+    (see parse_metric_label).
 
     Args:
         metrics (str | list[str]): The metric names, labels and collections.
@@ -451,17 +493,16 @@ def select_metrics(
         list[str | tuple[str, dict]]: The metrics, each once, in the order given.
     """
     if isinstance(metrics, str):
-        metrics = [metric.strip() for metric in metrics.split(",") if metric.strip()]
-
-    variants = {
-        get_metric_label(metric): metric
-        for collection in collections.values()
-        for metric in collection
-    }
+        # The commas between the parameters of a label do not separate metrics.
+        metrics = [
+            metric.strip()
+            for metric in re.split(r",(?![^()]*\))", metrics)
+            if metric.strip()
+        ]
 
     names: list[str | tuple[str, dict]] = []
     for metric in metrics:
-        for name in collections.get(metric, [variants.get(metric, metric)]):
+        for name in collections.get(metric, [parse_metric_label(metric)]):
             if name not in names:
                 names.append(name)
 
@@ -520,8 +561,25 @@ def get_daily_factors(
             raise ValueError(
                 f"{name} is not a metric of the {type(module).__name__} module."
             )
+        accepted = inspect.signature(method).parameters
+        for key, value in variant.items():
+            if key not in accepted:
+                raise ValueError(f"{key} is not a parameter of {name}.")
+            # The options of a parameter typed as a Literal (or a Literal or None).
+            annotation = accepted[key].annotation
+            options = [
+                option
+                for member in (annotation, *typing.get_args(annotation))
+                if typing.get_origin(member) is typing.Literal
+                for option in typing.get_args(member)
+            ]
+            if options and value not in options:
+                raise ValueError(
+                    f"{key}={value!r} is not an option of {name}, which takes "
+                    f"{', '.join(map(repr, options))}."
+                )
         methods[get_metric_label(metric)] = (method, variant)
-        unused -= set(inspect.signature(method).parameters)
+        unused -= set(accepted)
 
     if unused:
         raise ValueError(

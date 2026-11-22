@@ -18,6 +18,7 @@ from financetoolkit.portfolio.construction.optimization.optimization_controller 
     OptimizationConstruction,
 )
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
+from financetoolkit.risk.helpers import trades_on_weekends
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -203,6 +204,18 @@ class PortfolioConstructionBase:
             np.tile(resolved.to_numpy(), (len(index), 1)), index=index, columns=assets
         )
 
+    @staticmethod
+    def _get_periods_per_year(period: str, index: pd.Index) -> int:
+        """
+        The number of periods in a year that annualizes returns of the period: 365 for
+        daily returns on calendar days, which have returns on Saturdays and Sundays (such
+        as those of cryptocurrencies, see trades_on_weekends), and otherwise that of
+        PERIODS_PER_YEAR, 252 trading days for daily returns, as the risk module counts.
+        """
+        if period == "daily" and trades_on_weekends(index):
+            return 365
+        return PERIODS_PER_YEAR[period]
+
     def _get_risk_free_rate(self, period: str, index: pd.Index) -> float:
         """The average annualized risk free rate over the periods, 0 when unknown."""
         risk_free = self._risk_free_rate_data.get(period)
@@ -300,7 +313,7 @@ class PortfolioConstructionBase:
         expected, covariance_matrix = (
             optimization_model.get_expected_returns_and_covariance(
                 returns,
-                PERIODS_PER_YEAR[period],
+                self._get_periods_per_year(period, returns.index),
                 covariance,
                 covariance_span,
                 expected_returns,

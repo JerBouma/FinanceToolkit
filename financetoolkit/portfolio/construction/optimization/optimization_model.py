@@ -1354,7 +1354,12 @@ def get_portfolio_statistics(
     risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
-    The expected return, volatility and Sharpe ratio of a portfolio.
+    The expected return, volatility and Sharpe ratio of a portfolio. The part of the
+    portfolio that is not invested, 1 - Σw, is cash that earns the risk free rate (and,
+    above a net exposure of one, is borrowed at it), so the expected return is
+    w'μ + (1 - Σw) r_f and the Sharpe ratio w'(μ - r_f) / √(w'Σw), the ratio the maximum
+    Sharpe ratio optimizer maximizes, which is the same for every net exposure of the
+    same mix of assets (Tobin, 1958).
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -1366,7 +1371,9 @@ def get_portfolio_statistics(
         pd.Series: The Expected Return, Volatility and Sharpe Ratio.
     """
     weights = weights.reindex(expected_returns.index).fillna(0)
-    portfolio_return = float(weights @ expected_returns)
+    portfolio_return = (
+        float(weights @ expected_returns) + (1 - float(weights.sum())) * risk_free_rate
+    )
     portfolio_volatility = float(np.sqrt(weights @ covariance @ weights))
 
     return pd.Series(
@@ -1479,7 +1486,10 @@ def get_maximum_sharpe_weights(
     The fully invested portfolio with the highest Sharpe ratio, the tangency portfolio of
     the efficient frontier (Sharpe, 1966; Tobin, 1958). A transaction cost c lowers the
     expected return by c Σ |w_i - w0_i|, so the ratio maximized is
-    (w'μ - r_f - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|. An L2 regularization γ
+    (w'(μ - r_f) - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|. The part of the portfolio
+    that is not invested, 1 - Σw, earns the risk free rate (see get_portfolio_statistics),
+    so, when no bound binds, a net exposure other than one scales the weights of the
+    same portfolio, as on the capital market line (Tobin, 1958). An L2 regularization γ
     replaces Σ by Σ + γI in the denominator, √(w'Σw + γ w'w), which pulls the portfolio
     towards equal weights. It equals adding γ y'y to the variance y'Σy that the
     homogeneous form of the problem minimizes (y = κw with (μ - r_f)'y = 1).
@@ -5431,13 +5441,17 @@ def get_minimum_tracking_error_weights(
     gross_exposure: float | None = None,
     current_weights: pd.Series | None = None,
     maximum_turnover: float | None = None,
+    risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
     The fully invested portfolio closest to a benchmark (Roll, 1992): with the objective
     "tracking_error", the one with the lowest tracking error, the volatility of its return
     minus the benchmark's, TE²(w) = Var(R w - r_b) = w'Σ_AA w - 2 w'Σ_Ab + σ_b²; with
     "information_ratio", the one with the highest information ratio, the expected active
-    return per unit of tracking error, (w'μ - μ_b) / TE(w).
+    return per unit of tracking error, (w'μ + (1 - Σw) r_f - μ_b) / TE(w). The part of
+    the portfolio that is not invested, 1 - Σw, is cash at the risk free rate (borrowed
+    at it above a net exposure of one), as in get_tracking_error; it has no risk, so it
+    leaves the tracking error as it is.
 
     Args:
         expected_returns (pd.Series): The annualized expected return of the assets and the
@@ -5467,6 +5481,8 @@ def get_minimum_tracking_error_weights(
             turnover is measured from. Defaults to None.
         maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
             from the current weights. Defaults to None, no limit.
+        risk_free_rate (float, optional): The annualized risk free rate the part that is
+            not invested earns, for the information ratio. Defaults to 0.
 
     Returns:
         pd.Series: The weight per asset, without the benchmark.
@@ -5485,7 +5501,10 @@ def get_minimum_tracking_error_weights(
     sigma = covariance.loc[assets, assets].to_numpy()
     with_benchmark = covariance.loc[assets, benchmark].to_numpy()
     benchmark_variance = float(covariance.loc[benchmark, benchmark])
-    active = expected_returns.reindex(assets).to_numpy() - expected_returns[benchmark]
+    # The active return w'(μ - r_f) - (μ_b - r_f) counts the part not invested at the
+    # risk free rate; it differs from w'μ - μ_b by a constant only at a net exposure of one.
+    active = expected_returns.reindex(assets).to_numpy() - risk_free_rate
+    benchmark_excess = float(expected_returns[benchmark]) - risk_free_rate
     constraints = get_weight_constraints(
         assets,
         minimum_weight,
@@ -5514,22 +5533,22 @@ def get_minimum_tracking_error_weights(
             constraints,
         )
     else:
-        if np.all(active <= 0) and all(bound[0] >= 0 for bound in constraints.bounds):
+        if _return_range(active, constraints)[1] <= benchmark_excess:
             raise ValueError(
-                "No asset has an expected return above the benchmark's, so no portfolio "
-                "has a positive information ratio."
+                "No portfolio within the constraints expects a return above the "
+                "benchmark's, so none has a positive information ratio."
             )
 
         def gradient(weights):
             variance = tracking_variance(weights)
-            excess = weights @ active
+            excess = weights @ active - benchmark_excess
             return -(
                 active / np.sqrt(variance)
                 - excess * (sigma @ weights - with_benchmark) / variance**1.5
             )
 
         weights = _solve(
-            lambda w: -(w @ active) / np.sqrt(tracking_variance(w)),
+            lambda w: -(w @ active - benchmark_excess) / np.sqrt(tracking_variance(w)),
             gradient,
             constraints,
         )
@@ -5542,11 +5561,14 @@ def get_tracking_error(
     expected_returns: pd.Series,
     covariance: pd.DataFrame,
     benchmark: str,
+    risk_free_rate: float = 0.0,
 ) -> pd.Series:
     """
     The expected active return, tracking error and information ratio of a portfolio
-    against a benchmark: w'μ - μ_b, √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²) and their ratio
-    (Roll, 1992; Grinold and Kahn, 2000).
+    against a benchmark: w'μ + (1 - Σw) r_f - μ_b, √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²) and
+    their ratio (Roll, 1992; Grinold and Kahn, 2000). The part of the portfolio that is
+    not invested, 1 - Σw, is cash at the risk free rate (borrowed at it above a net
+    exposure of one), as in get_portfolio_statistics.
 
     Args:
         weights (pd.Series): The weight per asset.
@@ -5556,6 +5578,8 @@ def get_tracking_error(
             benchmark.
         benchmark (str): The name of the benchmark in the expected returns and covariance
             matrix.
+        risk_free_rate (float, optional): The annualized risk free rate the part that is
+            not invested earns. Defaults to 0.
 
     Returns:
         pd.Series: The Active Return, Tracking Error and Information Ratio.
@@ -5563,8 +5587,12 @@ def get_tracking_error(
     # The active position: the weights of the assets against a short position in the
     # benchmark, whose variance is the tracking variance.
     active = weights.reindex(covariance.index).fillna(0)
+    cash = 1 - float(active.sum())
     active[benchmark] -= 1
-    active_return = float(active @ expected_returns.reindex(covariance.index))
+    active_return = (
+        float(active @ expected_returns.reindex(covariance.index))
+        + cash * risk_free_rate
+    )
     tracking_error = float(np.sqrt(max(active @ covariance @ active, 0)))
 
     return pd.Series(
@@ -7245,11 +7273,18 @@ def get_worst_case_mean_variance_weights(
     μ'w - δ'|w| for a box and μ'w - κ √(w'Σ_μ w) for an ellipsoid. Both are concave in
     w, so the problems stay convex:
 
-    - "maximum_sharpe": maximize (R(w) - r_f) / √(w'Σw), solved with the Charnes-Cooper
-      transformation y = κw, κ ≥ 0 (Charnes and Cooper, 1962): maximize R(y) - r_f κ
-      subject to y'Σy ≤ 1 and the weight constraints scaled by κ, then w = y / κ.
+    - "maximum_sharpe": maximize (R(w) - n r_f) / √(w'Σw) with n = Σw the net exposure,
+      solved with the Charnes-Cooper transformation y = κw, κ ≥ 0 (Charnes and Cooper,
+      1962): maximize R(y) - n r_f κ subject to y'Σy ≤ 1 and the weight constraints
+      scaled by κ, then w = y / κ.
     - "utility": maximize R(w) - (λ/2) w'Σw with λ the risk aversion.
-    - "minimum_variance": minimize w'Σw subject to R(w) ≥ the target return.
+    - "minimum_variance": minimize w'Σw subject to R(w) + (1 - n) r_f ≥ the target
+      return.
+
+    The part of the portfolio that is not invested, 1 - n, is cash that earns the risk
+    free rate without uncertainty (borrowed at it above a net exposure of one), as in
+    get_portfolio_statistics, so the worst-case return of the portfolio is
+    R(w) + (1 - n) r_f and its worst-case Sharpe ratio (R(w) - n r_f) / √(w'Σw).
 
     With Σ_μ proportional to Σ (such as Σ / T) the ellipsoid lowers every Sharpe ratio
     by the same κ √(w'Σ_μ w) / √(w'Σw), so its maximum Sharpe portfolio is the ordinary
@@ -7276,7 +7311,8 @@ def get_worst_case_mean_variance_weights(
         risk_aversion (float, optional): The risk aversion λ of the utility. Defaults to
             2.5.
         target_return (float | None, optional): The lowest annualized worst-case
-            return of the minimum variance objective, which needs it. Defaults to None.
+            return of the portfolio, cash included, of the minimum variance objective,
+            which needs it. Defaults to None.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -7426,12 +7462,13 @@ def get_worst_case_mean_variance_weights(
     highest = float(worst(highest_point))
 
     if objective == "minimum_variance" and target_return is not None:
-        if target_return > highest + 1e-9:
+        cash_return = (1 - net_exposure) * risk_free_rate
+        if target_return > highest + cash_return + 1e-9:
             raise ValueError(
                 f"A worst-case return of {target_return:.4f} cannot be reached within "
-                f"the constraints (at most {highest:.4f})."
+                f"the constraints (at most {highest + cash_return:.4f})."
             )
-        target = min(target_return, highest)
+        target = min(target_return - cash_return, highest)
         if uncertainty == "box":
             # The box's worst case is linear, so R(x) ≥ target is one more row A x ≤ b.
             constraints = constraints._replace(
@@ -7464,7 +7501,7 @@ def get_worst_case_mean_variance_weights(
             "narrows the uncertainty set."
         )
 
-    # Charnes-Cooper: over z = (y, κ) maximize R(y) - r_f κ subject to y'Σy ≤ 1 (in
+    # Charnes-Cooper: over z = (y, κ) maximize R(y) - n r_f κ subject to y'Σy ≤ 1 (in
     # units of the average variance) and the homogeneous weight constraints, starting
     # from the portfolio with the highest worst-case return scaled onto y'Σy = 1.
     scaled = sigma / scale
@@ -7478,9 +7515,10 @@ def get_worst_case_mean_variance_weights(
     # The objective in units of its value at the start, which is positive.
     unit = (highest - risk_free_rate * net_exposure) / size
     result = minimize(
-        lambda z: -(worst(z[:-1]) - risk_free_rate * z[-1]) / unit,
+        lambda z: -(worst(z[:-1]) - risk_free_rate * net_exposure * z[-1]) / unit,
         start,
-        jac=lambda z: -np.append(worst_gradient(z[:-1]), -risk_free_rate) / unit,
+        jac=lambda z: -np.append(worst_gradient(z[:-1]), -risk_free_rate * net_exposure)
+        / unit,
         method="SLSQP",
         bounds=[(None, None)] * variables + [(0, None)],
         constraints=[

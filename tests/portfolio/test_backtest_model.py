@@ -208,3 +208,33 @@ def test_in_sample_expectations_average_what_each_rebalance_expected():
     assert expectations.loc[
         "Maximum Sharpe", "In-Sample Sharpe Ratio"
     ] == pytest.approx((0.20 / 0.2 + second_sharpe) / 2)
+
+
+def test_a_strategy_holds_nothing_before_its_first_weights(caplog):
+    returns = _returns()
+    dates = backtest_model.get_rebalancing_dates(returns.index, "monthly", 100)
+
+    def late(window: pd.DataFrame) -> pd.Series:
+        if window.index[-1] < dates[2]:
+            raise ValueError("No weights yet.")
+        return _equal(window)
+
+    def never(window: pd.DataFrame) -> pd.Series:
+        raise ValueError("The bounds cannot be met.")
+
+    net, weights, turnover = backtest_model.get_walk_forward_backtest(
+        returns, {"Late": late, "Never": never, "1/N": _equal}, dates, 100
+    )
+    start = returns.index.get_loc(dates[2]) - returns.index.get_loc(dates[0])
+
+    # Before its first weights the strategy has no returns and no weights, after them
+    # the returns of 1/N, which it then holds.
+    assert net["Late"].iloc[:start].isna().all()
+    np.testing.assert_allclose(net["Late"].iloc[start:], net["1/N"].iloc[start:])
+    assert weights["Late"].iloc[:2].isna().all().all()
+    assert net["Never"].isna().all()
+    assert "Never found no weights on any of the" in caplog.text
+    assert "The bounds cannot be met." in caplog.text
+    statistics = backtest_model.get_backtest_statistics(net, turnover, 252)
+    assert statistics.loc["Never"].isna().all()
+    assert statistics.loc["Late"].notna().all()

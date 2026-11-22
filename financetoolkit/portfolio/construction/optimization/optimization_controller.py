@@ -14,11 +14,14 @@ from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 # ruff: noqa: E501
 
 logger = get_logger()
+
+# The largest gap between the sum of the weights and one that is not shown as cash, well
+# above the rounding of the solvers.
+CASH_TOLERANCE = 1e-6
 
 # The optimizers that stacking combines, with the names they are shown under.
 STACKING_METHODS = {
@@ -93,11 +96,29 @@ class OptimizationConstruction:
         covariance: pd.DataFrame,
         risk_free_rate: float,
         rounding: int | None,
+        current: pd.Series | None = None,
+        transaction_cost: float = 0.0,
     ) -> pd.DataFrame:
         """
         The weights with, per asset and for the portfolio, the expected return, volatility,
-        Sharpe ratio and share of the portfolio's risk.
+        Sharpe ratio and share of the portfolio's risk. Weights that do not sum to one leave
+        the rest, 1 - Σw, in a Cash row at the risk free rate (negative when borrowed above
+        a net exposure of one), so the portfolio's expected return and Sharpe ratio include
+        it. With current weights it adds the Turnover, and with a transaction cost the
+        Transaction Cost, the cost times |w_i - w0_i| per asset, which the portfolio's
+        expected return and Sharpe ratio are after, as the optimizers that take it maximize.
         """
+        assets = weights
+        cash = 1 - float(weights.sum())
+        if abs(cash) > CASH_TOLERANCE:
+            weights = pd.concat([weights, pd.Series({"Cash": cash})])
+            expected_returns = pd.concat(
+                [expected_returns, pd.Series({"Cash": risk_free_rate})]
+            )
+            with_cash = covariance.index.append(pd.Index(["Cash"]))
+            covariance = covariance.reindex(
+                index=with_cash, columns=with_cash, fill_value=0.0
+            )
         volatility = pd.Series(np.sqrt(np.diag(covariance)), index=covariance.index)
         contributions = optimization_model.get_risk_contributions(weights, covariance)
         table = pd.DataFrame(
@@ -119,6 +140,16 @@ class OptimizationConstruction:
             statistics["Sharpe Ratio"],
             contributions["Percentage Contribution"].sum(),
         ]
+        table = self._add_turnover(table, assets, current)
+        if transaction_cost and current is not None:
+            costs = transaction_cost * table["Turnover"].drop(PORTFOLIO_TICKER)
+            table["Transaction Cost"] = costs
+            table.loc[PORTFOLIO_TICKER, "Transaction Cost"] = costs.sum()
+            table.loc[PORTFOLIO_TICKER, "Expected Return"] -= costs.sum()
+            if not np.isnan(statistics["Sharpe Ratio"]):
+                table.loc[PORTFOLIO_TICKER, "Sharpe Ratio"] = (
+                    table.loc[PORTFOLIO_TICKER, "Expected Return"] - risk_free_rate
+                ) / statistics["Volatility"]
         return self._round(table, rounding)
 
     def _get_constraints(
@@ -287,10 +318,12 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). At 0 the portfolio with the lowest variance holds
-                nothing, so all weights are 0. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest variance holds nothing,
+                so all weights are 0. The rest, 1 minus the net exposure, is a Cash row at
+                the risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -502,9 +535,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -519,7 +554,10 @@ class OptimizationConstruction:
                 of the portfolio each way. Defaults to None, no limit.
             transaction_cost (float, optional): The cost per unit of weight traded
                 from the current weights, e.g. 0.001 for 10 basis points, subtracted once
-                from the portfolio's annualized expected return. Defaults to 0.
+                from the portfolio's annualized expected return. It adds a Transaction
+                Cost column, the cost times |w_i - w0_i| per asset and their sum for the
+                portfolio, whose Expected Return and Sharpe Ratio are after it. Defaults
+                to 0.
             l2_regularization (float, optional): The weight γ of the L2 penalty γ w'w on
                 the weights, in annualized variance units, which pulls the portfolio
                 towards equal weights and spreads it over more assets, e.g. 0.05. It is
@@ -550,7 +588,8 @@ class OptimizationConstruction:
           times the turnover from the current weights, so the optimizer only trades when
           the gain in Sharpe ratio pays for it. The cost
           is taken once from an annualized return, which spreads it over a year of
-          holding the portfolio.
+          holding the portfolio. The Portfolio row shows the expected return and Sharpe
+          ratio after the cost, the ones the optimizer maximized.
 
         As an example:
 
@@ -608,10 +647,15 @@ class OptimizationConstruction:
             l2_regularization=l2_regularization,
             transaction_cost=transaction_cost,
         )
-        table = self._weights_table(
-            weights, expected, covariance_matrix, risk_free_rate, rounding
+        return self._weights_table(
+            weights,
+            expected,
+            covariance_matrix,
+            risk_free_rate,
+            rounding,
+            current,
+            transaction_cost,
         )
-        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_mean_variance_weights(
@@ -673,7 +717,8 @@ class OptimizationConstruction:
 
         Args:
             target_return (float | None, optional): The annualized return the portfolio must
-                expect, e.g. 0.12 for 12%. Defaults to None, which uses the target
+                expect, e.g. 0.12 for 12%, with the cash of a net exposure other than one
+                at the risk free rate. Defaults to None, which uses the target
                 volatility or the risk aversion.
             risk_aversion (float, optional): The investor's risk aversion λ; higher values
                 give less risky portfolios. Not used with a target return or target
@@ -734,9 +779,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -751,7 +798,10 @@ class OptimizationConstruction:
                 of the portfolio each way. Defaults to None, no limit.
             transaction_cost (float, optional): The cost per unit of weight traded
                 from the current weights, e.g. 0.001 for 10 basis points, subtracted once
-                from the portfolio's annualized expected return. Defaults to 0.
+                from the portfolio's annualized expected return. It adds a Transaction
+                Cost column, the cost times |w_i - w0_i| per asset and their sum for the
+                portfolio, whose Expected Return and Sharpe Ratio are after it. Defaults
+                to 0.
             target_volatility (float | None, optional): The highest annualized volatility
                 of the portfolio (the volatility per period times the square root of the
                 number of periods in a year), e.g. 0.15 for 15%. Cannot be combined with
@@ -829,7 +879,12 @@ class OptimizationConstruction:
         weights = optimization_model.get_mean_variance_weights(
             expected,
             covariance_matrix,
-            target_return,
+            # The target is that of the portfolio, the cash at the risk free rate included.
+            (
+                target_return - (1 - net_exposure) * risk_free_rate
+                if target_return is not None
+                else None
+            ),
             risk_aversion,
             **self._get_constraints(
                 covariance_matrix.index.tolist(),
@@ -846,10 +901,15 @@ class OptimizationConstruction:
             transaction_cost=transaction_cost,
             target_volatility=target_volatility,
         )
-        table = self._weights_table(
-            weights, expected, covariance_matrix, risk_free_rate, rounding
+        return self._weights_table(
+            weights,
+            expected,
+            covariance_matrix,
+            risk_free_rate,
+            rounding,
+            current,
+            transaction_cost,
         )
-        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_efficient_frontier(
@@ -954,11 +1014,13 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). At 0 the portfolio with the lowest variance holds
-                nothing, so the first portfolio of the frontier has all weights 0 and no
-                Sharpe ratio (NaN). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest variance holds nothing,
+                so the first portfolio of the frontier has all weights 0 and no Sharpe ratio
+                (NaN). The rest, 1 minus the net exposure, earns the risk free rate
+                (borrowed at it above one) in the Expected Return and Sharpe Ratio. Defaults
+                to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1792,7 +1854,7 @@ class OptimizationConstruction:
                 window_risk_free_rate = self._get_risk_free_rate(period, window.index)
                 mu, sigma = optimization_model.get_expected_returns_and_covariance(
                     window,
-                    PERIODS_PER_YEAR[period],
+                    self._get_periods_per_year(period, returns.index),
                     covariance,
                     covariance_span,
                     expected_returns,
@@ -2490,10 +2552,12 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). At 0 the portfolio with the lowest CVaR holds
-                nothing, so all weights are 0. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest CVaR holds nothing, so
+                all weights are 0. The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -2647,9 +2711,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio. A net exposure of 0 is refused, as holding nothing
-                has no drawdown. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio. A net exposure of 0 is refused, as holding nothing has no
+                drawdown. The rest, 1 minus the net exposure, is a Cash row at the risk free
+                rate (negative when borrowed above one), which the Portfolio's Expected
+                Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -2821,8 +2887,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
+                is a Cash row at the risk free rate (negative when borrowed above one),
+                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
+                1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -2889,7 +2958,9 @@ class OptimizationConstruction:
         )
         # The numerator of the ratio takes the expected returns per period; the losses
         # in its denominator are those of the historical returns.
-        expected_per_period = expected / PERIODS_PER_YEAR[period]
+        expected_per_period = expected / self._get_periods_per_year(
+            period, returns.index
+        )
         current = self._get_current_weights(
             current_weights, returns.columns.tolist(), maximum_turnover is not None
         )
@@ -2996,8 +3067,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
+                is a Cash row at the risk free rate (negative when borrowed above one),
+                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
+                1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -3066,11 +3140,12 @@ class OptimizationConstruction:
         )
         # The numerator of the ratio takes the expected returns per period; the losses
         # in its denominator are those of the historical returns.
-        expected_per_period = expected / PERIODS_PER_YEAR[period]
+        periods_per_year = self._get_periods_per_year(period, returns.index)
+        expected_per_period = expected / periods_per_year
         current = self._get_current_weights(
             current_weights, returns.columns.tolist(), maximum_turnover is not None
         )
-        risk_free_per_period = risk_free_rate / PERIODS_PER_YEAR[period]
+        risk_free_per_period = risk_free_rate / periods_per_year
         weights = optimization_model.get_maximum_cvar_ratio_weights(
             returns,
             confidence_level,
@@ -3221,7 +3296,8 @@ class OptimizationConstruction:
             objective (str, optional): "minimum_risk" or "maximum_ratio" (the highest
                 average excess return per unit of risk). Defaults to "minimum_risk".
             target_return (float | None, optional): The annualized expected return the
-                minimum risk portfolio must have, e.g. 0.12 for 12%. Defaults to None,
+                minimum risk portfolio must have, e.g. 0.12 for 12%, with the cash of a
+                net exposure other than one at the risk free rate. Defaults to None,
                 no target.
             confidence_level (float, optional): The confidence level of the CVaR range
                 and the Tail Gini measures, e.g. 0.95 for the worst 5% of periods.
@@ -3258,8 +3334,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
+                is a Cash row at the risk free rate (negative when borrowed above one),
+                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
+                1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -3342,8 +3421,9 @@ class OptimizationConstruction:
         )
         # The ratio and the target return take the expected returns per period; the
         # risk measures are those of the historical returns.
-        expected_per_period = expected / PERIODS_PER_YEAR[period]
-        risk_free_per_period = risk_free_rate / PERIODS_PER_YEAR[period]
+        periods_per_year = self._get_periods_per_year(period, returns.index)
+        expected_per_period = expected / periods_per_year
+        risk_free_per_period = risk_free_rate / periods_per_year
         current = self._get_current_weights(
             current_weights, returns.columns.tolist(), maximum_turnover is not None
         )
@@ -3352,7 +3432,8 @@ class OptimizationConstruction:
             risk_measure,
             objective,
             (
-                target_return / PERIODS_PER_YEAR[period]
+                target_return / periods_per_year
+                - (1 - net_exposure) * risk_free_per_period
                 if target_return is not None
                 else None
             ),
@@ -3637,7 +3718,8 @@ class OptimizationConstruction:
             risk_aversion (float, optional): The risk aversion λ of the utility; higher
                 values give less risky portfolios. Defaults to 2.5.
             target_return (float | None, optional): The lowest annualized worst-case
-                return of the minimum variance objective, e.g. 0.1 for 10%. Defaults to
+                return of the minimum variance objective, e.g. 0.1 for 10%, with the cash
+                of a net exposure other than one at the risk free rate. Defaults to
                 None.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
@@ -3669,8 +3751,10 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio. The rest, 1 minus the net exposure, is a Cash row at the risk
+                free rate (negative when borrowed above one), which the Portfolio's Expected
+                Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -3751,7 +3835,11 @@ class OptimizationConstruction:
             expected_returns_span,
         )
         # The covariance of the annualized average of T periods: Var(P r̄) = P Σ_annual / T.
-        mean_covariance = covariance_matrix * PERIODS_PER_YEAR[period] / len(returns)
+        mean_covariance = (
+            covariance_matrix
+            * self._get_periods_per_year(period, returns.index)
+            / len(returns)
+        )
         current = self._get_current_weights(
             current_weights,
             covariance_matrix.index.tolist(),
@@ -3808,6 +3896,11 @@ class OptimizationConstruction:
                 for name, portfolio in portfolios.items()
             }
         )
+        # The cash of a net exposure other than one earns the risk free rate for certain.
+        cash = 1 - float(weights.sum())
+        worst[PORTFOLIO_TICKER] += cash * risk_free_rate
+        if "Cash" in table.index:
+            worst["Cash"] = risk_free_rate
         table["Worst-Case Return"] = worst
         table["Worst-Case Sharpe Ratio"] = (worst - risk_free_rate) / volatility
         return self._round(self._add_turnover(table, weights, current), rounding)
@@ -3895,8 +3988,10 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio. The rest, 1 minus the net exposure, is a Cash row at the risk
+                free rate (negative when borrowed above one), which the Portfolio's Expected
+                Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -4094,9 +4189,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -4218,9 +4315,11 @@ class OptimizationConstruction:
         The tracking error is TE(w) = √Var(R w - r_b) = √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²), with
         Σ_AA the annualized covariance matrix of the assets, Σ_Ab their covariances with the
         benchmark and σ_b² the benchmark's variance. The information ratio is
-        (w'μ - μ_b) / TE(w), with μ and μ_b the annualized expected returns. The weights sum
-        to one and lie between the minimum and maximum weight; the benchmark is the
-        Toolkit's (SPY by default) and is not one of the assets.
+        (w'μ + (1 - Σw) r_f - μ_b) / TE(w), with μ and μ_b the annualized expected returns
+        and the part not invested at the risk free rate r_f, which leaves the tracking error
+        as it is. The weights sum to the net exposure, one by default, and lie between the
+        minimum and maximum weight; the benchmark is the Toolkit's (SPY by default) and is
+        not one of the assets.
 
         For more information, see the following papers:
 
@@ -4293,9 +4392,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -4386,6 +4487,7 @@ class OptimizationConstruction:
             gross_exposure=gross_exposure,
             current_weights=current,
             maximum_turnover=maximum_turnover,
+            risk_free_rate=risk_free_rate,
         )
         assets = weights.index
         table = self._weights_table(
@@ -4395,6 +4497,7 @@ class OptimizationConstruction:
             risk_free_rate,
             rounding,
         )
+        # Each row on its own, the Cash row as cash only, against the benchmark.
         tracking = pd.DataFrame(
             {
                 asset: optimization_model.get_tracking_error(
@@ -4402,12 +4505,13 @@ class OptimizationConstruction:
                     expected,
                     covariance_matrix,
                     BENCHMARK_TICKER,
+                    risk_free_rate,
                 )
-                for asset in assets
+                for asset in table.index.drop(PORTFOLIO_TICKER)
             }
         ).T
         tracking.loc[PORTFOLIO_TICKER] = optimization_model.get_tracking_error(
-            weights, expected, covariance_matrix, BENCHMARK_TICKER
+            weights, expected, covariance_matrix, BENCHMARK_TICKER, risk_free_rate
         )
         return self._round(
             self._add_turnover(pd.concat([table, tracking], axis=1), weights, current),
@@ -4608,7 +4712,7 @@ class OptimizationConstruction:
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
         )
-        periods_per_year = PERIODS_PER_YEAR[period]
+        periods_per_year = self._get_periods_per_year(period, returns.index)
         cash = 1 - fraction * net_exposure
         growth = np.log1p(returns).mean() * periods_per_year
         portfolio_growth = (
@@ -4618,18 +4722,9 @@ class OptimizationConstruction:
             * periods_per_year
         )
 
-        # The cash is an asset without risk that earns the risk free rate, so the
-        # portfolio's expected return and Sharpe ratio include it.
-        if cash != 0:
-            weights["Cash"] = cash
-            expected["Cash"] = risk_free_rate
-            covariance_matrix = covariance_matrix.reindex(
-                index=weights.index, columns=weights.index, fill_value=0.0
-            )
-            growth["Cash"] = (
-                np.log1p(risk_free_rate / periods_per_year) * periods_per_year
-            )
-
+        # The cash is an asset without risk that earns the risk free rate; the table adds
+        # it to the weights, so the portfolio's expected return and Sharpe ratio include it.
+        growth["Cash"] = np.log1p(risk_free_rate / periods_per_year) * periods_per_year
         table = self._weights_table(
             weights, expected, covariance_matrix, risk_free_rate, rounding
         )
@@ -4759,8 +4854,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
+                is a Cash row at the risk free rate (negative when borrowed above one),
+                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
+                1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -4843,7 +4941,7 @@ class OptimizationConstruction:
             returns,
             expected,
             covariance_matrix,
-            PERIODS_PER_YEAR[period],
+            self._get_periods_per_year(period, returns.index),
             objective,
             resamples,
             resampling,
@@ -5044,9 +5142,11 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). Defaults to 1.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). The rest, 1 minus the net exposure, is a Cash row at the
+                risk free rate (negative when borrowed above one), which the Portfolio's
+                Expected Return and Sharpe Ratio include. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -5129,7 +5229,7 @@ class OptimizationConstruction:
                 raise ValueError("The market risk aversion needs a benchmark.")
             risk_aversion = optimization_model.get_market_implied_risk_aversion(
                 benchmark.reindex(returns.index),
-                PERIODS_PER_YEAR[period],
+                self._get_periods_per_year(period, returns.index),
                 risk_free_rate,
             )
         elif isinstance(risk_aversion, str):
@@ -5138,7 +5238,7 @@ class OptimizationConstruction:
             )
 
         if method != "standard":
-            periods_per_year = PERIODS_PER_YEAR[period]
+            periods_per_year = self._get_periods_per_year(period, returns.index)
             aligned, factor_returns = self._align_factors(
                 returns, self._get_factor_returns(period, factors, region)
             )

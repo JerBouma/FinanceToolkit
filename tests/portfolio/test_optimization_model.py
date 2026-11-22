@@ -4169,3 +4169,90 @@ def test_the_dbht_breaks_ties_and_handles_few_assets():
         assert small[-1, 3] == assets
     with pytest.raises(ValueError, match="At least two assets"):
         optimization_model.get_dbht_linkage(np.zeros((1, 1)))
+
+
+def _benchmark_inputs() -> tuple[pd.Series, pd.DataFrame]:
+    rng = np.random.default_rng(11)
+    returns = pd.DataFrame(
+        rng.normal([0.0009, 0.0006, 0.0003, 0.0007], 0.015, (600, 4)),
+        columns=["A", "B", "C", "Benchmark"],
+    )
+    returns["Benchmark"] += returns[["A", "B", "C"]].mean(axis=1)
+    return returns.mean() * 252, returns.cov() * 252
+
+
+def test_the_information_ratio_counts_the_part_not_invested_at_the_risk_free_rate():
+    expected, covariance = _benchmark_inputs()
+    weights = optimization_model.get_minimum_tracking_error_weights(
+        expected,
+        covariance,
+        "Benchmark",
+        "information_ratio",
+        net_exposure=2.0,
+        risk_free_rate=0.03,
+    )
+    statistics = optimization_model.get_tracking_error(
+        weights, expected, covariance, "Benchmark", 0.03
+    )
+
+    assert weights.sum() == pytest.approx(2)
+    assert statistics["Active Return"] == pytest.approx(
+        weights @ expected[weights.index] - 0.03 - expected["Benchmark"]
+    )
+    # No other portfolio within the bounds has a higher information ratio than the one
+    # reported for the optimizer's weights.
+    rng = np.random.default_rng(0)
+    draws = 2 * rng.dirichlet(np.ones(3), 5000)
+    best = max(
+        optimization_model.get_tracking_error(
+            pd.Series(draw, index=weights.index),
+            expected,
+            covariance,
+            "Benchmark",
+            0.03,
+        )["Information Ratio"]
+        for draw in draws[draws.max(axis=1) <= 1]
+    )
+    assert statistics["Information Ratio"] >= best - 1e-8
+
+
+def test_the_portfolio_statistics_hold_the_rest_in_cash_at_the_risk_free_rate():
+    expected, covariance = _benchmark_inputs()
+    expected, covariance = expected[:3], covariance.iloc[:3, :3]
+    full = optimization_model.get_maximum_sharpe_weights(
+        expected, covariance, 0.03, maximum_weight=2.0
+    )
+    half = optimization_model.get_maximum_sharpe_weights(
+        expected, covariance, 0.03, maximum_weight=2.0, net_exposure=0.5
+    )
+    statistics = optimization_model.get_portfolio_statistics(
+        half, expected, covariance, 0.03
+    )
+
+    np.testing.assert_allclose(half, 0.5 * full, atol=1e-6)
+    assert statistics["Expected Return"] == pytest.approx(half @ expected + 0.5 * 0.03)
+    assert statistics["Sharpe Ratio"] == pytest.approx(
+        optimization_model.get_portfolio_statistics(full, expected, covariance, 0.03)[
+            "Sharpe Ratio"
+        ],
+        rel=1e-6,
+    )
+
+
+def test_the_worst_case_sharpe_ratio_holds_the_rest_in_cash_at_the_risk_free_rate():
+    expected, covariance = _benchmark_inputs()
+    expected, covariance = expected[:3], covariance.iloc[:3, :3]
+    weights = {
+        net_exposure: optimization_model.get_worst_case_mean_variance_weights(
+            expected,
+            covariance,
+            covariance / 600,
+            risk_free_rate=0.03,
+            maximum_weight=2.0,
+            net_exposure=net_exposure,
+        )
+        for net_exposure in (1.0, 0.5)
+    }
+
+    # The box's worst case is homogeneous, so half the net exposure halves the weights.
+    np.testing.assert_allclose(weights[0.5], 0.5 * weights[1.0], atol=1e-5)

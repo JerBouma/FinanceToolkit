@@ -400,7 +400,9 @@ class ToolkitProvider:
             "financetoolkit_version": TOOLKIT_VERSION,
             "module": module_name,
             "method": method_name,
-            "tickers": sorted(t.upper() for t in tickers) if tickers else [],
+            # In the order given, as the order is part of the question: the first ticker is
+            # the dependent one of a regression or pair, and the answer follows the order.
+            "tickers": [t.upper() for t in tickers] if tickers else [],
             "countries": sorted(countries) if countries else [],
             "start": start_date,
             "end": end_date,
@@ -829,8 +831,9 @@ class ToolkitProvider:
 
         This method will attempt to return a cached Toolkit instance if one exists for the
         combination of tickers, start_date, end_date, quarterly flag and the provider API hash.
-        The cache key uses an uppercase, sorted representation of the tickers to ensure
-        consistent caching regardless of input order. Access to the cache is guarded by an
+        The cache key holds the uppercase tickers in the order given, as the Toolkit
+        takes its first ticker as the dependent one (econometrics, pairs trading) and
+        orders its answers by them. Access to the cache is guarded by an
         internal lock to ensure thread-safety. If no cached instance exists, a new Toolkit
         is instantiated with the provider's API key and the provided parameters, stored in
         the cache, and returned.
@@ -870,7 +873,7 @@ class ToolkitProvider:
             f"{effective_key or ''}|{effective_fred_key or ''}".encode()
         ).hexdigest()
         cache_key = (
-            f"{','.join(sorted(upper_tickers))}"
+            f"{','.join(upper_tickers)}"
             f"|{start_date}|{end_date}|{quarterly}"
             f"|{benchmark_ticker or 'none'}|{toolkit_risk_free_rate}|{toolkit_basket}"
             f"|{key_hash}"

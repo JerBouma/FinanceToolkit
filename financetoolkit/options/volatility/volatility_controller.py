@@ -141,7 +141,8 @@ class VolatilityOptions:
         Args:
             expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None,
             which uses the first expiration date at least one calendar day away (an expiry of today has hardly any
-            time left to price).
+            time left to price) that every ticker lists, if they share one. A ticker without options expiring on the
+            date is left out with a warning.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
@@ -151,7 +152,8 @@ class VolatilityOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            show_expiration_dates (bool, optional): Whether to show the expiration dates. Defaults to False.
+            show_expiration_dates (bool, optional): Whether to show the expiration dates: a list for a single ticker
+                and a list per ticker (a dictionary) for several. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -164,7 +166,7 @@ class VolatilityOptions:
 
         Returns:
             pd.Series | list[str]: Implied Volatility values indexed by ticker and strike price, with the expiration
-            date as the Series name. If show_expiration_dates is True, it returns the list of expiration dates.
+            date as the Series name. If show_expiration_dates is True, it returns the expiration dates.
 
         As an example:
 
@@ -190,19 +192,20 @@ class VolatilityOptions:
         |          372.5 |       0.2898 |
         |          377.5 |       0.3803 |
         """
-        expiration_dates = self.get_option_chains(show_expiration_dates=True)
-
         if show_expiration_dates:
-            return expiration_dates
+            return self.get_option_chains(show_expiration_dates=True)
+
+        # The dates of every ticker, so a date that only a later ticker lists is valid too.
+        expiration_dates = self._all_expiration_dates()
 
         if expiration_date is None:
             # An expiry of today has hardly any time left to price, so the first expiry at
-            # least a calendar day away is used.
+            # least a calendar day away is used, one that every ticker lists if they share any.
             now = self._current_time()
             expiration_date = next(
                 (
                     date
-                    for date in expiration_dates
+                    for date in self._all_expiration_dates(shared_first=True)
                     if get_days_to_expiration(date, now) >= 1
                 ),
                 None,
@@ -402,7 +405,8 @@ class VolatilityOptions:
         Args:
             expiration_dates (list[str] | None, optional): The expiration dates to
                 fit the surface over. Defaults to None, meaning the first
-                `number_of_expirations` available expiration dates.
+                `number_of_expirations` available expiration dates (those every ticker
+                lists, if they share any).
             put_option (bool, optional): Whether to use put options instead of call
                 options. Defaults to False.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
@@ -458,10 +462,14 @@ class VolatilityOptions:
         |          352.5 |       0.3033 |       0.2374 |          nan |          nan |
         |          357.5 |       0.303  |       0.2331 |          nan |          nan |
         """
-        all_expiration_dates = self.get_option_chains(show_expiration_dates=True)
+        # The dates of every ticker; the nearest ones by default are those every ticker
+        # lists, if they share any, so each expiry of the surface covers every ticker.
+        all_expiration_dates = self._all_expiration_dates()
 
         if expiration_dates is None:
-            expiration_dates = list(all_expiration_dates[:number_of_expirations])
+            expiration_dates = self._all_expiration_dates(shared_first=True)[
+                :number_of_expirations
+            ]
         else:
             invalid_dates = [
                 expiration_date
@@ -773,8 +781,9 @@ class VolatilityOptions:
         if expiration_date is not None:
             candidate_dates = [expiration_date]
         else:
-            # Illiquid near-term expiries resolve nothing, so pick the first usable date.
-            candidate_dates = self.get_option_chains(show_expiration_dates=True)
+            # Illiquid near-term expiries resolve nothing, so pick the first usable date,
+            # one that every ticker lists if they share any.
+            candidate_dates = self._all_expiration_dates(shared_first=True)
 
         for candidate_date in candidate_dates:
             try:

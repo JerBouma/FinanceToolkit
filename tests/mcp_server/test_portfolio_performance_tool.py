@@ -104,6 +104,12 @@ def test_weights_and_holdings_are_read_from_text_and_objects(captured):
     assert captured[-1]["portfolio"] == {"holdings": {"AAPL": 10.0, "MSFT": 5.0}}
 
 
+def test_a_ticker_held_twice_adds_up_with_or_without_spaces(captured):
+    for holdings in ("AAPL:2,AAPL:3", "AAPL:2, AAPL:3", "aapl:2, AAPL :3"):
+        call(holdings=holdings)
+        assert captured[-1]["portfolio"] == {"holdings": {"AAPL": 5.0}}, holdings
+
+
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [

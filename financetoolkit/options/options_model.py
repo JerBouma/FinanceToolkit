@@ -104,7 +104,13 @@ def get_option_chains(
                 "regularMarketPrice", np.nan
             )
         except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
-            logger.info("Yahoo Finance has no option chain of %s (%s).", ticker, error)
+            # A warning, so the answer says which ticker is left out and why.
+            logger.warning(
+                "No options data is available for %s expiring on %s, so it is left out (%s).",
+                ticker,
+                expiration_date,
+                error,
+            )
             options_df = pd.DataFrame()
 
         if options_df.empty:

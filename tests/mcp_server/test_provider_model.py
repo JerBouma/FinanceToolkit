@@ -317,3 +317,104 @@ def test_the_conversion_note_names_every_currency_a_company_reported_in(provider
     )
 
     assert any("SHEL (GBP to USD)" in note for note in notes)
+
+
+class OrderedToolkit:
+    """A Toolkit whose regression takes its first ticker as the dependent one."""
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.econometrics = self
+
+    def get_ols(self, **kwargs):
+        dependent, *independent = self.kwargs["tickers"]
+        return pd.DataFrame(
+            {"Coefficient": [0.0, 0.5], "Dependent": [dependent, dependent]},
+            index=["Intercept", *independent],
+        )
+
+
+def test_the_toolkit_keeps_the_order_of_the_tickers(provider):
+    arguments = {
+        "start_date": "2023-01-01",
+        "end_date": "2025-10-31",
+        "quarterly": False,
+        "benchmark_ticker": None,
+        "api_key": "test-key",
+    }
+    first = provider.get_toolkit_instance(tickers=["AAPL", "MSFT"], **arguments)
+    second = provider.get_toolkit_instance(tickers=["MSFT", "AAPL"], **arguments)
+
+    # The first ticker is the dependent one of a regression or pair, so the order is part
+    # of the question and a Toolkit kept for one order is never handed out for another.
+    assert second is not first
+    assert second.kwargs["tickers"] == ["MSFT", "AAPL"]
+    assert provider.get_toolkit_instance(tickers=["aapl", "msft"], **arguments) is first
+
+
+def test_a_cached_answer_keeps_the_order_of_the_tickers(monkeypatch, tmp_path):
+    monkeypatch.setattr(provider_model, "Toolkit", OrderedToolkit)
+    monkeypatch.setattr(provider_model, "resolve_api_key", lambda: "")
+    provider = ToolkitProvider(
+        cache_ttl=3600,
+        database_location=str(tmp_path / "cache.sqlite"),
+        api_key="test-key",
+    )
+    request = {
+        "module_name": "econometrics",
+        "method_name": "get_ols",
+        "category": "ticker",
+        "start_date": "2023-01-01",
+        "end_date": "2025-10-31",
+        "benchmark_ticker": None,
+    }
+
+    for tickers in (["AAPL", "MSFT"], ["MSFT", "AAPL"], ["AAPL", "MSFT"]):
+        answer = provider.call_method(tickers=tickers, **request)
+        assert answer["Dependent"].iloc[0] == tickers[0]
+        assert list(answer.index) == ["Intercept", tickers[1]]
+
+
+def test_the_econometrics_tool_answers_each_order_of_the_tickers(monkeypatch, tmp_path):
+    import asyncio
+
+    from financetoolkit.mcp_server import mcp_controller
+
+    monkeypatch.setattr(provider_model, "Toolkit", OrderedToolkit)
+    monkeypatch.setattr(provider_model, "resolve_api_key", lambda: "")
+    provider = ToolkitProvider(
+        cache_ttl=3600,
+        database_location=str(tmp_path / "cache.sqlite"),
+        api_key="test-key",
+    )
+    # The server's provider answers from this one, with its own cache of answers.
+    call_method = ToolkitProvider.call_method
+    get_toolkit_instance = ToolkitProvider.get_toolkit_instance
+    monkeypatch.setattr(
+        ToolkitProvider,
+        "call_method",
+        lambda self, *args, **kwargs: call_method(provider, *args, **kwargs),
+    )
+    monkeypatch.setattr(
+        ToolkitProvider,
+        "get_toolkit_instance",
+        lambda self, **kwargs: get_toolkit_instance(provider, **kwargs),
+    )
+
+    answers = [
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "econometrics",
+                {
+                    "indicator": "get_ols",
+                    "tickers": tickers,
+                    "start_date": "2023-01-01",
+                    "end_date": "2025-10-31",
+                },
+            )
+        )[0][0].text
+        for tickers in ("AAPL,MSFT", "MSFT,AAPL")
+    ]
+
+    assert '"Dependent": "AAPL"' in answers[0] and '"metric": "MSFT"' in answers[0]
+    assert '"Dependent": "MSFT"' in answers[1] and '"metric": "AAPL"' in answers[1]

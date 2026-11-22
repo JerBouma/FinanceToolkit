@@ -77,6 +77,7 @@ from financetoolkit.mcp_server.registry.formatting_model import (
 from financetoolkit.mcp_server.registry.provider_model import (
     FALLBACK_BENCHMARKS,
     ToolkitProvider,
+    resolve_benchmark_ticker,
 )
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
@@ -756,7 +757,9 @@ def _describe_docstring(docstring: str) -> dict[str, Any]:
     return {"description": description, "parameters": _docstring_arguments(docstring)}
 
 
-def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
+def _rank_result(
+    result: object, is_country: bool, entities: list[str] | None = None
+) -> pd.DataFrame | None:
     """The result ranked across its tickers (or countries) per period, if it has that shape.
 
     A table with the periods as rows and a column per ticker is ranked as it is; one with
@@ -766,6 +769,10 @@ def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
     Args:
         result (object): The answer of the indicator.
         is_country (bool): Whether the columns are countries rather than tickers.
+        entities (list[str] | None, optional): The requested tickers or countries. The
+            answer of a single one has its fields as columns (Close and Volume), which are
+            not ranked against each other. Defaults to None, which does not check the
+            columns.
 
     Returns:
         pd.DataFrame | None: The ranking, or None when the result has no such shape.
@@ -790,6 +797,13 @@ def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
         result.columns.nlevels != 1
         or not is_time_index_of(result)
         or result.columns.size < 2  # noqa: PLR2004
+        # The answer of a single ticker or country has its fields as columns.
+        or (
+            entities is not None
+            and len(entities) == 1
+            and str(entities[0]).upper()
+            not in {str(column).upper() for column in result.columns}
+        )
     ):
         return None
     result = result.copy()
@@ -1343,23 +1357,28 @@ def _amounts_per_ticker(value: object, name: str) -> dict[str, float]:
         name (str): The input, named in an error.
 
     Returns:
-        dict[str, float]: The amount per ticker.
+        dict[str, float]: The amount per ticker; a ticker given more than once gets the
+            sum of its amounts.
     """
     value = _parse_json_text(value)
     if isinstance(value, str):
         pairs = [item.split(":", 1) for item in value.split(",") if item.strip()]
-        if any(len(pair) != 2 for pair in pairs):  # noqa: PLR2004
+        if not pairs or any(len(pair) != 2 for pair in pairs):  # noqa: PLR2004
             raise ValueError(
                 f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}} or "
                 "'VTI:0.6, BND:0.4'."
             )
-        value = dict(pairs)
-    if not isinstance(value, dict) or not value:
+        # Kept as pairs until the tickers are cleaned, so "AAPL:2,AAPL:3" adds up as
+        # "AAPL:2, AAPL:3" does rather than the last one replacing the first.
+        items = [(ticker, amount) for ticker, amount in pairs]
+    elif isinstance(value, dict) and value:
+        items = list(value.items())
+    else:
         raise ValueError(
             f"{name} must be given per ticker, e.g. {{'VTI': 0.6, 'BND': 0.4}}."
         )
     amounts: dict[str, float] = {}
-    for ticker, amount in value.items():
+    for ticker, amount in items:
         symbol = _ticker(ticker, name)
         amounts[symbol] = amounts.get(symbol, 0.0) + _finite_number(
             amount, f"The {name} of {symbol}"
@@ -1865,7 +1884,16 @@ class ToolRegistry:
             resolved = reference._replace(
                 entities=entities + (["Total"] if arguments["toolkit_basket"] else [])
             )
-            frames.append((resolved, series_model.to_series_columns(result, resolved)))
+            # The benchmark the Toolkit was built with, under which it reports a requested
+            # ticker that is also the benchmark.
+            benchmark = (
+                resolve_benchmark_ticker(entities, benchmark_ticker)[0]
+                if by_ticker
+                else None
+            )
+            frames.append(
+                (resolved, series_model.to_series_columns(result, resolved, benchmark))
+            )
         return series_model.combine_series(frames)
 
     def _build_router_wrapper(
@@ -2908,7 +2936,11 @@ class ToolRegistry:
                             )
                 # After the row selection, so limit=-1 ranks the latest period only.
                 if rank_tickers:
-                    ranking = _rank_result(result, is_country=bool(countries))
+                    ranking = _rank_result(
+                        result,
+                        is_country=bool(countries),
+                        entities=countries or tickers,
+                    )
                     if ranking is None:
                         notes.append(
                             "rank=true was not applied: it needs a value per period and "

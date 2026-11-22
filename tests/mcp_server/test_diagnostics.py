@@ -137,3 +137,62 @@ def test_a_long_list_is_cut_to_the_response_size():
     assert len(json.dumps(answer["data"])) <= 1_000
     assert answer["data"][:3] == [0, 1, 2]
     assert "of 200000 values" in answer["_notes"][-1]
+
+
+def test_a_ticker_without_the_expiry_is_noted_with_its_dates_not_as_unknown(
+    monkeypatch, options_module
+):
+    import asyncio
+
+    from financetoolkit.mcp_server import mcp_controller
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+    from financetoolkit.options import options_model
+
+    expiry_dates = {"AAPL": ["2026-12-04", "2026-12-18"], "MSFT": ["2026-12-18"]}
+
+    def fake_option_chains(tickers, expiration_date, put_option=False):  # noqa: ARG001
+        chain = pd.DataFrame(
+            {
+                "Bid": [1.0],
+                "Ask": [1.1],
+                "Change": [0.1],
+                "Percent Change": [0.01],
+                "Implied Volatility": [0.3],
+            },
+            index=pd.MultiIndex.from_tuples(
+                [(tickers[0], 100.0)], names=["Ticker", "Strike Price"]
+            ),
+        )
+        return chain if expiration_date in expiry_dates[tickers[0]] else pd.DataFrame()
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        return options_module.get_option_chains(
+            expiration_date=kwargs.get("expiration_date")
+        )
+
+    monkeypatch.setattr(
+        options_model, "get_option_expiry_dates", lambda ticker: expiry_dates[ticker]
+    )
+    monkeypatch.setattr(options_model, "get_option_chains", fake_option_chains)
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+
+    answer = json.loads(
+        asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "options",
+                {
+                    "indicator": "get_option_chains",
+                    "tickers": "AAPL,MSFT",
+                    "expiration_date": "2026-12-04",
+                },
+            )
+        )[0][0].text
+    )
+
+    assert {row["Ticker"] for row in answer["data"]} == {"AAPL"}
+    assert answer["_notes"] == [
+        "No options data is available for MSFT expiring on 2026-12-04, so it is left "
+        "out. Its expiration dates are 2026-12-18."
+    ]

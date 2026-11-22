@@ -511,7 +511,8 @@ def enrich_historical_data(
     following columns:
 
         - Return: The return for the given period.
-        - Cumulative Return: The cumulative return for the given period.
+        - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+          1.0 on the first date and 1.25 after a 25% gain.
 
     The return is calculated as the percentage change in the given return column.
 

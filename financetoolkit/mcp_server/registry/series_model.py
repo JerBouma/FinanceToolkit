@@ -8,6 +8,9 @@ from typing import NamedTuple
 import pandas as pd
 
 from financetoolkit.econometrics.data_model import looks_like_dates
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
 
 # A reference has a tool, an indicator, its entities and optionally a column; without the
 # tool it starts with the indicator.
@@ -116,18 +119,25 @@ def _matches(level: object, wanted: str) -> bool:
     return str(level).strip().lower() == wanted.strip().lower()
 
 
-def to_series_columns(result: object, reference: SeriesReference) -> pd.DataFrame:
+def to_series_columns(
+    result: object, reference: SeriesReference, benchmark: str | None = None
+) -> pd.DataFrame:
     """
     Arranges the answer of an indicator as series by date: the dates become the rows,
     whether the indicator has them in its rows (economic indicators, risk metrics) or its
     columns (ratios, models), and only the requested tickers or countries are kept (so a
     benchmark the indicator adds is left out). The optional column picks a field, such as
     a maturity of a yield curve or a component of a model. A column of several levels is
-    named by its levels ("AAPL Return on Equity").
+    named by its levels ("AAPL Return on Equity"), and the answer of a single ticker or
+    country, which has no level naming it, is named after it as well ("AAPL Revenue").
 
     Args:
         result (object): The indicator's answer.
         reference (SeriesReference): The reference it answers.
+        benchmark (str | None, optional): The benchmark ticker the indicator was
+            calculated with. The Toolkit reports a requested ticker that is also its
+            benchmark under "Benchmark", which is then read as that ticker. Defaults to
+            None, no requested ticker is the benchmark.
 
     Returns:
         pd.DataFrame: The series, a column each, by date.
@@ -158,13 +168,31 @@ def to_series_columns(result: object, reference: SeriesReference) -> pd.DataFram
     labels = [
         column if isinstance(column, tuple) else (column,) for column in frame.columns
     ]
-    keep = [
+    if benchmark and any(_matches(benchmark, entity) for entity in reference.entities):
+        labels = [
+            tuple(
+                benchmark if _matches(level, "Benchmark") else level for level in label
+            )
+            for label in labels
+        ]
+    named = [
         any(_matches(level, entity) for level in label for entity in reference.entities)
         for label in labels
     ]
+    keep = list(named)
     # An answer for one ticker or country often has no level naming it.
     if not any(keep):
         keep = [True] * len(labels)
+    elif absent := [
+        entity
+        for entity in reference.entities
+        if not any(_matches(level, entity) for label in labels for level in label)
+    ]:
+        # Reaches the answer's notes, so a series left out is never left out quietly.
+        logger.warning(
+            f"No data is available for {', '.join(absent)} in {reference.indicator}, so "
+            f"{'it is' if len(absent) == 1 else 'they are'} left out of the series."
+        )
     if reference.column:
         keep = [
             kept and any(_matches(level, reference.column) for level in label)
@@ -186,9 +214,13 @@ def to_series_columns(result: object, reference: SeriesReference) -> pd.DataFram
 
     selected = frame.loc[:, keep]
     names = []
-    for label, kept in zip(labels, keep, strict=True):
+    for label, kept, has_entity in zip(labels, keep, named, strict=True):
         if kept:
             levels = [str(level) for level in label if str(level) != ""]
+            # Named after its ticker or country, so the same field of two references
+            # (AAPL's and MSFT's Revenue) stays two series.
+            if not has_entity and len(reference.entities) == 1:
+                levels = [reference.entities[0], *levels]
             names.append(" ".join(levels) if levels else reference.entities[0])
     selected.columns = names
     return selected

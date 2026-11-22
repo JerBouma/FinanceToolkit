@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.analysis import backtest_model
+from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.construction.optimization import (
     estimation_model,
     optimization_model,
@@ -82,8 +83,9 @@ class AnalysisConstruction:
     ) -> pd.DataFrame:
         """
         Calculate how much each asset contributes to the risk of a portfolio, measured as
-        its volatility, expected shortfall (CVaR), semideviation, mean absolute deviation or
-        Conditional Drawdown at Risk (CDaR). The marginal contribution is the
+        its volatility, expected shortfall (CVaR), semideviation, mean absolute deviation,
+        Conditional Drawdown at Risk (CDaR) or one of the Risk module's tail, dispersion and
+        drawdown measures. The marginal contribution is the
         change in the portfolio's risk from a small increase in an asset's weight; the
         risk contribution is the weight times that, and the contributions add up to the
         portfolio's risk (Euler allocation). A large position in a calm asset can
@@ -110,6 +112,20 @@ class AnalysisConstruction:
           sum of the assets' drawdowns from the portfolio's peak, so the marginal
           contribution of an asset is its average drawdown over the portfolio's worst
           drawdown periods (Goldberg and Mahmoud, 2017).
+        - risk_measure="var", "evar", "worst_realization", "gini_mean_difference",
+          "tail_gini", "lower_partial_moment", "kurtosis", "maximum_drawdown",
+          "average_drawdown", "drawdown_at_risk", "entropic_drawdown_at_risk" or
+          "ulcer_index": the historical Value at Risk and Entropic Value at Risk, the worst
+          return, the Gini mean difference, the Tail Gini, the first lower partial moment
+          below zero, the square root of the fourth central moment, and the maximum and
+          average drawdown, Drawdown at Risk, Entropic Drawdown at Risk and Ulcer Index of
+          the uncompounded cumulative return, as the Risk module calculates them, losses
+          positive. The marginal contribution is found by central finite differences,
+          (ρ(w + h e_i) - ρ(w - h e_i)) / 2h with h = 1e-7 (1e-4 for the entropic
+          measures), as Riskfolio-Lib's Risk_Contribution does; the risk contribution is the
+          weight times that (half of it for "kurtosis", whose square root of the fourth
+          moment doubles when the weights double twice over), so the contributions add up
+          to the measure. Per period, not annualized.
 
         For more information, see the following papers:
 
@@ -126,6 +142,8 @@ class AnalysisConstruction:
           Science, 37(5), 519-531.
         - Goldberg, L. R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and
           Back Again." Mathematics and Financial Economics, 11(3), 275-297.
+        - Riskfolio-Lib: Risk_Contribution, Risk_Margin
+          (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: risk decomposition, marginal contribution to risk, risk budget,
         component expected shortfall, component CVaR, downside risk contribution,
@@ -137,11 +155,15 @@ class AnalysisConstruction:
                 or equal weights.
             risk_measure (str, optional): "volatility", "cvar" (the expected shortfall),
                 "semideviation" (below a return of zero), "mad" (the mean absolute
-                deviation) or "cdar" (the Conditional Drawdown at Risk). Defaults to
-                "volatility".
-            confidence_level (float, optional): The confidence level of the expected
-                shortfall and the CDaR, e.g. 0.95 for the average of the worst 5% of
-                periods or drawdowns. Defaults to 0.95.
+                deviation), "cdar" (the Conditional Drawdown at Risk), "var", "evar",
+                "worst_realization", "gini_mean_difference", "tail_gini",
+                "lower_partial_moment", "kurtosis", "maximum_drawdown",
+                "average_drawdown", "drawdown_at_risk", "entropic_drawdown_at_risk" or
+                "ulcer_index". Defaults to "volatility".
+            confidence_level (float, optional): The confidence level of the tail
+                measures (the expected shortfall, CDaR, VaR, EVaR, Tail Gini, Drawdown at
+                Risk and EDaR), e.g. 0.95 for the worst 5% of periods or drawdowns.
+                Defaults to 0.95.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
@@ -156,8 +178,9 @@ class AnalysisConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -176,9 +199,18 @@ class AnalysisConstruction:
             pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or
             per period terms of the other measures, with losses and drawdowns positive.
+            For "kurtosis" the marginal contribution is the derivative of the measure and
+            the risk contribution half the weight times it.
             The assets held (a weight other than zero) are listed, over the periods in
             which each of them has a return; a loaded asset without weight does not
             shorten the sample.
+
+        Notes:
+        - The Value at Risk and Drawdown at Risk are the Risk module's quantiles,
+          interpolated between two periods, where Riskfolio-Lib takes a single period (the
+          ⌈αT⌉-th worst), so their contributions mix two periods and differ from
+          Riskfolio-Lib's; the other measures equal Riskfolio-Lib's ("EVaR", "WR", "GMD",
+          "TG", "FLPM", "KT", "MDD", "ADD", "EDaR", "UCI") to 1e-8.
 
         As an example:
 
@@ -208,7 +240,12 @@ class AnalysisConstruction:
         | XOM     |      0.1 |                  0.0136 |              0.0014 |                    0.0518 |
         | Total   |      1   |                nan      |              0.0263 |                    1      |
         """
-        measures = ("volatility", "cvar", *optimization_model.HISTORICAL_RISK_MEASURES)
+        measures = (
+            "volatility",
+            "cvar",
+            *optimization_model.HISTORICAL_RISK_MEASURES,
+            *optimization_model.FINITE_DIFFERENCE_RISK_MEASURES,
+        )
         if risk_measure not in measures:
             raise ValueError(
                 f"The risk measure must be one of {', '.join(measures)}, not "
@@ -231,6 +268,10 @@ class AnalysisConstruction:
         elif risk_measure == "cvar":
             table = optimization_model.get_expected_shortfall_contributions(
                 resolved, returns, confidence_level
+            )
+        elif risk_measure in optimization_model.FINITE_DIFFERENCE_RISK_MEASURES:
+            table = optimization_model.get_finite_difference_risk_contributions(
+                resolved, returns, risk_measure, confidence_level
             )
         else:
             table = optimization_model.get_historical_risk_contributions(
@@ -300,8 +341,9 @@ class AnalysisConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -675,8 +717,9 @@ class AnalysisConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -807,6 +850,7 @@ class AnalysisConstruction:
             .dropna(how="all")
             .fillna(0)
         )
+        factors = self._get_factor_returns("daily") if covariance == "factor" else None
         # The estimates of a window are the same for every method, so they are made once.
         estimates: dict = {}
 
@@ -829,6 +873,7 @@ class AnalysisConstruction:
                             else None
                         ),
                         risk_free_rate,
+                        factors,
                     ),
                 )
             return estimates[window.index[-1]]
@@ -1094,6 +1139,9 @@ class AnalysisConstruction:
         gerber_statistic: int = 1,
         denoise_alpha: float = 0.0,
         components: int = 1,
+        factor_selection: str = "ols",
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
         correlation: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
@@ -1125,6 +1173,14 @@ class AnalysisConstruction:
           matrix, the market, removed and the rest rescaled to a unit diagonal (López de
           Prado, 2020; skfolio's DetoneCovariance). It is singular, so the optimizers do
           not take it; it suits clustering (codependence="detoned").
+        - "factor": Σ = B Σ_f B' + D, the covariance a time series factor model implies,
+          with B the loadings of the assets on the factors (the Fama and French five
+          factors by default), Σ_f the covariance of the factors and D the variances of the
+          residuals, all with ddof=1 (Fama and French, 1993; Connor, 1995; Riskfolio-Lib's
+          risk_factors, skfolio's TimeSeriesFactorModel). The loadings come from OLS on
+          every factor, a stepwise selection or a principal components regression
+          (factor_selection, see get_factor_loadings), on the periods both the assets and
+          the factors have.
 
         For more information, see the following papers:
 
@@ -1136,22 +1192,28 @@ class AnalysisConstruction:
           Optimization." The Journal of Portfolio Management, 48(3), 87-102.
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
           University Press, chapter 2.
+        - Fama, E. F. and French, K. R. (1993). "Common Risk Factors in the Returns on
+          Stocks and Bonds." Journal of Financial Economics, 33(1), 3-56.
+        - Connor, G. (1995). "The Three Types of Factor Models: A Comparison of Their
+          Explanatory Power." Financial Analysts Journal, 51(3), 42-46.
         - skfolio: ShrunkCovariance, GerberCovariance, DenoiseCovariance,
           DetoneCovariance (https://github.com/skfolio/skfolio).
         - PyPortfolioOpt: risk_models.CovarianceShrinkage
           (https://github.com/robertmartin8/PyPortfolioOpt).
-        - Riskfolio-Lib: covar_matrix, denoiseCov, gerber_cov_stat0/1/2
+        - Riskfolio-Lib: covar_matrix, denoiseCov, gerber_cov_stat0/1/2, risk_factors
           (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: TimeSeriesFactorModel (https://github.com/skfolio/skfolio).
 
         Also known as: covariance estimator, risk model, shrunk covariance, Gerber
-        covariance, denoised covariance, detoned correlation.
+        covariance, denoised covariance, detoned correlation, factor covariance, factor
+        risk model.
 
         Args:
             method (str, optional): The estimator: "sample", "ledoit_wolf",
                 "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor", "oas",
                 "shrunk", "semicovariance", "exponential", "denoised",
-                "denoised_spectral", "denoised_shrink", "gerber" or "detoned". Defaults
-                to "sample".
+                "denoised_spectral", "denoised_shrink", "gerber", "detoned" or "factor".
+                Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
@@ -1165,6 +1227,16 @@ class AnalysisConstruction:
                 "denoised_shrink" keeps, between 0 and 1. Defaults to 0.
             components (int, optional): The number of principal components "detoned"
                 removes. Defaults to 1.
+            factor_selection (str, optional): How "factor" estimates the loadings: "ols"
+                (every factor), "forward" or "backward" (stepwise by the p-values, 0.05) or
+                "pcr" (principal components regression keeping 95% of the variance).
+                Defaults to "ols".
+            factors (pd.DataFrame | None, optional): The factor returns of "factor", one
+                column per factor, at the frequency of the period. Defaults to None, the
+                Fama and French five factors of the region.
+            region (str, optional): The region of the Fama and French factors: "United
+                States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific
+                ex Japan" or "North America". Defaults to "United States".
             correlation (bool, optional): Whether to return the correlation matrix of
                 the estimate instead. Defaults to False.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -1214,6 +1286,17 @@ class AnalysisConstruction:
         returns = self._get_returns(period, include_benchmark)
         if method == "detoned":
             matrix = estimation_model.get_detoned_covariance(returns, components)
+        elif method == "factor":
+            returns, factor_returns = self._align_factors(
+                returns, self._get_factor_returns(period, factors, region)
+            )
+            matrix = estimation_model.get_factor_model(
+                returns,
+                factor_returns,
+                estimation_model.get_factor_loadings(
+                    returns, factor_returns, factor_selection
+                ),
+            )[1]
         else:
             matrix = optimization_model.get_covariance_matrix(
                 returns,
@@ -1356,7 +1439,12 @@ class AnalysisConstruction:
         """
         returns = self._get_returns(period, include_benchmark)
         covariance_matrix = optimization_model.get_covariance_matrix(
-            returns, covariance, benchmark_returns=self._get_benchmark_returns(period)
+            returns,
+            covariance,
+            benchmark_returns=self._get_benchmark_returns(period),
+            factors=(
+                self._get_factor_returns(period) if covariance == "factor" else None
+            ),
         )
         function = (
             optimization_model.get_codependence_distance
@@ -1469,7 +1557,12 @@ class AnalysisConstruction:
             )
         returns = self._get_returns(period, include_benchmark)
         covariance_matrix = optimization_model.get_covariance_matrix(
-            returns, covariance, benchmark_returns=self._get_benchmark_returns(period)
+            returns,
+            covariance,
+            benchmark_returns=self._get_benchmark_returns(period),
+            factors=(
+                self._get_factor_returns(period) if covariance == "factor" else None
+            ),
         )
         if method == "ftca":
             labels = estimation_model.get_fast_threshold_clusters(
@@ -1800,3 +1893,672 @@ class AnalysisConstruction:
         if output == "covariance":
             table = pd.concat({"Lower": lower, "Upper": upper}, axis=1)
         return self._round(table * PERIODS_PER_YEAR[period], rounding)
+
+    @handle_errors
+    def get_factor_loadings(
+        self,
+        selection: str = "ols",
+        criterion: str = "pvalue",
+        threshold: float = 0.05,
+        components: float = 0.95,
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Estimate the loadings of a time series factor model: the regression of every
+        asset's returns on factor returns, by default the five factors of Fama and French
+        (market, size, value, profitability and investment), r_i,t = α_i + Σ_f β_i,f F_f,t +
+        ε_i,t. The loadings are what the factor covariance (covariance="factor"), the
+        factor risk contributions, the factor attribution and the augmented and Bayesian
+        Black-Litterman models build on.
+
+        - selection="ols": every factor, by ordinary least squares.
+        - selection="forward": starting without factors, add the factor with the lowest
+          p-value as long as every p-value stays at or below the threshold (or, with
+          another criterion, as long as it improves); the factors left out load zero.
+        - selection="backward": starting with every factor, drop the one with the highest
+          p-value until all are at or below the threshold (or as long as dropping one
+          improves the criterion). Both stepwise selections keep at least the single best
+          factor with criterion="pvalue".
+        - selection="pcr": a principal components regression: the standardized factors'
+          first principal components that explain the share `components` of their
+          variance as regressors, mapped back to loadings on the factors, which removes
+          the instability that correlated factors give OLS (Jolliffe, 1982).
+
+        The Alpha is the annualized intercept, α times the number of periods in a year.
+        The R Squared is the share of an asset's variance the factors explain and the
+        Residual Volatility (ddof=1, annualized) what they leave, the idiosyncratic risk
+        the factor covariance keeps on the diagonal.
+
+        For more information, see the following sources:
+
+        - Fama, E. F. and French, K. R. (1993). "Common Risk Factors in the Returns on
+          Stocks and Bonds." Journal of Financial Economics, 33(1), 3-56.
+        - Fama, E. F. and French, K. R. (2015). "A Five-Factor Asset Pricing Model."
+          Journal of Financial Economics, 116(1), 1-22.
+        - Connor, G. (1995). "The Three Types of Factor Models: A Comparison of Their
+          Explanatory Power." Financial Analysts Journal, 51(3), 42-46.
+        - Jolliffe, I. T. (1982). "A Note on the Use of Principal Components in
+          Regression." Journal of the Royal Statistical Society, Series C, 31(3), 300-303.
+        - Riskfolio-Lib: loadings_matrix, forward_regression, backward_regression, PCR
+          (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: TimeSeriesFactorModel, LoadingMatrixRegression
+          (https://github.com/skfolio/skfolio).
+
+        Also known as: factor exposures, factor betas, loadings matrix, stepwise
+        regression, principal components regression.
+
+        Args:
+            selection (str, optional): "ols", "forward", "backward" or "pcr". Defaults to
+                "ols".
+            criterion (str, optional): What the stepwise selections compare: "pvalue",
+                "aic", "bic", "r_squared" or "adjusted_r_squared". Defaults to "pvalue".
+            threshold (float, optional): The highest p-value a selected factor may have.
+                Defaults to 0.05.
+            components (float, optional): The principal components "pcr" keeps: a number
+                of 1 or more, or between 0 and 1 the share of the variance of the
+                standardized factors to explain. Defaults to 0.95.
+            factors (pd.DataFrame | None, optional): The factor returns, one column per
+                factor, at the frequency of the period. Defaults to None, the Fama and
+                French five factors of the region.
+            region (str, optional): The region of the Fama and French factors: "United
+                States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific
+                ex Japan" or "North America". Defaults to "United States".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset the Alpha (annualized), the loading on every factor,
+            the R Squared and the Residual Volatility (annualized), from the periods in
+            which every asset and every factor has a return.
+
+        Notes:
+        - The Fama and French factors are excess returns while the asset returns are
+          total returns, so the Alpha holds the risk free rate. Ken French publishes the
+          factors about a month after each month ends, so the latest weeks are left out.
+        - The loadings equal Riskfolio-Lib's loadings_matrix (with OLS as a backward
+          selection at a threshold of 1) for every selection and criterion; AIC and BIC
+          are statsmodels' (Riskfolio-Lib's "AIC" and "SIC").
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_factor_loadings(selection="forward")
+        ```
+
+        Which returns:
+
+        |      |   Alpha |   Mkt-RF |     SMB |     HML |     RMW |     CMA |   R Squared |   Residual Volatility |
+        |:-----|--------:|---------:|--------:|--------:|--------:|--------:|------------:|----------------------:|
+        | AAPL |  0.0726 |   1.1791 | -0.2683 | -0.3519 |  0      |  0.3824 |      0.6004 |                0.1761 |
+        | MSFT |  0.0851 |   1.0449 | -0.321  | -0.3811 |  0.3329 | -0.2635 |      0.6806 |                0.1453 |
+        | JNJ  |  0.0387 |   0.2901 | -0.1045 |  0.1992 |  0.1657 |  0      |      0.0868 |                0.1599 |
+        | XOM  |  0.1409 |   0.7905 | -0.2442 |  1.0268 | -0.4884 |  0.2562 |      0.3934 |                0.2105 |
+        """
+        returns, factor_returns = self._align_factors(
+            self._get_returns(period, include_benchmark),
+            self._get_factor_returns(period, factors, region),
+        )
+        loadings = estimation_model.get_factor_loadings(
+            returns, factor_returns, selection, criterion, threshold, components
+        )
+        _, _, residual_variance = estimation_model.get_factor_model(
+            returns, factor_returns, loadings
+        )
+        periods_per_year = PERIODS_PER_YEAR[period]
+        table = pd.concat(
+            [
+                (loadings["Intercept"] * periods_per_year).rename("Alpha"),
+                loadings.drop(columns="Intercept"),
+                (1 - residual_variance / returns.var()).rename("R Squared"),
+                np.sqrt(residual_variance * periods_per_year).rename(
+                    "Residual Volatility"
+                ),
+            ],
+            axis=1,
+        )
+        return self._round(table, rounding)
+
+    def _get_risk_contribution_table(
+        self,
+        weights: pd.Series,
+        returns: pd.DataFrame,
+        covariance_matrix: pd.DataFrame,
+        risk_measure: str,
+        confidence_level: float,
+    ) -> pd.DataFrame:
+        """The risk contributions of the assets to one of the risk measures."""
+        if risk_measure == "volatility":
+            return optimization_model.get_risk_contributions(weights, covariance_matrix)
+        if risk_measure == "cvar":
+            return optimization_model.get_expected_shortfall_contributions(
+                weights, returns, confidence_level
+            )
+        if risk_measure in optimization_model.FINITE_DIFFERENCE_RISK_MEASURES:
+            return optimization_model.get_finite_difference_risk_contributions(
+                weights, returns, risk_measure, confidence_level
+            )
+        if risk_measure in optimization_model.HISTORICAL_RISK_MEASURES:
+            return optimization_model.get_historical_risk_contributions(
+                weights, returns, risk_measure, confidence_level
+            )
+        measures = (
+            "volatility",
+            "cvar",
+            *optimization_model.HISTORICAL_RISK_MEASURES,
+            *optimization_model.FINITE_DIFFERENCE_RISK_MEASURES,
+        )
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(measures)}, not "
+            f"'{risk_measure}'."
+        )
+
+    @handle_errors
+    def get_factor_risk_contributions(
+        self,
+        weights: dict[str, float] | None = None,
+        risk_measure: str = "volatility",
+        confidence_level: float = 0.95,
+        selection: str = "ols",
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how much each factor, by default the five factors of Fama and French,
+        contributes to the risk of a portfolio, rather than each asset. The portfolio's
+        exposure to the factors is y = B'w, with B the loadings of the assets on the
+        factors (see get_factor_loadings), and the marginal risk of the factors follows
+        from that of the assets m = ∂ρ/∂w (see get_risk_contributions) through the
+        pseudo-inverse of B': ∂ρ/∂y = pinv(B')'m. A factor contributes its exposure times
+        its marginal risk, and the part of the weights the factors cannot span forms an
+        Other factor, so the contributions add up to the risk measure (Meucci, 2009;
+        Roncalli and Weisang, 2016). With fewer assets than factors the factors span every
+        portfolio and Other is zero.
+
+        The risk measure is any of get_risk_contributions: the volatility (annualized), the
+        expected shortfall, the drawdowns or the other measures of the Risk module (per
+        period).
+
+        For more information, see the following sources:
+
+        - Meucci, A. (2009). "Managing Diversification." Risk, 22(5), 74-79.
+        - Roncalli, T. and Weisang, G. (2016). "Risk Parity Portfolios with Risk
+          Factors." Quantitative Finance, 16(3), 377-388.
+        - Fama, E. F. and French, K. R. (2015). "A Five-Factor Asset Pricing Model."
+          Journal of Financial Economics, 116(1), 1-22.
+        - Riskfolio-Lib: Factors_Risk_Contribution
+          (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: factor risk decomposition, factor risk budget, risk factor
+        contributions.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the latest weights of the Portfolio the Toolkit came from,
+                or equal weights.
+            risk_measure (str, optional): A risk measure of get_risk_contributions, e.g.
+                "volatility", "cvar" or "maximum_drawdown". Defaults to "volatility".
+            confidence_level (float, optional): The confidence level of the tail
+                measures. Defaults to 0.95.
+            selection (str, optional): How the loadings are estimated: "ols", "forward",
+                "backward" or "pcr" (see get_factor_loadings). Defaults to "ols".
+            factors (pd.DataFrame | None, optional): The factor returns, one column per
+                factor, at the frequency of the period. Defaults to None, the Fama and
+                French five factors of the region.
+            region (str, optional): The region of the Fama and French factors. Defaults to
+                "United States".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per factor, Other and in total, the Exposure, Marginal
+            Contribution, Risk Contribution and Percentage Contribution, on the periods in
+            which the assets held and the factors all have a return.
+
+        Notes:
+        - Equals Riskfolio-Lib's Factors_Risk_Contribution with OLS loadings: the
+          volatility uses the sample covariance (ddof=1) of the asset returns, annualized,
+          and the other measures their historical returns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_factor_risk_contributions(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}
+        )
+        ```
+
+        Which returns:
+
+        | Factor   |   Exposure |   Marginal Contribution |   Risk Contribution |   Percentage Contribution |
+        |:---------|-----------:|------------------------:|--------------------:|--------------------------:|
+        | Mkt-RF   |     0.9376 |                  0.1727 |              0.1619 |                    0.873  |
+        | SMB      |    -0.1694 |                 -0.0254 |              0.0043 |                    0.0232 |
+        | HML      |    -0.1765 |                 -0.0437 |              0.0077 |                    0.0415 |
+        | RMW      |     0.2806 |                  0.0337 |              0.0095 |                    0.051  |
+        | CMA      |     0.1144 |                  0.0184 |              0.0021 |                    0.0113 |
+        | Other    |   nan      |                nan      |              0      |                    0      |
+        | Total    |   nan      |                nan      |              0.1855 |                    1      |
+        """
+        resolved = self._get_held_weights(weights, period, include_benchmark)
+        returns, factor_returns = self._align_factors(
+            self._get_returns(period, include_benchmark, resolved.index.tolist()),
+            self._get_factor_returns(period, factors, region),
+        )
+        assets = self._get_risk_contribution_table(
+            resolved,
+            returns,
+            returns.cov() * PERIODS_PER_YEAR[period],
+            risk_measure,
+            confidence_level,
+        )
+        # A measure homogeneous of a higher order splits its Euler sum by that order, so
+        # the factor contributions add up to the measure itself.
+        marginal = assets["Marginal Contribution"] / (
+            optimization_model.FINITE_DIFFERENCE_RISK_MEASURES.get(risk_measure, 1)
+        )
+        loadings = estimation_model.get_factor_loadings(
+            returns, factor_returns, selection
+        ).drop(columns="Intercept")
+        table = optimization_model.get_factor_risk_contributions(
+            resolved, loadings, marginal
+        )
+        table.index.name = "Factor"
+        table.loc["Total"] = [
+            np.nan,
+            np.nan,
+            table["Risk Contribution"].sum(),
+            table["Percentage Contribution"].sum(),
+        ]
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_entropy_pooling(
+        self,
+        views: dict | None = None,
+        volatility_views: dict | None = None,
+        correlation_views: dict | None = None,
+        opinions: list[dict] | None = None,
+        opinion_weights: list[float] | None = None,
+        pooling: str = "linear",
+        divergence_penalty: float = 0.0,
+        output: str = "moments",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Reweight the historical periods so that they agree with views on the assets, by
+        Entropy Pooling (Meucci, 2008): the probabilities of the periods closest to equal
+        probabilities in relative entropy, Σ p_t ln(p_t T), under which the views hold.
+        The returns themselves stay as they were, so the posterior keeps the fat tails and
+        co-movements of the history; only how much each period counts changes. The
+        posterior expected returns and covariance matrix follow from the probabilities.
+
+        Views are annualized, like those of get_black_litterman_weights:
+
+        - views: the expected return of an asset ({"AAPL": 0.10}, an arithmetic return a
+          year) or the difference of two ({"AAPL-MSFT": 0.02}).
+        - volatility_views: the annualized volatility of an asset ({"AAPL": 0.25}).
+        - correlation_views: the correlation of two assets ({"AAPL-MSFT": 0.5}).
+
+        A view is an equality (a number) or an inequality, a pair (">=", 0.10) or
+        ("<=", 0.10). The views on volatilities hold the means found with the mean views,
+        and the views on correlations hold both the means and the volatilities, the
+        sequential scheme of skfolio's EntropyPooling. The problem is solved through its
+        dual with SciPy's truncated Newton method.
+
+        With opinions, a list of views of several experts, each a dictionary with the
+        keys "views", "volatility_views" and "correlation_views", every opinion gets its
+        own posterior and these are pooled with the opinion weights (equal by default; any
+        weight left to sum to one goes to the equal prior probabilities): linearly,
+        p = Σ π_k p_k (Stone, 1961), or logarithmically, p ∝ Π p_k^π_k (Genest and Zidek,
+        1986), optionally weighing down opinions far from the consensus by
+        exp(-α KL(p_k ‖ c)) with α the divergence penalty.
+
+        For more information, see the following sources:
+
+        - Meucci, A. (2008). "Fully Flexible Views: Theory and Practice." Risk, 21(10),
+          97-102.
+        - Stone, M. (1961). "The Opinion Pool." The Annals of Mathematical Statistics,
+          32(4), 1339-1342.
+        - Genest, C. and Zidek, J. V. (1986). "Combining Probability Distributions: A
+          Critique and an Annotated Bibliography." Statistical Science, 1(1), 114-135.
+        - skfolio: EntropyPooling, OpinionPooling (https://github.com/skfolio/skfolio).
+        - Riskfolio-Lib: entropy_pooling (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: fully flexible views, fully flexible probabilities, opinion pooling,
+        views on scenarios.
+
+        Args:
+            views (dict | None, optional): The annualized expected return views. Defaults
+                to None.
+            volatility_views (dict | None, optional): The annualized volatility views.
+                Defaults to None.
+            correlation_views (dict | None, optional): The correlation views. Defaults to
+                None.
+            opinions (list[dict] | None, optional): The views of several experts to pool,
+                instead of views, volatility_views and correlation_views. Defaults to None.
+            opinion_weights (list[float] | None, optional): The weight of every opinion,
+                summing to at most one. Defaults to None, equal weights.
+            pooling (str, optional): "linear" or "logarithmic". Defaults to "linear".
+            divergence_penalty (float, optional): The penalty α on an opinion's relative
+                entropy to the consensus. Defaults to 0.
+            output (str, optional): "moments" (the prior and posterior expected return and
+                volatility per asset), "covariance" (the posterior covariance matrix),
+                "probabilities" (the prior and posterior probability of every period) or
+                "summary" (the relative entropy and the effective number of periods).
+                Defaults to "moments".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The output chosen: the expected returns (arithmetic averages
+            times the number of periods in a year) and volatilities (annualized), the
+            annualized covariance matrix, the probabilities, or the Relative Entropy,
+            Effective Number of Scenarios (exp of the entropy of the probabilities, T for
+            equal ones) and the number of Scenarios.
+
+        Notes:
+        - The posterior covariance is weighted with the probabilities and the ddof=1
+          correction for weights, 1 / (1 - Σ p_t²) (numpy's cov with aweights, as
+          skfolio), so it equals the sample covariance with equal probabilities; a
+          volatility view holds the variance without that correction, which is
+          Σ p_t² ≈ 1 / T (about 0.1% for daily data) lower.
+        - Equals skfolio's EntropyPooling to 1e-11 for mean and volatility views; with
+          correlation views both meet the views to the solver's tolerance, and the
+          posterior here lies closer to the prior (a lower relative entropy).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_entropy_pooling(
+            views={"AAPL": 0.05, "XOM-JNJ": (">=", 0.02)},
+            volatility_views={"MSFT": 0.30},
+        )
+        ```
+
+        Which returns:
+
+        |      |   Prior Return |   Posterior Return |   Prior Volatility |   Posterior Volatility |
+        |:-----|---------------:|-------------------:|-------------------:|-----------------------:|
+        | AAPL |         0.1932 |             0.05   |             0.2786 |                 0.3152 |
+        | MSFT |         0.2017 |             0.118  |             0.2571 |                 0.3001 |
+        | JNJ  |         0.0987 |             0.0697 |             0.1673 |                 0.1696 |
+        | XOM  |         0.2911 |             0.264  |             0.2702 |                 0.2764 |
+        """
+        outputs = ("moments", "covariance", "probabilities", "summary")
+        if output not in outputs:
+            raise ValueError(
+                f"The output must be one of {', '.join(outputs)}, not '{output}'."
+            )
+        returns = self._get_returns(period, include_benchmark)
+        periods_per_year = PERIODS_PER_YEAR[period]
+
+        def per_period(views: dict | None, scale) -> dict | None:
+            # The views are annualized; the scenarios are returns per period.
+            if not views:
+                return None
+            return {
+                name: (
+                    scale(value)
+                    if isinstance(value, int | float)
+                    else (value[0], scale(value[1]))
+                )
+                for name, value in views.items()
+            }
+
+        def posterior(opinion: dict) -> pd.Series:
+            unknown = set(opinion) - {"views", "volatility_views", "correlation_views"}
+            if unknown:
+                raise ValueError(
+                    f"An opinion holds views, volatility_views and correlation_views, not "
+                    f"{', '.join(sorted(unknown))}."
+                )
+            return estimation_model.get_entropy_pooling(
+                returns,
+                per_period(
+                    opinion.get("views"), lambda value: value / periods_per_year
+                ),
+                per_period(
+                    opinion.get("volatility_views"),
+                    lambda value: value / np.sqrt(periods_per_year),
+                ),
+                opinion.get("correlation_views") or None,
+            )
+
+        if opinions:
+            if views or volatility_views or correlation_views:
+                raise ValueError(
+                    "Pass the views either directly or as opinions, not both."
+                )
+            probabilities = estimation_model.get_opinion_pooling(
+                pd.concat([posterior(opinion) for opinion in opinions], axis=1),
+                opinion_weights,
+                pooling,
+                divergence_penalty,
+            )
+        else:
+            probabilities = posterior(
+                {
+                    "views": views,
+                    "volatility_views": volatility_views,
+                    "correlation_views": correlation_views,
+                }
+            )
+
+        weights = probabilities.to_numpy()
+        prior = np.full(len(weights), 1 / len(weights))
+        if output == "probabilities":
+            table = pd.DataFrame(
+                {"Prior Probability": prior, "Posterior Probability": weights},
+                index=returns.index,
+            )
+        elif output == "summary":
+            positive = weights[weights > 0]
+            table = pd.DataFrame(
+                {
+                    "Relative Entropy": float(
+                        np.sum(positive * np.log(positive * len(weights)))
+                    ),
+                    "Effective Number of Scenarios": float(
+                        np.exp(-np.sum(positive * np.log(positive)))
+                    ),
+                    "Scenarios": len(weights),
+                },
+                index=["Entropy Pooling"],
+            )
+        else:
+            covariance = pd.DataFrame(
+                np.cov(returns.to_numpy(), rowvar=False, aweights=weights),
+                index=returns.columns,
+                columns=returns.columns,
+            )
+            if output == "covariance":
+                table = covariance * periods_per_year
+            else:
+                table = pd.DataFrame(
+                    {
+                        "Prior Return": returns.mean() * periods_per_year,
+                        "Posterior Return": pd.Series(
+                            weights @ returns.to_numpy(), index=returns.columns
+                        )
+                        * periods_per_year,
+                        "Prior Volatility": returns.std() * np.sqrt(periods_per_year),
+                        "Posterior Volatility": np.sqrt(
+                            np.diag(covariance) * periods_per_year
+                        ),
+                    }
+                )
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_return_contributions(
+        self,
+        weights: dict[str, float] | None = None,
+        period: str = "monthly",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how much each asset added to the portfolio's return in every period
+        (week, month, quarter or year), so the contributions of the assets add up to the
+        portfolio's return of that period.
+
+        Every day an asset contributes its weight at the start of the day times its
+        return, c_i,t = w_i,t-1 r_i,t, which add up to the portfolio's daily return
+        R_t = Σ c_i,t. Over a longer period the daily contributions are carried by the
+        growth of the portfolio since the period began: C_i = Σ_t c_i,t Π_(s<t) (1 + R_s),
+        the contribution in money divided by the value at the start of the period, so the
+        contributions add up to the compounded return Π (1 + R_t) - 1 (Bacon, 2008;
+        PerformanceAnalytics' to.period.contributions).
+
+        The weights are the latest weights of the Portfolio the Toolkit came from, as they
+        moved from day to day, or, when weights are given (or there is no Portfolio), those
+        weights restored every day.
+
+        For more information, see the following sources:
+
+        - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
+          Attribution." 2nd edition, Wiley, chapter 5.
+        - PerformanceAnalytics: to.period.contributions, Return.portfolio with
+          contribution=TRUE (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: contribution to return, return attribution by asset, performance
+        contribution.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the weights of the Portfolio the Toolkit came from over
+                time, or equal weights.
+            period (str, optional): The period to add the contributions up over: daily,
+                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the contribution of every asset held and the
+            Portfolio return, compounded within the period.
+
+        Notes:
+        - Equals PerformanceAnalytics' to.period.contributions of the daily contributions;
+          with given weights these are rebalanced every day (Return.portfolio with
+          rebalance_on="days"), not left to drift.
+        - A day on which an asset has no return (it did not trade) is a contribution of 0.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_return_contributions(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}, period="yearly"
+        )
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    MSFT |     JNJ |     XOM |   Portfolio |
+        |:-------|--------:|--------:|--------:|--------:|------------:|
+        | 2021   |  0.1698 |  0.1574 |  0.0289 |  0.0514 |      0.4074 |
+        | 2022   | -0.1049 | -0.0914 |  0.0105 |  0.0655 |     -0.1204 |
+        | 2023   |  0.1833 |  0.1649 | -0.0136 | -0.0046 |      0.3301 |
+        | 2024   |  0.1263 |  0.0396 | -0.0087 |  0.0116 |      0.1689 |
+        | 2025   |  0.0598 |  0.04   |  0.0889 |  0.0187 |      0.2074 |
+        """
+        if period not in PERIODS_PER_YEAR:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        resolved = self._get_held_weights(weights, "daily", include_benchmark)
+        assets = resolved.index.tolist()
+        if weights is None and self._portfolio_weights:
+            assets = self._get_loaded_assets("daily", include_benchmark)
+        # The first day of the data has no return, as there is no close before it.
+        returns = (
+            self._historical_data["daily"]["Return"]
+            .iloc[1:]
+            .loc[self._start_date : self._end_date, assets]
+            .dropna(how="all")
+        )
+        held = self._get_weights_over_time(weights, "daily", assets, returns.index)
+        daily = (held * returns.fillna(0)).loc[:, (held != 0).any()]
+        table = attribution_model.get_period_contributions(
+            daily, self._historical_data[period]["Return"].index.freq
+        )
+        table.index.name = "Date"
+        return self._round(table, rounding)

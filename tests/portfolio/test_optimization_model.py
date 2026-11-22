@@ -2578,3 +2578,293 @@ def test_bootstrap_estimates_cover_the_averages():
     assert np.allclose(
         normal["Standard Error"], returns.std() / np.sqrt(len(returns)), rtol=0.15
     )
+
+
+def _reference_factors() -> pd.DataFrame:
+    """
+    The two factors _reference_returns is built from and a third factor of noise, as the
+    factor returns of the factor model tests.
+    """
+    factors = np.random.default_rng(42).normal(0.0004, 0.01, size=(500, 2))
+    noise = np.random.default_rng(7).normal(0.0001, 0.006, size=500)
+    return pd.DataFrame({"MKT": factors[:, 0], "SMB": factors[:, 1], "NOISE": noise})
+
+
+def test_factor_loadings_and_covariance_match_riskfolio():
+    returns, _ = _reference_returns()
+    factors = _reference_factors()
+    # Riskfolio-Lib 7.4.1 loadings_matrix (backward, threshold 1: every factor).
+    ols = estimation_model.get_factor_loadings(returns, factors)
+    assert np.allclose(
+        ols.loc["A"], [2.7557241519e-04, 0.66495261593, 0.31542852097, 0.034711426664]
+    )
+    # The forward selection by p-value and the backward selection by AIC both leave
+    # out the noise.
+    for selection, criterion in (("forward", "pvalue"), ("backward", "aic")):
+        selected = estimation_model.get_factor_loadings(
+            returns, factors, selection, criterion
+        )
+        assert (selected["NOISE"] == 0).all()
+        assert np.allclose(
+            selected.loc["B"], [3.5394116532e-04, 0.54109093511, 0.76184540587, 0]
+        )
+    # Riskfolio-Lib PCR with two components.
+    assert np.allclose(
+        estimation_model.get_factor_loadings(returns, factors, "pcr", components=2).loc[
+            "A"
+        ],
+        [3.5589006336e-04, 0.55884531295, 0.44260245264, 0.12261809151],
+    )
+    # Riskfolio-Lib risk_factors.
+    mean, covariance, _ = estimation_model.get_factor_model(returns, factors, ols)
+    assert np.allclose(
+        covariance.iloc[0],
+        [
+            2.0119956392e-04,
+            6.8579700403e-05,
+            8.1445829507e-05,
+            7.7248935555e-05,
+            2.81771077e-05,
+        ],
+        rtol=1e-8,
+    )
+    # With an intercept the factor model's expected returns are the averages.
+    assert np.allclose(mean, returns.mean())
+
+
+def test_stepwise_selection_keeps_one_factor_and_rejects_unknown_criteria():
+    returns, _ = _reference_returns()
+    factors = _reference_factors()[["NOISE"]].assign(
+        OTHER=np.random.default_rng(1).normal(0, 0.01, 500)
+    )
+    assert len(estimation_model.get_stepwise_factors(returns["A"], factors)) == 1
+    with pytest.raises(ValueError, match="criterion"):
+        estimation_model.get_stepwise_factors(returns["A"], factors, criterion="r2")
+
+
+def test_augmented_and_bayesian_black_litterman_match_riskfolio():
+    returns, _ = _reference_returns()
+    factors = _reference_factors()
+    loadings = estimation_model.get_factor_loadings(returns, factors)
+    periods = len(returns)
+    # Riskfolio-Lib augmented_black_litterman (τ = 1 / T, δ = 2.5, equal weights, B
+    # without a constant) with a view on A and one on SMB.
+    table, _ = optimization_model.get_augmented_black_litterman_returns(
+        returns.cov(),
+        pd.Series(0.2, index=returns.columns),
+        factors.cov(),
+        loadings.drop(columns="Intercept"),
+        views={"A": 0.001},
+        factor_views={"SMB": 0.0008},
+        risk_aversion=2.5,
+        tau=1 / periods,
+    )
+    assert np.allclose(
+        table["Black-Litterman Return"],
+        [0.0006785368, 0.0006550672, 0.0007350946, 0.0007361426, 0.0002707868],
+        atol=1e-12,
+    )
+    # Riskfolio-Lib black_litterman_bayesian: its prior N(μ_f, Σ_f) and views with
+    # τ = 1 / T are tau=1 and a confidence of T / (T + 1).
+    _, _, residual_variance = estimation_model.get_factor_model(
+        returns, factors, loadings
+    )
+    table, covariance = optimization_model.get_bayesian_black_litterman_returns(
+        loadings,
+        factors.mean(),
+        factors.cov(),
+        residual_variance,
+        {"SMB": 0.0008},
+        {"SMB": periods / (periods + 1)},
+        tau=1,
+    )
+    assert np.allclose(
+        table["Black-Litterman Return"],
+        [0.0007224086, 0.001140982, 0.0013732232, 0.0011761662, 0.0006878033],
+        atol=1e-12,
+    )
+    assert np.allclose(
+        covariance.iloc[0],
+        [
+            2.4374572901e-04,
+            1.0333040446e-04,
+            1.2128331357e-04,
+            1.1685915731e-04,
+            4.7605264598e-05,
+        ],
+        rtol=1e-8,
+    )
+    assert np.allclose(table["Prior Return"], returns.mean())
+
+
+def test_entropy_pooling_matches_skfolio_and_meets_the_views():
+    returns, _ = _reference_returns()
+    probabilities = estimation_model.get_entropy_pooling(
+        returns, {"A": 0.001, "B": (">=", 0.0006)}, {"C": 0.0004**0.5}
+    )
+    # skfolio 1.14.4 EntropyPooling(mean_views=["A == 0.001", "B >= 0.0006"],
+    # variance_views=["C == 0.0004"]).
+    assert np.allclose(
+        probabilities @ returns,
+        [0.001, 0.0009506459, 0.0007793088, 0.0006197087, 0.0005345727],
+        atol=1e-9,
+    )
+    assert np.exp(-np.sum(probabilities * np.log(probabilities))) == pytest.approx(
+        483.9120721, rel=1e-6
+    )
+    correlated = estimation_model.get_entropy_pooling(
+        returns, correlation_views={"A-B": 0.6}
+    )
+    # The correlation view holds to the precision of the dual's solver, with the means
+    # and variances of A and B kept at those of the prior.
+    weighted = np.cov(returns, rowvar=False, aweights=correlated, ddof=0)
+    assert weighted[0, 1] / np.sqrt(weighted[0, 0] * weighted[1, 1]) == pytest.approx(
+        0.6, abs=1e-4
+    )
+    assert np.allclose(
+        (correlated @ returns)[["A", "B"]],
+        returns.mean()[["A", "B"]],
+        rtol=0,
+        atol=1e-7,
+    )
+    with pytest.raises(ValueError, match="operator"):
+        estimation_model.get_entropy_pooling(returns, {"A": ("!=", 0.001)})
+
+
+def test_opinion_pooling_matches_skfolio():
+    returns, _ = _reference_returns()
+    opinions = pd.concat(
+        [
+            estimation_model.get_entropy_pooling(returns, {"A": 0.001}),
+            estimation_model.get_entropy_pooling(returns, {"B": ("<=", 0.0)}),
+        ],
+        axis=1,
+    )
+    # skfolio 1.14.4 OpinionPooling(opinion_probabilities=[0.4, 0.4],
+    # is_linear_pooling=False, divergence_penalty=1.0).
+    pooled = estimation_model.get_opinion_pooling(
+        opinions, [0.4, 0.4], "logarithmic", 1.0
+    )
+    assert np.allclose(
+        pooled @ returns,
+        [0.0005831489, 0.0003749356, 0.0005577186, 0.0004682266, 0.0005329563],
+        atol=1e-10,
+    )
+    linear = estimation_model.get_opinion_pooling(opinions)
+    assert np.allclose(linear, opinions.mean(axis=1))
+
+
+def test_finite_difference_risk_contributions_match_riskfolio():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.2, 0.2, 0.2, 0.1], index=returns.columns)
+    # Riskfolio-Lib 7.4.1 Risk_Contribution (alpha 0.05).
+    references = {
+        "evar": [0.008006527, 0.0055135929, 0.0045127416, 0.0056649863, 0.0012344606],
+        "maximum_drawdown": [
+            0.0377682157,
+            0.0428562987,
+            0.0099817534,
+            0.0361105725,
+            0.00371522,
+        ],
+        "average_drawdown": [
+            0.0150599254,
+            0.0168259054,
+            0.0068143795,
+            0.0122606549,
+            -0.0008226426,
+        ],
+        "ulcer_index": [
+            0.017279098454,
+            0.020111478517,
+            0.0066907511406,
+            0.014108644968,
+            -3.6944107495e-05,
+        ],
+        "worst_realization": [
+            0.0111445088,
+            0.0076422823,
+            0.0050695402,
+            0.0077565192,
+            0.0018130024,
+        ],
+        "gini_mean_difference": [
+            0.0034886211,
+            0.0025435014,
+            0.0027629012,
+            0.0028333186,
+            0.0004989152,
+        ],
+        "lower_partial_moment": [
+            0.0011502159,
+            0.0008066813,
+            0.0009023448,
+            0.0010039715,
+            0.0001521146,
+        ],
+        "kurtosis": [
+            6.0861272849e-05,
+            4.3190886333e-05,
+            4.6965257678e-05,
+            4.5732598942e-05,
+            9.0538752575e-06,
+        ],
+        "entropic_drawdown_at_risk": [
+            0.0348477172,
+            0.0406381936,
+            0.005982999,
+            0.0308742672,
+            0.0036738177,
+        ],
+        "tail_gini": [
+            0.0075863268,
+            0.005239196,
+            0.0044990444,
+            0.005171983,
+            0.0009032992,
+        ],
+    }
+    for measure, reference in references.items():
+        table = optimization_model.get_finite_difference_risk_contributions(
+            weights, returns, measure
+        )
+        assert np.allclose(
+            table["Risk Contribution"], reference, rtol=1e-6, atol=1e-12
+        ), measure
+        assert table["Percentage Contribution"].sum() == pytest.approx(1)
+    # The contributions add up to the measure itself.
+    table = optimization_model.get_finite_difference_risk_contributions(
+        weights, returns, "maximum_drawdown"
+    )
+    measure = optimization_model.get_risk_measure(
+        (returns @ weights).to_frame(), "maximum_drawdown"
+    )
+    assert table["Risk Contribution"].sum() == pytest.approx(measure.iloc[0], rel=1e-6)
+    with pytest.raises(ValueError, match="risk measure"):
+        optimization_model.get_finite_difference_risk_contributions(
+            weights, returns, "range"
+        )
+
+
+def test_factor_risk_contributions_match_riskfolio():
+    returns, _ = _reference_returns()
+    factors = _reference_factors()
+    weights = pd.Series([0.3, 0.2, 0.2, 0.2, 0.1], index=returns.columns)
+    loadings = estimation_model.get_factor_loadings(returns, factors).drop(
+        columns="Intercept"
+    )
+    marginal = optimization_model.get_risk_contributions(weights, returns.cov())[
+        "Marginal Contribution"
+    ]
+    table = optimization_model.get_factor_risk_contributions(
+        weights, loadings, marginal
+    )
+    # Riskfolio-Lib 7.4.1 Factors_Risk_Contribution (rm="MV"): MKT, SMB, NOISE, Other.
+    assert np.allclose(
+        table["Risk Contribution"],
+        [7.5924048242e-03, 3.0548911433e-03, 1.2644958343e-04, 1.7070360056e-05],
+        rtol=1e-7,
+    )
+    assert table["Risk Contribution"].sum() == pytest.approx(
+        np.sqrt(weights @ returns.cov() @ weights)
+    )

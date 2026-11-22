@@ -5,6 +5,7 @@ import re
 import numpy as np
 import pandas as pd
 import yaml
+from scipy import stats
 
 from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.utilities.excel_model import read_excel as read_workbook
@@ -240,3 +241,92 @@ def get_trading_day_locations(
     locations[locations == -1] = len(all_dates) - 1
 
     return locations
+
+
+def get_view_vector(view: str, names: pd.Index) -> np.ndarray:
+    """
+    The pick vector of a view on one name ("AAPL": +1 for AAPL) or on the difference
+    between two names ("AAPL-MSFT": +1 for AAPL and -1 for MSFT), as the views of
+    Black-Litterman and Entropy Pooling are written. Names can hold a hyphen themselves
+    (BRK-B, Mkt-RF), so a name that matches in full is read as one name and otherwise every
+    hyphen is tried as the split between the two legs.
+
+    Args:
+        view (str): The view, a name or two names joined by a hyphen.
+        names (pd.Index): The names (assets or factors) the view can refer to.
+
+    Returns:
+        np.ndarray: The pick vector, one entry per name.
+    """
+    row = np.zeros(len(names))
+    if view in names:
+        row[names.get_loc(view)] = 1
+        return row
+    legs = [
+        (view[:position], view[position + 1 :])
+        for position, character in enumerate(view)
+        if character == "-"
+        and view[:position] in names
+        and view[position + 1 :] in names
+    ]
+    if len(legs) > 1:
+        raise ValueError(f"The view {view!r} can be read as more than one pair.")
+    if not legs:
+        raise ValueError(
+            f"The view {view!r} names no asset or factor; use 'NAME' or 'NAME-NAME'."
+        )
+    row[names.get_loc(legs[0][0])] = 1
+    row[names.get_loc(legs[0][1])] = -1
+    return row
+
+
+def get_linear_regression(target: np.ndarray, regressors: np.ndarray) -> dict:
+    """
+    The ordinary least squares regression of a target on regressors and a constant, with
+    the statistics the stepwise selection of factors compares: the two-sided p-values of
+    the t-statistics, the Akaike and Schwarz (Bayesian) information criteria and the
+    (adjusted) R squared, defined as statsmodels' OLS defines them: the log-likelihood
+    ln L = -n / 2 (ln(2π) + ln(SSR / n) + 1), AIC = -2 ln L + 2k and BIC = -2 ln L + k ln n
+    with k the number of coefficients including the constant.
+
+    Args:
+        target (np.ndarray): The n observations of the dependent variable.
+        regressors (np.ndarray): The n × m regressors, without the constant (m may be 0).
+
+    Returns:
+        dict: "params" (the constant first), "pvalues" (of the m regressors), "residuals",
+        "aic", "bic", "r_squared" and "adjusted_r_squared".
+    """
+    observations = len(target)
+    design = np.column_stack([np.ones(observations), regressors])
+    coefficients = design.shape[1]
+    if observations <= coefficients:
+        raise ValueError(
+            "The regression needs more observations than coefficients to estimate."
+        )
+    params, *_ = np.linalg.lstsq(design, target, rcond=None)
+    residuals = target - design @ params
+    sum_of_squares = float(residuals @ residuals)
+    degrees_of_freedom = observations - coefficients
+    variance = sum_of_squares / degrees_of_freedom
+    standard_errors = np.sqrt(np.diag(variance * np.linalg.pinv(design.T @ design)))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t_statistics = params / standard_errors
+    pvalues = 2 * stats.t.sf(np.abs(t_statistics), degrees_of_freedom)
+    log_likelihood = (
+        -observations
+        / 2
+        * (np.log(2 * np.pi) + np.log(sum_of_squares / observations) + 1)
+    )
+    centred = target - target.mean()
+    r_squared = 1 - sum_of_squares / float(centred @ centred)
+    return {
+        "params": params,
+        "pvalues": pvalues[1:],
+        "residuals": residuals,
+        "aic": -2 * log_likelihood + 2 * coefficients,
+        "bic": -2 * log_likelihood + np.log(observations) * coefficients,
+        "r_squared": r_squared,
+        "adjusted_r_squared": 1
+        - (observations - 1) / degrees_of_freedom * (1 - r_squared),
+    }

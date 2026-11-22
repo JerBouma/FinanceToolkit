@@ -520,3 +520,87 @@ def get_look_through_exposure(
         total = total.add(exposure * weight, fill_value=0)
 
     return total.sort_values(ascending=False).rename("Exposure")
+
+
+def get_period_contributions(
+    contributions: pd.DataFrame, frequency: str
+) -> pd.DataFrame:
+    """
+    The contributions of the assets to the portfolio's return over longer periods, from
+    their contributions per (shorter) period, c_i,t = w_i,t-1 r_i,t. Within each longer
+    period the contributions are carried by the growth of the portfolio since the period
+    began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s) with R_t = Σ_i c_i,t, so they are the
+    contributions in money divided by the portfolio's value at the start of the period and
+    add up to its compounded return, Π (1 + R_t) - 1.
+
+    See Bacon, C. R. (2008), "Practical Portfolio Performance Measurement and
+    Attribution", 2nd edition, Wiley, chapter 5, and PerformanceAnalytics'
+    to.period.contributions (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        contributions (pd.DataFrame): The contribution per asset (columns) per period, with
+            a PeriodIndex.
+        frequency (str): The frequency of the longer periods, e.g. "M" or "Q-DEC".
+
+    Returns:
+        pd.DataFrame: The contribution per asset and the Portfolio return per longer period.
+    """
+    portfolio = contributions.sum(axis=1)
+    periods = contributions.index.asfreq(frequency)
+    # The portfolio's growth from the start of its longer period up to each day before.
+    growth = (1 + portfolio).groupby(periods).cumprod()
+    carried = growth.groupby(periods).shift(1).fillna(1)
+    table = contributions.mul(carried, axis=0).groupby(periods).sum()
+    table["Portfolio"] = table.sum(axis=1)
+    return table
+
+
+def get_factor_attribution(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    loadings: pd.DataFrame,
+    factor_returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    The attribution of a portfolio's return per period to factors, as empyrical's
+    perf_attrib (the risk model attribution of Grinold and Kahn, 2000) computes it. The
+    portfolio's exposure to factor f is the weighted sum of the loadings of its assets,
+    x_f,t = Σ_i w_i,t β_i,f (empyrical's compute_exposures), and
+
+    - Contribution_f,t = x_f,t F_f,t, the return earned through factor f
+    - Common Return_t = Σ_f Contribution_f,t
+    - Specific Return_t = R_t - Common Return_t, with R_t = Σ_i w_i,t r_i,t
+    - Tilt Return_t = Σ_f mean(x_f) F_f,t, the return of the average exposure
+    - Timing Return_t = Common Return_t - Tilt Return_t, the return of moving the
+      exposures around their average
+
+    See Grinold, R. C. and Kahn, R. N. (2000), "Active Portfolio Management", 2nd
+    edition, McGraw-Hill, chapter 17, and empyrical's perf_attrib and compute_exposures
+    (https://github.com/stefan-jansen/empyrical-reloaded).
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        weights (pd.DataFrame): The weight of every asset at the start of every period.
+        loadings (pd.DataFrame): The loading of every asset (rows) on every factor
+            (columns).
+        factor_returns (pd.DataFrame): The factor returns per period.
+
+    Returns:
+        pd.DataFrame: Per period the contribution of every factor and the Common,
+        Specific, Total, Tilt and Timing Return.
+    """
+    weights = weights.reindex(index=returns.index, columns=returns.columns).fillna(0)
+    factor_returns = factor_returns.reindex(returns.index)
+    exposures = weights @ loadings.reindex(
+        index=returns.columns, columns=factor_returns.columns
+    ).fillna(0)
+    table = exposures * factor_returns
+    total = (weights * returns.fillna(0)).sum(axis=1)
+    common = table.sum(axis=1)
+    tilt = factor_returns @ exposures.mean()
+    table["Common Return"] = common
+    table["Specific Return"] = total - common
+    table["Total Return"] = total
+    table["Tilt Return"] = tilt
+    table["Timing Return"] = common - tilt
+    return table

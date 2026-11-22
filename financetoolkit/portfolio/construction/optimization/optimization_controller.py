@@ -5,7 +5,10 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.portfolio.construction.optimization import (
+    estimation_model,
+    optimization_model,
+)
 from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -190,8 +193,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -364,8 +368,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -566,8 +571,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -758,8 +764,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -932,8 +939,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1082,8 +1090,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1233,8 +1242,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 clusters when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -1538,8 +1548,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -2312,8 +2323,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -2491,8 +2503,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). Defaults to "sample".
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2715,8 +2728,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). Defaults to "sample".
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2939,8 +2953,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). Defaults to "sample".
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3096,6 +3111,11 @@ class OptimizationConstruction:
         market_weights: dict[str, float] | None = None,
         risk_aversion: float | str = 2.5,
         tau: float = 0.05,
+        method: str = "standard",
+        factor_views: dict[str, float] | None = None,
+        factor_view_confidences: dict[str, float] | None = None,
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
@@ -3132,6 +3152,24 @@ class OptimizationConstruction:
         δ = (E[r_m] - r_f) / σ²_m, the benchmark's annualized average excess return over
         its annualized variance on the same periods as the assets.
 
+        Two variants put views on factors, by default the five factors of Fama and French
+        (Mkt-RF, SMB, HML, RMW and CMA), with loadings from an OLS regression of the
+        assets on the factors (see get_factor_loadings):
+
+        - method="augmented" (Cheung, 2009): the assets and the factors form one vector
+          with covariance [[Σ, BΣ_f], [Σ_f B', Σ_f]] and implied returns [δΣw; δΣ_f B'w],
+          the factor premiums the market implies, and the Black-Litterman update takes
+          views on both, so a view on a factor ({"HML": 0.03}, value beats growth by 3% a
+          year) moves every asset through its covariance with that factor. Factor views
+          are premiums, without the risk free rate.
+        - method="bayesian" (Kolm and Ritter, 2017): the prior is the factor model itself,
+          the historical average factor returns μ_f with uncertainty τΣ_f, the views on
+          the factors update them to Π̂ with uncertainty Ŝ, and the assets follow:
+          μ = α + BΠ̂ and Σ_post = BΣ_f B' + D + BŜB', with α the intercepts and D the
+          residual variances. It needs factor views and no market weights; the Prior
+          Return is α + Bμ_f, the average return of every asset, and the weights are
+          the mean-variance portfolio of μ and Σ_post.
+
         The Posterior Volatility is the square root of the diagonal of the posterior
         covariance matrix Σ + M (He and Litterman, 1999), with M = ((τΣ)⁻¹ + P'Ω⁻¹P)⁻¹
         the uncertainty that remains in the Black-Litterman returns: the volatility to
@@ -3148,8 +3186,16 @@ class OptimizationConstruction:
           Incorporating User-Specified Confidence Levels." Working paper.
         - Walters, J. (2014). "The Black-Litterman Model in Detail."
           https://ssrn.com/abstract=1314585
+        - Cheung, W. (2009). "The Augmented Black-Litterman Model: A Ranking-Free
+          Approach to Factor-Based Portfolio Construction and Beyond."
+          https://ssrn.com/abstract=1347648
+        - Kolm, P. and Ritter, G. (2017). "On the Bayesian Interpretation of
+          Black-Litterman." European Journal of Operational Research, 258(2), 564-572.
+        - Riskfolio-Lib: black_litterman, augmented_black_litterman,
+          black_litterman_bayesian (https://github.com/dcajasn/Riskfolio-Lib).
 
-        Also known as: BL model, equilibrium returns with views.
+        Also known as: BL model, equilibrium returns with views, augmented
+        Black-Litterman, Bayesian Black-Litterman, factor views.
 
         Args:
             views (dict[str, float] | None, optional): The annualized views, absolute views
@@ -3167,6 +3213,20 @@ class OptimizationConstruction:
                 2.5.
             tau (float, optional): The uncertainty of the implied returns relative to the
                 covariance matrix. Defaults to 0.05.
+            method (str, optional): "standard", "augmented" (views on assets and
+                factors) or "bayesian" (views on factors of the factor model). Defaults to
+                "standard".
+            factor_views (dict[str, float] | None, optional): The annualized views on
+                factors, a premium ({"HML": 0.03}) or the difference of two
+                ({"SMB-HML": 0.01}), for "augmented" and "bayesian". Defaults to None.
+            factor_view_confidences (dict[str, float] | None, optional): The confidence per
+                factor view, between 0 and 1. Defaults to None, which sets each view's
+                uncertainty to the variance of the view scaled by tau.
+            factors (pd.DataFrame | None, optional): The factor returns, one column per
+                factor, at the frequency of the period. Defaults to None, the Fama and
+                French five factors of the region.
+            region (str, optional): The region of the Fama and French factors. Defaults to
+                "United States".
             period (str, optional): The frequency of the returns the covariance matrix is
                 estimated from. Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
@@ -3181,8 +3241,9 @@ class OptimizationConstruction:
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
                 (the noise correlations shrunk towards their diagonal, López de Prado,
-                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
-                et al., 2022). The shrinkage and denoised estimators stabilize the
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022) or "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993). The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -3217,11 +3278,24 @@ class OptimizationConstruction:
         Returns:
             pd.DataFrame: Per asset its Market Weight, Implied Return, Black-Litterman Return
             (both annualized total returns), Posterior Volatility (annualized) and the
-            resulting Weight.
+            resulting Weight; with method="bayesian" the Prior Return in place of the
+            Market Weight and Implied Return.
 
         Notes:
         - risk_aversion="market" is refused when the benchmark earned no more than the
           risk free rate over the period, as that implies no positive risk aversion.
+        - The factor models are estimated on the periods in which the assets and the
+          factors all have a return.
+        - The augmented model equals Riskfolio-Lib's augmented_black_litterman (with τ = 1
+          / T, its choice) when the loadings hold no intercept: Riskfolio-Lib adds the
+          intercepts to the posterior returns when they do, which Cheung (2009) does not.
+          It does not invert the stacked covariance, which is singular when an asset is
+          itself a factor (the benchmark and Mkt-RF), where Riskfolio-Lib's inverse
+          loses its accuracy.
+        - The Bayesian model takes the prior N(μ_f, τΣ_f); Riskfolio-Lib's
+          black_litterman_bayesian takes N(μ_f, Σ_f) with views of uncertainty
+          τ p'Σ_f p, τ = 1 / T, which equals this one with tau=1 and a confidence of
+          T / (T + 1) for every view.
 
         As an example:
 
@@ -3249,6 +3323,19 @@ class OptimizationConstruction:
         | JNJ  |          0.0647 |           0.0511 |                   0.0522 |                 0.1714 |   0.016  |
         | XOM  |          0.0658 |           0.0697 |                   0.0847 |                 0.2736 |   0.1345 |
         """
+        methods = ("standard", "augmented", "bayesian")
+        if method not in methods:
+            raise ValueError(
+                f"The method must be one of {', '.join(methods)}, not '{method}'."
+            )
+        if method == "standard" and factor_views:
+            raise ValueError(
+                "Factor views need method='augmented' or method='bayesian'."
+            )
+        if method == "bayesian" and views:
+            raise ValueError(
+                "The Bayesian model takes views on factors only; use factor_views."
+            )
         returns, _, covariance_matrix, risk_free_rate = self._get_inputs(
             period, False, covariance, covariance_span
         )
@@ -3268,6 +3355,57 @@ class OptimizationConstruction:
                 f"The risk aversion must be a number or 'market', not '{risk_aversion}'."
             )
 
+        if method != "standard":
+            periods_per_year = PERIODS_PER_YEAR[period]
+            aligned, factor_returns = self._align_factors(
+                returns, self._get_factor_returns(period, factors, region)
+            )
+            loadings = estimation_model.get_factor_loadings(aligned, factor_returns)
+            factor_covariance = factor_returns.cov() * periods_per_year
+
+        if method == "bayesian":
+            _, _, residual_variance = estimation_model.get_factor_model(
+                aligned, factor_returns, loadings
+            )
+            black_litterman, posterior_covariance = (
+                optimization_model.get_bayesian_black_litterman_returns(
+                    loadings.assign(Intercept=loadings["Intercept"] * periods_per_year),
+                    factor_returns.mean() * periods_per_year,
+                    factor_covariance,
+                    residual_variance * periods_per_year,
+                    factor_views or {},
+                    factor_view_confidences,
+                    tau,
+                )
+            )
+            weights = optimization_model.get_mean_variance_weights(
+                black_litterman["Black-Litterman Return"],
+                posterior_covariance,
+                risk_aversion=risk_aversion,
+                **self._get_constraints(
+                    assets,
+                    minimum_weight,
+                    maximum_weight,
+                    sector_bounds,
+                    country_bounds,
+                ),
+                net_exposure=net_exposure,
+                gross_exposure=gross_exposure,
+            )
+            table = pd.concat(
+                [
+                    black_litterman,
+                    pd.Series(
+                        np.sqrt(np.diag(posterior_covariance)),
+                        index=posterior_covariance.index,
+                        name="Posterior Volatility",
+                    ),
+                    weights,
+                ],
+                axis=1,
+            )
+            return self._round(table, rounding)
+
         if market_weights is not None:
             market = pd.Series(market_weights, dtype=float).reindex(assets)
         else:
@@ -3281,17 +3419,34 @@ class OptimizationConstruction:
                 f"No market weight for {missing}; pass market_weights explicitly."
             )
 
-        black_litterman, posterior_covariance = (
-            optimization_model.get_black_litterman_returns(
-                covariance_matrix,
-                market,
-                views=views,
-                view_confidences=view_confidences,
-                risk_aversion=risk_aversion,
-                tau=tau,
-                risk_free_rate=risk_free_rate,
+        if method == "augmented":
+            black_litterman, posterior_covariance = (
+                optimization_model.get_augmented_black_litterman_returns(
+                    covariance_matrix,
+                    market,
+                    factor_covariance,
+                    loadings.drop(columns="Intercept"),
+                    views=views,
+                    view_confidences=view_confidences,
+                    factor_views=factor_views,
+                    factor_view_confidences=factor_view_confidences,
+                    risk_aversion=risk_aversion,
+                    tau=tau,
+                    risk_free_rate=risk_free_rate,
+                )
             )
-        )
+        else:
+            black_litterman, posterior_covariance = (
+                optimization_model.get_black_litterman_returns(
+                    covariance_matrix,
+                    market,
+                    views=views,
+                    view_confidences=view_confidences,
+                    risk_aversion=risk_aversion,
+                    tau=tau,
+                    risk_free_rate=risk_free_rate,
+                )
+            )
         weights = optimization_model.get_mean_variance_weights(
             black_litterman["Black-Litterman Return"],
             covariance_matrix,

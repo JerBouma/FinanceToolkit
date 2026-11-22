@@ -9,13 +9,17 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from scipy.cluster.hierarchy import cut_tree, fcluster, leaves_list, linkage, to_tree
+from scipy.linalg import null_space
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
 from scipy.spatial.distance import pdist, squareform
 
 from financetoolkit.performance import performance_model
 from financetoolkit.portfolio.construction.optimization import estimation_model
+from financetoolkit.portfolio.helpers import get_view_vector
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.value_at_risk import cvar_model, var_model
+from financetoolkit.risk.distribution import dispersion_model
+from financetoolkit.risk.drawdown import drawdown_model
+from financetoolkit.risk.value_at_risk import cvar_model, evar_model, var_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -976,6 +980,7 @@ COVARIANCE_METHODS = (
     "denoised_spectral",
     "denoised_shrink",
     "gerber",
+    "factor",
 )
 
 EXPECTED_RETURN_METHODS = (
@@ -999,6 +1004,7 @@ def get_covariance_matrix(
     gerber_threshold: float = 0.5,
     gerber_statistic: int = 1,
     denoise_alpha: float = 0.0,
+    factors: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     The covariance matrix per period of a set of returns, by one of the estimators.
@@ -1015,6 +1021,9 @@ def get_covariance_matrix(
       eigenvalues of the correlation matrix averaged, set to zero or shrunk towards
       the diagonal (see get_denoised_covariance).
     - "gerber": the Gerber covariance (see estimation_model.get_gerber_covariance).
+    - "factor": the covariance a time series factor model implies, B Σ_f B' + D, with the
+      OLS loadings on every factor, estimated on the periods both the returns and the
+      factors have (see estimation_model.get_factor_model).
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1032,6 +1041,8 @@ def get_covariance_matrix(
             Defaults to 1.
         denoise_alpha (float, optional): The share of the noise correlations kept by
             "denoised_shrink". Defaults to 0.
+        factors (pd.DataFrame | None, optional): The factor returns per period, for
+            "factor". Defaults to None.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -1068,6 +1079,21 @@ def get_covariance_matrix(
         return estimation_model.get_gerber_covariance(
             returns, gerber_threshold, gerber_statistic
         )
+    if method == "factor":
+        if factors is None:
+            raise ValueError("The factor covariance needs the returns of factors.")
+        periods = returns.index.intersection(factors.dropna(how="any").index)
+        if len(periods) <= factors.shape[1] + 1:
+            raise ValueError(
+                f"The returns and the factors share only {len(periods)} periods, too few "
+                "to estimate the factor model."
+            )
+        loadings = estimation_model.get_factor_loadings(
+            returns.loc[periods], factors.loc[periods]
+        )
+        return estimation_model.get_factor_model(
+            returns.loc[periods], factors.loc[periods], loadings
+        )[1]
     raise ValueError(
         f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
         f"'{method}'."
@@ -1218,6 +1244,7 @@ def get_expected_returns_and_covariance(
     expected_returns_span: int = 180,
     benchmark_returns: pd.Series | None = None,
     risk_free_rate: float = 0.0,
+    factors: pd.DataFrame | None = None,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     The annualized expected returns (see get_expected_returns) and the annualized
@@ -1233,8 +1260,8 @@ def get_expected_returns_and_covariance(
             covariance the benchmark as a single factor implies), "oas", "shrunk" (a
             fixed intensity of 0.1 towards the scaled identity), "semicovariance" (below
             a zero return), "exponential", "denoised", "denoised_spectral",
-            "denoised_shrink" (Marčenko-Pastur) or "gerber" (threshold 0.5, statistic 1).
-            Defaults to "sample".
+            "denoised_shrink" (Marčenko-Pastur), "gerber" (threshold 0.5, statistic 1) or
+            "factor" (a factor model with OLS loadings). Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
         expected_returns (str, optional): The estimator of the expected returns: "mean",
@@ -1247,6 +1274,8 @@ def get_expected_returns_and_covariance(
             covariance. Defaults to None.
         risk_free_rate (float, optional): The annualized risk free rate, for the "capm"
             expected returns. Defaults to 0.
+        factors (pd.DataFrame | None, optional): The factor returns per period, for the
+            "factor" covariance. Defaults to None.
 
     Returns:
         tuple[pd.Series, pd.DataFrame]: The expected returns and the covariance matrix.
@@ -1257,7 +1286,7 @@ def get_expected_returns_and_covariance(
         raise ValueError("At least two periods of returns are needed for every asset.")
 
     matrix = get_covariance_matrix(
-        returns, covariance, covariance_span, benchmark_returns
+        returns, covariance, covariance_span, benchmark_returns, factors=factors
     )
     mean = get_expected_returns(
         returns,
@@ -3721,7 +3750,7 @@ def get_black_litterman_returns(
     view_confidences: dict[str, float] | None = None,
     risk_aversion: float = 2.5,
     tau: float = 0.05,
-    risk_free_rate: float = 0.0,
+    risk_free_rate: float | pd.Series = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     The Black-Litterman expected returns (Black and Litterman, 1992), as total returns,
@@ -3764,9 +3793,10 @@ def get_black_litterman_returns(
         risk_aversion (float, optional): The risk aversion of the market, δ. Defaults to 2.5.
         tau (float, optional): The uncertainty of the prior relative to the covariance.
             Defaults to 0.05.
-        risk_free_rate (float, optional): The annualized risk free rate, added to the
-            implied excess returns so that they are total returns like the views. Defaults
-            to 0.
+        risk_free_rate (float | pd.Series, optional): The annualized risk free rate, added
+            to the implied excess returns so that they are total returns like the views, or
+            one per name (0 for a name missing from it), e.g. 0 for the factors of the
+            augmented model, whose returns are excess returns. Defaults to 0.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: The Implied Return and the Black-Litterman
@@ -3783,7 +3813,11 @@ def get_black_litterman_returns(
     # Π = δΣw is an excess return; with the risk free rate added it is a total return,
     # comparable to absolute views. A relative view compares two total returns, so the
     # risk free rate cancels out of it.
-    implied = risk_aversion * sigma @ weights + risk_free_rate
+    implied = risk_aversion * sigma @ weights + (
+        risk_free_rate.reindex(assets).fillna(0).to_numpy(dtype=float)
+        if isinstance(risk_free_rate, pd.Series)
+        else risk_free_rate
+    )
     posterior = implied
     tau_sigma = tau * sigma
     uncertainty_left = tau_sigma
@@ -3797,30 +3831,7 @@ def get_black_litterman_returns(
     if views:
         pick, targets, uncertainty = [], [], []
         for view, value in views.items():
-            row = np.zeros(len(assets))
-            # Tickers can hold a hyphen themselves (BRK-B), so every hyphen is tried as the
-            # split between the two legs of a relative view.
-            legs = [
-                (view[:position], view[position + 1 :])
-                for position, character in enumerate(view)
-                if character == "-"
-                and view[:position] in assets
-                and view[position + 1 :] in assets
-            ]
-            if view in assets:
-                row[assets.get_loc(view)] = 1
-            elif len(legs) == 1:
-                long_leg, short_leg = legs[0]
-                row[assets.get_loc(long_leg)] = 1
-                row[assets.get_loc(short_leg)] = -1
-            elif len(legs) > 1:
-                raise ValueError(
-                    f"The view {view!r} can be read as more than one pair of assets."
-                )
-            else:
-                raise ValueError(
-                    f"The view {view!r} names no asset; use 'TICKER' or 'TICKER-TICKER'."
-                )
+            row = get_view_vector(view, assets)
             variance = tau * row @ sigma @ row
             confidence = (view_confidences or {}).get(view)
             if confidence is not None:
@@ -3855,6 +3866,204 @@ def get_black_litterman_returns(
             index=assets,
         ),
         pd.DataFrame(sigma + uncertainty_left, index=assets, columns=assets),
+    )
+
+
+def get_augmented_black_litterman_returns(
+    covariance: pd.DataFrame,
+    market_weights: pd.Series,
+    factor_covariance: pd.DataFrame,
+    loadings: pd.DataFrame,
+    views: dict[str, float] | None = None,
+    view_confidences: dict[str, float] | None = None,
+    factor_views: dict[str, float] | None = None,
+    factor_view_confidences: dict[str, float] | None = None,
+    risk_aversion: float = 2.5,
+    tau: float = 0.05,
+    risk_free_rate: float = 0.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    The augmented Black-Litterman expected returns of Cheung (2009), which take views on
+    factors next to (or instead of) views on assets. The assets and the factors are
+    stacked into one vector with the covariance matrix
+
+    - Σ_a = [[Σ, B Σ_f], [Σ_f B', Σ_f]]
+
+    with B the loadings of the assets on the factors and Σ_f the covariance of the factor
+    returns, and the market weights extended with a zero weight for every factor, so the
+    implied returns are Π_a = δ Σ_a w_a = [δ Σ w; δ Σ_f B' w]: the excess returns of the
+    assets and the factor premiums the market portfolio implies. The Black-Litterman
+    update of get_black_litterman_returns then runs on the stacked vector, so a view on a
+    factor moves every asset through its covariance with that factor. The risk free rate
+    is added to the assets only: factor returns are excess returns already, so a factor
+    view is a factor premium ("HML": 0.03, value beats growth by 3% a year).
+
+    Without factor views and with the factors left out, this is the Black-Litterman
+    model itself. Riskfolio-Lib's augmented_black_litterman adds the intercepts of the
+    loadings matrix to the posterior returns when it holds a constant; here the
+    intercepts are left out, as in Cheung (2009), where the equilibrium has no alpha.
+
+    See Cheung, W. (2009), "The Augmented Black-Litterman Model: A Ranking-Free Approach to
+    Factor-Based Portfolio Construction and Beyond", https://ssrn.com/abstract=1347648,
+    and Riskfolio-Lib's augmented_black_litterman (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        covariance (pd.DataFrame): The annualized covariance matrix of the assets.
+        market_weights (pd.Series): The market capitalization weight per asset.
+        factor_covariance (pd.DataFrame): The annualized covariance matrix of the factors.
+        loadings (pd.DataFrame): The loading of every asset (rows) on every factor (columns).
+        views (dict[str, float] | None, optional): The annualized views on assets, as in
+            get_black_litterman_returns. Defaults to None.
+        view_confidences (dict[str, float] | None, optional): The confidence per asset view.
+            Defaults to None.
+        factor_views (dict[str, float] | None, optional): The annualized views on factors
+            ("HML": 0.03) or on the difference of two ("SMB-HML": 0.01). Defaults to None.
+        factor_view_confidences (dict[str, float] | None, optional): The confidence per
+            factor view. Defaults to None.
+        risk_aversion (float, optional): The risk aversion of the market, δ. Defaults to 2.5.
+        tau (float, optional): The uncertainty of the prior relative to the covariance.
+            Defaults to 0.05.
+        risk_free_rate (float, optional): The annualized risk free rate, added to the
+            implied excess returns of the assets. Defaults to 0.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: The Implied Return and the Black-Litterman
+            Return per asset, both annualized total returns, and the annualized posterior
+            covariance matrix of the assets.
+    """
+    assets = covariance.index
+    factor_names = factor_covariance.index
+    overlap = set(assets) & set(factor_names)
+    if overlap:
+        raise ValueError(
+            f"The factors share names with the assets: {', '.join(sorted(overlap))}."
+        )
+    beta = loadings.reindex(index=assets, columns=factor_names).fillna(0).to_numpy()
+    sigma_factors = factor_covariance.to_numpy()
+    cross = beta @ sigma_factors
+    names = assets.append(factor_names)
+    augmented = pd.DataFrame(
+        np.block([[covariance.to_numpy(), cross], [cross.T, sigma_factors]]),
+        index=names,
+        columns=names,
+    )
+    table, posterior = get_black_litterman_returns(
+        augmented,
+        market_weights.reindex(names).fillna(0),
+        views={**(views or {}), **(factor_views or {})} or None,
+        view_confidences={**(view_confidences or {}), **(factor_view_confidences or {})}
+        or None,
+        risk_aversion=risk_aversion,
+        tau=tau,
+        risk_free_rate=pd.Series(risk_free_rate, index=assets),
+    )
+    return table.loc[assets], posterior.loc[assets, assets]
+
+
+def get_bayesian_black_litterman_returns(
+    loadings: pd.DataFrame,
+    factor_returns: pd.Series,
+    factor_covariance: pd.DataFrame,
+    residual_variance: pd.Series,
+    factor_views: dict[str, float],
+    factor_view_confidences: dict[str, float] | None = None,
+    tau: float = 0.05,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    The Bayesian Black-Litterman expected returns of Kolm and Ritter (2017), which put the
+    views on the factors of a factor model r = α + B f + ε rather than on the assets. The
+    factor premiums have the prior N(μ_f, τ Σ_f), with μ_f the historical average factor
+    returns, and the views P μ_f = Q the uncertainty Ω_k = τ p_k'Σ_f p_k, scaled by
+    (1 - c) / c for a confidence c (as in get_black_litterman_returns). Their posterior is
+
+    - Ŝ = τΣ_f - τΣ_f P'(P τΣ_f P' + Ω)⁻¹ P τΣ_f
+    - Π̂ = μ_f + τΣ_f P'(P τΣ_f P' + Ω)⁻¹ (Q - P μ_f)
+
+    and the asset returns follow from the factor model: μ = α + B Π̂ and
+    Σ_post = B Σ_f B' + D + B Ŝ B', with D the residual variances. This is Riskfolio-Lib's
+    black_litterman_bayesian written without inverting Σ: its Π_BLB = Σ_BLB S⁻¹ B (Ŝ⁻¹ +
+    B'S⁻¹B)⁻¹ Ŝ⁻¹ Π̂ equals B Π̂ and its Σ_BLB = (S⁻¹ - S⁻¹B(Ŝ⁻¹ + B'S⁻¹B)⁻¹B'S⁻¹)⁻¹ equals
+    S + B Ŝ B' (Woodbury). Riskfolio-Lib takes the prior N(μ_f, Σ_f) and Ω with τ = 1 / T;
+    with tau=1 and a confidence of T / (T + 1) for every view this gives its result.
+
+    Without views the prior is the factor model itself and μ is the average return of
+    every asset (the OLS intercept makes the residuals average zero).
+
+    See Kolm, P. and Ritter, G. (2017), "On the Bayesian Interpretation of
+    Black-Litterman", European Journal of Operational Research, 258(2), 564-572, and
+    Riskfolio-Lib's black_litterman_bayesian (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        loadings (pd.DataFrame): The Intercept and the factor loadings per asset, annualized
+            intercept (see estimation_model.get_factor_loadings).
+        factor_returns (pd.Series): The annualized average return of every factor.
+        factor_covariance (pd.DataFrame): The annualized covariance matrix of the factors.
+        residual_variance (pd.Series): The annualized residual variance of every asset.
+        factor_views (dict[str, float]): The annualized views on factors ("HML": 0.03) or on
+            the difference of two ("SMB-HML": 0.01).
+        factor_view_confidences (dict[str, float] | None, optional): The confidence per
+            factor view, between 0 and 1. Defaults to None.
+        tau (float, optional): The uncertainty of the prior factor premiums relative to the
+            factor covariance. Defaults to 0.05.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: The Prior Return (α + B μ_f) and the
+            Black-Litterman Return per asset, annualized, and the annualized posterior
+            covariance matrix.
+    """
+    if not factor_views:
+        raise ValueError("The Bayesian Black-Litterman model needs views on factors.")
+    unmatched = set(factor_view_confidences or {}) - set(factor_views)
+    if unmatched:
+        raise ValueError(
+            f"The view confidences name views that are not given: {', '.join(sorted(unmatched))}."
+        )
+    factor_names = factor_covariance.index
+    assets = loadings.index
+    beta = loadings[factor_names].to_numpy(dtype=float)
+    intercept = loadings["Intercept"].to_numpy(dtype=float)
+    sigma_factors = factor_covariance.to_numpy(dtype=float)
+    prior = factor_returns.reindex(factor_names).to_numpy(dtype=float)
+    tau_sigma = tau * sigma_factors
+
+    pick, uncertainty = [], []
+    for view in factor_views:
+        row = get_view_vector(view, factor_names)
+        variance = tau * row @ sigma_factors @ row
+        confidence = (factor_view_confidences or {}).get(view)
+        if confidence is not None:
+            if not 0 < confidence <= 1:
+                raise ValueError("A view confidence must lie between 0 and 1.")
+            variance *= max(1 - confidence, 1e-8) / confidence
+        pick.append(row)
+        uncertainty.append(variance)
+    p = np.array(pick)
+    try:
+        solved = np.linalg.solve(
+            p @ tau_sigma @ p.T + np.diag(uncertainty),
+            np.column_stack(
+                [np.array(list(factor_views.values())) - p @ prior, p @ tau_sigma]
+            ),
+        )
+    except np.linalg.LinAlgError as error:
+        raise ValueError(
+            "The views contradict or repeat each other, so they cannot be combined."
+        ) from error
+    posterior_premiums = prior + tau_sigma @ p.T @ solved[:, 0]
+    uncertainty_left = tau_sigma - tau_sigma @ p.T @ solved[:, 1:]
+
+    covariance = beta @ (sigma_factors + uncertainty_left) @ beta.T + np.diag(
+        residual_variance.reindex(assets).to_numpy(dtype=float)
+    )
+    return (
+        pd.DataFrame(
+            {
+                "Prior Return": intercept + beta @ prior,
+                "Black-Litterman Return": intercept + beta @ posterior_premiums,
+            },
+            index=assets,
+        ),
+        pd.DataFrame(covariance, index=assets, columns=assets),
     )
 
 
@@ -4109,6 +4318,228 @@ def get_historical_risk_contributions(
         },
         index=returns.columns,
     )
+
+
+# The risk measures whose contributions are found by finite differences, with the order of
+# homogeneity of each in the weights (the square root of the fourth moment doubles when the
+# weights double twice over).
+FINITE_DIFFERENCE_RISK_MEASURES = {
+    "var": 1,
+    "evar": 1,
+    "worst_realization": 1,
+    "gini_mean_difference": 1,
+    "tail_gini": 1,
+    "lower_partial_moment": 1,
+    "kurtosis": 2,
+    "maximum_drawdown": 1,
+    "average_drawdown": 1,
+    "drawdown_at_risk": 1,
+    "entropic_drawdown_at_risk": 1,
+    "ulcer_index": 1,
+}
+
+# The step of the central differences: Riskfolio-Lib's 1e-7, and 1e-4 for the entropic
+# measures, which are found by a numerical minimization of their own.
+FINITE_DIFFERENCE_STEP = 1e-7
+ENTROPIC_FINITE_DIFFERENCE_STEP = 1e-4
+
+
+def get_risk_measure(
+    returns: pd.DataFrame, risk_measure: str, confidence_level: float = 0.95
+) -> pd.Series:
+    """
+    A risk measure of every column of returns (each a portfolio), from the Risk module's
+    measures, as a positive loss per period: the historical Value at Risk and Entropic
+    Value at Risk, the worst realization, the Gini mean difference, the Tail Gini, the
+    first lower partial moment below zero, the square root of the fourth central moment
+    (Riskfolio-Lib's "KT"), and the maximum and average drawdown, the Drawdown at Risk, the
+    Entropic Drawdown at Risk and the Ulcer Index of the uncompounded cumulative returns
+    (Riskfolio-Lib's absolute drawdowns), which scale with the weights.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per portfolio.
+        risk_measure (str): One of FINITE_DIFFERENCE_RISK_MEASURES.
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+
+    Returns:
+        pd.Series: The risk measure per column, positive for a loss.
+    """
+    alpha = 1 - confidence_level
+    if risk_measure == "var":
+        measure = -var_model.get_var_historic(returns, alpha)
+    elif risk_measure == "evar":
+        measure = -evar_model.get_evar_historic(returns, alpha)
+    elif risk_measure == "worst_realization":
+        measure = -dispersion_model.get_worst_realization(returns)
+    elif risk_measure == "gini_mean_difference":
+        measure = dispersion_model.get_gini_mean_difference(returns)
+    elif risk_measure == "tail_gini":
+        measure = -dispersion_model.get_tail_gini(returns, alpha)
+    elif risk_measure == "lower_partial_moment":
+        measure = risk_model.get_partial_moment(returns, order=1)
+    elif risk_measure == "kurtosis":
+        measure = dispersion_model.get_central_moment(returns, order=4) ** 0.5
+    elif risk_measure == "maximum_drawdown":
+        measure = -drawdown_model.get_maximum_drawdown(returns, compounded=False)
+    elif risk_measure == "average_drawdown":
+        measure = -drawdown_model.get_average_drawdown(
+            returns, method="observation", compounded=False
+        )
+    elif risk_measure == "drawdown_at_risk":
+        measure = -drawdown_model.get_drawdown_at_risk(returns, alpha, compounded=False)
+    elif risk_measure == "entropic_drawdown_at_risk":
+        measure = -drawdown_model.get_entropic_drawdown_at_risk(
+            returns, alpha, compounded=False
+        )
+    elif risk_measure == "ulcer_index":
+        measure = risk_model.get_ui(returns, rolling=None, compounded=False)
+    else:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(FINITE_DIFFERENCE_RISK_MEASURES)}, "
+            f"not '{risk_measure}'."
+        )
+    return pd.Series(measure, index=returns.columns, dtype=float)
+
+
+def get_finite_difference_risk_contributions(
+    weights: pd.Series,
+    returns: pd.DataFrame,
+    risk_measure: str = "maximum_drawdown",
+    confidence_level: float = 0.95,
+) -> pd.DataFrame:
+    """
+    How much each asset adds to a risk measure of a portfolio's historical returns (Euler
+    allocation), with the derivative of the measure found by central finite differences,
+    as Riskfolio-Lib's Risk_Contribution does: ∂ρ/∂w_i ≈ (ρ(w + h e_i) - ρ(w - h e_i)) /
+    (2h), with h = 1e-7 (1e-4 for the entropic measures). A measure that is homogeneous of
+    order k in the weights satisfies Σ w_i ∂ρ/∂w_i = k ρ (Euler's theorem), so the risk
+    contribution w_i ∂ρ/∂w_i / k adds up to ρ (Tasche, 2000). The measures that are not
+    smooth (the Value at Risk, the worst realization, the drawdowns) have a derivative
+    almost everywhere: the measure follows the returns of a single period, or a few, and
+    the derivative is the return of each asset in those periods.
+
+    The measure is taken of the portfolio's returns, see get_risk_measure; every measure is
+    per period (e.g. daily), not annualized.
+
+    See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
+    math/0104190, and Riskfolio-Lib's Risk_Contribution
+    (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        risk_measure (str, optional): One of FINITE_DIFFERENCE_RISK_MEASURES. Defaults to
+            "maximum_drawdown".
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+
+    Returns:
+        pd.DataFrame: The Weight, Marginal Contribution (∂ρ/∂w_i), Risk Contribution and
+        Percentage Contribution per asset.
+    """
+    if risk_measure not in FINITE_DIFFERENCE_RISK_MEASURES:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(FINITE_DIFFERENCE_RISK_MEASURES)}, "
+            f"not '{risk_measure}'."
+        )
+    returns = returns.dropna(how="any")
+    if returns.empty:
+        raise ValueError("No period has a return for every asset.")
+    weights = weights.reindex(returns.columns).fillna(0)
+    step = (
+        ENTROPIC_FINITE_DIFFERENCE_STEP
+        if risk_measure in ("evar", "entropic_drawdown_at_risk")
+        else FINITE_DIFFERENCE_STEP
+    )
+    assets = len(weights)
+    # Every column holds the weights with one asset's weight moved up or down a step.
+    shifts = np.hstack([np.eye(assets), -np.eye(assets)]) * step
+    shifted = weights.to_numpy(dtype=float)[:, np.newaxis] + shifts
+    measures = get_risk_measure(
+        pd.DataFrame(returns.to_numpy(dtype=float) @ shifted, index=returns.index),
+        risk_measure,
+        confidence_level,
+    ).to_numpy()
+    marginal = (measures[:assets] - measures[assets:]) / (2 * step)
+    contribution = (
+        weights.to_numpy() * marginal / FINITE_DIFFERENCE_RISK_MEASURES[risk_measure]
+    )
+    total = contribution.sum()
+    if total == 0:
+        raise ValueError(f"The portfolio has no {risk_measure} to decompose.")
+
+    return pd.DataFrame(
+        {
+            "Weight": weights.to_numpy(),
+            "Marginal Contribution": marginal,
+            "Risk Contribution": contribution,
+            "Percentage Contribution": contribution / total,
+        },
+        index=returns.columns,
+    )
+
+
+def get_factor_risk_contributions(
+    weights: pd.Series, loadings: pd.DataFrame, marginal_contributions: pd.Series
+) -> pd.DataFrame:
+    """
+    How much each factor of a factor model adds to the risk of a portfolio, the factor
+    risk contributions of Meucci (2009) and Roncalli and Weisang (2016), as Riskfolio-Lib's
+    Factors_Risk_Contribution computes them. With B the N × K loadings of the assets on the
+    factors, the portfolio's exposure to the factors is y = B'w, and the marginal risk of
+    a factor follows from the marginal risk of the assets m = ∂ρ/∂w through the
+    pseudo-inverse, ∂ρ/∂y = B⁺'m with B⁺ = pinv(B'). The risk contribution of factor f is
+    y_f (B⁺'m)_f. The part of the weights the factors do not span (the null space of B')
+    forms an Other factor, Σ (B̃'w) ∘ (B̃⁺'m) with B̃ = pinv(null(B')'), so the factor
+    contributions and Other add up to the risk measure, Σ w_i m_i.
+
+    See Meucci, A. (2009), "Managing Diversification", Risk, 22(5), 74-79; Roncalli, T. and
+    Weisang, G. (2016), "Risk Parity Portfolios with Risk Factors", Quantitative Finance,
+    16(3), 377-388; and Riskfolio-Lib's Factors_Risk_Contribution
+    (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        loadings (pd.DataFrame): The loading of every asset (rows) on every factor
+            (columns), without the intercept.
+        marginal_contributions (pd.Series): The marginal contribution ∂ρ/∂w_i of every
+            asset to the risk measure.
+
+    Returns:
+        pd.DataFrame: Per factor and Other, the Exposure, Marginal Contribution, Risk
+        Contribution and Percentage Contribution.
+    """
+    assets = loadings.index
+    beta = loadings.to_numpy(dtype=float)
+    weight = weights.reindex(assets).fillna(0).to_numpy(dtype=float)
+    marginal = marginal_contributions.reindex(assets).to_numpy(dtype=float)
+    exposure = beta.T @ weight
+    factor_marginal = np.linalg.pinv(beta.T).T @ marginal
+    contribution = exposure * factor_marginal
+    complement = null_space(beta.T)
+    other = 0.0
+    if complement.size:
+        other_loadings = np.linalg.pinv(complement.T)
+        other = float(
+            np.sum(
+                (other_loadings.T @ weight)
+                * (np.linalg.pinv(other_loadings.T).T @ marginal)
+            )
+        )
+    total = float(weight @ marginal)
+    if total == 0:
+        raise ValueError("The portfolio has no risk to decompose.")
+    table = pd.DataFrame(
+        {
+            "Exposure": np.append(exposure, np.nan),
+            "Marginal Contribution": np.append(factor_marginal, np.nan),
+            "Risk Contribution": np.append(contribution, other),
+        },
+        index=[*loadings.columns, "Other"],
+    )
+    table["Percentage Contribution"] = table["Risk Contribution"] / total
+    return table
 
 
 def get_diversification_metrics(

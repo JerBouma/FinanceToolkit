@@ -108,6 +108,7 @@ class PortfolioConstructionBase:
         self._start_date = start_date
         self._end_date = end_date
         self._profile: pd.DataFrame | None = None
+        self._factor_datasets: dict[str, pd.DataFrame] = {}
 
     def _get_assets(self, include_benchmark: bool = False) -> list[str]:
         """The assets to build the portfolio from, without the Portfolio pseudo-ticker."""
@@ -171,6 +172,37 @@ class PortfolioConstructionBase:
         )
         return resolved[resolved != 0]
 
+    def _get_weights_over_time(
+        self,
+        weights: dict[str, float] | pd.Series | None,
+        period: str,
+        assets: list[str],
+        index: pd.Index,
+    ) -> pd.DataFrame:
+        """
+        The weight of every asset at the start of each period: the weights as given,
+        rebalanced to them every period, or, without weights, those of the Portfolio the
+        Toolkit came from at the end of the period before (the weights held while the
+        period's return was earned), and otherwise equal weights.
+        """
+        portfolio_weights = (self._portfolio_weights or {}).get(period)
+        if (
+            weights is None
+            and portfolio_weights is not None
+            and not portfolio_weights.empty
+        ):
+            held = (
+                portfolio_weights.reindex(columns=assets)
+                .shift(1)
+                .reindex(index)
+                .astype(float)
+            )
+            return held.fillna(0)
+        resolved = self._resolve_weights(weights, assets)
+        return pd.DataFrame(
+            np.tile(resolved.to_numpy(), (len(index), 1)), index=index, columns=assets
+        )
+
     def _get_risk_free_rate(self, period: str, index: pd.Index) -> float:
         """The average annualized risk free rate over the periods, 0 when unknown."""
         risk_free = self._risk_free_rate_data.get(period)
@@ -185,6 +217,69 @@ class PortfolioConstructionBase:
         """The returns of the benchmark per period, None when there is no benchmark."""
         returns = self._historical_data[period]["Return"]
         return returns.get(BENCHMARK_TICKER)
+
+    def _get_factor_returns(
+        self,
+        period: str,
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+    ) -> pd.DataFrame:
+        """
+        The factor returns per period: the given factors, or the Fama and French five
+        factors of the region (Ken French's daily file without the risk free rate),
+        compounded within each period, (Π (1 + f_d)) - 1, for the periods other than daily.
+        Given factors keep the periods they share with the returns: their dates are read
+        as the period they fall in.
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        index = self._historical_data[period]["Return"].index
+        if factors is not None:
+            table = pd.DataFrame(factors).astype(float)
+            dates = (
+                table.index
+                if isinstance(table.index, pd.PeriodIndex)
+                else pd.PeriodIndex(pd.to_datetime(table.index), freq=index.freq)
+            )
+            table.index = dates.asfreq(index.freq)
+            return table[~table.index.duplicated(keep="last")].dropna(how="any")
+
+        # Lazily imported: the factor files are the Performance module's data source.
+        from financetoolkit.performance import performance_model  # noqa: PLC0415
+
+        if region not in self._factor_datasets:
+            self._factor_datasets[region] = (
+                performance_model.obtain_fama_and_french_dataset(region=region)
+            )
+        daily = self._factor_datasets[region].drop(columns="RF", errors="ignore")
+        if period == "daily":
+            return daily.dropna(how="any")
+        return (
+            (1 + daily)
+            .groupby(daily.index.asfreq(index.freq))
+            .prod(min_count=1)
+            .sub(1)
+            .dropna(how="any")
+        )
+
+    def _align_factors(
+        self, returns: pd.DataFrame, factors: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        The returns and the factor returns on the periods both have. Ken French publishes
+        the factors about a month after the month ends, so the latest periods of the
+        returns have no factors yet and are left out.
+        """
+        periods = returns.index.intersection(factors.index)
+        if len(periods) <= factors.shape[1] + 2:  # noqa: PLR2004
+            raise ValueError(
+                f"The returns and the factors share only {len(periods)} periods, too few "
+                f"to estimate a model on {factors.shape[1]} factors; use a longer date "
+                "range or a higher frequency."
+            )
+        return returns.loc[periods], factors.loc[periods]
 
     def _get_inputs(
         self,
@@ -217,6 +312,7 @@ class PortfolioConstructionBase:
                     else None
                 ),
                 risk_free_rate,
+                self._get_factor_returns(period) if covariance == "factor" else None,
             )
         )
         return returns, expected, covariance_matrix, risk_free_rate
@@ -318,13 +414,15 @@ class PortfolioConstruction(
     Omega ratio, maximum CVaR ratio, maximum diversification, minimum tracking error,
     growth optimal, resampled efficient), the efficient frontier, a walk-forward
     backtest of the optimizers against equal weights, risk contributions to volatility,
-    expected shortfall, semideviation, mean absolute deviation and drawdowns, the risk
-    metrics of given weights, a whole-share allocation of the weights, diversification
-    metrics, historical stress tests,
-    look-through exposure and a Brinson-Fachler attribution against the benchmark, and
-    the estimates behind the weights: expected returns, covariance and codependence
-    matrices, asset clusters, coskewness and cokurtosis and their bootstrapped
-    uncertainty. The
+    expected shortfall, semideviation, mean absolute deviation, drawdowns and the other
+    risk measures of the Risk module, per asset and per factor, the risk metrics of given
+    weights, a whole-share allocation of the weights, diversification metrics, historical
+    stress tests, look-through exposure, a Brinson-Fachler attribution against the
+    benchmark, a factor attribution and the return contributions per period, and the
+    estimates behind the weights: expected returns, covariance and codependence
+    matrices, factor loadings, asset clusters, coskewness and cokurtosis, their
+    bootstrapped uncertainty and Entropy Pooling of views. Black-Litterman takes views
+    on assets and, augmented or Bayesian, on factors. The
     optimizers take weight bounds per asset, sector and country bounds from the company
     profiles, for long-short portfolios a net and gross exposure and, from current
     weights, a maximum turnover.

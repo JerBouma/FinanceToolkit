@@ -148,7 +148,7 @@ def get_wilder_moving_average(
     )
 
 
-# The moving averages of get_moving_average, which the Bollinger Bands can take as their
+# The moving averages of get_moving_average that take only a window, which the Bollinger Bands can take as their
 # middle band as TA-Lib's BBANDS takes a matype.
 MOVING_AVERAGES = {
     "simple": overlap_model.get_moving_average,
@@ -774,7 +774,7 @@ def get_bollinger_bands(
         window (int): Number of periods for the moving average.
         num_std_dev (float): Number of standard deviations for the bands.
         moving_average (str): The moving average of the middle band, one of
-            `MOVING_AVERAGES` (the methods of `get_moving_average`). Defaults to "simple".
+            `MOVING_AVERAGES` (the window-only methods of `get_moving_average`). Defaults to "simple".
 
     Returns:
         pd.DataFrame: Bollinger Bands (upper, middle, lower).

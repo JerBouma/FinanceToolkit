@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import inspect
 from collections.abc import Callable
 from functools import cached_property
 
@@ -415,15 +416,19 @@ class TechnicalsBase:
         and split adjusted close. An indicator in price units does not compare across tickers
         with different share prices, so a price line (a moving average, band, channel, stop or
         cloud line) is used as the distance of the close from it, close / line - 1, and a price
-        difference (the true range, ATR, MACD, awesome oscillator, elder ray, detrended
-        price oscillator, Hilbert phasor components, Swiss Army Knife filter and detrended
-        synthetic price) as a share of the close. Each ticker
+        difference (the true range, ATR and average day range, MACD, momentum, awesome
+        oscillator, elder ray, detrended price oscillator, Hilbert phasor components, Swiss Army
+        Knife filter and detrended synthetic price) as a share of the close. The collections
+        evaluate every variant of an indicator with variants, such as each method of
+        `get_moving_average`, labelled with its method, e.g. "get_moving_average(method='t3')".
+        Each ticker
         keeps its own history: a ticker without a value or a return in a period is left out
         of that period only.
 
         Args:
             metrics (str | list[str], optional): An indicator method name, e.g.
-                "get_relative_strength_index", a list of them, or a collection: "momentum",
+                "get_relative_strength_index", a variant of one by its label, e.g.
+                "get_relative_strength_index(method='connors')", a list of them, or a collection: "momentum",
                 "overlap", "volatility", "breadth", "cycle" or "all". Defaults to "momentum",
                 the oscillators and momentum indicators. The collections leave out the market-wide
                 breadth measures, the volume-scaled indicators, the pivot points and
@@ -448,8 +453,9 @@ class TechnicalsBase:
                 than a price, a histogram or a signal line, e.g. "MACD Line" or "Lower Band".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            **kwargs: Parameters passed to the indicators that take them, e.g. window=14 or
-                close_column="Close".
+            **kwargs: Parameters passed to the indicators that take them, e.g. window=14,
+                close_column="Close" or method="connors" for a single indicator. A variant in a
+                collection keeps its own method.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -502,25 +508,40 @@ class TechnicalsBase:
         | ('get_moving_average', '12 Months') |    0.1018 |                  0.3848 |                 0.2646 |        2.7503 |    0.007  |           0.5833 |            108 |             0.0853 |              0.3074 |                 0.8031 |
         """
         tickers = self._tickers
+        selected = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
         factors = factor_model.get_daily_factors(
-            self,
-            factor_model.select_metrics(metrics, FACTOR_COLLECTIONS),
-            kwargs,
-            {},
-            tickers,
-            column,
+            self, selected, kwargs, {}, tickers, column
         )
 
         close = factor_model.to_daily_factor(
             self._historical_data["daily"][kwargs.get("close_column", "Adj Close")],
             tickers,
         )
-        for name, factor in factors.items():
+        price_lines = {factor_model.get_metric_label(m) for m in FACTOR_PRICE_LINES}
+        price_differences = {
+            factor_model.get_metric_label(m) for m in FACTOR_PRICE_DIFFERENCES
+        }
+        for metric in selected:
+            label = factor_model.get_metric_label(metric)
+            if label not in factors:
+                continue
+            factor = factors[label]
+
+            # The unit follows the method and, for a method with variants, the variant
+            # calculated: the one of the metric, the one given or the method's default.
+            name, variant = (metric, {}) if isinstance(metric, str) else metric
+            default = inspect.signature(getattr(self, name)).parameters.get("method")
+            method = variant.get(
+                "method",
+                kwargs.get("method", default.default if default else None),
+            )
+            names = {name, factor_model.get_metric_label((name, {"method": method}))}
+
             # The Supertrend's direction is +1 or -1 and stays as it is.
-            if name in FACTOR_PRICE_LINES and column != "Trend Direction":
-                factors[name] = close.reindex_like(factor) / factor - 1
-            elif name in FACTOR_PRICE_DIFFERENCES:
-                factors[name] = factor / close.reindex_like(factor)
+            if names & price_lines and column != "Trend Direction":
+                factors[label] = close.reindex_like(factor) / factor - 1
+            elif names & price_differences:
+                factors[label] = factor / close.reindex_like(factor)
 
         result = factor_model.get_factor_analysis(
             factors,

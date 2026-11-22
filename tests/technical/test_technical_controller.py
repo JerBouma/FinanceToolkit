@@ -121,27 +121,41 @@ def test_get_ultimate_oscillator(recorder, technical_module):
     )
 
 
-def test_get_percentage_price_oscillator(recorder, technical_module):
-    recorder.capture(technical_module.get_percentage_price_oscillator())
-    recorder.capture(technical_module.get_percentage_price_oscillator(growth=True))
+def test_get_moving_average_convergence_divergence_percentage(
+    recorder, technical_module
+):
     recorder.capture(
-        technical_module.get_percentage_price_oscillator(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average_convergence_divergence(method="percentage")
     )
     recorder.capture(
-        technical_module.get_percentage_price_oscillator(
-            signal_window=5, moving_average="simple"
+        technical_module.get_moving_average_convergence_divergence(
+            method="percentage", growth=True
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            method="percentage", growth=True, lag=[1, 2, 3]
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            method="percentage", signal_window=5, moving_average="simple"
         )
     )
 
 
-def test_get_absolute_price_oscillator(recorder, technical_module):
-    recorder.capture(technical_module.get_absolute_price_oscillator())
-    recorder.capture(
-        technical_module.get_absolute_price_oscillator(moving_average="simple")
-    )
-    recorder.capture(
-        technical_module.get_absolute_price_oscillator(growth=True, lag=[1, 2, 3])
-    )
+def test_get_moving_average_convergence_divergence_absolute_price_oscillator(
+    recorder, technical_module
+):
+    # The Absolute Price Oscillator is the MACD line.
+    def macd_line(**kwargs):
+        return technical_module.get_moving_average_convergence_divergence(**kwargs)[
+            "MACD Line"
+        ].reindex(columns=["AAPL", "MSFT", "Benchmark"], level=0)
+
+    recorder.capture(macd_line())
+    recorder.capture(macd_line(moving_average="simple"))
+    recorder.capture(macd_line(growth=True, lag=[1, 2, 3]))
 
 
 def test_get_percentage_volume_oscillator(recorder, technical_module):
@@ -183,14 +197,14 @@ def test_get_directional_movement_index(recorder, technical_module):
     )
 
 
-def test_get_average_directional_index_rating(recorder, technical_module):
-    recorder.capture(technical_module.get_average_directional_index_rating())
+def test_get_average_directional_index_rating_method(recorder, technical_module):
+    recorder.capture(technical_module.get_average_directional_index(method="rating"))
     recorder.capture(
-        technical_module.get_average_directional_index_rating(period="weekly")
+        technical_module.get_average_directional_index(method="rating", period="weekly")
     )
     recorder.capture(
-        technical_module.get_average_directional_index_rating(
-            growth=True, lag=[1, 2, 3]
+        technical_module.get_average_directional_index(
+            method="rating", growth=True, lag=[1, 2, 3]
         )
     )
 
@@ -204,11 +218,15 @@ def test_get_chande_momentum_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_chande_momentum_oscillator(smoothed=True))
 
 
-def test_get_intraday_momentum_index(recorder, technical_module):
-    recorder.capture(technical_module.get_intraday_momentum_index())
-    recorder.capture(technical_module.get_intraday_momentum_index(window=7))
+def test_get_relative_strength_index_intraday(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_strength_index(method="intraday"))
     recorder.capture(
-        technical_module.get_intraday_momentum_index(growth=True, lag=[1, 2, 3])
+        technical_module.get_relative_strength_index(method="intraday", window=7)
+    )
+    recorder.capture(
+        technical_module.get_relative_strength_index(
+            method="intraday", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
@@ -255,14 +273,14 @@ def test_get_relative_strength_index(recorder, technical_module):
     )
 
 
-def test_get_stochastic_relative_strength_index(recorder, technical_module):
-    recorder.capture(technical_module.get_stochastic_relative_strength_index())
+def test_get_stochastic_oscillator_rsi(recorder, technical_module):
+    recorder.capture(technical_module.get_stochastic_oscillator(method="rsi"))
     recorder.capture(
-        technical_module.get_stochastic_relative_strength_index(stochastic_window=5)
+        technical_module.get_stochastic_oscillator(method="rsi", stochastic_window=5)
     )
     recorder.capture(
-        technical_module.get_stochastic_relative_strength_index(
-            growth=True, lag=[1, 2, 3]
+        technical_module.get_stochastic_oscillator(
+            method="rsi", growth=True, lag=[1, 2, 3]
         )
     )
 
@@ -532,10 +550,14 @@ def test_get_rate_of_change(recorder, technical_module):
     recorder.capture(technical_module.get_rate_of_change(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_momentum(recorder, technical_module):
-    recorder.capture(technical_module.get_momentum())
-    recorder.capture(technical_module.get_momentum(window=20))
-    recorder.capture(technical_module.get_momentum(growth=True, lag=[1, 2, 3]))
+def test_get_rate_of_change_absolute(recorder, technical_module):
+    recorder.capture(technical_module.get_rate_of_change(method="absolute"))
+    recorder.capture(technical_module.get_rate_of_change(method="absolute", window=20))
+    recorder.capture(
+        technical_module.get_rate_of_change(
+            method="absolute", growth=True, lag=[1, 2, 3]
+        )
+    )
 
 
 def test_get_choppiness_index(recorder, technical_module):
@@ -676,14 +698,16 @@ def test_get_quantitative_qualitative_estimation(recorder, technical_module):
     )
 
 
-def test_get_dynamic_momentum_index(recorder, technical_module):
-    recorder.capture(technical_module.get_dynamic_momentum_index())
+def test_get_relative_strength_index_dynamic(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_strength_index(method="dynamic"))
     recorder.capture(
-        technical_module.get_dynamic_momentum_index(
-            window=20, minimum_window=3, maximum_window=40
+        technical_module.get_relative_strength_index(
+            method="dynamic", window=20, minimum_window=3, maximum_window=40
         )
     )
-    recorder.capture(technical_module.get_dynamic_momentum_index(period="weekly"))
+    recorder.capture(
+        technical_module.get_relative_strength_index(method="dynamic", period="weekly")
+    )
 
 
 def test_get_price_zone_oscillator(recorder, technical_module):
@@ -712,15 +736,15 @@ def test_get_volume_weighted_macd(recorder, technical_module):
     )
 
 
-def test_get_connors_relative_strength_index(recorder, technical_module):
-    recorder.capture(technical_module.get_connors_relative_strength_index())
+def test_get_relative_strength_index_connors(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_strength_index(method="connors"))
     recorder.capture(
-        technical_module.get_connors_relative_strength_index(
-            window=4, streak_window=3, rank_window=50
+        technical_module.get_relative_strength_index(
+            method="connors", window=4, streak_window=3, rank_window=50
         )
     )
     recorder.capture(
-        technical_module.get_connors_relative_strength_index(period="weekly")
+        technical_module.get_relative_strength_index(method="connors", period="weekly")
     )
 
 
@@ -777,11 +801,15 @@ def test_get_ttm_trend(recorder, technical_module):
     recorder.capture(technical_module.get_ttm_trend(period="weekly"))
 
 
-def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
-    recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))
+def test_get_moving_average_kaufman_adaptive(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="kaufman_adaptive"))
     recorder.capture(
-        technical_module.get_kaufman_adaptive_moving_average(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average(method="kaufman_adaptive", growth=True)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="kaufman_adaptive", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
@@ -849,10 +877,14 @@ def test_get_finite_volume_elements(recorder, technical_module):
     recorder.capture(technical_module.get_finite_volume_elements(period="weekly"))
 
 
-def test_get_twiggs_money_flow(recorder, technical_module):
-    recorder.capture(technical_module.get_twiggs_money_flow())
-    recorder.capture(technical_module.get_twiggs_money_flow(window=10))
-    recorder.capture(technical_module.get_twiggs_money_flow(growth=True))
+def test_get_chaikin_money_flow_twiggs(recorder, technical_module):
+    recorder.capture(technical_module.get_chaikin_money_flow(method="twiggs"))
+    recorder.capture(
+        technical_module.get_chaikin_money_flow(method="twiggs", window=10)
+    )
+    recorder.capture(
+        technical_module.get_chaikin_money_flow(method="twiggs", growth=True)
+    )
 
 
 def test_get_volume_zone_oscillator(recorder, technical_module):
@@ -903,19 +935,17 @@ def test_get_volume_profile(recorder, technical_module):
     recorder.capture(technical_module.get_volume_profile(period="weekly", bins=20))
 
 
-def test_get_negative_volume_index(recorder, technical_module):
-    recorder.capture(technical_module.get_negative_volume_index())
-    recorder.capture(technical_module.get_negative_volume_index(growth=True))
-    recorder.capture(
-        technical_module.get_negative_volume_index(growth=True, lag=[1, 2, 3])
-    )
+def test_get_volume_index(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_index())
+    recorder.capture(technical_module.get_volume_index(growth=True))
+    recorder.capture(technical_module.get_volume_index(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_positive_volume_index(recorder, technical_module):
-    recorder.capture(technical_module.get_positive_volume_index())
-    recorder.capture(technical_module.get_positive_volume_index(growth=True))
+def test_get_volume_index_positive(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_index(method="positive"))
+    recorder.capture(technical_module.get_volume_index(method="positive", growth=True))
     recorder.capture(
-        technical_module.get_positive_volume_index(growth=True, lag=[1, 2, 3])
+        technical_module.get_volume_index(method="positive", growth=True, lag=[1, 2, 3])
     )
 
 
@@ -978,13 +1008,14 @@ def test_conventional_default_windows():
             for name, parameter in inspect.signature(method).parameters.items()
         }
 
-    assert defaults(Technicals.get_percentage_price_oscillator)["short_window"] == 12
-    assert defaults(Technicals.get_percentage_price_oscillator)["long_window"] == 26
+    macd = defaults(Technicals.get_moving_average_convergence_divergence)
+    assert (macd["short_window"], macd["long_window"]) == (12, 26)
     assert defaults(Technicals.get_force_index)["window"] == 13
+    # The windows depend on the method: 20 and 10 for the Keltner Channels.
     keltner = defaults(Technicals.get_keltner_channels)
     assert (keltner["window"], keltner["atr_window"], keltner["atr_multiplier"]) == (
-        20,
-        10,
+        None,
+        None,
         2,
     )
     # Bollinger's own setting: a 20-period average with bands at 2 standard deviations.
@@ -1222,14 +1253,14 @@ def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
     together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
     saturday = pd.Period("2022-12-24", freq="D")
 
-    for method in (
+    for entry in (
         "get_average_true_range",
         "get_average_directional_index",
         "get_bollinger_bands",
         "get_money_flow_index",
         "get_ease_of_movement",
         "get_relative_strength_index",
-        "get_stochastic_relative_strength_index",
+        ("get_stochastic_oscillator", {"method": "rsi"}),
         "get_true_strength_index",
         "get_coppock_curve",
         "get_bollinger_percent_b_and_bandwidth",
@@ -1243,14 +1274,15 @@ def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
         "get_chandelier_exit",
         "get_percentage_volume_oscillator",
         "get_klinger_volume_oscillator",
-        "get_twiggs_money_flow",
+        ("get_chaikin_money_flow", {"method": "twiggs"}),
         "get_relative_volume",
         "get_volume_flow_indicator",
         "get_candlestick_patterns",
         "get_signals",
     ):
-        expected = getattr(alone, method)()
-        result = getattr(together, method)()
+        method, kwargs = (entry, {}) if isinstance(entry, str) else entry
+        expected = getattr(alone, method)(**kwargs)
+        result = getattr(together, method)(**kwargs)
         if isinstance(expected.columns, pd.MultiIndex):
             expected = expected.xs("AAPL", level=1, axis=1)
             result = result.xs("AAPL", level=1, axis=1)
@@ -1549,48 +1581,70 @@ def test_get_moving_average_pascal(recorder, technical_module):
     )
 
 
-def test_get_t3_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_t3_moving_average())
+def test_get_moving_average_t3(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="t3"))
     recorder.capture(
-        technical_module.get_t3_moving_average(window=10, volume_factor=0.8)
+        technical_module.get_moving_average(method="t3", window=10, volume_factor=0.8)
     )
-    recorder.capture(technical_module.get_t3_moving_average(growth=True))
+    recorder.capture(technical_module.get_moving_average(method="t3", growth=True))
 
 
-def test_get_arnaud_legoux_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_arnaud_legoux_moving_average())
+def test_get_moving_average_arnaud_legoux(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="arnaud_legoux"))
     recorder.capture(
-        technical_module.get_arnaud_legoux_moving_average(
-            window=20, sigma=4.0, offset=0.5
+        technical_module.get_moving_average(
+            method="arnaud_legoux", window=20, sigma=4.0, offset=0.5
         )
     )
-    recorder.capture(technical_module.get_arnaud_legoux_moving_average(growth=True))
-
-
-def test_get_volume_weighted_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_volume_weighted_moving_average())
-    recorder.capture(technical_module.get_volume_weighted_moving_average(window=30))
-    recorder.capture(technical_module.get_volume_weighted_moving_average(growth=True))
-
-
-def test_get_mcginley_dynamic(recorder, technical_module):
-    recorder.capture(technical_module.get_mcginley_dynamic())
-    recorder.capture(technical_module.get_mcginley_dynamic(window=10, constant=0.6))
-    recorder.capture(technical_module.get_mcginley_dynamic(growth=True))
-
-
-def test_get_variable_index_dynamic_average(recorder, technical_module):
-    recorder.capture(technical_module.get_variable_index_dynamic_average())
     recorder.capture(
-        technical_module.get_variable_index_dynamic_average(window=14, cmo_window=14)
+        technical_module.get_moving_average(method="arnaud_legoux", growth=True)
     )
-    recorder.capture(technical_module.get_variable_index_dynamic_average(growth=True))
 
 
-def test_get_fractal_adaptive_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_fractal_adaptive_moving_average())
-    recorder.capture(technical_module.get_fractal_adaptive_moving_average(window=10))
-    recorder.capture(technical_module.get_fractal_adaptive_moving_average(growth=True))
+def test_get_moving_average_volume_weighted(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="volume_weighted"))
+    recorder.capture(
+        technical_module.get_moving_average(method="volume_weighted", window=30)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(method="volume_weighted", growth=True)
+    )
+
+
+def test_get_moving_average_mcginley(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="mcginley"))
+    recorder.capture(
+        technical_module.get_moving_average(method="mcginley", window=10, constant=0.6)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(method="mcginley", growth=True)
+    )
+
+
+def test_get_moving_average_variable_index_dynamic(recorder, technical_module):
+    recorder.capture(
+        technical_module.get_moving_average(method="variable_index_dynamic")
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="variable_index_dynamic", window=14, cmo_window=14
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="variable_index_dynamic", growth=True
+        )
+    )
+
+
+def test_get_moving_average_fractal_adaptive(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="fractal_adaptive"))
+    recorder.capture(
+        technical_module.get_moving_average(method="fractal_adaptive", window=10)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(method="fractal_adaptive", growth=True)
+    )
 
 
 def test_get_price_transform(recorder, technical_module):
@@ -1605,14 +1659,19 @@ def test_get_midpoint(recorder, technical_module):
     recorder.capture(technical_module.get_midpoint(growth=True))
 
 
-def test_get_holt_winters_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_holt_winters_moving_average())
+def test_get_moving_average_holt_winters(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="holt_winters"))
     recorder.capture(
-        technical_module.get_holt_winters_moving_average(
-            level_smoothing=0.3, velocity_smoothing=0.2, acceleration_smoothing=0.05
+        technical_module.get_moving_average(
+            method="holt_winters",
+            level_smoothing=0.3,
+            velocity_smoothing=0.2,
+            acceleration_smoothing=0.05,
         )
     )
-    recorder.capture(technical_module.get_holt_winters_moving_average(growth=True))
+    recorder.capture(
+        technical_module.get_moving_average(method="holt_winters", growth=True)
+    )
 
 
 def test_get_holt_winters_channel(recorder, technical_module):
@@ -1623,20 +1682,28 @@ def test_get_holt_winters_channel(recorder, technical_module):
     recorder.capture(technical_module.get_holt_winters_channel(growth=True))
 
 
-def test_get_elastic_volume_weighted_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_elastic_volume_weighted_moving_average())
+def test_get_moving_average_elastic_volume_weighted(recorder, technical_module):
     recorder.capture(
-        technical_module.get_elastic_volume_weighted_moving_average(window=10)
+        technical_module.get_moving_average(method="elastic_volume_weighted")
     )
     recorder.capture(
-        technical_module.get_elastic_volume_weighted_moving_average(growth=True)
+        technical_module.get_moving_average(method="elastic_volume_weighted", window=10)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="elastic_volume_weighted", growth=True
+        )
     )
 
 
-def test_get_volume_adjusted_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_volume_adjusted_moving_average())
-    recorder.capture(technical_module.get_volume_adjusted_moving_average(window=14))
-    recorder.capture(technical_module.get_volume_adjusted_moving_average(growth=True))
+def test_get_moving_average_volume_adjusted(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="volume_adjusted"))
+    recorder.capture(
+        technical_module.get_moving_average(method="volume_adjusted", window=14)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(method="volume_adjusted", growth=True)
+    )
 
 
 def test_get_gann_hilo_activator(recorder, technical_module):
@@ -1761,16 +1828,24 @@ def test_williams_fractal_is_confirmed_after_the_right_bars(technical_module):
         assert window[pivot] > neighbours.max()
 
 
-def test_get_normalized_average_true_range(recorder, technical_module):
-    recorder.capture(technical_module.get_normalized_average_true_range())
-    recorder.capture(technical_module.get_normalized_average_true_range(window=20))
-    recorder.capture(technical_module.get_normalized_average_true_range(growth=True))
+def test_get_average_true_range_normalized(recorder, technical_module):
+    recorder.capture(technical_module.get_average_true_range(method="normalized"))
+    recorder.capture(
+        technical_module.get_average_true_range(method="normalized", window=20)
+    )
+    recorder.capture(
+        technical_module.get_average_true_range(method="normalized", growth=True)
+    )
 
 
-def test_get_average_day_range(recorder, technical_module):
-    recorder.capture(technical_module.get_average_day_range())
-    recorder.capture(technical_module.get_average_day_range(window=5))
-    recorder.capture(technical_module.get_average_day_range(period="weekly"))
+def test_get_average_true_range_day_range(recorder, technical_module):
+    recorder.capture(technical_module.get_average_true_range(method="day_range"))
+    recorder.capture(
+        technical_module.get_average_true_range(method="day_range", window=5)
+    )
+    recorder.capture(
+        technical_module.get_average_true_range(method="day_range", period="weekly")
+    )
 
 
 def test_get_chaikin_volatility(recorder, technical_module):
@@ -1811,18 +1886,28 @@ def test_get_adaptive_price_zone(recorder, technical_module):
     recorder.capture(technical_module.get_adaptive_price_zone(growth=True))
 
 
-def test_get_aberration(recorder, technical_module):
-    recorder.capture(technical_module.get_aberration())
-    recorder.capture(technical_module.get_aberration(window=10, atr_window=10))
-    recorder.capture(technical_module.get_aberration(growth=True))
-
-
-def test_get_profit_maximizer(recorder, technical_module):
-    recorder.capture(technical_module.get_profit_maximizer())
+def test_get_keltner_channels_aberration(recorder, technical_module):
+    recorder.capture(technical_module.get_keltner_channels(method="aberration"))
     recorder.capture(
-        technical_module.get_profit_maximizer(window=20, atr_window=14, multiplier=2.0)
+        technical_module.get_keltner_channels(
+            method="aberration", window=10, atr_window=10
+        )
     )
-    recorder.capture(technical_module.get_profit_maximizer(period="weekly"))
+    recorder.capture(
+        technical_module.get_keltner_channels(method="aberration", growth=True)
+    )
+
+
+def test_get_supertrend_profit_maximizer(recorder, technical_module):
+    recorder.capture(technical_module.get_supertrend(method="profit_maximizer"))
+    recorder.capture(
+        technical_module.get_supertrend(
+            method="profit_maximizer", window=20, atr_window=14, multiplier=2.0
+        )
+    )
+    recorder.capture(
+        technical_module.get_supertrend(method="profit_maximizer", period="weekly")
+    )
 
 
 def test_get_price_distance(recorder, technical_module):
@@ -1884,8 +1969,7 @@ def test_volatility_default_windows():
 
     # The defaults of the primary sources, or TA-Lib's where the source has none.
     for method, defaults in (
-        (Technicals.get_normalized_average_true_range, {"window": 14}),
-        (Technicals.get_average_day_range, {"window": 14}),
+        (Technicals.get_average_true_range, {"window": 14}),
         (Technicals.get_chaikin_volatility, {"window": 10, "roc_window": 10}),
         (Technicals.get_relative_volatility_index, {"window": 14, "std_window": 10}),
         (Technicals.get_acceleration_bands, {"window": 20, "factor": 4.0}),
@@ -1894,9 +1978,8 @@ def test_volatility_default_windows():
             {"window": 10, "multiplier": 1.0, "stop_window": 9},
         ),
         (Technicals.get_adaptive_price_zone, {"window": 20, "multiplier": 2.0}),
-        (Technicals.get_aberration, {"window": 5, "atr_window": 15}),
         (
-            Technicals.get_profit_maximizer,
+            Technicals.get_supertrend,
             {"window": 10, "atr_window": 10, "multiplier": 3.0},
         ),
         (Technicals.get_market_thermometer, {"window": 22}),
@@ -1905,6 +1988,47 @@ def test_volatility_default_windows():
         parameters = inspect.signature(method).parameters
         for name, default in defaults.items():
             assert parameters[name].default == default
+
+
+def test_method_dependent_default_windows(technical_module):
+    # A window of None uses the default of the method it calculates.
+    for name, method, windows in (
+        ("get_keltner_channels", "exponential", {"window": 20, "atr_window": 10}),
+        ("get_keltner_channels", "aberration", {"window": 5, "atr_window": 15}),
+        ("get_chaikin_money_flow", "standard", {"window": 20}),
+        ("get_chaikin_money_flow", "twiggs", {"window": 21}),
+        ("get_relative_strength_index", "standard", {"window": 14}),
+        ("get_relative_strength_index", "connors", {"window": 3}),
+        ("get_rate_of_change", "percentage", {"window": 12}),
+        ("get_rate_of_change", "absolute", {"window": 10}),
+        ("get_moving_average", "simple", {"window": 14}),
+        ("get_moving_average", "kaufman_adaptive", {"window": 10}),
+        ("get_moving_average", "t3", {"window": 5}),
+        ("get_moving_average", "fractal_adaptive", {"window": 16}),
+    ):
+        method_function = getattr(technical_module, name)
+        pd.testing.assert_frame_equal(
+            method_function(method=method),
+            method_function(method=method, **windows),
+        )
+
+
+def test_merged_methods_reject_an_unknown_method(technical_module):
+    for name in (
+        "get_relative_strength_index",
+        "get_stochastic_oscillator",
+        "get_moving_average_convergence_divergence",
+        "get_average_true_range",
+        "get_average_directional_index",
+        "get_rate_of_change",
+        "get_hilbert_sine_wave",
+        "get_supertrend",
+        "get_chaikin_money_flow",
+        "get_keltner_channels",
+        "get_volume_index",
+    ):
+        # The ValueError is logged and the result is empty, as for other data errors.
+        assert getattr(technical_module, name)(method="unknown").empty, name
 
 
 def test_get_hilbert_dominant_cycle_period(recorder, technical_module):
@@ -1937,9 +2061,11 @@ def test_get_hilbert_trend_mode(recorder, technical_module):
     recorder.capture(technical_module.get_hilbert_trend_mode(close_column="Close"))
 
 
-def test_get_hilbert_instantaneous_trendline(recorder, technical_module):
-    recorder.capture(technical_module.get_hilbert_instantaneous_trendline())
-    recorder.capture(technical_module.get_hilbert_instantaneous_trendline(growth=True))
+def test_get_moving_average_hilbert_trendline(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="hilbert_trendline"))
+    recorder.capture(
+        technical_module.get_moving_average(method="hilbert_trendline", growth=True)
+    )
 
 
 def test_get_mesa_adaptive_moving_average(recorder, technical_module):
@@ -1969,10 +2095,14 @@ def test_get_swiss_army_knife_filter(recorder, technical_module):
     recorder.capture(technical_module.get_swiss_army_knife_filter(delta=0.3))
 
 
-def test_get_super_smoother_filter(recorder, technical_module):
-    recorder.capture(technical_module.get_super_smoother_filter())
-    recorder.capture(technical_module.get_super_smoother_filter(poles=3, window=20))
-    recorder.capture(technical_module.get_super_smoother_filter(period="weekly"))
+def test_get_moving_average_super_smoother(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="super_smoother"))
+    recorder.capture(
+        technical_module.get_moving_average(method="super_smoother", poles=3, window=20)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(method="super_smoother", period="weekly")
+    )
 
 
 def test_get_even_better_sinewave(recorder, technical_module):
@@ -1987,9 +2117,13 @@ def test_get_detrended_synthetic_price(recorder, technical_module):
     recorder.capture(technical_module.get_detrended_synthetic_price(window=30))
 
 
-def test_get_mesa_sine_wave(recorder, technical_module):
-    recorder.capture(technical_module.get_mesa_sine_wave())
-    recorder.capture(technical_module.get_mesa_sine_wave(median_price=False, window=20))
+def test_get_hilbert_sine_wave_mesa(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_sine_wave(method="mesa"))
+    recorder.capture(
+        technical_module.get_hilbert_sine_wave(
+            method="mesa", median_price=False, window=20
+        )
+    )
 
 
 def test_get_center_of_gravity_oscillator(recorder, technical_module):
@@ -2001,6 +2135,8 @@ def test_get_center_of_gravity_oscillator(recorder, technical_module):
     )
 
 
-def test_get_laguerre_relative_strength_index(recorder, technical_module):
-    recorder.capture(technical_module.get_laguerre_relative_strength_index())
-    recorder.capture(technical_module.get_laguerre_relative_strength_index(gamma=0.8))
+def test_get_relative_strength_index_laguerre(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_strength_index(method="laguerre"))
+    recorder.capture(
+        technical_module.get_relative_strength_index(method="laguerre", gamma=0.8)
+    )

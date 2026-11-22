@@ -147,7 +147,7 @@ def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     call(
         "breadth",
         {
-            "indicator": "get_negative_volume_index",
+            "indicator": "get_volume_index",
             "tickers": "SPY",
             "benchmark_ticker": benchmark,
         },
@@ -360,7 +360,7 @@ def test_an_empty_benchmark_is_the_default_benchmark(captured):
     call(
         "breadth",
         {
-            "indicator": "get_negative_volume_index",
+            "indicator": "get_volume_index",
             "tickers": "AAPL",
             "benchmark_ticker": "",
         },

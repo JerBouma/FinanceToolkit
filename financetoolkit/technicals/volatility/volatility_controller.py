@@ -31,7 +31,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class VolatilityTechnicals:
     """
-    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range and normalized average true range, the average day range, Chaikin's volatility, the relative volatility index, the mass index, the Supertrend, the Chandelier Exit, the Chande Kroll Stop, the Profit Maximizer, the Keltner and Donchian channels, the acceleration bands, the adaptive price zone, the aberration bands, the price distance, Elder's market thermometer, the squeeze momentum, the volatility cone and the standard deviation channel.
+    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range (also normalized, and the average day range), Chaikin's volatility, the relative volatility index, the mass index, the Supertrend and the Profit Maximizer, the Chandelier Exit, the Chande Kroll Stop, the Keltner channels and aberration bands, the Donchian channels, the acceleration bands, the adaptive price zone, the price distance, Elder's market thermometer, the squeeze momentum, the volatility cone and the standard deviation channel.
     """
 
     @handle_errors
@@ -200,12 +200,15 @@ class VolatilityTechnicals:
         ]
 
         volatility_indicators["Normalized Average True Range"] = (
-            self.get_normalized_average_true_range(
-                period=period, close_column=close_column, window=window
+            self.get_average_true_range(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="normalized",
             )
         )
-        volatility_indicators["Average Day Range"] = self.get_average_day_range(
-            period=period, close_column=close_column, window=window
+        volatility_indicators["Average Day Range"] = self.get_average_true_range(
+            period=period, close_column=close_column, window=window, method="day_range"
         )
         volatility_indicators["Chaikin Volatility"] = self.get_chaikin_volatility(
             period=period, close_column=close_column
@@ -238,12 +241,14 @@ class VolatilityTechnicals:
                 f"{band} Band"
             ]
 
-        aberration = self.get_aberration(period=period, close_column=close_column)
+        aberration = self.get_keltner_channels(
+            period=period, close_column=close_column, method="aberration"
+        )
         for band in ["Upper", "Middle", "Lower"]:
             volatility_indicators[f"Aberration {band}"] = aberration[f"{band} Band"]
 
-        profit_maximizer = self.get_profit_maximizer(
-            period=period, close_column=close_column
+        profit_maximizer = self.get_supertrend(
+            period=period, close_column=close_column, method="profit_maximizer"
         )
         volatility_indicators["PMax"] = profit_maximizer["PMax"]
         volatility_indicators["PMax Trend Direction"] = profit_maximizer[
@@ -371,8 +376,8 @@ class VolatilityTechnicals:
                 The number of periods (time intervals) over which to calculate the moving average. Defaults to 20.
             num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
-            moving_average (str, optional): The moving average of the middle band, one of the methods
-                of `get_moving_average`: "simple", "exponential", "double_exponential",
+            moving_average (str, optional): The moving average of the middle band, one of the
+                window-only methods of `get_moving_average`: "simple", "exponential", "double_exponential",
                 "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
                 "fibonacci" or "pascal". Defaults to "simple", Bollinger's own.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -752,20 +757,31 @@ class VolatilityTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: Literal["standard", "normalized", "day_range"] = "standard",
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Average True Range (ATR) of a given price series.
+        Calculate the Average True Range (ATR) of a given price series, normalized by the close
+        (NATR) or as the Average Day Range (ADR).
 
         The Average True Range (ATR) is a technical indicator that measures the volatility
         of an asset's price movements over a specified number of periods. It provides insights
         into the potential price range of an asset, which can help traders and investors make
-        more informed decisions.
+        more informed decisions. The Normalized Average True Range (method="normalized") is the
+        Average True Range divided by the close, so the average range is a share of the price:
+        unlike the ATR, which is in price units, it compares across stocks with different prices
+        and over periods in which the price changed a lot. The Average Day Range
+        (method="day_range") is the simple average of the High — Low range: unlike the Average True
+        Range it leaves out the gaps between periods, so it measures how far the price moves within
+        a period, a basis for intraday targets and stops (for example a stop half an ADR away).
 
-        The formula is as follows:
+        The formula is as follows, per method:
 
-        - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
-        - ATR = Wilder's Smoothed Moving Average of TR over `window` periods
+        - "standard": TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
+          and ATR = Wilder's Smoothed Moving Average of TR over `window` periods
+        - "normalized": NATR = ATR(window) / Close, where the ATR uses Wilder's smoothing; 0.02 is
+          an average range of 2% of the close
+        - "day_range": ADR = SMA(High — Low, window)
 
         The ATR is in price units, which makes it the common basis for stop distances (for example
         two ATRs below the entry) and for sizing positions to equal risk. For the same reason it
@@ -777,10 +793,20 @@ class VolatilityTechnicals:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
         - Referenced against TA-Lib's ATR (https://ta-lib.org/functions/atr.html).
+        - Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True Range."
+          Technical Analysis of Stocks & Commodities, 24(5).
+        - Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
+        - pandas-ta-classic: natr (https://github.com/xgboosted/pandas-ta-classic).
+        - Tulip Indicators: natr (https://tulipindicators.org/natr).
+        - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical
+          Service, whose channel is the average day range around the typical price.
+        - Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
 
-        Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
-        for the full formula; Wilder's smoothing constant (1/window) is slower than a
-        standard EMA's (2/(window+1)) of the same window.
+        Also known as: ATR, volatility indicator, NATR, normalized average true range, ATR percent,
+        ATRP, ADR, average day range, average daily range, average high-low range.
+
+        See `volatility_model.get_average_true_range` for the full formula; Wilder's smoothing
+        constant (1/window) is slower than a standard EMA's (2/(window+1)) of the same window.
 
         The first period has no previous close, so its True Range is High — Low and the first ATR
         is the average of the first `window` True Ranges (the StockCharts convention; TA-Lib starts
@@ -793,7 +819,8 @@ class VolatilityTechnicals:
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
             window (int, optional): The number of periods over which to calculate the Average
-                True Range. Defaults to 14.
+                True Range, or of the average of the range with method="day_range". Defaults to 14,
+                as in TA-Lib.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding set on the Toolkit (4 unless set
                 otherwise).
@@ -804,14 +831,17 @@ class VolatilityTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): "standard" for the ATR, "normalized" for the NATR (a decimal of
+                the close) or "day_range" for the Average Day Range. Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: ATR values per ticker or ATR growth rate (if growth is True).
-                A pandas Series containing the calculated Average True Range values or growth rate for each period.
+            pd.DataFrame: ATR values per ticker in price units, or their growth (if growth is True).
+                With method="normalized" the NATR as decimals and with method="day_range" the ADR in
+                price units.
 
         Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
@@ -819,6 +849,10 @@ class VolatilityTechnicals:
         - Because the True Range starts on the first period, the ATR starts one period before
           TA-Lib's ATR and differs from it until the two converge (within 0.01% after about 80
           periods with the default window).
+        - "normalized": the ATR is the one above (the StockCharts seeding), so the NATR starts one
+          period before TA-Lib's NATR and equals it, divided by 100, once the seeds have converged
+          (within 1e-8 after about 150 periods with the default window).
+        - "day_range": equals TA-Lib's ADR.
 
         As an example:
 
@@ -845,6 +879,11 @@ class VolatilityTechnicals:
         | 2025-12-30 |  1.1558 |  0.3073 |      5.9621 |
         | 2025-12-31 |  1.1697 |  0.3071 |      5.9367 |
         """
+        methods = ("standard", "normalized", "day_range")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -867,8 +906,12 @@ class VolatilityTechnicals:
 
         average_true_range = calculate_per_ticker(
             historical_data,
-            ["High", "Low", close_column],
-            volatility_model.get_average_true_range,
+            ["High", "Low"] if method == "day_range" else ["High", "Low", close_column],
+            {
+                "standard": volatility_model.get_average_true_range,
+                "normalized": volatility_model.get_normalized_average_true_range,
+                "day_range": volatility_model.get_average_day_range,
+            }[method],
             window,
         ).loc[self._start_date : self._end_date]
         return finalize_dataset(
@@ -1037,10 +1080,13 @@ class VolatilityTechnicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: Literal["standard", "profit_maximizer"] = "standard",
+        atr_window: int = 10,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Supertrend indicator for a given price series.
+        Calculate the Supertrend indicator for a given price series, of the price or of its moving
+        average (the Profit Maximizer).
 
         The Supertrend indicator plots a single trailing line that flips between sitting
         below price (in an uptrend) and above price (in a downtrend). The line is built from
@@ -1051,7 +1097,16 @@ class VolatilityTechnicals:
         Supertrend both a trend filter (the flip direction signals a trend change) and a
         trailing stop-loss level.
 
-        The formula is as follows:
+        The Profit Maximizer (method="profit_maximizer") applies the Supertrend's trailing logic to
+        a moving average instead of the price: two stops a multiple of the Average True Range below
+        and above an Exponential Moving Average of the median price, each of which only tightens
+        while the average stays on its side. The trend turns down when the average falls below the
+        long stop and up when it rises above the short stop, and PMax is the active stop. Because
+        the average is smoother than the price, PMax flips less often than the Supertrend.
+
+        The formula is as follows, per method:
+
+        "standard":
 
         - Basic Upper Band = (High + Low) / 2 + multiplier * ATR(window)
         - Basic Lower Band = (High + Low) / 2 — multiplier * ATR(window)
@@ -1063,11 +1118,22 @@ class VolatilityTechnicals:
           at which point the trend flips to a downtrend and Supertrend = Final Upper Band
           (and vice versa)
 
+        "profit_maximizer":
+
+        - Average = EMA((High + Low) / 2, window)
+        - Long Stop = Average — multiplier × ATR(atr_window), never lowered while the Average stays
+          above the previous Long Stop
+        - Short Stop = Average + multiplier × ATR(atr_window), never raised while the Average stays
+          below the previous Short Stop
+        - PMax = Long Stop in an uptrend and Short Stop in a downtrend
+
         For more information, see the following sources:
 
         - Referenced against TA-Lib's SUPERTREND (https://ta-lib.org/functions/supertrend.html).
+        - Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script.
+        - pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
 
-        Also known as: Supertrend, SuperTrend.
+        Also known as: Supertrend, SuperTrend, PMax, Profit Maximizer.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1076,9 +1142,11 @@ class VolatilityTechnicals:
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
             window (int, optional): Number of periods for the underlying Average True Range
-                calculation. Defaults to 10.
+                calculation, and with method="profit_maximizer" of the EMA of the median price.
+                Defaults to 10, as defined by Ozbilgic for the Profit Maximizer.
             multiplier (float, optional): Multiplier applied to the Average True Range to
-                determine how far the bands sit from the median price. Defaults to 3.0.
+                determine how far the bands (or the stops of the Profit Maximizer) sit from the median
+                price (or its average). Defaults to 3.0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Supertrend and
@@ -1088,6 +1156,11 @@ class VolatilityTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): "standard" for the Supertrend or "profit_maximizer" for the
+                Profit Maximizer (PMax). Defaults to "standard".
+            atr_window (int, optional): The number of periods of the Average True Range of the
+                Profit Maximizer. Only used when method="profit_maximizer". Defaults to 10, as
+                defined by Ozbilgic.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1096,7 +1169,8 @@ class VolatilityTechnicals:
         Returns:
             pd.Series or pd.DataFrame:
             Supertrend (the trailing indicator line) and Trend Direction (1 for an uptrend
-            and -1 for a downtrend) values.
+            and -1 for a downtrend) values, or with method="profit_maximizer" PMax (the active
+            stop, in price units) and Trend Direction.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -1110,6 +1184,9 @@ class VolatilityTechnicals:
           Supertrend starts one period before TA-Lib's SUPERTREND and differs from it until the two
           converge (within 0.01% after about 40 periods with the defaults). The Trend Direction
           agrees with TA-Lib's `trend` from TA-Lib's first value.
+        - "profit_maximizer": this follows Ozbilgic's script (EMA of the median price, Wilder's ATR,
+          starting in an uptrend). pandas-ta-classic's pmax averages the close and turns the trend on
+          the close instead of the average, so it differs by design.
         - If `growth` is set to True, the method calculates the growth of the Supertrend and
           Trend Direction values using the specified `lag`.
 
@@ -1138,6 +1215,11 @@ class VolatilityTechnicals:
         | 2025-12-30 |      152.113 |                 1 |
         | 2025-12-31 |      152.113 |                 1 |
         """
+        methods = ("standard", "profit_maximizer")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -1161,9 +1243,11 @@ class VolatilityTechnicals:
         supertrend = calculate_per_ticker(
             historical_data,
             ["High", "Low", close_column],
-            volatility_model.get_supertrend,
-            window,
-            multiplier,
+            *(
+                (volatility_model.get_profit_maximizer, window, atr_window, multiplier)
+                if method == "profit_maximizer"
+                else (volatility_model.get_supertrend, window, multiplier)
+            ),
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -1330,10 +1414,10 @@ class VolatilityTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 20,
-        atr_window: int = 10,
+        window: int | None = None,
+        atr_window: int | None = None,
         atr_multiplier: float = 2,
-        method: str = "exponential",
+        method: Literal["exponential", "original", "aberration"] = "exponential",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1341,7 +1425,7 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Keltner Channels for a given price series.
+        Calculate the Keltner Channels for a given price series, or the Aberration bands.
 
         The Keltner Channels consist of three lines: a middle line, the Exponential Moving Average
         (EMA) of the closing prices, and an upper and a lower line a multiple of the Average True
@@ -1360,14 +1444,27 @@ class VolatilityTechnicals:
         - Upper Line = Middle Line + atr_multiplier * SMA(High — Low, window)
         - Lower Line = Middle Line — atr_multiplier * SMA(High — Low, window)
 
+        With method="aberration" the channel is the Aberration bands, which place one Average True
+        Range above and below a short simple average of the typical price. They come from Keith
+        Fitschen's Aberration breakout system, which buys a close above the upper band and sells a
+        close below the lower band.
+
+        - Middle Band = SMA((High + Low + Close) / 3, window)
+        - Upper Band = Middle Band + ATR(atr_window)
+        - Lower Band = Middle Band — ATR(atr_window)
+
         For more information, see the following sources:
 
         - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical Service.
         - Referenced against TA-Lib's KC (https://ta-lib.org/functions/kc.html).
         - ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
           original_version=True is the original channel.
+        - Fitschen, K. (2013). "Building Reliable Trading Systems." John Wiley & Sons, on the
+          Aberration system (1993), to which the Aberration bands are attributed; no definitive
+          source of the formula exists.
+        - pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
 
-        Also known as: ATR-based bands, volatility channels.
+        Also known as: Keltner Channels, KC, ATR-based bands, volatility channels, ABER, Aberration, Aberration bands.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1375,16 +1472,20 @@ class VolatilityTechnicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            window (int, optional): Number of periods for the Exponential Moving Average (the
-                middle line). Defaults to 20, as on StockCharts.
-            atr_window (int, optional): Number of periods for ATR calculation.
-                Defaults to 10, as on StockCharts.
+            window (int | None, optional): Number of periods for the Exponential Moving Average (the
+                middle line), or of the simple average of the typical price ("original" and
+                "aberration"). Defaults to None, which uses 20, as on StockCharts, and 5 for
+                "aberration", as in pandas-ta-classic.
+            atr_window (int | None, optional): Number of periods for ATR calculation. Not used by
+                "original". Defaults to None, which uses 10, as on StockCharts, and 15 for
+                "aberration", as in pandas-ta-classic.
             atr_multiplier (float, optional): Multiplier for ATR (or, for the original channel, the
                 average range) to determine channel width. Defaults to 2; Keltner's original channel
-                uses 1 (method="original", atr_multiplier=1).
-            method (str, optional): "exponential" for the EMA of the close with ATR bands (StockCharts)
-                or "original" for Keltner's simple average of the typical price with average range
-                bands. Defaults to "exponential".
+                uses 1 (method="original", atr_multiplier=1). Not used by "aberration", whose bands
+                sit one ATR away.
+            method (str, optional): "exponential" for the EMA of the close with ATR bands (StockCharts),
+                "original" for Keltner's simple average of the typical price with average range
+                bands or "aberration" for the Aberration bands. Defaults to "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the channels.
@@ -1400,7 +1501,9 @@ class VolatilityTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Keltner Channels (upper, middle, lower).
+            pd.Series or pd.DataFrame: Keltner Channels ("Upper Line", "Middle Line" and "Lower
+            Line"), or with method="aberration" the "Upper Band", "Middle Band" and "Lower Band", in
+            price units.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
@@ -1411,6 +1514,8 @@ class VolatilityTechnicals:
         - The original channel uses `window` for both averages (Keltner used 10 days with one
           average range, atr_multiplier=1) and no ATR, so `atr_window` does not apply. With
           atr_multiplier=1 it agrees with ta's KeltnerChannel with original_version=True.
+        - "aberration": the ATR is that of `get_average_true_range`; pandas-ta-classic seeds its ATR
+          one period later and its bands equal these once the seeds have converged.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
 
         As an example:
@@ -1438,6 +1543,11 @@ class VolatilityTechnicals:
         | 2025-12-30 |      23710.7 |       24127.5 |      24544.2 |
         | 2025-12-31 |        nan   |         nan   |        nan   |
         """
+        methods = ("exponential", "original", "aberration")
+        if method not in methods:
+            raise ValueError(
+                f"Method must be one of {', '.join(methods)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -1456,16 +1566,27 @@ class VolatilityTechnicals:
                 )
             close_column = "Close"
 
+        if window is None:
+            window = 5 if method == "aberration" else 20
+        if atr_window is None:
+            atr_window = 15 if method == "aberration" else 10
+
         historical_data = self._get_historical_data(period, close_column)
 
         keltner_channels = calculate_per_ticker(
             historical_data,
             ["High", "Low", close_column],
-            volatility_model.get_keltner_channels,
-            window,
-            atr_window,
-            atr_multiplier,
-            method,
+            *(
+                (volatility_model.get_aberration, window, atr_window)
+                if method == "aberration"
+                else (
+                    volatility_model.get_keltner_channels,
+                    window,
+                    atr_window,
+                    atr_multiplier,
+                    method,
+                )
+            ),
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -1779,263 +1900,6 @@ class VolatilityTechnicals:
 
         return apply_rounding(
             volatility_cone_df, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_normalized_average_true_range(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the Normalized Average True Range (NATR) of a given price series.
-
-        The Normalized Average True Range is the Average True Range divided by the close, so the
-        average range is a share of the price. Unlike the ATR, which is in price units, it compares
-        across stocks with different prices and over periods in which the price changed a lot.
-
-        The formula is as follows:
-
-        - NATR = ATR(window) / Close, where the ATR uses Wilder's smoothing.
-
-        The result is a decimal: 0.02 is an average range of 2% of the close.
-
-        For more information, see the following sources:
-
-        - Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True Range."
-          Technical Analysis of Stocks & Commodities, 24(5).
-        - Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
-        - pandas-ta-classic: natr (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: natr (https://tulipindicators.org/natr).
-
-        Also known as: NATR, ATR percent, ATRP.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            window (int, optional): The number of periods of the Average True Range.
-                Defaults to 14, as in TA-Lib.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the NATR.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: NATR values per ticker as decimals, or their growth (if growth is True).
-
-        Notes:
-        - The ATR is that of `get_average_true_range` (the StockCharts seeding), so the NATR starts
-          one period before TA-Lib's NATR and equals it, divided by 100, once the seeds have
-          converged (within 1e-8 after about 150 periods with the default window).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_normalized_average_true_range().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   AAPL |   MSFT |   Benchmark |
-        |:-----------|-------:|-------:|------------:|
-        | 2025-12-24 | 0.0169 | 0.0169 |      0.0098 |
-        | 2025-12-26 | 0.0164 | 0.016  |      0.0094 |
-        | 2025-12-29 | 0.0157 | 0.0155 |      0.0092 |
-        | 2025-12-30 | 0.0151 | 0.015  |      0.0087 |
-        | 2025-12-31 | 0.0146 | 0.0147 |      0.0088 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        normalized_average_true_range = calculate_per_ticker(
-            historical_data,
-            ["High", "Low", close_column],
-            volatility_model.get_normalized_average_true_range,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=normalized_average_true_range,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_average_day_range(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the Average Day Range (ADR) of a given price series.
-
-        The Average Day Range is the simple average of the High — Low range over `window` periods.
-        Unlike the Average True Range it leaves out the gaps between periods, so it measures how
-        far the price moves within a period. It is in price units, which makes it a basis for
-        intraday targets and stops (for example a stop half an ADR away).
-
-        The formula is as follows:
-
-        - ADR = SMA(High — Low, window)
-
-        For more information, see the following sources:
-
-        - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical
-          Service, whose channel is this average range around the typical price.
-        - Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
-
-        Also known as: ADR, average daily range, average high-low range.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            window (int, optional): The number of periods of the average. Defaults to 14, as in
-                TA-Lib.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ADR.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: ADR values per ticker in price units, or their growth (if growth is True).
-
-        Notes:
-        - Equals TA-Lib's ADR.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AMZN", "GOOGL"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_average_day_range().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   AMZN |   GOOGL |   Benchmark |
-        |:-----------|-------:|--------:|------------:|
-        | 2025-12-24 | 3.7636 |  7.0625 |      5.6971 |
-        | 2025-12-26 | 3.7007 |  6.9786 |      5.5972 |
-        | 2025-12-29 | 3.5057 |  6.5637 |      5.4608 |
-        | 2025-12-30 | 3.4421 |  6.4496 |      5.4033 |
-        | 2025-12-31 | 3.3643 |  6.2008 |      5.2624 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        average_day_range = calculate_per_ticker(
-            historical_data,
-            ["High", "Low"],
-            volatility_model.get_average_day_range,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=average_day_range,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
         )
 
     @handle_portfolio
@@ -2741,283 +2605,6 @@ class VolatilityTechnicals:
 
         return finalize_dataset(
             dataset=adaptive_price_zone,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_aberration(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 5,
-        atr_window: int = 15,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Aberration bands of a given price series.
-
-        The Aberration bands place one Average True Range above and below a short simple average
-        of the typical price. They come from Keith Fitschen's Aberration breakout system, which
-        buys a close above the upper band and sells a close below the lower band.
-
-        The formula is as follows:
-
-        - Typical Price = (High + Low + Close) / 3
-        - Middle Band = SMA(Typical Price, window)
-        - Upper Band = Middle Band + ATR(atr_window)
-        - Lower Band = Middle Band — ATR(atr_window)
-
-        For more information, see the following sources:
-
-        - Fitschen, K. (2013). "Building Reliable Trading Systems." John Wiley & Sons, on the
-          Aberration system (1993), to which these bands are attributed; no definitive source of
-          the formula exists.
-        - pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: ABER, Aberration.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            window (int, optional): The number of periods of the simple average of the typical
-                price. Defaults to 5, as in pandas-ta-classic.
-            atr_window (int, optional): The number of periods of the Average True Range. Defaults
-                to 15, as in pandas-ta-classic.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the bands.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Upper Band, Middle Band and Lower Band in price units.
-
-        Notes:
-        - The ATR is that of `get_average_true_range`; pandas-ta-classic seeds its ATR one period
-          later and its bands equal these once the seeds have converged.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["NFLX"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_aberration().xs("NFLX", level=1, axis="columns").tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   Lower Band |   Middle Band |   Upper Band |
-        |:-----------|-------------:|--------------:|-------------:|
-        | 2025-12-24 |      90.8442 |       93.7507 |      96.6571 |
-        | 2025-12-26 |      90.8786 |       93.686  |      96.4934 |
-        | 2025-12-29 |      90.9345 |       93.644  |      96.3535 |
-        | 2025-12-30 |      91.0784 |       93.6613 |      96.2442 |
-        | 2025-12-31 |      91.3519 |       93.8367 |      96.3214 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        aberration = calculate_per_ticker(
-            historical_data,
-            ["High", "Low", close_column],
-            volatility_model.get_aberration,
-            window,
-            atr_window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=aberration,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_profit_maximizer(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 10,
-        atr_window: int = 10,
-        multiplier: float = 3.0,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Profit Maximizer (PMax) of a given price series.
-
-        The Profit Maximizer applies the Supertrend's trailing logic to a moving average instead of
-        the price: two stops a multiple of the Average True Range below and above an Exponential
-        Moving Average of the median price, each of which only tightens while the average stays
-        on its side. The trend turns down when the average falls below the long stop and up when
-        it rises above the short stop, and PMax is the active stop. Because the average is
-        smoother than the price, PMax flips less often than the Supertrend.
-
-        The formula is as follows:
-
-        - Average = EMA((High + Low) / 2, window)
-        - Long Stop = Average — multiplier × ATR(atr_window), never lowered while the Average stays
-          above the previous Long Stop
-        - Short Stop = Average + multiplier × ATR(atr_window), never raised while the Average stays
-          below the previous Short Stop
-        - PMax = Long Stop in an uptrend and Short Stop in a downtrend
-
-        For more information, see the following sources:
-
-        - Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script.
-        - pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: PMax, Profit Maximizer.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            window (int, optional): The number of periods of the EMA of the median price.
-                Defaults to 10, as defined by Ozbilgic.
-            atr_window (int, optional): The number of periods of the Average True Range. Defaults
-                to 10, as defined by Ozbilgic.
-            multiplier (float, optional): The number of Average True Ranges between the average and
-                the stops. Defaults to 3.0, as defined by Ozbilgic.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the PMax.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: PMax (the active stop, in price units) and Trend Direction (1
-                for an uptrend, -1 for a downtrend).
-
-        Notes:
-        - This follows Ozbilgic's script (EMA of the median price, Wilder's ATR, starting in an
-          uptrend). pandas-ta-classic's pmax averages the close and turns the trend on the close
-          instead of the average, so it differs by design.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["BTCUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_profit_maximizer().xs("BTCUSD", level=1, axis="columns").tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    PMax |   Trend Direction |
-        |:-----------|--------:|------------------:|
-        | 2025-12-27 | 96012   |                -1 |
-        | 2025-12-28 | 95350.2 |                -1 |
-        | 2025-12-29 | 95350.2 |                -1 |
-        | 2025-12-30 | 95350.2 |                -1 |
-        | 2025-12-31 | 95350.2 |                -1 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        profit_maximizer = calculate_per_ticker(
-            historical_data,
-            ["High", "Low", close_column],
-            volatility_model.get_profit_maximizer,
-            window,
-            atr_window,
-            multiplier,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=profit_maximizer,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

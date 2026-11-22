@@ -41,7 +41,7 @@ MINIMUM_WINDOW = 2
 
 # The moving averages the oscillators built on two averages (MACD, APO, PPO, KST) can use, as
 # TA-Lib's MA types: SMA (0), EMA (1), WMA (2), DEMA (3), TRIMA (5) and KAMA (6), plus the Hull
-# moving average of get_moving_average.
+# moving average, each one of the methods of get_moving_average.
 MOVING_AVERAGES = {
     "simple": get_moving_average,
     "exponential": get_exponential_moving_average,

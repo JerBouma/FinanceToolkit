@@ -732,11 +732,15 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
         if len(sentence) <= MAXIMUM_SUMMARY_CHARACTERS
         else sentence[: MAXIMUM_SUMMARY_CHARACTERS - 3].rsplit(" ", 1)[0] + "..."
     )
+    # The aliases run to the end of their paragraph, over as many lines as the width needs.
     aliases = re.search(
-        r"Also known as:\s*(.+?)(?:\.\s*$|\.\n|$)", docstring, re.MULTILINE
+        r"Also known as:\s*(.+?)\s*(?:\n\s*\n|\Z)", docstring, re.DOTALL
     )
 
-    return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+    return {
+        "summary": summary,
+        "aliases": " ".join(aliases.group(1).split()).rstrip(".") if aliases else "",
+    }
 
 
 def _describe_docstring(docstring: str) -> dict[str, Any]:

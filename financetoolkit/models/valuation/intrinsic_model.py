@@ -1021,3 +1021,78 @@ def get_monte_carlo_intrinsic_value(
         shares_outstanding,
         periods,
     )
+
+
+def get_owner_earnings(
+    net_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    maintenance_capital_expenditure: pd.Series | pd.DataFrame,
+    change_in_working_capital: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Buffett's owner earnings: the cash a business could hand its owners while keeping its
+    competitive position and unit volume, the earnings the owners of the business own.
+
+    The formula is as follows:
+
+        - Owner Earnings = Net Income + Depreciation and Amortization - Maintenance Capital
+          Expenditure - Change in Working Capital
+
+    Args:
+        net_income (pd.Series | pd.DataFrame): The reported net income.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): The depreciation and
+            amortization (Buffett also adds other non-cash charges).
+        maintenance_capital_expenditure (pd.Series | pd.DataFrame): The capital expenditure
+            needed to keep the business as it is, as a positive amount.
+        change_in_working_capital (pd.Series | pd.DataFrame): The increase in working capital,
+            positive when working capital grows.
+
+    Returns:
+        pd.Series | pd.DataFrame: The owner earnings.
+
+    References:
+    - Buffett, W. E. (1986). "Chairman's Letter." Berkshire Hathaway Inc. Annual Report 1986,
+      appendix on purchase-price accounting adjustments and owner earnings.
+    """
+    return (
+        net_income
+        + depreciation_and_amortization
+        - maintenance_capital_expenditure
+        - change_in_working_capital
+    )
+
+
+def get_greenwald_maintenance_capital_expenditure(
+    capital_expenditure: pd.Series | pd.DataFrame,
+    property_plant_and_equipment_to_revenue: pd.Series | pd.DataFrame,
+    change_in_revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Greenwald's estimate of the maintenance capital expenditure: the capital expenditure minus
+    the investment that the growth in revenue required at the company's ratio of fixed assets to
+    revenue (the growth capital expenditure).
+
+    The formula is as follows:
+
+        - Growth Capital Expenditure = PP&E / Revenue * Change in Revenue (0 when revenue falls)
+        - Maintenance Capital Expenditure = Capital Expenditure - Growth Capital Expenditure,
+          at least 0
+
+    Args:
+        capital_expenditure (pd.Series | pd.DataFrame): The capital expenditure, positive.
+        property_plant_and_equipment_to_revenue (pd.Series | pd.DataFrame): The property, plant
+            and equipment per unit of revenue.
+        change_in_revenue (pd.Series | pd.DataFrame): The change in revenue over the period.
+
+    Returns:
+        pd.Series | pd.DataFrame: The maintenance capital expenditure.
+
+    References:
+    - Greenwald, B. C. N., Kahn, J., Sonkin, P. D. and van Biema, M. (2001). "Value Investing:
+      From Graham to Buffett and Beyond." Wiley, chapter 6.
+    """
+    growth_capital_expenditure = property_plant_and_equipment_to_revenue * (
+        change_in_revenue.clip(lower=0)
+    )
+    # Growth capital expenditure above the actual capital expenditure leaves no maintenance part, not a negative one.  # noqa: E501
+    return (capital_expenditure - growth_capital_expenditure).clip(lower=0)

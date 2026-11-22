@@ -152,3 +152,12 @@ def test_debt_without_an_interest_expense_has_an_unknown_cost_of_debt():
     assert pd.isna(weighted.iloc[1])
     # Without debt the WACC is the cost of equity.
     assert weighted.iloc[2] == pytest.approx(0.08)
+
+
+def test_unlevered_and_relevered_beta_follow_hamada():
+    # Damodaran's example: a levered beta of 1.2 at a D/E of 50% and a 40% tax rate.
+    unlevered = wacc_model.get_unlevered_beta(1.2, 0.5, 0.4)
+    assert unlevered == pytest.approx(1.2 / 1.3)
+    assert wacc_model.get_relevered_beta(unlevered, 0.5, 0.4) == pytest.approx(1.2)
+    # Without debt the levered and unlevered betas are the same.
+    assert wacc_model.get_unlevered_beta(1.1, 0.0, 0.25) == pytest.approx(1.1)

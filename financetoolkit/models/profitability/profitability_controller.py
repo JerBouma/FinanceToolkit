@@ -772,7 +772,7 @@ class ProfitabilityModels:
         return_on_equity, dividend_payout_ratio = self._return_on_equity_and_payout(
             trailing
         )
-        retention_ratio = valuation_model.get_reinvestment_ratio(
+        retention_ratio = valuation_model.get_retention_ratio(
             dividend_payout_ratio=dividend_payout_ratio,
         )
 
@@ -884,7 +884,7 @@ class ProfitabilityModels:
             dividends=dividends,
             net_income=net_income,
         )
-        retention_ratio = valuation_model.get_reinvestment_ratio(
+        retention_ratio = valuation_model.get_retention_ratio(
             dividend_payout_ratio=dividend_payout_ratio,
         )
 
@@ -904,3 +904,278 @@ class ProfitabilityModels:
             standardize=standardize,
             axis="columns",
         )
+
+    @handle_errors
+    def get_fundamental_growth_rate(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Damodaran's fundamental growth rate of operating income: the growth that a
+        company's reinvestment produces at its return on capital, with the reinvestment rate and
+        the sales-to-capital ratio it is built from. Where the sustainable growth rate grows the
+        equity with the retained net income, this grows the operating income with the capital
+        reinvested in the operations, the growth a discounted cash flow valuation of the firm
+        assumes.
+
+        The formula is as follows:
+
+            - NOPAT = EBIT * (1 - Tax Rate)
+            - Net Capital Expenditure = Capital Expenditure - Depreciation and Amortization
+            - Reinvestment = Net Capital Expenditure + Change in Working Capital
+            - Reinvestment Rate = Reinvestment / NOPAT
+            - Invested Capital = Total Equity + Total Debt - Cash and Short Term Investments
+            - Return on Invested Capital = NOPAT / Invested Capital at the beginning of the period
+            - Fundamental Growth Rate = Reinvestment Rate * Return on Invested Capital
+            - Sales to Capital = Revenue / Invested Capital at the beginning of the period
+
+        The reinvestment is NOPAT minus the Free Cash Flow to Firm of `get_free_cash_flow_to_firm`,
+        so a company that reinvests less than its depreciation has a negative reinvestment rate and
+        a negative fundamental growth. The sales-to-capital ratio links revenue growth to the
+        reinvestment it needs: Reinvestment = Change in Revenue / Sales to Capital.
+
+        For more information, see the following sources:
+
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 11 (Estimating
+          Growth) and chapter 12 (Closure in Valuation).
+
+        Also known as: Damodaran reinvestment rate, fundamental growth, expected growth in EBIT,
+        reinvestment rate times return on capital, sales to capital ratio, sales to invested capital.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the flows over, with the
+                invested capital taken `trailing` periods back. The window counts calendar periods, so
+                a period without a report makes it NaN. Defaults to None, which is 4 on quarterly data
+                (a trailing twelve months against the capital a year earlier) and single years on
+                yearly data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the NOPAT, Net Capital Expenditure, Change in Working Capital,
+            Reinvestment, Reinvestment Rate, Invested Capital (at the beginning of the period), Return
+            on Invested Capital, Fundamental Growth Rate and Sales to Capital, rates as decimals.
+
+        Notes:
+        - The tax rate is the effective tax rate kept within 0 and 1 (0 without a pre-tax profit), as
+        in `get_economic_value_added`, and EBIT the reported Operating Income.
+        - The Capital Expenditure is the purchase of property, plant and equipment of the cash flow
+        statement; Damodaran also counts acquisitions, which are lumpy and left out here. The Change
+        in Working Capital is that of the cash flow statement (an increase is positive here), the
+        non-cash working capital Damodaran uses.
+        - The Invested Capital is Damodaran's: the book value of equity and debt net of cash, at the
+        beginning of the period, as the return on capital measures the income on the capital already
+        in place. A non-positive invested capital leaves the return and the ratio NaN, and a
+        non-positive NOPAT the reinvestment rate.
+        - This is a different measure from the retention ratio of the Ratios module
+        (`get_retention_ratio`, 1 minus the dividend payout), the equity counterpart that the
+        sustainable growth rate multiplies with the return on equity.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MSFT", "GOOGL", "META"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_fundamental_growth_rate().loc["MSFT"]
+        ```
+
+        Which returns:
+
+        |                                  |       2021 |         2022 |        2023 |         2024 |        2025 |
+        |:---------------------------------|-----------:|-------------:|------------:|-------------:|------------:|
+        | Net Operating Profit After Taxes | 6.0249e+10 |  7.24487e+10 | 7.17226e+10 |  8.94819e+10 | 1.05869e+11 |
+        | Net Capital Expenditure          | 8.936e+09  |  9.426e+09   | 1.4246e+10  |  2.219e+10   | 3.0398e+10  |
+        | Change in Working Capital        | 9.36e+08   | -4.46e+08    | 2.388e+09   | -1.824e+09   | 5.35e+09    |
+        | Reinvestment                     | 9.872e+09  |  8.98e+09    | 1.6634e+10  |  2.0366e+10  | 3.5748e+10  |
+        | Reinvestment Rate                | 0.1639     |  0.1239      | 0.2319      |  0.2276      | 0.3377      |
+        | Invested Capital                 | 6.3887e+10 |  9.401e+10   | 1.40193e+11 |  1.74408e+11 | 2.90798e+11 |
+        | Return on Invested Capital       | 0.9431     |  0.7706      | 0.5116      |  0.5131      | 0.3641      |
+        | Fundamental Growth Rate          | 0.1545     |  0.0955      | 0.1187      |  0.1168      | 0.1229      |
+        | Sales to Capital                 | 2.631      |  2.109       | 1.5116      |  1.4055      | 0.9688      |
+        """
+        trailing, periods_per_year = self._annual_trailing(trailing)
+        span = trailing or periods_per_year
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        balance = self._balance_sheet_statement
+        components = {}
+        components["Net Operating Profit After Taxes"] = (
+            self._net_operating_profit_after_taxes(trailing).reindex(self._tickers)
+        )
+        components["Net Capital Expenditure"] = -flow(
+            self._cash_flow_statement, "Capital Expenditure"
+        ) - flow(self._income_statement, "Depreciation and Amortization")
+        components["Change in Working Capital"] = -flow(
+            self._cash_flow_statement, "Change in Working Capital"
+        )
+        components["Reinvestment"] = (
+            components["Net Capital Expenditure"]
+            + components["Change in Working Capital"]
+        )
+        components["Reinvestment Rate"] = growth_model.get_reinvestment_rate(
+            net_capital_expenditure=components["Net Capital Expenditure"],
+            change_in_working_capital=components["Change in Working Capital"],
+            net_operating_profit_after_taxes=components[
+                "Net Operating Profit After Taxes"
+            ],
+        )
+        # Damodaran's invested capital (book equity and debt net of cash) at the beginning of the period.  # noqa: E501
+        invested_capital = (
+            self._rows(balance, "Total Equity")
+            + self._rows(balance, "Total Debt")
+            - self._rows(balance, "Cash and Short Term Investments")
+        ).shift(span, axis=1)
+        components["Invested Capital"] = invested_capital
+        components["Return on Invested Capital"] = components[
+            "Net Operating Profit After Taxes"
+        ] / invested_capital.where(invested_capital > 0)
+        components["Fundamental Growth Rate"] = (
+            growth_model.get_fundamental_growth_rate(
+                reinvestment_rate=components["Reinvestment Rate"],
+                return_on_invested_capital=components["Return on Invested Capital"],
+            )
+        )
+        components["Sales to Capital"] = growth_model.get_sales_to_capital_ratio(
+            revenue=flow(self._income_statement, "Revenue"),
+            invested_capital=invested_capital,
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_rule_of_40(
+        self,
+        margin: str = "free_cash_flow",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Rule of 40 score: the revenue growth plus the profit margin, the measure of
+        software and other subscription companies that trade growth against profitability. A score
+        of 40% (0.40) or more is seen as healthy: a company growing 30% a year should keep a margin
+        of at least 10%, one that grows 10% a margin of 30%.
+
+        The formula is as follows:
+
+            - Revenue Growth = Revenue / Revenue a year earlier - 1
+            - Free Cash Flow Margin = Free Cash Flow / Revenue (or EBITDA Margin = EBITDA / Revenue)
+            - Rule of 40 Score = Revenue Growth + Free Cash Flow Margin (or EBITDA Margin)
+
+        The rule comes from venture capital practice for software companies (attributed to Brad
+        Feld, 2015) and has no academic source; investors use the free cash flow margin and the
+        EBITDA margin, which the `margin` parameter chooses between.
+
+        For more information, see the following sources:
+
+        - Feld, B. (2015). "The Rule of 40% For a Healthy SaaS Company." Feld Thoughts
+          (https://feld.com/archives/2015/02/rule-40-healthy-saas-company/).
+
+        Also known as: Rule of 40, 40% rule, growth plus margin, SaaS rule of 40.
+
+        Args:
+            margin (str, optional): The margin to add: "free_cash_flow" (Free Cash Flow / Revenue) or
+                "ebitda" (EBITDA / Revenue). Defaults to "free_cash_flow".
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the revenue and cash flows
+                over. The window counts calendar periods, so a period without a report makes it NaN.
+                Defaults to None, which is 4 on quarterly data (a trailing twelve months, its growth
+                against the trailing twelve months a year earlier) and single years on yearly data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Revenue Growth, the margin (Free Cash Flow Margin or EBITDA
+            Margin) and the Rule of 40 Score, as decimals.
+
+        Notes:
+        - The revenue growth compares with the same period a year earlier (four quarters back on
+        quarterly data), so the first year has no score. Growth from a negative or zero revenue is
+        NaN.
+        - The Free Cash Flow is that of the cash flow statement (Operating Cash Flow minus Capital
+        Expenditure).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["CRM", "NOW", "ADBE"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_rule_of_40().xs("Rule of 40 Score", level=1)
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |     2025 |
+        |:-----|-------:|-------:|-------:|-------:|---------:|
+        | ADBE | 0.6627 | 0.5354 | 0.4601 | 0.4741 |   0.5198 |
+        | CRM  | 0.446  | 0.3848 | 0.3843 | 0.4153 | nan      |
+        | NOW  | 0.6097 | 0.5287 | 0.5396 | 0.5353 |   0.5535 |
+        """
+        margin = margin.lower()
+        if margin not in ("free_cash_flow", "ebitda"):
+            raise ValueError("The margin must be 'free_cash_flow' or 'ebitda'.")
+        trailing, periods_per_year = self._annual_trailing(trailing)
+
+        revenue = trailing_sum(self._rows(self._income_statement, "Revenue"), trailing)
+        previous_revenue = revenue.shift(periods_per_year, axis=1)
+        if margin == "free_cash_flow":
+            name = "Free Cash Flow Margin"
+            profit = trailing_sum(
+                self._rows(self._cash_flow_statement, "Free Cash Flow"), trailing
+            )
+        else:
+            name = "EBITDA Margin"
+            profit = trailing_sum(
+                self._rows(self._income_statement, "EBITDA"), trailing
+            )
+
+        components = {}
+        components["Revenue Growth"] = (
+            revenue / previous_revenue.where(previous_revenue > 0) - 1
+        )
+        components[name] = profit / revenue.where(revenue > 0)
+        components["Rule of 40 Score"] = growth_model.get_rule_of_40(
+            revenue_growth=components["Revenue Growth"],
+            profit_margin=components[name],
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)

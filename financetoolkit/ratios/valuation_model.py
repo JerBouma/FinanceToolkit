@@ -634,18 +634,22 @@ def get_dividend_payout_ratio(
     return abs(dividends) / net_income
 
 
-def get_reinvestment_ratio(
+def get_retention_ratio(
     dividend_payout_ratio: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the reinvestment ratio, which measures the proportion of net income
-    retained by the company to reinvest in the business.
+    Calculates the retention ratio (plowback ratio), which measures the proportion of net
+    income retained by the company to reinvest in the business.
+
+    The formula is as follows:
+
+        Retention Ratio = 1 - Dividend Payout Ratio
 
     Args:
         dividend_payout_ratio (float or pd.Series): The dividend payout ratio.
 
     Returns:
-        float | pd.Series: The reinvestment ratio.
+        float | pd.Series: The retention ratio.
     """
     return 1 - dividend_payout_ratio
 

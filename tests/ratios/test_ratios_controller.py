@@ -395,8 +395,8 @@ def test_get_dividend_payout_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_dividend_payout_ratio())
 
 
-def test_get_reinvestment_rate(recorder, ratios_module):
-    recorder.capture(ratios_module.get_reinvestment_rate())
+def test_get_retention_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_retention_ratio())
 
 
 def test_get_tangible_asset_value(recorder, ratios_module):

@@ -10,6 +10,7 @@ from financetoolkit.helpers import calendar_periods, trailing_mean, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
+    cfroi_model,
     easton_model,
     enterprise_model,
     eva_model,
@@ -685,6 +686,8 @@ class ValuationModels:
         The estimates are the analysts' consensus from FinancialModelingPrep, the same estimates
         as `get_forward_price_earnings_ratio` of the Ratios module uses, which requires an
         `api_key` and a Premium FMP subscription. They are fetched once per Toolkit instance.
+        These are the current analyst estimates, also for past periods, so the result of every
+        period, the example below included, changes as analysts revise their estimates.
 
         Also known as: implied cost of capital, ICC, PEG / MPEG cost of equity, Easton model.
 
@@ -754,9 +757,9 @@ class ValuationModels:
 
         |      |   2021 |   2022 |     2023 |   2024 |   2025 |
         |:-----|-------:|-------:|---------:|-------:|-------:|
-        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0921 | 0.0685 |
+        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0927 | 0.0679 |
         | MDLZ | 0.0793 | 0.0653 | nan      | 0.0695 | 0.0944 |
-        | PEP  | 0.0803 | 0.071  | nan      | 0.0639 | 0.0588 |
+        | PEP  | 0.0803 | 0.071  | nan      | 0.0641 | 0.0589 |
         """
         analyst_estimates = self._analyst_estimates
 
@@ -870,14 +873,25 @@ class ValuationModels:
 
             - NOPAT = EBIT * (1 - Corporate Tax Rate)
             - Invested Capital = Total Equity + Total Debt
-            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital)
+            - Return on Invested Capital = NOPAT / Invested Capital
+            - EVA Spread = Return on Invested Capital - Weighted Average Cost of Capital
+            - EVA = NOPAT - (Weighted Average Cost of Capital * Invested Capital) = EVA Spread * Invested Capital
 
         EVA is mostly used to compare value creation across business units or companies and over time, and
         as a basis for management compensation. It is equivalent to (Return on Invested Capital - WACC) *
         Invested Capital, so a company with a high return on capital but a small capital base can create
         less EVA than a larger, less profitable one.
 
-        Also known as: EVA, economic profit.
+        The EVA Spread, the return on capital above its cost (Stewart, 1991), compares value creation
+        between companies of different sizes.
+
+        For more information, see the following sources:
+
+        - Stewart, G. B. (1991). "The Quest for Value." HarperBusiness.
+        - Stern, J. M., Stewart, G. B. and Chew, D. H. (1995). "The EVA Financial Management
+          System." Journal of Applied Corporate Finance, 8(2), 32-46.
+
+        Also known as: EVA, economic profit, EVA spread, economic spread, ROIC minus WACC.
 
         Args:
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
@@ -902,7 +916,8 @@ class ValuationModels:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: DataFrame containing the EVA and its components.
+            pd.DataFrame: DataFrame containing the EVA and its components: NOPAT, Invested Capital, the
+            WACC, the Return on Invested Capital, the EVA Spread and the EVA.
 
         Notes:
         - A positive EVA indicates that the company is generating returns in excess of its cost of
@@ -940,11 +955,11 @@ class ValuationModels:
 
         Which returns:
 
-        |    |        2022 |        2023 |        2024 |          2025 |
-        |:---|------------:|------------:|------------:|--------------:|
-        | HD | 1.51586e+10 | 1.23634e+10 | 1.21182e+10 | nan           |
-        | MA | 8.78616e+09 | 9.83484e+09 | 1.15047e+10 |   1.32979e+10 |
-        | V  | 1.14346e+10 | 1.30385e+10 | 1.54653e+10 |   1.5322e+10  |
+        |    |        2022 |        2023 |        2024 |         2025 |
+        |:---|------------:|------------:|------------:|-------------:|
+        | HD | 1.51589e+10 | 1.23635e+10 | 1.2118e+10  | nan          |
+        | MA | 8.7863e+09  | 9.8349e+09  | 1.15046e+10 |   1.3298e+10 |
+        | V  | 1.1435e+10  | 1.30387e+10 | 1.5465e+10  |   1.5322e+10 |
         """
         eva = {}
 
@@ -988,6 +1003,15 @@ class ValuationModels:
             self._weighted_average_cost_of_capital(
                 trailing=trailing, market_risk_premium=market_risk_premium
             ).loc[:, "Weighted Average Cost of Capital", :]
+        )
+
+        invested_capital = eva["Invested Capital"]
+        eva["Return on Invested Capital"] = eva[
+            "Net Operating Profit After Taxes"
+        ] / invested_capital.where(invested_capital > 0)
+        eva["Economic Value Added Spread"] = eva_model.get_economic_value_added_spread(
+            return_on_invested_capital=eva["Return on Invested Capital"],
+            weighted_average_cost_of_capital=eva["Weighted Average Cost of Capital"],
         )
 
         eva["Economic Value Added"] = eva_model.get_economic_value_added(
@@ -1129,6 +1153,690 @@ class ValuationModels:
         )
 
         return self._finalize_components(mva, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_return_on_incremental_invested_capital(
+        self,
+        years: int = 1,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Return on Incremental Invested Capital (ROIIC): the growth in after-tax
+        operating profit over the capital invested to produce it. Where the Return on Invested
+        Capital measures the return on all the capital in place, ROIIC measures the return on the
+        newest investments, which shows whether growth creates value: growth adds value only while
+        the ROIIC exceeds the cost of capital.
+
+        The formula is as follows, with n the number of years:
+
+            - NOPAT = EBIT * (1 - Tax Rate)
+            - Invested Capital = Total Equity + Total Debt
+            - ROIIC (t) = (NOPAT (t) - NOPAT (t - n)) / (Invested Capital (t - 1) - Invested Capital (t - 1 - n))
+
+        Following Mauboussin and Callahan, the invested capital is lagged by a year: the capital
+        invested in a year earns its profit in the years after. A longer span (`years`, often 3 or
+        5) smooths the lumpy year-to-year changes.
+
+        For more information, see the following sources:
+
+        - Mauboussin, M. J. and Callahan, D. (2014). "Calculating Return on Invested Capital."
+          Credit Suisse Global Financial Strategies.
+        - Koller, T., Goedhart, M. and Wessels, D. (2020). "Valuation: Measuring and Managing the
+          Value of Companies." Wiley, 7th edition.
+
+        Also known as: ROIIC, incremental ROIC, return on new invested capital, RONIC.
+
+        Args:
+            years (int, optional): The number of years n the changes span. Defaults to 1.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the NOPAT over. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which is 4 on quarterly data (a trailing twelve months, with every lag counted in
+                years of four quarters) and single years on yearly data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Net Operating Profit After Taxes, the Change in NOPAT, the
+            Invested Capital (a year earlier), the Change in Invested Capital and the Return on
+            Incremental Invested Capital (a decimal).
+
+        Notes:
+        - NOPAT and the Invested Capital are those of `get_economic_value_added` (the effective tax
+        rate kept within 0 and 1, EBIT the reported Operating Income), with the Invested Capital at
+        the period end rather than averaged, as its change is what was invested.
+        - The ROIIC is NaN where the invested capital did not grow: a ratio on shrinking capital
+        has no meaning as a return (a fall in NOPAT on less capital would show as a positive return).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["COST", "WMT", "TGT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_return_on_incremental_invested_capital().xs(
+            "Return on Incremental Invested Capital", level=1
+        )
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |     2023 |    2024 |   2025 |
+        |:-----|-------:|-------:|---------:|--------:|-------:|
+        | COST |    nan |    nan |   0.0657 |  0.2493 |    nan |
+        | TGT  |    nan |    nan |   1.3141 | -0.0469 |    nan |
+        | WMT  |    nan |    nan | nan      |  0.264  |    nan |
+        """
+        if years < 1:
+            raise ValueError("years must be at least 1.")
+        trailing, periods_per_year = self._annual_trailing(trailing)
+        span = years * periods_per_year
+
+        nopat = self._net_operating_profit_after_taxes(trailing).reindex(self._tickers)
+        invested_capital = (
+            self._rows(self._balance_sheet_statement, "Total Equity")
+            + self._rows(self._balance_sheet_statement, "Total Debt")
+        ).shift(periods_per_year, axis=1)
+
+        components = {}
+        components["Net Operating Profit After Taxes"] = nopat
+        components["Change in NOPAT"] = nopat - nopat.shift(span, axis=1)
+        components["Invested Capital"] = invested_capital
+        components["Change in Invested Capital"] = invested_capital - (
+            invested_capital.shift(span, axis=1)
+        )
+        components["Return on Incremental Invested Capital"] = (
+            eva_model.get_return_on_incremental_invested_capital(
+                change_in_net_operating_profit_after_taxes=components[
+                    "Change in NOPAT"
+                ],
+                change_in_invested_capital=components["Change in Invested Capital"],
+            )
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_owner_earnings(
+        self,
+        method: str = "total",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Warren Buffett's owner earnings: the cash a business could pay its owners while
+        keeping its competitive position and unit volume. Buffett defines them in the 1986
+        Berkshire Hathaway letter as the reported earnings plus depreciation, depletion and
+        amortization and other non-cash charges, less the average yearly capital expenditure the
+        business needs to keep its position (and any additional working capital that requires).
+
+        The formula is as follows:
+
+            - Owner Earnings = Net Income + Depreciation and Amortization - Maintenance Capital
+              Expenditure - Change in Working Capital
+            - Owner Earnings per Share = Owner Earnings / Weighted Average Shares Diluted
+
+        The statements do not split the capital expenditure into maintenance and growth, which
+        Buffett himself calls a guess. `method` chooses the estimate of the maintenance part:
+
+            - "total": all the capital expenditure, the conservative estimate (owner earnings then
+              differ from the free cash flow only by the non-cash items other than depreciation).
+            - "greenwald": the capital expenditure minus the growth capital expenditure, the
+              investment the growth in revenue required at the company's ratio of property, plant
+              and equipment to revenue a year earlier (Greenwald et al., 2001):
+              Maintenance Capital Expenditure = Capital Expenditure - PP&E / Revenue (t - 1) *
+              max(Change in Revenue, 0), at least 0.
+
+        For more information, see the following sources:
+
+        - Buffett, W. E. (1986). "Chairman's Letter." Berkshire Hathaway Inc. Annual Report 1986,
+          appendix on purchase-price accounting adjustments and owner earnings.
+        - Greenwald, B. C. N., Kahn, J., Sonkin, P. D. and van Biema, M. (2001). "Value Investing:
+          From Graham to Buffett and Beyond." Wiley, chapter 6.
+
+        Also known as: owner earnings, Buffett owner earnings, maintenance free cash flow.
+
+        Args:
+            method (str, optional): The estimate of the maintenance capital expenditure: "total" or
+                "greenwald". Defaults to "total".
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the flows over. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which uses single periods (per quarter on quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Net Income, Depreciation and Amortization, Capital
+            Expenditure, Maintenance Capital Expenditure, Change in Working Capital, Owner Earnings
+            and Owner Earnings per Share.
+
+        Notes:
+        - The Change in Working Capital is that of the cash flow statement with its sign turned, so
+        an increase in working capital (a use of cash) is positive and lowers the owner earnings.
+        - Depreciation and Amortization is that of the cash flow statement; other non-cash charges
+        (such as share-based compensation) are not added back, as Buffett adds back only the
+        charges that do not reflect an economic cost.
+        - With method="greenwald" on quarterly data, the change in revenue is measured against the
+        same period a year earlier and divided over the four quarters of that year when `trailing`
+        is not set.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_owner_earnings().xs("Owner Earnings", level=1)
+        ```
+
+        Which returns:
+
+        |      |       2021 |      2022 |      2023 |      2024 |      2025 |
+        |:-----|-----------:|----------:|----------:|----------:|----------:|
+        | KO   | 1.1181e+10 | 8.713e+09 | 9.144e+09 | 3.408e+09 | 4.837e+09 |
+        | MDLZ | 3.799e+09  | 2.405e+09 | 4.553e+09 | 3.557e+09 | 1.556e+09 |
+        | PEP  | 6.926e+09  | 6.095e+09 | 6.737e+09 | 6.379e+09 | 6.358e+09 |
+        """
+        method = method.lower()
+        if method not in ("total", "greenwald"):
+            raise ValueError("The method must be 'total' or 'greenwald'.")
+        periods_per_year = 4 if self._quarterly else 1
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        capital_expenditure = -flow(self._cash_flow_statement, "Capital Expenditure")
+
+        if method == "total":
+            maintenance_capital_expenditure = capital_expenditure
+        else:
+            revenue = self._rows(self._income_statement, "Revenue")
+            # The change in revenue over the window the capital expenditure covers: compared with a year earlier, a year's change divided over its quarters for a single quarter.  # noqa: E501
+            window = trailing or 1
+            yearly_revenue = trailing_sum(revenue, periods_per_year)
+            change_in_revenue = (
+                (yearly_revenue - yearly_revenue.shift(periods_per_year, axis=1))
+                * window
+                / periods_per_year
+            )
+            ppe_to_revenue = (
+                self._rows(
+                    self._balance_sheet_statement, "Property, Plant and Equipment"
+                )
+                / yearly_revenue.where(yearly_revenue > 0)
+            ).shift(periods_per_year, axis=1)
+            maintenance_capital_expenditure = (
+                intrinsic_model.get_greenwald_maintenance_capital_expenditure(
+                    capital_expenditure=capital_expenditure,
+                    property_plant_and_equipment_to_revenue=ppe_to_revenue,
+                    change_in_revenue=change_in_revenue,
+                )
+            )
+
+        components = {}
+        components["Net Income"] = flow(self._income_statement, "Net Income")
+        components["Depreciation and Amortization"] = flow(
+            self._cash_flow_statement, "Depreciation and Amortization"
+        )
+        components["Capital Expenditure"] = capital_expenditure
+        components["Maintenance Capital Expenditure"] = maintenance_capital_expenditure
+        components["Change in Working Capital"] = -flow(
+            self._cash_flow_statement, "Change in Working Capital"
+        )
+        components["Owner Earnings"] = intrinsic_model.get_owner_earnings(
+            net_income=components["Net Income"],
+            depreciation_and_amortization=components["Depreciation and Amortization"],
+            maintenance_capital_expenditure=maintenance_capital_expenditure,
+            change_in_working_capital=components["Change in Working Capital"],
+        )
+        components["Owner Earnings per Share"] = components["Owner Earnings"] / (
+            self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_unlevered_beta(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the unlevered (asset) beta of Hamada (1972): the beta each company's shares
+        would have without debt, its business risk apart from its financial leverage. Unlevered
+        betas can be compared across companies with different amounts of debt, averaged over an
+        industry and relevered at a company's own leverage (Damodaran's bottom-up beta, see
+        `wacc_model.get_relevered_beta`).
+
+        The formula is as follows:
+
+            - Levered Beta = the regression beta of the shares against the benchmark over the period
+            - Debt to Equity = Total Debt / Market Value of Equity
+            - Unlevered Beta = Levered Beta / (1 + (1 - Tax Rate) * Debt to Equity)
+
+        For more information, see the following sources:
+
+        - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+          of Common Stocks." The Journal of Finance, 27(2), 435-452.
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+
+        Also known as: asset beta, unlevered beta, Hamada equation, business risk beta.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods the beta is measured over (and the
+                taxes summed over). The window counts calendar periods, so a period without a report
+                makes it NaN. Defaults to None, which is a single period.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Levered Beta, Debt to Equity, Tax Rate and Unlevered Beta.
+
+        Notes:
+        - The Levered Beta, the market value of equity and the tax rate are those of
+        `get_weighted_average_cost_of_capital`: the beta of the daily returns within the period
+        against the benchmark, the closing price at the fiscal period end times the diluted
+        weighted average shares, and the effective tax rate kept within 0 and 1 (0 without a
+        pre-tax profit). The debt is the book value of Total Debt, the usual stand-in for its
+        market value.
+        - The debt is assumed to carry no market risk (a debt beta of zero), as Hamada and
+        Damodaran's bottom-up betas do. Damodaran also corrects the unlevered beta for the cash a
+        company holds (Unlevered Beta / (1 - Cash / Firm Value)), which this leaves out.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "GM", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_unlevered_beta().xs("Unlevered Beta", level=1)
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | F    | 0.4549 | 0.3568 | 0.3472 | 0.2686 | 0.1996 |
+        | GM   | 0.6333 | 0.4549 | 0.4088 | 0.3555 | 0.3454 |
+        | TSLA | 1.9416 | 1.7191 | 2.223  | 2.3614 | 2.2258 |
+        """
+        years = self._cash_flow_statement.columns
+        beta = self._beta_per_period(str(years[0]), str(years[-1]), trailing).T
+        wacc = self._weighted_average_cost_of_capital(trailing=trailing)
+
+        market_value_equity = wacc.xs("Market Value Equity", level=1).reindex(
+            self._tickers
+        )
+        debt_to_equity = self._rows(
+            self._balance_sheet_statement, "Total Debt"
+        ) / market_value_equity.where(market_value_equity > 0)
+        tax_rate = wacc.xs("Corporate Tax Rate", level=1).reindex(self._tickers)
+
+        components = {}
+        components["Levered Beta"] = beta.reindex(
+            index=self._tickers, columns=debt_to_equity.columns
+        )
+        components["Debt to Equity"] = debt_to_equity
+        components["Tax Rate"] = tax_rate
+        components["Unlevered Beta"] = wacc_model.get_unlevered_beta(
+            levered_beta=components["Levered Beta"],
+            debt_to_equity=debt_to_equity,
+            tax_rate=tax_rate,
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_capitalized_research_and_development(
+        self,
+        amortization_years: int = 5,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Capitalize the research and development expenses as Aswath Damodaran does: accounting
+        treats R&D as an expense, while it is an investment whose benefit lasts several years.
+        Every year's R&D becomes an asset amortized straight-line over its amortizable life,
+        which changes the operating income, the net income, the book equity, the invested capital
+        and with them the return on capital of research-intensive companies.
+
+        The formula is as follows, with n the amortizable life in years:
+
+            - Research Asset (t) = Σ (k = 0 .. n - 1) R&D (t - k) * (n - k) / n
+            - Amortization (t) = Σ (k = 1 .. n) R&D (t - k) / n
+            - Adjusted Operating Income = Operating Income + R&D - Amortization
+            - Adjusted Net Income = Net Income + R&D - Amortization
+            - Adjusted Total Equity = Total Equity + Research Asset
+            - Adjusted Invested Capital = Total Equity + Total Debt + Research Asset
+            - Adjusted Return on Invested Capital = Adjusted Operating Income * (1 - Tax Rate) /
+              Adjusted Invested Capital at the beginning of the period
+
+        The expense of the current year is not amortized yet, and that of n years ago is written
+        off in full this year, as in Damodaran's R&D converter.
+
+        For more information, see the following sources:
+
+        - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 9.
+        - Damodaran, A. "R&D Converter" (R&D.xls),
+          https://pages.stern.nyu.edu/~adamodar/New_Home_Page/spreadsh.htm
+        - Lev, B. and Sougiannis, T. (1996). "The Capitalization, Amortization, and Value-Relevance
+          of R&D." Journal of Accounting and Economics, 21(1), 107-138.
+
+        Also known as: R&D capitalization, research asset, capitalized R&D, adjusted operating
+        income for R&D.
+
+        Args:
+            amortization_years (int, optional): The amortizable life n of the research asset in
+                years. Damodaran uses 2 years for software, 3 to 5 for most industries and up to 10
+                for pharmaceuticals (the life it takes to turn research into products). Defaults to 5.
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Research and Development Expenses, Research Asset,
+            Amortization of Research Asset, Adjusted Operating Income, Adjusted Net Income,
+            Adjusted Total Equity, Adjusted Invested Capital and Adjusted Return on Invested Capital.
+
+        Notes:
+        - The asset needs the expenses of the n years before: with a start date less than n years
+        back the results are NaN (set an earlier start_date). A year without a reported R&D expense
+        leaves the years that include it NaN rather than counting it as zero.
+        - On quarterly data every quarter holds the expenses of the trailing year, the asset and
+        amortization are those of the years ending with the quarter, and the adjusted incomes are
+        trailing twelve months figures.
+        - The tax rate is the effective tax rate kept within 0 and 1 (0 without a pre-tax profit),
+        as in `get_economic_value_added`. Damodaran notes that the tax benefit of R&D stays that of
+        the expense, which these adjustments keep by not changing the taxes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MRK", "PFE", "LLY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The last four years, the first with ten years of spending behind them
+        toolkit.models.get_capitalized_research_and_development(
+            amortization_years=10
+        ).loc["MRK"].iloc[:, -4:]
+        ```
+
+        Which returns:
+
+        |                                     |         2022 |          2023 |        2024 |        2025 |
+        |:------------------------------------|-------------:|--------------:|------------:|------------:|
+        | Research and Development Expenses   |   1.3548e+10 |   3.0531e+10  | 1.7938e+10  | 1.2514e+10  |
+        | Research Asset                      | nan          |   8.18812e+10 | 8.74511e+10 | 8.65212e+10 |
+        | Amortization of Research Asset      | nan          |   1.00653e+10 | 1.23681e+10 | 1.34439e+10 |
+        | Adjusted Operating Income           | nan          |   2.34197e+10 | 2.57909e+10 | 2.25561e+10 |
+        | Adjusted Net Income                 | nan          |   2.08307e+10 | 2.26869e+10 | 1.73241e+10 |
+        | Adjusted Total Equity               | nan          |   1.19516e+11 | 1.33823e+11 | 1.39183e+11 |
+        | Adjusted Invested Capital           | nan          |   1.55784e+11 | 1.72093e+11 | 1.89717e+11 |
+        | Adjusted Return on Invested Capital | nan          | nan           | 0.1423      | 0.1136      |
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        trailing = periods_per_year if self._quarterly else None
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        research_and_development = flow(
+            self._income_statement, "Research and Development Expenses"
+        )
+        research_asset, amortization = eva_model.get_research_and_development_asset(
+            research_and_development=research_and_development,
+            amortization_years=amortization_years,
+            periods_per_year=periods_per_year,
+        )
+        adjustment = research_and_development - amortization
+        balance = self._balance_sheet_statement
+
+        components = {}
+        components["Research and Development Expenses"] = research_and_development
+        components["Research Asset"] = research_asset
+        components["Amortization of Research Asset"] = amortization
+        components["Adjusted Operating Income"] = (
+            flow(self._income_statement, "Operating Income") + adjustment
+        )
+        components["Adjusted Net Income"] = (
+            flow(self._income_statement, "Net Income") + adjustment
+        )
+        components["Adjusted Total Equity"] = (
+            self._rows(balance, "Total Equity") + research_asset
+        )
+        components["Adjusted Invested Capital"] = (
+            self._rows(balance, "Total Equity")
+            + self._rows(balance, "Total Debt")
+            + research_asset
+        )
+        tax_rate = wacc_model.get_corporate_tax_rate(
+            income_tax_expense=flow(self._income_statement, "Income Tax Expense"),
+            income_before_tax=flow(self._income_statement, "Income Before Tax"),
+        )
+        beginning_capital = components["Adjusted Invested Capital"].shift(
+            periods_per_year, axis=1
+        )
+        components["Adjusted Return on Invested Capital"] = (
+            components["Adjusted Operating Income"]
+            * (1 - tax_rate)
+            / beginning_capital.where(beginning_capital > 0)
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
+
+    @handle_errors
+    def get_cash_flow_return_on_investment(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Cash Flow Return on Investment (CFROI) of Bartley Madden (the HOLT model):
+        the internal rate of return of a company's assets seen as one project. The gross
+        investment buys a gross cash flow for every year of the life of the depreciating assets,
+        and the non-depreciating assets (working capital) come back at the end. Where the return
+        on invested capital divides an accounting profit by depreciated book values, the CFROI
+        compares cash flows with the original cost of the assets, which makes companies with old
+        and new assets comparable.
+
+        The formula is as follows, solved for the CFROI:
+
+            - Gross Cash Flow = Net Income + Depreciation and Amortization + Interest Expense
+            - Depreciating Assets = Gross Property, Plant and Equipment (Net Property, Plant and
+              Equipment where the gross amount is not reported)
+            - Non-Depreciating Assets = Total Current Assets - (Total Current Liabilities - Short
+              Term Debt)
+            - Gross Investment = Depreciating Assets + Non-Depreciating Assets
+            - Asset Life = Depreciating Assets / Depreciation and Amortization
+            - Gross Investment = Σ (t = 1 .. Asset Life) Gross Cash Flow / (1 + CFROI)^t +
+              Non-Depreciating Assets / (1 + CFROI)^Asset Life
+
+        This is the simplified, nominal form of Madden's model that the statements allow. HOLT's
+        CFROI also restates the gross investment and the cash flows for inflation (a real
+        return), capitalizes operating leases and R&D and adds the rental expense to the cash flow;
+        practitioner versions differ in these choices, so the levels are best compared between
+        companies and over time rather than with a published CFROI.
+
+        For more information, see the following sources:
+
+        - Madden, B. J. (1999). "CFROI Valuation: A Total System Approach to Valuing the Firm."
+          Butterworth-Heinemann.
+        - Madden, B. J. (2010). "Wealth Creation: A Systems Mindset for Building and Investing in
+          Businesses for the Long Term." Wiley.
+
+        Also known as: CFROI, HOLT CFROI, cash flow return on investment, Madden CFROI.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Gross Cash Flow, Depreciating Assets, Non-Depreciating
+            Assets, Gross Investment, Asset Life (years) and the Cash Flow Return on Investment (a
+            decimal per year, annually compounded).
+
+        Notes:
+        - The balance sheet items are averaged over the period ends that open and close the year,
+        as the invested capital of `get_economic_value_added`. On quarterly data the flows are
+        those of the trailing twelve months, so the CFROI stays a yearly rate.
+        - FinancialModelingPrep reports the property, plant and equipment net of depreciation. The
+        net amount understates the original cost and its life (Net PP&E / Depreciation) is the
+        remaining life of the assets, which gives a remaining-life CFROI. Where the statements
+        report the gross amount (Yahoo Finance), the gross amount and the full life are used.
+        - The CFROI is NaN where the life or the gross investment is not positive or no rate
+        between -99% and 1,000% solves the equation (such as a gross cash flow that never
+        returns the investment).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["HD", "LOW"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_cash_flow_return_on_investment().loc["HD"]
+        ```
+
+        Which returns:
+
+        |                                |         2021 |         2022 |        2023 |       2024 |
+        |:-------------------------------|-------------:|-------------:|------------:|-----------:|
+        | Gross Cash Flow                |  2.0642e+10  |  2.1697e+10  |  2.0333e+10 | 2.0888e+10 |
+        | Depreciating Assets            |  3.0917e+10  |  3.18695e+10 |  3.3305e+10 | 3.4666e+10 |
+        | Non-Depreciating Assets        |  5.2855e+09  |  7.218e+09   |  9.86e+09   | 8.524e+09  |
+        | Gross Investment               |  3.62025e+10 |  3.90875e+10 |  4.3165e+10 | 4.319e+10  |
+        | Asset Life                     | 10.8026      | 10.7124      | 10.2572     | 9.2172     |
+        | Cash Flow Return on Investment |  0.5664      |  0.551       |  0.4637     | 0.4726     |
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        trailing = periods_per_year if self._quarterly else None
+        balance = self._balance_sheet_statement
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        def average(row: str) -> pd.DataFrame:
+            # The opening and closing balance of the year.
+            values = self._rows(balance, row)
+            return (values + values.shift(periods_per_year, axis=1)) / 2
+
+        depreciation = flow(self._income_statement, "Depreciation and Amortization")
+        gross_property = average("Gross Property, Plant and Equipment")
+        depreciating_assets = gross_property.combine_first(
+            average("Property, Plant and Equipment")
+        )
+        non_depreciating_assets = average("Total Current Assets") - (
+            average("Total Current Liabilities") - average("Short Term Debt").fillna(0)
+        )
+
+        components = {}
+        components["Gross Cash Flow"] = (
+            flow(self._income_statement, "Net Income")
+            + depreciation
+            + flow(self._income_statement, "Interest Expense").abs().fillna(0)
+        )
+        components["Depreciating Assets"] = depreciating_assets
+        components["Non-Depreciating Assets"] = non_depreciating_assets
+        components["Gross Investment"] = depreciating_assets + non_depreciating_assets
+        components["Asset Life"] = depreciating_assets / depreciation.where(
+            depreciation > 0
+        )
+        components["Cash Flow Return on Investment"] = (
+            cfroi_model.get_cash_flow_return_on_investment(
+                gross_investment=components["Gross Investment"],
+                gross_cash_flow=components["Gross Cash Flow"],
+                non_depreciating_assets=non_depreciating_assets,
+                asset_life=components["Asset Life"],
+            )
+        )
+
+        return self._finalize_components(components, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_intrinsic_valuation(
@@ -2414,7 +3122,7 @@ class ValuationModels:
             # valuations.
             growth = growth_model.get_sustainable_growth_rate(
                 return_on_equity=return_on_equity,
-                retention_ratio=valuation_model.get_reinvestment_ratio(
+                retention_ratio=valuation_model.get_retention_ratio(
                     dividend_payout_ratio=payout_ratio
                 ),
             ).clip(lower=0, upper=LONG_RUN_GROWTH_RATE)

@@ -274,3 +274,67 @@ def get_weighted_average_cost_of_capital(
         )
 
     return pd.DataFrame.from_dict(components, orient="index")
+
+
+def get_unlevered_beta(
+    levered_beta: float | pd.Series | pd.DataFrame,
+    debt_to_equity: float | pd.Series | pd.DataFrame,
+    tax_rate: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    The unlevered (asset) beta of Hamada (1972): the beta the equity would have without debt,
+    the business risk of the company apart from its financial leverage.
+
+    The formula is as follows:
+
+        - Unlevered Beta = Levered Beta / (1 + (1 - Tax Rate) * Debt / Equity)
+
+    Args:
+        levered_beta (float | pd.Series | pd.DataFrame): The (regression) beta of the equity.
+        debt_to_equity (float | pd.Series | pd.DataFrame): The debt over the equity, both at
+            market values.
+        tax_rate (float | pd.Series | pd.DataFrame): The marginal (or effective) tax rate.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The unlevered beta.
+
+    Notes:
+    - The formula assumes the debt carries no market risk (a debt beta of zero), as Hamada and
+    Damodaran's bottom-up betas do.
+
+    References:
+    - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+    of Common Stocks." The Journal of Finance, 27(2), 435-452.
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+    """
+    return levered_beta / (1 + (1 - tax_rate) * debt_to_equity)
+
+
+def get_relevered_beta(
+    unlevered_beta: float | pd.Series | pd.DataFrame,
+    debt_to_equity: float | pd.Series | pd.DataFrame,
+    tax_rate: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Relevers an unlevered (asset) beta at a debt-to-equity ratio (Hamada, 1972), such as the
+    unlevered beta of an industry at a company's own leverage, the bottom-up beta of Damodaran.
+
+    The formula is as follows:
+
+        - Levered Beta = Unlevered Beta * (1 + (1 - Tax Rate) * Debt / Equity)
+
+    Args:
+        unlevered_beta (float | pd.Series | pd.DataFrame): The unlevered beta.
+        debt_to_equity (float | pd.Series | pd.DataFrame): The debt over the equity, both at
+            market values.
+        tax_rate (float | pd.Series | pd.DataFrame): The marginal (or effective) tax rate.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The levered beta.
+
+    References:
+    - Hamada, R. S. (1972). "The Effect of the Firm's Capital Structure on the Systematic Risk
+    of Common Stocks." The Journal of Finance, 27(2), 435-452.
+    - Damodaran, A. (2012). "Investment Valuation." Wiley, 3rd edition, chapter 8.
+    """
+    return unlevered_beta * (1 + (1 - tax_rate) * debt_to_equity)

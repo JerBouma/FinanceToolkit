@@ -15,6 +15,7 @@ from financetoolkit.models.profitability.profitability_controller import (
     ProfitabilityModels,
 )
 from financetoolkit.models.quality.quality_controller import QualityModels
+from financetoolkit.models.valuation import eva_model, wacc_model
 from financetoolkit.models.valuation.valuation_controller import ValuationModels
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities import factor_model
@@ -255,6 +256,45 @@ class ModelsBase:
 
         return trailing_sum(operating_income, trailing)
 
+    def _net_operating_profit_after_taxes(
+        self, trailing: int | None = None
+    ) -> pd.DataFrame:
+        """
+        The Net Operating Profit After Taxes (NOPAT) the models use: EBIT (the reported
+        Operating Income) times one minus the effective tax rate, the rate kept within 0 and
+        1 and 0 without a pre-tax profit, as in the Economic Value Added and the WACC.
+
+        Args:
+            trailing (int | None, optional): The number of periods to sum. Defaults to None,
+                which is a single period.
+
+        Returns:
+            pd.DataFrame: The NOPAT per ticker (rows) and period (columns).
+        """
+        effective_tax_rate = wacc_model.get_corporate_tax_rate(
+            income_tax_expense=trailing_sum(
+                self._income_statement.loc[:, "Income Tax Expense", :], trailing
+            ),
+            income_before_tax=trailing_sum(
+                self._income_statement.loc[:, "Income Before Tax", :], trailing
+            ),
+        )
+        return eva_model.get_net_operating_profit_after_taxes(
+            ebit=self._earnings_before_interest_and_taxes(trailing),
+            effective_tax_rate=effective_tax_rate,
+        )
+
+    def _annual_trailing(self, trailing: int | None) -> tuple[int | None, int]:
+        """
+        The trailing window of a measure that is annual by nature and the number of periods
+        in a year: a trailing year (4) on quarterly data unless `trailing` says otherwise, so
+        that comparisons with a year earlier are year over year.
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        if trailing is None and self._quarterly:
+            trailing = 4
+        return trailing, periods_per_year
+
     def _return_on_equity_and_payout(
         self, trailing: int | None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -458,6 +498,7 @@ FACTOR_COLLECTIONS = {
         "get_fulmer_h_score",
         "get_taffler_z_score",
         "get_campbell_hilscher_szilagyi_score",
+        "get_shumway_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -536,10 +577,11 @@ class Models(
                 ticker and period, e.g. "get_piotroski_score", a list of them, or a
                 collection: "scores" or "all". Defaults to "scores", the Piotroski, Altman Z,
                 Beneish M, Ohlson O, Zmijewski, Springate, Grover, Fulmer H, Taffler z,
-                Dechow F, Montier C and Mohanram G scores. "all" adds the accruals ratio, Tobin's Q, the
-                sustainable and internal growth rates, the magic formula and the Merton
-                distance to default. The valuation models and the analyses with several
-                components and no score are not in the collections.
+                Campbell-Hilscher-Szilagyi, Shumway, Dechow F, Montier C and Mohanram G
+                scores. "all" adds the accruals ratio, Tobin's Q, the sustainable and internal
+                growth rates, the magic formula and the Merton distance to default. The
+                valuation models and the analyses with several components and no score are not
+                in the collections.
             period (str, optional): The frequency at which the models are evaluated: daily,
                 weekly, monthly, quarterly or yearly. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

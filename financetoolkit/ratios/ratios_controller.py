@@ -17814,7 +17814,7 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
-    def get_reinvestment_rate(
+    def get_retention_ratio(
         self,
         rounding: int | None = None,
         growth: bool = False,
@@ -17825,20 +17825,25 @@ class Ratios:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Reinvestment rate, a financial metric that measures the proportion
-        of earnings retained by the company.
+        Calculate the retention ratio, the share of net income the company keeps rather than
+        pays out as dividends.
 
-        The reinvestment rate is a financial metric that helps investors assess the
-        portion of a company's earnings that is being retained by the company
-        for future growth. It's a valuable indicator for dividend investors as
-        it indicates the sustainability of dividend payments and the company's
-        approach to distributing profits.
+        The retention ratio helps investors assess the portion of a company's earnings that
+        is retained for future growth. It's a valuable indicator for dividend investors as it
+        indicates the sustainability of dividend payments and the company's approach to
+        distributing profits. Times the return on equity it gives the sustainable growth rate
+        (`get_sustainable_growth_rate` of the Models module).
 
         The formula is as follows:
 
-        - Reinvestment Rate = 1 — Dividend Payout Ratio
+        - Retention Ratio = 1 - Dividend Payout Ratio
 
-        Also known as: plowback ratio, retention rate.
+        It is an equity measure, based on net income and dividends. Damodaran's reinvestment
+        rate, the share of after-tax operating income reinvested in net capital expenditure and
+        working capital, is a different measure: see `get_fundamental_growth_rate` of the
+        Models module.
+
+        Also known as: plowback ratio, retention rate, earnings retention ratio.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -17862,7 +17867,7 @@ class Ratios:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Reinvestment Rate values.
+            pd.DataFrame: Retention Ratio values.
 
         As an example:
 
@@ -17876,30 +17881,30 @@ class Ratios:
             end_date="2025-12-31",
         )
 
-        toolkit.ratios.get_reinvestment_rate()
+        toolkit.ratios.get_retention_ratio()
         ```
 
         Which returns:
 
-        |      |    2021 |   2022 |   2023 |    2024 |   2025 |
-        |:-----|--------:|-------:|-------:|--------:|-------:|
-        | COST | -0.148  | 0.7437 | 0.8012 | -0.2272 | 0.7305 |
-        | NKE  |  0.6962 | 0.6032 | 0.6195 |  0.2855 | 0.2255 |
-        | V    |  0.7727 | 0.7859 | 0.7828 |  0.7864 | 0.7666 |
+        |      |    2021 |   2022 |   2023 |    2024 |     2025 |
+        |:-----|--------:|-------:|-------:|--------:|---------:|
+        | COST | -0.148  | 0.7437 | 0.8012 | -0.2272 |   0.7305 |
+        | NKE  |  0.6962 | 0.6032 | 0.6195 |  0.2855 | nan      |
+        | V    |  0.7727 | 0.7859 | 0.7828 |  0.7864 |   0.7666 |
         """
         if trailing:
             dividend_payout_ratio = self.get_dividend_payout_ratio(trailing=trailing)
-            reinvestment_ratio = valuation_model.get_reinvestment_ratio(
+            retention_ratio = valuation_model.get_retention_ratio(
                 dividend_payout_ratio=dividend_payout_ratio,
             )
         else:
             dividend_payout_ratio = self.get_dividend_payout_ratio()
-            reinvestment_ratio = valuation_model.get_reinvestment_ratio(
+            retention_ratio = valuation_model.get_retention_ratio(
                 dividend_payout_ratio=dividend_payout_ratio,
             )
 
         return finalize_dataset(
-            dataset=reinvestment_ratio,
+            dataset=retention_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -18282,6 +18287,18 @@ class Ratios:
         two multiples differ only by the depreciation and amortization. The enterprise value
         is taken at the end of each period (or on each day with show_daily), while EBIT is
         summed over the trailing periods.
+
+        This is also Tobias Carlisle's Acquirer's Multiple: the enterprise value over operating
+        earnings, which he defines as revenue minus the cost of goods sold, selling, general and
+        administrative expenses and depreciation and amortization, the reported operating
+        income. A low multiple marks a cheap company in the eyes of an acquirer.
+
+        For more information, see the following sources:
+
+        - Carlisle, T. (2014). "Deep Value: Why Activist Investors and Other Contrarians Battle
+          for Control of Losing Corporations." Wiley.
+
+        Also known as: EV/EBIT, Acquirer's Multiple, enterprise multiple on operating earnings.
 
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day

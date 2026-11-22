@@ -1023,3 +1023,158 @@ def get_price_to_tangible_book_ratio(
     )
 
     return market_cap / tangible_book_value.where(tangible_book_value > 0)
+
+
+def get_operating_cash_flow_per_share(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the operating cash flow per share, the cash a company generates from its
+    operations per outstanding share.
+
+    The formula is as follows:
+
+        Operating Cash Flow per Share = Cash Flow from Operations / Weighted Average Shares
+
+    Also known as: cash flow per share, CFPS.
+
+    Args:
+        cash_flow_from_operations (float or pd.Series): Cash flow from operations of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The operating cash flow per share.
+    """
+    return cash_flow_from_operations / shares_outstanding
+
+
+def get_free_cash_flow_per_share(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow per share, the cash a company generates after its capital
+    expenditure per outstanding share.
+
+    The formula is as follows:
+
+        Free Cash Flow per Share = Free Cash Flow / Weighted Average Shares
+
+    Also known as: FCF per share, FCFPS.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company (cash flow from
+            operations minus capital expenditure).
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The free cash flow per share.
+    """
+    return free_cash_flow / shares_outstanding
+
+
+def get_cash_per_share(
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the cash per share, the cash and short-term investments (marketable
+    securities) a company holds per outstanding share.
+
+    The formula is as follows:
+
+        Cash per Share = Cash and Short Term Investments / Weighted Average Shares
+
+    Args:
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The cash per share.
+    """
+    return cash_and_short_term_investments / shares_outstanding
+
+
+def get_tangible_book_value_per_share(
+    total_shareholder_equity: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the tangible book value per share, the common equity without goodwill and
+    other intangible assets per outstanding share.
+
+    The formula is as follows:
+
+        Tangible Book Value per Share = (Total Shareholder Equity - Preferred Stock -
+            Goodwill and Intangible Assets) / Weighted Average Shares
+
+    The tangible book value is the one of the price to tangible book ratio; it can be
+    negative after large acquisitions or buybacks and is returned as it is.
+
+    Also known as: TBVPS, tangible equity per share.
+
+    Args:
+        total_shareholder_equity (float or pd.Series): Shareholders' equity, without
+            minority interest.
+        preferred_stock (float or pd.Series): Preferred stock of the company.
+        goodwill_and_intangible_assets (float or pd.Series): Goodwill and intangible assets.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+
+    Returns:
+        float | pd.Series: The tangible book value per share.
+    """
+    return (
+        total_shareholder_equity - preferred_stock - goodwill_and_intangible_assets
+    ) / shares_outstanding
+
+
+def get_net_net_working_capital_per_share(
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    receivables: pd.Series | pd.DataFrame,
+    inventory: pd.Series | pd.DataFrame,
+    total_liabilities: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+    receivables_weight: float = 0.75,
+    inventory_weight: float = 0.5,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Benjamin Graham's net-net working capital per share, the current assets
+    discounted to a rough liquidation value minus all liabilities, per share.
+
+    Graham and Dodd (1934) value cash at its full amount, receivables at about 75 to 90% and
+    inventories at about 50 to 75% in a liquidation; the defaults take the lower ends, as
+    FinancialModelingPrep's key metrics do.
+
+    The formula is as follows:
+
+        Net-Net Working Capital per Share = (Cash and Short Term Investments +
+            Receivables Weight x Receivables + Inventory Weight x Inventory -
+            Total Liabilities) / Weighted Average Shares
+
+    Also known as: Graham net-net, NNWC, net-net working capital.
+
+    Args:
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments of the company.
+        receivables (float or pd.Series): Net receivables of the company.
+        inventory (float or pd.Series): Inventory of the company.
+        total_liabilities (float or pd.Series): Total liabilities of the company.
+        shares_outstanding (float or pd.Series): The (weighted average) number of shares.
+        receivables_weight (float, optional): The share of the receivables counted.
+            Defaults to 0.75.
+        inventory_weight (float, optional): The share of the inventory counted. Defaults
+            to 0.5.
+
+    Returns:
+        float | pd.Series: The net-net working capital per share.
+    """
+    return (
+        cash_and_short_term_investments
+        + receivables_weight * receivables
+        + inventory_weight * inventory
+        - total_liabilities
+    ) / shares_outstanding

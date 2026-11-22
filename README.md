@@ -193,7 +193,7 @@ And below the cumulative returns of all three are plotted against the S&P 500, w
 
 ## Zooming in on Competitors
 
-Nvidia's shares outran the other two by far, which raises the question whether its business did as well. From the financial statements the Toolkit calculates 80+ [ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) in five categories: efficiency, liquidity, profitability, solvency and valuation. Each ratio has its own function, and a `collect_` function returns a whole category at once:
+Nvidia's shares outran the other two by far, which raises the question whether its business did as well. From the financial statements the Toolkit calculates 140+ [ratios](https://www.jeroenbouma.com/projects/financetoolkit/docs/ratios) in five categories: efficiency, liquidity, profitability, solvency and valuation. Each ratio has its own function, and a `collect_` function returns a whole category at once:
 
 ```python
 # Collect all Profitability Ratios for all tickers

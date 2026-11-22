@@ -601,3 +601,77 @@ def get_net_operating_assets(
     return (operating_assets - operating_liabilities) / beginning_total_assets.where(
         beginning_total_assets > 0
     )
+
+
+def get_capex_to_operating_cash_flow_ratio(
+    capital_expenditure: pd.Series | pd.DataFrame,
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the capital expenditure to operating cash flow ratio, the share of the cash
+    from operations that a company reinvests in property, plant and equipment.
+
+    The formula is as follows:
+
+        Capex to Operating Cash Flow = |Capital Expenditure| / Cash Flow from Operations
+
+    Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+    A cash flow from operations of zero or less gives NaN. It is the inverse of the
+    capital expenditure coverage ratio.
+
+    Args:
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        cash_flow_from_operations (float or pd.Series): Cash flow from operations.
+
+    Returns:
+        float | pd.Series: The capex to operating cash flow ratio.
+    """
+    return abs(capital_expenditure) / cash_flow_from_operations.where(
+        cash_flow_from_operations > 0
+    )
+
+
+def get_intangibles_to_total_assets_ratio(
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
+    total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the intangibles to total assets ratio, the share of the assets that is
+    goodwill or another intangible asset.
+
+    The formula is as follows:
+
+        Intangibles to Total Assets = Goodwill and Intangible Assets / Total Assets
+
+    Args:
+        goodwill_and_intangible_assets (float or pd.Series): Goodwill and intangible assets.
+        total_assets (float or pd.Series): Total assets of the company.
+
+    Returns:
+        float | pd.Series: The intangibles to total assets ratio.
+    """
+    return goodwill_and_intangible_assets / total_assets
+
+
+def get_amount_per_employee(
+    amount: pd.Series | pd.DataFrame, employee_count: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate an amount per employee, such as the revenue or the net income per employee,
+    a measure of the productivity of the workforce.
+
+    The formula is as follows:
+
+        Amount per Employee = Amount / Employee Count
+
+    An employee count of zero or less gives NaN.
+
+    Args:
+        amount (float or pd.Series): The amount, e.g. the revenue or the net income.
+        employee_count (float or pd.Series): The number of employees.
+
+    Returns:
+        float | pd.Series: The amount per employee.
+    """
+    return amount / employee_count.where(employee_count > 0)

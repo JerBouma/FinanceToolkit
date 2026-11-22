@@ -308,3 +308,13 @@ def test_nissim_penman_components():
     assert profitability_model.get_financial_leverage(
         pd.Series([80.0]), pd.Series([120.0])
     ).iloc[0] == pytest.approx(80 / 120)
+
+
+def test_operating_return_on_assets_and_continuing_operations_margin():
+    # Apple 2022: 119,437 / ((351,002 + 352,755) / 2).
+    assert profitability_model.get_operating_return_on_assets(
+        119437.0, (351002.0 + 352755.0) / 2
+    ) == pytest.approx(0.339427, abs=1e-6)
+    assert profitability_model.get_continuing_operations_profit_margin(
+        99803.0, 394328.0
+    ) == pytest.approx(0.253096, abs=1e-6)

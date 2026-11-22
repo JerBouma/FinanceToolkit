@@ -8,6 +8,10 @@ AAPL,Book Value per Share,,,-0.0821,0.0242
 AAPL,Price-to-Book,,0.3335,-0.1181,
 AAPL,Interest Debt per Share,,,0.0759,-0.0515
 AAPL,CAPEX per Share,,,-0.2239,-0.0265
+AAPL,Operating Cash Flow per Share,,,0.265,0.0622
+AAPL,Free Cash Flow per Share,,,0.2695,0.066
+AAPL,Cash per Share,,,-0.2515,0.0227
+AAPL,Tangible Book Value per Share,,,-0.0821,0.0242
 AAPL,Earnings Yield,,,0.8053,
 AAPL,Dividend Payout Ratio,,,-0.1972,0.0071
 AAPL,Dividend Yield,,,-0.3029,
@@ -23,6 +27,7 @@ AAPL,EV-to-EBITDA,,,-0.4338,
 AAPL,EV-to-Operating-Cash-Flow,,,-0.4131,
 AAPL,Tangible Asset Value,,,-0.1142,-0.0083
 AAPL,Net Current Asset Value,,,-0.1935,0.0194
+AAPL,Net-Net Working Capital per Share,,,-0.2562,-0.0238
 AAPL,EV-to-Free-Cash-Flow,,,-0.4152,
 AAPL,Buyback Yield,,,0.5736,
 AAPL,Shareholder Yield,,,0.3344,
@@ -42,6 +47,10 @@ MSFT,Book Value per Share,,,0.1965,0.2191
 MSFT,Price-to-Book,,0.2476,-0.3975,
 MSFT,Interest Debt per Share,,,-0.0638,-0.0536
 MSFT,CAPEX per Share,,,-0.2453,-0.1788
+MSFT,Operating Cash Flow per Share,,,0.2173,0.0751
+MSFT,Free Cash Flow per Share,,,0.2073,0.037
+MSFT,Cash per Share,,,-0.1108,-0.0725
+MSFT,Tangible Book Value per Share,,,0.1406,0.2698
 MSFT,Earnings Yield,,,0.7965,
 MSFT,Dividend Payout Ratio,,,-0.1378,0.011
 MSFT,Dividend Yield,,,0.5461,
@@ -57,6 +66,7 @@ MSFT,EV-to-EBITDA,,,-0.4195,
 MSFT,EV-to-Operating-Cash-Flow,,,-0.414,
 MSFT,Tangible Asset Value,,,0.13,0.2584
 MSFT,Net Current Asset Value,,,-3.2467,-0.392
+MSFT,Net-Net Working Capital per Share,,,-0.7106,-0.2894
 MSFT,EV-to-Free-Cash-Flow,,,-0.4091,
 MSFT,Buyback Yield,,,0.6911,
 MSFT,Shareholder Yield,,,0.6311,

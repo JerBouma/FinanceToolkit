@@ -869,7 +869,8 @@ def convert_daily_to_other_period(
     stock's week is the same with or without a cryptocurrency in the data. It also
     calculates the following:
         - Return: The return for the given period.
-        - Cumulative Return: The cumulative return for the given period.
+        - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+          1.0 on the first date and 1.25 after a 25% gain.
 
     Args:
         period (str): The period to convert to (weekly, monthly, quarterly or yearly).

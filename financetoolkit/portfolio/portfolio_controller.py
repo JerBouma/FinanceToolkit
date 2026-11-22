@@ -1243,7 +1243,8 @@ class Portfolio:
         - Volume: the volume of the benchmark over time.
         - Dividends: the dividends of the benchmark over time.
         - Returns: the returns of the benchmark over time.
-        - Cumulative Return: the cumulative return of the benchmark over time.
+        - Cumulative Return: the growth of 1 invested in the benchmark at the start, the product of
+        (1 + Return): 1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
@@ -1617,7 +1618,8 @@ class Portfolio:
         - Volume: the volume of each asset over time.
         - Dividends: the dividends of each asset over time.
         - Returns: the returns of each asset over time.
-        - Cumulative Return: the cumulative return of each asset over time.
+        - Cumulative Return: the growth of 1 invested in each asset at the start, the product of (1 + Return):
+        1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are
         available via the Risk module (e.g. toolkit.risk.get_volatility) and the Performance
@@ -1864,7 +1866,8 @@ class Portfolio:
         units held at the previous close times the dividend per unit.
         - Current Value: the market value of the position still held, marked at the closing price of that day.
         - Cumulative Return: the total return on the capital deployed, i.e.
-        (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount. It is NaN
+        (Current Value + Realized Proceeds + Dividends - Invested Amount) / Invested Amount: a return, 0.25
+        after a 25% gain (unlike the Cumulative Return of the historical data, the growth of 1). It is NaN
         before the first purchase, when no capital has been deployed yet.
         - Invested Weight: the weight of the asset in the portfolio based on the invested amount over time.
         - Current Weight: the weight of the asset in the portfolio based on the current value over time.
@@ -2182,7 +2185,10 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate portfolio performance metrics for a specified period.
+        Calculate portfolio performance metrics for a specified period: each position and the
+        Portfolio at the end of every period. The Return is the total return on the capital
+        deployed since the purchase, as of the end of the period, not the return within the
+        period (`get_return_contributions` gives that per period).
 
         This method calculates key performance metrics, such as returns, for the portfolio
         over a specified period. The available periods are 'yearly', 'quarterly', 'monthly',

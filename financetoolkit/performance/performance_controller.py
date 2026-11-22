@@ -5425,10 +5425,9 @@ class Performance:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Win Rate of an investment portfolio or asset's returns.
-
-        The Win Rate is the share of days within each period in which the asset's return exceeds the
-        benchmark's return.
+        Calculate the Win Rate of an investment portfolio or asset against its benchmark: the share of
+        days within each period in which the asset's return exceeds the benchmark's return. The Win Rate
+        of `get_return_statistics` counts the days with a gain instead.
 
         The formula is as follows:
 
@@ -7654,10 +7653,9 @@ class Performance:
         Calculate the statistics traders report about the returns of an investment portfolio or
         asset: how often it wins, how large its wins and losses are, how long its winning and
         losing streaks run, how its gains relate to its drawdown and tails, its best and worst
-        returns and outliers, and how precisely its mean return is known.
-
-        Unlike the Win Rate of `get_win_rate`, which counts the periods an asset beats its
-        benchmark, these statistics are absolute: a win is a positive return.
+        returns and outliers, and how precisely its mean return is known. These statistics are
+        absolute: a win is a positive return, unlike the Win Rate of `get_win_rate`, which counts
+        the days an asset beats its benchmark.
 
         The formulas are as follows:
 

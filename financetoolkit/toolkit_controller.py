@@ -2963,7 +2963,8 @@ class Toolkit:
             - Volume: The volume for the period.
             - Dividends: The dividends for the period.
             - Return: The return for the period.
-            - Cumulative Return: The cumulative return for the period.
+            - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+              1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility, Excess Return and Excess Volatility are not included here. These are available
         as dedicated calculations in the Risk module (e.g. toolkit.risk.get_volatility,
@@ -3195,7 +3196,8 @@ class Toolkit:
             - Close: The closing price for the period.
             - Volume: The volume for the period.
             - Return: The return for the period.
-            - Cumulative Return: The cumulative return for the period.
+            - Cumulative Return: The growth of 1 invested at the start, the product of (1 + Return):
+              1.0 on the first date and 1.25 after a 25% gain.
 
         Volatility is not included here. This is available as a dedicated calculation in the
         Risk module instead (e.g. toolkit.risk.get_volatility).

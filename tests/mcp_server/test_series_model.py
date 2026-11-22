@@ -307,3 +307,141 @@ def test_a_reference_passes_arguments_to_its_indicator(indicator_answers):
         series="rates:get_outstanding_mortgage_rates:United States:cumulativ=true",
     )
     assert "takes no argument cumulativ" in answer
+
+
+def test_a_requested_ticker_that_is_the_benchmark_is_kept():
+    days = pd.period_range("2026-01-01", periods=3, freq="D")
+    # The Toolkit holds SPY, the benchmark, under "Benchmark" rather than as a ticker.
+    historical = pd.DataFrame(
+        np.full((3, 6), 0.01),
+        index=days,
+        columns=pd.MultiIndex.from_product(
+            [["Close", "Return"], ["AAPL", "MSFT", "Benchmark"]]
+        ),
+    )
+    reference = series_model.parse_series_references(
+        "market_data:get_historical_data:AAPL,MSFT,SPY:Return"
+    )[0]
+
+    assert list(
+        series_model.to_series_columns(historical, reference, benchmark="SPY").columns
+    ) == ["Return AAPL", "Return MSFT", "Return SPY"]
+    # A benchmark that was not asked for stays out.
+    without_spy = reference._replace(entities=["AAPL", "MSFT"])
+    assert list(
+        series_model.to_series_columns(historical, without_spy, benchmark="SPY").columns
+    ) == ["Return AAPL", "Return MSFT"]
+
+
+def test_a_requested_ticker_without_data_is_named_in_a_warning(caplog):
+    days = pd.period_range("2026-01-01", periods=3, freq="D")
+    historical = pd.DataFrame(
+        np.full((3, 2), 0.01),
+        index=days,
+        columns=pd.MultiIndex.from_product([["Return"], ["AAPL", "MSFT"]]),
+    )
+    reference = series_model.parse_series_references(
+        "market_data:get_historical_data:AAPL,MSFT,XYZ:Return"
+    )[0]
+
+    with caplog.at_level("WARNING"):
+        columns = series_model.to_series_columns(historical, reference).columns
+
+    assert list(columns) == ["Return AAPL", "Return MSFT"]
+    assert (
+        "No data is available for XYZ in get_historical_data, so it is left out of the "
+        "series." in caplog.text
+    )
+
+
+def test_the_answer_of_a_single_ticker_is_named_after_it():
+    years = pd.period_range("2020", periods=3, freq="Y")
+    statements = {
+        ticker: pd.DataFrame(
+            [[100.0, 110.0, 120.0], [10.0, 11.0, 12.0]],
+            index=["Revenue", "Net Income"],
+            columns=years,
+        )
+        for ticker in ("AAPL", "MSFT")
+    }
+    frames = [
+        (reference, series_model.to_series_columns(statements[ticker], reference))
+        for ticker, reference in zip(
+            ("AAPL", "MSFT"),
+            series_model.parse_series_references(
+                "market_data:get_income_statement:AAPL:Revenue;"
+                "market_data:get_income_statement:MSFT:Revenue"
+            ),
+            strict=True,
+        )
+    ]
+
+    # Two references of one ticker each are two series, as AAPL,MSFT in one reference is.
+    assert list(series_model.combine_series(frames).columns) == [
+        "AAPL Revenue",
+        "MSFT Revenue",
+    ]
+
+
+@pytest.fixture
+def ticker_answers(monkeypatch):
+    """Answer historical data and statements as the Toolkit holds them, and record the
+    series the regression receives."""
+    days = pd.period_range("2024-01-01", periods=120, freq="D")
+    years = pd.period_range("2015", periods=10, freq="Y")
+    rng = np.random.default_rng(1)
+    received = []
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        tickers = kwargs["tickers"]
+        if method_name == "get_income_statement":
+            return pd.DataFrame(
+                rng.normal(100, 10, (2, len(years))),
+                index=["Revenue", "Net Income"],
+                columns=years,
+            )
+        held = [
+            "Benchmark" if ticker == kwargs["benchmark_ticker"] else ticker
+            for ticker in tickers
+        ]
+        return pd.DataFrame(
+            rng.normal(0, 0.01, (len(days), len(held))),
+            index=days,
+            columns=pd.MultiIndex.from_product([["Return"], held]),
+        )
+
+    def fake_with_data(
+        method_name, data, changes="percentage", **kwargs
+    ):  # noqa: ARG001
+        received.append(list(data.columns))
+        return pd.DataFrame({"Coefficient": [1.0]}, index=["Intercept"])
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+    monkeypatch.setattr(
+        ToolkitProvider, "call_econometrics_with_data", staticmethod(fake_with_data)
+    )
+    return received
+
+
+def test_the_econometrics_tool_keeps_the_benchmark_and_names_single_tickers(
+    ticker_answers,
+):
+    call_econometrics(
+        indicator="get_ols",
+        series="market_data:get_historical_data:AAPL,MSFT,SPY:Return",
+        dependent_ticker="Return AAPL",
+        changes="none",
+    )
+    answer = call_econometrics(
+        indicator="get_ols",
+        series="market_data:get_income_statement:AAPL:Revenue;"
+        "market_data:get_income_statement:MSFT:Revenue",
+    )
+
+    assert ticker_answers == [
+        ["Return AAPL", "Return MSFT", "Return SPY"],
+        ["AAPL Revenue", "MSFT Revenue"],
+    ]
+    assert "appear more than once" not in answer

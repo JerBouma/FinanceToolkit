@@ -310,6 +310,31 @@ class OptionsBase:
         # stock by the same amount over a year, as the risk-free rate conversion does.  # noqa: E501
         return float(np.log1p(self._dividend_yield[ticker].iloc[-1]))
 
+    def _expiration_dates(self) -> dict[str, list[str]]:
+        """The expiration dates Yahoo Finance lists for each ticker, as each has its own."""
+        return {
+            ticker: options_model.get_option_expiry_dates(ticker=ticker)
+            for ticker in self._tickers
+        }
+
+    def _all_expiration_dates(self, shared_first: bool = False) -> list[str]:
+        """
+        The expiration dates of the tickers together, in date order, so a date one ticker
+        lists is valid for the analysis (the tickers without it are left out). With
+        shared_first, only the dates every ticker lists, when they have any in common.
+        """
+        dates_per_ticker = [
+            dates for dates in self._expiration_dates().values() if dates
+        ]
+        shared = (
+            set.intersection(*map(set, dates_per_ticker)) if dates_per_ticker else set()
+        )
+        return sorted(
+            shared
+            if shared_first and shared
+            else {date for dates in dates_per_ticker for date in dates}
+        )
+
     @handle_errors
     def get_option_chains(
         self,
@@ -322,9 +347,15 @@ class OptionsBase:
     ):
         """
         Get the Option Chains which gives information about the currently available
-        options as reported by Yahoo Finance. This returns the Contract Symbol, Last
-        Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume, Open Interest,
-        Implied Volatility, whether the option is In The Money and the Currency.
+        options as reported by Yahoo Finance. This returns the Expiration Date, Contract
+        Symbol, Last Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume,
+        Open Interest, Implied Volatility, whether the option is In The Money and the
+        Currency.
+
+        Every ticker has its own expiration dates (one lists weekly options, another only
+        monthly ones). Without an expiration date each ticker shows its nearest expiry; with
+        one, a ticker that has no options expiring on that date is left out with a warning
+        that lists its own expiration dates.
 
         The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
         it is advised to use the theoretical calculations as provided by the
@@ -334,12 +365,13 @@ class OptionsBase:
         Also known as: calls, puts, strike prices, expiry dates, option data.
 
         Args:
-            expiration_date (str | None, optional): The expiration date to use. Defaults to None which means it will
-                use the first available expiration date.
+            expiration_date (str | None, optional): The expiration date to use. Defaults to None which means each
+                ticker uses its own nearest expiration date.
             put_option (bool, optional): Whether to show the put options instead of the call options.
                 Defaults to False.
             show_expiration_dates (bool, optional): Whether to return the available expiration dates instead of
-                the option chains. Defaults to False.
+                the option chains: a list for a single ticker and a list per ticker (a dictionary) for several.
+                Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
@@ -352,10 +384,11 @@ class OptionsBase:
 
         Returns:
             pd.DataFrame: the option chains with the tickers and strike prices as the index
-            and the contract details (Contract Symbol, Last Trade Date, Last Price, Bid, Ask,
-            Change, Percent Change, Volume, Open Interest, Implied Volatility, In The Money
-            and Currency) as the columns. The expiration date is stored as the DataFrame's
-            name. If show_expiration_dates is True, it returns the list of expiration dates.
+            and the contract details (Expiration Date, Contract Symbol, Last Trade Date, Last
+            Price, Bid, Ask, Change, Percent Change, Volume, Open Interest, Implied
+            Volatility, In The Money and Currency) as the columns. When every ticker shares
+            the expiration date, it is also stored as the DataFrame's name. If
+            show_expiration_dates is True, it returns the expiration dates instead.
 
         As an example:
 
@@ -383,22 +416,68 @@ class OptionsBase:
         |          537.5 |  0.71 |  0.98 |
         |          542.5 |  0.34 |  0.4  |
         """
-        expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
+        expiry_dates = self._expiration_dates()
 
         if show_expiration_dates:
-            return expiry_dates
-
-        if expiration_date is None:
-            expiration_date = expiry_dates[0]
-        elif expiration_date not in expiry_dates:
-            raise ValueError(
-                f"The expiration date {expiration_date} is not a valid date. Choose from {', '.join(expiry_dates)}"
+            return (
+                expiry_dates[self._tickers[0]]
+                if len(self._tickers) == 1
+                else expiry_dates
             )
 
-        option_chains = options_model.get_option_chains(
-            tickers=self._tickers,
-            expiration_date=expiration_date,
-            put_option=put_option,
+        # Each ticker is checked against its own expiration dates, so a date that only
+        # some tickers list leaves the others out rather than refusing them all.
+        dates = {
+            ticker: (expiration_date or available[0])
+            for ticker, available in expiry_dates.items()
+            if available and (expiration_date is None or expiration_date in available)
+        }
+        if not dates:
+            listed = {
+                ticker: available
+                for ticker, available in expiry_dates.items()
+                if available
+            }
+            if expiration_date is None or not listed:
+                raise ValueError(
+                    f"Yahoo Finance has no options of {', '.join(self._tickers)}."
+                )
+            raise ValueError(
+                f"The expiration date {expiration_date} is not a valid date. Choose from "
+                + "; ".join(
+                    f"{ticker}: {', '.join(available)}"
+                    for ticker, available in listed.items()
+                )
+            )
+        for ticker, available in expiry_dates.items():
+            if ticker in dates:
+                continue
+            logger.warning(
+                f"No options data is available for {ticker} expiring on {expiration_date}, so it is left out. "
+                f"Its expiration dates are {', '.join(available)}."
+                if available
+                else f"No options data is available for {ticker}, so it is left out: Yahoo Finance lists no "
+                "options of it."
+            )
+
+        chains = [
+            options_model.get_option_chains(
+                tickers=[ticker], expiration_date=date, put_option=put_option
+            )
+            for ticker, date in dates.items()
+        ]
+        chains = [chain for chain in chains if not chain.empty]
+        if not chains:
+            raise ValueError(
+                f"Yahoo Finance has no option chains of {', '.join(dates)} for "
+                f"{', '.join(sorted(set(dates.values())))}."
+            )
+        option_chains = pd.concat(chains)
+        # The expiry each ticker's chain is for, as they differ without an expiration date.
+        option_chains.insert(
+            0,
+            "Expiration Date",
+            option_chains.index.get_level_values(0).map(dates),
         )
 
         option_chains["Change"] = option_chains["Change"].pipe(
@@ -428,7 +507,8 @@ class OptionsBase:
 
         option_chains = option_chains.drop(columns="Underlying Price", errors="ignore")
 
-        option_chains.name = expiration_date
+        if len(set(dates.values())) == 1:
+            option_chains.name = next(iter(dates.values()))
 
         return option_chains
 

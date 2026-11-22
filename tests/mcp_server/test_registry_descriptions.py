@@ -430,3 +430,52 @@ def test_rank_result_ranks_tickers_per_period_in_either_orientation():
     fields = pd.concat({"Close": returns, "Return": returns}, axis=1)
     assert _rank_result(fields, is_country=False) is None
     assert _rank_result(fields[["Return"]], is_country=False).equals(ranking)
+
+
+def test_rank_result_does_not_rank_the_fields_of_a_single_ticker():
+    periods = pd.PeriodIndex(["2024", "2025"], freq="Y", name="Date")
+    # The answer of a single ticker has its fields, not its ticker, as columns.
+    fields = pd.DataFrame(
+        {"Close": [180.0, 250.0], "Volume": [5e7, 6e7]}, index=periods
+    )
+    returns = pd.DataFrame({"AAPL": [0.1, 0.2], "MSFT": [0.3, -0.1]}, index=periods)
+
+    assert _rank_result(fields, is_country=False, entities=["AAPL"]) is None
+    assert (
+        _rank_result(returns, is_country=False, entities=["AAPL", "MSFT"]) is not None
+    )
+    # A single ticker next to its benchmark is still ranked.
+    benchmark = returns.rename(columns={"MSFT": "Benchmark"})
+    assert _rank_result(benchmark, is_country=False, entities=["AAPL"]) is not None
+
+
+def test_rank_true_on_a_single_ticker_says_it_was_not_applied(monkeypatch):
+    import asyncio
+
+    from financetoolkit.mcp_server import mcp_controller
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+
+    days = pd.period_range("2025-01-02", periods=3, freq="D")
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Close": [243.0, 244.0, 245.0], "Volume": [4e7, 5e7, 6e7]}, index=days
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+    answer = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "market_data",
+            {
+                "indicator": "get_historical_data",
+                "tickers": "AAPL",
+                "show_columns": "Close,Volume",
+                "rank": True,
+            },
+        )
+    )[0][0].text
+
+    assert "rank=true was not applied" in answer
+    assert '"Rank"' not in answer

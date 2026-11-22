@@ -1350,3 +1350,121 @@ def test_the_volatility_rolls_over_each_tickers_own_trading_days():
     )
     # A weekend takes the volatility of the Friday before it.
     assert together.loc["2022-12-25", "AAPL"] == alone.loc["2022-12-23", "AAPL"]
+
+
+EXPIRY_DATES = {
+    # AAPL lists weekly options; MSFT only a monthly and a later expiry AAPL does not have.
+    "AAPL": ["2026-11-27", "2026-12-04", "2026-12-18"],
+    "MSFT": ["2026-12-18", "2027-01-15"],
+}
+
+
+@pytest.fixture
+def chains(monkeypatch):
+    """Serve the expiration dates above and a chain for every ticker on each of its dates."""
+    from financetoolkit.options import options_model
+
+    requested = []
+
+    def fake_option_chains(tickers, expiration_date, put_option=False):  # noqa: ARG001
+        requested.extend((ticker, expiration_date) for ticker in tickers)
+        frames = {
+            ticker: pd.DataFrame(
+                {
+                    "Bid": [1.0, 2.0],
+                    "Ask": [1.1, 2.1],
+                    "Change": [0.1, 0.2],
+                    "Percent Change": [0.01, 0.02],
+                    "Implied Volatility": [0.3, 0.25],
+                    "Underlying Price": [100.0, 100.0],
+                },
+                index=pd.Index([95.0, 105.0], name="Strike"),
+            )
+            for ticker in tickers
+            if expiration_date in EXPIRY_DATES[ticker]
+        }
+        if not frames:
+            return pd.DataFrame()
+        result = pd.concat(frames)
+        result.index.names = ["Ticker", "Strike Price"]
+        return result
+
+    monkeypatch.setattr(
+        options_model, "get_option_expiry_dates", lambda ticker: EXPIRY_DATES[ticker]
+    )
+    monkeypatch.setattr(options_model, "get_option_chains", fake_option_chains)
+    return requested
+
+
+def test_each_ticker_is_checked_against_its_own_expiration_dates(
+    options_module, chains, caplog
+):
+    # A date only the second ticker lists is not refused for the first one's dates.
+    with caplog.at_level("WARNING"):
+        january = options_module.get_option_chains(expiration_date="2027-01-15")
+
+    assert list(january.index.get_level_values(0).unique()) == ["MSFT"]
+    assert set(january["Expiration Date"]) == {"2027-01-15"}
+    assert january.name == "2027-01-15"
+    assert chains == [("MSFT", "2027-01-15")]
+    # The ticker without that date is left out with its own dates, not as an unknown symbol.
+    assert (
+        "No options data is available for AAPL expiring on 2027-01-15, so it is left out. "
+        "Its expiration dates are 2026-11-27, 2026-12-04, 2026-12-18." in caplog.text
+    )
+
+    shared = options_module.get_option_chains(expiration_date="2026-12-18")
+    assert list(shared.index.get_level_values(0).unique()) == ["AAPL", "MSFT"]
+
+
+def test_each_ticker_shows_its_nearest_expiry_by_default(options_module, chains):
+    nearest = options_module.get_option_chains()
+
+    assert nearest.groupby(level=0)["Expiration Date"].first().to_dict() == {
+        "AAPL": "2026-11-27",
+        "MSFT": "2026-12-18",
+    }
+    assert list(nearest.columns[:3]) == ["Expiration Date", "Bid", "Ask"]
+    assert "Underlying Price" not in nearest.columns
+    # The expiries differ, so no single date names the chains.
+    assert getattr(nearest, "name", None) is None
+
+
+def test_the_expiration_dates_are_shown_per_ticker(options_module, chains):
+    assert options_module.get_option_chains(show_expiration_dates=True) == EXPIRY_DATES
+    assert options_module._all_expiration_dates() == [
+        "2026-11-27",
+        "2026-12-04",
+        "2026-12-18",
+        "2027-01-15",
+    ]
+    assert options_module._all_expiration_dates(shared_first=True) == ["2026-12-18"]
+
+
+def test_an_expiration_date_no_ticker_lists_names_the_dates_of_each(
+    options_module, chains, caplog
+):
+    with caplog.at_level("ERROR"):
+        result = options_module.get_option_chains(expiration_date="2030-01-18")
+
+    assert result.empty
+    assert chains == []
+    assert "AAPL: 2026-11-27, 2026-12-04, 2026-12-18; MSFT: 2026-12-18, 2027-01-15" in (
+        caplog.text
+    )
+
+
+def test_a_ticker_without_options_is_left_out_by_name(
+    options_module, chains, monkeypatch, caplog
+):
+    monkeypatch.setitem(EXPIRY_DATES, "MSFT", [])
+
+    with caplog.at_level("WARNING"):
+        nearest = options_module.get_option_chains()
+
+    assert list(nearest.index.get_level_values(0).unique()) == ["AAPL"]
+    assert nearest.name == "2026-11-27"
+    assert (
+        "No options data is available for MSFT, so it is left out: Yahoo Finance lists no "
+        "options of it." in caplog.text
+    )

@@ -1222,6 +1222,10 @@ class DependenceRisk:
         beta = covar_model.get_market_beta(
             returns[tickers], returns[market], period, rolling
         )
+        if beta.dropna(how="all").empty:
+            raise ValueError(
+                f"The rolling window of {rolling} {period} returns is longer than the data."
+            )
         long_run_marginal_expected_shortfall = (
             covar_model.get_long_run_marginal_expected_shortfall(beta, decline)
         )

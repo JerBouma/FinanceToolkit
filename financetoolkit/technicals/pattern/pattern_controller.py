@@ -29,6 +29,9 @@ from financetoolkit.utilities.statistics_model import (
 class PatternTechnicals:
     """
     Candlestick patterns, the signals of the indicators and the summary of an indicator's history.
+
+    The candlestick patterns are those described by Steve Nison and Thomas Bulkowski, in the measurable
+    form TA-Lib (Mario Fortier) defines them.
     """
 
     @handle_errors
@@ -124,7 +127,7 @@ class PatternTechnicals:
         - Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute of
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
-        - TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/).
+        - Referenced against TA-Lib's the CDL functions (https://ta-lib.org/functions/).
         - pandas-ta-classic: cdl_inside, for the inside bar (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks, belt
@@ -156,10 +159,10 @@ class PatternTechnicals:
             -1 (bearish), 0.8 / -0.8 (the weaker engulfing, harami and harami cross) or 0.
 
         Notes:
-        - The patterns match TA-Lib (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c) candle for
-          candle, including its default candle settings and penetrations (30% for the stars and
-          doji stars, 50% for the dark cloud cover); the inside bar matches pandas-ta-classic's
-          cdl_inside.
+        - The patterns are TA-Lib's definitions (Mario Fortier, https://ta-lib.org/functions/) of the
+          patterns described by Nison and Bulkowski, and match TA-Lib candle for candle, including its
+          default candle settings and penetrations (30% for the stars and doji stars, 50% for the dark
+          cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
         - A pattern is empty until TA-Lib's lookback has passed: the 3 to 13 candles its
           averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
           sets to 0 on the first candle), counted from the ticker's own first candle.
@@ -295,7 +298,7 @@ class PatternTechnicals:
 
         - Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of Stocks &
           Commodities, 22(2).
-        - TA-Lib: HA, the reference implementation (https://ta-lib.org/functions/).
+        - Referenced against TA-Lib's HA (https://ta-lib.org/functions/).
         - pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: Heikin-Ashi, Heikin Ashi, Heiken Ashi, HA candles, average bar.
@@ -428,7 +431,7 @@ class PatternTechnicals:
 
         - Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your
           Profits." Wiley.
-        - TA-Lib: FRACTAL, the reference implementation (https://ta-lib.org/functions/).
+        - Referenced against TA-Lib's FRACTAL (https://ta-lib.org/functions/).
         - finta: WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
 
         Also known as: Williams Fractal, fractals, swing high, swing low, FRACTAL.

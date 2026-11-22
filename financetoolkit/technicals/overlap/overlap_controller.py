@@ -464,11 +464,13 @@ class OverlapTechnicals:
           Commodities, November 2010.
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
         - Hull, A. (2005). "Hull Moving Average."
+        - Everget (2018). "Sine Weighted Moving Average." TradingView script.
         - TA-Lib: SMA, EMA, DEMA, TEMA, ZLEMA, RMA, TRIMA, WMA and HMA, the reference
           implementations (https://ta-lib.org/functions/).
-        - pandas-ta-classic: swma, sinwma, fwma and pwma, the reference implementations of the
+        - Referenced against pandas-ta-classic's swma, sinwma, fwma and pwma of the
           symmetric, sine, Fibonacci and Pascal's weighted averages
-          (https://github.com/xgboosted/pandas-ta-classic).
+          (https://github.com/xgboosted/pandas-ta-classic). The Fibonacci and Pascal's weighted averages
+          are defined in pandas-ta by Kevin Johnson.
 
         Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double exponential moving average, TEMA, triple exponential moving average, ZLEMA, ZLMA, zero lag moving average, RMA, SMMA, Wilder's smoothing, smoothed moving average, running moving average, TMA, TRIMA, triangular moving average, SWMA, symmetric weighted moving average, WMA, linearly weighted moving average, HMA, Hull moving average, SINWMA, sine weighted moving average, FWMA, Fibonacci weighted moving average, PWMA, Pascal's weighted moving average.
 
@@ -615,9 +617,8 @@ class OverlapTechnicals:
 
         For more information, see the following sources:
 
-        - Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator." Technical Analysis of
-          Stocks & Commodities, 1(5).
-        - TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
+        - Hutson, J.K. (1983). "Good TRIX." Technical Analysis of Stocks & Commodities, 1(5), 105-108.
+        - Referenced against TA-Lib's TRIX (https://ta-lib.org/functions/trix.html).
         - pandas-ta-classic: trix and trixh, with the signal line and histogram
           (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -800,7 +801,7 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the KAMA for each asset in the Toolkit instance.
         - Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
-        - TA-Lib: KAMA, the reference implementation (https://ta-lib.org/functions/kama.html).
+        - Referenced against TA-Lib's KAMA (https://ta-lib.org/functions/kama.html).
         - With the default `fast_window` of 2 and `slow_window` of 30, which TA-Lib fixes, the KAMA
           equals TA-Lib's KAMA.
         - If `growth` is set to True, the method calculates the growth of the KAMA using the
@@ -904,7 +905,7 @@ class OverlapTechnicals:
 
         - Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals." Technical Analysis
           of Stocks & Commodities, 16(1).
-        - TA-Lib: T3, the reference implementation (https://ta-lib.org/functions/t3.html).
+        - Referenced against TA-Lib's T3 (https://ta-lib.org/functions/t3.html).
         - pandas-ta-classic: t3 (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: T3, Tillson T3, T3 moving average.
@@ -1042,7 +1043,7 @@ class OverlapTechnicals:
 
         - Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving Average."
           arnaudlegoux.com.
-        - TA-Lib: ALMA, the reference implementation (https://ta-lib.org/functions/alma.html).
+        - Referenced against TA-Lib's ALMA (https://ta-lib.org/functions/alma.html).
         - pandas-ta-classic: alma (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: ALMA, Arnaud Legoux moving average.
@@ -1178,7 +1179,7 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
-        - TA-Lib: VWMA, the reference implementation (https://ta-lib.org/functions/vwma.html).
+        - Referenced against TA-Lib's VWMA (https://ta-lib.org/functions/vwma.html).
         - pandas-ta-classic: vwma (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: vwma (https://tulipindicators.org/vwma).
 
@@ -1313,7 +1314,7 @@ class OverlapTechnicals:
 
         - McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis (Market
           Technicians Association).
-        - TA-Lib: MCGD, the reference implementation (https://ta-lib.org/functions/mcgd.html).
+        - Referenced against TA-Lib's MCGD (https://ta-lib.org/functions/mcgd.html).
         - pandas-ta-classic: mcgd (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: MCGD, McGinley Dynamic Indicator.
@@ -1456,7 +1457,7 @@ class OverlapTechnicals:
         - Chande, T.S. (1992). "Adapting Moving Averages to Market Volatility." Technical Analysis
           of Stocks & Commodities, 10(3).
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - TA-Lib: VIDYA, the reference implementation (https://ta-lib.org/functions/vidya.html).
+        - Referenced against TA-Lib's VIDYA (https://ta-lib.org/functions/vidya.html).
         - pandas-ta-classic: vidya (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: VIDYA, variable index dynamic average, Chande's dynamic average.
@@ -1603,9 +1604,9 @@ class OverlapTechnicals:
 
         For more information, see the following sources:
 
-        - Ehlers, J.F. (2005). "FRAMA - Fractal Adaptive Moving Average." Technical Analysis of
-          Stocks & Commodities, October 2005.
-        - TA-Lib: FRAMA, the reference implementation (https://ta-lib.org/functions/frama.html).
+        - Ehlers, J.F. (2005). "Fractal Adaptive Moving Averages." Technical Analysis of Stocks & Commodities,
+          23(10), 81-82.
+        - Referenced against TA-Lib's FRAMA (https://ta-lib.org/functions/frama.html).
         - finta: FRAMA (https://github.com/peerchemist/finta).
 
         Also known as: FRAMA, fractal adaptive moving average.
@@ -1746,8 +1747,8 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic Trends."
-          Commodities (Futures) Magazine, the typical price of the CCI.
-        - TA-Lib: AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE, the reference implementations
+          Commodities, October 1980, the typical price of the CCI.
+        - Referenced against TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE
           (https://ta-lib.org/functions/).
         - pandas-ta-classic: ohlc4, hl2, hlc3 and wcp (https://github.com/xgboosted/pandas-ta-classic).
         - finta: TP (https://github.com/peerchemist/finta).
@@ -1886,8 +1887,8 @@ class OverlapTechnicals:
 
         For more information, see the following sources:
 
-        - Donchian, R.D. (1960). "High Finance in Copper." Financial Analysts Journal, 16(6).
-        - TA-Lib: MIDPOINT and MIDPRICE, the reference implementations
+        - Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial Analysts Journal, 16(6), 133-142.
+        - Referenced against TA-Lib's MIDPOINT and MIDPRICE
           (https://ta-lib.org/functions/midpoint.html, https://ta-lib.org/functions/midprice.html).
         - pandas-ta-classic: midpoint and midprice (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -2037,7 +2038,7 @@ class OverlapTechnicals:
         - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
           Management Science, 6(3), 324-342.
         - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
-        - pandas-ta-classic: hwma, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's hwma (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: HWMA, Holt-Winters moving average, Holt-Winter moving average.
 
@@ -2186,7 +2187,7 @@ class OverlapTechnicals:
         - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
           Management Science, 6(3), 324-342.
         - MQL5 Code Base: HWC (https://www.mql5.com/en/code/20857).
-        - pandas-ta-classic: hwc, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's hwc (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: HWC, Holt-Winters channel, Holt-Winter channel.
 
@@ -2327,9 +2328,9 @@ class OverlapTechnicals:
 
         For more information, see the following sources:
 
-        - Fries, C.P. (2001). "Elastic Volume Weighted Moving Average."
-          (https://www.christian-fries.de/evwma/).
-        - finta: EVWMA, the reference implementation (https://github.com/peerchemist/finta).
+        - Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks & Commodities, 19(6),
+          52-56 (https://www.christian-fries.de/evwma/).
+        - Referenced against finta's EVWMA (https://github.com/peerchemist/finta).
 
         Also known as: eVWMA, EVWMA, elastic volume weighted moving average.
 
@@ -2462,9 +2463,10 @@ class OverlapTechnicals:
 
         For more information, see the following sources:
 
-        - Arms, R.W. Jr. (1994). "Volume Cycles in the Stock Market: Market Timing Through
+        - Arms, R.W. Jr. (1983). "Volume Cycles in the Stock Market: Market Timing Through
           Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume traded.
-        - finta: VAMA, the reference implementation (https://github.com/peerchemist/finta).
+        - Referenced against finta's VAMA (https://github.com/peerchemist/finta), by Peerchemist,
+          which defines the indicator; it has no published source.
 
         Also known as: VAMA, volume adjusted moving average.
 
@@ -2746,7 +2748,7 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Merrill, A.A. (1977). "Filtered Waves: Basic Theory." Analysis Press.
-        - TA-Lib: ZIGZAG, the reference implementation (https://ta-lib.org/functions/zigzag.html).
+        - Referenced against TA-Lib's ZIGZAG (https://ta-lib.org/functions/zigzag.html).
 
         Also known as: ZIGZAG, Zig Zag, swing filter, filtered waves.
 
@@ -2901,7 +2903,7 @@ class OverlapTechnicals:
         - Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of Transactions
           on the NYSE." Journal of Finance, 43(1), 97-112.
         - Shannon, B. (2023). "Maximum Trading Gains With Anchored VWAP." Alphatrends Publishing.
-        - TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html).
+        - Referenced against TA-Lib's VWAP (https://ta-lib.org/functions/vwap.html).
         - pandas-ta-classic: vwap with an anchor (https://github.com/xgboosted/pandas-ta-classic).
         - finta: VWAP (https://github.com/peerchemist/finta).
 
@@ -3059,7 +3061,7 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - TA-Lib: SAR and SAREXT, the reference implementations (https://ta-lib.org/functions/sar.html,
+        - Referenced against TA-Lib's SAR and SAREXT (https://ta-lib.org/functions/sar.html,
           https://ta-lib.org/functions/sarext.html).
         - pandas-ta-classic: psar and sarext (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -3228,8 +3230,9 @@ class OverlapTechnicals:
 
         - Person, J.L. (2004). "A Complete Guide to Technical Trading Tactics." Wiley.
         - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
-        - Ochoa, F. (2010). "Secrets of a Pivot Boss." Pivot Boss.
-        - pandas-ta-classic: cpr, the reference implementation of the classic, Fibonacci, Camarilla
+        - Ochoa, F. (2010). "Secrets of a Pivot Boss: Revealing Proven Methods for Profiting in the Market."
+          311 Publishing.
+        - Referenced against pandas-ta-classic's cpr of the classic, Fibonacci, Camarilla
           and Woodie pivots and the central pivot range (https://github.com/xgboosted/pandas-ta-classic).
         - finta: PIVOT and PIVOT_FIB (https://github.com/peerchemist/finta).
 
@@ -3386,6 +3389,10 @@ class OverlapTechnicals:
           the valleys, with each level published `window` periods after its peak or valley (when it is confirmed)
 
         Where Close is the `close_column`, the Adj Close by default (the Close for intraday data).
+
+        For more information, see the following sources:
+
+        - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
 
         Also known as: support levels, resistance levels, pivot points.
 

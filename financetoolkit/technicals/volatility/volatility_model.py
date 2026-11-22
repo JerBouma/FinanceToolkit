@@ -39,7 +39,7 @@ def get_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: TRANGE, the reference implementation (https://ta-lib.org/functions/trange.html).
+    Referenced against TA-Lib's TRANGE (https://ta-lib.org/functions/trange.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -184,12 +184,12 @@ def get_average_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: ATR, the reference implementation (https://ta-lib.org/functions/atr.html).
+    Referenced against TA-Lib's ATR (https://ta-lib.org/functions/atr.html).
 
     Notes:
         - This follows the StockCharts convention: the first period, which has no previous
           close, has a True Range of High - Low, and the first ATR is the average of the
-          first `window` True Ranges, on period `window` - 1. TA-Lib's `ta_ATR.c` starts
+          first `window` True Ranges, on period `window` - 1. TA-Lib's ATR starts
           the True Range on the second period instead, so its first ATR is one period later
           and averages periods 1 to `window`; the two converge as the smoothing forgets the
           seed.
@@ -237,7 +237,7 @@ def get_mass_index(
     Reference: Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks &
     Commodities, 10(6). The calculation follows StockCharts ChartSchool, "Mass Index".
 
-    TA-Lib: MASSI, the reference implementation (https://ta-lib.org/functions/massi.html).
+    Referenced against TA-Lib's MASSI (https://ta-lib.org/functions/massi.html).
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
@@ -532,7 +532,7 @@ def get_keltner_channels(
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
     envelope, the default here) was popularized by Linda Bradford Raschke in the 1980s.
 
-    TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html), which
+    Referenced against TA-Lib's KC (https://ta-lib.org/functions/kc.html), which
     centres the channel on an EMA of the typical price instead of the close.
 
     ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
@@ -611,7 +611,7 @@ def get_donchian_channels(
     Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
-    TA-Lib: DONCHIAN, the reference implementation (https://ta-lib.org/functions/donchian.html),
+    Referenced against TA-Lib's DONCHIAN (https://ta-lib.org/functions/donchian.html),
     which includes the current period.
 
     Notes:
@@ -679,7 +679,7 @@ def get_volatility_cone(
     Also known as: volatility cone, realized volatility cone.
 
     Reference: Burghardt, G. & Lane, M. (1990). "How to Tell if Options are Cheap." Journal
-    of Portfolio Management, and the related treatment in Natenberg, S. (1994). "Option
+    of Portfolio Management, 16(2), 72-78, and the related treatment in Natenberg, S. (1994). "Option
     Volatility and Pricing." McGraw-Hill — the volatility cone is a standard tool in options
     trading practice for comparing realized volatility across lookback windows.
 
@@ -753,13 +753,13 @@ def get_bollinger_bands(
 
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
-    TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+    Referenced against TA-Lib's BBANDS (https://ta-lib.org/functions/bbands.html).
 
     Notes:
         - The rolling standard deviation uses the *population* convention (dividing by n,
           i.e. `ddof=0`), not pandas' default sample convention (dividing by n-1). This is
           what Bollinger himself specifies — "(We use the population calculation for
-          standard deviation)", bollingerbands.com — and matches both TA-Lib (`ta_VAR.c`
+          standard deviation)", bollingerbands.com — and matches both TA-Lib (whose variance
           divides by the period) and StockCharts. For the default 20-period window the
           sample convention inflates the band half-width by a factor of sqrt(20/19), about
           2.6%.
@@ -824,7 +824,7 @@ def get_bollinger_percent_b_and_bandwidth(
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill, chapters
     7 (%b) and 8 (BandWidth).
 
-    TA-Lib: PERCENTB and BBW, the reference implementations
+    Referenced against TA-Lib's PERCENTB and BBW
     (https://ta-lib.org/functions/percentb.html, https://ta-lib.org/functions/bbw.html).
 
     Notes:
@@ -875,7 +875,7 @@ def get_normalized_average_true_range(
     Reference: Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True
     Range." Technical Analysis of Stocks & Commodities, 24(5).
 
-    TA-Lib: NATR, the reference implementation (https://ta-lib.org/functions/natr.html).
+    Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
 
     Notes:
         - The ATR is `get_average_true_range` (the StockCharts seeding), so the NATR starts
@@ -918,7 +918,7 @@ def get_average_day_range(
     average range is the width of Keltner's original channel (Keltner, C.W. (1960). "How
     to Make Money in Commodities." The Keltner Statistical Service).
 
-    TA-Lib: ADR, the reference implementation (https://ta-lib.org/functions/adr.html).
+    Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
 
     Notes:
         - Equals TA-Lib's ADR.
@@ -958,7 +958,7 @@ def get_chaikin_volatility(
     Reference: Chaikin, M.; described in Achelis, S.B. (2000). "Technical Analysis from A
     to Z." 2nd ed. McGraw-Hill.
 
-    TA-Lib: CVI, the reference implementation (https://ta-lib.org/functions/cvi.html).
+    Referenced against TA-Lib's CVI (https://ta-lib.org/functions/cvi.html).
 
     Notes:
         - The EMA is seeded with the Simple Moving Average of its first `window` ranges, as
@@ -1010,7 +1010,7 @@ def get_relative_volatility_index(
     Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical Analysis of
     Stocks & Commodities, 13(9).
 
-    TA-Lib: RVI and RVIR, the reference implementations (https://ta-lib.org/functions/rvi.html,
+    Referenced against TA-Lib's RVI and RVIR (https://ta-lib.org/functions/rvi.html,
     https://ta-lib.org/functions/rvir.html).
 
     Notes:
@@ -1071,7 +1071,7 @@ def get_acceleration_bands(
     Reference: Headley, P. (2002). "Big Trends in Trading: Strategies to Master Major Market
     Moves." John Wiley & Sons.
 
-    TA-Lib: ACCBANDS, the reference implementation (https://ta-lib.org/functions/accbands.html).
+    Referenced against TA-Lib's ACCBANDS (https://ta-lib.org/functions/accbands.html).
 
     Notes:
         - Equals TA-Lib's ACCBANDS (factor 4) and pandas-ta-classic's accbands.
@@ -1131,7 +1131,7 @@ def get_chande_kroll_stop(
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." John Wiley &
     Sons.
 
-    TA-Lib: CKSP, the reference implementation (https://ta-lib.org/functions/cksp.html).
+    Referenced against TA-Lib's CKSP (https://ta-lib.org/functions/cksp.html).
 
     Notes:
         - The ATR is `get_average_true_range` (the StockCharts seeding), so the stops start
@@ -1206,7 +1206,7 @@ def get_adaptive_price_zone(
     Notes:
         - Each EMA is seeded with the simple average of its first ceil(sqrt(window))
           values, the Toolkit's seeding of exponential averages, and then runs with the
-          exact smoothing constant of the square-root period, as Leibfarth's code does.
+          exact smoothing constant of the square-root period, as Leibfarth's formula does.
         - finta's APZ differs by design: it smooths over the full `window` instead of its
           square root and centres the zone on a Double Exponential Moving Average
           (2 * EMA - EMA of EMA) instead of the EMA of the EMA.
@@ -1283,8 +1283,8 @@ def get_aberration(
     Also known as: ABER, Aberration.
 
     Reference: attributed to Fitschen, K. (1993), the Aberration trading system; the bands
-    as implemented here follow pandas-ta-classic, which notes that no definitive source of
-    the formula exists. Fitschen describes his breakout systems in Fitschen, K. (2013).
+    are pandas-ta-classic's definition, which notes that no definitive source of the formula
+    exists. Fitschen describes his breakout systems in Fitschen, K. (2013).
     "Building Reliable Trading Systems." John Wiley & Sons.
 
     pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
@@ -1353,7 +1353,7 @@ def get_profit_maximizer(
     Also known as: PMax, Profit Maximizer.
 
     Reference: Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script by
-    KivancOzbilgic. Low priority: a practitioner script without a published source.
+    KivancOzbilgic, a practitioner indicator without a published source.
 
     pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -1446,8 +1446,8 @@ def get_price_distance(
 
     Also known as: PDIST, price distance volatility.
 
-    Reference: ProRealCode, "Price Distance" indicator; low priority, a practitioner measure
-    without a published source.
+    Reference: ProRealCode, "Price Distance" indicator, a practitioner measure without a
+    published source.
 
     pandas-ta-classic: pdist (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -1564,16 +1564,16 @@ def get_squeeze_momentum(
     Squeeze). The momentum follows LazyBear's "Squeeze Momentum Indicator" TradingView
     script (2014).
 
-    TA-Lib: SQZMOM, the reference implementation (https://ta-lib.org/functions/sqzmom.html).
+    Referenced against TA-Lib's SQZMOM (https://ta-lib.org/functions/sqzmom.html).
 
     Notes:
         - The momentum equals TA-Lib's SQZMOM and pandas-ta-classic's
-          `squeeze(lazybear=True)`. The Squeeze equals TA-Lib's squeeze code with 0 instead
+          `squeeze(lazybear=True)`. The Squeeze equals TA-Lib's squeeze output with 0 instead
           of -1 for no squeeze; its Keltner Channel is LazyBear's simple average of the True
           Range, not `get_keltner_channels`.
         - The Bollinger standard deviation is the population one (ddof=0), as in
           `get_bollinger_bands`. The Squeeze starts on period `window` - 1 (the True Range
-          of the first period is High - Low); TA-Lib reports its squeeze code from the first
+          of the first period is High - Low); TA-Lib reports its squeeze output from the first
           Momentum, on period 2 * (`window` - 1), and pandas-ta-classic one period later.
         - pandas-ta-classic's squeeze without `lazybear` smooths a 12-period momentum
           instead, and finta's SQZMI returns only whether the squeeze is on.

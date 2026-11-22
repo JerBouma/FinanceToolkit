@@ -335,7 +335,7 @@ def apply_variable_smoothing(
 
     The recursion is seeded with the simple average of `window` prices, placed on the
     period before the first factor that follows a full window, with the periods before it
-    missing, as the Toolkit seeds its exponential moving averages (TA-Lib's `ta_EMA.c`).
+    missing, as the Toolkit seeds its exponential moving averages (TA-Lib's convention).
     A period without a factor keeps the last average, and a period without a price is
     missing while the recursion continues from the last average on the next price.
 

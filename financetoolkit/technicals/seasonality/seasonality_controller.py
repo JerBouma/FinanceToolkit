@@ -171,7 +171,7 @@ class SeasonalityTechnicals:
         - Jegadeesh, N. and Titman, S. (1993). "Returns to Buying Winners and Selling Losers:
           Implications for Stock Market Efficiency." The Journal of Finance, 48(1), 65-91.
         - Weinstein, S. (1988). "Stan Weinstein's Secrets for Profiting in Bull and Bear
-          Markets." McGraw-Hill.
+          Markets." Dow Jones-Irwin.
         - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
 
         Also known as: relative strength, price relative, Mansfield relative strength, RS

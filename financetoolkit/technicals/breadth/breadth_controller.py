@@ -303,6 +303,11 @@ class BreadthTechnicals:
         - McClellan Oscillator = EMA(Advance/Decline Signal, short_ema_window) — EMA(Advance/Decline
           Signal, long_ema_window)
 
+        For more information, see the following sources:
+
+        - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan Oscillator and Summation
+          Index." Trade Levels Inc.
+
         Also known as: McClellan oscillator, market breadth.
 
         Args:
@@ -550,7 +555,8 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: OBV, the reference implementation (https://ta-lib.org/functions/obv.html).
+        - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall.
+        - Referenced against TA-Lib's OBV (https://ta-lib.org/functions/obv.html).
 
         Also known as: OBV, volume momentum.
 
@@ -680,7 +686,9 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: PVT, the reference implementation (https://ta-lib.org/functions/pvt.html).
+        - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall, the On-Balance
+          Volume the PVT refines.
+        - Referenced against TA-Lib's PVT (https://ta-lib.org/functions/pvt.html).
 
         Also known as: PVT, Price and Volume Trend, Volume Price Trend.
 
@@ -805,7 +813,9 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: AD, the reference implementation (https://ta-lib.org/functions/ad.html).
+        - Chaikin, M., who published no formal paper on it; the standard textbook treatment is Murphy, J.J.
+          (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
+        - Referenced against TA-Lib's AD (https://ta-lib.org/functions/ad.html).
 
         Also known as: ADL, Chaikin ADL, volume-price trend.
 
@@ -932,7 +942,9 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: ADOSC, the reference implementation (https://ta-lib.org/functions/adosc.html).
+        - Chaikin, M., who published no formal paper on it; the standard textbook treatment is Murphy, J.J.
+          (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
+        - Referenced against TA-Lib's ADOSC (https://ta-lib.org/functions/adosc.html).
 
         Also known as: Chaikin oscillator, volume accumulation.
 
@@ -1070,7 +1082,7 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: CMF, the reference implementation (https://ta-lib.org/functions/cmf.html).
+        - Referenced against TA-Lib's CMF (https://ta-lib.org/functions/cmf.html).
 
         Also known as: CMF, Chaikin Money Flow.
 
@@ -1238,8 +1250,8 @@ class BreadthTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ease of Movement for each asset in the Toolkit instance.
         - Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the
-          Volume Analysis of Stock and Bond Markets." Business One Irwin.
-        - TA-Lib: EMV, the reference implementation (https://ta-lib.org/functions/emv.html).
+          Volume Analysis of Stock and Bond Markets." Dow Jones-Irwin.
+        - Referenced against TA-Lib's EMV (https://ta-lib.org/functions/emv.html).
         - The Ease of Movement equals TA-Lib's EMV with its `volumedivisor` set to `volume_divisor`
           (TA-Lib's default is 10,000).
         - If `growth` is set to True, the method calculates the growth of the Ease of
@@ -1370,7 +1382,7 @@ class BreadthTechnicals:
           the Negative Volume Index for each asset in the Toolkit instance.
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
-        - TA-Lib: NVI, the reference implementation (https://ta-lib.org/functions/nvi.html).
+        - Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html).
         - With the default `start_value` of 1,000, the Negative Volume Index equals TA-Lib's NVI.
         - If `growth` is set to True, the method calculates the growth of the Negative Volume
           Index using the specified `lag`.
@@ -1501,7 +1513,7 @@ class BreadthTechnicals:
           the Positive Volume Index for each asset in the Toolkit instance.
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
-        - TA-Lib: PVI, the reference implementation (https://ta-lib.org/functions/pvi.html).
+        - Referenced against TA-Lib's PVI (https://ta-lib.org/functions/pvi.html).
         - With the default `start_value` of 1,000, the Positive Volume Index equals TA-Lib's PVI.
         - If `growth` is set to True, the method calculates the growth of the Positive Volume
           Index using the specified `lag`.
@@ -1607,6 +1619,12 @@ class BreadthTechnicals:
         A ticker counts on the dates it traded, with its change since its own previous close:
         on a date only a cryptocurrency in the Toolkit traded, such as a weekend, only the
         cryptocurrency counts, and a stock is never counted as unchanged on it.
+
+        For more information, see the following sources:
+
+        - Arms, R.W. (1967), who introduced the index in Barron's as the Short-Term Trading Index.
+        - Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume Analysis of Stock and Bond
+          Markets." Dow Jones-Irwin.
 
         Also known as: Arms Index, TRIN.
 
@@ -1753,6 +1771,10 @@ class BreadthTechnicals:
 
         Each ticker's window counts its own closes and the ticker counts on the dates it traded,
         so the weekends of a cryptocurrency in the Toolkit do not shorten a stock's window.
+
+        For more information, see the following sources:
+
+        - Colby, R.W. (2003). "The Encyclopedia of Technical Market Indicators." 2nd ed. McGraw-Hill.
 
         Also known as: new highs minus new lows, record high percent.
 
@@ -1910,7 +1932,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Klinger, S.J. (1997). "Identifying Trends With Volume Analysis." Technical Analysis of Stocks & Commodities, 15(12).
-        - TA-Lib: KVO, the reference implementation (https://ta-lib.org/functions/kvo.html).
+        - Referenced against TA-Lib's KVO (https://ta-lib.org/functions/kvo.html).
         - Tulip Indicators: kvo (https://tulipindicators.org/kvo).
 
         Also known as: KVO, Klinger Oscillator, Klinger Volume Force.
@@ -2055,7 +2077,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." John Wiley & Sons.
-        - TA-Lib: MARKETFI, the reference implementation (https://ta-lib.org/functions/marketfi.html).
+        - Referenced against TA-Lib's MARKETFI (https://ta-lib.org/functions/marketfi.html).
         - pandas-ta-classic: marketfi (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: marketfi (https://tulipindicators.org/marketfi).
 
@@ -2194,7 +2216,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading Commodities." Windsor Books.
-        - TA-Lib: WAD, the reference implementation (https://ta-lib.org/functions/wad.html).
+        - Referenced against TA-Lib's WAD (https://ta-lib.org/functions/wad.html).
         - pandas-ta-classic: wad (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: wad (https://tulipindicators.org/wad).
 
@@ -2328,7 +2350,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Bulkowski, T.N. (2005). "Encyclopedia of Chart Patterns." 2nd ed. John Wiley & Sons.
-        - TA-Lib: RVOL, the reference implementation (https://ta-lib.org/functions/rvol.html).
+        - Referenced against TA-Lib's RVOL (https://ta-lib.org/functions/rvol.html).
 
         Also known as: RVOL, Relative Volume, volume ratio.
 
@@ -2466,7 +2488,7 @@ class BreadthTechnicals:
 
         - Katsanos, M. (2004). "Using Money Flow to Stay with the Trend." Technical Analysis of Stocks & Commodities, 22(6).
         - Katsanos, M. (2004). "Volume Flow Indicator Performance." Technical Analysis of Stocks & Commodities, 22(7).
-        - pandas-ta-classic: vfi, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's vfi (https://github.com/xgboosted/pandas-ta-classic).
         - finta: VFI (https://github.com/peerchemist/finta).
 
         Also known as: VFI, Volume Flow Indicator.
@@ -2506,7 +2528,7 @@ class BreadthTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the VFI for
           each asset in the Toolkit instance. With the default window it needs 261 periods before its first
           value, so start a year earlier than the dates of interest.
-        - The volatility is the population standard deviation (ddof=0), as in Katsanos' MetaStock code:
+        - The volatility is the population standard deviation (ddof=0), as in Katsanos' MetaStock formula:
           it only sets the cutoff of the indicator's definition, so it follows the primary source, as the
           Bollinger Bands do. The VFI equals pandas-ta-classic's `vfi` exactly. finta uses the sample
           deviation (ddof=1), a 1.7% larger cutoff, and differs wherever a move falls between the two
@@ -2619,7 +2641,7 @@ class BreadthTechnicals:
 
         - Katsanos, M. (2003). "Detecting Breakouts." Technical Analysis of Stocks & Commodities, 21(4).
         - Katsanos, M. (2003). "Detecting Breakouts In Intraday Charts." Technical Analysis of Stocks & Commodities, 21(9).
-        - finta: FVE, the reference implementation (https://github.com/peerchemist/finta).
+        - Referenced against finta's FVE (https://github.com/peerchemist/finta).
 
         Also known as: FVE, Finite Volume Elements.
 
@@ -2894,7 +2916,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Khalil, W. and Steckler, D. (2011). "In The Volume Zone." Technical Analysis of Stocks & Commodities, 29(5).
-        - finta: VZO, the reference implementation (https://github.com/peerchemist/finta).
+        - Referenced against finta's VZO (https://github.com/peerchemist/finta).
 
         Also known as: VZO, Volume Zone Oscillator.
 
@@ -3029,7 +3051,8 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money Management." John Wiley & Sons.
-        - finta: CFI and WOBV, the reference implementations (https://github.com/peerchemist/finta).
+        - Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta), by
+          Peerchemist, which defines the cumulative form and the Weighted On-Balance Volume.
 
         Also known as: CFI, Cumulative Force Index, Weighted On-Balance Volume, WOBV (with a window of 1).
 
@@ -3162,7 +3185,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and Time-Series Effects." Journal of Financial Markets, 5(1), 31-56.
-        - pandas-ta-classic: pvol, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's pvol (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: PVOL, dollar volume, traded value.
 
@@ -3296,7 +3319,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Fulks Maxwell Laboratories (fmlabs), "Price Volume Rank," Technical Indicators Reference.
-        - pandas-ta-classic: pvr, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's pvr (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: PVR, Price Volume Rank.
 
@@ -3426,8 +3449,10 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading Commodities." Windsor Books.
-        - finta: BASP and BASPN, the reference implementations (https://github.com/peerchemist/finta).
+        - Referenced against finta's BASP and BASPN (https://github.com/peerchemist/finta), by
+          Peerchemist, which defines the indicator without citing a primary source.
+        - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4),
+          for a similar buying pressure measured from the lower of the low and the previous close.
 
         Also known as: BASP, BASPN, normalized buying and selling pressure.
 
@@ -3570,7 +3595,7 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall.
-        - pandas-ta-classic: aobv, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's aobv (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: AOBV, Archer OBV.
 
@@ -3719,7 +3744,7 @@ class BreadthTechnicals:
 
         - Steidlmayer, J.P. and Koy, K. (1986). "Markets and Market Logic." Porcupine Press.
         - StockCharts ChartSchool, "Volume by Price" (https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/volume-by-price).
-        - pandas-ta-classic: vp, the reference implementation (https://github.com/xgboosted/pandas-ta-classic).
+        - Referenced against pandas-ta-classic's vp (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: VP, Volume by Price, Volume at Price, Market Profile.
 

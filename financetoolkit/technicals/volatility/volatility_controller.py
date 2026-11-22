@@ -341,7 +341,7 @@ class VolatilityTechnicals:
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
 
         The standard deviation is the *population* standard deviation (dividing by n), as
-        Bollinger himself specifies and as TA-Lib and StockCharts both implement, not
+        Bollinger himself specifies and as TA-Lib and StockCharts both define it, not
         pandas' default sample standard deviation.
 
         The band width tracks volatility: bands that narrow sharply (a squeeze) often precede a
@@ -353,7 +353,7 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
-        - TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+        - Referenced against TA-Lib's BBANDS (https://ta-lib.org/functions/bbands.html).
         - pandas-ta-classic: bbands (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
@@ -506,7 +506,7 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: PERCENTB and BBW, the reference implementations (https://ta-lib.org/functions/percentb.html,
+        - Referenced against TA-Lib's PERCENTB and BBW (https://ta-lib.org/functions/percentb.html,
           https://ta-lib.org/functions/bbw.html).
 
         Also known as: Percent B, %b, Bollinger Band Width, BBW, Bollinger Squeeze.
@@ -638,7 +638,8 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: TRANGE, the reference implementation (https://ta-lib.org/functions/trange.html).
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Referenced against TA-Lib's TRANGE (https://ta-lib.org/functions/trange.html).
 
         Also known as: TR, true range.
 
@@ -770,7 +771,8 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: ATR, the reference implementation (https://ta-lib.org/functions/atr.html).
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - Referenced against TA-Lib's ATR (https://ta-lib.org/functions/atr.html).
 
         Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
         for the full formula; Wilder's smoothing constant (1/window) is slower than a
@@ -914,7 +916,8 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: MASSI, the reference implementation (https://ta-lib.org/functions/massi.html).
+        - Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks & Commodities, 10(6), 265-267.
+        - Referenced against TA-Lib's MASSI (https://ta-lib.org/functions/massi.html).
 
         Also known as: Mass Index, MI. See `volatility_model.get_mass_index` for the references.
 
@@ -1058,7 +1061,7 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: SUPERTREND, the reference implementation (https://ta-lib.org/functions/supertrend.html).
+        - Referenced against TA-Lib's SUPERTREND (https://ta-lib.org/functions/supertrend.html).
 
         Also known as: Supertrend, SuperTrend.
 
@@ -1207,7 +1210,11 @@ class VolatilityTechnicals:
 
         Also known as: Chandelier Exit, Chandelier Stop, CE.
 
-        See `volatility_model.get_chandelier_exit` for the references.
+        For more information, see the following sources:
+
+        - Le Beau, C. & Lucas, D.W. (1992). "Technical Traders Guide to Computer Analysis of the Futures
+          Market." Business One Irwin.
+        - Elder, A. (2002). "Come Into My Trading Room." John Wiley & Sons, which popularised the exit.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1352,7 +1359,7 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical Service.
-        - TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html).
+        - Referenced against TA-Lib's KC (https://ta-lib.org/functions/kc.html).
         - ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
           original_version=True is the original channel.
 
@@ -1503,7 +1510,10 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - TA-Lib: DONCHIAN, the reference implementation (https://ta-lib.org/functions/donchian.html).
+        - Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial Analysts Journal, 16(6),
+          133-142.
+        - Kaufman, P.J. (2013). "Trading Systems and Methods." 5th ed. Wiley.
+        - Referenced against TA-Lib's DONCHIAN (https://ta-lib.org/functions/donchian.html).
 
         Also known as: Donchian Channels, price channel breakout.
 
@@ -1653,6 +1663,12 @@ class VolatilityTechnicals:
         as it stays in the data; five years of daily data or more gives a more stable picture
         than one.
 
+        For more information, see the following sources:
+
+        - Burghardt, G. & Lane, M. (1990). "How to Tell if Options are Cheap." Journal of Portfolio Management,
+          16(2), 72-78.
+        - Natenberg, S. (1994). "Option Volatility and Pricing." McGraw-Hill.
+
         Also known as: volatility cone, realized volatility term structure.
 
         Args:
@@ -1791,7 +1807,7 @@ class VolatilityTechnicals:
 
         - Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True Range."
           Technical Analysis of Stocks & Commodities, 24(5).
-        - TA-Lib: NATR, the reference implementation (https://ta-lib.org/functions/natr.html).
+        - Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
         - pandas-ta-classic: natr (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: natr (https://tulipindicators.org/natr).
 
@@ -1921,7 +1937,7 @@ class VolatilityTechnicals:
 
         - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical
           Service, whose channel is this average range around the typical price.
-        - TA-Lib: ADR, the reference implementation (https://ta-lib.org/functions/adr.html).
+        - Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
 
         Also known as: ADR, average daily range, average high-low range.
 
@@ -2051,7 +2067,7 @@ class VolatilityTechnicals:
 
         - Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed. McGraw-Hill,
           "Chaikin's Volatility".
-        - TA-Lib: CVI, the reference implementation (https://ta-lib.org/functions/cvi.html).
+        - Referenced against TA-Lib's CVI (https://ta-lib.org/functions/cvi.html).
         - pandas-ta-classic: cvi (https://github.com/xgboosted/pandas-ta-classic).
         - Tulip Indicators: cvi (https://tulipindicators.org/cvi).
 
@@ -2195,7 +2211,7 @@ class VolatilityTechnicals:
           Commodities, 11(6).
         - Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical Analysis of
           Stocks & Commodities, 13(9).
-        - TA-Lib: RVI and RVIR, the reference implementations (https://ta-lib.org/functions/rvi.html,
+        - Referenced against TA-Lib's RVI and RVIR (https://ta-lib.org/functions/rvi.html,
           https://ta-lib.org/functions/rvir.html).
         - pandas-ta-classic: rvi (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -2349,7 +2365,7 @@ class VolatilityTechnicals:
 
         - Headley, P. (2002). "Big Trends in Trading: Strategies to Master Major Market Moves."
           John Wiley & Sons.
-        - TA-Lib: ACCBANDS, the reference implementation (https://ta-lib.org/functions/accbands.html).
+        - Referenced against TA-Lib's ACCBANDS (https://ta-lib.org/functions/accbands.html).
         - pandas-ta-classic: accbands (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: ACCBANDS, Price Headley's Acceleration Bands.
@@ -2485,7 +2501,7 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." John Wiley & Sons.
-        - TA-Lib: CKSP, the reference implementation (https://ta-lib.org/functions/cksp.html).
+        - Referenced against TA-Lib's CKSP (https://ta-lib.org/functions/cksp.html).
         - pandas-ta-classic: cksp (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: CKSP, Chande Kroll stop loss. Chande and Kroll call the high stop the "stop
@@ -2662,7 +2678,7 @@ class VolatilityTechnicals:
         Notes:
         - Each EMA has the smoothing constant 2 / (√window + 1) and is seeded with the simple
           average of its first ⌈√window⌉ values; after about 35 periods the zone equals
-          Leibfarth's TradeStation code, which starts from the first price.
+          Leibfarth's TradeStation formula, which starts from the first price.
         - finta's APZ smooths over the full `window` instead of its square root and centres the
           zone on a Double Exponential Moving Average, so it differs by design.
 
@@ -3304,7 +3320,7 @@ class VolatilityTechnicals:
 
         - Carter, J.F. (2005). "Mastering the Trade." McGraw-Hill, chapter 11.
         - LazyBear (2014). "Squeeze Momentum Indicator." TradingView script.
-        - TA-Lib: SQZMOM, the reference implementation (https://ta-lib.org/functions/sqzmom.html).
+        - Referenced against TA-Lib's SQZMOM (https://ta-lib.org/functions/sqzmom.html).
         - pandas-ta-classic: squeeze and squeeze_pro (https://github.com/xgboosted/pandas-ta-classic).
         - finta: TA.SQZMI (https://github.com/peerchemist/finta).
 
@@ -3343,8 +3359,8 @@ class VolatilityTechnicals:
 
         Notes:
         - The Momentum equals TA-Lib's SQZMOM and pandas-ta-classic's `squeeze(lazybear=True)`.
-          The Squeeze equals TA-Lib's squeeze code, with 0 instead of -1 for no squeeze. It starts
-          on the `window`-th period, while TA-Lib reports its code from the first Momentum on.
+          The Squeeze equals TA-Lib's squeeze output, with 0 instead of -1 for no squeeze. It starts
+          on the `window`-th period, while TA-Lib reports it from the first Momentum on.
         - The Keltner Channel here is LazyBear's (a simple average of the close and of the True
           Range), not that of `get_keltner_channels`, and the Bollinger standard deviation is the
           population one, as in `get_bollinger_bands`.

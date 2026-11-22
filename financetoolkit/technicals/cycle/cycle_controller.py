@@ -26,6 +26,10 @@ from financetoolkit.utilities.statistics_model import (
 class CycleTechnicals:
     """
     Cycle indicators built on Ehlers' Hilbert transform: the dominant cycle period and phase, the phasor components, the sine wave, the trend vs cycle mode, the instantaneous trendline and the MESA adaptive moving average (MAMA and FAMA).
+
+    The indicators are John Ehlers' (Rocket Science for Traders, 2001, and his MAMA article in Technical Analysis
+    of Stocks & Commodities), referenced against TA-Lib's HT functions and MAMA (Mario Fortier), whose start and
+    lookback they share.
     """
 
     @handle_errors
@@ -228,7 +232,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_DCPERIOD, the reference implementation (https://ta-lib.org/functions/ht_dcperiod.html).
+        - Referenced against TA-Lib's HT_DCPERIOD (https://ta-lib.org/functions/ht_dcperiod.html).
         - pandas-ta-classic: ht_dcperiod (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -369,7 +373,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_DCPHASE, the reference implementation (https://ta-lib.org/functions/ht_dcphase.html).
+        - Referenced against TA-Lib's HT_DCPHASE (https://ta-lib.org/functions/ht_dcphase.html).
         - pandas-ta-classic: ht_dcphase (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -502,7 +506,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_PHASOR, the reference implementation (https://ta-lib.org/functions/ht_phasor.html).
+        - Referenced against TA-Lib's HT_PHASOR (https://ta-lib.org/functions/ht_phasor.html).
         - pandas-ta-classic: ht_phasor (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -642,7 +646,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_SINE, the reference implementation (https://ta-lib.org/functions/ht_sine.html).
+        - Referenced against TA-Lib's HT_SINE (https://ta-lib.org/functions/ht_sine.html).
         - pandas-ta-classic: ht_sine (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -774,7 +778,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_TRENDMODE, the reference implementation (https://ta-lib.org/functions/ht_trendmode.html).
+        - Referenced against TA-Lib's HT_TRENDMODE (https://ta-lib.org/functions/ht_trendmode.html).
         - pandas-ta-classic: ht_trendmode (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -912,7 +916,7 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: HT_TRENDLINE, the reference implementation (https://ta-lib.org/functions/ht_trendline.html).
+        - Referenced against TA-Lib's HT_TRENDLINE (https://ta-lib.org/functions/ht_trendline.html).
         - pandas-ta-classic: ht_trendline (https://github.com/xgboosted/pandas-ta-classic).
 
         Args:
@@ -1047,11 +1051,11 @@ class CycleTechnicals:
 
         For more information, see the following sources:
 
-        - Ehlers, J.F. (2001). "MAMA - The Mother of Adaptive Moving Averages." Technical Analysis of
-          Stocks & Commodities, September 2001.
+        - Ehlers, J.F. (2001). "MESA Adaptive Moving Averages." Technical Analysis of Stocks & Commodities,
+          September 2001.
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - TA-Lib: MAMA, the reference implementation (https://ta-lib.org/functions/mama.html).
+        - Referenced against TA-Lib's MAMA (https://ta-lib.org/functions/mama.html).
         - pandas-ta-classic: mama (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: MAMA, FAMA, MESA adaptive moving average.
@@ -1089,7 +1093,7 @@ class CycleTechnicals:
           price (High + Low) / 2 in his article.
         - The recursion starts from zero on the 12th period of each ticker's own history, as in TA-Lib,
           and the first 32 periods (TA-Lib's lookback) are NaN. MAMA and FAMA also start from zero there, as in
-          TA-Lib and Ehlers' code. MAMA has caught up with the price by the end of the lookback, but FAMA, at half
+          TA-Lib and Ehlers' article. MAMA has caught up with the price by the end of the lookback, but FAMA, at half
           the smoothing factor, is then still several percent below it and settles to within 0.1% after about
           80 periods. The Toolkit calculates the technical indicators from a year before `start_date`, so with
           daily data this warm-up falls before the dates shown.

@@ -195,7 +195,7 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     Notes:
         Referenced against statsmodels' `RegressionResults.compare_f_test`.
     """
-    q = _validate_nested_models(result_restricted, result_unrestricted)
+    _validate_nested_models(result_restricted, result_unrestricted)
     _require_fit(result_restricted)
     _require_fit(result_unrestricted)
 
@@ -216,7 +216,7 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     return pd.Series(
         {
             "F-Statistic": float(max(f_statistic, 0.0)),
-            "Df Numerator": q,
+            "Df Numerator": degrees_of_freedom_numerator,
             "Df Denominator": degrees_of_freedom_denominator,
             "P-Value": float(p_value),
             "Reject Restrictions (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
@@ -328,7 +328,7 @@ def get_wald_test(
             "Chi2 P-Value": chi2_p_value,
             "F-Statistic": f_statistic,
             "F P-Value": f_p_value,
-            "Restrictions (q)": n_restrictions,
+            "Restrictions (q)": independent_restrictions,
             "Reject Restrictions (5%)": bool(chi2_p_value < SIGNIFICANCE_LEVEL),
         }
     )

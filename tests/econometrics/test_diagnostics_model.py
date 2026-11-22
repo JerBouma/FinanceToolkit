@@ -458,7 +458,8 @@ def test_level_significance_gives_the_annualised_change_and_the_largest_drawdown
         2 ** (1 / 10) - 1, abs=1e-4
     )
     assert significance["Largest Drawdown"] == pytest.approx(-0.4)
-    assert significance["Drawdown Peak Date"] == "2005-01"
+    # The level stays at its peak of 150 through 2005 and falls from December.
+    assert significance["Drawdown Peak Date"] == "2005-12"
     assert significance["Drawdown Trough Date"] == "2006-01"
     # 150 again from January 2008.
     assert significance["Recovery Date"] == "2008-01"
@@ -529,3 +530,24 @@ def test_window_change_by_year_ranks_and_years_are_whole_numbers():
     assert window.loc[2024, "Rank"] is pd.NA
     assert window.loc[2021, "Largest Since"] is pd.NA
     assert window.loc[2023, "Largest Since"] == 2021
+
+
+def test_get_cusum_test_of_a_constant_series_is_not_defined():
+    # A constant series fitted on a constant leaves residuals of rounding noise, which must not
+    # give a statistic of noise over noise.
+    for level in [0.01, 1.0, -0.003]:
+        result = diagnostics_model.get_cusum_test(pd.Series([level] * 30))
+        assert np.isnan(result["CUSUM Statistic"])
+        assert not result["Reject Stability (5%)"]
+
+
+def test_get_level_significance_dates_the_drawdown_from_the_last_visit_to_the_peak():
+    # The level returns to its peak of 110 before falling to 90, so the decline starts from
+    # the second visit.
+    values = pd.Series(
+        [100, 110, 105, 110, 90, 95.0],
+        index=pd.period_range("2024-01-01", periods=6, freq="D"),
+    )
+    result = diagnostics_model.get_level_significance(values)
+    assert str(result["Drawdown Peak Date"]) == "2024-01-04"
+    assert str(result["Drawdown Trough Date"]) == "2024-01-05"

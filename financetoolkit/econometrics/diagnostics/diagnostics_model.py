@@ -529,6 +529,11 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         if n < MINIMUM_CUSUM_OBSERVATIONS:
             return nan_result
 
+        # A constant series leaves residuals of rounding noise rather than zeros, which would
+        # otherwise give a statistic of noise over noise.
+        if np.ptp(values) == 0:
+            return nan_result
+
         residuals = fit_least_squares(values, np.ones((n, 1)))["residuals"]
         scaled_sum_of_squares = np.sum(residuals**2) / (n - 1) * n
 
@@ -626,7 +631,8 @@ def get_level_significance(
         Since Start (a decimal), Multiple Since Start, Annualised Change (a decimal),
         Percentile, Rank, Highest Since, Lowest Since, Highest, Highest Date, Change From Highest (a
         decimal), Lowest, Lowest Date, Change From Lowest (a decimal), Largest Drawdown (a
-        decimal), Drawdown Peak Date, Drawdown Trough Date and Recovery Date, and with a level
+        decimal), Drawdown Peak Date (the last date at the peak before the trough), Drawdown
+        Trough Date and Recovery Date, and with a level
         the Level, First Above Level, Above Level Since, Last Above Level, Last At Or Below
         Level, Observations Above Level and Observations At Or Below Level, the dates as
         text.
@@ -677,7 +683,8 @@ def get_level_significance(
         )
     trough = int(np.nanargmin(falls)) if np.isfinite(falls).any() else 0
     largest_fall = float(falls[trough]) if np.isfinite(falls[trough]) else np.nan
-    peak = int(np.flatnonzero(values[: trough + 1] == running_peak[trough])[0])
+    # The decline starts from the last visit to the peak before the trough.
+    peak = int(np.flatnonzero(values[: trough + 1] == running_peak[trough])[-1])
     regained = np.flatnonzero(values[trough + 1 :] >= running_peak[trough])
     drawdown = {
         "Largest Drawdown": largest_fall,

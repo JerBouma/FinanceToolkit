@@ -152,6 +152,11 @@ def test_get_percentage_volume_oscillator(recorder, technical_module):
             short_window=5, long_window=20, signal_window=5
         )
     )
+    recorder.capture(
+        technical_module.get_percentage_volume_oscillator(
+            short_window=14, long_window=28, moving_average="simple"
+        )
+    )
 
 
 def test_get_detrended_price_oscillator(recorder, technical_module):
@@ -593,6 +598,110 @@ def test_get_ease_of_movement(recorder, technical_module):
     recorder.capture(technical_module.get_ease_of_movement(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_klinger_volume_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_klinger_volume_oscillator().round(0))
+    recorder.capture(
+        technical_module.get_klinger_volume_oscillator(
+            short_window=5, long_window=10, signal_window=4
+        ).round(0)
+    )
+    recorder.capture(technical_module.get_klinger_volume_oscillator(growth=True))
+
+
+def test_get_market_facilitation_index(recorder, technical_module):
+    recorder.capture(technical_module.get_market_facilitation_index())
+    recorder.capture(
+        technical_module.get_market_facilitation_index(volume_divisor=1_000_000)
+    )
+    recorder.capture(technical_module.get_market_facilitation_index(growth=True))
+
+
+def test_get_williams_accumulation_distribution(recorder, technical_module):
+    recorder.capture(technical_module.get_williams_accumulation_distribution())
+    recorder.capture(
+        technical_module.get_williams_accumulation_distribution(period="weekly")
+    )
+    recorder.capture(
+        technical_module.get_williams_accumulation_distribution(growth=True, lag=[1, 2])
+    )
+
+
+def test_get_relative_volume(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_volume())
+    recorder.capture(technical_module.get_relative_volume(window=10))
+    recorder.capture(technical_module.get_relative_volume(period="weekly"))
+
+
+def test_get_volume_flow_indicator(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_flow_indicator())
+    recorder.capture(
+        technical_module.get_volume_flow_indicator(window=50, smoothing_window=5)
+    )
+    recorder.capture(technical_module.get_volume_flow_indicator(growth=True))
+
+
+def test_get_finite_volume_elements(recorder, technical_module):
+    recorder.capture(technical_module.get_finite_volume_elements())
+    recorder.capture(
+        technical_module.get_finite_volume_elements(window=10, cutoff=0.01)
+    )
+    recorder.capture(technical_module.get_finite_volume_elements(period="weekly"))
+
+
+def test_get_twiggs_money_flow(recorder, technical_module):
+    recorder.capture(technical_module.get_twiggs_money_flow())
+    recorder.capture(technical_module.get_twiggs_money_flow(window=10))
+    recorder.capture(technical_module.get_twiggs_money_flow(growth=True))
+
+
+def test_get_volume_zone_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_zone_oscillator())
+    recorder.capture(technical_module.get_volume_zone_oscillator(window=28))
+    recorder.capture(technical_module.get_volume_zone_oscillator(growth=True))
+
+
+def test_get_cumulative_force_index(recorder, technical_module):
+    recorder.capture(technical_module.get_cumulative_force_index().round(0))
+    recorder.capture(technical_module.get_cumulative_force_index(window=1).round(0))
+    recorder.capture(
+        technical_module.get_cumulative_force_index(period="weekly").round(0)
+    )
+
+
+def test_get_price_volume(recorder, technical_module):
+    recorder.capture(technical_module.get_price_volume().round(0))
+    recorder.capture(technical_module.get_price_volume(signed=True).round(0))
+    recorder.capture(technical_module.get_price_volume(growth=True))
+
+
+def test_get_price_volume_rank(recorder, technical_module):
+    recorder.capture(technical_module.get_price_volume_rank())
+    recorder.capture(technical_module.get_price_volume_rank(period="weekly"))
+
+
+def test_get_buying_selling_pressure(recorder, technical_module):
+    recorder.capture(technical_module.get_buying_selling_pressure())
+    recorder.capture(technical_module.get_buying_selling_pressure(smoothing_window=1))
+    recorder.capture(
+        technical_module.get_buying_selling_pressure(window=20, smoothing_window=10)
+    )
+
+
+def test_get_archer_on_balance_volume(recorder, technical_module):
+    recorder.capture(technical_module.get_archer_on_balance_volume().round(0))
+    recorder.capture(
+        technical_module.get_archer_on_balance_volume(
+            short_window=5, long_window=20, run_window=3
+        ).round(0)
+    )
+
+
+def test_get_volume_profile(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_profile())
+    recorder.capture(technical_module.get_volume_profile(bins=5))
+    recorder.capture(technical_module.get_volume_profile(period="weekly", bins=20))
+
+
 def test_get_negative_volume_index(recorder, technical_module):
     recorder.capture(technical_module.get_negative_volume_index())
     recorder.capture(technical_module.get_negative_volume_index(growth=True))
@@ -929,6 +1038,10 @@ def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
         "get_price_volume_trend",
         "get_chandelier_exit",
         "get_percentage_volume_oscillator",
+        "get_klinger_volume_oscillator",
+        "get_twiggs_money_flow",
+        "get_relative_volume",
+        "get_volume_flow_indicator",
         "get_candlestick_patterns",
         "get_signals",
     ):

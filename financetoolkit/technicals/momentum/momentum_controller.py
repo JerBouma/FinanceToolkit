@@ -1605,6 +1605,7 @@ class MomentumTechnicals:
         short_window: int = 12,
         long_window: int = 26,
         signal_window: int = 9,
+        moving_average: str = "exponential",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1620,10 +1621,14 @@ class MomentumTechnicals:
 
         The formula is as follows:
 
-        - PVO = (EMA(Volume, short_window) — EMA(Volume, long_window)) /
-          EMA(Volume, long_window)
+        - PVO = (MA(Volume, short_window) — MA(Volume, long_window)) /
+          MA(Volume, long_window)
         - Signal Line = EMA(PVO, signal_window)
         - Histogram = PVO — Signal Line
+
+        with MA the Exponential Moving Average by default. With the Simple Moving Average
+        (`moving_average="simple"`) it is the Volume Oscillator (VOSC) of StockCharts,
+        pandas-ta-classic and Tulip Indicators, often used with 14 and 28 periods.
 
         A positive PVO means recent volume runs above its longer-term average, which gives weight to
         a breakout or a trend in price; a PVO below zero in a rising market says the move happens on
@@ -1634,8 +1639,10 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html).
+        - pandas-ta-classic: vosc, the Simple Moving Average form (https://github.com/xgboosted/pandas-ta-classic).
+        - Tulip Indicators: vosc, the Simple Moving Average form (https://tulipindicators.org/vosc).
 
-        Also known as: PVO, volume oscillator. See `momentum_model.get_percentage_volume_oscillator`
+        Also known as: PVO, volume oscillator, VOSC. See `momentum_model.get_percentage_volume_oscillator`
         for the references.
 
         Args:
@@ -1647,6 +1654,9 @@ class MomentumTechnicals:
                 Defaults to 26, as for the PPO and MACD.
             signal_window (int, optional): The number of periods for the signal line.
                 Defaults to 9.
+            moving_average (str, optional): The moving average of the volume, "exponential"
+                or "simple" (the Volume Oscillator). The signal line is always an EMA.
+                Defaults to "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1673,7 +1683,9 @@ class MomentumTechnicals:
         - A ticker without volume, such as an index or a currency pair, has no PVO.
         - The PVO is a decimal, like the Percentage Price Oscillator, and NaN for a ticker without
           volume. It equals TA-Lib's PVO (with its default EMA) divided by 100: TA-Lib's PVO is in
-          percent, returns 0 without volume and has no signal line or histogram.
+          percent, returns 0 without volume and has no signal line or histogram. With
+          `moving_average="simple"` it equals TA-Lib's PVO with `matype=0` and the `vosc` of
+          pandas-ta-classic and Tulip Indicators, divided by 100.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1727,6 +1739,7 @@ class MomentumTechnicals:
             short_window,
             long_window,
             signal_window,
+            moving_average,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(

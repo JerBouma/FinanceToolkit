@@ -407,6 +407,63 @@ PER_SECURITY_INDICATORS = {
     "get_rolling_entropy": lambda high, low, close, opening, volume: statistics.get_rolling_entropy(
         close, 10
     ),
+    "get_klinger_volume_oscillator": (
+        lambda high, low, close, opening, volume: breadth.get_klinger_volume_oscillator(
+            high, low, close, volume, 34, 55, 13
+        )
+    ),
+    "get_market_facilitation_index": (
+        lambda high, low, close, opening, volume: breadth.get_market_facilitation_index(
+            high, low, volume
+        )
+    ),
+    "get_williams_accumulation_distribution": (
+        lambda high, low, close, opening, volume: breadth.get_williams_accumulation_distribution(
+            high, low, close
+        )
+    ),
+    "get_relative_volume": lambda high, low, close, opening, volume: breadth.get_relative_volume(
+        volume, 20
+    ),
+    "get_volume_flow_indicator": (
+        lambda high, low, close, opening, volume: breadth.get_volume_flow_indicator(
+            high, low, close, volume, 130, 0.2, 2.5, 3
+        )
+    ),
+    "get_finite_volume_elements": (
+        lambda high, low, close, opening, volume: breadth.get_finite_volume_elements(
+            high, low, close, volume, 22, 0.003
+        )
+    ),
+    "get_twiggs_money_flow": lambda high, low, close, opening, volume: breadth.get_twiggs_money_flow(
+        high, low, close, volume, 21
+    ),
+    "get_volume_zone_oscillator": (
+        lambda high, low, close, opening, volume: breadth.get_volume_zone_oscillator(
+            close, volume, WINDOW
+        )
+    ),
+    "get_cumulative_force_index": (
+        lambda high, low, close, opening, volume: breadth.get_cumulative_force_index(
+            close, volume, 10
+        )
+    ),
+    "get_price_volume": lambda high, low, close, opening, volume: breadth.get_price_volume(
+        close, volume, True
+    ),
+    "get_price_volume_rank": lambda high, low, close, opening, volume: breadth.get_price_volume_rank(
+        close, volume
+    ),
+    "get_buying_selling_pressure": (
+        lambda high, low, close, opening, volume: breadth.get_buying_selling_pressure(
+            high, low, close, volume, 40, 20
+        )
+    ),
+    "get_archer_on_balance_volume": (
+        lambda high, low, close, opening, volume: breadth.get_archer_on_balance_volume(
+            close, volume, 4, 12, 2, 2
+        )
+    ),
 }
 
 # Breadth indicators measured across a universe rather than one security.

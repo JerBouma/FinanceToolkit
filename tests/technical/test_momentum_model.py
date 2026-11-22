@@ -876,3 +876,23 @@ def test_slow_stochastic_oscillator_matches_talib():
     assert slow["Stochastic %D"].iloc[-3:].tolist() == pytest.approx(
         [37.172728, 30.870737, 23.424779], abs=1e-6
     )
+
+
+def test_simple_percentage_volume_oscillator_matches_talib():
+    volumes = sample_prices()["Volume"]
+    result = momentum_model.get_percentage_volume_oscillator(
+        volumes, 5, 10, 9, moving_average="simple"
+    )
+
+    # TA-Lib 0.8.3 PVO(5, 10, matype=0), the volume oscillator of pandas-ta-classic and
+    # Tulip Indicators, in percent.
+    assert result["Percentage Volume Oscillator"].iloc[-1] == pytest.approx(
+        -0.023622047244094486, rel=1e-12
+    )
+    assert (
+        result["Percentage Volume Oscillator"].first_valid_index() == volumes.index[9]
+    )
+    with pytest.raises(ValueError):
+        momentum_model.get_percentage_volume_oscillator(
+            volumes, 5, 10, 9, moving_average="hull"
+        )

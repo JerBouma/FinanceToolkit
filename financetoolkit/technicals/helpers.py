@@ -19,8 +19,10 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 
 # The indicators per collection that get_factor_analysis compares across tickers. Left out are
 # the market-wide breadth measures (one value for all tickers), the volume-scaled ones (on
-# balance volume, price volume trend, accumulation/distribution, Chaikin oscillator, force
-# index, ease of movement), whose level reflects how many shares trade, and the pivot points and Fibonacci
+# balance volume and Archer's version, price volume trend, accumulation/distribution, Chaikin oscillator, force
+# index and its running total, ease of movement, Klinger volume oscillator, market facilitation index, price-volume),
+# whose level reflects how many shares trade, the running totals in price units (Williams' accumulation/distribution),
+# the price volume rank (four categories), the volume profile (not per date) and the pivot points and Fibonacci
 # levels, which only restate the latest high, low and close.
 FACTOR_COLLECTIONS = {
     "momentum": [
@@ -88,6 +90,12 @@ FACTOR_COLLECTIONS = {
         "get_chaikin_money_flow",
         "get_negative_volume_index",
         "get_positive_volume_index",
+        "get_relative_volume",
+        "get_volume_flow_indicator",
+        "get_finite_volume_elements",
+        "get_twiggs_money_flow",
+        "get_volume_zone_oscillator",
+        "get_buying_selling_pressure",
     ],
 }
 FACTOR_COLLECTIONS["all"] = [

@@ -22,8 +22,9 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # balance volume and Archer's version, price volume trend, accumulation/distribution, Chaikin oscillator, force
 # index and its running total, ease of movement, Klinger volume oscillator, market facilitation index, price-volume),
 # whose level reflects how many shares trade, the running totals in price units (Williams' accumulation/distribution),
-# the price volume rank (four categories), the volume profile (not per date) and the pivot points and Fibonacci
-# levels, which only restate the latest high, low and close.
+# the price volume rank (four categories), the volume profile (not per date), the pivot points and Fibonacci
+# levels, which only restate the latest high, low and close, and Wilder's swing index, which is scaled
+# by a limit move in price units and accumulates from the first date of the data.
 FACTOR_COLLECTIONS = {
     "momentum": [
         "get_money_flow_index",
@@ -61,6 +62,18 @@ FACTOR_COLLECTIONS = {
         "get_vertical_horizontal_filter",
         "get_know_sure_thing",
         "get_coppock_curve",
+        "get_fisher_transform",
+        "get_inverse_fisher_transform_rsi",
+        "get_kdj_indicator",
+        "get_premier_stochastic_oscillator",
+        "get_stochastic_momentum_index",
+        "get_smi_ergodic_indicator",
+        "get_schaff_trend_cycle",
+        "get_wavetrend_oscillator",
+        "get_derivative_oscillator",
+        "get_quantitative_qualitative_estimation",
+        "get_dynamic_momentum_index",
+        "get_price_zone_oscillator",
     ],
     "overlap": [
         "get_moving_average",

@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -2249,3 +2251,981 @@ def get_vertical_horizontal_filter(prices_close: pd.Series, window: int) -> pd.S
     volatility = prices_close.diff().abs().rolling(window=window).sum()
 
     return (highest_close - lowest_close) / volatility.where(volatility != 0)
+
+
+def get_fisher_transform(
+    prices_high: pd.Series, prices_low: pd.Series, window: int
+) -> pd.DataFrame:
+    """
+    Calculate the Fisher Transform of a given price series.
+
+    The Fisher Transform turns the position of the median price within its recent range into
+    a series that is close to normally distributed. Prices are not normally distributed, so
+    an oscillator of their position spends most of its time in the middle and gives vague
+    turning points; the Fisher transform stretches the values near the edges of the range,
+    which makes the extremes, and the turns after them, sharp and rare. The trigger is the
+    previous value of the transform, and the transform crossing it marks a turn.
+
+    The formula is as follows:
+
+    - Median Price = (High + Low) / 2
+    - Position = (Median Price - Min(Median Price, window)) / (Max(Median Price, window) -
+      Min(Median Price, window))
+    - Value(t) = 0.66 * (Position - 0.5) + 0.67 * Value(t - 1), set to 0.999 above 0.99 and
+      to -0.999 below -0.99
+    - Fisher Transform(t) = 0.5 * ln((1 + Value(t)) / (1 - Value(t))) + 0.5 * Fisher
+      Transform(t - 1)
+    - Trigger(t) = Fisher Transform(t - 1)
+
+    Value and Fisher Transform start from 0 on the period before the first full window, as
+    in Ehlers' code.
+
+    Also known as: Fisher, Ehlers Fisher Transform, FISHT.
+
+    Reference: Ehlers, J.F. (2002). "Using the Fisher Transform." Technical Analysis of
+    Stocks & Commodities, 20(11); Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and
+    Futures." Wiley.
+
+    TA-Lib: FISHER, the reference implementation (https://ta-lib.org/functions/fisher.html).
+
+    Notes:
+        - A window in which the median price did not move has no range; its position is the
+          neutral 0.5, as in TA-Lib, so the transform decays towards zero rather than
+          stopping.
+        - The Fisher Transform starts on period `window` - 1 and the trigger one period
+          later; TA-Lib gives the first trigger the starting value 0. pandas-ta-classic's
+          fisher starts one period later and therefore differs in the first values only.
+          finta's FISH smooths with exponential averages of 5 and 3 periods instead of
+          Ehlers' constants, a different series.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods of the range of the median price.
+
+    Returns:
+        pd.DataFrame: The Fisher Transform and Trigger as columns, centred on zero.
+    """
+    median_price = (prices_high + prices_low) / 2
+    highest = median_price.rolling(window=window).max()
+    lowest = median_price.rolling(window=window).min()
+    price_range = highest - lowest
+
+    position = ((median_price - lowest) / price_range.where(price_range != 0)).where(
+        price_range != 0, 0.5
+    )
+    position = position.where(price_range.notna())
+
+    # The recursion runs on plain Python floats and carries its state across a period
+    # without a price, which has no value itself.
+    positions = position.to_numpy(dtype="float64").tolist()
+    fisher = [math.nan] * len(positions)
+    value = 0.0
+    previous_fisher = 0.0
+    for i, current_position in enumerate(positions):
+        if math.isnan(current_position):
+            continue
+
+        value = 0.66 * (current_position - 0.5) + 0.67 * value
+        if value > 0.99:  # noqa: PLR2004
+            value = 0.999
+        elif value < -0.99:  # noqa: PLR2004
+            value = -0.999
+
+        previous_fisher = (
+            0.5 * math.log((1 + value) / (1 - value)) + 0.5 * previous_fisher
+        )
+        fisher[i] = previous_fisher
+
+    fisher_transform = pd.Series(fisher, index=prices_high.index, dtype="float64")
+    trigger = fisher_transform.shift(1)
+
+    return pd.concat(
+        [fisher_transform, trigger], keys=["Fisher Transform", "Trigger"], axis=1
+    )
+
+
+def get_inverse_fisher_transform_rsi(
+    prices: pd.Series, rsi_window: int, wma_window: int
+) -> pd.Series:
+    """
+    Calculate the Inverse Fisher Transform of the Relative Strength Index of a given price
+    series.
+
+    The inverse Fisher transform (the hyperbolic tangent) squeezes a series into the range
+    from -1 to 1, with most values close to the edges: applied to a rescaled and smoothed
+    short RSI, it turns the RSI into a nearly binary signal that switches quickly between
+    overbought and oversold. Ehlers buys when it crosses above -0.5 and sells when it
+    crosses below 0.5.
+
+    The formula is as follows:
+
+    - Value 1 = 0.1 * (RSI(Close, rsi_window) - 50)
+    - Value 2 = WMA(Value 1, wma_window)
+    - IFT RSI = (exp(2 * Value 2) - 1) / (exp(2 * Value 2) + 1) = tanh(Value 2)
+
+    Ehlers uses a 5-period RSI and a 9-period weighted moving average.
+
+    Also known as: IFT RSI, IFTRSI, Inverse Fisher RSI.
+
+    Reference: Ehlers, J.F. (2004). "The Inverse Fisher Transform." Technical Analysis of
+    Stocks & Commodities, 22(5).
+
+    finta: IFT_RSI (https://github.com/peerchemist/finta).
+
+    Notes:
+        - The RSI is that of `get_relative_strength_index` (Wilder's smoothing, seeded with
+          a simple average), so the IFT RSI starts on period `rsi_window` + `wma_window` - 1.
+        - finta's IFT_RSI returns (Value 2² - 1) / (Value 2² + 1) instead of the hyperbolic
+          tangent, with an RSI from an exponential average without a seed; this follows
+          Ehlers' formula.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        rsi_window (int): Number of periods of the RSI.
+        wma_window (int): Number of periods of the weighted moving average of the rescaled
+            RSI.
+
+    Returns:
+        pd.Series: IFT RSI values, between -1 and 1.
+    """
+    relative_strength_index = get_relative_strength_index(prices, rsi_window)
+
+    smoothed_value = get_weighted_moving_average(
+        0.1 * (relative_strength_index - 50), wma_window
+    )
+
+    return np.tanh(smoothed_value)
+
+
+def get_kdj_indicator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    k_window: int,
+    d_window: int,
+) -> pd.DataFrame:
+    """
+    Calculate the KDJ indicator of a given price series.
+
+    The KDJ indicator is a stochastic oscillator, widely used in Chinese and other Asian
+    markets, that smooths the raw stochastic with Wilder's average instead of a simple one
+    and adds a third line, J, which extrapolates K away from D. J leaves the 0 to 100 range
+    when the momentum is strong, so J above 100 (or below 0) is read as overbought (or
+    oversold) before K and D get there, and K crossing D is the trade signal, as with the
+    stochastic.
+
+    The formula is as follows:
+
+    - RSV = 100 * (Close - Lowest Low(window)) / (Highest High(window) - Lowest Low(window))
+    - K = Wilder's MA(RSV, k_window)
+    - D = Wilder's MA(K, d_window)
+    - J = 3 * K - 2 * D
+
+    Wilder's moving average is the recursion K(t) = K(t - 1) + (RSV(t) - K(t - 1)) /
+    k_window, often written SMA(RSV, 3, 1) in the formula language of Asian platforms. The
+    common parameters are 9, 3 and 3.
+
+    Also known as: KDJ, KDJ stochastic, random index.
+
+    Reference: The KDJ has no single primary source; it extends Lane's stochastic, see Lane,
+    G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
+
+    TA-Lib: KDJ, the reference implementation (https://ta-lib.org/functions/kdj.html).
+
+    Notes:
+        - Every Wilder average is seeded with the simple average of its first values (see
+          `get_wilder_moving_average`), as TA-Lib does with its RMA moving average type, so
+          K starts on period `window` + `k_window` - 2 and D `d_window` - 1 periods later.
+          Platforms that start K and D at 50 differ in the first few dozen periods.
+        - A window without a range (the highest high equal to the lowest low) has no RSV
+          (NaN), where TA-Lib uses 0; the averages carry on over it.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the high-low range of the RSV.
+        k_window (int): Number of periods of Wilder's average of the RSV that gives K.
+        d_window (int): Number of periods of Wilder's average of K that gives D.
+
+    Returns:
+        pd.DataFrame: K, D and J as columns; K and D between 0 and 100, J unbounded.
+    """
+    raw_stochastic = get_stochastic_oscillator(
+        prices_high, prices_low, prices_close, window, 1
+    )["Stochastic %K"]
+
+    k_line = get_wilder_moving_average(raw_stochastic, k_window)
+    d_line = get_wilder_moving_average(k_line, d_window)
+
+    return pd.concat(
+        [k_line, d_line, 3 * k_line - 2 * d_line], keys=["K", "D", "J"], axis=1
+    )
+
+
+def get_premier_stochastic_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    smooth_window: int,
+) -> pd.Series:
+    """
+    Calculate the Premier Stochastic Oscillator (PSO) of a given price series.
+
+    The Premier Stochastic Oscillator rescales a short stochastic around zero, smooths it
+    twice with an exponential average and squeezes the result between -1 and 1 with the
+    inverse Fisher transform. The smoothing removes the noise of the stochastic, and the
+    transform keeps the oscillator near its extremes most of the time, so that a reading
+    crossing back through 0.9 or -0.9 (or 0.2 and -0.2) stands out as a signal.
+
+    The formula is as follows:
+
+    - %K = 100 * (Close - Lowest Low(window)) / (Highest High(window) - Lowest Low(window))
+    - Normalized Stochastic = 0.1 * (%K - 50)
+    - Smoothed Stochastic = EMA(EMA(Normalized Stochastic, smooth_window), smooth_window)
+    - PSO = (exp(Smoothed Stochastic) - 1) / (exp(Smoothed Stochastic) + 1) = tanh(Smoothed
+      Stochastic / 2)
+
+    Leibfarth uses an 8-period stochastic and a smoothing of 5 periods (the square root of
+    25).
+
+    Also known as: PSO, Premier Stochastic.
+
+    Reference: Leibfarth, L. (2008). "Premier Stochastic Oscillator." Technical Analysis of
+    Stocks & Commodities, 26(8).
+
+    TA-Lib: PSO, the reference implementation (https://ta-lib.org/functions/pso.html).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), as TA-Lib does, so the PSO
+          starts on period `window` + 2 * `smooth_window` - 3.
+        - A window without a range has no %K (NaN), where TA-Lib uses 50; the averages
+          carry on over it.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the high-low range of %K.
+        smooth_window (int): Number of periods of each of the two EMAs.
+
+    Returns:
+        pd.Series: PSO values, between -1 and 1.
+    """
+    stochastic_k = get_stochastic_oscillator(
+        prices_high, prices_low, prices_close, window, 1
+    )["Stochastic %K"]
+
+    smoothed_stochastic = get_exponential_moving_average(
+        get_exponential_moving_average(0.1 * (stochastic_k - 50), smooth_window),
+        smooth_window,
+    )
+
+    return np.tanh(smoothed_stochastic / 2)
+
+
+def get_stochastic_momentum_index(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    long_window: int,
+    short_window: int,
+    signal_window: int,
+) -> pd.DataFrame:
+    """
+    Calculate the Stochastic Momentum Index (SMI) of a given price series.
+
+    The Stochastic Momentum Index measures where the close sits relative to the midpoint of
+    the high-low range, rather than to its low as the stochastic does, and smooths both the
+    distance and the range twice with an exponential average before dividing. It runs from
+    -100 (a close on the low) to +100 (a close on the high) around zero, is less erratic than
+    the stochastic, and is read with its signal line and the levels -40 and 40.
+
+    The formula is as follows:
+
+    - Distance = Close - (Highest High(window) + Lowest Low(window)) / 2
+    - Range = Highest High(window) - Lowest Low(window)
+    - SMI = 100 * EMA(EMA(Distance, long_window), short_window) / (0.5 * EMA(EMA(Range,
+      long_window), short_window))
+    - Signal Line = EMA(SMI, signal_window)
+
+    Blau uses a 13-period range, smoothed over 25 and then 2 periods.
+
+    Also known as: SMI, Blau's stochastic momentum.
+
+    Reference: Blau, W. (1993). "Stochastic Momentum." Technical Analysis of Stocks &
+    Commodities, 11(1); Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
+
+    TA-Lib: SMI, the reference implementation (https://ta-lib.org/functions/smi.html).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), as TA-Lib does, so the SMI
+          starts on period `window` + `long_window` + `short_window` - 3 and the signal
+          line `signal_window` - 1 periods later. TA-Lib starts both on the first signal
+          value.
+        - A stretch in which the smoothed range is zero has no SMI (NaN), where TA-Lib
+          returns 0.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the high-low range.
+        long_window (int): Number of periods of the first EMA of the distance and range.
+        short_window (int): Number of periods of the second EMA.
+        signal_window (int): Number of periods of the EMA of the SMI that gives the signal
+            line.
+
+    Returns:
+        pd.DataFrame: Stochastic Momentum Index and Signal Line as columns, between -100 and
+            100.
+    """
+    highest_high = prices_high.rolling(window=window).max()
+    lowest_low = prices_low.rolling(window=window).min()
+
+    smoothed_distance = get_exponential_moving_average(
+        get_exponential_moving_average(
+            prices_close - (highest_high + lowest_low) / 2, long_window
+        ),
+        short_window,
+    )
+    smoothed_range = get_exponential_moving_average(
+        get_exponential_moving_average(highest_high - lowest_low, long_window),
+        short_window,
+    )
+
+    stochastic_momentum_index = (
+        100 * smoothed_distance / (0.5 * smoothed_range.where(smoothed_range != 0))
+    )
+    signal_line = get_exponential_moving_average(
+        stochastic_momentum_index, signal_window
+    )
+
+    return pd.concat(
+        [stochastic_momentum_index, signal_line],
+        keys=["Stochastic Momentum Index", "Signal Line"],
+        axis=1,
+    )
+
+
+def get_smi_ergodic_indicator(
+    prices: pd.Series, long_window: int, short_window: int, signal_window: int
+) -> pd.DataFrame:
+    """
+    Calculate the SMI Ergodic Indicator and Oscillator of a given price series.
+
+    The SMI Ergodic Indicator is Blau's True Strength Index with short smoothing periods,
+    and its signal line an EMA of the indicator. The SMI Ergodic Oscillator is the
+    difference between the two, a histogram in the way the MACD histogram is the MACD line
+    minus its signal line. Blau trades the direction of the oscillator: a turn up from below
+    zero is a buy signal, a turn down from above zero a sell signal.
+
+    The formula is as follows:
+
+    - Momentum(t) = Close(t) - Close(t - 1)
+    - SMI Ergodic Indicator = 100 * EMA(EMA(Momentum, long_window), short_window) /
+      EMA(EMA(|Momentum|, long_window), short_window)
+    - Signal Line = EMA(SMI Ergodic Indicator, signal_window)
+    - SMI Ergodic Oscillator (Histogram) = SMI Ergodic Indicator - Signal Line
+
+    The common parameters are 20, 5 and 5.
+
+    Also known as: SMI Ergodic, SMIIO, ergodic oscillator, TSI ergodic.
+
+    Reference: Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
+
+    pandas-ta-classic: smi (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The indicator is `get_true_strength_index` with these windows and on its scale of
+          -100 to 100; pandas-ta-classic's smi uses a scalar of 1, a scale of -1 to 1.
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), so the indicator starts on
+          period `long_window` + `short_window` - 1 and the signal line and histogram
+          `signal_window` - 1 periods later.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        long_window (int): Number of periods of the first EMA of the price change.
+        short_window (int): Number of periods of the second EMA.
+        signal_window (int): Number of periods of the EMA of the indicator that gives the
+            signal line.
+
+    Returns:
+        pd.DataFrame: SMI Ergodic Indicator, Signal Line and Histogram (the SMI Ergodic
+            Oscillator) as columns.
+    """
+    true_strength_index = get_true_strength_index(
+        prices, long_window, short_window, signal_window
+    )
+    ergodic_indicator = true_strength_index["True Strength Index"]
+    signal_line = true_strength_index["Signal Line"]
+
+    return pd.concat(
+        [ergodic_indicator, signal_line, ergodic_indicator - signal_line],
+        keys=["SMI Ergodic Indicator", "Signal Line", "Histogram"],
+        axis=1,
+    )
+
+
+def get_schaff_trend_cycle(
+    prices: pd.Series,
+    short_window: int,
+    long_window: int,
+    cycle_window: int,
+    factor: float = 0.5,
+) -> pd.Series:
+    """
+    Calculate the Schaff Trend Cycle (STC) of a given price series.
+
+    The Schaff Trend Cycle applies a smoothed stochastic twice to the MACD line: it measures
+    where the MACD sits within its range over the last cycle, smooths that, and does the
+    same again. The result moves between 0 and 100 and turns earlier than the MACD, as it
+    reacts to the MACD's cycle rather than its level. A turn up from below 25 is read as
+    bullish and a turn down from above 75 as bearish.
+
+    The formula is as follows:
+
+    - MACD = EMA(Close, short_window) - EMA(Close, long_window)
+    - Fraction 1 = 100 * (MACD - Min(MACD, cycle_window)) / (Max(MACD, cycle_window) -
+      Min(MACD, cycle_window))
+    - PF(t) = PF(t - 1) + factor * (Fraction 1(t) - PF(t - 1))
+    - Fraction 2 = 100 * (PF - Min(PF, cycle_window)) / (Max(PF, cycle_window) - Min(PF,
+      cycle_window))
+    - STC(t) = STC(t - 1) + factor * (Fraction 2(t) - STC(t - 1))
+
+    A fraction over a window without a range keeps its previous value, and each smoothing
+    starts on its first input, as in Schaff's code. Schaff uses 23, 50 and 10 with a factor
+    of 0.5.
+
+    Also known as: STC, Schaff Trend Cycle indicator.
+
+    Reference: Schaff, D. (2008). "Releasing the Code to the Schaff Trend Cycle."
+    FX-Strategy.com; Schaff, D. (2002). "Catching Currency Moves with the Schaff Trend Cycle
+    Indicator." Chartpoint, July/August 2002.
+
+    TA-Lib: STC, the reference implementation (https://ta-lib.org/functions/stc.html).
+
+    Notes:
+        - The EMAs of the MACD are seeded with the Simple Moving Average of their first
+          values with an empty warm-up (see `get_exponential_moving_average`). TA-Lib starts
+          the short EMA on the same period as the long one, so the two differ in the first
+          values (up to 50 points) and agree within 0.01 after about 200 periods and within
+          1e-5 after about 250 at the default windows.
+        - pandas-ta-classic's stc seeds as this does and equals it with the same windows
+          after the first values.
+        - A fraction has a value from its first full window with a range, so the STC starts
+          on period `long_window` + 2 * `cycle_window` - 3 at the earliest; TA-Lib counts a
+          fraction without a value yet as 0.
+        - pandas-ta-classic's stc defaults to 12 and 26 periods, and ta's STCIndicator and
+          finta's STC smooth with exponential or simple moving averages of 3 periods.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        short_window (int): Number of periods of the short EMA of the MACD.
+        long_window (int): Number of periods of the long EMA of the MACD.
+        cycle_window (int): Number of periods of the range of each stochastic.
+        factor (float): The smoothing factor of each stochastic. Defaults to 0.5.
+
+    Returns:
+        pd.Series: STC values, between 0 and 100.
+    """
+    macd_line = get_exponential_moving_average(
+        prices, short_window
+    ) - get_exponential_moving_average(prices, long_window)
+
+    # The two stages are the same: a stochastic of the input over the cycle window that
+    # keeps its previous value on a window without a range, smoothed with the factor from
+    # its first value. A period without an input has no value and the state carries on.
+    smoothed = macd_line
+    for _ in range(2):
+        values = smoothed.to_numpy(dtype="float64").tolist()
+        lowest = smoothed.rolling(window=cycle_window).min().to_numpy().tolist()
+        highest = smoothed.rolling(window=cycle_window).max().to_numpy().tolist()
+
+        output = [math.nan] * len(values)
+        fraction = math.nan
+        previous = math.nan
+        for i, value in enumerate(values):
+            if math.isnan(value) or math.isnan(lowest[i]):
+                continue
+
+            if highest[i] > lowest[i]:
+                fraction = 100 * (value - lowest[i]) / (highest[i] - lowest[i])
+            if math.isnan(fraction):
+                continue
+
+            previous = (
+                fraction
+                if math.isnan(previous)
+                else previous + factor * (fraction - previous)
+            )
+            output[i] = previous
+
+        smoothed = pd.Series(output, index=prices.index, dtype="float64")
+
+    return smoothed
+
+
+def get_wavetrend_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    channel_window: int,
+    average_window: int,
+    signal_window: int,
+) -> pd.DataFrame:
+    """
+    Calculate the WaveTrend Oscillator of a given price series.
+
+    The WaveTrend Oscillator is a Commodity Channel Index built from exponential averages:
+    the distance of the typical price from its EMA, divided by 0.015 times the EMA of that
+    absolute distance, and smoothed with a longer EMA. Its signal line is a short simple
+    average. Readings beyond 53 or 60 (or -53 and -60) are read as overbought (or
+    oversold), and the oscillator crossing its signal line there as a turn.
+
+    The formula is as follows:
+
+    - Typical Price = (High + Low + Close) / 3
+    - ESA = EMA(Typical Price, channel_window)
+    - D = EMA(|Typical Price - ESA|, channel_window)
+    - CI = (Typical Price - ESA) / (0.015 * D)
+    - WaveTrend = EMA(CI, average_window)
+    - Signal Line = SMA(WaveTrend, signal_window)
+
+    LazyBear's parameters are 10, 21 and 4.
+
+    Also known as: WaveTrend, WT, WTO, WT1 and WT2.
+
+    Reference: LazyBear (2014). "WaveTrend Oscillator [WT]." TradingView published script.
+
+    TA-Lib: WAVETREND, the reference implementation
+    (https://ta-lib.org/functions/wavetrend.html).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), as TA-Lib does, so the
+          WaveTrend starts on period 2 * `channel_window` + `average_window` - 3 and the
+          signal line `signal_window` - 1 periods later. finta's WTO uses averages without a
+          seed, which differ in the first values.
+        - A stretch without any distance from the average has no CI (NaN), where TA-Lib
+          returns 0.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        channel_window (int): Number of periods of the EMA of the typical price and of its
+            distance.
+        average_window (int): Number of periods of the EMA of the CI.
+        signal_window (int): Number of periods of the SMA that gives the signal line.
+
+    Returns:
+        pd.DataFrame: WaveTrend and Signal Line as columns.
+    """
+    typical_price = (prices_high + prices_low + prices_close) / 3
+    average = get_exponential_moving_average(typical_price, channel_window)
+    distance = typical_price - average
+
+    mean_distance = get_exponential_moving_average(distance.abs(), channel_window)
+    channel_index = distance / (0.015 * mean_distance.where(mean_distance != 0))
+
+    wavetrend = get_exponential_moving_average(channel_index, average_window)
+    signal_line = get_moving_average(wavetrend, signal_window)
+
+    return pd.concat(
+        [wavetrend, signal_line], keys=["WaveTrend", "Signal Line"], axis=1
+    )
+
+
+def get_derivative_oscillator(
+    prices: pd.Series,
+    window: int,
+    first_window: int,
+    second_window: int,
+    signal_window: int,
+) -> pd.Series:
+    """
+    Calculate the Derivative Oscillator of a given price series.
+
+    The Derivative Oscillator smooths the Relative Strength Index twice with an exponential
+    average and subtracts a simple average of the result, the way the MACD histogram
+    subtracts the signal line from the MACD. It thereby shows the momentum of the smoothed
+    RSI: a crossing of zero marks a turn of the RSI, and the distance from zero how far the
+    smoothed RSI has moved from its mean.
+
+    The formula is as follows:
+
+    - Double Smoothed RSI = EMA(EMA(RSI(Close, window), first_window), second_window)
+    - Derivative Oscillator = Double Smoothed RSI - SMA(Double Smoothed RSI, signal_window)
+
+    Brown uses a 14-period RSI, smoothed over 5 and then 3 periods, and a 9-period signal.
+
+    Also known as: DOSC, Brown's Derivative Oscillator.
+
+    Reference: Brown, C.M. (1994). "The Derivative Oscillator: A New Approach for an Old
+    Problem." MTA Journal, 42; Brown, C.M. (1999). "Technical Analysis for the Trading
+    Professional." McGraw-Hill.
+
+    TA-Lib: DOSC, the reference implementation (https://ta-lib.org/functions/dosc.html).
+
+    Notes:
+        - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
+          Simple Moving Average of its first values, as in TA-Lib, so the oscillator starts
+          on period `window` + `first_window` + `second_window` + `signal_window` - 3.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the RSI.
+        first_window (int): Number of periods of the first EMA of the RSI.
+        second_window (int): Number of periods of the second EMA.
+        signal_window (int): Number of periods of the SMA subtracted from the smoothed RSI.
+
+    Returns:
+        pd.Series: Derivative Oscillator values, in RSI points around zero.
+    """
+    double_smoothed_rsi = get_exponential_moving_average(
+        get_exponential_moving_average(
+            get_relative_strength_index(prices, window), first_window
+        ),
+        second_window,
+    )
+
+    return double_smoothed_rsi - get_moving_average(double_smoothed_rsi, signal_window)
+
+
+def get_swing_index(
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    limit_move: float,
+) -> pd.DataFrame:
+    """
+    Calculate Wilder's Swing Index and Accumulative Swing Index of a given price series.
+
+    The Swing Index weighs the change of the close against the previous period's open and
+    close and against the range of the current period, to measure the real direction of a
+    period's move on a scale of -100 to 100. Wilder accumulates it into the Accumulative
+    Swing Index, a line that follows the price but filters out the moves that the open,
+    high and low do not confirm. A breakout of the ASI through a previous high or low swing
+    point confirms a breakout of the price.
+
+    The formula is as follows:
+
+    - A = |High - Close(t - 1)|, B = |Low - Close(t - 1)|, C = |High - Low|
+    - D = |Close(t - 1) - Open(t - 1)|
+    - R = A - 0.5 * B + 0.25 * D when A is the largest of A, B and C, B - 0.5 * A + 0.25 * D
+      when B is, else C + 0.25 * D
+    - K = max(A, B)
+    - N = (Close - Close(t - 1)) + 0.5 * (Close - Open) + 0.25 * (Close(t - 1) - Open(t - 1))
+    - Swing Index = 50 * (N / R) * (K / limit_move)
+    - Accumulative Swing Index = Sum of the Swing Index since the first period
+
+    The limit move is the largest move a futures contract may make in one period. A stock
+    has none, so `limit_move` is a scale in price units: the Swing Index stays within -100
+    and 100 only for moves within it.
+
+    Also known as: SI, ASI, Wilder Swing Index, Accumulation Swing Index.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research, section VIII "The Swing Index."
+
+    TA-Lib: SI and ASI, the reference implementations (https://ta-lib.org/functions/si.html,
+    https://ta-lib.org/functions/asi.html).
+
+    Notes:
+        - The first period has no previous period and no Swing Index, so the Accumulative
+          Swing Index starts at the Swing Index of the second period, as in TA-Lib, which
+          also gives the first period an ASI of 0.
+        - A period without any move (R equal to 0) has no Swing Index (NaN), where TA-Lib
+          uses 0; the Accumulative Swing Index carries on over it. Neither is rounded,
+          where Wilder rounded to whole numbers by hand.
+
+    Args:
+        prices_open (pd.Series): Series of opening prices.
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        limit_move (float): The limit move that scales the index, in price units.
+
+    Returns:
+        pd.DataFrame: Swing Index and Accumulative Swing Index as columns.
+    """
+    previous_close = prices_close.shift(1)
+    previous_open = prices_open.shift(1)
+
+    high_move = (prices_high - previous_close).abs()
+    low_move = (prices_low - previous_close).abs()
+    price_range = (prices_high - prices_low).abs()
+    previous_body = 0.25 * (previous_close - previous_open).abs()
+
+    swing_range = np.where(
+        (high_move >= low_move) & (high_move >= price_range),
+        high_move - 0.5 * low_move + previous_body,
+        np.where(
+            low_move >= price_range,
+            low_move - 0.5 * high_move + previous_body,
+            price_range + previous_body,
+        ),
+    )
+    swing_range = pd.Series(swing_range, index=prices_close.index).where(
+        previous_close.notna()
+    )
+
+    numerator = (
+        (prices_close - previous_close)
+        + 0.5 * (prices_close - prices_open)
+        + 0.25 * (previous_close - previous_open)
+    )
+
+    swing_index = (
+        50
+        * numerator
+        / swing_range.where(swing_range != 0)
+        * np.maximum(high_move, low_move)
+        / limit_move
+    )
+    accumulative_swing_index = swing_index.cumsum().where(prices_close.notna())
+
+    return pd.concat(
+        [swing_index, accumulative_swing_index],
+        keys=["Swing Index", "Accumulative Swing Index"],
+        axis=1,
+    )
+
+
+def get_quantitative_qualitative_estimation(
+    prices: pd.Series, window: int, smooth_window: int, factor: float
+) -> pd.DataFrame:
+    """
+    Calculate the Quantitative Qualitative Estimation (QQE) of a given price series.
+
+    The QQE smooths the Relative Strength Index with an exponential average (the fast line)
+    and trails it with a stop line (the QQE, the slow line), placed a multiple of the RSI's
+    own average move away, in the way an Average True Range stop trails the price. The
+    stop only moves towards the RSI while the RSI moves away from it, and jumps to the other
+    side when the RSI crosses it, so the RSI crossing the QQE line marks a change of trend
+    and the side of the line the trend itself.
+
+    The formula is as follows:
+
+    - RSI Moving Average = EMA(RSI(Close, window), smooth_window)
+    - Average Move = EMA(EMA(|RSI Moving Average(t) - RSI Moving Average(t - 1)|, 2 * window -
+      1), 2 * window - 1)
+    - Distance = factor * Average Move
+    - QQE(t) = max(QQE(t - 1), RSI Moving Average(t) - Distance(t)) while the RSI Moving
+      Average stays above QQE, min(QQE(t - 1), RSI Moving Average(t) + Distance(t)) while it
+      stays below, and RSI Moving Average(t) -/+ Distance(t) when it crosses QQE
+
+    The EMA over 2 * window - 1 periods has the smoothing constant 1 / window of Wilder's
+    average. The common parameters are 14, 5 and 4.236.
+
+    Also known as: QQE, QQE fast and slow line.
+
+    Reference: The QQE is a community indicator of the MetaTrader platform without a
+    published primary source.
+
+    pandas-ta-classic: qqe (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
+          Simple Moving Average of its first values with an empty warm-up (see
+          `get_exponential_moving_average`), so the RSI Moving Average starts on period
+          `window` + `smooth_window` - 1 and the QQE on period `window` + `smooth_window` +
+          2 * (2 * `window` - 1) - 2, at the RSI Moving Average minus the distance.
+        - The QQE line switches sides on the period the RSI Moving Average crosses it, as
+          in the MetaTrader code. pandas-ta-classic's qqe switches when the RSI Moving
+          Average crosses the band on the other side, which can keep its line on the old
+          side for a few more periods; otherwise the two are equal.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the RSI.
+        smooth_window (int): Number of periods of the EMA of the RSI.
+        factor (float): The multiple of the average move of the RSI Moving Average that sets
+            the distance of the QQE line.
+
+    Returns:
+        pd.DataFrame: QQE and RSI Moving Average as columns, in RSI points.
+    """
+    rsi_moving_average = get_exponential_moving_average(
+        get_relative_strength_index(prices, window), smooth_window
+    )
+    wilder_window = 2 * window - 1
+    distance = factor * get_exponential_moving_average(
+        get_exponential_moving_average(rsi_moving_average.diff().abs(), wilder_window),
+        wilder_window,
+    )
+
+    # The trailing line runs on plain Python floats; a period without a value has no line
+    # and the line carries on from its last value.
+    rsi_values = rsi_moving_average.to_numpy(dtype="float64").tolist()
+    distances = distance.to_numpy(dtype="float64").tolist()
+    qqe = [math.nan] * len(rsi_values)
+    line = math.nan
+    previous_rsi = math.nan
+    for i, (current_rsi, current_distance) in enumerate(zip(rsi_values, distances)):
+        if math.isnan(current_rsi) or math.isnan(current_distance):
+            continue
+
+        if math.isnan(line):
+            line = current_rsi - current_distance
+        elif current_rsi > line:
+            candidate = current_rsi - current_distance
+            line = max(line, candidate) if previous_rsi > line else candidate
+        elif current_rsi < line:
+            candidate = current_rsi + current_distance
+            line = min(line, candidate) if previous_rsi < line else candidate
+
+        qqe[i] = line
+        previous_rsi = current_rsi
+
+    return pd.concat(
+        [pd.Series(qqe, index=prices.index, dtype="float64"), rsi_moving_average],
+        keys=["QQE", "RSI Moving Average"],
+        axis=1,
+    )
+
+
+def get_dynamic_momentum_index(
+    prices: pd.Series,
+    window: int,
+    volatility_window: int,
+    average_window: int,
+    minimum_window: int,
+    maximum_window: int,
+) -> pd.Series:
+    """
+    Calculate the Dynamic Momentum Index (DMI) of a given price series.
+
+    The Dynamic Momentum Index is a Relative Strength Index whose period changes with the
+    volatility: the period shortens when the recent volatility is above its average and
+    lengthens when it is below, between 5 and 30 periods. The index thereby reacts quickly in
+    volatile markets and stays calm in quiet ones, and is read as the RSI, overbought above
+    70 and oversold below 30.
+
+    The formula is as follows:
+
+    - Volatility Index = StdDev(Close, volatility_window) / SMA(StdDev(Close,
+      volatility_window), average_window)
+    - Period = Int(window / Volatility Index), bounded to minimum_window and maximum_window
+    - DMI = 100 * Sum(Up Changes, Period) / (Sum(Up Changes, Period) + Sum(Down Changes,
+      Period))
+
+    Chande uses a 14-period base, a 5-period standard deviation and its 10-period average.
+
+    Also known as: DYMI, Chande's Dynamic Momentum Index, variable-term RSI.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    finta: DYMI (https://github.com/peerchemist/finta).
+
+    Notes:
+        - The period changes every period, which leaves no single period for Wilder's
+          recursive average, so the RSI of each period sums the gains and losses of its own
+          last `Period` changes (Cutler's RSI), the summed form Chande also uses for his
+          Momentum Oscillator.
+        - The standard deviation is the sample standard deviation (ddof=1). The DMI starts
+          on period `volatility_window` + `average_window` - 2, the first Volatility Index,
+          once the period has that many changes.
+        - finta's DYMI rounds the Volatility Index before the division, bounds the period to
+          5 and 30, and takes an exponentially smoothed RSI over the periods before the
+          current one, so it differs from this.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The base period that the volatility index divides.
+        volatility_window (int): Number of periods of the standard deviation.
+        average_window (int): Number of periods of the average of the standard deviation.
+        minimum_window (int): The shortest period of the RSI.
+        maximum_window (int): The longest period of the RSI.
+
+    Returns:
+        pd.Series: DMI values, between 0 and 100.
+    """
+    standard_deviation = prices.rolling(window=volatility_window).std()
+    volatility_index = standard_deviation / get_moving_average(
+        standard_deviation, average_window
+    )
+    periods = np.floor(window / volatility_index).clip(minimum_window, maximum_window)
+
+    price_diff = prices.diff()
+    cumulative_gains = np.concatenate(
+        [[0.0], price_diff.clip(lower=0).fillna(0).cumsum().to_numpy()]
+    )
+    cumulative_losses = np.concatenate(
+        [[0.0], (-price_diff).clip(lower=0).fillna(0).cumsum().to_numpy()]
+    )
+
+    # The sums over the last Period changes of each period, as differences of the running
+    # sums; a period with fewer changes than its Period has no value.
+    positions = np.arange(len(prices))
+    valid = periods.notna().to_numpy() & (positions >= periods.fillna(0).to_numpy())
+    starts = np.where(valid, positions - periods.fillna(0).to_numpy(), 0).astype(int)
+
+    gains = cumulative_gains[positions + 1] - cumulative_gains[starts + 1]
+    losses = cumulative_losses[positions + 1] - cumulative_losses[starts + 1]
+    total = gains + losses
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dynamic_momentum_index = np.where(
+            valid & (total != 0), 100 * gains / total, np.nan
+        )
+
+    return pd.Series(dynamic_momentum_index, index=prices.index).where(prices.notna())
+
+
+def get_price_zone_oscillator(prices: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Price Zone Oscillator (PZO) of a given price series.
+
+    The Price Zone Oscillator counts each close as positive when it closed above the
+    previous close and as negative when it closed below, and divides the EMA of these signed
+    closes by the EMA of the closes. It is thereby the share of the recent price action that
+    went up, on a scale of -100 to 100: above 40 is overbought and below -40 oversold in a
+    trendless market, and crossings of zero, 15 and -5 are Khalil and Steckler's signals in
+    a trend.
+
+    The formula is as follows:
+
+    - Signed Close = sign(Close(t) - Close(t - 1)) * Close(t)
+    - PZO = 100 * EMA(Signed Close, window) / EMA(Close, window)
+
+    Both EMAs run over the periods with a change, so they start on the same period.
+
+    Also known as: PZO.
+
+    Reference: Khalil, W. & Steckler, D. (2011). "Entering The Price Zone." Technical
+    Analysis of Stocks & Commodities, 29(6), 28-35.
+
+    finta: PZO (https://github.com/peerchemist/finta).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), so the PZO starts on period
+          `window`. finta's PZO uses averages without a seed and starts the EMA of the
+          closes one period earlier, which differs in the first values.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the EMAs.
+
+    Returns:
+        pd.Series: PZO values, between -100 and 100.
+    """
+    price_diff = prices.diff()
+    signed_close = np.sign(price_diff) * prices
+    closes = prices.where(price_diff.notna())
+
+    return (
+        100
+        * get_exponential_moving_average(signed_close, window)
+        / get_exponential_moving_average(closes, window)
+    )

@@ -20,6 +20,30 @@ from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 logger = get_logger()
 
+# The optimizers that stacking combines, with the names they are shown under.
+STACKING_METHODS = {
+    "minimum_variance": "Minimum Variance",
+    "maximum_sharpe": "Maximum Sharpe",
+    "risk_parity": "Risk Parity",
+    "inverse_volatility": "Inverse Volatility",
+    "maximum_diversification": "Maximum Diversification",
+    "hierarchical_risk_parity": "Hierarchical Risk Parity",
+    "hierarchical_equal_risk_contribution": "Hierarchical Equal Risk Contribution",
+    "nested_clustered_optimization": "Nested Clustered Optimization",
+    "schur_complementary": "Schur Complementary",
+    "minimum_cvar": "Minimum CVaR",
+    "minimum_drawdown": "Minimum Drawdown",
+    "minimum_mad": "Minimum MAD",
+    "minimum_semideviation": "Minimum Semideviation",
+    "equal_weight": "Equal Weight",
+}
+DEFAULT_STACKING_METHODS = (
+    "inverse_volatility",
+    "maximum_diversification",
+    "hierarchical_risk_parity",
+    "minimum_cvar",
+)
+
 
 @filter_shown_columns
 @track_sources
@@ -142,6 +166,33 @@ class OptimizationConstruction:
             "groups": groups,
             "group_bounds": bounds or None,
         }
+
+    def _add_hierarchical_risk(
+        self,
+        table: pd.DataFrame,
+        weights: pd.Series,
+        returns: pd.DataFrame,
+        risk_measure: str,
+        confidence_level: float,
+        minimum_acceptable_return: float | str,
+        rounding: int | None,
+    ) -> pd.DataFrame:
+        """
+        The table of a hierarchical optimizer with a column of its risk measure per asset
+        and for the portfolio, when that is a measure of the returns rather than the
+        variance or volatility the table already shows.
+        """
+        if risk_measure in ("variance", "volatility"):
+            return table
+        table[optimization_model.HIERARCHICAL_RISK_MEASURES[risk_measure]] = (
+            optimization_model.get_mean_risk_measure(
+                returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
+                risk_measure,
+                confidence_level,
+                minimum_acceptable_return,
+            )
+        )
+        return self._round(table, rounding)
 
     @handle_errors
     def get_minimum_variance_weights(
@@ -1222,6 +1273,9 @@ class OptimizationConstruction:
         covariance_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
+        risk_measure: str = "variance",
+        confidence_level: float = 0.95,
+        minimum_acceptable_return: float | str = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1239,10 +1293,26 @@ class OptimizationConstruction:
         relate to all the other assets in the same way. Some libraries cluster on the
         correlation distance itself, which can order the assets differently.
 
-        For more information, see the following paper:
+        The risk of each half is that of its inverse risk portfolio, every asset weighted by
+        the inverse of its own risk: the variance by default, as in the paper, or another
+        risk measure of the historical returns, such as the CVaR, which splits by the
+        losses in the worst periods, or the CDaR, which splits by the drawdowns. Raffinot
+        (2017, 2018) allocates across hierarchical clusters with such measures, and
+        Riskfolio-Lib (Cajas) and skfolio (Delatte) offer them for HRP.
+
+        For more information, see the following papers:
 
         - López de Prado, M. (2016). "Building Diversified Portfolios that Outperform Out of
           Sample." The Journal of Portfolio Management, 42(4), 59-69.
+        - Raffinot, T. (2017). "Hierarchical Clustering-Based Asset Allocation." The
+          Journal of Portfolio Management, 44(2), 89-99.
+        - Raffinot, T. (2018). "The Hierarchical Equal Risk Contribution Portfolio."
+          SSRN 3237540.
+        - Riskfolio-Lib: HCPortfolio(model="HRP", rm=...)
+          (https://github.com/dcajasn/Riskfolio-Lib), which the weights with every risk
+          measure are referenced against.
+        - skfolio: HierarchicalRiskParity(risk_measure=...) (https://skfolio.org),
+          referenced against for the measures it has.
 
         Also known as: HRP, hierarchical clustering portfolio.
 
@@ -1300,6 +1370,20 @@ class OptimizationConstruction:
             maximum_weight (float | dict[str, float], optional): The highest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            risk_measure (str, optional): The risk measure of the splits: "variance"
+                (of the covariance matrix), "volatility", or one of the historical
+                returns: "mad" (mean absolute deviation, Konno and Yamazaki, 1991),
+                "semideviation" (below the minimum acceptable return), "lower_partial_moment"
+                (first order), "worst_realization", "gini_mean_difference" (Yitzhaki,
+                1982), "tail_gini" (Furman et al., 2017), "range", "cvar_range",
+                "tail_gini_range", "ulcer_index" (of the uncompounded cumulative return),
+                "cvar" (Rockafellar and Uryasev, 2002) or "cdar" (Chekhlov et al., 2005).
+                Defaults to "variance".
+            confidence_level (float, optional): The confidence level of "cvar", "cdar",
+                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            minimum_acceptable_return (float | str, optional): The threshold of
+                "semideviation" and "lower_partial_moment", as a return per period of the
+                chosen frequency, or "mean" for each asset's average return. Defaults to 0.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1311,11 +1395,18 @@ class OptimizationConstruction:
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution.
+            Volatility, Sharpe Ratio and Risk Contribution, and with a risk measure of the
+            returns, that measure per period (e.g. "CVaR").
 
         Notes:
         - Weight bounds move each split just enough to keep both halves within the sum of
           their assets' bounds.
+        - The risk measures of the returns are per period of the chosen frequency and not
+          annualized, and only their ratios between the halves matter. They equal
+          Riskfolio-Lib's HCPortfolio(model="HRP", rm=...) and skfolio's
+          HierarchicalRiskParity(risk_measure=...) on the same asset order; those cluster
+          on the correlation distance itself rather than the distance between its columns,
+          which can order the assets differently.
         - A split only moves weight between the two halves of a cluster, so sector and
           country bounds, which cut across the clusters, do not apply; neither do short
           positions or a net or gross exposure, as HRP is long only and fully invested.
@@ -1356,16 +1447,391 @@ class OptimizationConstruction:
             distance=optimization_model.get_codependence_distance(
                 returns, covariance_matrix, codependence
             ),
+            returns=returns,
+            risk_measure=risk_measure,
+            confidence_level=confidence_level,
+            minimum_acceptable_return=minimum_acceptable_return,
+        )
+        table = self._weights_table(
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        )
+        return self._add_hierarchical_risk(
+            table,
+            weights,
+            returns,
+            risk_measure,
+            confidence_level,
+            minimum_acceptable_return,
+            rounding,
+        )
+
+    @handle_errors
+    def get_schur_complementary_weights(
+        self,
+        gamma: float = 0.5,
+        linkage_method: str = "single",
+        codependence: str = "pearson",
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Schur Complementary Allocation weights, which run from Hierarchical
+        Risk Parity (γ = 0) towards the minimum variance portfolio (γ near 1). HRP splits
+        every cluster between its two halves by their own variances and ignores how the
+        two halves move together; the minimum variance portfolio uses exactly that, through
+        the Schur complements of the inverse covariance matrix, but becomes unstable when
+        the covariance matrix is noisy. Schur Complementary Allocation augments the
+        covariance block of each half with a share γ of what the other half tells about
+        it, and then splits as HRP does on the augmented blocks.
+
+        For a cluster split into halves with covariance blocks A and D and the block B
+        between them, the formula is as follows:
+
+        - A_c = A - γ B D⁻¹ B'
+        - Ã = (I - γ B D⁻¹ M')⁻¹ A_c, made symmetric, with M the step-up matrix that spreads
+          the assets of the other half over those of this one (the identity for halves of
+          equal size), so that Ã⁻¹1 = A_c⁻¹(1 - γ B D⁻¹ M'1), the minimum variance
+          weights of the half up to a scale.
+        - α = 1 - ν(Ã) / (ν(Ã) + ν(D̃)), the share of the first half, with ν the
+          variance of the inverse variance portfolio of a block.
+
+        The halves are then split further on Ã and D̃. The assets are clustered and
+        ordered as in Hierarchical Risk Parity, so γ = 0 gives its weights.
+
+        For more information, see the following papers:
+
+        - Cotton, P. (2024). "Schur Complementary Allocation: A Unification of
+          Hierarchical Risk Parity and Minimum Variance Portfolios." arXiv 2411.05807.
+        - López de Prado, M. (2016). "Building Diversified Portfolios that Outperform Out of
+          Sample." The Journal of Portfolio Management, 42(4), 59-69.
+        - skfolio: SchurComplementary(keep_monotonic=False) (https://skfolio.org), which
+          the weights are referenced against.
+
+        Also known as: Schur complementary portfolio, Schur allocation.
+
+        Args:
+            gamma (float, optional): How much of the covariance between the halves of a
+                cluster the splits use, between 0 (Hierarchical Risk Parity) and 1.
+                Defaults to 0.5.
+            linkage_method (str, optional): The linkage of the hierarchical clustering:
+                "single", "complete", "average" or "ward". Defaults to "single", as in
+                Hierarchical Risk Parity.
+            codependence (str, optional): The codependence the assets are clustered on
+                (see get_hierarchical_risk_parity_weights). Defaults to "pearson".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix (see
+                get_hierarchical_risk_parity_weights). A shrinkage estimator such as
+                "ledoit_wolf" keeps the augmented blocks positive definite at a higher
+                gamma. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); it
+                cannot be negative. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution. Returns and volatilities are
+            annualized.
+
+        Notes:
+        - Weight bounds move each split just enough to keep both halves within the sum of
+          their assets' bounds, as in Hierarchical Risk Parity; the method is long only
+          and fully invested.
+        - The portfolio's variance need not fall as gamma rises: the augmented blocks can
+          make a split worse when the covariance matrix is poorly conditioned. skfolio
+          by default caps gamma where the variance stops falling (keep_monotonic=True);
+          here gamma is used as given, so compare the Volatility with that of a lower
+          gamma. When an augmented block is not positive definite, the method returns an
+          error that asks for a lower gamma or a shrinkage covariance estimator.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_schur_complementary_weights(gamma=0.5)
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
+        |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
+        | AAPL      |   0.1146 |            0.1932 |       0.2786 |         0.5725 |              0.136  |
+        | MSFT      |   0.1448 |            0.2017 |       0.2571 |         0.6534 |              0.1365 |
+        | JNJ       |   0.5231 |            0.0987 |       0.1673 |         0.3884 |              0.479  |
+        | XOM       |   0.2175 |            0.2911 |       0.2702 |         0.9526 |              0.2485 |
+        | Portfolio |   1      |            0.1663 |       0.1372 |         0.9663 |              1      |
+        """
+        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
+        )
+        weights = optimization_model.get_schur_complementary_weights(
+            covariance_matrix,
+            gamma,
+            linkage_method,
+            minimum_weight,
+            maximum_weight,
+            distance=optimization_model.get_codependence_distance(
+                returns, covariance_matrix, codependence
+            ),
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
+    def get_stacking_weights(
+        self,
+        methods: str | list[str] | None = None,
+        final_method: str = "minimum_variance",
+        folds: int | None = 5,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of a stacked portfolio: several optimizers each give their
+        portfolio, and a final optimizer divides the weight over those portfolios as if
+        they were assets, judged by the returns each earns out of sample. Each optimizer
+        has its own strengths (inverse volatility is robust, maximum diversification
+        spreads the risk, HRP avoids inverting the covariance matrix, minimum CVaR guards
+        the tail); stacking combines them by how they hold up rather than choosing one.
+
+        The formula is as follows:
+
+        - w = W v, with W the N × K matrix whose column k holds the weights of method k
+          optimized on all periods, and v the weights the final method gives the K
+          portfolios.
+        - The final method is optimized on the returns of the K portfolios. With folds,
+          the periods are cut into that many consecutive blocks; for each block the
+          methods are optimized on the other periods and their portfolios earn the
+          block's returns, so every return the final method sees is out of sample (a
+          K-fold cross-validation without shuffling). With folds=None it uses the
+          in-sample returns R W, which favours the methods that fit the past best.
+
+        For more information, see the following sources:
+
+        - Wolpert, D. H. (1992). "Stacked Generalization." Neural Networks, 5(2),
+          241-259.
+        - skfolio: StackingOptimization (https://skfolio.org), which the weights are
+          referenced against with cv=KFold(folds) and cv="ignore".
+
+        Also known as: stacking, stacked generalization, ensemble optimization.
+
+        Args:
+            methods (str | list[str] | None, optional): The optimizers to combine, a list
+                or a comma-separated string of "minimum_variance", "maximum_sharpe",
+                "risk_parity", "inverse_volatility", "maximum_diversification",
+                "hierarchical_risk_parity", "hierarchical_equal_risk_contribution",
+                "nested_clustered_optimization", "schur_complementary", "minimum_cvar",
+                "minimum_drawdown", "minimum_mad", "minimum_semideviation" and
+                "equal_weight", each with its default settings. Defaults to None, which
+                uses "inverse_volatility", "maximum_diversification",
+                "hierarchical_risk_parity" and "minimum_cvar".
+            final_method (str, optional): The optimizer that weights the methods'
+                portfolios, one of the methods above. Defaults to "minimum_variance".
+            folds (int | None, optional): The number of consecutive blocks of the
+                cross-validation, at least 2, or None to use the in-sample returns.
+                Defaults to 5.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix of the
+                methods that use one (see get_minimum_variance_weights). Defaults to
+                "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns of
+                "maximum_sharpe" (see get_maximum_sharpe_weights). Defaults to "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution of the stacked portfolio, and a
+            column per method with its weights, whose Portfolio row is the method's weight
+            in the stacked portfolio. Returns and volatilities are annualized.
+
+        Notes:
+        - Every method and the final method are long only and fully invested and use their
+          default settings; the risk free rate of "maximum_sharpe" is the Toolkit's
+          average over the periods it is optimized on.
+        - skfolio's StackingOptimization uses 5-fold cross-validation by default as well;
+          its blocks follow scikit-learn's KFold, the same consecutive blocks with the
+          first ones one period longer when the periods do not divide evenly.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_stacking_weights()[
+            [
+                "Weight",
+                "Maximum Diversification",
+                "Hierarchical Risk Parity",
+                "Minimum CVaR",
+            ]
+        ]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Maximum Diversification |   Hierarchical Risk Parity |   Minimum CVaR |
+        |:----------|---------:|--------------------------:|---------------------------:|---------------:|
+        | AAPL      |   0.1287 |                    0.0922 |                     0.1287 |         0      |
+        | MSFT      |   0.1511 |                    0.2349 |                     0.1511 |         0.1823 |
+        | JNJ       |   0.5207 |                    0.4195 |                     0.5207 |         0.5968 |
+        | XOM       |   0.1995 |                    0.2534 |                     0.1995 |         0.2209 |
+        | Portfolio |   1      |                    0      |                     1      |         0      |
+        """
+        if isinstance(methods, str):
+            methods = [
+                method.strip() for method in methods.split(",") if method.strip()
+            ]
+        methods = list(methods or DEFAULT_STACKING_METHODS)
+        unknown = [
+            method
+            for method in [*methods, final_method]
+            if method not in STACKING_METHODS
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown methods: {', '.join(unknown)}; choose from "
+                f"{', '.join(STACKING_METHODS)}."
+            )
+        returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        benchmark = (
+            self._get_benchmark_returns(period)
+            if expected_returns == "capm" or covariance == "ledoit_wolf_single_factor"
+            else None
+        )
+        factors = self._get_factor_returns(period) if covariance == "factor" else None
+
+        def optimizer(method: str):
+            def weights(window: pd.DataFrame) -> pd.Series:
+                if method == "equal_weight":
+                    return pd.Series(1 / window.shape[1], index=window.columns)
+                if method == "minimum_cvar":
+                    return optimization_model.get_minimum_cvar_weights(window)
+                if method == "minimum_drawdown":
+                    return optimization_model.get_minimum_drawdown_weights(window)
+                if method in ("minimum_mad", "minimum_semideviation"):
+                    return optimization_model.get_mean_risk_weights(
+                        window, risk_measure=method.removeprefix("minimum_")
+                    )
+                window_risk_free_rate = self._get_risk_free_rate(period, window.index)
+                mu, sigma = optimization_model.get_expected_returns_and_covariance(
+                    window,
+                    PERIODS_PER_YEAR[period],
+                    covariance,
+                    covariance_span,
+                    expected_returns,
+                    expected_returns_span,
+                    benchmark,
+                    window_risk_free_rate,
+                    factors,
+                )
+                if method == "minimum_variance":
+                    return optimization_model.get_minimum_variance_weights(sigma)
+                if method == "maximum_sharpe":
+                    return optimization_model.get_maximum_sharpe_weights(
+                        mu, sigma, window_risk_free_rate
+                    )
+                if method == "risk_parity":
+                    return optimization_model.get_risk_parity_weights(sigma)
+                if method == "inverse_volatility":
+                    return optimization_model.get_inverse_volatility_weights(sigma)
+                if method == "maximum_diversification":
+                    return optimization_model.get_maximum_diversification_weights(sigma)
+                if method == "hierarchical_equal_risk_contribution":
+                    return optimization_model.get_hierarchical_equal_risk_contribution_weights(
+                        sigma
+                    )
+                if method == "nested_clustered_optimization":
+                    return optimization_model.get_nested_clustered_optimization_weights(
+                        mu, sigma, risk_free_rate=window_risk_free_rate
+                    )
+                if method == "schur_complementary":
+                    return optimization_model.get_schur_complementary_weights(sigma)
+                return optimization_model.get_hierarchical_risk_parity_weights(sigma)
+
+            return weights
+
+        weights, method_weights, final_weights = (
+            optimization_model.get_stacking_weights(
+                returns,
+                {STACKING_METHODS[method]: optimizer(method) for method in methods},
+                optimizer(final_method),
+                folds,
+            )
+        )
+        table = self._weights_table(
+            weights, expected, covariance_matrix, risk_free_rate, rounding
+        )
+        for name in method_weights.columns:
+            table[name] = method_weights[name]
+            table.loc[PORTFOLIO_TICKER, name] = final_weights[name]
+        return self._round(table, rounding)
+
+    @handle_errors
     def get_hierarchical_equal_risk_contribution_weights(
         self,
         linkage_method: str = "ward",
         clusters: int | None = None,
+        cluster_criterion: str = "two_difference_gap",
         codependence: str = "pearson",
         period: str = "daily",
         covariance: str = "sample",
@@ -1374,6 +1840,10 @@ class OptimizationConstruction:
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
+        risk_measure: str = "variance",
+        confidence_level: float = 0.95,
+        minimum_acceptable_return: float | str = 0.0,
+        within_clusters: str = "inverse_risk",
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1392,7 +1862,16 @@ class OptimizationConstruction:
         The clustering uses the correlation distance √((1 - ρ) / 2) with Ward linkage, as
         in the paper. Without a number of clusters, it is the one at the sharpest bend of
         the pooled within-cluster dispersion, the two-order difference of the gap
-        statistic (Yue, Wang and Wei, 2008; Tibshirani, Walther and Hastie, 2001).
+        statistic (Yue, Wang and Wei, 2008; Tibshirani, Walther and Hastie, 2001), or
+        with cluster_criterion="standardized_silhouette" the one whose clusters have the
+        highest mean over standard deviation of the silhouette coefficients (López de
+        Prado, 2020; Rousseeuw, 1987).
+
+        The risk of a cluster is that of its inverse risk portfolio: the variance by
+        default, or, as in the paper, another risk measure of the historical returns,
+        such as the CVaR or the CDaR. With within_clusters="equal", the assets of a cluster
+        share its weight equally while the clusters are still split by the risk of their
+        inverse risk portfolios, the HERC2 variant of Riskfolio-Lib (Cajas).
 
         For more information, see the following papers:
 
@@ -1400,6 +1879,16 @@ class OptimizationConstruction:
           SSRN 3237540.
         - Raffinot, T. (2017). "Hierarchical Clustering-Based Asset Allocation." The
           Journal of Portfolio Management, 44(2), 89-99.
+        - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
+          University Press.
+        - Rousseeuw, P. J. (1987). "Silhouettes: A Graphical Aid to the Interpretation and
+          Validation of Cluster Analysis." Journal of Computational and Applied
+          Mathematics, 20, 53-65.
+        - Riskfolio-Lib: HCPortfolio(model="HERC" or "HERC2", rm=...)
+          (https://github.com/dcajasn/Riskfolio-Lib), which the weights with every risk
+          measure are referenced against.
+        - skfolio: HierarchicalEqualRiskContribution(risk_measure=...)
+          (https://skfolio.org), referenced against for the measures it has.
 
         Also known as: HERC, hierarchical clustering-based risk parity.
 
@@ -1409,6 +1898,12 @@ class OptimizationConstruction:
                 paper.
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
+            cluster_criterion (str, optional): How the number of clusters is chosen when
+                it is not given: "two_difference_gap" (the sharpest bend of the
+                within-cluster dispersion, Yue, Wang and Wei, 2008) or
+                "standardized_silhouette" (the highest mean over standard deviation of the
+                silhouette coefficients, López de Prado, 2020). Defaults to
+                "two_difference_gap".
             codependence (str, optional): The codependence the assets are clustered on:
                 "pearson" (the linear correlation of the covariance matrix), "spearman"
                 (the rank correlation of the returns, Spearman, 1904), "kendall" (the
@@ -1467,6 +1962,20 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
+            risk_measure (str, optional): The risk measure of the clusters: "variance"
+                (of the covariance matrix), "volatility", or one of the historical
+                returns: "mad", "semideviation", "lower_partial_moment",
+                "worst_realization", "gini_mean_difference", "tail_gini", "range",
+                "cvar_range", "tail_gini_range", "ulcer_index", "cvar" or "cdar" (see
+                get_hierarchical_risk_parity_weights). Defaults to "variance".
+            confidence_level (float, optional): The confidence level of "cvar", "cdar",
+                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            minimum_acceptable_return (float | str, optional): The threshold of
+                "semideviation" and "lower_partial_moment", as a return per period of the
+                chosen frequency, or "mean" for each asset's average return. Defaults to 0.
+            within_clusters (str, optional): The weights within a cluster:
+                "inverse_risk" (inverse to each asset's risk) or "equal" (HERC2). Defaults
+                to "inverse_risk".
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1478,13 +1987,20 @@ class OptimizationConstruction:
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution, with the Cluster of every asset
+            Volatility, Sharpe Ratio and Risk Contribution, with a risk measure of the
+            returns that measure per period (e.g. "CDaR"), and the Cluster of every asset
             (numbered from 1). Returns and volatilities are annualized.
 
         Notes:
         - Weight, sector and country bounds are applied after the allocation: when the
           weights fall outside them, they move to the weights within the bounds with the
           smallest relative change, Σ (w_i / w_HERC,i - 1)².
+        - The risk measures of the returns are per period of the chosen frequency and not
+          annualized. With the same clusters, the weights equal Riskfolio-Lib's
+          HCPortfolio(model="HERC", rm=...) and skfolio's
+          HierarchicalEqualRiskContribution(risk_measure=...). Riskfolio-Lib's own
+          two-order difference sums the standard deviation of the distances within each
+          cluster, which can pick another number of clusters.
         - HERC is long only and fully invested, so short positions and a net or gross
           exposure do not apply.
 
@@ -1533,12 +2049,30 @@ class OptimizationConstruction:
                 country_bounds,
             ),
             distance=distance,
+            returns=returns,
+            risk_measure=risk_measure,
+            confidence_level=confidence_level,
+            minimum_acceptable_return=minimum_acceptable_return,
+            within_clusters=within_clusters,
+            cluster_criterion=cluster_criterion,
         )
-        table = self._weights_table(
-            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        table = self._add_hierarchical_risk(
+            self._weights_table(
+                weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+            ),
+            weights,
+            returns,
+            risk_measure,
+            confidence_level,
+            minimum_acceptable_return,
+            rounding,
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters, distance=distance
+            covariance_matrix,
+            linkage_method,
+            clusters,
+            distance=distance,
+            cluster_criterion=cluster_criterion,
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -1549,12 +2083,16 @@ class OptimizationConstruction:
         objective: str = "minimum_variance",
         linkage_method: str = "ward",
         clusters: int | None = None,
+        cluster_criterion: str = "two_difference_gap",
         codependence: str = "pearson",
         period: str = "daily",
         covariance: str = "denoised",
         covariance_span: int = 180,
         expected_returns: str = "mean",
         expected_returns_span: int = 180,
+        risk_measure: str = "variance",
+        confidence_level: float = 0.95,
+        minimum_acceptable_return: float | str = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1573,7 +2111,11 @@ class OptimizationConstruction:
         across the clusters v are optimal for those, and the weight of every asset is
         w = W v. The clusters are found as in HERC (correlation distance, Ward linkage,
         the number of clusters from the two-order difference of the gap statistic) and the
-        covariance matrix is denoised by default, as in the paper.
+        covariance matrix is denoised by default, as in the paper. With another risk
+        measure than the variance, "minimum_variance" minimizes that measure of the
+        historical returns and "risk_parity" equalizes its risk contributions, within the
+        clusters and across them on the returns of the clusters' portfolios, as
+        Riskfolio-Lib's HCPortfolio(model="NCO", rm=...) does.
 
         For more information, see the following papers:
 
@@ -1581,6 +2123,9 @@ class OptimizationConstruction:
           3469961.
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
           University Press, chapter 7.
+        - Riskfolio-Lib: HCPortfolio(model="NCO", rm=...)
+          (https://github.com/dcajasn/Riskfolio-Lib), which the weights with the other
+          risk measures are referenced against.
 
         Also known as: NCO, nested clustered optimisation.
 
@@ -1592,6 +2137,12 @@ class OptimizationConstruction:
                 "single", "complete", "average" or "ward". Defaults to "ward".
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
+            cluster_criterion (str, optional): How the number of clusters is chosen when
+                it is not given: "two_difference_gap" (the sharpest bend of the
+                within-cluster dispersion, Yue, Wang and Wei, 2008) or
+                "standardized_silhouette" (the highest mean over standard deviation of the
+                silhouette coefficients, López de Prado, 2020). Defaults to
+                "two_difference_gap".
             codependence (str, optional): The codependence the assets are clustered on:
                 "pearson" (the linear correlation of the covariance matrix), "spearman"
                 (the rank correlation of the returns, Spearman, 1904), "kendall" (the
@@ -1640,6 +2191,18 @@ class OptimizationConstruction:
                 optimal weights, Bodnar, Okhrin and Parolya, 2019). Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
+            risk_measure (str, optional): The risk measure of "minimum_variance" and
+                "risk_parity": "variance" (of the covariance matrix), or one of the
+                historical returns: "mad", "semideviation", "lower_partial_moment",
+                "worst_realization", "gini_mean_difference", "tail_gini", "range",
+                "cvar_range", "tail_gini_range", "ulcer_index", "cvar" or "cdar" (see
+                get_mean_risk_weights). "volatility" gives the weights of "variance", and
+                "maximum_sharpe" takes the variance only. Defaults to "variance".
+            confidence_level (float, optional): The confidence level of "cvar", "cdar",
+                "cvar_range" and the Tail Gini measures. Defaults to 0.95.
+            minimum_acceptable_return (float | str, optional): The threshold of
+                "semideviation" and "lower_partial_moment", as a return per period of the
+                chosen frequency, or "mean" for each asset's average return. Defaults to 0.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1651,7 +2214,8 @@ class OptimizationConstruction:
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution, with the Cluster of every asset
+            Volatility, Sharpe Ratio and Risk Contribution, with a risk measure of the
+            returns that measure per period (e.g. "MAD"), and the Cluster of every asset
             (numbered from 1). Returns and volatilities are annualized.
 
         Notes:
@@ -1712,12 +2276,29 @@ class OptimizationConstruction:
             linkage_method,
             clusters,
             distance=distance,
+            returns=returns,
+            risk_measure=risk_measure,
+            confidence_level=confidence_level,
+            minimum_acceptable_return=minimum_acceptable_return,
+            cluster_criterion=cluster_criterion,
         )
-        table = self._weights_table(
-            weights, expected, covariance_matrix, risk_free_rate, rounding
+        table = self._add_hierarchical_risk(
+            self._weights_table(
+                weights, expected, covariance_matrix, risk_free_rate, rounding
+            ),
+            weights,
+            returns,
+            risk_measure,
+            confidence_level,
+            minimum_acceptable_return,
+            rounding,
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters, distance=distance
+            covariance_matrix,
+            linkage_method,
+            clusters,
+            distance=distance,
+            cluster_criterion=cluster_criterion,
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table

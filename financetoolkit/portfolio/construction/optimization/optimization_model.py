@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import math
+from collections.abc import Callable
 from typing import NamedTuple
 
 import numpy as np
@@ -2227,6 +2228,10 @@ def get_hierarchical_risk_parity_weights(
     maximum_weight: float | dict[str, float] = 1.0,
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    returns: pd.DataFrame | None = None,
+    risk_measure: str = "variance",
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
 ) -> pd.Series:
     """
     Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
@@ -2234,6 +2239,11 @@ def get_hierarchical_risk_parity_weights(
     split top-down between the two halves of each cluster in inverse proportion to their
     variance. It needs no matrix inversion, so it stays stable when assets are highly
     correlated.
+
+    The risk of a half is that of its inverse risk portfolio, w_i ∝ 1 / ρ_i with ρ_i the
+    risk of asset i alone: the inverse variance portfolio and its variance by default, or
+    another risk measure ρ, such as the volatility, the CVaR or the CDaR, measured on the
+    returns (see get_hierarchical_risk), as Riskfolio-Lib and skfolio offer for HRP.
 
     As in the paper (Stage 1, step 2), the clustering uses the Euclidean distance between
     the columns of the correlation distance matrix d = √((1 - ρ) / 2), a distance of
@@ -2261,6 +2271,15 @@ def get_hierarchical_risk_parity_weights(
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
+        returns (pd.DataFrame | None, optional): The returns per period, one column per
+            asset, which the risk measures besides the variance and volatility need.
+            Defaults to None.
+        risk_measure (str, optional): The risk measure of the splits, a key of
+            HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2282,36 +2301,20 @@ def get_hierarchical_risk_parity_weights(
             "Hierarchical Risk Parity holds long positions only; the minimum weight "
             "cannot be negative."
         )
-    if distance is not None:
-        distance = distance.loc[covariance.index, covariance.index].to_numpy()
-    else:
-        if correlation is None:
-            volatility = np.sqrt(np.diag(covariance.to_numpy()))
-            correlation = covariance / np.outer(volatility, volatility)
-        # The correlation distance of López de Prado, sqrt((1 - rho) / 2).
-        distance = np.sqrt(
-            np.clip(
-                (1 - correlation.loc[covariance.index, covariance.index].to_numpy())
-                / 2,
-                0,
-                None,
-            )
-        )
-        np.fill_diagonal(distance, 0)
-    # The Euclidean distance between the columns of the distance matrix that the paper
-    # clusters on (the paper's listing passes the square matrix to linkage, which reads the
-    # rows as observations and does exactly this).
-    order = leaves_list(linkage(pdist(distance), method=linkage_method))
+    order = get_hierarchical_order(covariance, linkage_method, correlation, distance)
     # The bisection works on positions in numpy: label lookups in pandas took most of
     # the time, which counts in a backtest that runs it on every rebalancing date.
     sigma = covariance.to_numpy()
     lower, upper = lower.to_numpy(), upper.to_numpy()
-
-    def cluster_variance(items: list) -> float:
-        sub = sigma[np.ix_(items, items)]
-        inverse_variance = 1 / np.diag(sub)
-        weights = inverse_variance / inverse_variance.sum()
-        return float(weights @ sub @ weights)
+    data = None
+    if risk_measure not in ("variance", "volatility") and returns is not None:
+        data = returns[covariance.index].dropna(how="any").to_numpy(dtype=float)
+    measure = (risk_measure, confidence_level, minimum_acceptable_return)
+    asset_risk = get_hierarchical_risk(np.eye(len(sigma)), sigma, data, *measure)
+    if not (asset_risk > 0).all():
+        raise ValueError(
+            f"Every asset needs a positive {risk_measure} to be weighted by its inverse."
+        )
 
     weights = np.ones(len(sigma))
     clusters = [order.tolist()]
@@ -2322,12 +2325,19 @@ def get_hierarchical_risk_parity_weights(
             if len(cluster) > 1
             for half in (cluster[: len(cluster) // 2], cluster[len(cluster) // 2 :])
         ]
+        if not clusters:
+            break
+        # The inverse risk portfolios of all halves of this level, one column each, are
+        # measured in one go: a measure on the returns costs mostly its overhead.
+        portfolios = np.zeros((len(sigma), len(clusters)))
+        for column, half in enumerate(clusters):
+            portfolios[half, column] = 1 / asset_risk[half]
+        risk = get_hierarchical_risk(
+            portfolios / portfolios.sum(axis=0), sigma, data, *measure
+        )
         for i in range(0, len(clusters), 2):
             left, right = clusters[i], clusters[i + 1]
-            left_variance, right_variance = cluster_variance(left), cluster_variance(
-                right
-            )
-            alpha = 1 - left_variance / (left_variance + right_variance)
+            alpha = 1 - risk[i] / (risk[i] + risk[i + 1])
             # The weight of the cluster being split, which all its assets still share.
             parent = weights[left[0]]
             alpha = min(
@@ -2352,6 +2362,7 @@ def get_hierarchical_clusters(
     clusters: int | None = None,
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    cluster_criterion: str = "two_difference_gap",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Cluster the assets on their correlations: a hierarchical clustering on the
@@ -2367,6 +2378,11 @@ def get_hierarchical_clusters(
     max(8, √N) clusters for N assets. Summing the average distance within each cluster
     instead does not fall as clusters split and tends to pick more clusters than the
     correlation blocks hold.
+
+    With cluster_criterion="standardized_silhouette", it is the number of clusters, from 2
+    up to the same limit, whose cut has the highest standardized silhouette of López de
+    Prado (2020), the mean of the silhouette coefficients over their standard deviation
+    (see get_standardized_silhouette).
 
     See Yue, S., Wang, X. and Wei, M. (2008), "Application of Two-Order Difference to Gap
     Statistic", Transactions of Tianjin University, 14(3), 217-221, and Tibshirani, R.,
@@ -2385,11 +2401,19 @@ def get_hierarchical_clusters(
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
+        cluster_criterion (str, optional): How the number of clusters is chosen when it
+            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
+            "two_difference_gap".
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
             cluster of every asset, numbered from 0.
     """
+    if cluster_criterion not in CLUSTER_CRITERIA:
+        raise ValueError(
+            f"The cluster criterion must be one of {', '.join(CLUSTER_CRITERIA)}, not "
+            f"'{cluster_criterion}'."
+        )
     if linkage_method not in LINKAGE_METHODS:
         raise ValueError(
             f"The linkage method must be one of {', '.join(LINKAGE_METHODS)}, not "
@@ -2422,6 +2446,15 @@ def get_hierarchical_clusters(
         if count == 2:  # noqa: PLR2004
             # Two assets have no second difference; each is its own cluster.
             clusters = 2
+        elif cluster_criterion == "standardized_silhouette":
+            # Column j of the cut tree holds the clusters of the cut into N - j clusters.
+            levels = cut_tree(matrix)
+            candidates = range(2, min(count - 1, max(8, round(np.sqrt(count)))) + 1)
+            scores = [
+                get_standardized_silhouette(distance, levels[:, count - k])
+                for k in candidates
+            ]
+            clusters = candidates[int(np.argmax(scores))] if scores else 2
         else:
             # Column j of the cut tree holds the clusters of the cut into N - j clusters.
             levels = cut_tree(matrix)
@@ -2457,6 +2490,12 @@ def get_hierarchical_equal_risk_contribution_weights(
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    returns: pd.DataFrame | None = None,
+    risk_measure: str = "variance",
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+    within_clusters: str = "inverse_risk",
+    cluster_criterion: str = "two_difference_gap",
 ) -> pd.Series:
     """
     Hierarchical Equal Risk Contribution (Raffinot, 2018): the assets are clustered on
@@ -2467,6 +2506,13 @@ def get_hierarchical_equal_risk_contribution_weights(
     portfolios of the clusters in each branch. Unlike Hierarchical Risk Parity, which
     bisects the ordered list of assets, the splits follow the tree, so similar assets
     stay together.
+
+    The risk of a cluster is that of its inverse risk portfolio, w_i ∝ 1 / ρ_i with ρ_i
+    the risk of asset i alone: the variance by default, or another risk measure ρ, such
+    as the volatility, the CVaR or the CDaR, measured on the returns (Raffinot, 2018,
+    see get_hierarchical_risk). With within_clusters="equal", the assets of a cluster
+    share its weight equally while the clusters are still split by the risk of their
+    inverse risk portfolios, Riskfolio-Lib's HERC2.
 
     The weight and group bounds are applied afterwards: when the
     weights fall outside them, they move to the weights within the bounds with the
@@ -2497,6 +2543,20 @@ def get_hierarchical_equal_risk_contribution_weights(
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
+        returns (pd.DataFrame | None, optional): The returns per period, one column per
+            asset, which the risk measures besides the variance and volatility need.
+            Defaults to None.
+        risk_measure (str, optional): The risk measure of the clusters, a key of
+            HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
+        within_clusters (str, optional): The weights within a cluster: "inverse_risk"
+            or "equal" (HERC2). Defaults to "inverse_risk".
+        cluster_criterion (str, optional): How the number of clusters is chosen when it
+            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
+            "two_difference_gap".
 
     Returns:
         pd.Series: The weight per asset.
@@ -2510,18 +2570,40 @@ def get_hierarchical_equal_risk_contribution_weights(
             "Hierarchical Equal Risk Contribution holds long positions only; the minimum "
             "weight cannot be negative."
         )
+    if within_clusters not in ("inverse_risk", "equal"):
+        raise ValueError(
+            "The weights within the clusters must be 'inverse_risk' or 'equal', not "
+            f"'{within_clusters}'."
+        )
     matrix, labels = get_hierarchical_clusters(
-        covariance, linkage_method, clusters, correlation, distance
+        covariance,
+        linkage_method,
+        clusters,
+        correlation,
+        distance,
+        cluster_criterion,
     )
     sigma = covariance.to_numpy()
+    data = None
+    if risk_measure not in ("variance", "volatility") and returns is not None:
+        data = returns[covariance.index].dropna(how="any").to_numpy(dtype=float)
+    measure = (risk_measure, confidence_level, minimum_acceptable_return)
+    asset_risk = get_hierarchical_risk(np.eye(len(sigma)), sigma, data, *measure)
+    if not (asset_risk > 0).all():
+        raise ValueError(
+            f"Every asset needs a positive {risk_measure} to be weighted by its inverse."
+        )
 
     members = [np.flatnonzero(labels == label) for label in range(labels.max() + 1)]
-    weights = np.zeros(len(sigma))
-    risk = np.zeros(len(members))
+    # The inverse risk portfolio of every cluster, one column each, and its risk.
+    portfolios = np.zeros((len(sigma), len(members)))
     for label, assets in enumerate(members):
-        inverse_variance = 1 / np.diag(sigma)[assets]
-        weights[assets] = inverse_variance / inverse_variance.sum()
-        risk[label] = weights[assets] @ sigma[np.ix_(assets, assets)] @ weights[assets]
+        portfolios[assets, label] = 1 / asset_risk[assets]
+    portfolios /= portfolios.sum(axis=0)
+    risk = get_hierarchical_risk(portfolios, sigma, data, *measure)
+    weights = portfolios.sum(axis=1)
+    if within_clusters == "equal":
+        weights = np.array([1 / np.sum(labels == label) for label in labels])
 
     # Walk down the dendrogram until every node is one of the clusters, splitting the
     # weight of each node between the clusters under its two branches.
@@ -2575,6 +2657,11 @@ def get_nested_clustered_optimization_weights(
     clusters: int | None = None,
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    returns: pd.DataFrame | None = None,
+    risk_measure: str = "variance",
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+    cluster_criterion: str = "two_difference_gap",
 ) -> pd.Series:
     """
     Nested Clustered Optimization (López de Prado, 2019): the assets are clustered on
@@ -2591,6 +2678,14 @@ def get_nested_clustered_optimization_weights(
     portfolio. Both levels are long only and fully invested. The paper clusters with
     k-means and solves both levels without bounds, allowing short positions; here the
     clustering is hierarchical, as in HERC.
+
+    With another risk measure than the variance (or the volatility, whose minimum and
+    equal risk contribution portfolios are those of the variance), "minimum_variance"
+    minimizes that measure of the returns (get_mean_risk_weights, get_minimum_cvar_weights
+    or get_minimum_drawdown_weights) and "risk_parity" equalizes its risk contributions
+    (get_risk_budgeting_weights), within the clusters on the returns of their assets and
+    across them on the returns of the clusters' portfolios, R W, as Riskfolio-Lib's
+    HCPortfolio(model="NCO", rm=...) does. "maximum_sharpe" takes the variance only.
 
     See López de Prado, M. (2019), "A Robust Estimator of the Efficient Frontier", SSRN
     3469961, and López de Prado, M. (2020), Machine Learning for Asset Managers,
@@ -2613,6 +2708,18 @@ def get_nested_clustered_optimization_weights(
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
+        returns (pd.DataFrame | None, optional): The returns per period, one column per
+            asset, which the risk measures besides the variance and volatility need.
+            Defaults to None.
+        risk_measure (str, optional): The risk measure of "minimum_variance" and
+            "risk_parity", a key of HIERARCHICAL_RISK_MEASURES. Defaults to "variance".
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
+        cluster_criterion (str, optional): How the number of clusters is chosen when it
+            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
+            "two_difference_gap".
 
     Returns:
         pd.Series: The weight per asset.
@@ -2623,10 +2730,49 @@ def get_nested_clustered_optimization_weights(
             f"'{objective}'."
         )
     _validate_covariance(covariance)
+    on_returns = risk_measure not in ("variance", "volatility")
+    if on_returns:
+        if risk_measure not in HIERARCHICAL_RISK_MEASURES:
+            raise ValueError(
+                "The risk measure must be one of "
+                f"{', '.join(HIERARCHICAL_RISK_MEASURES)}, not '{risk_measure}'."
+            )
+        if objective == "maximum_sharpe":
+            raise ValueError(
+                "The maximum Sharpe objective takes the variance only; use "
+                "'minimum_variance' or 'risk_parity' with another risk measure."
+            )
+        if returns is None:
+            raise ValueError(f"The risk measure '{risk_measure}' needs the returns.")
+    history = (
+        returns[covariance.index].dropna(how="any")
+        if on_returns and returns is not None
+        else None
+    )
 
-    def optimize(mu: pd.Series, sigma: pd.DataFrame) -> pd.Series:
+    def optimize(
+        mu: pd.Series, sigma: pd.DataFrame, data: pd.DataFrame | None
+    ) -> pd.Series:
         if len(sigma) == 1:
             return pd.Series(1.0, index=sigma.index)
+        if data is not None:
+            if objective == "risk_parity":
+                return get_risk_budgeting_weights(
+                    data,
+                    risk_measure,
+                    confidence_level=confidence_level,
+                    minimum_acceptable_return=minimum_acceptable_return,
+                )
+            if risk_measure == "cvar":
+                return get_minimum_cvar_weights(data, confidence_level)
+            if risk_measure == "cdar":
+                return get_minimum_drawdown_weights(data, "cdar", confidence_level)
+            return get_mean_risk_weights(
+                data,
+                risk_measure,
+                confidence_level=confidence_level,
+                minimum_acceptable_return=minimum_acceptable_return,
+            )
         if objective == "minimum_variance":
             return get_minimum_variance_weights(sigma)
         if objective == "maximum_sharpe":
@@ -2639,7 +2785,12 @@ def get_nested_clustered_optimization_weights(
             "maximum Sharpe ratio portfolio."
         )
     _, labels = get_hierarchical_clusters(
-        covariance, linkage_method, clusters, correlation, distance
+        covariance,
+        linkage_method,
+        clusters,
+        correlation,
+        distance,
+        cluster_criterion,
     )
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:
@@ -2658,12 +2809,16 @@ def get_nested_clustered_optimization_weights(
             )
             continue
         within.loc[assets, label] = optimize(
-            expected_returns[assets], covariance.loc[assets, assets]
+            expected_returns[assets],
+            covariance.loc[assets, assets],
+            history[assets] if history is not None else None,
         )
 
     across = optimize(
         within.T @ expected_returns.reindex(covariance.index),
         within.T @ covariance @ within,
+        # The returns of the clusters' portfolios.
+        history @ within if history is not None else None,
     )
 
     return _as_series((within @ across).to_numpy(), covariance.index)
@@ -4400,6 +4555,380 @@ def get_random_weights(
     """
     weights = np.random.default_rng(seed).dirichlet(np.ones(len(assets)))
     return _as_series(weights, assets)
+
+
+# The risk measures of the hierarchical optimizers: the variance and volatility of the
+# covariance matrix and the measures of the mean-risk optimizer on the returns.
+HIERARCHICAL_RISK_MEASURES = {
+    "variance": "Variance",
+    "volatility": "Volatility",
+    **MEAN_RISK_MEASURES,
+    "cvar": "CVaR",
+    "cdar": "CDaR",
+}
+
+# How the number of clusters is chosen when it is not given.
+CLUSTER_CRITERIA = ("two_difference_gap", "standardized_silhouette")
+
+
+def get_hierarchical_risk(
+    weights: np.ndarray,
+    covariance: np.ndarray,
+    returns: np.ndarray | None = None,
+    risk_measure: str = "variance",
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+) -> np.ndarray:
+    """
+    The risk of portfolios by which the hierarchical optimizers split their weight: the
+    variance w'Σw or the volatility √(w'Σw) of the covariance matrix, or a measure of
+    get_mean_risk_measure on the portfolio's returns X_t = r_t'w (per period, positive
+    for a loss), the measures Raffinot (2018) allocates HERC by and Riskfolio-Lib and
+    skfolio offer for HRP and HERC.
+
+    Args:
+        weights (np.ndarray): The N × K weights of K portfolios, one column each.
+        covariance (np.ndarray): The N × N covariance matrix.
+        returns (np.ndarray | None, optional): The T × N returns, without missing values,
+            for the measures besides the variance and volatility. Defaults to None.
+        risk_measure (str, optional): A key of HIERARCHICAL_RISK_MEASURES. Defaults to
+            "variance".
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
+
+    Returns:
+        np.ndarray: The risk of every portfolio.
+    """
+    if risk_measure not in HIERARCHICAL_RISK_MEASURES:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(HIERARCHICAL_RISK_MEASURES)}, "
+            f"not '{risk_measure}'."
+        )
+    if risk_measure in ("variance", "volatility"):
+        variance = np.einsum("ik,ij,jk->k", weights, covariance, weights)
+        return variance if risk_measure == "variance" else np.sqrt(variance)
+    if returns is None:
+        raise ValueError(f"The risk measure '{risk_measure}' needs the returns.")
+    return get_mean_risk_measure(
+        pd.DataFrame(returns @ weights),
+        risk_measure,
+        confidence_level,
+        minimum_acceptable_return,
+    ).to_numpy()
+
+
+def get_hierarchical_order(
+    covariance: pd.DataFrame,
+    linkage_method: str = "single",
+    correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
+) -> np.ndarray:
+    """
+    The order of the assets that Hierarchical Risk Parity bisects (López de Prado, 2016,
+    Stages 1 and 2): the leaves of the hierarchical clustering on the Euclidean distance
+    between the columns of the correlation distance matrix d = √((1 - ρ) / 2), so that
+    similar assets sit next to each other.
+
+    Args:
+        covariance (pd.DataFrame): The covariance matrix of the assets.
+        linkage_method (str, optional): The linkage of the hierarchical clustering.
+            Defaults to "single".
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on. Defaults to None, the correlation matrix of the covariance
+            matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, in place of the correlation distance. Defaults to None.
+
+    Returns:
+        np.ndarray: The positions of the assets in the order of the leaves.
+    """
+    if distance is not None:
+        matrix = distance.loc[covariance.index, covariance.index].to_numpy()
+    else:
+        if correlation is None:
+            volatility = np.sqrt(np.diag(covariance.to_numpy()))
+            correlation = covariance / np.outer(volatility, volatility)
+        # The correlation distance of López de Prado, sqrt((1 - rho) / 2).
+        matrix = np.sqrt(
+            np.clip(
+                (1 - correlation.loc[covariance.index, covariance.index].to_numpy())
+                / 2,
+                0,
+                None,
+            )
+        )
+        np.fill_diagonal(matrix, 0)
+    # The Euclidean distance between the columns of the distance matrix that the paper
+    # clusters on (the paper's listing passes the square matrix to linkage, which reads the
+    # rows as observations and does exactly this).
+    return leaves_list(linkage(pdist(matrix), method=linkage_method))
+
+
+def get_standardized_silhouette(distance: np.ndarray, labels: np.ndarray) -> float:
+    """
+    The standardized silhouette of a clustering, the quality score q = E[S] / √V[S] of
+    López de Prado (2020, chapter 4) over the silhouette coefficients of Rousseeuw
+    (1987), S_i = (b_i - a_i) / max(a_i, b_i), with a_i the average distance of asset i to
+    the other assets of its cluster and b_i the smallest average distance to the assets of
+    another cluster (S_i = 0 for an asset alone in its cluster). As in the book, the
+    assets are the rows of the distance matrix, so the distances are the Euclidean
+    distances between those rows, and the variance has no degrees of freedom correction.
+
+    See López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge
+    University Press, and Rousseeuw, P. J. (1987), "Silhouettes: A Graphical Aid to the
+    Interpretation and Validation of Cluster Analysis", Journal of Computational and
+    Applied Mathematics, 20, 53-65.
+
+    Args:
+        distance (np.ndarray): The N × N distance matrix the assets are clustered on.
+        labels (np.ndarray): The cluster of every asset.
+
+    Returns:
+        float: The mean of the silhouette coefficients over their standard deviation.
+    """
+    euclidean = squareform(pdist(distance))
+    clusters = np.unique(labels)
+    # The average distance of every asset to the assets of every cluster, itself left out.
+    members = labels[:, None] == clusters[None, :]
+    sizes = members.sum(axis=0) - members
+    average = np.divide(
+        euclidean @ members,
+        sizes,
+        out=np.full(members.shape, np.nan),
+        where=sizes > 0,
+    )
+    within = average[members]
+    between = np.where(members, np.inf, average).min(axis=1)
+    alone = sizes[members] == 0
+    with np.errstate(invalid="ignore"):
+        silhouette = np.where(
+            alone, 0.0, (between - within) / np.maximum(between, within)
+        )
+    return float(silhouette.mean() / silhouette.std())
+
+
+def get_schur_complementary_weights(
+    covariance: pd.DataFrame,
+    gamma: float = 0.5,
+    linkage_method: str = "single",
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
+) -> pd.Series:
+    """
+    Schur Complementary Allocation (Cotton, 2024): Hierarchical Risk Parity whose splits
+    see the covariance between the two halves. HRP splits every cluster with the
+    covariance blocks A and D of its two halves and ignores the block B between them,
+    which the minimum variance portfolio w ∝ Σ⁻¹1 uses through the Schur complements of
+    the block inverse. Cotton writes the minimum variance weights of each half as a
+    scaled minimum variance portfolio of an augmented matrix and shrinks the step from A
+    to it with γ:
+
+    - A_c = A - γ B D⁻¹ B', the Schur complement of D scaled by γ.
+    - b = 1 - γ B D⁻¹ M' 1, with M the n_A × n_D step-up matrix that spreads the n_D assets
+      of the other half over the n_A of this one (M 1 = 1; the identity for equal halves,
+      and for n_A = n_D + 1 the average of the identities with a row of 1 / n_D inserted
+      at every position).
+    - Ã = (I - γ B D⁻¹ M')⁻¹ A_c, made symmetric, so that Ã⁻¹1 = A_c⁻¹ b, the minimum
+      variance weights of the half up to a scale (the collapse of Cotton's appendix A).
+    - The split is that of HRP on the augmented blocks, α = 1 - ν(Ã) / (ν(Ã) + ν(D̃)),
+      with ν the variance of the inverse variance portfolio of a block, and the halves
+      are split further on Ã and D̃.
+
+    With γ = 0 the blocks are not augmented and the weights are those of Hierarchical
+    Risk Parity; as γ rises towards 1 they move towards the minimum variance portfolio.
+    A split of a cluster with a half of one asset uses no augmentation, as both halves
+    are then a single asset or the augmentation has nothing to spread.
+
+    The correction as a matrix, with the step-up matrix for halves of unequal size, is
+    the form of Cotton's precise package and shares similar logic as skfolio's
+    SchurComplementary, which these weights equal with keep_monotonic=False.
+
+    See Cotton, P. (2024), "Schur Complementary Allocation: A Unification of
+    Hierarchical Risk Parity and Minimum Variance Portfolios", arXiv 2411.05807.
+
+    Args:
+        covariance (pd.DataFrame): The covariance matrix of the assets.
+        gamma (float, optional): How much of the covariance between the halves the splits
+            use, from 0 (Hierarchical Risk Parity) to 1. Defaults to 0.5.
+        linkage_method (str, optional): The linkage of the hierarchical clustering.
+            Defaults to "single", as in Hierarchical Risk Parity.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on. Defaults to None, the correlation matrix of the covariance
+            matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, in place of the correlation distance. Defaults to None.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if not 0 <= gamma <= 1:
+        raise ValueError(f"Gamma must lie between 0 and 1, not {gamma}.")
+    _validate_covariance(covariance)
+    if len(covariance) < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets are needed.")
+    constraints = get_weight_constraints(
+        covariance.index, minimum_weight, maximum_weight
+    )
+    lower = np.array([bound[0] for bound in constraints.bounds])
+    upper = np.array([bound[1] for bound in constraints.bounds])
+    if (lower < 0).any():
+        raise ValueError(
+            "Schur Complementary Allocation holds long positions only; the minimum "
+            "weight cannot be negative."
+        )
+    order = get_hierarchical_order(covariance, linkage_method, correlation, distance)
+    # The blocks are augmented in place, so every later split works on the augmented
+    # blocks of the cluster it splits.
+    sigma = covariance.to_numpy(dtype=float, copy=True)
+
+    def augment(own: np.ndarray, between: np.ndarray, other: np.ndarray) -> np.ndarray:
+        size, other_size = len(own), len(other)
+        if size == other_size:
+            step_up = np.eye(size)
+        else:
+            larger, smaller = max(size, other_size), min(size, other_size)
+            # Row i of the larger-by-smaller step-up matrix: 1 / smaller everywhere, plus
+            # larger - 1 - i on column i and i on column i - 1, all over larger.
+            rows = np.arange(larger)[:, None]
+            columns = np.arange(smaller)[None, :]
+            step_up = (
+                1 / smaller
+                + (larger - 1 - rows) * (columns == rows)
+                + rows * (columns == rows - 1)
+            ) / larger
+            if size < other_size:
+                step_up = step_up.T * size / other_size
+        projection = gamma * np.linalg.solve(other, between.T).T
+        augmented = np.linalg.solve(
+            np.eye(size) - projection @ step_up.T, own - projection @ between.T
+        )
+        return (augmented + augmented.T) / 2
+
+    def inverse_variance_risk(block: np.ndarray) -> float:
+        inverse_variance = 1 / np.diag(block)
+        weights = inverse_variance / inverse_variance.sum()
+        return float(weights @ block @ weights)
+
+    weights = np.ones(len(sigma))
+    clusters = [order]
+    while clusters:
+        clusters = [
+            half
+            for cluster in clusters
+            if len(cluster) > 1
+            for half in (cluster[: len(cluster) // 2], cluster[len(cluster) // 2 :])
+        ]
+        for i in range(0, len(clusters), 2):
+            left, right = clusters[i], clusters[i + 1]
+            own, other = sigma[np.ix_(left, left)], sigma[np.ix_(right, right)]
+            if gamma > 0 and len(left) > 1:
+                between = sigma[np.ix_(left, right)]
+                own, other = (
+                    augment(own, between, other),
+                    augment(other, between.T, own),
+                )
+                for block in (own, other):
+                    if np.any(np.linalg.eigvalsh(block) <= 0):
+                        raise ValueError(
+                            f"With a gamma of {gamma}, an augmented covariance block "
+                            "is not positive definite; choose a smaller gamma or a "
+                            "shrinkage covariance estimator."
+                        )
+                sigma[np.ix_(left, left)], sigma[np.ix_(right, right)] = own, other
+            left_risk, right_risk = inverse_variance_risk(own), inverse_variance_risk(
+                other
+            )
+            alpha = 1 - left_risk / (left_risk + right_risk)
+            parent = weights[left[0]]
+            alpha = min(
+                upper[left].sum() / parent, max(lower[left].sum() / parent, alpha)
+            )
+            alpha = 1 - min(
+                upper[right].sum() / parent,
+                max(lower[right].sum() / parent, 1 - alpha),
+            )
+            weights[left] *= alpha
+            weights[right] *= 1 - alpha
+
+    return _as_series(weights, covariance.index)
+
+
+def get_stacking_weights(
+    returns: pd.DataFrame,
+    methods: dict[str, Callable[[pd.DataFrame], pd.Series]],
+    final_method: Callable[[pd.DataFrame], pd.Series],
+    folds: int | None = 5,
+) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
+    """
+    Stacking (Wolpert, 1992) of portfolio optimizers: every method gives its weights, a
+    final method is optimized over the returns of the methods' portfolios as if they were
+    assets, and the weights are the methods' weights combined with the final method's,
+    w = W v, with W the N × K matrix of the K methods' weights and v the final weights.
+
+    The final method should learn how the portfolios do out of sample, not how well each
+    fits the periods it was optimized on. With folds, the periods are cut into that many
+    consecutive blocks, the methods are optimized on all periods outside a block and
+    their portfolios earn the returns of the block, so the final method sees returns
+    none of the portfolios was fitted on; this is a K-fold cross-validation without
+    shuffling (the cross_val_predict of skfolio's StackingOptimization). Without folds,
+    the final method is optimized on the in-sample returns R W. The weights of the methods
+    themselves are always optimized on all periods.
+
+    See Wolpert, D. H. (1992), "Stacked Generalization", Neural Networks, 5(2), 241-259.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        methods (dict[str, Callable[[pd.DataFrame], pd.Series]]): Per name, a function
+            that gives the weight per asset from a window of returns.
+        final_method (Callable[[pd.DataFrame], pd.Series]): The function that gives the
+            weight per method from the returns of the methods' portfolios, one column per
+            method.
+        folds (int | None, optional): The number of consecutive blocks of the
+            cross-validation, at least 2, or None for the in-sample returns. Defaults to 5.
+
+    Returns:
+        tuple[pd.Series, pd.DataFrame, pd.Series]: The weight per asset, the weights of
+            every method (one column each) and the weight of every method in the final
+            portfolio.
+    """
+    if len(methods) < 2:  # noqa: PLR2004
+        raise ValueError("Stacking needs at least two methods.")
+    if folds is not None and not 2 <= folds <= len(returns):  # noqa: PLR2004
+        raise ValueError(
+            f"The number of folds must lie between 2 and {len(returns)}, or be None."
+        )
+    weights = pd.DataFrame(
+        {name: method(returns) for name, method in methods.items()}
+    ).reindex(returns.columns)
+    if folds is None:
+        portfolio_returns = returns @ weights
+    else:
+        blocks = np.array_split(np.arange(len(returns)), folds)
+        portfolio_returns = pd.concat(
+            [
+                returns.iloc[block]
+                @ pd.DataFrame(
+                    {
+                        name: method(
+                            returns.iloc[np.setdiff1d(np.arange(len(returns)), block)]
+                        )
+                        for name, method in methods.items()
+                    }
+                ).reindex(returns.columns)
+                for block in blocks
+            ]
+        )
+    final = final_method(portfolio_returns).reindex(weights.columns)
+    return weights @ final, weights, final
 
 
 def get_diversification_ratio(weights: pd.Series, covariance: pd.DataFrame) -> float:

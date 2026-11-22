@@ -358,7 +358,7 @@ def test_rate_of_change_and_oscillators_are_decimals():
     assert rate_of_change.iloc[-1] == pytest.approx(1.01**10 - 1)
 
     ppo = momentum_model.get_percentage_price_oscillator(close, 12, 26)
-    assert 0 < ppo.iloc[-1] < 1
+    assert 0 < ppo["Percentage Price Oscillator"].iloc[-1] < 1
 
 
 def test_windows_of_one_period_are_refused():
@@ -554,3 +554,325 @@ def test_coppock_curve_matches_talib():
     tickers = pd.DataFrame({"A": closes, "B": closes.iloc[::-1].to_numpy()})
     per_ticker = momentum_model.get_coppock_curve(tickers)
     pd.testing.assert_series_equal(per_ticker["A"], result, check_names=False)
+
+
+def random_bars(length: int = 300) -> pd.DataFrame:
+    """300 seeded random bars, long enough for Wilder's smoothing to converge to TA-Lib's."""
+    rng = np.random.default_rng(11)
+    close = 100 + rng.normal(0, 1, length).cumsum()
+    opened = np.r_[close[0], close[:-1]] + rng.normal(0, 0.3, length)
+    high = np.maximum(opened, close) + rng.uniform(0, 1, length)
+    low = np.minimum(opened, close) - rng.uniform(0, 1, length)
+    return pd.DataFrame({"Open": opened, "High": high, "Low": low, "Close": close})
+
+
+def test_get_directional_movement_index(recorder):
+    prices = sample_prices()
+    result = momentum_model.get_directional_movement_index(
+        prices["High"], prices["Low"], prices["Close"], 10
+    ).round(3)
+
+    # The window fills within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_directional_movement_index_matches_talib_and_the_adx():
+    """TA-Lib's PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI, DX and ADXR(14) once the seeds have
+    decayed, and the ADX as Wilder's average of the DX."""
+    bars = random_bars()
+    high, low, close = bars["High"], bars["Low"], bars["Close"]
+    result = momentum_model.get_directional_movement_index(high, low, close, 14)
+
+    # Every column starts on period 14, the first with a full window of movements.
+    assert (result.apply(lambda column: column.first_valid_index()) == 14).all()
+    for column, expected in {
+        "+DM": [2.843691, 2.64057, 2.451958],
+        "-DM": [6.117981, 5.680982, 6.100133],
+        "+DI": [10.939967, 10.640924, 9.869091],
+        "-DI": [23.536494, 22.893124, 24.552938],
+        "DX": [36.536599, 36.536599, 42.658284],
+    }.items():
+        assert result[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+    adx = momentum_model.get_average_directional_index(high, low, close, 14)
+    pd.testing.assert_series_equal(
+        adx,
+        momentum_model.get_wilder_moving_average(result["DX"], 14),
+        check_names=False,
+    )
+
+    rating = momentum_model.get_average_directional_index_rating(high, low, close, 14)
+    assert rating.first_valid_index() == 3 * 14 - 2
+    assert rating.iloc[-3:].tolist() == pytest.approx(
+        [15.526234, 15.786392, 16.288776], abs=1e-6
+    )
+
+
+def test_get_average_directional_index_rating(recorder):
+    prices = sample_prices()
+    result = momentum_model.get_average_directional_index_rating(
+        prices["High"], prices["Low"], prices["Close"], 7
+    ).round(3)
+
+    # The window fills within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_aroon_oscillator_matches_talib():
+    bars = random_bars()
+    result = momentum_model.get_aroon_indicator(bars["High"], bars["Low"], 14)
+
+    pd.testing.assert_series_equal(
+        result["Aroon Oscillator"],
+        result["Aroon Up"] - result["Aroon Down"],
+        check_names=False,
+    )
+    assert result["Aroon Oscillator"].iloc[-3:].tolist() == pytest.approx(
+        [-50.0, -50.0, -64.285714], abs=1e-6
+    )
+
+
+def test_get_absolute_price_oscillator(recorder):
+    result = momentum_model.get_absolute_price_oscillator(random_walk(), 12, 26).round(
+        6
+    )
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_price_oscillators_match_talib():
+    """TA-Lib's APO and PPO with their moving average types, and the MACD line."""
+    closes = random_walk()
+
+    simple = momentum_model.get_absolute_price_oscillator(closes, 12, 26, "simple")
+    exponential = momentum_model.get_absolute_price_oscillator(closes, 12, 26)
+    assert simple.first_valid_index() == exponential.first_valid_index() == 25
+    assert simple.iloc[-3:].tolist() == pytest.approx(
+        [-0.695263, -0.827153, -0.963935], abs=1e-6
+    )
+    assert exponential.iloc[-3:].tolist() == pytest.approx(
+        [-0.495551, -0.509523, -0.393128], abs=1e-6
+    )
+    macd = momentum_model.get_moving_average_convergence_divergence(closes, 12, 26, 9)
+    pd.testing.assert_series_equal(macd["MACD Line"], exponential, check_names=False)
+
+    ppo = momentum_model.get_percentage_price_oscillator(closes, 12, 26, 9, "weighted")
+    assert ppo["Percentage Price Oscillator"].iloc[-3:].tolist() == pytest.approx(
+        [-0.00825328, -0.00834461, -0.00673998], abs=1e-8
+    )
+
+    with pytest.raises(ValueError, match="moving_average"):
+        momentum_model.get_absolute_price_oscillator(closes, 12, 26, "wilder")
+
+
+def test_percentage_price_oscillator_has_an_ema_signal_line():
+    closes = random_walk()
+    result = momentum_model.get_percentage_price_oscillator(closes, 12, 26, 9)
+
+    signal_line = momentum_model.get_exponential_moving_average(
+        result["Percentage Price Oscillator"], 9
+    )
+    pd.testing.assert_series_equal(
+        result["Signal Line"], signal_line, check_names=False
+    )
+    pd.testing.assert_series_equal(
+        result["Histogram"],
+        result["Percentage Price Oscillator"] - result["Signal Line"],
+        check_names=False,
+    )
+    assert result["Signal Line"].first_valid_index() == 33
+
+
+def test_moving_average_convergence_divergence_variants_match_talib():
+    """The histogram, TA-Lib's MACDEXT with simple moving averages (equal from the first
+    value) and MACDFIX once the seeds have decayed."""
+    closes = random_walk()
+    simple = momentum_model.get_moving_average_convergence_divergence(
+        closes, 5, 10, 4, "simple", "simple"
+    )
+    for column, expected in {
+        "MACD Line": [-0.174394, 0.195711, 0.387302],
+        "Signal Line": [-0.69479, -0.420308, -0.068449],
+        "Histogram": [0.520396, 0.616019, 0.45575],
+    }.items():
+        assert simple[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+    fixed = momentum_model.get_moving_average_convergence_divergence(
+        random_bars()["Close"], 12, 26, 9, fixed=True
+    )
+    for column, expected in {
+        "MACD Line": [0.176816, 0.023121, -0.125808],
+        "Signal Line": [0.45395, 0.367784, 0.269066],
+        "Histogram": [-0.277133, -0.344663, -0.394873],
+    }.items():
+        assert fixed[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+    with pytest.raises(ValueError, match="fixed"):
+        momentum_model.get_moving_average_convergence_divergence(
+            closes, 5, 10, 4, fixed=True
+        )
+
+
+def test_know_sure_thing_takes_other_moving_averages():
+    """TA-Lib's KSTEXT with weighted moving averages, in decimals instead of percent."""
+    result = momentum_model.get_know_sure_thing(
+        random_bars()["Close"],
+        moving_average="weighted",
+        signal_moving_average="weighted",
+    )
+
+    assert result["KST"].iloc[-3:].tolist() == pytest.approx(
+        [0.0392952, -0.00958326, -0.04866799], abs=1e-8
+    )
+    assert result["Signal Line"].iloc[-3:].tolist() == pytest.approx(
+        [0.10531716, 0.07793091, 0.04710109], abs=1e-8
+    )
+
+
+def test_get_momentum(recorder):
+    result = momentum_model.get_momentum(random_walk(), 10).round(6)
+
+    assert result.first_valid_index() == 10
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-2.773514, -1.700181, 0.61799], abs=1e-6
+    )
+    recorder.capture(result)
+
+
+def test_get_accelerator_oscillator(recorder):
+    bars = random_bars()
+    result = momentum_model.get_accelerator_oscillator(bars["High"], bars["Low"])
+
+    # The AC starts on period 34 + 5 - 2, the first full SMA of the Awesome Oscillator.
+    assert result.first_valid_index() == 37
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.399343, -0.608252, -0.658767], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_get_internal_bar_strength(recorder):
+    bars = random_bars()
+    result = momentum_model.get_internal_bar_strength(
+        bars["High"], bars["Low"], bars["Close"]
+    )
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [0.231665, 0.209847, 0.330882], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_internal_bar_strength_without_a_range_is_missing():
+    result = momentum_model.get_internal_bar_strength(
+        pd.Series([11.0, 10.0]), pd.Series([9.0, 10.0]), pd.Series([10.0, 10.0])
+    )
+
+    assert result.iloc[0] == pytest.approx(0.5)
+    assert np.isnan(result.iloc[1])
+
+
+def test_get_intraday_momentum_index(recorder):
+    bars = random_bars()
+    result = momentum_model.get_intraday_momentum_index(bars["Open"], bars["Close"], 14)
+
+    assert result.first_valid_index() == 13
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [42.155642, 47.153421, 46.821301], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_get_qstick(recorder):
+    bars = random_bars()
+    result = momentum_model.get_qstick(bars["Open"], bars["Close"], 10)
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.217948, -0.1948, -0.334352], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_get_efficiency_ratio(recorder):
+    result = momentum_model.get_efficiency_ratio(random_walk(), 10)
+
+    assert result.first_valid_index() == 10
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [0.348424, 0.246874, 0.081147], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_get_vertical_horizontal_filter(recorder):
+    result = momentum_model.get_vertical_horizontal_filter(random_walk(), 28)
+
+    assert result.first_valid_index() == 28
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [0.248857, 0.255715, 0.251329], abs=1e-6
+    )
+    recorder.capture(result.round(6))
+
+
+def test_ratios_of_flat_prices_are_missing():
+    """A window without a change has no Efficiency Ratio, VHF or IMI, where TA-Lib returns 1,
+    0 and 50."""
+    flat = pd.Series(10.0, index=range(30))
+
+    assert momentum_model.get_efficiency_ratio(flat, 10).isna().all()
+    assert momentum_model.get_vertical_horizontal_filter(flat, 10).isna().all()
+    assert momentum_model.get_intraday_momentum_index(flat, flat, 10).isna().all()
+
+
+def test_smoothed_chande_momentum_oscillator_matches_talib_and_the_rsi():
+    closes = random_walk()
+    result = momentum_model.get_chande_momentum_oscillator(closes, 14, smoothed=True)
+
+    assert result.first_valid_index() == 14
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-9.806629, -12.179579, 4.32708], abs=1e-6
+    )
+    pd.testing.assert_series_equal(
+        result,
+        2 * momentum_model.get_relative_strength_index(closes, 14) - 100,
+        check_names=False,
+    )
+
+
+def test_choppiness_index_with_the_true_range_box_matches_talib():
+    bars = random_bars()
+    result = momentum_model.get_choppiness_index(
+        bars["High"], bars["Low"], bars["Close"], 14, range_method="true_range"
+    )
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [66.120535, 64.503945, 61.158911], abs=1e-6
+    )
+    with pytest.raises(ValueError, match="range_method"):
+        momentum_model.get_choppiness_index(
+            bars["High"], bars["Low"], bars["Close"], 14, range_method="close"
+        )
+
+
+def test_slow_stochastic_oscillator_matches_talib():
+    """TA-Lib's STOCH(14, 3, SMA, 3, SMA), whose slow %K is the fast %D."""
+    bars = random_bars()
+    fast = momentum_model.get_stochastic_oscillator(
+        bars["High"], bars["Low"], bars["Close"], 14, 3
+    )
+    slow = momentum_model.get_stochastic_oscillator(
+        bars["High"], bars["Low"], bars["Close"], 14, 3, slow=True
+    )
+
+    pd.testing.assert_series_equal(
+        slow["Stochastic %K"], fast["Stochastic %D"], check_names=False
+    )
+    assert slow["Stochastic %K"].iloc[-3:].tolist() == pytest.approx(
+        [35.375979, 21.845389, 13.05297], abs=1e-6
+    )
+    assert slow["Stochastic %D"].iloc[-3:].tolist() == pytest.approx(
+        [37.172728, 30.870737, 23.424779], abs=1e-6
+    )

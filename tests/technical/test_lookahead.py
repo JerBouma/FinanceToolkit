@@ -130,6 +130,50 @@ PER_SECURITY_INDICATORS = {
     "get_coppock_curve": lambda high, low, close, opening, volume: momentum.get_coppock_curve(
         close, 14, 11, 10
     ),
+    "get_directional_movement_index": (
+        lambda high, low, close, opening, volume: momentum.get_directional_movement_index(
+            high, low, close, WINDOW
+        )
+    ),
+    "get_average_directional_index_rating": (
+        lambda high, low, close, opening, volume: momentum.get_average_directional_index_rating(
+            high, low, close, WINDOW
+        )
+    ),
+    "get_absolute_price_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_absolute_price_oscillator(
+            close, 12, 26
+        )
+    ),
+    "get_momentum": lambda high, low, close, opening, volume: momentum.get_momentum(
+        close, 10
+    ),
+    "get_accelerator_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_accelerator_oscillator(
+            high, low
+        )
+    ),
+    "get_internal_bar_strength": (
+        lambda high, low, close, opening, volume: momentum.get_internal_bar_strength(
+            high, low, close
+        )
+    ),
+    "get_intraday_momentum_index": (
+        lambda high, low, close, opening, volume: momentum.get_intraday_momentum_index(
+            opening, close, WINDOW
+        )
+    ),
+    "get_qstick": lambda high, low, close, opening, volume: momentum.get_qstick(
+        opening, close, 10
+    ),
+    "get_efficiency_ratio": lambda high, low, close, opening, volume: momentum.get_efficiency_ratio(
+        close, 10
+    ),
+    "get_vertical_horizontal_filter": (
+        lambda high, low, close, opening, volume: momentum.get_vertical_horizontal_filter(
+            close, 28
+        )
+    ),
     "get_moving_average": lambda high, low, close, opening, volume: overlap.get_moving_average(
         close, WINDOW
     ),

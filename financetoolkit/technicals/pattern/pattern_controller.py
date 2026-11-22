@@ -449,7 +449,7 @@ class PatternTechnicals:
                 forward returns instead of the summary. Defaults to False.
             column (str | None, optional): The output to use of an indicator with several,
                 e.g. "Signal Line" of the MACD. Defaults to None, which uses the first output
-                other than a price, e.g. "MACD Line".
+                other than a price, a histogram or a signal line, e.g. "MACD Line".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the indicator, e.g. window=14 or period="weekly".

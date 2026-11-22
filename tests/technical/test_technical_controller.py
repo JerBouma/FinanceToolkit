@@ -127,6 +127,21 @@ def test_get_percentage_price_oscillator(recorder, technical_module):
     recorder.capture(
         technical_module.get_percentage_price_oscillator(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(
+        technical_module.get_percentage_price_oscillator(
+            signal_window=5, moving_average="simple"
+        )
+    )
+
+
+def test_get_absolute_price_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_absolute_price_oscillator())
+    recorder.capture(
+        technical_module.get_absolute_price_oscillator(moving_average="simple")
+    )
+    recorder.capture(
+        technical_module.get_absolute_price_oscillator(growth=True, lag=[1, 2, 3])
+    )
 
 
 def test_get_percentage_volume_oscillator(recorder, technical_module):
@@ -155,11 +170,40 @@ def test_get_average_directional_index(recorder, technical_module):
     )
 
 
+def test_get_directional_movement_index(recorder, technical_module):
+    recorder.capture(technical_module.get_directional_movement_index())
+    recorder.capture(technical_module.get_directional_movement_index(window=7))
+    recorder.capture(
+        technical_module.get_directional_movement_index(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_average_directional_index_rating(recorder, technical_module):
+    recorder.capture(technical_module.get_average_directional_index_rating())
+    recorder.capture(
+        technical_module.get_average_directional_index_rating(period="weekly")
+    )
+    recorder.capture(
+        technical_module.get_average_directional_index_rating(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
 def test_get_chande_momentum_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_chande_momentum_oscillator())
     recorder.capture(technical_module.get_chande_momentum_oscillator(growth=True))
     recorder.capture(
         technical_module.get_chande_momentum_oscillator(growth=True, lag=[1, 2, 3])
+    )
+    recorder.capture(technical_module.get_chande_momentum_oscillator(smoothed=True))
+
+
+def test_get_intraday_momentum_index(recorder, technical_module):
+    recorder.capture(technical_module.get_intraday_momentum_index())
+    recorder.capture(technical_module.get_intraday_momentum_index(window=7))
+    recorder.capture(
+        technical_module.get_intraday_momentum_index(growth=True, lag=[1, 2, 3])
     )
 
 
@@ -175,6 +219,7 @@ def test_get_stochastic_oscillator(recorder, technical_module):
     recorder.capture(
         technical_module.get_stochastic_oscillator(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(technical_module.get_stochastic_oscillator(slow=True))
 
 
 def test_get_moving_average_convergence_divergence(recorder, technical_module):
@@ -186,6 +231,14 @@ def test_get_moving_average_convergence_divergence(recorder, technical_module):
         technical_module.get_moving_average_convergence_divergence(
             growth=True, lag=[1, 2, 3]
         )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            moving_average="simple", signal_moving_average="simple"
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(fixed=True)
     )
 
 
@@ -223,11 +276,33 @@ def test_get_balance_of_power(recorder, technical_module):
     recorder.capture(technical_module.get_balance_of_power(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_internal_bar_strength(recorder, technical_module):
+    recorder.capture(technical_module.get_internal_bar_strength())
+    recorder.capture(technical_module.get_internal_bar_strength(period="weekly"))
+    recorder.capture(
+        technical_module.get_internal_bar_strength(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_qstick(recorder, technical_module):
+    recorder.capture(technical_module.get_qstick())
+    recorder.capture(technical_module.get_qstick(window=5))
+    recorder.capture(technical_module.get_qstick(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_awesome_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_awesome_oscillator())
     recorder.capture(technical_module.get_awesome_oscillator(growth=True))
     recorder.capture(
         technical_module.get_awesome_oscillator(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_accelerator_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_accelerator_oscillator())
+    recorder.capture(technical_module.get_accelerator_oscillator(signal_window=3))
+    recorder.capture(
+        technical_module.get_accelerator_oscillator(growth=True, lag=[1, 2, 3])
     )
 
 
@@ -452,16 +527,42 @@ def test_get_rate_of_change(recorder, technical_module):
     recorder.capture(technical_module.get_rate_of_change(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_momentum(recorder, technical_module):
+    recorder.capture(technical_module.get_momentum())
+    recorder.capture(technical_module.get_momentum(window=20))
+    recorder.capture(technical_module.get_momentum(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_choppiness_index(recorder, technical_module):
     recorder.capture(technical_module.get_choppiness_index())
     recorder.capture(technical_module.get_choppiness_index(growth=True))
     recorder.capture(technical_module.get_choppiness_index(growth=True, lag=[1, 2, 3]))
+    recorder.capture(technical_module.get_choppiness_index(range_method="true_range"))
+
+
+def test_get_efficiency_ratio(recorder, technical_module):
+    recorder.capture(technical_module.get_efficiency_ratio())
+    recorder.capture(technical_module.get_efficiency_ratio(window=20))
+    recorder.capture(technical_module.get_efficiency_ratio(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_vertical_horizontal_filter(recorder, technical_module):
+    recorder.capture(technical_module.get_vertical_horizontal_filter())
+    recorder.capture(technical_module.get_vertical_horizontal_filter(window=14))
+    recorder.capture(
+        technical_module.get_vertical_horizontal_filter(growth=True, lag=[1, 2, 3])
+    )
 
 
 def test_get_know_sure_thing(recorder, technical_module):
     recorder.capture(technical_module.get_know_sure_thing())
     recorder.capture(technical_module.get_know_sure_thing(growth=True))
     recorder.capture(technical_module.get_know_sure_thing(growth=True, lag=[1, 2, 3]))
+    recorder.capture(
+        technical_module.get_know_sure_thing(
+            moving_average="exponential", signal_moving_average="exponential"
+        )
+    )
 
 
 def test_get_coppock_curve(recorder, technical_module):

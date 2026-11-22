@@ -8,8 +8,12 @@ import pandas as pd
 
 from financetoolkit.technicals.overlap.overlap_model import (
     apply_to_rolling_windows,
+    get_double_exponential_moving_average,
     get_exponential_moving_average,
+    get_hull_moving_average,
+    get_kaufman_adaptive_moving_average,
     get_moving_average,
+    get_triangular_moving_average,
     get_weighted_moving_average,
 )
 from financetoolkit.technicals.volatility.volatility_model import (
@@ -23,6 +27,24 @@ KST_COMPONENT_COUNT = 4
 # The shortest window that has a deviation from its own mean (CCI) and a log10(window) above
 # zero (Choppiness Index).
 MINIMUM_WINDOW = 2
+
+# The moving averages the oscillators built on two averages (MACD, APO, PPO, KST) can use, as
+# TA-Lib's MA types: SMA (0), EMA (1), WMA (2), DEMA (3), TRIMA (5) and KAMA (6), plus the Hull
+# moving average of get_moving_average.
+MOVING_AVERAGES = {
+    "simple": get_moving_average,
+    "exponential": get_exponential_moving_average,
+    "double_exponential": get_double_exponential_moving_average,
+    "triangular": get_triangular_moving_average,
+    "weighted": get_weighted_moving_average,
+    "hull": get_hull_moving_average,
+    "kaufman_adaptive": get_kaufman_adaptive_moving_average,
+}
+
+# TA-Lib's MACDFIX smooths the 12- and 26-period EMAs with the fixed constants 0.15 and 0.075
+# that Appel used, instead of 2 / (window + 1) (0.1538 and 0.0741).
+FIXED_MACD_WINDOWS = (12, 26)
+FIXED_MACD_SMOOTHING = (0.15, 0.075)
 
 
 def get_money_flow_index(
@@ -154,12 +176,15 @@ def get_aroon_indicator(
     - Aroon Up = ((window - Periods Since High) / window) * 100
     - Aroon Down = ((window - Periods Since Low) / window) * 100, defined analogously using
       the lowest low
+    - Aroon Oscillator = Aroon Up - Aroon Down, between -100 and 100
 
-    Also known as: Aroon Up, Aroon Down.
+    Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC.
 
-    Reference: Chande, T.S. (1995). "The New Technical Trader." Wiley.
+    Reference: Chande, T.S. (1995). "A Time Price Oscillator." Technical Analysis of Stocks &
+    Commodities, 13(9); Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: AROON, the reference implementation (https://ta-lib.org/functions/aroon.html).
+    TA-Lib: AROON and AROONOSC, the reference implementations
+    (https://ta-lib.org/functions/aroon.html, https://ta-lib.org/functions/aroonosc.html).
 
     Notes:
         - The lookback spans `window + 1` bars — the current period plus the previous
@@ -175,7 +200,7 @@ def get_aroon_indicator(
         window (int): Number of periods for Aroon calculation.
 
     Returns:
-        pd.DataFrame: Aroon Up and Aroon Down values.
+        pd.DataFrame: Aroon Up, Aroon Down and Aroon Oscillator values.
     """
 
     # The lookback spans today plus the previous window bars, so the extreme can be up to window periods old and the indicator can reach zero. Reversing before taking the extreme breaks ties on the most recent occurrence, as the definition requires.  # noqa: E501
@@ -199,7 +224,11 @@ def get_aroon_indicator(
     aroon_up = ((window - periods_since_high) / window) * 100
     aroon_down = ((window - periods_since_low) / window) * 100
 
-    return pd.concat([aroon_up, aroon_down], keys=["Aroon Up", "Aroon Down"], axis=1)
+    return pd.concat(
+        [aroon_up, aroon_down, aroon_up - aroon_down],
+        keys=["Aroon Up", "Aroon Down", "Aroon Oscillator"],
+        axis=1,
+    )
 
 
 def get_commodity_channel_index(
@@ -454,46 +483,79 @@ def get_ultimate_oscillator(
 
 
 def get_percentage_price_oscillator(
-    prices_close: pd.Series, short_window: int, long_window: int
-) -> pd.Series:
+    prices_close: pd.Series,
+    short_window: int,
+    long_window: int,
+    signal_window: int = 9,
+    moving_average: str = "exponential",
+) -> pd.DataFrame:
     """
     Calculate the Percentage Price Oscillator (PPO) for a given price series.
 
     The Percentage Price Oscillator is the Moving Average Convergence Divergence line
     re-expressed as a percentage of the long-term EMA, rather than as a raw price
     difference. This makes readings comparable across securities trading at very different
-    price levels, which the raw MACD line cannot do.
+    price levels, which the raw MACD line cannot do. As for the MACD, a signal line (an EMA
+    of the PPO) and the histogram (the PPO minus its signal line) show when the PPO turns.
 
     The formula is as follows:
 
-    - PPO = (EMA(Close, short_window) - EMA(Close, long_window)) / EMA(Close, long_window)
+    - PPO = (MA(Close, short_window) - MA(Close, long_window)) / MA(Close, long_window)
+    - Signal Line = EMA(PPO, signal_window)
+    - Histogram = PPO - Signal Line
 
-    The conventional parameters are 12 and 26 periods, as for MACD. A signal line, if
-    wanted, is the 9-period EMA of the PPO (`get_exponential_moving_average(ppo, 9)`), and
-    the PPO histogram is the PPO minus that signal line.
+    with MA the Exponential Moving Average by default. The conventional parameters are 12,
+    26 and 9 periods, as for MACD.
 
-    Also known as: PPO.
+    Also known as: PPO, PPO signal line, PPO histogram.
 
     Reference: Appel, G. (2005). "Technical Analysis: Power Tools for Active Investors." FT
     Press. The PPO is a normalized variant of Appel's Moving Average Convergence Divergence
     (Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert
     Corp.).
 
-    TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html).
+    TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html), with
+    the moving average as its `matype`; it returns the PPO in percent and no signal line.
+    The signal line and histogram are those of ta's PercentagePriceOscillator, pandas-ta's
+    ppo and finta's PPO.
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values (see
+          `get_exponential_moving_average`), so the PPO starts on period `long_window` - 1
+          and the signal line and histogram `signal_window` - 1 periods later.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
-        short_window (int): Number of periods for the short-term EMA.
-        long_window (int): Number of periods for the long-term EMA.
+        short_window (int): Number of periods for the short-term moving average.
+        long_window (int): Number of periods for the long-term moving average.
+        signal_window (int): Number of periods for the signal line EMA. Defaults to 9.
+        moving_average (str): The moving average of the short and long term, one of
+            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
+            "weighted", "hull" or "kaufman_adaptive". Defaults to "exponential".
 
     Returns:
-        pd.Series: PPO values as a decimal (0.02 is 2%).
-    """
-    short_ema = get_exponential_moving_average(prices_close, short_window)
-    long_ema = get_exponential_moving_average(prices_close, long_window)
+        pd.DataFrame: The Percentage Price Oscillator, Signal Line and Histogram as columns,
+        as decimals (0.02 is 2%).
 
-    ppo = (short_ema - long_ema) / long_ema
-    return ppo
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
+    """
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    short_average = MOVING_AVERAGES[moving_average](prices_close, short_window)
+    long_average = MOVING_AVERAGES[moving_average](prices_close, long_window)
+
+    ppo = (short_average - long_average) / long_average
+    signal_line = get_exponential_moving_average(ppo, signal_window)
+
+    return pd.concat(
+        [ppo, signal_line, ppo - signal_line],
+        keys=["Percentage Price Oscillator", "Signal Line", "Histogram"],
+        axis=1,
+    )
 
 
 def get_percentage_volume_oscillator(
@@ -613,53 +675,65 @@ def get_detrended_price_oscillator(
     return dpo
 
 
-def get_average_directional_index(
+def get_directional_movement_index(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
-) -> pd.Series:
+) -> pd.DataFrame:
     """
-    Calculate the Average Directional Movement Index (ADX) of a given price series.
+    Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional
+    Movement (+DM, -DM), the Directional Indicators (+DI, -DI) and the Directional Movement
+    Index (DX) of a given price series.
 
-    The Average Directional Movement Index (ADX) is a technical indicator used to quantify
-    the strength of a trend. It combines the information from the Plus Directional Indicator (+DI)
-    and Minus Directional Indicator (-DI) to provide a single value that represents the trend's strength.
-
-    Every averaging step in the original ADX (the True Range, +DM and -DM smoothing, and the
-    final DX-to-ADX smoothing) uses Wilder's specific smoothing method rather than a plain
-    Simple Moving Average — substituting a plain SMA is one of the most common mistakes when
-    re-implementing this indicator, and produces materially different values.
+    The Directional Movement is the part of a period's range outside the previous period's
+    range: upward when the high rises above the previous high by more than the low falls
+    below the previous low, downward the other way around. Wilder sums each over the window
+    with his smoothing and divides by the smoothed True Range, which gives the Directional
+    Indicators: the share of the recent range that moved up (+DI) and down (-DI). The
+    Directional Movement Index is their difference as a share of their sum, which is high
+    in a trend in either direction and low in a range; its Wilder average is the ADX.
 
     The formula is as follows:
 
-    - +DM = High(t) - High(t-1), where positive and greater than -(Low(t) - Low(t-1)), else 0
-    - -DM = Low(t-1) - Low(t), where positive and greater than (High(t) - High(t-1)), else 0
-    - True Range = Max[(High - Low), |High - Previous Close|, |Low - Previous Close|]
-    - +DI = 100 * Wilder's MA(+DM, window) / Wilder's MA(True Range, window)
-    - -DI = 100 * Wilder's MA(-DM, window) / Wilder's MA(True Range, window)
+    - +DM(1) = High(t) - High(t-1), where positive and greater than Low(t-1) - Low(t), else 0
+    - -DM(1) = Low(t-1) - Low(t), where positive and greater than High(t) - High(t-1), else 0
+    - +DM = Wilder's sum of +DM(1) over window = window * Wilder's MA(+DM(1), window), and
+      -DM analogously, where Wilder's sum(t) = Sum(t-1) - Sum(t-1) / window + Value(t)
+    - +DI = 100 * Wilder's MA(+DM(1), window) / Wilder's MA(True Range, window)
+    - -DI = 100 * Wilder's MA(-DM(1), window) / Wilder's MA(True Range, window)
     - DX = 100 * |+DI - -DI| / (+DI + -DI)
-    - ADX = Wilder's MA(DX, window)
 
-    Also known as: ADX, Average Directional Index.
+    Also known as: DMI, DMS, Directional Movement System, +DM/-DM, +DI/-DI, PLUS_DM,
+    MINUS_DM, PLUS_DI, MINUS_DI, DX.
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
+    TA-Lib: PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI and DX, the reference implementations
+    (https://ta-lib.org/functions/plus_dm.html, https://ta-lib.org/functions/minus_dm.html,
+    https://ta-lib.org/functions/plus_di.html, https://ta-lib.org/functions/minus_di.html,
+    https://ta-lib.org/functions/dx.html).
 
     Notes:
         - The True Range and both directional movements start on the second period, the
-          first with a previous period, so the first ADX value is on period 2 * window - 1,
-          as in TA-Lib. Wilder's smoothing is seeded with the average of the first `window`
-          values; TA-Lib seeds its running sums with `window` - 1 values instead, a
-          difference that decays within a few windows.
+          first with a previous period, so every column starts on period `window`, as
+          TA-Lib's PLUS_DI, MINUS_DI and DX do. Wilder's smoothing is seeded with the sum
+          (average) of the first `window` values, as in `get_average_directional_index`, of
+          which DX is the input. TA-Lib seeds its running sums with `window` - 1 values and
+          starts PLUS_DM and MINUS_DM one period earlier, a difference that decays by a
+          factor 1 - 1 / `window` per period.
+        - +DM and -DM are Wilder's running sums, as in his worksheets and TA-Lib, so they
+          are in price units and `window` times the smoothed averages behind the +DI and -DI.
+        - A period without any directional movement over the window (+DI and -DI both 0) has
+          no DX.
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
-        window (int): Number of periods to consider for ADX calculation.
+        window (int): Number of periods of Wilder's smoothing.
 
     Returns:
-        pd.Series: ADX values.
+        pd.DataFrame: +DM, -DM, +DI, -DI and DX as columns, the Directional Indicators and
+        the DX between 0 and 100.
     """
     # The first period has no previous close or previous high and low, so it has no True
     # Range and no directional movement; starting both series on the second period gives
@@ -691,12 +765,125 @@ def get_average_directional_index(
 
     dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
 
-    adx = get_wilder_moving_average(dx, window)
+    return pd.concat(
+        [
+            window * smoothed_plus_dm,
+            window * smoothed_minus_dm,
+            plus_di,
+            minus_di,
+            dx,
+        ],
+        keys=["+DM", "-DM", "+DI", "-DI", "DX"],
+        axis=1,
+    )
+
+
+def get_average_directional_index(
+    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Average Directional Movement Index (ADX) of a given price series.
+
+    The Average Directional Movement Index (ADX) is a technical indicator used to quantify
+    the strength of a trend. It combines the information from the Plus Directional Indicator (+DI)
+    and Minus Directional Indicator (-DI) to provide a single value that represents the trend's strength.
+
+    Every averaging step in the original ADX (the True Range, +DM and -DM smoothing, and the
+    final DX-to-ADX smoothing) uses Wilder's specific smoothing method rather than a plain
+    Simple Moving Average — substituting a plain SMA is one of the most common mistakes when
+    re-implementing this indicator, and produces materially different values.
+
+    The formula is as follows:
+
+    - +DM = High(t) - High(t-1), where positive and greater than -(Low(t) - Low(t-1)), else 0
+    - -DM = Low(t-1) - Low(t), where positive and greater than (High(t) - High(t-1)), else 0
+    - True Range = Max[(High - Low), |High - Previous Close|, |Low - Previous Close|]
+    - +DI = 100 * Wilder's MA(+DM, window) / Wilder's MA(True Range, window)
+    - -DI = 100 * Wilder's MA(-DM, window) / Wilder's MA(True Range, window)
+    - DX = 100 * |+DI - -DI| / (+DI + -DI)
+    - ADX = Wilder's MA(DX, window)
+
+    The +DM, -DM, +DI, -DI and DX are returned by `get_directional_movement_index`.
+
+    Also known as: ADX, Average Directional Index.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
+
+    TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
+
+    Notes:
+        - The True Range and both directional movements start on the second period, the
+          first with a previous period, so the first ADX value is on period 2 * window - 1,
+          as in TA-Lib. Wilder's smoothing is seeded with the average of the first `window`
+          values; TA-Lib seeds its running sums with `window` - 1 values instead, a
+          difference that decays within a few windows.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods to consider for ADX calculation.
+
+    Returns:
+        pd.Series: ADX values.
+    """
+    directional_movement_index = get_directional_movement_index(
+        prices_high, prices_low, prices_close, window
+    )
+
+    adx = get_wilder_moving_average(directional_movement_index["DX"], window)
 
     return adx
 
 
-def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.Series:
+def get_average_directional_index_rating(
+    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Average Directional Movement Index Rating (ADXR) of a given price series.
+
+    The ADXR is Wilder's smoothed ADX: the average of today's ADX and the ADX of `window` - 1
+    periods ago. It rates how strongly a market trends, more slowly than the ADX itself,
+    and Wilder used it to rank commodities by their directional movement and so choose
+    which ones to trade with his trend-following systems.
+
+    The formula is as follows:
+
+    - ADXR = (ADX(t) + ADX(t - (window - 1))) / 2
+
+    with the ADX of `get_average_directional_index`.
+
+    Also known as: ADXR, Average Directional Movement Rating.
+
+    Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
+    Research.
+
+    TA-Lib: ADXR, the reference implementation (https://ta-lib.org/functions/adxr.html).
+
+    Notes:
+        - The ADX starts on period 2 * `window` - 1, so the ADXR starts on period
+          3 * `window` - 2, as in TA-Lib. The ADX is seeded as in
+          `get_average_directional_index`, so the first values differ from TA-Lib's until
+          the ADX values converge.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the ADX and of the lag of the rating.
+
+    Returns:
+        pd.Series: ADXR values, between 0 and 100.
+    """
+    adx = get_average_directional_index(prices_high, prices_low, prices_close, window)
+
+    return (adx + adx.shift(window - 1)) / 2
+
+
+def get_chande_momentum_oscillator(
+    prices_close: pd.Series, window: int, smoothed: bool = False
+) -> pd.Series:
     """
     Calculate the Chande Momentum Oscillator (CMO) for a given price series.
 
@@ -711,17 +898,25 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
 
     - CMO = 100 * (Sum(Up Changes, window) - Sum(Down Changes, window)) / (Sum(Up Changes,
       window) + Sum(Down Changes, window))
+    - Smoothed CMO = 100 * (Wilder's MA(Up Changes, window) - Wilder's MA(Down Changes,
+      window)) / (Wilder's MA(Up Changes, window) + Wilder's MA(Down Changes, window))
 
-    Also known as: CMO.
+    The smoothed CMO averages the gains and losses as the RSI does, so it equals
+    2 * RSI - 100.
+
+    Also known as: CMO, CMOU (the summed CMO), Chande momentum.
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    TA-Lib: CMO, the reference implementation (https://ta-lib.org/functions/cmo.html), which
-    smooths the gains and losses with Wilder's method instead of summing them.
+    TA-Lib: CMOU and CMO, the reference implementations
+    (https://ta-lib.org/functions/cmou.html, https://ta-lib.org/functions/cmo.html): CMOU
+    sums the gains and losses as Chande does, CMO smooths them with Wilder's method.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for CMO calculation.
+        smoothed (bool): Whether to smooth the gains and losses with Wilder's method (TA-Lib's
+            CMO) instead of summing them (Chande's CMO, TA-Lib's CMOU). Defaults to False.
 
     Returns:
         pd.Series: CMO values, bounded between -100 and 100.
@@ -730,8 +925,15 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
 
     # The first price has no change, which is missing rather than a zero change, so the
     # first sums cover a full window of changes.
-    up_sum = price_diff.clip(lower=0).rolling(window=window).sum()
-    down_sum = (-price_diff).clip(lower=0).rolling(window=window).sum()
+    gains = price_diff.clip(lower=0)
+    losses = (-price_diff).clip(lower=0)
+
+    if smoothed:
+        up_sum = get_wilder_moving_average(gains, window)
+        down_sum = get_wilder_moving_average(losses, window)
+    else:
+        up_sum = gains.rolling(window=window).sum()
+        down_sum = losses.rolling(window=window).sum()
 
     cmo = ((up_sum - down_sum) / (up_sum + down_sum)) * 100
     return cmo
@@ -831,6 +1033,7 @@ def get_stochastic_oscillator(
     prices_close: pd.Series,
     window: int,
     smooth_window: int,
+    slow: bool = False,
 ) -> pd.DataFrame:
     """
     Calculate the Stochastic Oscillator of a given price series.
@@ -842,25 +1045,33 @@ def get_stochastic_oscillator(
 
     The formula is as follows:
 
-    - %K = ((Close - Lowest Low) / (Highest High - Lowest Low)) * 100
-    - %D = SMA(%K, smooth_window)
+    - Fast %K = ((Close - Lowest Low) / (Highest High - Lowest Low)) * 100
+    - Fast %D = SMA(Fast %K, smooth_window)
+    - Slow %K = Fast %D = SMA(Fast %K, smooth_window)
+    - Slow %D = SMA(Slow %K, smooth_window)
 
-    This is the "Fast Stochastic" formulation (raw %K smoothed once to produce %D). The "Slow
-    Stochastic" variant additionally smooths %K itself with an SMA before computing %D.
+    The "Fast Stochastic" (the default) smooths the raw %K once to produce %D. The "Slow
+    Stochastic" (`slow=True`) smooths %K itself with an SMA first, which is the stochastic
+    Lane charted and most platforms show by default; its %K is the fast %D.
 
-    Also known as: Stochastic Oscillator, Fast Stochastic, %K/%D.
+    Also known as: Stochastic Oscillator, Fast Stochastic, Slow Stochastic, %K/%D, STOCHF,
+    STOCH.
 
     Reference: Lane, G.C. Developed in the late 1950s; see Lane, G.C. (1984). "Lane's
     Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
-    TA-Lib: STOCHF, the reference implementation (https://ta-lib.org/functions/stochf.html).
+    TA-Lib: STOCHF and STOCH, the reference implementations
+    (https://ta-lib.org/functions/stochf.html, https://ta-lib.org/functions/stoch.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for the stochastic calculation.
-        smooth_window (int): Number of periods for smoothing the %K values into %D.
+        smooth_window (int): Number of periods for smoothing the %K values into %D, and with
+            `slow` the raw %K into the slow %K.
+        slow (bool): Whether to return the slow stochastic instead of the fast one. Defaults
+            to False.
 
     Returns:
         pd.DataFrame: Stochastic Oscillator (%K and %D).
@@ -869,6 +1080,8 @@ def get_stochastic_oscillator(
     highest_high = prices_high.rolling(window=window).max()
 
     stochastic_k = ((prices_close - lowest_low) / (highest_high - lowest_low)) * 100
+    if slow:
+        stochastic_k = stochastic_k.rolling(window=smooth_window).mean()
     stochastic_d = stochastic_k.rolling(window=smooth_window).mean()
 
     return pd.concat(
@@ -877,26 +1090,41 @@ def get_stochastic_oscillator(
 
 
 def get_moving_average_convergence_divergence(
-    prices: pd.Series, short_window: int, long_window: int, signal_window: int
+    prices: pd.Series,
+    short_window: int,
+    long_window: int,
+    signal_window: int,
+    moving_average: str = "exponential",
+    signal_moving_average: str = "exponential",
+    fixed: bool = False,
 ) -> pd.DataFrame:
     """
     Calculate the Moving Average Convergence Divergence (MACD) of a given price series.
 
     MACD tracks the convergence and divergence of a short-term and a long-term Exponential
     Moving Average of price. The MACD line crossing above/below its own EMA-based signal line
-    is the classic trigger for a trend-following signal.
+    is the classic trigger for a trend-following signal, and the histogram, the distance
+    between the two lines, shows the momentum of the MACD line itself.
 
     The formula is as follows:
 
-    - MACD Line = EMA(Close, short_window) - EMA(Close, long_window)
-    - Signal Line = EMA(MACD Line, signal_window)
+    - MACD Line = MA(Close, short_window) - MA(Close, long_window)
+    - Signal Line = MA(MACD Line, signal_window)
+    - Histogram = MACD Line - Signal Line
 
-    Also known as: MACD.
+    with MA the Exponential Moving Average by default. With `fixed`, the 12- and 26-period
+    EMAs use Appel's fixed smoothing constants 0.15 and 0.075 instead of 2 / (window + 1).
+
+    Also known as: MACD, MACD histogram, MACDEXT (other moving averages), MACDFIX (fixed
+    smoothing constants).
 
     Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
-    Signalert Corp.
+    Signalert Corp. The histogram is from Aspray, T. (1986). "Fine-tuning the MACD."
+    Technical Analysis of Stocks & Commodities, 4(4).
 
-    TA-Lib: MACD, the reference implementation (https://ta-lib.org/functions/macd.html).
+    TA-Lib: MACD, MACDEXT and MACDFIX, the reference implementations
+    (https://ta-lib.org/functions/macd.html, https://ta-lib.org/functions/macdext.html,
+    https://ta-lib.org/functions/macdfix.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -904,24 +1132,73 @@ def get_moving_average_convergence_divergence(
           `long_window` - 1 and the signal line `signal_window` - 1 periods later, as on
           StockCharts. TA-Lib's `ta_MACD.c` additionally starts the short EMA on the same
           period as the long one, which changes only the first values.
+        - `moving_average` applies to both the short and the long average, as TA-Lib's
+          MACDEXT with the same `fastmatype` and `slowmatype`.
 
     Args:
         prices (pd.Series): Series of prices.
         short_window (int): Number of periods for the short-term moving average.
         long_window (int): Number of periods for the long-term moving average.
         signal_window (int): Number of periods for the signal line moving average.
+        moving_average (str): The moving average of the short and long term, one of
+            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
+            "weighted", "hull" or "kaufman_adaptive". Defaults to "exponential".
+        signal_moving_average (str): The moving average of the signal line, one of
+            `MOVING_AVERAGES`. Defaults to "exponential".
+        fixed (bool): Whether to smooth the 12- and 26-period EMAs with the fixed constants
+            0.15 and 0.075 (TA-Lib's MACDFIX). Needs the exponential moving average and
+            windows of 12 and 26. Defaults to False.
 
     Returns:
-        pd.DataFrame: The MACD Line and Signal Line as columns.
-    """
-    short_ema = get_exponential_moving_average(prices, short_window)
-    long_ema = get_exponential_moving_average(prices, long_window)
+        pd.DataFrame: The MACD Line, Signal Line and Histogram as columns.
 
-    macd_line = short_ema - long_ema
-    signal_line = get_exponential_moving_average(macd_line, signal_window)
+    Raises:
+        ValueError: If a moving average is not one of `MOVING_AVERAGES`, or `fixed` is
+            combined with another moving average or other windows than 12 and 26.
+    """
+    for name in (moving_average, signal_moving_average):
+        if name not in MOVING_AVERAGES:
+            raise ValueError(
+                f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {name}."
+            )
+
+    if fixed:
+        if (
+            moving_average != "exponential"
+            or (short_window, long_window) != FIXED_MACD_WINDOWS
+        ):
+            raise ValueError(
+                "fixed needs the exponential moving average with windows of 12 and 26."
+            )
+
+        # The EMA of get_exponential_moving_average with the fixed smoothing constant in
+        # place of 2 / (window + 1): seeded with the SMA of the first window values on the
+        # last of them, NaN before and on periods without a price.
+        averages = []
+        for window, smoothing in zip(FIXED_MACD_WINDOWS, FIXED_MACD_SMOOTHING):
+            simple_moving_average = prices.rolling(window=window).mean()
+            has_seed = simple_moving_average.notna().astype(bool).cummax()
+            seed_period = has_seed & ~has_seed.shift(1, fill_value=False).astype(bool)
+            seeded_prices = prices.where(has_seed).mask(
+                seed_period, simple_moving_average
+            )
+            averages.append(
+                seeded_prices.ewm(alpha=smoothing, adjust=False, ignore_na=True)
+                .mean()
+                .where(has_seed & prices.notna())
+            )
+        short_average, long_average = averages
+    else:
+        short_average = MOVING_AVERAGES[moving_average](prices, short_window)
+        long_average = MOVING_AVERAGES[moving_average](prices, long_window)
+
+    macd_line = short_average - long_average
+    signal_line = MOVING_AVERAGES[signal_moving_average](macd_line, signal_window)
 
     return pd.concat(
-        [macd_line, signal_line], keys=["MACD Line", "Signal Line"], axis=1
+        [macd_line, signal_line, macd_line - signal_line],
+        keys=["MACD Line", "Signal Line", "Histogram"],
+        axis=1,
     )
 
 
@@ -1365,6 +1642,7 @@ def get_choppiness_index(
     prices_low: pd.Series,
     prices_close: pd.Series,
     window: int,
+    range_method: str = "high_low",
 ) -> pd.Series:
     """
     Calculate the Choppiness Index (CHOP) for a given price series.
@@ -1381,19 +1659,29 @@ def get_choppiness_index(
 
     - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) - Min(Low, window)) ) / log10(window)
 
-    Also known as: CHOP, Choppiness Index.
+    With `range_method="true_range"` the net range is that of the true highs and lows, the
+    range the True Ranges themselves span, so a gap between periods counts in both:
+
+    - True High = Max(High, Previous Close), True Low = Min(Low, Previous Close)
+    - CHOP = 100 * log10( Sum(True Range, window) / (Max(True High, window) - Min(True Low, window)) ) / log10(window)
+
+    Also known as: CHOP, CHOPTR (the true range box), Choppiness Index.
 
     Reference: Dreiss, E.W. (1990s). Developed by Australian commodities trader Bill Dreiss;
     there is no formal journal citation. The standard textbook treatment is Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
-    TA-Lib: CHOP, the reference implementation (https://ta-lib.org/functions/chop.html).
+    TA-Lib: CHOP and CHOPTR, the reference implementations
+    (https://ta-lib.org/functions/chop.html, https://ta-lib.org/functions/choptr.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods to consider for the Choppiness Index calculation.
+        range_method (str): The net range the summed True Range is divided by: "high_low",
+            the highest high minus the lowest low, or "true_range", the highest true high
+            minus the lowest true low (TA-Lib's CHOPTR). Defaults to "high_low".
 
     Returns:
         pd.Series: Choppiness Index values, bounded between 0 and 100. Values above 61.8 are
@@ -1402,7 +1690,8 @@ def get_choppiness_index(
 
     Raises:
         TypeError: If `prices_high`, `prices_low` or `prices_close` is not a pandas Series.
-        ValueError: If `window` is smaller than 2.
+        ValueError: If `window` is smaller than 2 or `range_method` is not "high_low" or
+            "true_range".
     """
     if not (
         isinstance(prices_high, pd.Series)
@@ -1415,8 +1704,17 @@ def get_choppiness_index(
     # The index divides by log10(window), which is 0 for a single period.
     if window < MINIMUM_WINDOW:
         raise ValueError("window must be at least 2 for the Choppiness Index.")
+    if range_method not in ("high_low", "true_range"):
+        raise ValueError("range_method must be 'high_low' or 'true_range'.")
 
     true_range = get_true_range(prices_high, prices_low, prices_close)
+
+    if range_method == "true_range":
+        # The first period has no previous close, so its true high and low are its own
+        # high and low, as its True Range is its High - Low range.
+        previous_close = prices_close.shift(1)
+        prices_high = prices_high.where(~(previous_close > prices_high), previous_close)
+        prices_low = prices_low.where(~(previous_close < prices_low), previous_close)
 
     summed_true_range = true_range.rolling(window=window).sum()
     highest_high = prices_high.rolling(window=window).max()
@@ -1437,6 +1735,8 @@ def get_know_sure_thing(
     sma_windows: list[int] | None = None,
     weights: list[int] | None = None,
     signal_window: int = 9,
+    moving_average: str = "simple",
+    signal_moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
     Calculate the Know Sure Thing (KST) for a given price series.
@@ -1455,12 +1755,17 @@ def get_know_sure_thing(
     - KST = Sum(RCMA(i) * weights[i]) for i = 1..4
     - Signal Line = SMA(KST, signal_window)
 
-    Also known as: KST, Pring's Know Sure Thing, Summed Rate of Change.
+    Pring smooths with Simple Moving Averages; `moving_average` and `signal_moving_average`
+    take another moving average for the smoothing of the Rates of Change and the signal
+    line, as TA-Lib's KSTEXT does with its `rocmatype` and `signalmatype`.
+
+    Also known as: KST, KSTEXT, Pring's Know Sure Thing, Summed Rate of Change.
 
     Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks
     & Commodities, 10(6).
 
-    TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
+    TA-Lib: KST and KSTEXT, the reference implementations
+    (https://ta-lib.org/functions/kst.html, https://ta-lib.org/functions/kstext.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1472,6 +1777,11 @@ def get_know_sure_thing(
             series before summing. Defaults to the standard [1, 2, 3, 4].
         signal_window (int): Number of periods for the Simple Moving Average of the KST used
             as the signal line. Defaults to 9.
+        moving_average (str): The moving average that smooths each Rate of Change, one of
+            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
+            "weighted", "hull" or "kaufman_adaptive". Defaults to "simple".
+        signal_moving_average (str): The moving average of the signal line, one of
+            `MOVING_AVERAGES`. Defaults to "simple".
 
     Returns:
         pd.DataFrame: Know Sure Thing (KST and Signal Line) values, weighted sums of
@@ -1479,10 +1789,16 @@ def get_know_sure_thing(
 
     Raises:
         TypeError: If `prices_close` is not a pandas Series.
-        ValueError: If `roc_windows`, `sma_windows` and `weights` are not all length 4.
+        ValueError: If `roc_windows`, `sma_windows` and `weights` are not all length 4, or a
+            moving average is not one of `MOVING_AVERAGES`.
     """
     if not isinstance(prices_close, pd.Series):
         raise TypeError("prices_close must be a pandas Series.")
+    for name in (moving_average, signal_moving_average):
+        if name not in MOVING_AVERAGES:
+            raise ValueError(
+                f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {name}."
+            )
 
     if roc_windows is None:
         roc_windows = [10, 15, 20, 30]
@@ -1503,10 +1819,12 @@ def get_know_sure_thing(
     kst = pd.Series(0.0, index=prices_close.index)
     for roc_window, sma_window, weight in zip(roc_windows, sma_windows, weights):
         rate_of_change = get_rate_of_change(prices_close, roc_window)
-        smoothed_rate_of_change = get_moving_average(rate_of_change, sma_window)
+        smoothed_rate_of_change = MOVING_AVERAGES[moving_average](
+            rate_of_change, sma_window
+        )
         kst = kst + smoothed_rate_of_change * weight
 
-    signal_line = get_moving_average(kst, signal_window)
+    signal_line = MOVING_AVERAGES[signal_moving_average](kst, signal_window)
 
     return pd.concat([kst, signal_line], keys=["KST", "Signal Line"], axis=1)
 
@@ -1565,3 +1883,343 @@ def get_coppock_curve(
     ) + get_rate_of_change(prices_close, short_roc_window)
 
     return get_weighted_moving_average(summed_rate_of_change, wma_window)
+
+
+def get_absolute_price_oscillator(
+    prices_close: pd.Series,
+    short_window: int,
+    long_window: int,
+    moving_average: str = "exponential",
+) -> pd.Series:
+    """
+    Calculate the Absolute Price Oscillator (APO) for a given price series.
+
+    The Absolute Price Oscillator is the difference between a short-term and a long-term
+    moving average of price, in price units. With exponential moving averages it is the MACD
+    line; the APO lets the moving average be chosen, and the Percentage Price Oscillator is
+    the same difference as a share of the long-term average.
+
+    The formula is as follows:
+
+    - APO = MA(Close, short_window) - MA(Close, long_window)
+
+    The conventional parameters are 12 and 26 periods, as for MACD.
+
+    Also known as: APO, price oscillator, MACD line (with EMAs).
+
+    Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
+    Signalert Corp.; Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed.
+    McGraw-Hill ("Price Oscillator").
+
+    TA-Lib: APO, the reference implementation (https://ta-lib.org/functions/apo.html), with
+    the moving average as its `matype` (EMA by default).
+
+    Notes:
+        - Each moving average starts on its own first full window, so with EMAs seeded with a
+          Simple Moving Average the APO starts on period `long_window` - 1 and equals the
+          MACD line of `get_moving_average_convergence_divergence`.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        short_window (int): Number of periods for the short-term moving average.
+        long_window (int): Number of periods for the long-term moving average.
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
+            "exponential", "double_exponential", "triangular", "weighted", "hull" or
+            "kaufman_adaptive". Defaults to "exponential".
+
+    Returns:
+        pd.Series: APO values, in price units.
+
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
+    """
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    return MOVING_AVERAGES[moving_average](
+        prices_close, short_window
+    ) - MOVING_AVERAGES[moving_average](prices_close, long_window)
+
+
+def get_momentum(prices_close: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Momentum (MOM) of a given price series.
+
+    Momentum is the change in price over a fixed number of periods, in price units: the
+    simplest measure of the speed of a move. Above zero the price is higher than `window`
+    periods ago, below zero lower; a falling momentum while the price still rises says the
+    move slows down. The Rate of Change is the same change as a share of the earlier price.
+
+    The formula is as follows:
+
+    - Momentum = Close(t) - Close(t - window)
+
+    Also known as: MOM, price momentum, momentum oscillator.
+
+    Reference: Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill;
+    Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute
+    of Finance.
+
+    TA-Lib: MOM, the reference implementation (https://ta-lib.org/functions/mom.html).
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods to look back.
+
+    Returns:
+        pd.Series: Momentum values, in price units.
+    """
+    return prices_close - prices_close.shift(window)
+
+
+def get_accelerator_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    short_window: int = 5,
+    long_window: int = 34,
+    signal_window: int = 5,
+) -> pd.Series:
+    """
+    Calculate the Accelerator/Decelerator Oscillator (AC) for a given price series.
+
+    The Accelerator Oscillator is the Awesome Oscillator minus its own 5-period Simple Moving
+    Average. Where the Awesome Oscillator measures the momentum of the median price, the
+    Accelerator Oscillator measures how that momentum changes, its acceleration, on the
+    premise that momentum changes direction before price does. Bill Williams developed it
+    as part of his "Trading Chaos" indicators, next to the Awesome Oscillator.
+
+    The formula is as follows:
+
+    - Median Price = (High + Low) / 2
+    - AO = SMA(Median Price, short_window) - SMA(Median Price, long_window)
+    - AC = AO - SMA(AO, signal_window)
+
+    Also known as: AC, Acceleration/Deceleration Oscillator, AC oscillator.
+
+    Reference: Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in
+    Stocks, Bonds, and Commodities." Wiley; Williams, B. (1995). "Trading Chaos." Wiley.
+
+    TA-Lib: AC, the reference implementation (https://ta-lib.org/functions/ac.html).
+
+    Notes:
+        - The AC starts on period `long_window` + `signal_window` - 2, the first full window
+          of the Simple Moving Average of the Awesome Oscillator.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        short_window (int): Number of periods for the short-term SMA of the median price.
+            Defaults to 5.
+        long_window (int): Number of periods for the long-term SMA of the median price.
+            Defaults to 34.
+        signal_window (int): Number of periods for the SMA of the Awesome Oscillator.
+            Defaults to 5.
+
+    Returns:
+        pd.Series: Accelerator Oscillator values, in price units.
+    """
+    awesome_oscillator = get_awesome_oscillator(
+        prices_high, prices_low, short_window, long_window
+    )
+
+    return awesome_oscillator - get_moving_average(awesome_oscillator, signal_window)
+
+
+def get_internal_bar_strength(
+    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
+) -> pd.Series:
+    """
+    Calculate the Internal Bar Strength (IBS) of a given price series.
+
+    The Internal Bar Strength is where the close sits within the period's own range: 0 for
+    a close on the low, 1 for a close on the high. It is a mean-reversion measure: a close
+    near the low of the day (a low IBS) has tended to be followed by higher returns in
+    equity indices and ETFs, and a close near the high by lower returns.
+
+    The formula is as follows:
+
+    - IBS = (Close - Low) / (High - Low)
+
+    Also known as: IBS, close location value (as a 0 to 1 ratio).
+
+    Reference: Pagonidis, A.S. (2013). "The IBS Effect: Mean Reversion in Equity ETFs."
+    NAAIM Wagner Award paper.
+
+    TA-Lib: IBS, the reference implementation (https://ta-lib.org/functions/ibs.html).
+
+    Notes:
+        - A period without a range (High equal to Low) has no IBS (NaN), where TA-Lib
+          returns 0.5.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+
+    Returns:
+        pd.Series: IBS values as a decimal between 0 and 1.
+    """
+    price_range = prices_high - prices_low
+
+    return (prices_close - prices_low) / price_range.where(price_range != 0)
+
+
+def get_intraday_momentum_index(
+    prices_open: pd.Series, prices_close: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Intraday Momentum Index (IMI) for a given price series.
+
+    The Intraday Momentum Index is a Relative Strength Index of the moves within each
+    period: it compares the sum of the bodies of the periods that closed above their open
+    to the sum of all bodies over the window. Chande designed it for intraday traders, who
+    care about the move from open to close rather than from close to close.
+
+    The formula is as follows:
+
+    - Gain = Close - Open where Close > Open, else 0
+    - Loss = Open - Close where Close < Open, else 0
+    - IMI = 100 * Sum(Gain, window) / (Sum(Gain, window) + Sum(Loss, window))
+
+    Values above 70 are read as overbought and below 30 as oversold, as for the RSI.
+
+    Also known as: IMI.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    TA-Lib: IMI, the reference implementation (https://ta-lib.org/functions/imi.html).
+
+    Notes:
+        - A window in which every period closed at its open has no IMI (NaN), where TA-Lib
+          returns 50.
+
+    Args:
+        prices_open (pd.Series): Series of opening prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods to sum the gains and losses over.
+
+    Returns:
+        pd.Series: IMI values, between 0 and 100.
+    """
+    body = prices_close - prices_open
+
+    gains = body.clip(lower=0).rolling(window=window).sum()
+    total = body.abs().rolling(window=window).sum()
+
+    return 100 * gains / total.where(total != 0)
+
+
+def get_qstick(
+    prices_open: pd.Series, prices_close: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Qstick indicator for a given price series.
+
+    Qstick is the moving average of the candlestick bodies, Close - Open, over the window.
+    It turns the colour of the recent candles into a number: above zero the periods closed
+    above their open on average (white candles, buying pressure), below zero below their
+    open (black candles, selling pressure).
+
+    The formula is as follows:
+
+    - Qstick = SMA(Close - Open, window)
+
+    Also known as: Qstick, QSTICK, candlestick body average.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    TA-Lib: QSTICK, the reference implementation (https://ta-lib.org/functions/qstick.html).
+
+    Args:
+        prices_open (pd.Series): Series of opening prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the moving average.
+
+    Returns:
+        pd.Series: Qstick values, in price units.
+    """
+    return get_moving_average(prices_close - prices_open, window)
+
+
+def get_efficiency_ratio(prices_close: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate Kaufman's Efficiency Ratio (ER) for a given price series.
+
+    The Efficiency Ratio compares the net change in price over the window to the path price
+    travelled to get there, the sum of the absolute changes of each period. A price that
+    moves in a straight line has a ratio of 1; a price that ends where it started however
+    much it moved in between has a ratio of 0. Kaufman uses it to adapt the speed of his
+    Adaptive Moving Average to the noise in the market.
+
+    The formula is as follows:
+
+    - Change = |Close(t) - Close(t - window)|
+    - Volatility = Sum(|Close(i) - Close(i - 1)|, window)
+    - ER = Change / Volatility
+
+    Also known as: ER, Kaufman Efficiency Ratio, fractal efficiency.
+
+    Reference: Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing
+    Markets." McGraw-Hill.
+
+    TA-Lib: ER, the reference implementation (https://ta-lib.org/functions/er.html).
+
+    Notes:
+        - The ratio is the one `get_kaufman_adaptive_moving_average` uses, except that a
+          window without any change (flat prices) has no ratio (NaN), where TA-Lib's ER and
+          KAMA use 1.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the change and the path.
+
+    Returns:
+        pd.Series: Efficiency Ratio values as a decimal between 0 and 1.
+    """
+    change = (prices_close - prices_close.shift(window)).abs()
+    volatility = prices_close.diff().abs().rolling(window=window).sum()
+
+    return change / volatility.where(volatility != 0)
+
+
+def get_vertical_horizontal_filter(prices_close: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Vertical Horizontal Filter (VHF) for a given price series.
+
+    The Vertical Horizontal Filter tells a trending market from a congested one by dividing
+    the range of the closes over the window (the vertical move) by the sum of the absolute
+    changes from period to period (the path, horizontal in a range). A high VHF says the
+    price moves in one direction, which suits trend-following indicators; a low VHF says it
+    moves back and forth, which suits oscillators.
+
+    The formula is as follows:
+
+    - VHF = (Max(Close, window) - Min(Close, window)) / Sum(|Close(i) - Close(i - 1)|, window)
+
+    Also known as: VHF.
+
+    Reference: White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter."
+    Futures Magazine, August 1991.
+
+    TA-Lib: VHF, the reference implementation (https://ta-lib.org/functions/vhf.html).
+
+    Notes:
+        - The range spans the last `window` closes and the path the last `window` changes,
+          so the VHF starts on period `window`, as in TA-Lib.
+        - A window without any change (flat prices) has no VHF (NaN), where TA-Lib returns
+          0.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the range and the path.
+
+    Returns:
+        pd.Series: VHF values, a ratio between 0 and 1.
+    """
+    highest_close = prices_close.rolling(window=window).max()
+    lowest_close = prices_close.rolling(window=window).min()
+    volatility = prices_close.diff().abs().rolling(window=window).sum()
+
+    return (highest_close - lowest_close) / volatility.where(volatility != 0)

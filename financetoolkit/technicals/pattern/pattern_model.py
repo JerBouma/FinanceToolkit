@@ -10,15 +10,20 @@ from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
 
 # TA-Lib's default candle settings (ta_global.c): what a candle part is measured against, over how many
-# previous candles it is averaged and the factor applied. "Shadows" averages are halved, as in TA-Lib.
+# previous candles it is averaged and the factor applied. "Shadows" averages are halved, as in TA-Lib, so they
+# measure one shadow against the average of a candle's two.
 CANDLE_SETTINGS = {
     "BodyLong": ("RealBody", 10, 1.0),
+    "BodyVeryLong": ("RealBody", 10, 3.0),
     "BodyShort": ("RealBody", 10, 1.0),
     "BodyDoji": ("HighLow", 10, 0.1),
     "ShadowLong": ("RealBody", 0, 1.0),
+    "ShadowVeryLong": ("RealBody", 0, 2.0),
+    "ShadowShort": ("Shadows", 10, 1.0),
     "ShadowVeryShort": ("HighLow", 10, 0.1),
     "Near": ("HighLow", 5, 0.2),
     "Far": ("HighLow", 5, 0.6),
+    "Equal": ("HighLow", 5, 0.05),
 }
 
 # The candles TA-Lib needs before a pattern's first value (each function's _Lookback).
@@ -38,6 +43,17 @@ PATTERN_LOOKBACK = {
     "Three Black Crows": 13,
     "Marubozu": 10,
     "Spinning Top": 10,
+    "Belt-hold": 10,
+    "Closing Marubozu": 10,
+    "Dragonfly Doji": 10,
+    "Gravestone Doji": 10,
+    "High-Wave Candle": 10,
+    "Long-Legged Doji": 10,
+    "Long Line Candle": 10,
+    "Rickshaw Man": 10,
+    "Short Line Candle": 10,
+    "Takuri": 10,
+    "Inside Bar": 1,
 }
 
 # How far the third candle of a star, and the second candle of a dark cloud cover, must reach into the first
@@ -121,22 +137,27 @@ def get_candlestick_patterns(
     prices_high: pd.Series,
     prices_low: pd.Series,
     prices_close: pd.Series,
+    patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Recognise 15 candlestick patterns, following the definitions of TA-Lib's CDL functions.
+    Recognise 26 candlestick patterns, following the definitions of TA-Lib's CDL functions.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
     pattern and 0 otherwise, which is TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
     form of the engulfing and harami patterns, where one end of the two real bodies is equal,
-    is 0.8 (TA-Lib's 80). The doji is indecision rather than a direction and is 1 when present,
-    as in TA-Lib; a marubozu and a spinning top take the colour of the candle.
+    is 0.8 (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw
+    man and takuri) are indecision rather than a direction and are 1 when present, as in
+    TA-Lib; a marubozu, a spinning top, a belt-hold, a closing marubozu, a high-wave, long line
+    and short line candle and an inside bar take the colour of the candle (1 white, -1 black).
 
     Sizes are relative, as in TA-Lib (ta_global.c): a real body is long when it is longer than
     the average real body of the 10 previous candles and short when it is shorter; it is a
     doji's body when it is at most 10% of the average high-low range of the 10 previous
-    candles; a shadow is very short when it is shorter than 10% of that range and long when it
-    is longer than the candle's own real body; "near" is within 20% and "far" at least 60% of
-    the average high-low range of the 5 previous candles.
+    candles; a shadow is very short when it is shorter than 10% of that range, short when it
+    is shorter than half the average sum of both shadows of the 10 previous candles (the
+    average shadow), long when it is longer than the candle's own real body and very long
+    when it is longer than twice that body; "near" is within 20% and "far" at least 60% of the
+    average high-low range of the 5 previous candles.
 
     The patterns and what they need:
 
@@ -165,17 +186,36 @@ def get_candlestick_patterns(
       with very short lower shadows, each opening within the previous body.
     - Marubozu: a long real body with very short shadows.
     - Spinning Top: a short real body with both shadows longer than the body.
+    - Belt-hold: a long real body with a very short shadow on the side of the open, a white
+      candle opening on its low (bullish) or a black candle opening on its high (bearish).
+    - Closing Marubozu: a long real body with a very short shadow on the side of the close.
+    - Dragonfly Doji: a doji with a very short upper shadow and a lower shadow that is not.
+    - Gravestone Doji: a doji with a very short lower shadow and an upper shadow that is not.
+    - High-Wave Candle: a short real body with very long upper and lower shadows.
+    - Long-Legged Doji: a doji with at least one long shadow.
+    - Long Line Candle: a long real body with short upper and lower shadows.
+    - Rickshaw Man: a doji with two long shadows and the body near the middle of the
+      high-low range.
+    - Short Line Candle: a short real body with short upper and lower shadows.
+    - Takuri: a doji with a very short upper shadow and a very long lower shadow.
+    - Inside Bar: a high below and a low above the previous candle's, the price-action
+      pattern of pandas-ta-classic's cdl_inside (not part of TA-Lib's CDL functions).
 
     Reference: Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
     thresholds are TA-Lib's (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c).
 
-    TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/).
+    TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/);
+    pandas-ta-classic: cdl_inside for the inside bar
+    (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
         - A pattern is empty (NaN) until TA-Lib's lookback has passed: the candles its
-          averages and the pattern itself need (10 to 13 candles), so a ticker is evaluated
-          from the same candle on as TA-Lib.
+          averages and the pattern itself need (10 to 13 candles, 1 for the inside bar), so a
+          ticker is evaluated from the same candle on as TA-Lib. pandas-ta-classic's inside
+          bar is 0 instead of empty on the first candle.
+        - TA-Lib marks the gravestone doji, which Nison reads as bearish after a rise, as 1
+          like every doji; so does this function.
         - A pattern only describes the candles; the trend before it, which Nison requires for
           e.g. a hammer (after a decline) and a hanging man (after a rise), is not checked, as
           in TA-Lib.
@@ -185,11 +225,19 @@ def get_candlestick_patterns(
         prices_high (pd.Series): The high prices.
         prices_low (pd.Series): The low prices.
         prices_close (pd.Series): The close prices.
+        patterns (list[str] | None, optional): The patterns to return, names of
+            `PATTERN_LOOKBACK` in the order given. Defaults to None, which returns all 26.
 
     Returns:
         pd.DataFrame: The patterns as columns, with 1 (bullish), -1 (bearish), 0.8 / -0.8 (the
         weaker engulfing and harami) or 0 per candle.
     """
+    unknown = set(patterns or []) - set(PATTERN_LOOKBACK)
+    if unknown:
+        raise ValueError(
+            f"Unknown pattern(s) {sorted(unknown)}, choose from {list(PATTERN_LOOKBACK)}."
+        )
+
     candles = get_candle_parts(prices_open, prices_high, prices_low, prices_close)
     o, h, low, c = candles["Open"], candles["High"], candles["Low"], candles["Close"]
     white, color, body = candles["White"], candles["Color"], candles["Body"]
@@ -202,6 +250,8 @@ def get_candlestick_patterns(
     shadow_very_short = get_candle_average(candles, "ShadowVeryShort")
     near = get_candle_average(candles, "Near")
     far = get_candle_average(candles, "Far")
+    shadow_very_long = get_candle_average(candles, "ShadowVeryLong")
+    shadow_short = get_candle_average(candles, "ShadowShort")
 
     def previous(series: pd.Series, candles_back: int = 1) -> pd.Series:
         return series.shift(candles_back)
@@ -214,6 +264,8 @@ def get_candlestick_patterns(
 
     # The hammer family: a small body at one end of a long shadow.
     small_body = body < body_short
+    doji = body <= body_doji
+    midpoint = low + (h - low) / 2
     hammer_shape = small_body & (lower > shadow_long) & (upper < shadow_very_short)
     inverted_shape = small_body & (upper > shadow_long) & (lower < shadow_very_short)
     near1 = previous(near)
@@ -247,7 +299,7 @@ def get_candlestick_patterns(
         & (body > body_short)
     )
 
-    patterns = {
+    recognised = {
         "Doji": (body <= body_doji).astype(float),
         "Hammer": (hammer_shape & ((c <= l1 + near1) | (o <= l1 + near1))).astype(
             float
@@ -336,6 +388,37 @@ def get_candlestick_patterns(
             & (lower < shadow_very_short)
         ),
         "Spinning Top": color * ((upper > body) & (lower > body) & small_body),
+        # The open side of a belt-hold is the lower shadow of a white candle and the upper of a black one.
+        "Belt-hold": color
+        * ((body > body_long) & (lower.where(white, upper) < shadow_very_short)),
+        "Closing Marubozu": color
+        * ((body > body_long) & (upper.where(white, lower) < shadow_very_short)),
+        "Dragonfly Doji": (
+            doji & (upper < shadow_very_short) & (lower > shadow_very_short)
+        ).astype(float),
+        "Gravestone Doji": (
+            doji & (lower < shadow_very_short) & (upper > shadow_very_short)
+        ).astype(float),
+        "High-Wave Candle": color
+        * (small_body & (upper > shadow_very_long) & (lower > shadow_very_long)),
+        "Long-Legged Doji": (
+            doji & ((lower > shadow_long) | (upper > shadow_long))
+        ).astype(float),
+        "Long Line Candle": color
+        * ((body > body_long) & (upper < shadow_short) & (lower < shadow_short)),
+        "Rickshaw Man": (
+            doji
+            & (lower > shadow_long)
+            & (upper > shadow_long)
+            & ((o <= midpoint + near) | (c <= midpoint + near))
+            & ((o >= midpoint - near) | (c >= midpoint - near))
+        ).astype(float),
+        "Short Line Candle": color
+        * (small_body & (upper < shadow_short) & (lower < shadow_short)),
+        "Takuri": (
+            doji & (upper < shadow_very_short) & (lower > shadow_very_long)
+        ).astype(float),
+        "Inside Bar": color * ((h < h1) & (low > l1)),
     }
 
     position = pd.Series(np.arange(len(candles)), index=candles.index)
@@ -344,8 +427,137 @@ def get_candlestick_patterns(
     # negated False becomes 0.
     return pd.DataFrame(
         {
-            name: (pattern + 0.0).where(position >= PATTERN_LOOKBACK[name])
-            for name, pattern in patterns.items()
+            name: (recognised[name] + 0.0).where(position >= PATTERN_LOOKBACK[name])
+            for name in (patterns or PATTERN_LOOKBACK)
+        }
+    )
+
+
+def get_heikin_ashi(
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+) -> pd.DataFrame:
+    """
+    Calculate the Heikin-Ashi candles, which smooth the candles with two-period averages.
+
+    The formula is as follows:
+
+    - HA Close = (Open + High + Low + Close) / 4
+    - HA Open = (previous HA Open + previous HA Close) / 2, starting from (Open + Close) / 2
+      on the first candle
+    - HA High = max(High, HA Open, HA Close)
+    - HA Low = min(Low, HA Open, HA Close)
+
+    Reference: Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of
+    Stocks & Commodities, 22(2).
+
+    TA-Lib: HA, the reference implementation (https://ta-lib.org/functions/);
+    pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The HA Open halves the weight of the first candle's seed every period, so it is an
+          exponential average with a smoothing factor of 1/2 of the previous HA Closes. The
+          values equal TA-Lib's and pandas-ta-classic's on every candle, from the first candle
+          on (TA-Lib's default unstable period of HA is 0).
+
+    Args:
+        prices_open (pd.Series): The open prices.
+        prices_high (pd.Series): The high prices.
+        prices_low (pd.Series): The low prices.
+        prices_close (pd.Series): The close prices.
+
+    Returns:
+        pd.DataFrame: The Heikin-Ashi Open, High, Low and Close per candle.
+    """
+    ha_close = prices_open + prices_high + prices_low + prices_close
+    ha_close = ha_close / 4.0
+
+    # HA Open(t) = 1/2 HA Open(t-1) + 1/2 HA Close(t-1): an exponential average of the previous
+    # HA Closes that starts from the first candle's (Open + Close) / 2.
+    previous_close = ha_close.shift(1)
+    previous_close.iloc[:1] = (prices_open.iloc[:1] + prices_close.iloc[:1]) / 2.0
+    ha_open = previous_close.ewm(alpha=0.5, adjust=False).mean()
+
+    return pd.DataFrame(
+        {
+            "Open": ha_open,
+            "High": pd.concat([prices_high, ha_open, ha_close], axis=1).max(axis=1),
+            "Low": pd.concat([prices_low, ha_open, ha_close], axis=1).min(axis=1),
+            "Close": ha_close,
+        }
+    )
+
+
+def get_williams_fractal(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    left_bars: int = 2,
+    right_bars: int = 2,
+) -> pd.DataFrame:
+    """
+    Mark Bill Williams' fractals: a high above the highs of the bars on either side of it (an
+    up fractal) or a low below their lows (a down fractal).
+
+    A fractal needs the `right_bars` bars after it, so it is only known `right_bars` periods
+    later. It is therefore marked on the bar that confirms it, not on the bar of the high or
+    low itself: the value on a date only uses the prices up to that date.
+
+    The formula is as follows:
+
+    - Up Fractal (t) = 1 if High (t - right_bars) > every other High from t - left_bars -
+      right_bars to t, else 0
+    - Down Fractal (t) = 1 if Low (t - right_bars) < every other Low from t - left_bars -
+      right_bars to t, else 0
+
+    Reference: Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize
+    Your Profits." Wiley.
+
+    TA-Lib: FRACTAL, the reference implementation (https://ta-lib.org/functions/); finta:
+    WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
+
+    Notes:
+        - This equals TA-Lib's FRACTAL (swinghigh, swinglow) divided by 100, which marks the
+          confirming bar too. finta's WILLIAMS_FRACTAL marks the bar of the high or low itself,
+          which uses the later bars (look-ahead).
+        - The comparison is strict, as in TA-Lib: a high equal to a neighbouring high is no
+          fractal.
+
+    Args:
+        prices_high (pd.Series): The high prices.
+        prices_low (pd.Series): The low prices.
+        left_bars (int, optional): The bars before the high or low it must exceed. Defaults to 2.
+        right_bars (int, optional): The bars after the high or low it must exceed. Defaults to 2.
+
+    Returns:
+        pd.DataFrame: The Up Fractal and Down Fractal, 1 on the bar that confirms a fractal and
+        0 otherwise, empty for the first left_bars + right_bars bars.
+    """
+    if left_bars < 1 or right_bars < 1:
+        raise ValueError("left_bars and right_bars must be at least 1.")
+
+    window = left_bars + right_bars
+    position = pd.Series(np.arange(len(prices_high)), index=prices_high.index)
+
+    def is_extreme(prices: pd.Series, sign: float) -> pd.Series:
+        # The highs (or negated lows) of the bars before and after the pivot, without the pivot itself.
+        prices = sign * prices
+        others = pd.concat(
+            [
+                prices.shift(right_bars + 1).rolling(left_bars).max(),
+                prices.rolling(right_bars).max(),
+            ],
+            axis=1,
+        ).max(axis=1, skipna=False)
+        return (
+            (prices.shift(right_bars) > others).astype(float).where(position >= window)
+        )
+
+    return pd.DataFrame(
+        {
+            "Up Fractal": is_extreme(prices_high, 1.0),
+            "Down Fractal": is_extreme(prices_low, -1.0),
         }
     )
 

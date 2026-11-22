@@ -1,5 +1,7 @@
 """Candlestick Pattern and Signal Tests"""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -207,3 +209,170 @@ def test_indicator_summary_of_the_zone_above():
     assert summary["Periods Above"] == 3
     assert summary["Crossings Above"] == 2
     assert crossings["Zone"].eq("Above").all()
+
+
+def test_single_candle_patterns_of_a_long_body():
+    # Long bodies (2 against an average of 1) with a very short (0.05) or short (0.3) shadow.
+    white_belt_hold = candles_after_a_calm_market((100.0, 102.0, 0.3, 0.05))
+    black_closing_marubozu = candles_after_a_calm_market((102.0, 100.0, 0.3, 0.05))
+    long_line = candles_after_a_calm_market((100.0, 102.0, 0.3, 0.3))
+
+    assert white_belt_hold["Belt-hold"].iloc[-1] == 1
+    assert white_belt_hold["Closing Marubozu"].iloc[-1] == 0
+    # A black candle's open side is its upper shadow, 0.3 here: no belt-hold.
+    assert black_closing_marubozu["Closing Marubozu"].iloc[-1] == -1
+    assert black_closing_marubozu["Belt-hold"].iloc[-1] == 0
+    # Shadows below the average shadow (0.5) and a long body.
+    assert long_line["Long Line Candle"].iloc[-1] == 1
+    assert long_line["Belt-hold"].iloc[-1] == 0
+
+
+def test_single_candle_patterns_of_a_short_body():
+    short_line = candles_after_a_calm_market((100.5, 100.0, 0.3, 0.3))
+    high_wave = candles_after_a_calm_market((100.0, 100.5, 1.2, 1.2))
+
+    assert short_line["Short Line Candle"].iloc[-1] == -1
+    assert short_line["High-Wave Candle"].iloc[-1] == 0
+    # Both shadows longer than twice the body of 0.5.
+    assert high_wave["High-Wave Candle"].iloc[-1] == 1
+    assert high_wave["Short Line Candle"].iloc[-1] == 0
+
+
+def test_the_dojis():
+    dragonfly = candles_after_a_calm_market((100.0, 100.05, 0.05, 1.5))
+    gravestone = candles_after_a_calm_market((100.0, 100.05, 1.5, 0.05))
+    rickshaw_man = candles_after_a_calm_market((100.0, 100.05, 1.0, 1.0))
+
+    # A very long lower shadow (more than twice the body) also makes the dragonfly a takuri.
+    assert dragonfly[["Doji", "Dragonfly Doji", "Takuri", "Long-Legged Doji"]].iloc[
+        -1
+    ].tolist() == [1, 1, 1, 1]
+    assert dragonfly[["Gravestone Doji", "Rickshaw Man"]].iloc[-1].tolist() == [0, 0]
+    assert gravestone["Gravestone Doji"].iloc[-1] == 1
+    assert gravestone[["Dragonfly Doji", "Takuri"]].iloc[-1].tolist() == [0, 0]
+    # Two long shadows with the body in the middle of the range.
+    assert rickshaw_man[["Rickshaw Man", "Long-Legged Doji"]].iloc[-1].tolist() == [
+        1,
+        1,
+    ]
+    assert rickshaw_man["Dragonfly Doji"].iloc[-1] == 0
+
+
+def test_an_inside_bar_takes_the_colour_of_the_candle():
+    # High 101.0 below the previous 101.5 and low 99.7 above the previous 99.5.
+    patterns = candles_after_a_calm_market((100.5, 100.2, 0.5, 0.5))
+
+    assert patterns["Inside Bar"].iloc[-1] == -1
+    assert np.isnan(patterns["Inside Bar"].iloc[0])
+
+
+def test_the_patterns_selector_keeps_the_order_given():
+    frame = pd.DataFrame(
+        [(100.0, 101.5, 99.5, 101.0)] * 15, columns=["Open", "High", "Low", "Close"]
+    )
+    patterns = pattern_model.get_candlestick_patterns(
+        frame["Open"], frame["High"], frame["Low"], frame["Close"], ["Takuri", "Doji"]
+    )
+
+    assert list(patterns.columns) == ["Takuri", "Doji"]
+    with pytest.raises(ValueError, match="Unknown pattern"):
+        pattern_model.get_candlestick_patterns(
+            frame["Open"], frame["High"], frame["Low"], frame["Close"], ["Hamer"]
+        )
+
+
+def test_single_candle_patterns_match_ta_lib_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+    candles = (
+        data[["Open", "High", "Low", "Close"]].xs("AAPL", axis=1, level=1).dropna()
+    )
+    patterns = pattern_model.get_candlestick_patterns(
+        candles["Open"], candles["High"], candles["Low"], candles["Close"]
+    )
+
+    # TA-Lib 0.8.3's CDL functions on these candles: (+100 count, -100 count).
+    ta_lib_counts = {
+        "Belt-hold": (62, 42),
+        "Closing Marubozu": (76, 64),
+        "Dragonfly Doji": (10, 0),
+        "Gravestone Doji": (5, 0),
+        "High-Wave Candle": (39, 44),
+        "Long-Legged Doji": (96, 0),
+        "Long Line Candle": (98, 63),
+        "Rickshaw Man": (77, 0),
+        "Short Line Candle": (54, 42),
+        "Takuri": (10, 0),
+    }
+    for name, (bullish, bearish) in ta_lib_counts.items():
+        assert (patterns[name].eq(1).sum(), patterns[name].eq(-1).sum()) == (
+            bullish,
+            bearish,
+        ), name
+
+
+def test_heikin_ashi_matches_ta_lib():
+    candles = pd.DataFrame(
+        {
+            "Open": [72.48, 74.06, 74.29, 73.45, 74.96, 74.29, 76.81, 77.65],
+            "High": [73.42, 75.15, 75.15, 74.99, 75.22, 76.11, 77.61, 78.17],
+            "Low": [72.38, 73.8, 74.13, 73.19, 74.37, 74.29, 76.55, 77.06],
+            "Close": [73.41, 75.09, 74.36, 74.95, 74.6, 75.8, 77.41, 77.58],
+        }
+    )
+    heikin_ashi = pattern_model.get_heikin_ashi(
+        candles["Open"], candles["High"], candles["Low"], candles["Close"]
+    )
+
+    # TA-Lib 0.8.3's HA on the same candles.
+    assert heikin_ashi["Open"].tolist() == pytest.approx(
+        [72.945, 72.93375, 73.729375, 74.1059375, 74.12546875, 74.456484375,
+         74.7894921875, 75.94224609375]
+    )  # fmt: skip
+    assert heikin_ashi["Close"].tolist() == pytest.approx(
+        [72.9225, 74.525, 74.4825, 74.145, 74.7875, 75.1225, 77.095, 77.615]
+    )
+    assert heikin_ashi["High"].tolist() == pytest.approx(candles["High"].tolist())
+    assert heikin_ashi["Low"].tolist() == pytest.approx(
+        [72.38, 72.93375, 73.729375, 73.19, 74.12546875, 74.29, 74.7894921875,
+         75.94224609375]
+    )  # fmt: skip
+
+
+def test_williams_fractal_is_marked_on_the_confirming_bar():
+    high = pd.Series([1.0, 2.0, 5.0, 3.0, 2.0, 2.5, 2.0])
+    low = pd.Series([3.0, 2.0, 1.0, 2.0, 2.5, 3.0, 2.8])
+    fractals = pattern_model.get_williams_fractal(high, low)
+
+    # The high of 5 and the low of 1 at bar 2 are confirmed two bars later, at bar 4.
+    assert fractals["Up Fractal"].iloc[:4].isna().all()
+    assert fractals["Up Fractal"].iloc[4:].tolist() == [1, 0, 0]
+    assert fractals["Down Fractal"].iloc[4:].tolist() == [1, 0, 0]
+    # Without look-ahead: the bars up to the confirmation give the same value.
+    truncated = pattern_model.get_williams_fractal(high.iloc[:5], low.iloc[:5])
+    assert truncated["Up Fractal"].iloc[-1] == 1
+
+
+def test_williams_fractal_matches_ta_lib_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+    prices = data[["High", "Low"]].xs("AAPL", axis=1, level=1).dropna().iloc[:30]
+    fractals = pattern_model.get_williams_fractal(prices["High"], prices["Low"])
+
+    # TA-Lib 0.8.3's FRACTAL (2, 2): the positions of its swinghigh and swinglow.
+    positions = np.arange(len(prices))
+    assert positions[fractals["Up Fractal"].eq(1).to_numpy()].tolist() == [
+        11,
+        18,
+        21,
+        27,
+    ]
+    assert positions[fractals["Down Fractal"].eq(1).to_numpy()].tolist() == [
+        5,
+        12,
+        19,
+        24,
+        29,
+    ]

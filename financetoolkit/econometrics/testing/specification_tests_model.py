@@ -28,6 +28,9 @@ UNSUPPORTED_RESET_COV_TYPES = ("cluster", "HAC")
 # A heteroskedasticity test needs a constant and at least one other regressor.
 MINIMUM_HETEROSKEDASTICITY_REGRESSORS = 2
 
+# A sum of squared residuals at most this share of the dependent variable's is rounding noise.
+PERFECT_FIT_TOLERANCE = 1e-20
+
 
 def _with_constant(design: np.ndarray) -> np.ndarray:
     """
@@ -41,8 +44,22 @@ def _with_constant(design: np.ndarray) -> np.ndarray:
     return np.column_stack([np.ones(design.shape[0]), design])
 
 
+def _is_perfect_fit(result: dict) -> bool:
+    """
+    Whether the regression fits its dependent variable exactly: residuals that are only
+    rounding noise (relative to the dependent variable) carry no information about their
+    variance or autocorrelation, so the tests on them are not defined.
+    """
+    residuals = np.asarray(result["residuals"], dtype=float)
+    dependent = residuals + np.asarray(result["fitted_values"], dtype=float)
+    return bool(np.sum(residuals**2) <= PERFECT_FIT_TOLERANCE * np.sum(dependent**2))
+
+
 def _get_heteroskedasticity_lm(
-    residuals: np.ndarray, auxiliary_design: np.ndarray, test_name: str
+    residuals: np.ndarray,
+    auxiliary_design: np.ndarray,
+    test_name: str,
+    perfect_fit: bool = False,
 ) -> tuple[float, float]:
     """
     The LM statistic n * R² of the regression of the squared residuals on
@@ -55,6 +72,9 @@ def _get_heteroskedasticity_lm(
             f"The {test_name} test requires exog to have at least two columns where "
             "one is a constant."
         )
+
+    if perfect_fit:
+        return np.nan, np.nan
 
     auxiliary = fit_least_squares(residuals**2, auxiliary_design)
     lm_statistic = len(residuals) * auxiliary["r_squared"]
@@ -125,7 +145,10 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
     `robust=True`).
     """
     lm_statistic, p_value = _get_heteroskedasticity_lm(
-        result["residuals"], _with_constant(result["design_matrix"]), "Breusch-Pagan"
+        result["residuals"],
+        _with_constant(result["design_matrix"]),
+        "Breusch-Pagan",
+        _is_perfect_fit(result),
     )
 
     return pd.Series(
@@ -193,7 +216,10 @@ def get_white_test(result: dict) -> pd.Series:
     design = _with_constant(result["design_matrix"])
     first, second = np.triu_indices(design.shape[1])
     lm_statistic, p_value = _get_heteroskedasticity_lm(
-        result["residuals"], design[:, first] * design[:, second], "White's"
+        result["residuals"],
+        design[:, first] * design[:, second],
+        "White's",
+        _is_perfect_fit(result),
     )
 
     return pd.Series(
@@ -246,11 +272,15 @@ def get_durbin_watson_test(result: dict) -> pd.Series:
     - Referenced against statsmodels' `durbin_watson`.
     """
     residuals = result["residuals"]
-    durbin_watson_statistic = float(
-        np.sum(np.diff(residuals) ** 2) / np.sum(residuals**2)
+    durbin_watson_statistic = (
+        np.nan
+        if _is_perfect_fit(result)
+        else float(np.sum(np.diff(residuals) ** 2) / np.sum(residuals**2))
     )
 
-    if durbin_watson_statistic < DURBIN_WATSON_LOWER_BAND:
+    if np.isnan(durbin_watson_statistic):
+        interpretation = "Not Defined (Perfect Fit)"
+    elif durbin_watson_statistic < DURBIN_WATSON_LOWER_BAND:
         interpretation = "Positive Autocorrelation Likely"
     elif durbin_watson_statistic > DURBIN_WATSON_UPPER_BAND:
         interpretation = "Negative Autocorrelation Likely"

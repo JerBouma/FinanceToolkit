@@ -416,3 +416,15 @@ def test_get_hausman_wu_test_with_additional_exogenous_regressor():
     )
 
     assert result["Endogenous (5%)"]
+
+
+def test_get_wald_test_reports_the_independent_restrictions():
+    # The second restriction is twice the first, so the test has one degree of freedom.
+    rng = np.random.default_rng(5)
+    x = pd.DataFrame({"x1": rng.normal(size=80), "x2": rng.normal(size=80)})
+    y = 0.5 * x["x1"] + rng.normal(size=80)
+    result = regression_model.get_ols(y, x)
+    outcome = hypothesis_testing_model.get_wald_test(
+        result, np.array([[0, 1, 0], [0, 2, 0]])
+    )
+    assert outcome["Restrictions (q)"] == 1

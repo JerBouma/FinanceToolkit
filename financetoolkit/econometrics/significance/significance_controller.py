@@ -173,8 +173,9 @@ class SignificanceEconometrics:
             highest of the history: "the 3rd highest since" the Start Date), the Highest Since and
             Lowest Since dates, the Highest and Lowest with their Highest Date and Lowest Date
             and the Change From Highest and Change From Lowest (decimals), and the Largest
-            Drawdown (decimal) with its Drawdown Peak Date, Drawdown Trough Date and Recovery
-            Date (NaN while it has not recovered), and with a level the Level, First Above
+            Drawdown (decimal) with its Drawdown Peak Date (the last date at the peak before the
+            trough), Drawdown Trough Date and Recovery Date (NaN while it has not recovered),
+            and with a level the Level, First Above
             Level, Above Level Since, Last Above Level, Last At Or Below Level, Observations
             Above Level and Observations At Or Below Level. The dates are text: the dates of the observations, e.g.
             2002-05-31 for a monthly series, or the periods, e.g. 2002-05 with period="monthly".

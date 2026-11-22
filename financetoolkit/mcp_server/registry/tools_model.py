@@ -279,6 +279,8 @@ class UtilityToolRegistry:
         An indicator counts as one metric per formula variant it offers through its
         ``method`` parameter (``get_sharpe_ratio`` with method="smart" or "deflated"), so the
         metrics are what the server calculates and the indicators what it can be asked for.
+        Each category counts the indicators of its tools; the total counts a method that
+        several tools list once.
 
         Use this first to understand what is available, then call
         ``search_by_category`` with a specific category name.
@@ -288,11 +290,7 @@ class UtilityToolRegistry:
                 descriptions, with the totals.
         """
         index = self._registry.get_tool_index()
-        indicators_per_tool: Counter[str] = Counter()
-        metrics_per_tool: Counter[str] = Counter()
-        for entry in self._registry.get_indicator_index():
-            indicators_per_tool[entry["tool"]] += 1
-            metrics_per_tool[entry["tool"]] += max(1, len(entry.get("variants", ())))
+        indicators_per_tool, metrics_per_tool, unique_metrics = self._count_metrics()
         lines = [
             "| Category | Tools | Indicators | Metrics | Description |",
             "| --- | --- | --- | --- | --- |",
@@ -306,9 +304,11 @@ class UtilityToolRegistry:
                 f"| `{cat}` | {len(tools)} | {indicators} | {metrics} | {desc} |"
             )
         total_tools = sum(len(v) for v in index.values())
+        # A method several tools list counts once in the total, while two methods that
+        # share a name (an ETF's and a company's get_profile) count as two.
         lines.append(
-            f"\n**Total: {sum(metrics_per_tool.values())} metrics "
-            f"({sum(indicators_per_tool.values())} indicators) in {total_tools} tools**"
+            f"\n**Total: {sum(unique_metrics.values())} metrics "
+            f"({len(unique_metrics)} indicators) in {total_tools} tools**"
         )
         lines.append(
             "\n**Tip:** Use `search_metrics('what you want to measure')` to find the "
@@ -316,6 +316,28 @@ class UtilityToolRegistry:
         )
         result = "\n".join(lines)
         return result
+
+    def _count_metrics(self) -> tuple[Counter[str], Counter[str], dict[str, int]]:
+        """
+        Counts the indicators and metrics: an indicator is one metric per formula variant
+        the server offers through its ``method`` parameter.
+
+        Returns:
+            tuple[Counter[str], Counter[str], dict[str, int]]: The indicators and the
+                metrics per tool, and the metrics per indicator method, each method once
+                however many tools list it.
+        """
+        indicators_per_tool: Counter[str] = Counter()
+        metrics_per_tool: Counter[str] = Counter()
+        unique_metrics: dict[str, int] = {}
+        for entry in self._registry.get_indicator_index():
+            metrics = max(1, len(entry.get("variants", ())))
+            indicators_per_tool[entry["tool"]] += 1
+            metrics_per_tool[entry["tool"]] += metrics
+            key = entry.get("key") or entry["indicator"]
+            unique_metrics[key] = max(metrics, unique_metrics.get(key, 0))
+
+        return indicators_per_tool, metrics_per_tool, unique_metrics
 
     def list_metrics_by_category(
         self,
@@ -327,16 +349,18 @@ class UtilityToolRegistry:
             ),
         ],  # noqa: E501
     ) -> str:
-        """Finance Toolkit: list every metric/tool within a category of prices, financial
-        statements, ratios and other calculations.
+        """Finance Toolkit: list the tools within a category of prices, financial
+        statements, ratios and other calculations, with how many indicators and metrics
+        each has.
 
         Args:
             category: One of the category names returned by ``search_metric_categories``,
                 e.g. ``ratios``, ``technicals``, ``economics``, ``discovery``.
 
         Returns:
-            str: Markdown table of tool names and their descriptions for the
-                requested category, or an error message if the category is unknown.
+            str: Markdown table of the tools of the requested category with their
+                indicator and metric counts and descriptions, or an error message if the
+                category is unknown.
         """
         index = self._registry.get_tool_index()
         cat = category.lower().strip()
@@ -348,13 +372,19 @@ class UtilityToolRegistry:
         if not tools:
             return f"No tools registered for `{cat}`."
 
+        indicators_per_tool, metrics_per_tool, _ = self._count_metrics()
         lines = [
-            f"### {cat} — {len(tools)} metrics\n",
-            "| Tool | Description |",
-            "| --- | --- |",
+            f"### {cat} — {len(tools)} {'tool' if len(tools) == 1 else 'tools'}, "
+            f"{sum(indicators_per_tool[t['tool']] for t in tools)} indicators, "
+            f"{sum(metrics_per_tool[t['tool']] for t in tools)} metrics\n",
+            "| Tool | Indicators | Metrics | Description |",
+            "| --- | --- | --- | --- |",
         ]
         for t in tools:
-            lines.append(f"| `{t['tool']}` | {t['description']} |")
+            lines.append(
+                f"| `{t['tool']}` | {indicators_per_tool[t['tool']]} | "
+                f"{metrics_per_tool[t['tool']]} | {t['description']} |"
+            )
         result = "\n".join(lines)
         return result
 

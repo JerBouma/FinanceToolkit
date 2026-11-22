@@ -75,36 +75,157 @@ def test_the_categories_count_the_indicators_of_every_tool():
     assert indicators["technicals"] > 100
     assert all(count > 0 for count in indicators.values())
     assert all(metrics[name] >= count for name, count in indicators.items())
-    assert sum(metrics.values()) == int(total.group(1))
-    assert sum(indicators.values()) == int(total.group(2))
+    # The total counts each method once, however many tools list it, and two methods that
+    # share a name (an ETF's and a company's get_profile) as two: at least the distinct
+    # names, at most every tool's indicators.
+    offered = {
+        indicator
+        for tool in asyncio.run(mcp_controller.mcp.list_tools())
+        if "indicator" in tool.inputSchema.get("properties", {})
+        for indicator in tool.inputSchema["properties"]["indicator"].get("enum", [])
+    }
+    assert len(offered) < int(total.group(2)) <= sum(indicators.values())
+    assert int(total.group(1)) <= sum(metrics.values())
     # The Sharpe ratio's formula variants count as metrics, beyond the indicators.
-    assert sum(metrics.values()) > sum(indicators.values())
+    assert int(total.group(1)) > int(total.group(2))
 
 
-def test_an_indicator_counts_the_values_of_its_formula_selecting_method():
-    """Only a method= typed Literal selects formula variants; a plain str or model= does not."""
-    from typing import Literal
+def test_the_total_counts_every_method_once():
+    """A method several tools list is one indicator with its variants once; two methods
+    that share a name are two."""
+    from types import SimpleNamespace
+
+    from financetoolkit.mcp_server.registry.tools_model import UtilityToolRegistry
+
+    registry = SimpleNamespace(
+        get_tool_index=lambda: {
+            "ratios": [{"tool": "valuation", "description": "Ratios."}],
+            "risk": [{"tool": "risk", "description": "Risk."}],
+        },
+        get_indicator_index=lambda: [
+            {"tool": "valuation", "indicator": "get_beta", "key": "A.get_beta"},
+            {"tool": "risk", "indicator": "get_beta", "key": "A.get_beta"},
+            {"tool": "valuation", "indicator": "get_profile", "key": "B.get_profile"},
+            {"tool": "risk", "indicator": "get_profile", "key": "C.get_profile"},
+            {
+                "tool": "risk",
+                "indicator": "get_garch",
+                "key": "D.get_garch",
+                "variants": ("garch", "gjr"),
+            },
+        ],
+    )
+    utility = UtilityToolRegistry(
+        mcp=None,
+        registry=registry,
+        search_stop_words=[],
+        category_descriptions={},
+    )
+
+    text = utility.list_categories()
+
+    # Each category keeps its own tools' counts; the total counts each method once.
+    assert "| `ratios` | 1 | 2 | 2 |" in text
+    assert "| `risk` | 1 | 3 | 4 |" in text
+    assert "**Total: 5 metrics (4 indicators) in 2 tools**" in text
+
+    category = utility.list_metrics_by_category("risk")
+    assert category.startswith("### risk — 1 tool, 3 indicators, 4 metrics")
+    assert "| `risk` | 3 | 4 | Risk. |" in category
+
+
+def test_refused_and_estimation_choices_are_no_formula_variants():
+    """EGARCH is refused by the server (parameter_limits) and a covariance estimator
+    estimates the same quantity, so neither is offered or counted as a metric."""
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _formula_variants,
+    )
+    from financetoolkit.portfolio.construction.analysis.analysis_controller import (
+        AnalysisConstruction,
+    )
+
+    for name in (
+        "get_covariance_estimate",
+        "get_coskewness_matrix",
+        "get_cokurtosis_matrix",
+    ):
+        assert _formula_variants(getattr(AnalysisConstruction, name)) == ()
+    # Pearson, Spearman, Kendall and distance correlation are different measures.
+    assert "kendall" in _formula_variants(AnalysisConstruction.get_codependence_matrix)
+
+    tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
+    description = tools["risk"].inputSchema["properties"]["method"]["description"]
+    assert "get_garch, get_garch_forecast, get_garch_parameters: 'garch', 'gjr';" in (
+        description
+    )
+    assert "egarch" not in description
+
+    # A method that is free text lists every value it accepts, however long the list.
+    from financetoolkit.portfolio.construction.optimization.optimization_model import (
+        COVARIANCE_METHODS,
+    )
+
+    description = tools["portfolio"].inputSchema["properties"]["method"]["description"]
+    assert all(f'"{method}"' in description for method in COVARIANCE_METHODS)
+
+
+def test_a_method_is_known_by_the_class_that_defines_it():
+    from financetoolkit.etf.etf_controller import ETF
+    from financetoolkit.mcp_server.registry.registry_controller import _method_key
+    from financetoolkit.technicals.technicals_controller import Technicals
+    from financetoolkit.toolkit_controller import Toolkit
+
+    # Two methods that share a name are two; an inherited one is that of its base.
+    assert _method_key(ETF, "get_profile") != _method_key(Toolkit, "get_profile")
+    assert _method_key(Technicals, "get_factor_analysis").endswith(
+        "TechnicalsBase.get_factor_analysis"
+    )
+
+
+def test_the_method_description_lists_every_indicators_own_values():
+    """A tool whose indicators take many different methods lists each one's values."""
+    import importlib
 
     from financetoolkit.mcp_server.registry.registry_controller import (
         _formula_variants,
     )
 
-    def variants(method: Literal["standard", "smart", "lo"] = "standard"):
-        pass
+    tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
+    with open("financetoolkit/mcp_server/config.yaml", encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+    refused = {
+        (method, value)
+        for refusal in config["parameter_limits"]["refused_values"]
+        if refusal["parameter"] == "method"
+        for method in refusal["methods"]
+        for value in refusal["values"]
+    }
 
-    def optional(method: Literal["a", "b"] | None = None):
-        pass
+    def owner(module):
+        module_path, class_name = config["module_class_map"][module].rsplit(".", 1)
+        return getattr(importlib.import_module(module_path), class_name)
 
-    def text(method: str = "linear"):
-        pass
+    checked = 0
+    for group in config["tool_groups"]:
+        schema = tools[group["tool_name"]].inputSchema["properties"]
+        if "method" not in schema:
+            continue
+        description = schema["method"]["description"]
+        for indicator in schema["indicator"].get("enum", []):
+            module = (group.get("method_to_module") or {}).get(
+                indicator, group.get("module_name")
+            )
+            if module not in config["module_class_map"]:
+                continue
+            for value in _formula_variants(getattr(owner(module), indicator)):
+                if (indicator, value) not in refused:
+                    checked += 1
+                    # Quoted either way: a docstring's own words use double quotes.
+                    assert (
+                        f"'{value}'" in description or f'"{value}"' in description
+                    ), f"{group['tool_name']}: {indicator} method {value!r}"
 
-    def model(model: Literal["garch", "gjr"] = "garch"):
-        pass
-
-    assert _formula_variants(variants) == ("standard", "smart", "lo")
-    assert _formula_variants(optional) == ("a", "b")
-    assert _formula_variants(text) == ()
-    assert _formula_variants(model) == ()
+    assert checked > 100  # noqa: PLR2004
 
 
 def test_every_stated_number_of_metrics_is_the_same():
@@ -114,7 +235,7 @@ def test_every_stated_number_of_metrics_is_the_same():
 
     result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
     text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
-    total = int(text.split("**Total: ")[1].split(" metrics")[0])
+    total = int(text.split("**Total: ")[1].split(" metrics")[0].replace(",", ""))
     expected = f"{total // 100 * 100}+"
 
     files = [
@@ -127,18 +248,22 @@ def test_every_stated_number_of_metrics_is_the_same():
         "financetoolkit/mcp_server/registry/registry_controller.py",
         "financetoolkit/portfolio/portfolio_controller.py",
         "financetoolkit/toolkit_controller.py",
+        "pyproject.toml",
+        "financetoolkit/mcp_server/mcpb/pyproject.toml",
     ]
     # A total is a number of at least 300 followed by "+" and, within a few words, what it
-    # counts; the counts of single modules (140+ ratios, 150+ indicators) are smaller.
+    # counts; the counts of single modules (140+ ratios, 150+ indicators) are smaller. A
+    # thousands separator (1,000+) states the same number as 1000+.
     pattern = re.compile(
-        r"(?<![\d.,])(\d{3,})\+(?=[^\n]{0,60}?\b(?:methods?|indicators?|metrics?)\b)"
+        r"(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d{3,})\+"
+        r"(?=[^\n]{0,60}?\b(?:methods?|indicators?|metrics?)\b)"
     )
     stated = {}
     for path in files:
         with open(path, encoding="utf-8") as file:
             for number in pattern.findall(file.read()):
-                if int(number) >= 300:
-                    stated.setdefault(f"{number}+", []).append(path)
+                if int(number.replace(",", "")) >= 300:
+                    stated.setdefault(f"{number.replace(',', '')}+", []).append(path)
 
     assert expected in stated
     assert set(stated) == {expected}, f"Every total should be {expected}: {stated}"
@@ -569,6 +694,59 @@ def test_rank_true_on_a_single_ticker_says_it_was_not_applied(monkeypatch):
 
     assert "rank=true was not applied" in answer
     assert '"Rank"' not in answer
+
+
+def test_an_answer_without_values_gets_no_notes_on_limit_or_rank(monkeypatch):
+    import json
+    import typing
+
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+    from financetoolkit.utilities.logger_model import get_logger
+
+    def failing(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        get_logger().error("get_sharpe_ratio could not be calculated. ValueError: x.")
+        return pd.DataFrame({"Sharpe Ratio": [None]}, index=["AAPL"])
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", failing)
+    result = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {
+                "indicator": "get_sharpe_ratio",
+                "tickers": "AAPL",
+                "limit": -1,
+                "rank": True,
+            },
+        )
+    )
+    answer = json.loads(typing.cast(tuple, result)[0][0].text)
+
+    assert answer["reason"].endswith("ValueError: x.")
+    assert "_notes" not in answer
+
+
+def test_the_aliases_end_with_their_list():
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _summarize_docstring,
+    )
+
+    def aliases(text):
+        return _summarize_docstring(f"Summary.\n\nAlso known as: {text}\n\nArgs:")[
+            "aliases"
+        ]
+
+    assert aliases("NCAV. Note that NCAV is related to the Graham Number.") == "NCAV"
+    assert aliases("DPO, detrended price oscillator. Note the moving\naverage.") == (
+        "DPO, detrended price oscillator"
+    )
+    assert aliases("PVO, VOSC. See `momentum_model` for the references.") == "PVO, VOSC"
+    # A sentence that names more aliases stays, and an abbreviation is no sentence end.
+    assert aliases(
+        "reward-to-variability ratio. The variants are also known as the PSR."
+    ) == ("reward-to-variability ratio. The variants are also known as the PSR")
+    assert aliases("restricted vs. unrestricted F-test, U.S. Treasury yield.") == (
+        "restricted vs. unrestricted F-test, U.S. Treasury yield"
+    )
 
 
 def test_the_choices_of_one_indicator_become_the_type_of_their_values():

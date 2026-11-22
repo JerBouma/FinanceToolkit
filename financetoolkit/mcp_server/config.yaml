@@ -1191,7 +1191,7 @@ utility_tools:
     description: "List the metric categories with tool, indicator and metric (method= variants) counts and totals."
 
   - tool_name: "search_by_category"
-    description: "List all metrics within a specific category by name."
+    description: "List the tools of a category with their indicator and metric counts."
 
   - tool_name: "search_metrics"
     description: "Fuzzy keyword search across the indicators of all 900+ available metrics."

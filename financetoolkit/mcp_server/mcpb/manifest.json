@@ -167,7 +167,7 @@
     },
     {
       "name": "search_by_category",
-      "description": "List all metrics within a specific category by name."
+      "description": "List the tools of a category with their indicator and metric counts."
     },
     {
       "name": "search_metrics",

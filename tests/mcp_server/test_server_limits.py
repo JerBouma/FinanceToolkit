@@ -190,6 +190,43 @@ def test_series_references_are_held_to_the_entity_limit(captured):
     assert not captured
 
 
+def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
+    """An indicator analyzed through series= is refused what its own tool refuses."""
+    # The slow EGARCH fit, which the risk tool refuses by value.
+    answer = call(
+        "econometrics",
+        indicator="get_rolling_median",
+        series="risk:get_garch:AAPL:method=egarch",
+    )
+    assert "`method='egarch'` is not available on this server" in answer
+    assert "`risk` (`get_garch`) in the series" in answer
+
+    # A forecast far over the maximum horizon.
+    answer = call(
+        "econometrics",
+        indicator="get_rolling_median",
+        series="risk:get_garch_forecast:AAPL:time_steps=999999",
+    )
+    assert "`time_steps` may be at most 1,000 on this server" in answer
+
+    # Within the limits of one reference but not the other: neither is collected.
+    answer = call(
+        "econometrics",
+        indicator="get_ols",
+        series="risk:get_garch:AAPL; risk:get_garch:MSFT:method=EGARCH",
+    )
+    assert "is not available on this server" in answer
+    assert not captured
+
+    call(
+        "econometrics",
+        indicator="get_rolling_median",
+        series="risk:get_garch_forecast:AAPL:method=gjr:time_steps=10",
+    )
+    assert captured[-1][1]["method"] == "gjr"
+    assert captured[-1][1]["time_steps"] == 10  # noqa: PLR2004
+
+
 def test_a_large_table_is_cut_before_its_records_are_built(monkeypatch):
     """The records of a table of millions of rows would not fit in memory."""
     from financetoolkit.mcp_server.registry import formatting_model

@@ -7,7 +7,10 @@ import pandas as pd
 import pytest
 
 from financetoolkit.mcp_server import mcp_controller
-from financetoolkit.mcp_server.registry.formatting_model import parse_base_window
+from financetoolkit.mcp_server.registry.formatting_model import (
+    parse_base_window,
+    rebase_result,
+)
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
 YEARLY = pd.DataFrame(
@@ -135,7 +138,28 @@ def test_a_column_without_a_base_is_empty_with_a_note(answer):
         note.startswith("Empty has no value in the base window")
         for note in result["_notes"]
     )
-    assert any(note.startswith("Zero averages zero") for note in result["_notes"])
+    assert any(
+        note.startswith("Zero has an average over the base window")
+        for note in result["_notes"]
+    )
+
+
+def test_a_column_with_a_negative_base_is_empty_with_a_note():
+    days = pd.date_range("2024-01-01", periods=3, freq="D")
+    table = pd.DataFrame(
+        {"Negative": [-1.0, 1.0, 2.0], "Positive": [2.0, 1.0, 4.0]}, index=days
+    )
+
+    rebased, notes = rebase_result(table, parse_base_window("2024-01-01"), "2024-01-01")
+
+    # Indexed to -1, the column would turn every sign around (1 becoming -100).
+    assert rebased["Negative"].isna().all()
+    assert rebased["Positive"].tolist() == [100.0, 50.0, 200.0]
+    assert any(
+        note.startswith("Negative has an average over the base window")
+        and "not positive" in note
+        for note in notes
+    )
 
 
 def test_the_base_is_taken_before_limit_and_show_columns(answer):

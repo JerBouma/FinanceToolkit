@@ -789,7 +789,7 @@ def get_implied_growth_rate(
 
     For more information, see the following book:
 
-    - Mauboussin, M.J. and Rappaport, A. (2001). "Expectations Investing: Reading Stock
+    - Rappaport, A. and Mauboussin, M.J. (2001). "Expectations Investing: Reading Stock
       Prices for Better Returns." Harvard Business School Press.
 
     Args:

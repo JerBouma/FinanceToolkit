@@ -14,11 +14,12 @@ from financetoolkit.risk.dependence import copula_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 
-# The smallest eigenvalue a repaired correlation matrix keeps, as in skfolio's cov_nearest.
+# The smallest eigenvalue a repaired correlation matrix keeps, the same floor skfolio's cov_nearest uses.
 MINIMUM_EIGENVALUE = 1e-13
 
-# The lowest codependence that the tail distance -ln(λ) is taken of, as in Riskfolio-Lib, so
-# that two assets that never fall into their tails together get a large but finite distance.
+# The lowest codependence that the tail distance -ln(λ) is taken of (Riskfolio-Lib uses the same
+# floor), so that two assets that never fall into their tails together get a large but finite
+# distance.
 MINIMUM_TAIL_DEPENDENCE = 1e-8
 
 GERBER_STATISTICS = (0, 1, 2)
@@ -388,8 +389,9 @@ def get_minimum_covariance_determinant(
         return value if sign > 0 else -np.inf
 
     def c_steps(sample: np.ndarray, size: int, iterations: int, start=None) -> tuple:
-        # The C-steps of scikit-learn's _c_step, from a random subset or from a location and
-        # covariance; the distances it returns use the covariance before the last step.
+        # The C-steps of Rousseeuw and Van Driessen (1999), from a random subset or from a
+        # location and covariance; the distances returned use the covariance before the last
+        # step, the same convention as scikit-learn's MinCovDet.
         if start is None:
             selected = generator.permutation(len(sample))[:size]
         else:
@@ -503,11 +505,11 @@ def get_triangulated_maximally_filtered_graph(
     face into a separator, adds the 4-clique of the face and the vertex and splits the face
     into three new ones.
 
-    This is a port of Riskfolio-Lib's PMFG_T2s (DBHT.py, BSD 3-Clause License, Copyright
-    (c) 2020-2026 Dany Cajas, after Tomaso Aste's MATLAB code), with the same order of
-    insertion and the same tie-breaking (the gains rounded to six decimals).
+    The construction follows Massara, Di Matteo and Aste (2017). It shares similar logic as
+    Riskfolio-Lib's PMFG_T2s, with the same order of insertion and the same tie-breaking (the
+    gains rounded to six decimals), so the two give the same graph.
 
-    See Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Network Filtering for Big Data:
+    See Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
     Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
 
     Args:
@@ -585,12 +587,14 @@ def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
     With four or fewer assets the graph links every pair and the estimate is the sample
     covariance.
 
-    This equals Riskfolio-Lib's covar_matrix(method="jlogo") and its j_LoGo with PMFG_T2s
-    (DBHT.py, BSD 3-Clause License, Copyright (c) 2020-2026 Dany Cajas), of which the
-    graph is a port.
+    The estimator is that of Barfuss, Massara, Di Matteo and Aste (2016); the planar graph
+    follows Massara, Di Matteo and Aste (2017). It shares similar logic as Riskfolio-Lib's
+    covar_matrix(method="jlogo") (j_LoGo with PMFG_T2s), and the two agree.
 
     See Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Parsimonious
-    Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306.
+    Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306, and
+    Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
+    Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1183,8 +1187,8 @@ def get_cokurtosis_matrix(
     is the moment kurtosis of each asset (3 for a normal distribution, not the excess).
 
     See Jondeau, E. and Rockinger, M. (2006), "Optimal Portfolio Allocation under Higher
-    Moments", European Financial Management, 12(1), 29-55, and Cajas, D. (2023),
-    "Kurtosis and Semi-Kurtosis Portfolio Optimization", SSRN 4482613.
+    Moments", European Financial Management, 12(1), 29-55, and Cajas, D. (2022), "Convex
+    Optimization of Portfolio Kurtosis", SSRN 4202967.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1300,8 +1304,8 @@ def get_bootstrap_estimates(
 
     The bounds are the (1 - c) / 2 and (1 + c) / 2 percentiles of the estimates at
     confidence level c, and the standard error is their standard deviation (ddof=1).
-    The averages and covariances are those of the returns per period (ddof=1). This
-    follows Riskfolio-Lib's bootstrapping (q = 1 - c, n_sim, window) and
+    The averages and covariances are those of the returns per period (ddof=1). The
+    parameters match Riskfolio-Lib's bootstrapping (q = 1 - c, n_sim, window) and
     normal_simulation, whose box and ellipsoid uncertainty sets come from these
     estimates; the draws differ from its arch-based ones, so results agree only in
     distribution. The bounds of the covariances are per entry and are not adjusted to
@@ -1404,8 +1408,12 @@ def get_stepwise_factors(
     The p-values are those of the t-statistics of the OLS coefficients and the criteria
     are defined as statsmodels defines them (see helpers.get_linear_regression).
 
-    See Riskfolio-Lib's forward_regression and backward_regression
-    (https://github.com/dcajasn/Riskfolio-Lib).
+    See Efroymson, M. A. (1960), "Multiple Regression Analysis", in Ralston, A. and Wilf,
+    H. S. (eds.), Mathematical Methods for Digital Computers, Wiley; Akaike, H. (1974), "A
+    New Look at the Statistical Model Identification", IEEE Transactions on Automatic
+    Control, 19(6), 716-723; Schwarz, G. (1978), "Estimating the Dimension of a Model", The
+    Annals of Statistics, 6(2), 461-464; and Riskfolio-Lib's forward_regression and
+    backward_regression (https://github.com/dcajasn/Riskfolio-Lib).
 
     Args:
         returns (pd.Series): The returns per period of the asset.

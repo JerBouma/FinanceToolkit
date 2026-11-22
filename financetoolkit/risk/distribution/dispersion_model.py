@@ -10,7 +10,7 @@ from scipy.special import binom
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.value_at_risk import evar_model
 
-# The smallest tail probability of the Tail Gini's discretization, as in riskfolio-lib (Cajas 2021).
+# The smallest tail probability of the Tail Gini's discretization, the same as Riskfolio-Lib's (Cajas, 2021).
 TAIL_GINI_SMALLEST_ALPHA = 0.0001
 
 RANGE_MEASURES = ["range", "var", "cvar", "tail_gini", "evar"]
@@ -166,7 +166,7 @@ def get_owa_l_moment_crm_weights(
       relative risk aversion, with the OWA weights made non-decreasing by a running maximum.
 
     The first two are solved for φ with at most `max_weight` per L-moment, as convex
-    programs over the k - 1 weights (riskfolio-lib solves them with cvxpy). riskfolio-lib's
+    programs over the k - 1 weights (Riskfolio-Lib solves them with cvxpy). Riskfolio-Lib's
     maximum entropy method ("ME") is left out: it maximizes the entropy of a bound above the
     absolute OWA weights, which is the same for every feasible φ, so its weights depend on
     the solver rather than on the problem.

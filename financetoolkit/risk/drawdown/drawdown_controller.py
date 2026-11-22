@@ -63,7 +63,7 @@ class DrawdownRisk:
 
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - riskfolio-lib: RiskFunctions.CDaR_Rel and RiskFunctions.CDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.CDaR_Rel and RiskFunctions.CDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.cdar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: CDaR, uncompounded CDaR, absolute CDaR.
@@ -101,7 +101,7 @@ class DrawdownRisk:
         - The method retrieves historical return data based on the specified `period` and calculates CDaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of CDaR values using the specified `lag`.
-        - riskfolio-lib's CDaR_Rel and CDaR_Abs and skfolio's cdar take the exact tail average of Rockafellar and
+        - Riskfolio-Lib's CDaR_Rel and CDaR_Abs and skfolio's cdar take the exact tail average of Rockafellar and
         Uryasev (2002), which counts the drawdown at the boundary with a fraction, and report the loss as a
         positive number; the Toolkit averages the drawdowns up to the interpolated quantile, as its historic
         CVaR does, which differs from them by up to 2e-4 on three years of daily returns.
@@ -228,7 +228,7 @@ class DrawdownRisk:
 
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - riskfolio-lib: RiskFunctions.DaR_Rel and RiskFunctions.DaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.DaR_Rel and RiskFunctions.DaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.drawdown_at_risk (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: DaR, drawdown quantile, uncompounded DaR, absolute DaR.
@@ -266,7 +266,7 @@ class DrawdownRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the DaR
         for each asset in the Toolkit instance, each on its own returns.
         - If `growth` is set to True, the method calculates the growth of DaR values using the specified `lag`.
-        - riskfolio-lib's DaR_Rel and DaR_Abs and skfolio's drawdown_at_risk take the order statistic at
+        - Riskfolio-Lib's DaR_Rel and DaR_Abs and skfolio's drawdown_at_risk take the order statistic at
         ceil(alpha * n) of the sorted drawdowns instead of the interpolated quantile and report the drawdown
         as a positive number; on three years of daily returns they differ by up to 1e-3.
 
@@ -356,7 +356,7 @@ class DrawdownRisk:
         SSRN Electronic Journal.
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - riskfolio-lib: RiskFunctions.EDaR_Rel and RiskFunctions.EDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.EDaR_Rel and RiskFunctions.EDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.edar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: EDaR, entropic drawdown, uncompounded EDaR, absolute EDaR.
@@ -394,7 +394,7 @@ class DrawdownRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the EDaR
         for each asset in the Toolkit instance, each on its own returns.
         - If `growth` is set to True, the method calculates the growth of EDaR values using the specified `lag`.
-        - Equals riskfolio-lib's EDaR_Rel and EDaR_Abs and skfolio's edar, which report the drawdown as a
+        - Equals Riskfolio-Lib's EDaR_Rel and EDaR_Abs and skfolio's edar, which report the drawdown as a
         positive number.
 
         As an example:
@@ -477,7 +477,7 @@ class DrawdownRisk:
         negative decimal (0 when the value never fell below a previous high). With compounded=False the
         drawdowns are measured on the summed returns, as an absolute decline from their peak
         (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)), which is the
-        Maximum Drawdown of Chekhlov, Uryasev and Zabarankin (2005) and riskfolio-lib's MDD_Abs. With
+        Maximum Drawdown of Chekhlov, Uryasev and Zabarankin (2005) and Riskfolio-Lib's MDD_Abs. With
         `rolling`, every window starts from a wealth of 1 at its first return, so it is the deepest decline
         within the trailing window.
 
@@ -487,7 +487,7 @@ class DrawdownRisk:
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
         - empyrical: max_drawdown and roll_max_drawdown (https://github.com/stefan-jansen/empyrical-reloaded).
-        - riskfolio-lib: RiskFunctions.MDD_Rel and RiskFunctions.MDD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.MDD_Rel and RiskFunctions.MDD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.max_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: max drawdown, peak-to-trough decline, rolling maximum drawdown, uncompounded drawdown,
@@ -530,7 +530,7 @@ class DrawdownRisk:
         new high, even if prices fell within a year. Use period="daily" for the deepest decline, or
         within_period=True for the deepest decline within each year.
         - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
-        - Equals empyrical's max_drawdown and roll_max_drawdown, riskfolio-lib's MDD_Rel and MDD_Abs and skfolio's
+        - Equals empyrical's max_drawdown and roll_max_drawdown, Riskfolio-Lib's MDD_Rel and MDD_Abs and skfolio's
         max_drawdown, which report the decline as a positive number.
 
         As an example:
@@ -1248,12 +1248,12 @@ class DrawdownRisk:
 
         With compounded=False the drawdowns are the absolute declines of 1 plus the summed returns from their
         high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; with
-        rolling=None this is riskfolio-lib's UCI_Abs.
+        rolling=None this is Riskfolio-Lib's UCI_Abs.
 
         For more information, see the following sources:
 
         - Martin, P.G. and McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John Wiley & Sons.
-        - riskfolio-lib: RiskFunctions.UCI_Rel and RiskFunctions.UCI_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.UCI_Rel and RiskFunctions.UCI_Abs (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: UI, drawdown risk, uncompounded ulcer index.
 
@@ -1482,7 +1482,7 @@ class DrawdownRisk:
 
         The Average Drawdown has two definitions. Bacon (2008), PerformanceAnalytics and ffn average the depth
         of the drawdown episodes: every decline from a high until the asset is back at it counts once, with its
-        deepest point. Chekhlov, Uryasev and Zabarankin (2005), riskfolio-lib and skfolio average the drawdown
+        deepest point. Chekhlov, Uryasev and Zabarankin (2005), Riskfolio-Lib and skfolio average the drawdown
         of every period instead, the periods at a high counting as 0, which weighs a drawdown by how long it
         lasted (the Pain Index, `get_pain_index`, is that average per year as a positive number). The episode
         average says how deep a typical setback is, the period average how far below its high the asset
@@ -1512,7 +1512,7 @@ class DrawdownRisk:
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
         - PerformanceAnalytics (R): AverageDrawdown (https://github.com/braverock/PerformanceAnalytics).
         - ffn: PerformanceStats.avg_drawdown (https://github.com/pmorissette/ffn).
-        - riskfolio-lib: RiskFunctions.ADD_Rel and RiskFunctions.ADD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.ADD_Rel and RiskFunctions.ADD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.average_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: ADD, average drawdown depth, mean drawdown, uncompounded average drawdown.
@@ -1554,10 +1554,10 @@ class DrawdownRisk:
         - If `growth` is set to True, the method calculates the growth of the Average Drawdown values using the
         specified `lag`.
         - method="episode" equals PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
-        riskfolio-lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
+        Riskfolio-Lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
         libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
         geometric=FALSE divides the decline of 1 + the summed returns by its peak, where compounded=False here
-        (and in riskfolio-lib and skfolio) takes the absolute decline.
+        (and in Riskfolio-Lib and skfolio) takes the absolute decline.
         - The Sterling Ratio of `toolkit.performance` averages only the periods below a high, a third variant.
 
         As an example:

@@ -1298,9 +1298,9 @@ class VolatilityRisk:
         - Garman, M.B., & Klass, M.J. (1980). "On the Estimation of Security Price
         Volatilities from Historical Data." Journal of Business, 53(1), 67-78.
         - Rogers, L.C.G., & Satchell, S.E. (1991). "Estimating Variance from High, Low and
-        Close Prices." Annals of Applied Probability, 1(4), 504-512.
+        Closing Prices." Annals of Applied Probability, 1(4), 504-512.
         - Yang, D., & Zhang, Q. (2000). "Drift-Independent Volatility Estimation Based on
-        High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-491.
+        High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-492.
 
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
@@ -1770,7 +1770,7 @@ class VolatilityRisk:
         Journal of Investing, 3(3), 59-64.
         - Markowitz, H.M. (1959). "Portfolio Selection: Efficient Diversification of Investments." John
         Wiley & Sons, chapter 9 (the semi-variance).
-        - riskfolio-lib: RiskFunctions.SemiDeviation (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.SemiDeviation (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.semi_deviation and measures.semi_variance
         (https://skfolio.org/api.html#module-skfolio.measures).
         - PerformanceAnalytics (R): DownsideDeviation and SemiDeviation
@@ -1814,7 +1814,7 @@ class VolatilityRisk:
         - If `growth` is set to True, the method calculates the growth of the Downside Deviation values using
         the specified `lag`.
         - With the default MAR of 0 the result equals PerformanceAnalytics' DownsideDeviation (method="full").
-        With minimum_acceptable_return="mean" it equals riskfolio-lib's SemiDeviation and skfolio's
+        With minimum_acceptable_return="mean" it equals Riskfolio-Lib's SemiDeviation and skfolio's
         semi_deviation (skfolio's semi_variance is its square), while PerformanceAnalytics' SemiDeviation
         divides by n.
 

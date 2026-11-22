@@ -167,7 +167,7 @@ def get_evar_historic(
 
     - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure."
     Journal of Optimization Theory and Applications, 155(3), 1105-1123.
-    - riskfolio-lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
+    - Riskfolio-Lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
     - skfolio: measures.evar (https://skfolio.org/api.html#module-skfolio.measures).
 
     Args:
@@ -205,7 +205,7 @@ def get_entropic_risk_measure(
 
     - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure."
     Journal of Optimization Theory and Applications, 155(3), 1105-1123.
-    - riskfolio-lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
+    - Riskfolio-Lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
     - skfolio: measures.entropic_risk_measure (https://skfolio.org/api.html#module-skfolio.measures).
 
     Args:

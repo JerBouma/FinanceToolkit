@@ -129,7 +129,7 @@ class AnalysisConstruction:
 
         For more information, see the following papers:
 
-        - Litterman, R. (1996). "Hot Spots and Hedges." The Journal of Portfolio Management,
+        - Litterman, R. (1997). "Hot Spots and Hedges." The Journal of Portfolio Management,
           23(5), 52-75.
         - Tasche, D. (2000). "Conditional Expectations as Quantile Derivatives." Working
           paper, arXiv math/0104190.
@@ -173,7 +173,7 @@ class AnalysisConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -344,7 +344,7 @@ class AnalysisConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -728,7 +728,7 @@ class AnalysisConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -1184,7 +1184,7 @@ class AnalysisConstruction:
           et al., 2010).
         - "shrunk": Σ = (1 - δ) S + δ (tr(S) / N) I with a fixed intensity δ = shrinkage
           (PyPortfolioOpt's shrunk_covariance, skfolio's ShrunkCovariance).
-        - "semicovariance": the co-movement below a zero return (Estrada, 2007).
+        - "semicovariance": the co-movement below a zero return (Estrada, 2008).
         - "exponential": exponentially weighted with α = 2 / (span + 1) (RiskMetrics).
         - "denoised", "denoised_spectral", "denoised_shrink": the eigenvalues of the
           correlation matrix below the Marčenko-Pastur upper edge averaged, set to zero, or
@@ -1218,8 +1218,8 @@ class AnalysisConstruction:
         - "jlogo": Σ = J⁻¹ with J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ the sparse inverse
           covariance over the 4-cliques C and separators S of the Triangulated Maximally
           Filtered Graph of the similarities (1 + ρ) / 2, a planar graph with 3(N - 2)
-          links (Massara et al., 2016; Barfuss et al., 2016; Riskfolio-Lib's
-          covar_matrix(method="jlogo")). With four or fewer assets every pair is linked and
+          links (Massara et al., 2017; Barfuss et al., 2016; similar logic as
+          Riskfolio-Lib's covar_matrix(method="jlogo")). With four or fewer assets every pair is linked and
           it is the sample covariance.
         - "geodesic": Σ = S^(1/2) (S^(-1/2) T S^(-1/2))^δ S^(1/2) with T = (tr(S) / N) I
           and δ = shrinkage, which keeps the eigenvectors of S and interpolates its
@@ -1250,7 +1250,7 @@ class AnalysisConstruction:
         - Croux, C. and Haesbroeck, G. (1999). "Influence Function and Efficiency of the
           Minimum Covariance Determinant Scatter Matrix Estimator." Journal of
           Multivariate Analysis, 71(2), 161-190.
-        - Massara, G. P., Di Matteo, T. and Aste, T. (2016). "Network Filtering for Big
+        - Massara, G. P., Di Matteo, T. and Aste, T. (2017). "Network Filtering for Big
           Data: Triangulated Maximally Filtered Graph." Journal of Complex Networks, 5(2),
           161-178.
         - Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016). "Parsimonious
@@ -1271,8 +1271,8 @@ class AnalysisConstruction:
           (https://scikit-learn.org/stable/modules/generated/sklearn.covariance.MinCovDet.html).
         - PyPortfolioOpt: risk_models.min_cov_determinant, the raw estimate before the
           consistency factor and the reweighting (https://github.com/robertmartin8/PyPortfolioOpt).
-        - Riskfolio-Lib: covar_matrix(method="jlogo"), j_LoGo and PMFG_T2s, of which the
-          TMFG here is a port (BSD 3-Clause License, https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: covar_matrix(method="jlogo"), j_LoGo and PMFG_T2s, which share
+          similar logic for the TMFG and j-LoGo (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: GeodesicShrinkageCovariance, RegimeAdjustedEWCovariance
           (https://github.com/skfolio/skfolio).
 
@@ -1313,7 +1313,7 @@ class AnalysisConstruction:
                 States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific
                 ex Japan" or "North America". Defaults to "United States".
             half_life (float, optional): The half-life in periods of the exponential
-                weights of "regime_adjusted_ew". Defaults to 40, as in skfolio.
+                weights of "regime_adjusted_ew". Defaults to 40, skfolio's default as well.
             seed (int | None, optional): The seed of the random subsets of
                 "minimum_covariance_determinant", so the same returns give the same
                 estimate; scikit-learn's random_state gives the same subsets. Defaults
@@ -1798,8 +1798,7 @@ class AnalysisConstruction:
 
         - Jondeau, E. and Rockinger, M. (2006). "Optimal Portfolio Allocation under Higher
           Moments." European Financial Management, 12(1), 29-55.
-        - Cajas, D. (2023). "Kurtosis and Semi-Kurtosis Portfolio Optimization." SSRN
-          4482613.
+        - Cajas, D. (2022). "Convex Optimization of Portfolio Kurtosis." SSRN 4202967.
         - PerformanceAnalytics: M4.MM, M4.ewma, CoKurtosisMatrix
           (https://github.com/braverock/PerformanceAnalytics).
         - Riskfolio-Lib: cokurt_matrix (https://github.com/dcajasn/Riskfolio-Lib).

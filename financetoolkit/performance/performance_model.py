@@ -1778,16 +1778,19 @@ def get_autocorrelation_penalty(
     Where n is the number of returns and ρ the Pearson correlation between each return and
     the next. Returns without autocorrelation give a penalty of 1. Taking the absolute value
     of ρ penalizes negative autocorrelation as well, which would in fact lower the variance of
-    a sum of returns; this follows the reference implementation. Lo (2002), on which the
+    a sum of returns; quantstats takes it the same way. Lo (2002), on which the
     weights are based, uses the sample autocorrelation at every lag instead of powers of the
     first one (see `get_lo_sharpe_ratio`).
+
+    The penalty, and the "smart" Sharpe and Sortino ratios that divide by it, are defined in
+    quantstats (Ran Aroussi).
 
     For more information, see the following sources:
 
     - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal, 58(4),
     36-52.
     - quantstats: stats.autocorr_penalty, stats.smart_sharpe and stats.smart_sortino, the
-    reference implementation (https://github.com/ranaroussi/quantstats).
+    reference for the penalty (https://github.com/ranaroussi/quantstats).
 
     Fewer than two returns, or returns without variation, have no autocorrelation and give
     NaN (quantstats returns a penalty of 1 for them).
@@ -3366,8 +3369,8 @@ def get_prospect_ratio(
     2nd edition, John Wiley & Sons, p. 100.
     - PerformanceAnalytics: ProspectRatio (https://github.com/braverock/PerformanceAnalytics).
 
-    This is the formula of Bacon (2008) and the PerformanceAnalytics documentation. The
-    PerformanceAnalytics code subtracts MAR / N instead of the MAR from the average, so both
+    This is the formula of Bacon (2008) and the PerformanceAnalytics documentation.
+    PerformanceAnalytics' ProspectRatio subtracts MAR / N instead of the MAR from the average, so both
     only agree for a MAR of 0, the default here.
 
     Without a return below the MAR the downside deviation is 0 and the ratio undefined (NaN).
@@ -3501,6 +3504,10 @@ def get_return_statistics(
     the average win and loss and the profit ratio, and ends a streak. The Expectancy equals
     the average of the non-zero returns. The Recovery Factor compounds the returns into the
     cumulative return, so that it relates the same wealth path to the drawdown measured on it.
+
+    The Expectancy and the Payoff Ratio follow Tharp (2006). The Common Sense Ratio, the CPC
+    Index, the Profit Ratio, the Outlier Win and Loss Ratios, the Risk of Ruin, the Exposure
+    and the Risk-Adjusted Return are defined in quantstats (Ran Aroussi).
 
     For more information, see the following sources:
 
@@ -5235,8 +5242,8 @@ def get_lo_sharpe_ratio(
 
     - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal,
     58(4), 36-52.
-    - Moran, P.A.P. (1948). "Some Theorems on Time Series: I." Biometrika, 35(3/4),
-    255-260.
+    - Moran, P.A.P. (1948). "Some Theorems on Time Series: II. The Significance of the Serial
+    Correlation Coefficient." Biometrika, 35(3/4), 255-260.
     - Newey, W.K., & West, K.D. (1994). "Automatic Lag Selection in Covariance Matrix
     Estimation." Review of Economic Studies, 61(4), 631-653.
 
@@ -5742,7 +5749,8 @@ def get_outperformance_probability(
     """
     Calculate the probability of outperformance over rolling windows: the share of every
     window of `window` consecutive periods in which the compounded return of the asset beat
-    that of the benchmark, as PerformanceAnalytics' table.ProbOutPerformance does. Without
+    that of the benchmark, as defined in PerformanceAnalytics (Peterson and Carl) by
+    table.ProbOutPerformance. Without
     a benchmark the asset's compounded return is compared with 0, ffn's
     twelve_month_win_perc for a window of twelve monthly returns.
 
@@ -5968,7 +5976,8 @@ def get_stability_of_returns(
     """
     Calculate the stability of returns, the R-squared of a linear fit of the cumulative log
     returns on time. A value close to 1 means the asset grew at a steady rate; a value close
-    to 0 means its growth path was erratic.
+    to 0 means its growth path was erratic. The measure is defined in empyrical (Quantopian)
+    as stability_of_timeseries.
 
     The formula is as follows:
 
@@ -6529,7 +6538,7 @@ def get_risk_measure_ratio(
     - Gregoriou, G.N., & Gueyie, J.P. (2003). "Risk-Adjusted Performance of Funds of Hedge Funds
     Using a Modified Sharpe Ratio." Journal of Wealth Management, 6(3), 77-83.
     - skfolio: RatioMeasure (https://skfolio.org/generated/skfolio.measures.RatioMeasure.html).
-    - riskfolio-lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
+    - Riskfolio-Lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
     - PerformanceAnalytics: SharpeRatio with FUN="VaR" or "ES"
     (https://github.com/braverock/PerformanceAnalytics).
 
@@ -6929,7 +6938,8 @@ def get_forecast_cone(
         - Bound_t = MEAN(Wealth_t) ± k x STDEV(Wealth_t)
 
     The cone does not assume normally distributed returns, but it does assume that the coming
-    returns are drawn from the same distribution as the past ones, independently.
+    returns are drawn from the same distribution as the past ones, independently. The
+    bootstrap forecast cone is the one pyfolio (Quantopian) draws in its tear sheets.
 
     For more information, see the following sources:
 

@@ -520,6 +520,51 @@ PER_SECURITY_INDICATORS = {
             close, volume, 4, 12, 2, 2
         )
     ),
+    "get_volume_weighted_macd": (
+        lambda high, low, close, opening, volume: momentum.get_moving_average_convergence_divergence(
+            close, 12, 26, 9, "volume_weighted", "volume_weighted", volumes=volume
+        )
+    ),
+    "get_elastic_volume_weighted_macd": (
+        lambda high, low, close, opening, volume: momentum.get_moving_average_convergence_divergence(
+            close, 20, 40, 9, "elastic_volume_weighted", volumes=volume
+        )
+    ),
+    "get_connors_relative_strength_index": (
+        lambda high, low, close, opening, volume: momentum.get_connors_relative_strength_index(
+            close, 3, 2, 100
+        )
+    ),
+    "get_inertia": lambda high, low, close, opening, volume: momentum.get_inertia(
+        high, low, close, 20, 14, 10, "refined"
+    ),
+    "get_bias": lambda high, low, close, opening, volume: momentum.get_bias(close, 26),
+    "get_brar": lambda high, low, close, opening, volume: momentum.get_brar(
+        opening, high, low, close, 26
+    ),
+    "get_pretty_good_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_pretty_good_oscillator(
+            high, low, close, WINDOW
+        )
+    ),
+    "get_psychological_line": (
+        lambda high, low, close, opening, volume: momentum.get_psychological_line(
+            opening, close, 12
+        )
+    ),
+    "get_volatility_based_momentum": (
+        lambda high, low, close, opening, volume: momentum.get_volatility_based_momentum(
+            high, low, close, 12, 26
+        )
+    ),
+    "get_archer_moving_average_trends": (
+        lambda high, low, close, opening, volume: momentum.get_archer_moving_average_trends(
+            close, 8, 21, 2
+        )
+    ),
+    "get_ttm_trend": lambda high, low, close, opening, volume: momentum.get_ttm_trend(
+        high, low, close, 6
+    ),
     "get_candlestick_patterns": (
         lambda high, low, close, opening, volume: pattern.get_candlestick_patterns(
             opening, high, low, close

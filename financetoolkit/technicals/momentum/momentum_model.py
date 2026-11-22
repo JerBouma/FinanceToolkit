@@ -11,14 +11,22 @@ import pandas as pd
 from financetoolkit.technicals.overlap.overlap_model import (
     apply_to_rolling_windows,
     get_double_exponential_moving_average,
+    get_elastic_volume_weighted_moving_average,
     get_exponential_moving_average,
     get_hull_moving_average,
     get_kaufman_adaptive_moving_average,
     get_moving_average,
     get_triangular_moving_average,
+    get_volume_weighted_moving_average,
     get_weighted_moving_average,
 )
+from financetoolkit.technicals.statistics.statistics_model import (
+    get_linear_regression,
+    get_percent_rank,
+)
 from financetoolkit.technicals.volatility.volatility_model import (
+    get_average_true_range,
+    get_relative_volatility_index,
     get_true_range,
     get_wilder_moving_average,
 )
@@ -41,6 +49,14 @@ MOVING_AVERAGES = {
     "weighted": get_weighted_moving_average,
     "hull": get_hull_moving_average,
     "kaufman_adaptive": get_kaufman_adaptive_moving_average,
+}
+
+# The volume weighted averages the MACD can also use, which take the volume next to the
+# prices: Dormeier's VWMA (the Volume Weighted MACD) and Fries' eVWMA (the Elastic Volume
+# Weighted MACD).
+VOLUME_MOVING_AVERAGES = {
+    "volume_weighted": get_volume_weighted_moving_average,
+    "elastic_volume_weighted": get_elastic_volume_weighted_moving_average,
 }
 
 # TA-Lib's MACDFIX smooths the 12- and 26-period EMAs with the fixed constants 0.15 and 0.075
@@ -1125,6 +1141,7 @@ def get_moving_average_convergence_divergence(
     moving_average: str = "exponential",
     signal_moving_average: str = "exponential",
     fixed: bool = False,
+    volumes: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Calculate the Moving Average Convergence Divergence (MACD) of a given price series.
@@ -1142,17 +1159,23 @@ def get_moving_average_convergence_divergence(
 
     with MA the Exponential Moving Average by default. With `fixed`, the 12- and 26-period
     EMAs use Appel's fixed smoothing constants 0.15 and 0.075 instead of 2 / (window + 1).
+    With the Volume Weighted Moving Average, MA(Close, n) = Sum(Close * Volume, n) /
+    Sum(Volume, n), it is Dormeier's Volume Weighted MACD, and with Fries' Elastic Volume
+    Weighted Moving Average the Elastic Volume Weighted MACD.
 
     Also known as: MACD, MACD histogram, MACDEXT (other moving averages), MACDFIX (fixed
-    smoothing constants).
+    smoothing constants), VWMACD, volume weighted MACD, EVMACD, elastic volume weighted MACD.
 
     Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
     Signalert Corp. The histogram is from Aspray, T. (1986). "Fine-tuning the MACD."
-    Technical Analysis of Stocks & Commodities, 4(4).
+    Technical Analysis of Stocks & Commodities, 4(4). The volume weighted MACD is from
+    Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press, and the elastic one
+    builds on Fries, C.P. (2001). "Elastic Volume Weighted Moving Average."
 
     TA-Lib: MACD, MACDEXT and MACDFIX, the reference implementations
     (https://ta-lib.org/functions/macd.html, https://ta-lib.org/functions/macdext.html,
-    https://ta-lib.org/functions/macdfix.html).
+    https://ta-lib.org/functions/macdfix.html). pandas-ta-classic: vwmacd and finta: VW_MACD
+    and EV_MACD for the volume weighted ones.
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -1162,6 +1185,11 @@ def get_moving_average_convergence_divergence(
           period as the long one, which changes only the first values.
         - `moving_average` applies to both the short and the long average, as TA-Lib's
           MACDEXT with the same `fastmatype` and `slowmatype`.
+        - With "volume_weighted" for both averages the lines equal pandas-ta-classic's
+          vwmacd, which also weights the signal line by volume. finta's VW_MACD instead
+          divides exponential averages of Close * Volume and of the volume, and its EV_MACD
+          (20 and 40 periods by default) starts every eVWMA from 0 where the Toolkit seeds it
+          with a simple average, so it equals this once that start has decayed.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1170,25 +1198,37 @@ def get_moving_average_convergence_divergence(
         signal_window (int): Number of periods for the signal line moving average.
         moving_average (str): The moving average of the short and long term, one of
             `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
-            "weighted", "hull" or "kaufman_adaptive". Defaults to "exponential".
-        signal_moving_average (str): The moving average of the signal line, one of
-            `MOVING_AVERAGES`. Defaults to "exponential".
+            "weighted", "hull" or "kaufman_adaptive", or of `VOLUME_MOVING_AVERAGES`:
+            "volume_weighted" or "elastic_volume_weighted". Defaults to "exponential".
+        signal_moving_average (str): The moving average of the signal line, one of the
+            same. Defaults to "exponential".
         fixed (bool): Whether to smooth the 12- and 26-period EMAs with the fixed constants
             0.15 and 0.075 (TA-Lib's MACDFIX). Needs the exponential moving average and
             windows of 12 and 26. Defaults to False.
+        volumes (pd.Series | None): Series of trading volumes, needed by the volume weighted
+            moving averages. Defaults to None.
 
     Returns:
         pd.DataFrame: The MACD Line, Signal Line and Histogram as columns.
 
     Raises:
-        ValueError: If a moving average is not one of `MOVING_AVERAGES`, or `fixed` is
+        ValueError: If a moving average is not one of `MOVING_AVERAGES` or
+            `VOLUME_MOVING_AVERAGES`, a volume weighted one has no `volumes`, or `fixed` is
             combined with another moving average or other windows than 12 and 26.
     """
     for name in (moving_average, signal_moving_average):
-        if name not in MOVING_AVERAGES:
+        if name not in MOVING_AVERAGES and name not in VOLUME_MOVING_AVERAGES:
             raise ValueError(
-                f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {name}."
+                f"moving_average must be one of "
+                f"{', '.join([*MOVING_AVERAGES, *VOLUME_MOVING_AVERAGES])}, not {name}."
             )
+        if name in VOLUME_MOVING_AVERAGES and volumes is None:
+            raise ValueError(f"The {name} moving average needs the volumes.")
+
+    def moving_average_of(values: pd.Series, name: str, window: int) -> pd.Series:
+        if name in VOLUME_MOVING_AVERAGES:
+            return VOLUME_MOVING_AVERAGES[name](values, volumes, window)
+        return MOVING_AVERAGES[name](values, window)
 
     if fixed:
         if (
@@ -1217,11 +1257,11 @@ def get_moving_average_convergence_divergence(
             )
         short_average, long_average = averages
     else:
-        short_average = MOVING_AVERAGES[moving_average](prices, short_window)
-        long_average = MOVING_AVERAGES[moving_average](prices, long_window)
+        short_average = moving_average_of(prices, moving_average, short_window)
+        long_average = moving_average_of(prices, moving_average, long_window)
 
     macd_line = short_average - long_average
-    signal_line = MOVING_AVERAGES[signal_moving_average](macd_line, signal_window)
+    signal_line = moving_average_of(macd_line, signal_moving_average, signal_window)
 
     return pd.concat(
         [macd_line, signal_line, macd_line - signal_line],
@@ -3229,3 +3269,543 @@ def get_price_zone_oscillator(prices: pd.Series, window: int) -> pd.Series:
         * get_exponential_moving_average(signed_close, window)
         / get_exponential_moving_average(closes, window)
     )
+
+
+def get_connors_relative_strength_index(
+    prices: pd.Series, window: int = 3, streak_window: int = 2, rank_window: int = 100
+) -> pd.Series:
+    """
+    Calculate the Connors Relative Strength Index (ConnorsRSI) of a given price series.
+
+    ConnorsRSI averages three short-term measures of how overbought or oversold a price is,
+    each on a scale of 0 to 100: a 3-period RSI of the price, a 2-period RSI of the streak
+    (the number of periods in a row the price closed up, positive, or down, negative) and
+    the percent rank of the latest one-period return among the returns of the previous 100
+    periods. Connors and Alvarez use it for mean reversion: below 10 or 5 is oversold and
+    above 90 or 95 overbought.
+
+    The formula is as follows:
+
+    - Streak = Streak(t-1) + 1 if Close(t) > Close(t-1) (and Streak(t-1) >= 0, else 1),
+      Streak(t-1) - 1 if Close(t) < Close(t-1) (and Streak(t-1) <= 0, else -1), 0 if unchanged
+    - Return = Close(t) / Close(t-1) - 1
+    - ConnorsRSI = (RSI(Close, window) + RSI(Streak, streak_window) + 100 * PercentRank(Return,
+      rank_window)) / 3
+
+    with the RSI of Wilder (`get_relative_strength_index`) and the percent rank of
+    `get_percent_rank`: the share of the previous `rank_window` returns below the latest.
+
+    Also known as: CRSI, ConnorsRSI, Connors RSI.
+
+    Reference: Connors, L., Alvarez, C. & Radtke, M. (2012). "An Introduction to
+    ConnorsRSI." Connors Research Trading Strategy Series; Connors, L. & Alvarez, C. (2009).
+    "Short Term Trading Strategies That Work." TradingMarkets Publishing.
+
+    TA-Lib: CRSI, the reference implementation (https://ta-lib.org/functions/crsi.html).
+
+    Notes:
+        - Equals TA-Lib's CRSI.
+        - The ConnorsRSI starts on period `rank_window` + 1, the first percent rank of a
+          return.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the RSI of the price. Defaults to 3.
+        streak_window (int): Number of periods of the RSI of the streak. Defaults to 2.
+        rank_window (int): Number of previous returns of the percent rank. Defaults to 100.
+
+    Returns:
+        pd.Series: ConnorsRSI values, between 0 and 100.
+    """
+    direction = np.sign(prices.diff()).to_numpy(dtype=float)
+    streak = np.full(len(direction), np.nan)
+    previous = 0.0
+
+    # The streak continues while the price keeps moving in the same direction and starts
+    # again at 1 or -1 on a reversal; an unchanged price resets it to 0.
+    for i, step in enumerate(direction.tolist()):
+        if math.isnan(step):
+            continue
+        if step == 0:
+            previous = 0.0
+        elif step > 0:
+            previous = previous + 1 if previous > 0 else 1.0
+        else:
+            previous = previous - 1 if previous < 0 else -1.0
+        streak[i] = previous
+
+    price_rsi = get_relative_strength_index(prices, window)
+    streak_rsi = get_relative_strength_index(
+        pd.Series(streak, index=prices.index), streak_window
+    )
+    return_rank = get_percent_rank(prices / prices.shift(1) - 1, rank_window)
+
+    return (price_rsi + streak_rsi + 100 * return_rank) / 3
+
+
+def get_inertia(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 20,
+    rvi_window: int = 14,
+    std_window: int = 10,
+    method: str = "original",
+) -> pd.Series:
+    """
+    Calculate Dorsey's Inertia of a given price series.
+
+    Inertia is the Relative Volatility Index smoothed with a linear regression: the end point
+    of the least-squares line through the last `window` RVI values. Dorsey regarded a trend
+    as momentum that persists, inertia, and its direction as given by the direction of
+    volatility: above 50 the trend is up, below 50 down.
+
+    The formula is as follows:
+
+    - RVI = Relative Volatility Index(Close, rvi_window, std_window), or with `method`
+      "refined" (RVI(High) + RVI(Low)) / 2
+    - Inertia = Linear Regression(RVI, window), the end point of the least-squares line
+
+    with the RVI of `get_relative_volatility_index` and the linear regression of
+    `get_linear_regression`.
+
+    Also known as: INERTIA, Dorsey Inertia.
+
+    Reference: Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical
+    Analysis of Stocks & Commodities, 13(9).
+
+    pandas-ta-classic: inertia (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's inertia with mamode="rma" and a `std_window` equal to
+          `rvi_window`. By default pandas-ta-classic smooths its RVI with an EMA and takes
+          the standard deviation over the RVI window, where the Toolkit follows Dorsey (and
+          TA-Lib's RVI) with Wilder's smoothing over 14 periods of a 10-period standard
+          deviation.
+        - The linear regression can overshoot the 0 to 100 range of the RVI.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the linear regression. Defaults to 20.
+        rvi_window (int): Number of periods of Wilder's smoothing in the RVI. Defaults to 14.
+        std_window (int): Number of periods of the standard deviation in the RVI.
+            Defaults to 10.
+        method (str): "original" for the RVI of the close or "refined" for the average of
+            the RVI of the highs and of the lows. Defaults to "original".
+
+    Returns:
+        pd.Series: Inertia values, around 0 to 100.
+
+    Raises:
+        ValueError: If `method` is not "original" or "refined".
+    """
+    if method == "original":
+        relative_volatility_index = get_relative_volatility_index(
+            prices_close, rvi_window, std_window
+        )
+    elif method == "refined":
+        relative_volatility_index = (
+            get_relative_volatility_index(prices_high, rvi_window, std_window)
+            + get_relative_volatility_index(prices_low, rvi_window, std_window)
+        ) / 2
+    else:
+        raise ValueError("The method must be 'original' or 'refined'.")
+
+    return get_linear_regression(relative_volatility_index, window)["Linear Regression"]
+
+
+def get_bias(
+    prices: pd.Series, window: int = 26, moving_average: str = "simple"
+) -> pd.Series:
+    """
+    Calculate the Bias of a given price series: the distance of the price from its moving
+    average, as a share of that average.
+
+    The Bias (deviation rate) is widely used in Asian markets: a price far above its
+    average is read as overbought and likely to return to it, far below as oversold. The
+    level that counts as far depends on the security and the window.
+
+    The formula is as follows:
+
+    - Bias = Close / MA(Close, window) - 1
+
+    with MA the Simple Moving Average by default.
+
+    Also known as: BIAS, deviation rate, BIAS ratio, distance to the moving average.
+
+    Reference: no single primary source; it is a standard indicator on Asian trading
+    platforms (pandas-ta-classic notes the same).
+
+    pandas-ta-classic: bias, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's bias. Both give a decimal (0.05 is 5% above the
+          average); some platforms multiply it by 100.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the moving average. Defaults to 26.
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
+            "exponential", "double_exponential", "triangular", "weighted", "hull" or
+            "kaufman_adaptive". Defaults to "simple".
+
+    Returns:
+        pd.Series: Bias values as decimals.
+
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
+    """
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    return prices / MOVING_AVERAGES[moving_average](prices, window) - 1
+
+
+def get_brar(
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 26,
+) -> pd.DataFrame:
+    """
+    Calculate the AR and BR sentiment indicators (BRAR) of a given price series.
+
+    AR (popularity) compares how far the price rose above the open with how far it fell below
+    it over the window, and BR (willingness to buy) does the same against the previous
+    close. Both are 100 when the upward and downward moves balance; AR from 150 and BR from
+    300 are read as overheated, AR below 50 and BR below 40 as depressed, and BR crossing AR
+    from below as a buy signal.
+
+    The formula is as follows:
+
+    - AR = 100 * Sum(High - Open, window) / Sum(Open - Low, window)
+    - BR = 100 * Sum(Max(High - Close(t-1), 0), window) / Sum(Max(Close(t-1) - Low, 0), window)
+
+    Also known as: BRAR, AR BR, popularity and willingness indicators, sentiment indicator.
+
+    Reference: no single primary source; it is a standard sentiment indicator on Asian
+    trading platforms (pandas-ta-classic notes the same).
+
+    pandas-ta-classic: brar, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's brar, on its scale of 100 for a balance. A window
+          without any downward move has no AR or BR (missing) where pandas-ta-classic gives
+          an infinite value.
+
+    Args:
+        prices_open (pd.Series): Series of opening prices.
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the sums. Defaults to 26.
+
+    Returns:
+        pd.DataFrame: AR and BR, 100 for a balance.
+    """
+    previous_close = prices_close.shift(1)
+    upward_from_close = (prices_high - previous_close).clip(lower=0)
+    downward_from_close = (previous_close - prices_low).clip(lower=0)
+
+    open_low_sum = (prices_open - prices_low).rolling(window=window).sum()
+    close_low_sum = downward_from_close.rolling(window=window).sum()
+
+    return pd.DataFrame(
+        {
+            "AR": 100
+            * (prices_high - prices_open).rolling(window=window).sum()
+            / open_low_sum.where(open_low_sum != 0),
+            "BR": 100
+            * upward_from_close.rolling(window=window).sum()
+            / close_low_sum.where(close_low_sum != 0),
+        },
+        index=prices_close.index,
+    )
+
+
+def get_pretty_good_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 14,
+) -> pd.Series:
+    """
+    Calculate Johnson's Pretty Good Oscillator (PGO) of a given price series.
+
+    The Pretty Good Oscillator measures the distance of the close from its Simple Moving
+    Average in units of the average true range, so the distance compares across securities
+    and periods of different volatility. Johnson used it for breakouts: a close more than 3
+    average ranges above the average is a long entry, more than 3 below a short entry, and
+    the trade is closed when the oscillator returns to zero.
+
+    The formula is as follows:
+
+    - PGO = (Close - SMA(Close, window)) / EMA(ATR(window), window)
+
+    with ATR the Average True Range of Wilder (`get_average_true_range`) and EMA the
+    exponential moving average seeded with a simple average (`get_exponential_moving_average`).
+
+    Also known as: PGO, Pretty Good Oscillator.
+
+    Reference: Johnson, M. "Pretty Good Oscillator", as documented in FM Labs' technical
+    analysis library (https://www.fmlabs.com/reference/default.htm?url=PGO.htm).
+
+    pandas-ta-classic: pgo, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's pgo once Wilder's smoothing of the ATR has forgotten
+          its seed: the Toolkit's ATR includes the High - Low of the first period, as
+          StockCharts does. A period without any range has no PGO (0 / 0, missing) where
+          pandas-ta-classic gives 0.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the SMA, the ATR and its EMA. Defaults to 14.
+
+    Returns:
+        pd.Series: PGO values, in average true ranges.
+    """
+    average_true_range = get_exponential_moving_average(
+        get_average_true_range(prices_high, prices_low, prices_close, window), window
+    )
+
+    return (prices_close - get_moving_average(prices_close, window)) / (
+        average_true_range.where(average_true_range != 0)
+    )
+
+
+def get_psychological_line(
+    prices_open: pd.Series,
+    prices_close: pd.Series,
+    window: int = 12,
+    method: str = "close",
+) -> pd.Series:
+    """
+    Calculate the Psychological Line (PSL) of a given price series.
+
+    The Psychological Line is the percentage of the last `window` periods that closed
+    higher, a measure of the mood of the market: above 75 many periods in a row went up and
+    buyers may be exhausted (overbought), below 25 the reverse (oversold).
+
+    The formula is as follows:
+
+    - PSL = 100 * Count(Close(t) > Close(t-1), window) / window
+
+    or with `method` "open", the periods that closed above their own open:
+    100 * Count(Close > Open, window) / window.
+
+    Also known as: PSL, PSY, psychological line, psychological index.
+
+    Reference: no single primary source; it is a standard sentiment indicator on Asian
+    trading platforms (pandas-ta-classic notes the same).
+
+    pandas-ta-classic: psl, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's psl, also on the scale of 0 to 100. The first period
+          has no previous close, so the PSL of the close starts on period `window`.
+
+    Args:
+        prices_open (pd.Series): Series of opening prices, used with `method` "open".
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods counted. Defaults to 12.
+        method (str): "close" to count the periods that closed above the previous close,
+            or "open" for those that closed above their open. Defaults to "close".
+
+    Returns:
+        pd.Series: PSL values, between 0 and 100.
+
+    Raises:
+        ValueError: If `method` is not "close" or "open".
+    """
+    if method == "close":
+        change = prices_close.diff()
+    elif method == "open":
+        change = prices_close - prices_open
+    else:
+        raise ValueError("The method must be 'close' or 'open'.")
+
+    higher = (change > 0).astype(float).where(change.notna())
+
+    return 100 * higher.rolling(window=window).sum() / window
+
+
+def get_volatility_based_momentum(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 12,
+    atr_window: int = 26,
+) -> pd.Series:
+    """
+    Calculate the Volatility-Based Momentum (VBM) of a given price series.
+
+    Volatility-Based Momentum is the change in price over `window` periods in units of the
+    Average True Range, instead of as a share of the earlier price as in the Rate of Change.
+    A move of 3 average ranges is then large for any security, whatever its price or
+    volatility, which makes the momentum comparable across securities.
+
+    The formula is as follows:
+
+    - VBM = (Close(t) - Close(t - window)) / ATR(atr_window)
+
+    with ATR the Average True Range of Wilder (`get_average_true_range`).
+
+    Also known as: VBM, volatility-based momentum, volatility adjusted momentum.
+
+    Reference: no primary source beyond the libraries; the measure is the momentum of Pring
+    (1991) normalized by Wilder's (1978) Average True Range.
+
+    finta: VBM (https://github.com/peerchemist/finta).
+
+    Notes:
+        - finta documents this formula, but its code subtracts the earlier close twice
+          (Close.diff(n) - Close.shift(n)) and averages the true range with a simple moving
+          average, so its values differ.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the price change. Defaults to 12.
+        atr_window (int): Number of periods of the Average True Range. Defaults to 26.
+
+    Returns:
+        pd.Series: VBM values, in average true ranges.
+    """
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, atr_window
+    )
+
+    return (prices_close - prices_close.shift(window)) / average_true_range.where(
+        average_true_range != 0
+    )
+
+
+def get_archer_moving_average_trends(
+    prices: pd.Series,
+    short_window: int = 8,
+    long_window: int = 21,
+    lookback: int = 2,
+    moving_average: str = "exponential",
+) -> pd.DataFrame:
+    """
+    Calculate Archer's Moving Averages Trends (AMAT) of a given price series.
+
+    AMAT flags a long run when the short moving average rose over the last `lookback`
+    periods while the long one moved (a rising long average confirms the trend, a falling
+    one marks a potential bottom), and a short run when the short average fell while the
+    long one moved (a potential top when the long one still rose).
+
+    The formula is as follows:
+
+    - Long Run = 1 if Short MA(t) > Short MA(t - lookback) and Long MA(t) != Long MA(t -
+      lookback), else 0
+    - Short Run = 1 if Short MA(t) < Short MA(t - lookback) and Long MA(t) != Long MA(t -
+      lookback), else 0
+
+    with MA the exponential moving average by default.
+
+    Also known as: AMAT, Archer Moving Averages Trends.
+
+    Reference: Archer's TradingView script; there is no published primary source.
+
+    pandas-ta-classic: amat, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's amat (its long_run and short_run). Both flags are
+          missing until both averages have `lookback` earlier values.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        short_window (int): Number of periods of the short moving average. Defaults to 8.
+        long_window (int): Number of periods of the long moving average. Defaults to 21.
+        lookback (int): Number of periods over which the averages rise or fall.
+            Defaults to 2.
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
+            "exponential", "double_exponential", "triangular", "weighted", "hull" or
+            "kaufman_adaptive". Defaults to "exponential".
+
+    Returns:
+        pd.DataFrame: Long Run and Short Run, 1 when the run holds and 0 otherwise.
+
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
+    """
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    short_change = MOVING_AVERAGES[moving_average](prices, short_window).diff(lookback)
+    long_change = MOVING_AVERAGES[moving_average](prices, long_window).diff(lookback)
+    known = short_change.notna() & long_change.notna()
+    long_moved = long_change != 0
+
+    return pd.DataFrame(
+        {
+            "Long Run": ((short_change > 0) & long_moved).astype(float).where(known),
+            "Short Run": ((short_change < 0) & long_moved).astype(float).where(known),
+        },
+        index=prices.index,
+    )
+
+
+def get_ttm_trend(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 6,
+) -> pd.Series:
+    """
+    Calculate Carter's TTM Trend of a given price series.
+
+    The TTM Trend colours each bar by the trend: up (1) when the close is above the average
+    midpoint (High + Low) / 2 of the previous `window` bars, and down (-1) when it is not.
+    Carter uses it to stay in a trade while the bars keep their colour and to avoid trading
+    against it: two bars of the opposite colour in a row signal the trend has turned.
+
+    The formula is as follows:
+
+    - Average Midpoint = SMA((High + Low) / 2, window), of the `window` bars before the
+      current one
+    - TTM Trend = 1 if Close > Average Midpoint, else -1
+
+    Also known as: TTM Trend, TTM_TRND, trade the markets trend.
+
+    Reference: Carter, J.F. (2005). "Mastering the Trade: Proven Techniques for Profiting
+    from Intraday and Swing Trading Setups." McGraw-Hill.
+
+    pandas-ta-classic: ttm_trend, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's ttm_trend. The TTM Trend starts on period `window`,
+          the first with `window` earlier bars.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of earlier bars of the average midpoint. Defaults to 6.
+
+    Returns:
+        pd.Series: 1 for an up trend and -1 for a down trend.
+    """
+    average_midpoint = ((prices_high + prices_low) / 2).shift(1).rolling(window).mean()
+
+    return pd.Series(
+        np.where(prices_close > average_midpoint, 1.0, -1.0), index=prices_close.index
+    ).where(average_midpoint.notna() & prices_close.notna())

@@ -7,6 +7,7 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.distribution import dispersion_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -23,7 +24,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class DistributionRisk:
     """
-    The shape of the return distribution: variance, skewness, kurtosis, the Hill estimator, the tail ratio, the mean absolute deviation, the coefficient of variation, autocorrelation, the Hurst exponent and the significance of a move.
+    The shape of the return distribution: variance, skewness, kurtosis, central and partial moments, L-moments, the Gini mean difference, the tail Gini, range measures, the worst realization, the Hill estimator, the tail ratio, the mean absolute deviation, the coefficient of variation, autocorrelation, the Hurst exponent and the significance of a move.
     """
 
     @handle_portfolio
@@ -1209,4 +1210,1182 @@ class DistributionRisk:
 
         return apply_rounding(
             hurst_exponent, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_partial_moment(
+        self,
+        period: str | None = None,
+        order: float = 1,
+        minimum_acceptable_return: float | str = 0.0,
+        side: str = "lower",
+        root: bool = False,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Lower (or Upper) Partial Moment of an investment portfolio or asset's returns.
+
+        A partial moment measures only one side of the return distribution: the lower partial moment
+        averages the shortfalls below a minimum acceptable return (MAR) raised to a power, the order, and
+        the upper partial moment does the same for the returns above it. The order sets what is measured:
+        order 0 is how often the returns fall below the MAR (the downside frequency), order 1 how far they
+        fall below it on average (the downside potential, the expected shortfall below the target), order 2
+        the downside variance behind the Sortino Ratio and higher orders the weight of the extreme losses.
+        Investors who care about losses rather than about deviations in either direction use them in place
+        of the variance, and the ratio of an upper to a lower partial moment is the Omega Ratio (order 1)
+        and the Upside Potential Ratio's building block.
+
+        The formula is as follows (with the default order=1, side="lower" and minimum_acceptable_return=0):
+
+        - Lower Partial Moment = Σ max(MAR - Return_t, 0)^order / n
+        - Upper Partial Moment = Σ max(Return_t - MAR, 0)^order / n
+
+        Where n is the number of all returns, so the returns on the other side of the MAR count as zero
+        rather than being left out. With order=0 the moment counts the returns strictly below (or above)
+        the MAR, as a share of all returns. With root=True the moment is raised to the power 1 / order,
+        which turns order 2 into the Downside Deviation (side="lower") or the Upside Deviation
+        (side="upper"). With minimum_acceptable_return="mean" the MAR is the mean of each sample, which
+        gives the semi-moments around the mean (order 2: the semi-variance with n in the denominator).
+
+        For more information, see the following sources:
+
+        - Bawa, V.S. (1975). "Optimal Rules for Ordering Uncertain Prospects." Journal of Financial
+        Economics, 2(1), 95-121.
+        - Fishburn, P.C. (1977). "Mean-Risk Analysis with Risk Associated with Below-Target Returns."
+        The American Economic Review, 67(2), 116-126.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
+        Sons, chapter 4 (Downside Potential, Downside and Upside Frequency, Upside Potential).
+        - riskfolio-lib: RiskFunctions.LPM (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.first_lower_partial_moment and measures.fourth_lower_partial_moment
+        (https://skfolio.org/api.html#module-skfolio.measures).
+        - PerformanceAnalytics (R): DownsidePotential, DownsideFrequency, UpsideFrequency, UpsideRisk and
+        lpm (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: LPM, UPM, downside potential, downside frequency, upside frequency, upside potential,
+        shortfall probability, semi-moment.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            order (float, optional): The order of the moment, 0 or higher: 0 for the frequency, 1 for the
+            potential, 2 for the variance and higher orders for the extremes. Defaults to 1.
+            minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) per
+            observation of the chosen `period` (e.g. per day), or "mean" for the mean of each sample.
+            Defaults to 0.0.
+            side (str, optional): "lower" for the returns below the MAR, "upper" for those above it.
+            Defaults to "lower".
+            root (bool, optional): Whether to raise the moment to the power 1 / order, which needs an
+            order above 0. Defaults to False.
+            within_period (bool, optional): Whether to calculate the Partial Moment within the specified period or
+            for the entire period. Thus whether to look at the Partial Moment within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Partial Moment
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Partial Moment values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Partial Moment values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Partial Moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Partial Moment values using the
+        specified `lag`.
+        - The lower partial moment of order 1 equals PerformanceAnalytics' DownsidePotential and
+        riskfolio-lib's LPM(p=1), order 0 equals DownsideFrequency (UpsideFrequency with side="upper") and
+        side="upper" with order 1 and 2 equals UpsideRisk(stat="potential") and UpsideRisk(stat="variance").
+        - With minimum_acceptable_return="mean" order 1 and 4 equal skfolio's first_lower_partial_moment
+        and fourth_lower_partial_moment. riskfolio-lib's LPM(p=2) divides by n - 1 instead of n and
+        takes the root, and PerformanceAnalytics' lpm divides by the number of returns below the
+        threshold. riskfolio-lib's SemiKurtosis is the square of order 4 with root=True and
+        minimum_acceptable_return="mean", and EvenSemiMoment(p) the (order 2p) moment to the power 1 / p.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "GS", "MS"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_partial_moment(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    JPM |     GS |     MS |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.0048 | 0.0055 | 0.0057 |      0.0026 |
+        | 2022 | 0.0074 | 0.0072 | 0.0081 |      0.0063 |
+        | 2023 | 0.0041 | 0.0053 | 0.0056 |      0.0028 |
+        | 2024 | 0.0041 | 0.0046 | 0.0048 |      0.0025 |
+        | 2025 | 0.0048 | 0.0059 | 0.0057 |      0.0034 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = risk_model.get_partial_moment(
+            returns,
+            order=order,
+            minimum_acceptable_return=minimum_acceptable_return,
+            side=side,
+            root=root,
+            window_size=rolling,
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_central_moment(
+        self,
+        period: str | None = None,
+        order: int = 3,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate a Central Moment of an investment portfolio or asset's returns.
+
+        A central moment is the average deviation from the mean return raised to a power, the order. The
+        second central moment is the (population) variance, the third measures the asymmetry of the return
+        distribution in squared-and-cubed return units (negative when the large deviations are losses) and
+        the fourth the weight of the tails. Unlike the Skewness and Kurtosis, which divide by a power of the
+        standard deviation, they keep the scale of the returns, so a volatile asset has larger moments, and
+        they are the building blocks of the moment-based risk measures of portfolio optimization, such as
+        the square-root kurtosis.
+
+        The formula is as follows (with the default order=3):
+
+        - Central Moment = Σ (Return_t - Mean)^order / n
+
+        Where Mean is the average return and n the number of returns of the sample (the population moment,
+        without a bias adjustment).
+
+        For more information, see the following sources:
+
+        - Cajas, D. (2021). "Riskfolio-Lib Documentation: Risk Functions." (the square-root kurtosis and
+        even moments, https://riskfolio-lib.readthedocs.io/en/latest/risk.html).
+        - skfolio: measures.third_central_moment and measures.fourth_central_moment
+        (https://skfolio.org/api.html#module-skfolio.measures).
+        - riskfolio-lib: RiskFunctions.Kurtosis and RiskFunctions.EvenMoment
+        (https://github.com/dcajasn/Riskfolio-Lib).
+        - PerformanceAnalytics (R): centeredmoment (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: moment about the mean, third central moment, fourth central moment, square-root
+        kurtosis (its square root for order 4).
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            order (int, optional): The order of the moment, an integer of 2 or higher. Defaults to 3.
+            within_period (bool, optional): Whether to calculate the Central Moment within the specified period or
+            for the entire period. Thus whether to look at the Central Moment within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Central Moment
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Central Moment values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Central Moment values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Central Moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Central Moment values using the
+        specified `lag`.
+        - Order 3 and 4 equal skfolio's third_central_moment and fourth_central_moment and
+        PerformanceAnalytics' centeredmoment. riskfolio-lib's Kurtosis is the square root of order 4 and
+        its EvenMoment(p) the (order 2p) moment to the power 1 / p.
+        - The moments of daily returns are small numbers (order 4 of a stock is about 1e-7), so use the
+        rounding parameter to show them.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["XOM", "CVX", "COP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_central_moment(period="yearly", within_period=True, order=4, rounding=10)
+        ```
+
+        Which returns:
+
+        |      |       XOM |       CVX |        COP |   Benchmark |
+        |:-----|----------:|----------:|-----------:|------------:|
+        | 2021 | 3.194e-07 | 1.706e-07 | 7.526e-07  |   1.61e-08  |
+        | 2022 | 8.624e-07 | 8.274e-07 | 2.0632e-06 |   1.797e-07 |
+        | 2023 | 2.417e-07 | 2.375e-07 | 6.268e-07  |   1.29e-08  |
+        | 2024 | 6.71e-08  | 8.64e-08  | 2.004e-07  |   1.85e-08  |
+        | 2025 | 2.85e-07  | 5.392e-07 | 1.8409e-06 |   5.877e-07 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_central_moment(
+            returns, order=order, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_worst_realization(
+        self,
+        period: str | None = None,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Worst Realization of an investment portfolio or asset's returns, the lowest return.
+
+        The Worst Realization is the most conservative measure of the risk in the left tail: the loss on
+        the worst day (or week, month) of the sample. It is the limit of the Value at Risk and Conditional
+        Value at Risk as their tail probability goes to 0, and the risk measure of Young's (1998) minimax
+        portfolio, which minimizes the worst loss rather than the variance. As it rests on a single
+        observation it moves in jumps and depends on the length of the sample: a longer history can only
+        add worse days.
+
+        The formula is as follows:
+
+        - Worst Realization = min(Return_t)
+
+        The result is a return, negative for a loss, as the Value at Risk and Conditional Value at Risk of
+        the Toolkit are.
+
+        For more information, see the following sources:
+
+        - Young, M.R. (1998). "A Minimax Portfolio Selection Rule with Linear Programming Solution."
+        Management Science, 44(5), 673-683.
+        - riskfolio-lib: RiskFunctions.WR (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.worst_realization (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: worst return, minimax risk, maximum loss.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            within_period (bool, optional): Whether to calculate the Worst Realization within the specified period or
+            for the entire period. Thus whether to look at the Worst Realization within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Worst Realization
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Worst Realization values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Worst Realization values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Worst Realization for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Worst Realization values using the
+        specified `lag`.
+        - riskfolio-lib's WR and skfolio's worst_realization report the loss as a positive number
+        (-min(Return)); the Toolkit keeps the sign of the return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "AMD", "INTC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_worst_realization(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    NVDA |     AMD |    INTC |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 | -0.0821 | -0.062  | -0.1168 |     -0.0244 |
+        | 2022 | -0.0951 | -0.1387 | -0.0856 |     -0.0435 |
+        | 2023 | -0.0589 | -0.0922 | -0.0641 |     -0.0201 |
+        | 2024 | -0.1    | -0.1062 | -0.2606 |     -0.0298 |
+        | 2025 | -0.1697 | -0.089  | -0.115  |     -0.0585 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_worst_realization(returns, window_size=rolling)
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gini_mean_difference(
+        self,
+        period: str | None = None,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Gini Mean Difference (GMD) of an investment portfolio or asset's returns.
+
+        The Gini Mean Difference is the average absolute difference between two returns drawn from the
+        sample, a measure of dispersion that, unlike the standard deviation, does not square the
+        deviations and needs no mean to measure them from. Yitzhaki (1982) showed that, unlike the variance,
+        it is consistent with second-degree stochastic dominance, which makes it a sound risk measure for
+        returns that are not normally distributed. For a normal distribution it equals 2σ / √π, about 1.13
+        times the standard deviation.
+
+        The formula is as follows:
+
+        - Gini Mean Difference = Σ_i Σ_j |Return_i - Return_j| / (n * (n - 1))
+
+        Where the double sum runs over every pair of the n returns. It is calculated as an ordered weighted
+        average (OWA) of the returns sorted from low to high, with weight 2 * (2i - 1 - n) / (n * (n - 1))
+        on the i-th lowest (Cajas 2021), and equals twice the second L-moment (`get_l_moment`).
+
+        For more information, see the following sources:
+
+        - Yitzhaki, S. (1982). "Stochastic Dominance, Mean Variance, and Gini's Mean Difference." The
+        American Economic Review, 72(1), 178-185.
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - riskfolio-lib: RiskFunctions.GMD and OwaWeights.owa_gmd (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.gini_mean_difference (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: GMD, Gini's mean difference, mean absolute difference.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            within_period (bool, optional): Whether to calculate the Gini Mean Difference within the specified period or
+            for the entire period. Thus whether to look at the Gini Mean Difference within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Gini Mean Difference
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Gini Mean Difference values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Gini Mean Difference values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Gini Mean Difference for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Gini Mean Difference values using the
+        specified `lag`.
+        - The result equals riskfolio-lib's GMD and skfolio's gini_mean_difference.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MCD", "SBUX", "CMG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_gini_mean_difference(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    MCD |   SBUX |    CMG |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.0104 | 0.0149 | 0.0174 |      0.009  |
+        | 2022 | 0.0136 | 0.0244 | 0.0274 |      0.0171 |
+        | 2023 | 0.0098 | 0.0142 | 0.0158 |      0.0093 |
+        | 2024 | 0.012  | 0.0189 | 0.0194 |      0.0086 |
+        | 2025 | 0.0126 | 0.022  | 0.0237 |      0.0112 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_gini_mean_difference(returns, window_size=rolling)
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_tail_gini(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        simulations: int = 100,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Tail Gini of an investment portfolio or asset's returns.
+
+        The Tail Gini of Furman, Wang and Zitikis (2017) measures the variability within the loss tail,
+        the alpha share of the worst returns. Cajas (2021) writes it as a weighted average of the
+        Conditional Value at Risk at tail probabilities from 0.0001 up to alpha, which puts more weight on
+        the worst returns within the tail than the Conditional Value at Risk at alpha, which weighs every
+        return in the tail equally. It is therefore always at or below the Conditional Value at Risk and
+        above the Worst Realization.
+
+        The formula is as follows (with the default alpha=0.05 and simulations=100):
+
+        - Tail Gini = Σ_j c_j * CVaR(alpha_j)
+        - c_1 = alpha_2 * alpha_1 / alpha^2, c_j = (alpha_(j+1) - alpha_(j-1)) * alpha_j / alpha^2 and
+          c_m = (alpha_m - alpha_(m-1)) / alpha
+
+        Where alpha_1 < ... < alpha_m = alpha are m = `simulations` evenly spaced tail probabilities from
+        0.0001 to alpha and CVaR(alpha_j) is the average of the alpha_j share of the lowest returns, the
+        return at the boundary counting with its fraction (the ordered weighted average of Cajas 2021).
+        The result is a return, negative for a loss, as the Conditional Value at Risk of the Toolkit is.
+
+        For more information, see the following sources:
+
+        - Furman, E., Wang, R. and Zitikis, R. (2017). "Gini-type Measures of Risk and Variability: Gini
+        Shortfall, Capital Allocations, and Heavy-tailed Risks." Journal of Banking & Finance, 83, 70-84.
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - riskfolio-lib: RiskFunctions.TG and OwaWeights.owa_tg (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: TG, Gini shortfall, tail Gini risk.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            alpha (float, optional): The tail probability, between 0.0001 and 1. Defaults to 0.05.
+            simulations (int, optional): The number of tail probabilities the Conditional Value at Risk
+            is averaged over. Defaults to 100.
+            within_period (bool, optional): Whether to calculate the Tail Gini within the specified period or
+            for the entire period. Thus whether to look at the Tail Gini within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Tail Gini
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Tail Gini values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Tail Gini values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Tail Gini for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Tail Gini values using the
+        specified `lag`.
+        - The result equals riskfolio-lib's TG with the opposite sign: riskfolio-lib reports the loss as
+        a positive number. Its Conditional Value at Risk is the exact one of Rockafellar and Uryasev
+        (2002), which can differ slightly from the average of the returns below the interpolated quantile
+        that `get_conditional_value_at_risk` takes.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSLA", "F", "GM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_tail_gini(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    TSLA |       F |      GM |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 | -0.0785 | -0.0558 | -0.056  |     -0.0207 |
+        | 2022 | -0.1    | -0.0823 | -0.0642 |     -0.0365 |
+        | 2023 | -0.0832 | -0.0642 | -0.0462 |     -0.0168 |
+        | 2024 | -0.0902 | -0.0719 | -0.0542 |     -0.0218 |
+        | 2025 | -0.099  | -0.0526 | -0.0582 |     -0.0348 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_tail_gini(
+            returns, alpha=alpha, simulations=simulations, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_risk_range(
+        self,
+        period: str | None = None,
+        measure: str = "range",
+        alpha: float = 0.05,
+        beta: float | None = None,
+        simulations: int = 100,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate a Range measure of an investment portfolio or asset's returns: the distance between the
+        gain tail and the loss tail of the return distribution.
+
+        The Range is the distance between the best and the worst return. Cajas (2021) generalizes it to
+        the tails: the VaR Range is the distance between the 1 - beta and the alpha quantile, the CVaR
+        Range between the average return in the best beta share and in the worst alpha share of the
+        returns and the Tail Gini Range between the Tail Gini of the gains and of the losses. They measure
+        the width of the distribution where it matters most, without the assumption of symmetry behind the
+        standard deviation, and with beta different from alpha they weigh the gains and the losses
+        differently. The VaR Range at alpha = beta = 0.25 is the interquartile range.
+
+        The formula is as follows (with the default alpha=0.05 and beta=alpha):
+
+        - Range = max(Return) - min(Return)
+        - VaR Range = Quantile(Return, 1 - beta) - Quantile(Return, alpha)
+        - CVaR Range = mean(Return >= Quantile(Return, 1 - beta)) - mean(Return <= Quantile(Return, alpha))
+        - Tail Gini Range = Tail Gini of the gains (beta) - Tail Gini of the losses (alpha)
+
+        Where the quantiles are interpolated linearly and the CVaR is the average of the returns beyond the
+        quantile, as in the historic `get_value_at_risk` and `get_conditional_value_at_risk`, and the Tail
+        Gini is that of `get_tail_gini`, measured on the negated returns for the gains. The result is a
+        positive decimal.
+
+        For more information, see the following sources:
+
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - riskfolio-lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG and RiskFunctions.TGRG
+        (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: return range, VaR range, CVaR range, Tail Gini range, tail spread.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            measure (str, optional): The range to calculate: "range", "var", "cvar" or "tail_gini".
+            Defaults to "range".
+            alpha (float, optional): The tail probability of the losses, between 0 and 1 (between 0.0001
+            and 1 for the Tail Gini). Defaults to 0.05.
+            beta (float | None, optional): The tail probability of the gains. Defaults to None, which uses
+            alpha.
+            simulations (int, optional): The number of tail probabilities of the Tail Gini Range.
+            Defaults to 100.
+            within_period (bool, optional): Whether to calculate the Risk Range within the specified period or
+            for the entire period. Thus whether to look at the Risk Range within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Risk Range
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Risk Range values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Range values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Risk Range for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Risk Range values using the
+        specified `lag`.
+        - The Range and the Tail Gini Range equal riskfolio-lib's RG and TGRG. riskfolio-lib's VRG and
+        CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
+        Conditional Value at Risk of Rockafellar and Uryasev (2002), so the VaR Range and CVaR Range differ
+        slightly from them and equal the difference of the Toolkit's own historic Value at Risk and
+        Conditional Value at Risk of the gains and the losses instead.
+        - The EVaR Range of riskfolio-lib (EVRG) needs a historical Entropic Value at Risk, which the
+        Toolkit only offers in its gaussian form.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AMZN", "WMT", "COST"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_risk_range(period="yearly", within_period=True, measure="cvar")
+        ```
+
+        Which returns:
+
+        |      |   AMZN |    WMT |   COST |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.065  | 0.0457 | 0.05   |      0.0352 |
+        | 2022 | 0.1352 | 0.0736 | 0.0879 |      0.0634 |
+        | 2023 | 0.0913 | 0.0393 | 0.0523 |      0.0332 |
+        | 2024 | 0.0772 | 0.0485 | 0.0499 |      0.0352 |
+        | 2025 | 0.0975 | 0.0728 | 0.0631 |      0.0538 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_risk_range(
+            returns,
+            measure=measure,
+            alpha=alpha,
+            beta=beta,
+            simulations=simulations,
+            window_size=rolling,
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_l_moment(
+        self,
+        period: str | None = None,
+        order: int = 2,
+        ratio: bool = False,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate an L-moment, or an L-moment ratio, of an investment portfolio or asset's returns.
+
+        L-moments (Hosking 1990) describe the location, scale and shape of a distribution as the ordinary
+        moments do, but as linear combinations of the sorted returns rather than powers of the deviations.
+        This makes them far less sensitive to a few extreme returns and well defined whenever the mean is:
+        the L-skewness and L-kurtosis of a sample are bounded and nearly unbiased, where the sample skewness
+        and kurtosis of fat-tailed returns are dominated by the largest move. The first L-moment is the
+        mean, the second a measure of scale (half the Gini Mean Difference), and the ratios of the third and
+        fourth to the second, the L-skewness and L-kurtosis, measure the asymmetry and the tails. For a
+        normal distribution the L-skewness is 0 and the L-kurtosis 0.1226.
+
+        The formula is as follows (with the default order=2):
+
+        - L-moment λ_k = Σ_i w_i * Return_(i)
+        - w_i = Σ_j (-1)^j * C(k - 1, j) * C(i - 1, k - 1 - j) * C(n - i, j) / (k * C(n, k))
+        - L-moment ratio τ_k = λ_k / λ_2 for k >= 3 and τ_2 = λ_2 / λ_1 (the L-CV)
+
+        Where Return_(i) is the i-th lowest of the n returns, k the order, C the binomial coefficient and j
+        runs from 0 to k - 1. These are Hosking's unbiased sample L-moments, written as an ordered weighted
+        average as in Cajas (2021).
+
+        For more information, see the following sources:
+
+        - Hosking, J.R.M. (1990). "L-moments: Analysis and Estimation of Distributions using Linear
+        Combinations of Order Statistics." Journal of the Royal Statistical Society: Series B, 52(1),
+        105-124.
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - riskfolio-lib: RiskFunctions.L_Moment and OwaWeights.owa_l_moment
+        (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: L-moments, L-scale, L-skewness, L-kurtosis, L-CV, linear moments.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            order (int, optional): The order k, an integer of 1 or higher (1 is the mean, 2 the L-scale,
+            3 with ratio=True the L-skewness and 4 the L-kurtosis). Defaults to 2.
+            ratio (bool, optional): Whether to return the L-moment ratio, which needs an order of 2 or
+            higher. Defaults to False.
+            within_period (bool, optional): Whether to calculate the L-moment within the specified period or
+            for the entire period. Thus whether to look at the L-moment within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the L-moment
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the L-moment values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: L-moment values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        L-moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the L-moment values using the
+        specified `lag`.
+        - The L-moments equal riskfolio-lib's L_Moment and scipy's stats.lmoment(standardize=False), the
+        ratios scipy's stats.lmoment with standardize=True.
+        - A sample needs at least `order` returns, fewer give NaN.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["PFE", "MRK", "JNJ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_l_moment(period="yearly", within_period=True, order=3, ratio=True)
+        ```
+
+        Which returns:
+
+        |      |     PFE |     MRK |     JNJ |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 |  0.1252 | -0.0172 | -0.0248 |     -0.0386 |
+        | 2022 |  0.0344 |  0.0321 |  0.0518 |      0.0138 |
+        | 2023 | -0.0124 | -0.0261 | -0.0389 |     -0.0039 |
+        | 2024 |  0.0588 | -0.0149 |  0.0183 |     -0.0586 |
+        | 2025 | -0.0016 | -0.0154 | -0.0189 |     -0.0597 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_l_moment(
+            returns, order=order, ratio=ratio, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_l_moment_risk_measure(
+        self,
+        period: str | None = None,
+        order: int = 4,
+        method: str = "msd",
+        risk_aversion: float = 0.5,
+        max_weight: float = 0.5,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the L-moment Convex Risk Measure of an investment portfolio or asset's returns.
+
+        Cajas (2023) combines the L-moments of order 2 up to `order` into one convex risk measure: a
+        weighted sum of the L-scale, minus the L-moment of order 3 (so a negative skew adds risk), plus that
+        of order 4 and so on, with weights that are non-negative, sum to 1 and decrease with the order. The
+        weights are chosen so that the ordered weighted average they imply puts at least as much weight on
+        every worse return, which keeps the measure convex and therefore usable in portfolio optimization.
+        It captures the dispersion, the skew and the tails of the returns in one figure that is as robust to
+        outliers as the L-moments themselves.
+
+        The formula is as follows (with the default order=4 and method="msd"):
+
+        - L-moment Convex Risk Measure = Σ_k φ_k * (-1)^k * λ_k for k = 2, ..., order
+        - Σ φ_k = 1, 0 <= φ_k <= max_weight and φ_k >= φ_(k+1)
+
+        Where λ_k is the L-moment of order k (`get_l_moment`) and the φ_k follow from `method`: "msd"
+        minimizes the squared differences between the neighbouring weights of the ordered weighted average,
+        "mss" the sum of its squared weights and "crra" sets φ_k in proportion to
+        Π_(i=1..k-1) (risk_aversion + i - 1) / k!, constant relative risk aversion, after which the ordered
+        weights are made non-decreasing. The result is a positive decimal.
+
+        For more information, see the following sources:
+
+        - Cajas, D. (2023). "Convex Risk Measures based on Generalized Lower Deviation and L-moments."
+        SSRN Electronic Journal.
+        - Hosking, J.R.M. (1990). "L-moments: Analysis and Estimation of Distributions using Linear
+        Combinations of Order Statistics." Journal of the Royal Statistical Society: Series B, 52(1),
+        105-124.
+        - riskfolio-lib: RiskFunctions.L_Moment_CRM and OwaWeights.owa_l_moment_crm
+        (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: L-moment CRM, L-moment based convex risk measure.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            order (int, optional): The highest L-moment order, an integer of 2 or higher. Defaults to 4.
+            method (str, optional): How the L-moments are weighted: "msd", "mss" or "crra". Defaults to
+            "msd".
+            risk_aversion (float, optional): The risk aversion of method="crra", between 0 and 1.
+            Defaults to 0.5.
+            max_weight (float, optional): The largest weight of one L-moment for "msd" and "mss", between
+            0 and 1. Defaults to 0.5.
+            within_period (bool, optional): Whether to calculate the L-moment Convex Risk Measure within the specified
+            period or for the entire period. Thus whether to look at the L-moment Convex Risk Measure within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the
+            L-moment Convex Risk Measure is calculated over a rolling window of this many periods across the full return
+            history instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the L-moment Convex Risk Measure values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: L-moment Convex Risk Measure values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        L-moment Convex Risk Measure for each asset in the Toolkit instance, each on its own returns (a ticker that
+        listed later or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the L-moment Convex Risk Measure values using
+        the specified `lag`.
+        - With method="crra" the result equals riskfolio-lib's L_Moment_CRM. For "msd" and "mss" the weights
+        solve a small convex program over the order - 1 weights with scipy (SLSQP) where riskfolio-lib uses
+        cvxpy with the Clarabel solver; the Toolkit's weights meet the constraints exactly and match a
+        tightly solved cvxpy program, while Clarabel's default tolerances leave riskfolio-lib's weights
+        slightly off, so the results differ in the fourth significant digit for "msd" and the second for
+        "mss". riskfolio-lib's maximum entropy method ("ME") is left out: the entropy it maximizes is
+        that of a bound which is the same for every set of weights, so its result depends on the solver.
+        - With order=3 and max_weight=0.5 no weights meet the constraints, which gives an error.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["V", "MA", "PYPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_l_moment_risk_measure(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |      V |     MA |   PYPL |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.0044 | 0.0052 | 0.0068 |      0.0024 |
+        | 2022 | 0.0054 | 0.0058 | 0.0098 |      0.0044 |
+        | 2023 | 0.0028 | 0.0031 | 0.0067 |      0.0024 |
+        | 2024 | 0.0031 | 0.0029 | 0.0061 |      0.0024 |
+        | 2025 | 0.0039 | 0.004  | 0.0069 |      0.0032 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_l_moment_risk_measure(
+            returns,
+            order=order,
+            method=method,
+            risk_aversion=risk_aversion,
+            max_weight=max_weight,
+            window_size=rolling,
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_skewness_kurtosis_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Skewness-Kurtosis Ratio of an investment portfolio or asset's returns.
+
+        The Skewness-Kurtosis Ratio (Bacon 2008) divides the skewness by the kurtosis, combining the two
+        shape statistics an investor in fat-tailed assets cares about into one number: a positive skew is
+        attractive and fat tails are not, so a higher ratio is better. It is used to rank funds whose
+        returns are far from normal, where the Sharpe Ratio's reliance on the standard deviation misleads.
+
+        The formula is as follows:
+
+        - Skewness-Kurtosis Ratio = Skewness / Kurtosis
+
+        Where the Skewness is that of `get_skewness` and the Kurtosis that of `get_kurtosis` with the
+        default fisher=False, Pearson's kurtosis (3 for a normal distribution), both the bias-adjusted
+        sample estimates.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
+        Sons, chapter 4.
+        - PerformanceAnalytics (R): SkewnessKurtosisRatio (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: skewness to kurtosis ratio.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            within_period (bool, optional): Whether to calculate the Skewness-Kurtosis Ratio within the specified
+            period or for the entire period. Thus whether to look at the Skewness-Kurtosis Ratio within a specific
+            year (if period = 'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the
+            Skewness-Kurtosis Ratio is calculated over a rolling window of this many periods across the full return
+            history instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Skewness-Kurtosis Ratio values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Skewness-Kurtosis Ratio values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Skewness-Kurtosis Ratio for each asset in the Toolkit instance, each on its own returns (a ticker that
+        listed later or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Skewness-Kurtosis Ratio values using
+        the specified `lag`.
+        - PerformanceAnalytics' SkewnessKurtosisRatio divides the population (moment) skewness by the
+        population kurtosis; the Toolkit uses its bias-adjusted sample estimates of both, as in
+        `get_skewness` and `get_kurtosis`, which differ by about 0.4% of the ratio for three years of daily
+        returns and more for short samples.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["META", "GOOGL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_skewness_kurtosis_ratio(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    META |   GOOGL |    MSFT |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 |  0.0058 |  0.0708 | -0.0057 |     -0.0897 |
+        | 2022 | -0.0997 |  0.0468 |  0.038  |      0.0132 |
+        | 2023 |  0.1119 | -0.0405 |  0.0846 |     -0.007  |
+        | 2024 |  0.0804 |  0.0277 | -0.1715 |     -0.1095 |
+        | 2025 |  0.0563 |  0.0465 |  0.1    |      0.0567 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = dispersion_model.get_skewness_kurtosis_ratio(
+            returns, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )

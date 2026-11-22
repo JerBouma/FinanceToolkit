@@ -24,7 +24,7 @@ from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = get_logger()
 
@@ -174,6 +174,73 @@ class RiskBase:
                 )
 
         return returns
+
+    def _get_measure_returns(
+        self,
+        period: str,
+        within_period: bool,
+        rolling: int | None,
+        growth: bool,
+    ) -> pd.DataFrame:
+        """
+        The returns a measure of the return distribution runs on, after validating the
+        parameters it shares with the other distribution measures: the `period` returns of
+        the full history for a rolling window, else those of `_get_returns`.
+        """
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if (
+            period == "daily"
+            and within_period
+            and self._historical_data["intraday"].empty
+        ):
+            raise ValueError(
+                "Intraday data is required for within-period daily calculations. Either set "
+                "within_period=False or initialise the Toolkit with an intraday_period."
+            )
+        if growth and not within_period and not rolling:
+            raise ValueError(
+                "Growth calculations need one value per period, while "
+                "within_period=False produces a single value for the entire period. "
+                "Set within_period=True to calculate growth."
+            )
+
+        if rolling:
+            return self._historical_data[period]["Return"]
+
+        return self._get_returns(period, within_period)
+
+    def _finalize_measure(
+        self,
+        result: pd.Series | pd.DataFrame,
+        sliced: bool,
+        rounding: int | None,
+        growth: bool,
+        lag: int | list[int],
+        standardize: bool,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Cut a measure to the date range when it has a value per period or date (`sliced`,
+        with within_period=True or rolling) and apply the growth, rounding and
+        standardization, as every distribution measure does.
+        """
+        if sliced:
+            result = result.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=result,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
 
     def _get_prices(
         self, column: str, period: str = "daily", within_period: bool = False

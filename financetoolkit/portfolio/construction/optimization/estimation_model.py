@@ -1192,7 +1192,7 @@ def get_cokurtosis_matrix(
       CoKurtosisMatrix and, in its N² × N² arrangement, Riskfolio-Lib's cokurt_matrix
       (method="hist").
     - "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent
-      periods weigh most; it matches PerformanceAnalytics' M4.ewma on the demeaned
+      periods weigh most; it agrees with PerformanceAnalytics' M4.ewma on the demeaned
       returns.
     - "semi": the lower semi cokurtosis, with min(r_ti - μ_i, 0) in place of the
       deviations (Cajas, 2022), referenced against Riskfolio-Lib's cokurt_matrix

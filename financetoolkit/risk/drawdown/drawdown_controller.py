@@ -1151,7 +1151,7 @@ class DrawdownRisk:
 
         Notes:
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
-        - The Average Drawdown and Drawdown Deviation equal PerformanceAnalytics' AverageDrawdown and
+        - The Average Drawdown and Drawdown Deviation agree with PerformanceAnalytics' AverageDrawdown and
         DrawdownDeviation (which report the average as a positive number), and the Average Drawdown equals
         ffn's avg_drawdown. A drawdown that has not recovered by the end of the window has no recovery, so it
         is left out of the Average To Recovery and Average Length; PerformanceAnalytics' AverageRecovery and
@@ -1248,7 +1248,7 @@ class DrawdownRisk:
 
         With compounded=False the drawdowns are the absolute declines of 1 plus the summed returns from their
         high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; with
-        rolling=None this is Riskfolio-Lib's UCI_Abs.
+        rolling=None it agrees with Riskfolio-Lib's UCI_Abs.
 
         For more information, see the following sources:
 
@@ -1553,7 +1553,7 @@ class DrawdownRisk:
         Drawdown for each asset in the Toolkit instance, each on its own returns.
         - If `growth` is set to True, the method calculates the growth of the Average Drawdown values using the
         specified `lag`.
-        - method="episode" equals PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
+        - method="episode" agrees with PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
         Riskfolio-Lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
         libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
         geometric=FALSE divides the decline of 1 + the summed returns by its peak, where compounded=False here

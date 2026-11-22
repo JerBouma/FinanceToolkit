@@ -4151,7 +4151,12 @@ class Toolkit:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
+            pd.DataFrame: The employee count per reporting year (rows) and ticker (columns). The
+                year is the calendar year in which the fiscal year ends, the period of the annual
+                filing: Walmart's count at the end of January 2025 is 2025, a year after the label of
+                its financial statements for that fiscal year (2024), which follow the calendar year
+                holding most of it. The revenue and net income per employee match the counts on the
+                period end dates, so they divide each year by the headcount of that year.
 
         As an example:
 

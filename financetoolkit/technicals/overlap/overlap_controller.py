@@ -506,9 +506,9 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           MA for each asset in the Toolkit instance.
         - The simple, exponential, double exponential, triple exponential, zero lag exponential,
-          Wilder, triangular, weighted and Hull moving averages equal TA-Lib's SMA, EMA, DEMA, TEMA,
+          Wilder, triangular, weighted and Hull moving averages agree with TA-Lib's SMA, EMA, DEMA, TEMA,
           ZLEMA, RMA, TRIMA, WMA and HMA, and the triangular, sine, Fibonacci and Pascal's weighted
-          averages equal pandas-ta-classic's swma, sinwma, fwma and pwma.
+          averages agree with pandas-ta-classic's swma, sinwma, fwma and pwma.
         - finta's TEMA, SMMA and SSMA start their exponential averages on the first price (with
           pandas' ewm) instead of seeding them with a simple average over the window, so they
           differ during the warm-up and converge afterwards.
@@ -653,10 +653,10 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Trix for each asset in the Toolkit instance.
-        - TRIX is a decimal and equals TA-Lib's TRIX divided by 100, since TA-Lib's TRIX is in
+        - TRIX is a decimal and agrees with TA-Lib's TRIX divided by 100, since TA-Lib's TRIX is in
           percent.
         - The signal line is an EMA seeded with the simple average of its first values, as every
-          EMA of the Toolkit, and equals TA-Lib's EMA of the TRIX. pandas-ta-classic's trixh takes
+          EMA of the Toolkit, and agrees with TA-Lib's EMA of the TRIX. pandas-ta-classic's trixh takes
           a simple moving average of the TRIX as its signal line instead.
         - If `growth` is set to True, the method calculates the growth of the Trix
           using the specified `lag`.
@@ -803,7 +803,7 @@ class OverlapTechnicals:
         - Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
         - Referenced against TA-Lib's KAMA (https://ta-lib.org/functions/kama.html).
         - With the default `fast_window` of 2 and `slow_window` of 30, which TA-Lib fixes, the KAMA
-          equals TA-Lib's KAMA.
+          agrees with TA-Lib's KAMA.
         - If `growth` is set to True, the method calculates the growth of the KAMA using the
           specified `lag`.
 
@@ -940,7 +940,7 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the T3 for each asset in the Toolkit instance.
         - Each of the six EMAs is seeded with the simple average of its first `window` values,
-          so the T3 starts at period 6 * (window - 1). It equals TA-Lib's T3 and
+          so the T3 starts at period 6 * (window - 1). It agrees with TA-Lib's T3 and
           pandas-ta-classic's t3.
         - If `growth` is set to True, the method calculates the growth of the T3 using the
           specified `lag`.
@@ -961,6 +961,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |    ^DJI |   Benchmark |
         |:-----------|--------:|------------:|
         | 2025-12-24 | 48312.7 |     676.353 |
@@ -1078,7 +1079,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the ALMA for each asset in the Toolkit instance.
-        - The peak m is rounded down to a whole period, and the ALMA equals TA-Lib's ALMA.
+        - The peak m is rounded down to a whole period, and the ALMA agrees with TA-Lib's ALMA.
           pandas-ta-classic's alma measures the offset from the latest price and keeps m
           unrounded: its alma(offset=0.85) equals this ALMA with an offset of 0.15 and an
           unrounded peak, so it puts the weight on the older prices.
@@ -1101,6 +1102,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |    NVDA |   Benchmark |
         |:-----------|--------:|------------:|
         | 2025-12-24 | 182.824 |     678.086 |
@@ -1213,7 +1215,7 @@ class OverlapTechnicals:
           the VWMA for each asset in the Toolkit instance.
         - The VWMA differs from the rolling VWAP (`get_volume_weighted_average_price`) only in
           the price it averages: the close instead of the typical price (High + Low + Close) / 3.
-          It equals TA-Lib's VWMA and pandas-ta-classic's vwma.
+          It agrees with TA-Lib's VWMA and pandas-ta-classic's vwma.
         - A window without any volume has no average (NaN).
         - If `growth` is set to True, the method calculates the growth of the VWMA using the
           specified `lag`.
@@ -1235,6 +1237,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |     QQQ |
         |:-----------|--------:|
         | 2025-12-24 | 614.136 |
@@ -1373,6 +1376,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |   ^FTSE |   Benchmark |
         |:-----------|--------:|------------:|
         | 2025-12-24 | 9725.8  |     672.687 |
@@ -1496,7 +1500,7 @@ class OverlapTechnicals:
           Tulip Indicators' vidya use the ratio of a short to a long standard deviation instead.
         - The recursion is seeded with the simple average of `window` prices on the period before
           the first oscillator value that follows a full window, as the Toolkit seeds its
-          exponential moving averages. With equal windows it equals pandas-ta-classic's vidya.
+          exponential moving averages. With equal windows it agrees with pandas-ta-classic's vidya.
           TA-Lib starts the recursion from the first price, with the oscillator over the changes
           available so far, and shows it from period `cmo_window` on. The difference fades by a
           factor 1 - Alpha * |CMO| per period: with the defaults the two agree to 0.01% within
@@ -1520,6 +1524,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |     GLD |   Benchmark |
         |:-----------|--------:|------------:|
         | 2025-12-24 | 397.569 |     670.332 |
@@ -1667,6 +1672,7 @@ class OverlapTechnicals:
         ```
 
         Which returns:
+
         | Date       |    MSFT |   Benchmark |
         |:-----------|--------:|------------:|
         | 2025-12-24 | 481.61  |     676.384 |
@@ -1785,7 +1791,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the price for each asset in the Toolkit instance.
-        - The four prices equal TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE.
+        - The four prices agree with TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE.
         - If `growth` is set to True, the method calculates the growth of the price using the
           specified `lag`.
 
@@ -1923,7 +1929,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the midpoint for each asset in the Toolkit instance.
-        - The midpoint equals TA-Lib's MIDPOINT and the midpoint price its MIDPRICE. The middle
+        - The midpoint agrees with TA-Lib's MIDPOINT and the midpoint price its MIDPRICE. The middle
           line of `get_donchian_channels` ends one period earlier, so it differs whenever the
           current period sets a new high or low.
         - If `growth` is set to True, the method calculates the growth of the midpoint using
@@ -2073,7 +2079,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the HWMA for each asset in the Toolkit instance.
-        - The HWMA equals pandas-ta-classic's hwma. The recursion starts on each ticker's
+        - The HWMA agrees with pandas-ta-classic's hwma. The recursion starts on each ticker's
           first close, as in the MQL5 indicator, so there is no warm-up: the weight of the
           start fades by a factor 1 - Level Smoothing per period, and the first values of the
           price history lean on that close.
@@ -2222,7 +2228,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the channel for each asset in the Toolkit instance.
-        - The channel equals pandas-ta-classic's hwc. The band of a period uses the variance up
+        - The channel agrees with pandas-ta-classic's hwc. The band of a period uses the variance up
           to the period before, which holds the deviations up to two periods before, as in the
           MQL5 indicator. Since the average starts on the first close, the bands open from the
           fourth close on.
@@ -2496,7 +2502,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the VAMA for each asset in the Toolkit instance.
-        - The VAMA equals finta's VAMA, which has no published source; its weight multiplies
+        - The VAMA agrees with finta's VAMA, which has no published source; its weight multiplies
           the volume ratio by the close as well, so it is the traded value relative to the
           average volume.
         - A window without any volume has no average (NaN).
@@ -2784,7 +2790,7 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Zig Zag for each asset in the Toolkit instance.
         - Every period shows what is known at its close: the extreme of the current leg, its
-          direction and how many periods ago it was set. This equals TA-Lib's ZIGZAG (with the
+          direction and how many periods ago it was set. This agrees with TA-Lib's ZIGZAG (with the
           sensitivity in percent there and the pivot as a position instead of the periods since
           it) and a value never changes once its period has passed. The line drawn on a chart
           instead connects the swings, and its last leg is redrawn as long as the leg runs: a
@@ -3109,7 +3115,7 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Parabolic SAR for each asset in the Toolkit instance.
-        - The Parabolic SAR equals TA-Lib's SAR, which takes `af_increment` equal to `af_start`, and
+        - The Parabolic SAR agrees with TA-Lib's SAR, which takes `af_increment` equal to `af_start`, and
           its SAREXT for any acceleration factors, start value and offset on reverse. TA-Lib's
           SAREXT returns the SAR negated during a short trade to mark the direction; here it is
           always the price level.
@@ -3273,7 +3279,7 @@ class OverlapTechnicals:
           Pivot Points for each asset in the Toolkit instance.
         - Every level comes from the previous period, so it is known at the open of the period.
         - The classic, Fibonacci, Camarilla and Woodie pivots and the central pivot range equal
-          pandas-ta-classic's cpr; the classic and Fibonacci pivots also equal finta's PIVOT and
+          pandas-ta-classic's cpr; the classic and Fibonacci pivots also agree with finta's PIVOT and
           PIVOT_FIB, which add a fourth level. The Woodie pivot weights the previous close twice,
           as in pandas-ta-classic; some charting packages take the current open instead.
         - If `growth` is set to True, the method calculates the growth of the Pivot Points

@@ -177,14 +177,14 @@ def get_candlestick_patterns(
     Recognise 62 candlestick patterns of Nison, Bulkowski and Chesler in their measurable form.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
-    pattern and 0 otherwise, which is TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
+    pattern and 0 otherwise, which agrees with TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
     form of the engulfing, harami and harami cross patterns, where one end of the two real
     bodies is equal, is 0.8 (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and
     long-legged doji, rickshaw man and takuri) are indecision rather than a direction and are 1
     when present, as in TA-Lib; a marubozu, a spinning top, a belt-hold, a closing marubozu, a
     high-wave, long line and short line candle and an inside bar take the colour of the candle
     (1 white, -1 black). A hikkake and a modified hikkake are 1 or -1 on the candle that
-    completes them and 2 or -2 on the later candle that confirms them, which is TA-Lib's +200 /
+    completes them and 2 or -2 on the later candle that confirms them, which agrees with TA-Lib's +200 /
     -200 divided by 100 like every other value.
 
     Each pattern is a set of conditions on the features of its candles (see
@@ -1101,7 +1101,7 @@ def get_heikin_ashi(
     Notes:
         - The HA Open halves the weight of the first candle's seed every period, so it is an
           exponential average with a smoothing factor of 1/2 of the previous HA Closes. The
-          values equal TA-Lib's and pandas-ta-classic's on every candle, from the first candle
+          values agree with TA-Lib's and pandas-ta-classic's on every candle, from the first candle
           on (TA-Lib's default unstable period of HA is 0).
 
     Args:
@@ -1160,7 +1160,7 @@ def get_williams_fractal(
     WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
 
     Notes:
-        - This equals TA-Lib's FRACTAL (swinghigh, swinglow) divided by 100, which marks the
+        - This agrees with TA-Lib's FRACTAL (swinghigh, swinglow) divided by 100, which marks the
           confirming bar too. finta's WILLIAMS_FRACTAL marks the bar of the high or low itself,
           which uses the later bars (look-ahead).
         - The comparison is strict, as in TA-Lib: a high equal to a neighbouring high is no

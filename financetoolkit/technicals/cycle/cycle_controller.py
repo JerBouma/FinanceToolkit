@@ -1425,7 +1425,7 @@ class CycleTechnicals:
           the SuperSmoother filter for each asset in the Toolkit instance.
         - The filter equals the price on the first two (three) periods of each ticker's own history and runs from
           there, as pandas-ta-classic starts it; Ehlers' listing starts it from zero.
-        - The three-pole filter equals pandas-ta-classic's ssf. Its two-pole ssf filters the price itself rather
+        - The three-pole filter agrees with pandas-ta-classic's ssf. Its two-pole ssf filters the price itself rather
           than the average of the last two prices, which differs by up to 2% on daily prices; applied to that
           average the two are equal.
         - √2, √3 and π are exact, where Ehlers' listings write 1.414 and 3.14159.
@@ -1694,7 +1694,7 @@ class CycleTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Detrended Synthetic Price for each asset in the Toolkit instance.
         - The averages span a quarter and a half of the window, rounded down, and are seeded with their simple
-          average as every exponential moving average of the Toolkit; they equal pandas-ta-classic's ema.
+          average as every exponential moving average of the Toolkit; they agree with pandas-ta-classic's ema.
         - pandas-ta-classic's dsp subtracts one exponential moving average from the price, Price - EMA(Price, 14),
           a simpler detrender that also keeps the shorter cycles.
         - If `growth` is set to True, the method calculates the growth of the Detrended Synthetic Price using the

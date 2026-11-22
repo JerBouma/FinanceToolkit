@@ -583,7 +583,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MFI values for each asset in the Toolkit instance.
-        - The MFI equals TA-Lib's MFI.
+        - The MFI agrees with TA-Lib's MFI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -710,7 +710,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Williams %R values for each asset in the Toolkit instance.
-        - Williams %R equals TA-Lib's WILLR.
+        - Williams %R agrees with TA-Lib's WILLR.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -844,7 +844,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Aroon Indicator values for each asset in the Toolkit instance.
-        - Aroon Up and Aroon Down equal TA-Lib's AROON, and the Aroon Oscillator TA-Lib's AROONOSC.
+        - Aroon Up and Aroon Down agree with TA-Lib's AROON, and the Aroon Oscillator TA-Lib's AROONOSC.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -972,7 +972,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the CCI values for each asset in the Toolkit instance.
-        - With the default `constant` of 0.015, the CCI equals TA-Lib's CCI.
+        - With the default `constant` of 0.015, the CCI agrees with TA-Lib's CCI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1235,7 +1235,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Force Index values for each asset in the Toolkit instance.
-        - The Force Index equals TA-Lib's EFI.
+        - The Force Index agrees with TA-Lib's EFI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1371,7 +1371,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ultimate Oscillator values for each asset in the Toolkit instance.
-        - The Ultimate Oscillator equals TA-Lib's ULTOSC. The first period counts with its High —
+        - The Ultimate Oscillator agrees with TA-Lib's ULTOSC. The first period counts with its High —
           Low range and its close minus its low, so the oscillator starts on period `window_3`, one
           period before TA-Lib's.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -1522,9 +1522,9 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the PPO values for each asset in the Toolkit instance.
-        - The PPO is a decimal and equals TA-Lib's PPO with the same moving average (`matype`) divided
+        - The PPO is a decimal and agrees with TA-Lib's PPO with the same moving average (`matype`) divided
           by 100, since TA-Lib's PPO is in percent. TA-Lib has no signal line or histogram; with the
-          default EMAs all three equal pandas-ta-classic's ppo with `mamode="ema"` divided by 100. ta and
+          default EMAs all three agree with pandas-ta-classic's ppo with `mamode="ema"` divided by 100. ta and
           finta seed their EMAs with the first price instead of a simple average, so their first values
           differ until the two converge.
         - Every EMA is seeded with the simple average of its first values, so the PPO starts on the
@@ -1670,7 +1670,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the APO for each asset in the Toolkit instance.
-        - The APO equals TA-Lib's APO with the same moving average (`matype`: SMA 0, EMA 1, WMA 2,
+        - The APO agrees with TA-Lib's APO with the same moving average (`matype`: SMA 0, EMA 1, WMA 2,
           DEMA 3, TRIMA 5, KAMA 6) from the first value, and with the default EMAs the MACD line of
           `get_moving_average_convergence_divergence`.
         - If `growth` is set to True, the method calculates the growth of the APO
@@ -1830,9 +1830,9 @@ class MomentumTechnicals:
           `signal_window` - 1 periods later.
         - A ticker without volume, such as an index or a currency pair, has no PVO.
         - The PVO is a decimal, like the Percentage Price Oscillator, and NaN for a ticker without
-          volume. It equals TA-Lib's PVO (with its default EMA) divided by 100: TA-Lib's PVO is in
+          volume. It agrees with TA-Lib's PVO (with its default EMA) divided by 100: TA-Lib's PVO is in
           percent, returns 0 without volume and has no signal line or histogram. With
-          `moving_average="simple"` it equals TA-Lib's PVO with `matype=0` and the `vosc` of
+          `moving_average="simple"` it agrees with TA-Lib's PVO with `matype=0` and the `vosc` of
           pandas-ta-classic and Tulip Indicators, divided by 100.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -1963,7 +1963,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the DPO values for each asset in the Toolkit instance.
-        - The DPO equals TA-Lib's DPO.
+        - The DPO agrees with TA-Lib's DPO.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2529,7 +2529,7 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Chande Momentum Oscillator values for each asset in the Toolkit instance.
         - By default the gains and losses are summed over the window, as Chande defines the CMO and as
-          on StockCharts, which equals TA-Lib's CMOU. TA-Lib's CMO smooths them with Wilder's method
+          on StockCharts, which agrees with TA-Lib's CMOU. TA-Lib's CMO smooths them with Wilder's method
           instead, as in its RSI, so the two differ throughout (by up to about 55 points on daily data);
           `smoothed=True` gives TA-Lib's CMO, from the same period on.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -2664,7 +2664,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the IMI for each asset in the Toolkit instance.
-        - The IMI equals TA-Lib's IMI, except on a window in which every period closed at its open,
+        - The IMI agrees with TA-Lib's IMI, except on a window in which every period closed at its open,
           which has no IMI (NaN) where TA-Lib returns 50.
         - If `growth` is set to True, the method calculates the growth of the IMI
           using the specified `lag`.
@@ -2814,7 +2814,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ichimoku Cloud values for each asset in the Toolkit instance.
-        - The Conversion Line and Base Line equal TA-Lib's ICHIMOKU, and so do the leading spans
+        - The Conversion Line and Base Line agree with TA-Lib's ICHIMOKU, and so do the leading spans
           `base_window` periods earlier: TA-Lib places them on the period they are calculated on
           instead of displacing them forward, and starts every line on the `lead_span_b_window`-th
           period.
@@ -2966,10 +2966,10 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Stochastic Oscillator values for each asset in the Toolkit instance.
-        - %K and %D equal TA-Lib's STOCHF (the fast stochastic) with `fastd_period` set to
+        - %K and %D agree with TA-Lib's STOCHF (the fast stochastic) with `fastd_period` set to
           `smooth_window` and a simple moving average (`fastd_matype=0`), which TA-Lib's STOCH gives
           with a `slowk_period` of 1. TA-Lib starts %K on the first %D.
-        - With `slow=True`, %K and %D equal TA-Lib's STOCH with `slowk_period` and `slowd_period` set to
+        - With `slow=True`, %K and %D agree with TA-Lib's STOCH with `slowk_period` and `slowd_period` set to
           `smooth_window` and simple moving averages (`slowk_matype=0`, `slowd_matype=0`), and
           pandas-ta-classic's stoch. TA-Lib starts %K on the first %D.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
@@ -3151,14 +3151,14 @@ class MomentumTechnicals:
         - TA-Lib's MACD starts the short EMA on the same period as the long EMA and shows the MACD
           line from the first signal value, so the first values differ from TA-Lib's until the two
           converge (within 0.01% after about 85 periods with the default windows). The histogram
-          equals TA-Lib's `macdhist` and ta's `macd_diff` from then on.
+          agrees with TA-Lib's `macdhist` and ta's `macd_diff` from then on.
         - TA-Lib's MACDEXT and MACDFIX start their averages in the same way. With simple, weighted or
           triangular moving averages, which have no recursion, the lines equal MACDEXT from the
           first value; with exponential ones (also MACDFIX) they converge within 0.01% after about 90
           periods, with double exponential ones after about 130 and with Kaufman adaptive ones, whose
           smoothing can be very slow, after about 210.
         - With `moving_average="volume_weighted"` and `signal_moving_average="volume_weighted"` the
-          lines equal pandas-ta-classic's vwmacd. finta's VW_MACD divides exponential averages of
+          lines agree with pandas-ta-classic's vwmacd. finta's VW_MACD divides exponential averages of
           Close × Volume and of the volume instead. finta's EV_MACD starts every eVWMA from 0 where the
           Toolkit seeds it with a simple average, so the two converge as the start decays (after
           several hundred periods for a 40-period eVWMA).
@@ -3321,7 +3321,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           RSI for each asset in the Toolkit instance.
-        - The RSI equals TA-Lib's RSI.
+        - The RSI agrees with TA-Lib's RSI.
         - If `growth` is set to True, the method calculates the growth of the RSI
           using the specified `lag`.
 
@@ -3471,7 +3471,7 @@ class MomentumTechnicals:
         - An RSI that did not move over the stochastic window has no range, which leaves %K
           missing (TA-Lib sets it to 0).
         - With `fastk_period` set to `stochastic_window`, `fastd_period` to `smooth_window` and a
-          simple moving average (`fastd_matype=0`), %K and %D equal TA-Lib's STOCHRSI.
+          simple moving average (`fastd_matype=0`), %K and %D agree with TA-Lib's STOCHRSI.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
           using the specified `lag`.
 
@@ -3619,7 +3619,7 @@ class MomentumTechnicals:
           `short_window` - 1 periods after the first price and the signal line
           `signal_window` - 1 periods later.
         - A stretch without any price change leaves the TSI missing.
-        - The TSI equals TA-Lib's TSI, which has no signal line.
+        - The TSI agrees with TA-Lib's TSI, which has no signal line.
         - If `growth` is set to True, the method calculates the growth of the TSI and signal
           line using the specified `lag`.
 
@@ -3747,7 +3747,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           BOP for each asset in the Toolkit instance.
-        - The BOP equals TA-Lib's BOP.
+        - The BOP agrees with TA-Lib's BOP.
         - If `growth` is set to True, the method calculates the growth of the BOP
           using the specified `lag`.
 
@@ -3872,7 +3872,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the IBS for each asset in the Toolkit instance.
-        - The IBS equals TA-Lib's IBS, except on a period without a range (High equal to Low), which
+        - The IBS agrees with TA-Lib's IBS, except on a period without a range (High equal to Low), which
           has no IBS (NaN) where TA-Lib returns 0.5.
         - If `growth` is set to True, the method calculates the growth of the IBS
           using the specified `lag`.
@@ -4000,7 +4000,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Qstick for each asset in the Toolkit instance.
-        - Qstick equals TA-Lib's QSTICK and pandas-ta-classic's qstick.
+        - Qstick agrees with TA-Lib's QSTICK and pandas-ta-classic's qstick.
         - If `growth` is set to True, the method calculates the growth of the Qstick
           using the specified `lag`.
 
@@ -4137,7 +4137,7 @@ class MomentumTechnicals:
           "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." Wiley.
         - A cross of the AO above zero occurs exactly when the short-window SMA of the median
           price crosses above the long-window SMA, and vice versa for a cross below zero.
-        - The AO equals TA-Lib's AO.
+        - The AO agrees with TA-Lib's AO.
         - If `growth` is set to True, the method calculates the growth of the AO
           using the specified `lag`.
 
@@ -4278,7 +4278,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the AC for each asset in the Toolkit instance.
-        - The AC equals TA-Lib's AC and starts `long_window` + `signal_window` — 2 periods after the
+        - The AC agrees with TA-Lib's AC and starts `long_window` + `signal_window` — 2 periods after the
           first price.
         - If `growth` is set to True, the method calculates the growth of the AC
           using the specified `lag`.
@@ -4413,7 +4413,7 @@ class MomentumTechnicals:
         - Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis
           of Stocks & Commodities, 28(1), 20-30.
         - Referenced against TA-Lib's VORTEX (https://ta-lib.org/functions/vortex.html).
-        - VI+ and VI- equal TA-Lib's VORTEX.
+        - VI+ and VI- agree with TA-Lib's VORTEX.
         - If `growth` is set to True, the method calculates the growth of the VI+ and VI-
           using the specified `lag`.
 
@@ -4544,7 +4544,7 @@ class MomentumTechnicals:
           tend to be negative.
         - Reference: Elder, A. (1993). "Trading for a Living." Wiley.
         - Referenced against TA-Lib's ERI (https://ta-lib.org/functions/eri.html).
-        - Bull Power and Bear Power equal TA-Lib's ERI.
+        - Bull Power and Bear Power agree with TA-Lib's ERI.
         - If `growth` is set to True, the method calculates the growth of the Bull and Bear Power
           using the specified `lag`.
 
@@ -4671,7 +4671,7 @@ class MomentumTechnicals:
         - Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New
           York Institute of Finance.
         - Referenced against TA-Lib's ROCP (https://ta-lib.org/functions/rocp.html).
-        - The Rate of Change is a decimal and equals TA-Lib's ROCP; TA-Lib's ROC is the same in
+        - The Rate of Change is a decimal and agrees with TA-Lib's ROCP; TA-Lib's ROC is the same in
           percent.
         - If `growth` is set to True, the method calculates the growth of the Rate of Change
           using the specified `lag`.
@@ -4798,7 +4798,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Momentum for each asset in the Toolkit instance.
-        - The Momentum equals TA-Lib's MOM, pandas-ta-classic's mom and finta's MOM.
+        - The Momentum agrees with TA-Lib's MOM, pandas-ta-classic's mom and finta's MOM.
         - If `growth` is set to True, the method calculates the growth of the Momentum
           using the specified `lag`.
 
@@ -4945,7 +4945,7 @@ class MomentumTechnicals:
         - Developed by Australian commodities trader Bill Dreiss; there is no formal journal
           citation. The standard textbook treatment is Kaufman, P.J. (2013). "Trading Systems
           and Methods." 5th ed. Wiley.
-        - The Choppiness Index equals TA-Lib's CHOP, and with `range_method="true_range"` TA-Lib's
+        - The Choppiness Index agrees with TA-Lib's CHOP, and with `range_method="true_range"` TA-Lib's
           CHOPTR. The first period counts with its High — Low range, so the index starts on period
           `window`, one period before TA-Lib's.
         - If `growth` is set to True, the method calculates the growth of the Choppiness
@@ -5077,7 +5077,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Efficiency Ratio for each asset in the Toolkit instance.
-        - The Efficiency Ratio equals TA-Lib's ER, pandas-ta-classic's er and finta's ER, except on a
+        - The Efficiency Ratio agrees with TA-Lib's ER, pandas-ta-classic's er and finta's ER, except on a
           window without any change (flat prices), which has no ratio (NaN) where TA-Lib returns 1.
         - If `growth` is set to True, the method calculates the growth of the Efficiency Ratio
           using the specified `lag`.
@@ -5206,7 +5206,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the VHF for each asset in the Toolkit instance.
-        - The VHF equals TA-Lib's VHF and pandas-ta-classic's vhf and starts `window` periods after the
+        - The VHF agrees with TA-Lib's VHF and pandas-ta-classic's vhf and starts `window` periods after the
           first price, except on a window without any change (flat prices), which has no VHF (NaN) where TA-Lib
           returns 0.
         - If `growth` is set to True, the method calculates the growth of the VHF
@@ -5367,9 +5367,9 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Know Sure Thing values for each asset in the Toolkit instance.
-        - The KST and Signal Line are decimals and equal TA-Lib's KST divided by 100, since TA-Lib's
+        - The KST and Signal Line are decimals and agree with TA-Lib's KST divided by 100, since TA-Lib's
           KST is in percent. TA-Lib starts the KST on the first signal value.
-        - With other moving averages they equal TA-Lib's KSTEXT with the same `rocmatype` and
+        - With other moving averages they agree with TA-Lib's KSTEXT with the same `rocmatype` and
           `signalmatype` divided by 100: from the first value for the simple, weighted and triangular
           averages, and after the warm-up for the recursive ones, since TA-Lib starts their recursion
           later (within 0.01% after about 85 periods for exponential averages).
@@ -5523,7 +5523,7 @@ class MomentumTechnicals:
         - The curve starts max(`long_roc_window`, `short_roc_window`) + `wma_window` - 1
           periods after the first price: 23 months with the defaults on monthly data, so start
           about two years before the first value you need.
-        - The Coppock Curve is a decimal and equals TA-Lib's COPPOCK divided by 100, since TA-Lib's
+        - The Coppock Curve is a decimal and agrees with TA-Lib's COPPOCK divided by 100, since TA-Lib's
           is in percent.
         - If `growth` is set to True, the method calculates the growth of the Coppock Curve
           using the specified `lag`.
@@ -5669,7 +5669,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Fisher Transform and trigger for each asset in the Toolkit instance.
-        - The Fisher Transform equals TA-Lib's FISHER and starts `window` - 1 periods after the first price,
+        - The Fisher Transform agrees with TA-Lib's FISHER and starts `window` - 1 periods after the first price,
           the trigger one period later (TA-Lib gives the first trigger the value 0).
         - A window in which the median price did not move gives the neutral position 0.5, as in TA-Lib, so the
           transform decays towards zero.
@@ -5961,7 +5961,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the K, D and J for each asset in the Toolkit instance.
-        - K, D and J equal TA-Lib's KDJ (with its default RMA averages) and pandas-ta-classic's kdj. Every
+        - K, D and J agree with TA-Lib's KDJ (with its default RMA averages) and pandas-ta-classic's kdj. Every
           Wilder average is seeded with the simple average of its first values, so K starts `window`
           + `k_window` - 2 periods after the first price and D and J `d_window` - 1 periods later;
           TA-Lib starts K on the first D. Platforms that start K and D at 50 differ in the first few
@@ -6108,7 +6108,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the PSO for each asset in the Toolkit instance.
-        - The PSO equals TA-Lib's PSO. Every EMA is seeded with the simple average of its first values and is
+        - The PSO agrees with TA-Lib's PSO. Every EMA is seeded with the simple average of its first values and is
           missing before it, so the PSO starts `window` + 2 * `smooth_window` - 3 periods after the
           first price.
         - A window without a range has no %K (NaN), where TA-Lib uses 50; the averages carry on over it.
@@ -6256,7 +6256,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the SMI and signal line for each asset in the Toolkit instance.
-        - The SMI and signal line equal TA-Lib's SMI. Every EMA is seeded with the simple average of its first
+        - The SMI and signal line agree with TA-Lib's SMI. Every EMA is seeded with the simple average of its first
           values and is missing before it, so the SMI starts `window` + `long_window` +
           `short_window` - 3 periods after the first price and the signal line `signal_window` - 1
           periods later; TA-Lib starts both on the first signal value.
@@ -6405,8 +6405,8 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the SMI Ergodic lines for each asset in the Toolkit instance.
-        - The indicator is `get_true_strength_index` with these windows and equals TA-Lib's TSI with them; all
-          three columns equal pandas-ta-classic's smi times 100, as pandas-ta-classic uses a scale
+        - The indicator is `get_true_strength_index` with these windows and agrees with TA-Lib's TSI with them; all
+          three columns agree with pandas-ta-classic's smi times 100, as pandas-ta-classic uses a scale
           of -1 to 1.
         - Every EMA is seeded with the simple average of its first values and is missing before it, so the
           indicator starts `long_window` + `short_window` - 1 periods after the first price and the
@@ -6566,7 +6566,7 @@ class MomentumTechnicals:
           as in `get_moving_average_convergence_divergence`. TA-Lib's STC starts the short EMA on
           the same period as the long one, so the two differ in the first values (up to 50 points)
           and agree within 0.01 after about 200 periods and within 1e-5 after about 250 at the
-          default windows; on the same MACD line the two stochastic stages equal TA-Lib's.
+          default windows; on the same MACD line the two stochastic stages agree with TA-Lib's.
         - pandas-ta-classic's stc (12 and 26 periods by default) equals it with the same windows after the
           first values, and ta's STCIndicator, which smooths with a 3-period EMA (a factor of 0.5)
           without a seed, within 1e-6 after about 500 periods. finta's STC smooths with 3-period
@@ -6717,7 +6717,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the WaveTrend and signal line for each asset in the Toolkit instance.
-        - The WaveTrend and signal line equal TA-Lib's WAVETREND. Every EMA is seeded with the simple average
+        - The WaveTrend and signal line agree with TA-Lib's WAVETREND. Every EMA is seeded with the simple average
           of its first values and is missing before it, so the WaveTrend starts 2 * `channel_window`
           + `average_window` - 3 periods after the first price and the signal line `signal_window` -
           1 periods later. finta's WTO uses averages without a seed and equals it after the first
@@ -6865,7 +6865,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Derivative Oscillator for each asset in the Toolkit instance.
-        - The Derivative Oscillator equals TA-Lib's DOSC and starts `window` + `first_window` +
+        - The Derivative Oscillator agrees with TA-Lib's DOSC and starts `window` + `first_window` +
           `second_window` + `signal_window` - 3 periods after the first price.
         - If `growth` is set to True, the method calculates the growth of the Derivative Oscillator
           using the specified `lag`.
@@ -7013,8 +7013,8 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Swing Index and Accumulative Swing Index for each asset in the Toolkit instance.
-        - The Swing Index equals TA-Lib's SI. The first period has no previous period and no Swing Index, so
-          the Accumulative Swing Index starts on the second period, where it equals TA-Lib's ASI,
+        - The Swing Index agrees with TA-Lib's SI. The first period has no previous period and no Swing Index, so
+          the Accumulative Swing Index starts on the second period, where it agrees with TA-Lib's ASI,
           which gives the first period 0. The ASI accumulates from the first date of the Toolkit's
           data.
         - A period without any move (R equal to 0) has no Swing Index (NaN), where TA-Lib uses 0; the ASI
@@ -7165,7 +7165,7 @@ class MomentumTechnicals:
           its first values with an empty warm-up, so the RSI Moving Average starts `window` +
           `smooth_window` - 1 periods after the first price and the QQE 2 * (2 * `window` - 1) - 1
           periods later, at the RSI Moving Average minus the distance.
-        - The RSI Moving Average and QQE equal pandas-ta-classic's qqe, except that its line switches sides
+        - The RSI Moving Average and QQE agree with pandas-ta-classic's qqe, except that its line switches sides
           when the RSI Moving Average crosses the band on the other side, which can keep it on the
           old side for a few more periods (3 of 757 days on the test data); this follows the
           original MetaTrader indicator, which switches on the period of the crossing.
@@ -8839,7 +8839,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           CTI for each asset in the Toolkit instance.
-        - The CTI equals TA-Lib's CTI and pandas-ta-classic's cti (whose default window is 12).
+        - The CTI agrees with TA-Lib's CTI and pandas-ta-classic's cti (whose default window is 12).
         - A window of flat prices has no correlation and is missing, where TA-Lib gives 0.
         - If `growth` is set to True, the method calculates the growth of the CTI
           using the specified `lag`.
@@ -8975,7 +8975,7 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Forecast Oscillator for each asset in the Toolkit instance.
-        - The oscillator equals TA-Lib's FOSC and Tulip Indicators' fosc divided by 100: a decimal (0.01 is 1%)
+        - The oscillator agrees with TA-Lib's FOSC and Tulip Indicators' fosc divided by 100: a decimal (0.01 is 1%)
           where they give a percentage.
         - pandas-ta-classic's fosc and cfo compare the price with the forecast of the same period, a line fitted
           through that price, rather than with the forecast made the period before.

@@ -546,7 +546,7 @@ def get_keltner_channels(
         - The EMA is seeded with the Simple Moving Average of the first `window` closes (see
           `overlap_model.get_exponential_moving_average`), so the channel starts on period
           `window` - 1 or `atr_window` - 1, whichever is later.
-        - The original channel equals ta's `KeltnerChannel(window, original_version=True)`
+        - The original channel agrees with ta's `KeltnerChannel(window, original_version=True)`
           with `atr_multiplier` = 1; it starts on period `window` - 1.
 
     Args:
@@ -964,7 +964,7 @@ def get_chaikin_volatility(
 
     Notes:
         - The EMA is seeded with the Simple Moving Average of its first `window` ranges, as
-          TA-Lib does, so this equals TA-Lib's CVI divided by 100. pandas-ta-classic seeds
+          TA-Lib does, so this agrees with TA-Lib's CVI divided by 100. pandas-ta-classic seeds
           its EMA differently and converges to the same values.
 
     Args:
@@ -1569,8 +1569,8 @@ def get_squeeze_momentum(
     Referenced against TA-Lib's SQZMOM (https://ta-lib.org/functions/sqzmom.html).
 
     Notes:
-        - The momentum equals TA-Lib's SQZMOM and pandas-ta-classic's
-          `squeeze(lazybear=True)`. The Squeeze equals TA-Lib's squeeze output with 0 instead
+        - The momentum agrees with TA-Lib's SQZMOM and pandas-ta-classic's
+          `squeeze(lazybear=True)`. The Squeeze agrees with TA-Lib's squeeze output with 0 instead
           of -1 for no squeeze; its Keltner Channel is LazyBear's simple average of the True
           Range, not `get_keltner_channels`.
         - The Bollinger standard deviation is the population one (ddof=0), as in

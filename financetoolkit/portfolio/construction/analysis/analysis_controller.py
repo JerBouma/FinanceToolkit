@@ -1150,6 +1150,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   Mean |   Geometric |   Bayes-Stein |   James-Stein |   Bodnar-Okhrin-Parolya |
         |:-----|-------:|------------:|--------------:|--------------:|------------------------:|
         | AAPL | 0.1932 |      0.1672 |        0.1673 |        0.1932 |                  0.1291 |
@@ -1400,6 +1401,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   AAPL |   MSFT |    JNJ |    XOM |
         |:-----|-------:|-------:|-------:|-------:|
         | AAPL | 0.0776 | 0.0288 | 0.0044 | 0.0054 |
@@ -1556,6 +1558,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   AAPL |   MSFT |    JNJ |    XOM |
         |:-----|-------:|-------:|-------:|-------:|
         | AAPL | 1      | 0.5974 | 0.1659 | 0.1473 |
@@ -1670,6 +1673,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   Cluster |
         |:-----|----------:|
         | AAPL |         1 |
@@ -1769,7 +1773,7 @@ class AnalysisConstruction:
             the periods in which every asset has a return, per period (not annualized).
 
         Notes:
-        - The unstandardized "sample" matrix matches PerformanceAnalytics' M3.MM
+        - The unstandardized "sample" matrix agrees with PerformanceAnalytics' M3.MM
           (unbiased=FALSE). Its M3.ewma (default λ = 0.97, a span of about 65.7) assumes
           returns with a zero mean; "exponential" takes the deviations from the average
           return and matches M3.ewma on the demeaned returns.
@@ -1793,6 +1797,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   AAPL |    MSFT |     JNJ |
         |:-----|-------:|--------:|--------:|
         | AAPL | 0.4539 |  0.3026 |  0.0257 |
@@ -1864,7 +1869,7 @@ class AnalysisConstruction:
             period (not annualized).
 
         Notes:
-        - The unstandardized "sample" matrix matches PerformanceAnalytics' M4.MM;
+        - The unstandardized "sample" matrix agrees with PerformanceAnalytics' M4.MM;
           Riskfolio-Lib's cokurt_matrix ("hist", "semi") holds the same numbers as an
           N² × N² matrix. "exponential" matches M4.ewma on the demeaned returns.
 
@@ -1885,6 +1890,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   AAPL |   MSFT |
         |:-----|-------:|-------:|
         | AAPL | 9.5182 | 6.0896 |
@@ -1996,6 +2002,7 @@ class AnalysisConstruction:
         ```
 
         Which returns:
+
         |      |   Expected Return |   Lower |   Upper |   Standard Error |
         |:-----|------------------:|--------:|--------:|-----------------:|
         | AAPL |            0.1932 | -0.0568 |  0.4194 |           0.1207 |

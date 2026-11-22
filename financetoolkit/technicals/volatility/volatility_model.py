@@ -12,6 +12,7 @@ from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.overlap.overlap_model import (
     get_exponential_moving_average,
 )
+from financetoolkit.technicals.statistics.statistics_model import get_linear_regression
 
 # Number of trading days used to annualize realized volatility.
 TRADING_DAYS_PER_YEAR = 252
@@ -497,6 +498,7 @@ def get_keltner_channels(
     window: int,
     atr_window: int,
     atr_multiplier: float,
+    method: str = "exponential",
 ) -> pd.DataFrame:
     """
     Calculate the Keltner Channels for a given price series.
@@ -513,14 +515,28 @@ def get_keltner_channels(
     - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
     - Lower Line = Middle Line - atr_multiplier * ATR(atr_window)
 
-    Also known as: Keltner Bands.
+    With `method="original"`, the channel is Keltner's own, centred on a simple average of
+    the typical price with the average daily range as its width:
+
+    - Typical Price = (High + Low + Close) / 3
+    - Middle Line = SMA(Typical Price, window)
+    - Upper Line = Middle Line + atr_multiplier * SMA(High - Low, window)
+    - Lower Line = Middle Line - atr_multiplier * SMA(High - Low, window)
+
+    Keltner used a 10-day average and one average range (`atr_multiplier` = 1) on either
+    side; `atr_window` is not used by the original channel.
+
+    Also known as: Keltner Bands, Keltner's ten-day moving average rule.
 
     Reference: Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
-    envelope, as implemented here) was popularized by Linda Bradford Raschke in the 1980s.
+    envelope, the default here) was popularized by Linda Bradford Raschke in the 1980s.
 
     TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html), which
     centres the channel on an EMA of the typical price instead of the close.
+
+    ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
+    `original_version=True` is the original channel.
 
     Notes:
         - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
@@ -528,6 +544,8 @@ def get_keltner_channels(
         - The EMA is seeded with the Simple Moving Average of the first `window` closes (see
           `overlap_model.get_exponential_moving_average`), so the channel starts on period
           `window` - 1 or `atr_window` - 1, whichever is later.
+        - The original channel equals ta's `KeltnerChannel(window, original_version=True)`
+          with `atr_multiplier` = 1; it starts on period `window` - 1.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -535,18 +553,29 @@ def get_keltner_channels(
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for the Exponential Moving Average (the middle line).
         atr_window (int): Number of periods for ATR calculation.
-        atr_multiplier (float): Multiplier for ATR to determine channel width.
+        atr_multiplier (float): Multiplier for ATR (or, for the original channel, the
+            average range) to determine channel width.
+        method (str): "exponential" for the EMA of the close with ATR bands, or "original"
+            for Keltner's simple average of the typical price with average range bands.
+            Defaults to "exponential".
 
     Returns:
         pd.DataFrame: Keltner Channels (upper, middle, lower).
     """
-    average_true_range = get_average_true_range(
-        prices_high, prices_low, prices_close, atr_window
-    )
-    middle_line = get_exponential_moving_average(prices_close, window)
+    if method == "original":
+        typical_price = (prices_high + prices_low + prices_close) / 3
+        middle_line = typical_price.rolling(window=window).mean()
+        band_width = (prices_high - prices_low).rolling(window=window).mean()
+    elif method == "exponential":
+        middle_line = get_exponential_moving_average(prices_close, window)
+        band_width = get_average_true_range(
+            prices_high, prices_low, prices_close, atr_window
+        )
+    else:
+        raise ValueError("The method must be 'exponential' or 'original'.")
 
-    upper_line = middle_line + atr_multiplier * average_true_range
-    lower_line = middle_line - atr_multiplier * average_true_range
+    upper_line = middle_line + atr_multiplier * band_width
+    lower_line = middle_line - atr_multiplier * band_width
 
     return pd.concat(
         [upper_line, middle_line, lower_line],
@@ -556,7 +585,10 @@ def get_keltner_channels(
 
 
 def get_donchian_channels(
-    prices_high: pd.Series, prices_low: pd.Series, window: int
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    window: int,
+    include_current: bool = False,
 ) -> pd.DataFrame:
     """
     Calculate the Donchian Channels of a given price series.
@@ -591,18 +623,29 @@ def get_donchian_channels(
           silently disables the indicator's primary use as a breakout signal.
         - Because the channel is built entirely from prior periods, it uses no information
           from the current bar and is safe to compare the current bar's price against.
+        - With `include_current=True` the window ends on the current period, which equals
+          TA-Lib's DONCHIAN, pandas-ta-classic's donchian and ta's DonchianChannel (the
+          channel then traces the extremes, as used for the squeeze momentum and the
+          Ichimoku lines, rather than a breakout level).
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         window (int): Number of periods, ending one period ago, to consider for the
             Donchian Channels.
+        include_current (bool): Whether the window ends on the current period instead of
+            the period before it. Defaults to False.
 
     Returns:
         pd.DataFrame: Donchian Channels (upper, middle, lower).
     """
-    upper_channel = prices_high.rolling(window=window).max().shift(1)
-    lower_channel = prices_low.rolling(window=window).min().shift(1)
+    upper_channel = prices_high.rolling(window=window).max()
+    lower_channel = prices_low.rolling(window=window).min()
+
+    if not include_current:
+        upper_channel = upper_channel.shift(1)
+        lower_channel = lower_channel.shift(1)
+
     middle_channel = (upper_channel + lower_channel) / 2
 
     return pd.concat(
@@ -807,3 +850,767 @@ def get_bollinger_percent_b_and_bandwidth(
     bandwidth = band_range / bollinger_bands["Middle Band"]
 
     return pd.concat([percent_b, bandwidth], keys=["%B", "BandWidth"], axis=1)
+
+
+def get_normalized_average_true_range(
+    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Normalized Average True Range (NATR) of a given price series.
+
+    The Average True Range is in price units, so it does not compare across securities with
+    different prices or over long periods in which the price changed a lot. Dividing it by
+    the close expresses the average range as a share of the price, which makes it
+    comparable across markets.
+
+    The formula is as follows:
+
+    - NATR = ATR(window) / Close
+
+    The result is a decimal (0.02 is an average range of 2% of the close); TA-Lib and
+    pandas-ta-classic multiply it by 100.
+
+    Also known as: NATR, ATR percent, ATRP.
+
+    Reference: Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True
+    Range." Technical Analysis of Stocks & Commodities, 24(5).
+
+    TA-Lib: NATR, the reference implementation (https://ta-lib.org/functions/natr.html).
+
+    Notes:
+        - The ATR is `get_average_true_range` (the StockCharts seeding), so the NATR starts
+          one period before TA-Lib's and equals it, divided by 100, once the seeds have
+          converged.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the Average True Range.
+
+    Returns:
+        pd.Series: NATR values as decimals.
+    """
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, window
+    )
+
+    return average_true_range / prices_close
+
+
+def get_average_day_range(
+    prices_high: pd.Series, prices_low: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Average Day Range (ADR) of a given price series.
+
+    The Average Day Range is the simple average of the High - Low range over `window`
+    periods. Unlike the Average True Range it ignores gaps between periods, so it measures
+    the range traded within the periods only.
+
+    The formula is as follows:
+
+    - ADR = SMA(High - Low, window)
+
+    Also known as: ADR, average daily range, average high-low range.
+
+    Reference: a common practitioner measure without a single primary source; the same
+    average range is the width of Keltner's original channel (Keltner, C.W. (1960). "How
+    to Make Money in Commodities." The Keltner Statistical Service).
+
+    TA-Lib: ADR, the reference implementation (https://ta-lib.org/functions/adr.html).
+
+    Notes:
+        - Equals TA-Lib's ADR.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods of the average.
+
+    Returns:
+        pd.Series: ADR values in price units.
+    """
+    return (prices_high - prices_low).rolling(window=window).mean()
+
+
+def get_chaikin_volatility(
+    prices_high: pd.Series, prices_low: pd.Series, window: int, roc_window: int
+) -> pd.Series:
+    """
+    Calculate Chaikin's Volatility of a given price series.
+
+    Chaikin's Volatility measures how fast the trading range widens or narrows: it is the
+    rate of change of an Exponential Moving Average of the High - Low range. Chaikin read a
+    sharp rise in a short time as a sign of an approaching bottom (panic selling) and a
+    long decline in volatility as typical of a maturing top.
+
+    The formula is as follows:
+
+    - Range Average = EMA(High - Low, window)
+    - Chaikin Volatility = Range Average / Range Average(t - roc_window) - 1
+
+    The result is a decimal (0.25 is a range average 25% wider than `roc_window` periods
+    ago); TA-Lib, Tulip Indicators and pandas-ta-classic multiply it by 100.
+
+    Also known as: CV, CVI, Chaikin Volatility Indicator.
+
+    Reference: Chaikin, M.; described in Achelis, S.B. (2000). "Technical Analysis from A
+    to Z." 2nd ed. McGraw-Hill.
+
+    TA-Lib: CVI, the reference implementation (https://ta-lib.org/functions/cvi.html).
+
+    Notes:
+        - The EMA is seeded with the Simple Moving Average of its first `window` ranges, as
+          TA-Lib does, so this equals TA-Lib's CVI divided by 100. pandas-ta-classic seeds
+          its EMA differently and converges to the same values.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods of the EMA of the range.
+        roc_window (int): Number of periods the rate of change looks back.
+
+    Returns:
+        pd.Series: Chaikin Volatility as decimals.
+    """
+    range_average = get_exponential_moving_average(prices_high - prices_low, window)
+    previous_average = range_average.shift(roc_window)
+
+    return range_average / previous_average.where(previous_average != 0) - 1
+
+
+def get_relative_volatility_index(
+    prices: pd.Series, window: int, std_window: int
+) -> pd.Series:
+    """
+    Calculate Dorsey's Relative Volatility Index (RVI) of a given price series.
+
+    The Relative Volatility Index is built like the Relative Strength Index, but measures
+    the direction of volatility instead of price changes: on a period that closes higher,
+    the standard deviation of the last `std_window` prices counts as upward volatility,
+    and on a period that closes lower as downward volatility. Dorsey designed it as a
+    confirming filter for other indicators: above 50 favours long trades and below 50
+    short trades.
+
+    The formula is as follows:
+
+    - Standard Deviation = StdDev(Price, std_window)
+    - Up = Standard Deviation if Price(t) > Price(t-1), else 0
+    - Down = Standard Deviation if Price(t) < Price(t-1), else 0
+    - RVI = 100 * Wilder(Up, window) / (Wilder(Up, window) + Wilder(Down, window))
+
+    Wilder(x, window) is Wilder's smoothing (`get_wilder_moving_average`), seeded with the
+    simple average of the first `window` values. The RVI is on Dorsey's 0 to 100 scale.
+
+    Also known as: RVI, Relative Volatility Index.
+
+    Reference: Dorsey, D. (1993). "The Relative Volatility Index." Technical Analysis of
+    Stocks & Commodities, 11(6). The refined version, applied to the highs and lows, is in
+    Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical Analysis of
+    Stocks & Commodities, 13(9).
+
+    TA-Lib: RVI and RVIR, the reference implementations (https://ta-lib.org/functions/rvi.html,
+    https://ta-lib.org/functions/rvir.html).
+
+    Notes:
+        - Equals TA-Lib's RVI on the close and, averaged over the highs and lows, TA-Lib's
+          RVIR. pandas-ta-classic's rvi smooths with an EMA by default, which gives
+          different values.
+        - The standard deviation is the sample one (ddof=1); the RVI is a ratio of the
+          deviations, so the convention does not change it.
+        - A window in which the price did not move has no RVI (0 / 0, missing) instead of 0.
+
+    Args:
+        prices (pd.Series): Series of prices: the close for the RVI, or the high and the
+            low for the two halves of the refined RVI.
+        window (int): Number of periods of Wilder's smoothing.
+        std_window (int): Number of periods of the standard deviation.
+
+    Returns:
+        pd.Series: RVI values between 0 and 100.
+    """
+    standard_deviation = prices.rolling(window=std_window).std()
+    price_change = prices.diff()
+    has_value = standard_deviation.notna() & price_change.notna()
+
+    upward = standard_deviation.where(price_change > 0, 0.0).where(has_value)
+    downward = standard_deviation.where(price_change < 0, 0.0).where(has_value)
+
+    upward_average = get_wilder_moving_average(upward, window)
+    downward_average = get_wilder_moving_average(downward, window)
+    total = upward_average + downward_average
+
+    return 100 * upward_average / total.where(total != 0)
+
+
+def get_acceleration_bands(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    factor: float,
+) -> pd.DataFrame:
+    """
+    Calculate Headley's Acceleration Bands of a given price series.
+
+    Acceleration Bands place an envelope around a simple average of the close whose width
+    grows with the relative High - Low range of each period. Headley used a close outside
+    the bands as the start of an accelerating move (a breakout) and a close back inside
+    them as the end of it.
+
+    The formula is as follows:
+
+    - Range Ratio = factor * (High - Low) / (High + Low)
+    - Upper Band = SMA(High * (1 + Range Ratio), window)
+    - Middle Band = SMA(Close, window)
+    - Lower Band = SMA(Low * (1 - Range Ratio), window)
+
+    Also known as: ACCBANDS, Price Headley's Acceleration Bands.
+
+    Reference: Headley, P. (2002). "Big Trends in Trading: Strategies to Master Major Market
+    Moves." John Wiley & Sons.
+
+    TA-Lib: ACCBANDS, the reference implementation (https://ta-lib.org/functions/accbands.html).
+
+    Notes:
+        - Equals TA-Lib's ACCBANDS (factor 4) and pandas-ta-classic's accbands.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the simple averages.
+        factor (float): Multiplier of the relative range, 4 in Headley's definition.
+
+    Returns:
+        pd.DataFrame: Upper Band, Middle Band and Lower Band in price units.
+    """
+    range_ratio = factor * (prices_high - prices_low) / (prices_high + prices_low)
+
+    upper_band = (prices_high * (1 + range_ratio)).rolling(window=window).mean()
+    middle_band = prices_close.rolling(window=window).mean()
+    lower_band = (prices_low * (1 - range_ratio)).rolling(window=window).mean()
+
+    return pd.concat(
+        [upper_band, middle_band, lower_band],
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+        axis=1,
+    )
+
+
+def get_chande_kroll_stop(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    multiplier: float,
+    stop_window: int,
+) -> pd.DataFrame:
+    """
+    Calculate the Chande Kroll Stop of a given price series.
+
+    The Chande Kroll Stop is a pair of trailing stops a multiple of the Average True Range
+    from the extreme price of the last `window` periods, smoothed a second time by taking
+    the extreme of those first stops over `stop_window` periods. The high stop trails below
+    the highs and the low stop above the lows; a close below the high stop exits a long
+    position and a close above the low stop a short one, and the order of the two lines
+    shows the trend.
+
+    The formula is as follows:
+
+    - First High Stop = Highest High(window) - multiplier * ATR(window)
+    - First Low Stop = Lowest Low(window) + multiplier * ATR(window)
+    - High Stop = Highest(First High Stop, stop_window)
+    - Low Stop = Lowest(First Low Stop, stop_window)
+
+    Chande and Kroll call the high stop the "stop short" and the low stop the "stop long".
+
+    Also known as: CKSP, Chande Kroll stop loss.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." John Wiley &
+    Sons.
+
+    TA-Lib: CKSP, the reference implementation (https://ta-lib.org/functions/cksp.html).
+
+    Notes:
+        - The ATR is `get_average_true_range` (the StockCharts seeding), so the stops start
+          one period before TA-Lib's CKSP and equal them once the seeds have converged.
+        - pandas-ta-classic's cksp with `tvmode=True` uses the same defaults (10, 1, 9);
+          with `tvmode=False` it uses a simple average of the True Range with 3 ATRs and
+          20 periods.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the highest high, lowest low and ATR.
+        multiplier (float): Number of ATRs the first stops sit from the extremes.
+        stop_window (int): Number of periods over which the first stops are smoothed.
+
+    Returns:
+        pd.DataFrame: High Stop and Low Stop in price units.
+    """
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, window
+    )
+    first_high_stop = (
+        prices_high.rolling(window=window).max() - multiplier * average_true_range
+    )
+    first_low_stop = (
+        prices_low.rolling(window=window).min() + multiplier * average_true_range
+    )
+
+    return pd.concat(
+        [
+            first_high_stop.rolling(window=stop_window).max(),
+            first_low_stop.rolling(window=stop_window).min(),
+        ],
+        keys=["High Stop", "Low Stop"],
+        axis=1,
+    )
+
+
+def get_adaptive_price_zone(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    multiplier: float,
+) -> pd.DataFrame:
+    """
+    Calculate Leibfarth's Adaptive Price Zone (APZ) of a given price series.
+
+    The Adaptive Price Zone is a band around a fast, double-smoothed Exponential Moving
+    Average of the close, with a width that is the same double-smoothed average of the
+    High - Low range. Both averages use the square root of `window` as their period, so
+    the zone reacts quickly. Leibfarth designed it for markets without a trend (an ADX
+    below 30): a close above the zone is a chance to sell, and one below it to buy, in
+    anticipation of a reversal.
+
+    The formula is as follows:
+
+    - Smoothing Period = sqrt(window), with alpha = 2 / (sqrt(window) + 1)
+    - Middle Band = EMA(EMA(Close, Smoothing Period), Smoothing Period)
+    - Range = EMA(EMA(High - Low, Smoothing Period), Smoothing Period)
+    - Upper Band = Middle Band + multiplier * Range
+    - Lower Band = Middle Band - multiplier * Range
+
+    Also known as: APZ, Adaptive Price Zone.
+
+    Reference: Leibfarth, L. (2006). "Trading With An Adaptive Price Zone." Technical
+    Analysis of Stocks & Commodities, 24(9).
+
+    finta: TA.APZ (https://github.com/peerchemist/finta).
+
+    Notes:
+        - Each EMA is seeded with the simple average of its first ceil(sqrt(window))
+          values, the Toolkit's seeding of exponential averages, and then runs with the
+          exact smoothing constant of the square-root period, as Leibfarth's code does.
+        - finta's APZ differs by design: it smooths over the full `window` instead of its
+          square root and centres the zone on a Double Exponential Moving Average
+          (2 * EMA - EMA of EMA) instead of the EMA of the EMA.
+        - The article's examples use 20 to 30 periods with 1.4 to 2.1 ranges; the defaults
+          of the Toolkit are 20 periods and 2 ranges.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods whose square root is the smoothing period.
+        multiplier (float): Number of smoothed ranges between the middle and outer bands.
+
+    Returns:
+        pd.DataFrame: Upper Band, Middle Band and Lower Band in price units.
+    """
+    smoothing_period = math.sqrt(window)
+    seed_window = math.ceil(smoothing_period)
+
+    smoothed = {}
+    for name, series in (
+        ("close", prices_close),
+        ("range", prices_high - prices_low),
+    ):
+        values = series
+        for _ in range(2):
+            # The seed is the simple average of the first full window, after which ewm
+            # with adjust=False runs the recursion with the square-root period's constant.
+            seed = values.rolling(window=seed_window).mean()
+            has_seed = seed.notna().astype(bool).cummax()
+            seed_period = has_seed & ~has_seed.shift(1, fill_value=False).astype(bool)
+            values = (
+                values.where(has_seed)
+                .mask(seed_period, seed)
+                .ewm(span=smoothing_period, adjust=False, ignore_na=True)
+                .mean()
+                .where(has_seed & values.notna())
+            )
+        smoothed[name] = values
+
+    middle_band = smoothed["close"]
+    upper_band = middle_band + multiplier * smoothed["range"]
+    lower_band = middle_band - multiplier * smoothed["range"]
+
+    return pd.concat(
+        [upper_band, middle_band, lower_band],
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+        axis=1,
+    )
+
+
+def get_aberration(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    atr_window: int,
+) -> pd.DataFrame:
+    """
+    Calculate the Aberration bands of a given price series.
+
+    The Aberration bands place one Average True Range above and below a short simple
+    average of the typical price. They come from Keith Fitschen's Aberration trading
+    system, a breakout system that buys a close above the upper band and sells a close
+    below the lower band.
+
+    The formula is as follows:
+
+    - Typical Price = (High + Low + Close) / 3
+    - Middle Band = SMA(Typical Price, window)
+    - Upper Band = Middle Band + ATR(atr_window)
+    - Lower Band = Middle Band - ATR(atr_window)
+
+    Also known as: ABER, Aberration.
+
+    Reference: attributed to Fitschen, K. (1993), the Aberration trading system; the bands
+    as implemented here follow pandas-ta-classic, which notes that no definitive source of
+    the formula exists. Fitschen describes his breakout systems in Fitschen, K. (2013).
+    "Building Reliable Trading Systems." John Wiley & Sons.
+
+    pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The ATR is `get_average_true_range` (Wilder's smoothing with the StockCharts
+          seeding); pandas-ta-classic seeds its ATR differently and converges to the same
+          bands.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the simple average of the typical price.
+        atr_window (int): Number of periods of the Average True Range.
+
+    Returns:
+        pd.DataFrame: Upper Band, Middle Band and Lower Band in price units.
+    """
+    typical_price = (prices_high + prices_low + prices_close) / 3
+    middle_band = typical_price.rolling(window=window).mean()
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, atr_window
+    )
+
+    return pd.concat(
+        [
+            middle_band + average_true_range,
+            middle_band,
+            middle_band - average_true_range,
+        ],
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+        axis=1,
+    )
+
+
+def get_profit_maximizer(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    atr_window: int,
+    multiplier: float,
+) -> pd.DataFrame:
+    """
+    Calculate the Profit Maximizer (PMax) of a given price series.
+
+    The Profit Maximizer applies the Supertrend's trailing logic to a moving average instead
+    of the price: two stops a multiple of the Average True Range below and above an
+    Exponential Moving Average of the median price, each of which only tightens while the
+    average stays on its side. The trend turns down when the average crosses below the long
+    stop and up when it crosses above the short stop, and PMax is the active stop. Because
+    the average is smoother than the price, it flips less often than the Supertrend.
+
+    The formula is as follows:
+
+    - Average = EMA((High + Low) / 2, window)
+    - Long Stop(t) = Average - multiplier * ATR(atr_window), raised to Long Stop(t-1) while
+      Average(t) > Long Stop(t-1)
+    - Short Stop(t) = Average + multiplier * ATR(atr_window), lowered to Short Stop(t-1)
+      while Average(t) < Short Stop(t-1)
+    - The trend turns down when Average(t) < Long Stop(t-1) and up when Average(t) >
+      Short Stop(t-1)
+    - PMax = Long Stop in an uptrend, Short Stop in a downtrend
+
+    Also known as: PMax, Profit Maximizer.
+
+    Reference: Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script by
+    KivancOzbilgic. Low priority: a practitioner script without a published source.
+
+    pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - This follows Ozbilgic's script: the EMA (seeded with a simple average) of the
+          median price, a 10-period ATR with Wilder's smoothing and 3 ATRs, starting in an
+          uptrend on the first period with an average and an ATR.
+        - pandas-ta-classic's pmax differs by design: it averages the close and turns the
+          trend on the close crossing the previous stops instead of the average.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the EMA of the median price.
+        atr_window (int): Number of periods of the Average True Range.
+        multiplier (float): Number of ATRs between the average and the stops.
+
+    Returns:
+        pd.DataFrame: PMax (the active stop, in price units) and Trend Direction (1 for an
+            uptrend, -1 for a downtrend).
+    """
+    observed = prices_high.notna() & prices_low.notna() & prices_close.notna()
+    high, low, close = (
+        prices_high[observed],
+        prices_low[observed],
+        prices_close[observed],
+    )
+
+    average = get_exponential_moving_average((high + low) / 2, window)
+    average_true_range = get_average_true_range(high, low, close, atr_window)
+
+    averages = average.to_numpy(dtype="float64").tolist()
+    basic_long = (average - multiplier * average_true_range).to_numpy(dtype="float64")
+    basic_short = (average + multiplier * average_true_range).to_numpy(dtype="float64")
+
+    length = len(averages)
+    profit_maximizer = [math.nan] * length
+    direction = [math.nan] * length
+    long_stop = short_stop = trend = math.nan
+
+    # The recursion runs on plain Python floats, since writing a pandas Series one element
+    # at a time costs tens of microseconds per element.
+    for i, (mean, new_long, new_short) in enumerate(
+        zip(averages, basic_long.tolist(), basic_short.tolist())
+    ):
+        if math.isnan(new_long) or math.isnan(new_short):
+            continue
+
+        if math.isnan(trend):
+            long_stop, short_stop, trend = new_long, new_short, 1.0
+        else:
+            previous_long, previous_short = long_stop, short_stop
+            long_stop = (
+                max(new_long, previous_long) if mean > previous_long else new_long
+            )
+            short_stop = (
+                min(new_short, previous_short) if mean < previous_short else new_short
+            )
+            if trend == -1 and mean > previous_short:
+                trend = 1.0
+            elif trend == 1 and mean < previous_long:
+                trend = -1.0
+
+        profit_maximizer[i] = long_stop if trend == 1 else short_stop
+        direction[i] = trend
+
+    return pd.DataFrame(
+        {"PMax": profit_maximizer, "Trend Direction": direction}, index=average.index
+    ).reindex(prices_high.index)
+
+
+def get_price_distance(
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+) -> pd.Series:
+    """
+    Calculate the Price Distance of a given price series.
+
+    The Price Distance estimates the distance the price travelled within a period: twice
+    the High - Low range (down to the low and up to the high, or the reverse), less the
+    open-to-close body that the range already contains once, plus the gap from the
+    previous close to the open.
+
+    The formula is as follows:
+
+    - Price Distance = 2 * (High - Low) - |Close - Open| + |Open - Close(t-1)|
+
+    Also known as: PDIST, price distance volatility.
+
+    Reference: ProRealCode, "Price Distance" indicator; low priority, a practitioner measure
+    without a published source.
+
+    pandas-ta-classic: pdist (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's pdist; the first period has no previous close and no
+          Price Distance.
+
+    Args:
+        prices_open (pd.Series): Series of opening prices.
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+
+    Returns:
+        pd.Series: Price Distance values in price units.
+    """
+    return (
+        2 * (prices_high - prices_low)
+        - (prices_close - prices_open).abs()
+        + (prices_open - prices_close.shift(1)).abs()
+    )
+
+
+def get_market_thermometer(
+    prices_high: pd.Series, prices_low: pd.Series, window: int
+) -> pd.DataFrame:
+    """
+    Calculate Elder's Market Thermometer of a given price series.
+
+    The Market Thermometer measures how far each period's range pushes outside the previous
+    period's: the larger of the rise of the high above the previous high and the fall of the
+    low below the previous low, or 0 for an inside period. Elder compares it with its
+    Exponential Moving Average: a reading far above the average marks a burst of volatility
+    in which to take profits, and several readings below it a quiet market that often
+    precedes an explosive move.
+
+    The formula is as follows:
+
+    - Thermometer = Max(High - High(t-1), Low(t-1) - Low, 0)
+    - Thermometer Average = EMA(Thermometer, window)
+
+    Also known as: THERMO, Elder's thermometer, market temperature.
+
+    Reference: Elder, A. (2002). "Come Into My Trading Room." John Wiley & Sons, which
+    uses a 22-day EMA.
+
+    pandas-ta-classic: thermo (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Only a higher high or a lower low raises the temperature, and an inside period (a
+          lower high and a higher low) has a temperature of 0, as Elder defines it.
+          pandas-ta-classic's thermo takes the absolute values of both changes instead, so a
+          falling high or a rising low also counts; the two agree on periods with a higher
+          high and a lower low. It also defaults to 20 periods and adds long and short flags.
+        - The EMA is seeded with the simple average of its first `window` values.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods of the EMA.
+
+    Returns:
+        pd.DataFrame: Thermometer and Thermometer Average in price units.
+    """
+    high_change = prices_high - prices_high.shift(1)
+    low_change = prices_low.shift(1) - prices_low
+    thermometer = (
+        pd.concat([high_change, low_change], axis=1).max(axis=1).clip(lower=0)
+    ).where(high_change.notna() & low_change.notna())
+
+    return pd.concat(
+        [thermometer, get_exponential_moving_average(thermometer, window)],
+        keys=["Thermometer", "Thermometer Average"],
+        axis=1,
+    )
+
+
+def get_squeeze_momentum(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    num_std_dev: float,
+    keltner_multipliers: list[float],
+) -> pd.DataFrame:
+    """
+    Calculate the Squeeze Momentum (TTM Squeeze) of a given price series.
+
+    The squeeze compares two volatility bands around the same simple average of the close:
+    Bollinger Bands, which widen and narrow with the standard deviation, and a Keltner
+    Channel, which follows the average True Range. When the Bollinger Bands contract inside
+    the Keltner Channel, volatility is unusually low and the market is "in a squeeze"; Carter
+    trades the release of that squeeze in the direction of the momentum. The momentum is
+    LazyBear's: the linear regression end point of the close relative to the middle of its
+    recent range and its average.
+
+    The formula is as follows:
+
+    - Middle = SMA(Close, window)
+    - Bollinger Bands = Middle +/- num_std_dev * StdDev(Close, window)
+    - Keltner Channel(m) = Middle +/- m * SMA(True Range, window)
+    - Squeeze = the number of `keltner_multipliers` m for which the Bollinger Bands lie
+      inside Keltner Channel(m)
+    - Momentum = LinReg(Close - ((Highest High(window) + Lowest Low(window)) / 2 + Middle) / 2,
+      window), the end point of the least-squares line (`statistics_model.get_linear_regression`)
+
+    With the default multipliers 2, 1.5 and 1 (the TTM Squeeze Pro's wide, normal and narrow
+    channels), the Squeeze is 0 without a squeeze and 1, 2 or 3 for a low, normal or high
+    compression; Carter's original squeeze (Keltner at 1.5) is on when it is 2 or more.
+
+    Also known as: TTM Squeeze, Squeeze Pro, SQZ, SQZMOM, squeeze momentum indicator.
+
+    Reference: Carter, J.F. (2005). "Mastering the Trade." McGraw-Hill, chapter 11 (the TTM
+    Squeeze). The momentum follows LazyBear's "Squeeze Momentum Indicator" TradingView
+    script (2014).
+
+    TA-Lib: SQZMOM, the reference implementation (https://ta-lib.org/functions/sqzmom.html).
+
+    Notes:
+        - The momentum equals TA-Lib's SQZMOM and pandas-ta-classic's
+          `squeeze(lazybear=True)`. The Squeeze equals TA-Lib's squeeze code with 0 instead
+          of -1 for no squeeze; its Keltner Channel is LazyBear's simple average of the True
+          Range, not `get_keltner_channels`.
+        - The Bollinger standard deviation is the population one (ddof=0), as in
+          `get_bollinger_bands`. The Squeeze starts on period `window` - 1 (the True Range
+          of the first period is High - Low); TA-Lib reports its squeeze code from the first
+          Momentum, on period 2 * (`window` - 1), and pandas-ta-classic one period later.
+        - pandas-ta-classic's squeeze without `lazybear` smooths a 12-period momentum
+          instead, and finta's SQZMI returns only whether the squeeze is on.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the bands, channels, range and regression.
+        num_std_dev (float): Number of standard deviations of the Bollinger Bands.
+        keltner_multipliers (list[float]): The widths, in average True Ranges, of the
+            Keltner Channels the Bollinger Bands are compared with.
+
+    Returns:
+        pd.DataFrame: Momentum (in price units) and Squeeze (the number of Keltner Channels
+            the Bollinger Bands lie inside).
+    """
+    middle = prices_close.rolling(window=window).mean()
+    bollinger_width = num_std_dev * prices_close.rolling(window=window).std(ddof=0)
+    average_range = (
+        get_true_range(prices_high, prices_low, prices_close)
+        .where(prices_close.notna())
+        .rolling(window=window)
+        .mean()
+    )
+
+    squeeze = sum(
+        (bollinger_width < multiplier * average_range).astype(float)
+        for multiplier in keltner_multipliers
+    ).where(bollinger_width.notna() & average_range.notna())
+
+    range_middle = (
+        prices_high.rolling(window=window).max()
+        + prices_low.rolling(window=window).min()
+    ) / 2
+    momentum = get_linear_regression(
+        prices_close - (range_middle + middle) / 2, window
+    )["Linear Regression"]
+
+    return pd.concat([momentum, squeeze], keys=["Momentum", "Squeeze"], axis=1)

@@ -1727,3 +1727,149 @@ def test_williams_fractal_is_confirmed_after_the_right_bars(technical_module):
     for pivot in pivots:
         neighbours = np.delete(window[pivot - 2 : pivot + 3], 2)
         assert window[pivot] > neighbours.max()
+
+
+def test_get_normalized_average_true_range(recorder, technical_module):
+    recorder.capture(technical_module.get_normalized_average_true_range())
+    recorder.capture(technical_module.get_normalized_average_true_range(window=20))
+    recorder.capture(technical_module.get_normalized_average_true_range(growth=True))
+
+
+def test_get_average_day_range(recorder, technical_module):
+    recorder.capture(technical_module.get_average_day_range())
+    recorder.capture(technical_module.get_average_day_range(window=5))
+    recorder.capture(technical_module.get_average_day_range(period="weekly"))
+
+
+def test_get_chaikin_volatility(recorder, technical_module):
+    recorder.capture(technical_module.get_chaikin_volatility())
+    recorder.capture(technical_module.get_chaikin_volatility(window=14, roc_window=5))
+    recorder.capture(technical_module.get_chaikin_volatility(growth=True))
+
+
+def test_get_relative_volatility_index(recorder, technical_module):
+    recorder.capture(technical_module.get_relative_volatility_index())
+    recorder.capture(technical_module.get_relative_volatility_index(method="refined"))
+    recorder.capture(
+        technical_module.get_relative_volatility_index(window=10, std_window=20)
+    )
+
+
+def test_get_acceleration_bands(recorder, technical_module):
+    recorder.capture(technical_module.get_acceleration_bands())
+    recorder.capture(technical_module.get_acceleration_bands(window=10, factor=2.0))
+    recorder.capture(technical_module.get_acceleration_bands(growth=True))
+
+
+def test_get_chande_kroll_stop(recorder, technical_module):
+    recorder.capture(technical_module.get_chande_kroll_stop())
+    recorder.capture(
+        technical_module.get_chande_kroll_stop(
+            window=10, multiplier=3.0, stop_window=20
+        )
+    )
+    recorder.capture(technical_module.get_chande_kroll_stop(growth=True))
+
+
+def test_get_adaptive_price_zone(recorder, technical_module):
+    recorder.capture(technical_module.get_adaptive_price_zone())
+    recorder.capture(
+        technical_module.get_adaptive_price_zone(window=30, multiplier=1.4)
+    )
+    recorder.capture(technical_module.get_adaptive_price_zone(growth=True))
+
+
+def test_get_aberration(recorder, technical_module):
+    recorder.capture(technical_module.get_aberration())
+    recorder.capture(technical_module.get_aberration(window=10, atr_window=10))
+    recorder.capture(technical_module.get_aberration(growth=True))
+
+
+def test_get_profit_maximizer(recorder, technical_module):
+    recorder.capture(technical_module.get_profit_maximizer())
+    recorder.capture(
+        technical_module.get_profit_maximizer(window=20, atr_window=14, multiplier=2.0)
+    )
+    recorder.capture(technical_module.get_profit_maximizer(period="weekly"))
+
+
+def test_get_price_distance(recorder, technical_module):
+    recorder.capture(technical_module.get_price_distance())
+    recorder.capture(technical_module.get_price_distance(period="weekly"))
+    recorder.capture(technical_module.get_price_distance(growth=True))
+
+
+def test_get_market_thermometer(recorder, technical_module):
+    recorder.capture(technical_module.get_market_thermometer())
+    recorder.capture(technical_module.get_market_thermometer(window=20))
+    recorder.capture(technical_module.get_market_thermometer(growth=True))
+
+
+def test_get_squeeze_momentum(recorder, technical_module):
+    recorder.capture(technical_module.get_squeeze_momentum())
+    recorder.capture(technical_module.get_squeeze_momentum(keltner_multipliers=[1.5]))
+    recorder.capture(technical_module.get_squeeze_momentum(window=10, num_std_dev=1.5))
+
+
+def test_get_keltner_channels_original(recorder, technical_module):
+    recorder.capture(
+        technical_module.get_keltner_channels(method="original", atr_multiplier=1)
+    )
+    recorder.capture(
+        technical_module.get_keltner_channels(
+            method="original", window=10, atr_multiplier=1
+        )
+    )
+    recorder.capture(technical_module.get_keltner_channels(method="original"))
+
+
+def test_get_donchian_channels_include_current(recorder, technical_module):
+    recorder.capture(technical_module.get_donchian_channels(include_current=True))
+    recorder.capture(
+        technical_module.get_donchian_channels(include_current=True, window=10)
+    )
+
+
+def test_keltner_and_donchian_defaults_are_unchanged(technical_module):
+    keltner = technical_module.get_keltner_channels()
+    assert keltner.equals(
+        technical_module.get_keltner_channels(atr_multiplier=2, method="exponential")
+    )
+    donchian = technical_module.get_donchian_channels()
+    current = technical_module.get_donchian_channels(include_current=True)
+    # The default channel ends one period before the current one.
+    pd.testing.assert_frame_equal(
+        donchian.iloc[1:], current.shift(1).iloc[1:], check_freq=False
+    )
+
+
+def test_volatility_default_windows():
+    import inspect  # noqa: PLC0415
+
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    # The defaults of the primary sources, or TA-Lib's where the source has none.
+    for method, defaults in (
+        (Technicals.get_normalized_average_true_range, {"window": 14}),
+        (Technicals.get_average_day_range, {"window": 14}),
+        (Technicals.get_chaikin_volatility, {"window": 10, "roc_window": 10}),
+        (Technicals.get_relative_volatility_index, {"window": 14, "std_window": 10}),
+        (Technicals.get_acceleration_bands, {"window": 20, "factor": 4.0}),
+        (
+            Technicals.get_chande_kroll_stop,
+            {"window": 10, "multiplier": 1.0, "stop_window": 9},
+        ),
+        (Technicals.get_adaptive_price_zone, {"window": 20, "multiplier": 2.0}),
+        (Technicals.get_aberration, {"window": 5, "atr_window": 15}),
+        (
+            Technicals.get_profit_maximizer,
+            {"window": 10, "atr_window": 10, "multiplier": 3.0},
+        ),
+        (Technicals.get_market_thermometer, {"window": 22}),
+        (Technicals.get_squeeze_momentum, {"window": 20, "num_std_dev": 2.0}),
+    ):
+        parameters = inspect.signature(method).parameters
+        for name, default in defaults.items():
+            assert parameters[name].default == default

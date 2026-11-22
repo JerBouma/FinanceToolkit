@@ -1586,3 +1586,10 @@ def test_get_risk_range_evar(recorder, risk_module):
             period="yearly", within_period=True, measure="evar", beta=0.1
         )
     )
+
+
+def test_get_srisk_with_a_window_longer_than_the_data_is_empty(risk_module):
+    # Thirteen quarters of returns can't fill a window of twenty: the result is empty (the
+    # error is logged), not an AttributeError on an index without periods.
+    assert risk_module.get_srisk(period="quarterly", rolling=20).empty
+    assert not risk_module.get_srisk(period="yearly", rolling=2).empty

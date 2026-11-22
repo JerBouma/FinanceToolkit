@@ -385,7 +385,7 @@ class OptionsBase:
         Returns:
             pd.DataFrame: the option chains with the tickers and strike prices as the index
             and the contract details (Expiration Date, Contract Symbol, Last Trade Date, Last
-            Price, Bid, Ask, Change, Percent Change, Volume, Open Interest, Implied
+            Price, Bid, Ask, Change, Percent Change (a decimal), Volume, Open Interest, Implied
             Volatility, In The Money and Currency) as the columns. When every ticker shares
             the expiration date, it is also stored as the DataFrame's name. If
             show_expiration_dates is True, it returns the expiration dates instead.
@@ -483,7 +483,8 @@ class OptionsBase:
         option_chains["Change"] = option_chains["Change"].pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
         )
-        option_chains["Percent Change"] = option_chains["Percent Change"].pipe(
+        # Yahoo Finance quotes the change in percent (-3.36 for -3.36%), shown as a decimal.
+        option_chains["Percent Change"] = (option_chains["Percent Change"] / 100).pipe(
             apply_rounding, rounding if rounding is not None else self._rounding
         )
         option_chains["Implied Volatility"] = option_chains["Implied Volatility"].pipe(

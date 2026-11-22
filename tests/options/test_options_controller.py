@@ -1374,7 +1374,7 @@ def chains(monkeypatch):
                     "Bid": [1.0, 2.0],
                     "Ask": [1.1, 2.1],
                     "Change": [0.1, 0.2],
-                    "Percent Change": [0.01, 0.02],
+                    "Percent Change": [1.5, -3.36],
                     "Implied Volatility": [0.3, 0.25],
                     "Underlying Price": [100.0, 100.0],
                 },
@@ -1468,3 +1468,9 @@ def test_a_ticker_without_options_is_left_out_by_name(
         "No options data is available for MSFT, so it is left out: Yahoo Finance lists no "
         "options of it." in caplog.text
     )
+
+
+def test_the_percent_change_of_an_option_is_a_decimal(options_module, chains):
+    # Yahoo Finance quotes the change in percent (1.5 for 1.5%).
+    nearest = options_module.get_option_chains()
+    assert nearest["Percent Change"].tolist() == [0.015, -0.0336, 0.015, -0.0336]

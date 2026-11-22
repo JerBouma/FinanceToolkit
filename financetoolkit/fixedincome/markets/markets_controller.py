@@ -216,7 +216,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         iBoxx $ Investment Grade Corporate Bond ETF (LQD), the iShares 0-5 Year Investment
         Grade Corporate Bond ETF (IGSB) and the iShares Broad USD High Yield Corporate Bond
         ETF (USHY): together about 8,000 investment grade and high yield corporate bonds. A
-        bond held by several funds is listed once, with the funds that hold it.
+        bond held by several funds is listed once, with the funds that hold it, at the median
+        of their prices on the latest Price Date among them.
 
         The formula is as follows:
 
@@ -225,7 +226,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
           (1 + y / 2) per half year, are worth the clean price plus accrued interest
           (see `get_yield_to_maturity`)
         - Modified Duration = Macaulay Duration / (1 + y / 2) (see `get_duration`)
-        - G-Spread = Yield to Maturity - Treasury Par Yield at the bond's maturity
+        - G-Spread = Yield to Maturity - Treasury Par Yield at the bond's maturity, on the
+          bond's Price Date
 
         Coupons are semi-annual, the US convention for corporate bonds, and the yield is a
         nominal annual rate compounded twice a year (bond-equivalent), like the Treasury par
@@ -243,8 +245,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         Args:
             etfs (list[str] | str | None, optional): The bond ETFs to read the holdings of, as
                 a list or a comma-separated string. The holdings must name each bond as
-                "ISSUER COUPON% MM/DD/YYYY" with a par amount, as iShares funds do. Defaults
-                to None, which uses LQD, IGSB and USHY.
+                "ISSUER COUPON% MM/DD/YYYY" with its ISIN and par amount, as iShares funds
+                do. Defaults to None, which uses LQD, IGSB and USHY.
             issuer (list[str] | str | None, optional): Keeps the bonds whose issuer contains
                 this text (case-insensitive), e.g. "APPLE" or "JPMORGAN", or any of several.
                 Defaults to None, every issuer.
@@ -274,8 +276,15 @@ class MarketsFixedIncome(CurvesFixedIncome):
           holdings, so there is no history. For the Treasuries the funds hold, the yields are
           within about a basis point of the FedInvest prices of the same day (see
           `get_treasury_securities`).
-        - Each bond is valued as of its Price Date: the accrued interest and the years to
-          maturity count from that day, not from a later settlement date.
+        - Each bond is valued as of its Price Date: the accrued interest, the years to
+          maturity and the Treasury par yield of the G-Spread are those of that day, not of a
+          later settlement date.
+        - Only holdings that publish an ISIN are read. A US ISIN shows that a bond is a US
+          security, which an ISIN built from the CUSIP does not: the euro and sterling notes
+          of US companies carry US CUSIPs as well. FinancialModelingPrep gives no ISINs for
+          the funds of Vanguard, Schwab and Invesco, whose valuation dates also differ from
+          the date of the feed (the Vanguard holdings are those of the last month end), so
+          their bonds are left out, with a warning.
         - The yield is to maturity. A callable bond that trades above its call price
           yields less to its call date (the yield to worst), which is common among high
           yield bonds; call schedules are not in the holdings.
@@ -284,9 +293,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
         - Left out, with a count in the log: lines that are not fixed-coupon bonds (cash,
           futures, swaps), floating rate notes, bank notes marked fixed-to-floating
           ("FXD-FRN", which switch to a floating coupon before maturity), inflation-linked
-          bonds, mortgage pools, perpetual bonds, bonds without a US ISIN (the funds of
-          other currencies) and prices outside 1 to 300. A fixed-to-floating note the fund
-          does not mark as such is kept, and its yield assumes the fixed coupon to maturity.
+          bonds, mortgage pools, perpetual bonds, holdings without an ISIN, bonds without a
+          US ISIN (the funds of other currencies) and prices outside 1 to 300. A
+          fixed-to-floating note the fund does not mark as such is kept, and its yield
+          assumes the fixed coupon to maturity.
         - Requires a FinancialModelingPrep API key for the holdings; the Treasury curve needs
           none.
 
@@ -306,11 +316,11 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         | ISIN         |   Coupon | Maturity   |   Price |   Yield to Maturity |   Modified Duration |   G-Spread |
         |:-------------|---------:|:-----------|--------:|--------------------:|--------------------:|-----------:|
-        | US037833EC07 |   0.012  | 2028-02-08 |   95.54 |              0.0496 |              1.1972 |     0.0026 |
-        | US037833ET32 |   0.04   | 2028-05-10 |   98.61 |              0.0498 |              1.4267 |     0.0022 |
-        | US037833EY27 |   0.04   | 2028-05-12 |   98.65 |              0.0495 |              1.4324 |     0.0018 |
-        | US037833EH93 |   0.014  | 2028-08-05 |   94.13 |              0.0499 |              1.6647 |     0.0017 |
-        | US037833FD70 |   0.0465 | 2028-11-09 |   99.32 |              0.0501 |              1.8745 |     0.0014 |
+        | US037833EC07 |   0.012  | 2028-02-08 |   95.85 |              0.0475 |              1.1795 |     0.0021 |
+        | US037833ET32 |   0.04   | 2028-05-10 |   98.9  |              0.0478 |              1.4091 |     0.0022 |
+        | US037833EY27 |   0.04   | 2028-05-12 |   98.87 |              0.048  |              1.4144 |     0.0023 |
+        | US037833EH93 |   0.014  | 2028-08-05 |   94.55 |              0.0476 |              1.6476 |     0.0016 |
+        | US037833FD70 |   0.0465 | 2028-11-09 |   99.74 |              0.0479 |              1.8577 |     0.0016 |
         """
         helpers.require_api_key(self._api_key, "the bond universe")
 
@@ -325,8 +335,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 f"None of {', '.join(funds)} has holdings to read bonds from."
             )
 
-        # Fund families count the par amount differently: iShares and Vanguard in hundreds
-        # (market value / amount is the price per 100), Schwab in dollars (the price per 1).
+        # Fund families count the par amount differently: iShares in hundreds (market value /
+        # amount is the price per 100), others in dollars (the price per 1).
         ratios = pd.to_numeric(
             holdings["Market Value"], errors="coerce"
         ) / pd.to_numeric(holdings["Shares"], errors="coerce").where(
@@ -339,6 +349,19 @@ class MarketsFixedIncome(CurvesFixedIncome):
             .median()
             .map(lambda median: 100 if median < 2 else 1)  # noqa: PLR2004
         )
+
+        isins = holdings["ISIN"].fillna("").astype(str).str.strip()
+        without_isins = [
+            fund
+            for fund, values in isins.groupby(level=0, sort=False)
+            if not values.any()
+        ]
+        if without_isins:
+            logger.warning(
+                "The holdings of %s give no ISINs, so their bonds are left out: without one "
+                "neither the currency nor the date the fund valued them at is known.",
+                ", ".join(without_isins),
+            )
 
         skipped: dict[str, int] = {}
         records = []
@@ -362,12 +385,13 @@ class MarketsFixedIncome(CurvesFixedIncome):
                     holding["Name"], parsed["Maturity"]
                 )
             )
-            isin = str(holding["ISIN"] or "") or bond_data_model.cusip_to_isin(
-                holding["CUSIP"]
-            )
+            isin = isins.iloc[position]
             # A bond without a US ISIN is a foreign security, such as the euro bonds of a
-            # European fund, whose coupons and currency differ.
-            if reason is None and isin and not isin.startswith("US"):
+            # European fund, whose coupons and currency differ. Without a published ISIN the
+            # currency is unknown: the euro notes of US companies carry US CUSIPs too.
+            if reason is None and not isin:
+                reason = "no ISIN"
+            elif reason is None and not isin.startswith("US"):
                 reason = "not a US security"
             price = ratios.iloc[position] * scale.get(fund, 1)
             low, high = bond_data_model.PRICE_RANGE
@@ -379,8 +403,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
             records.append(
                 {
-                    # A fund that names its bonds without identifiers keeps them apart by name.
-                    "ISIN": isin or holding["Name"],
+                    "ISIN": isin,
                     "CUSIP": holding["CUSIP"],
                     **parsed,
                     "Price": price,
@@ -398,14 +421,21 @@ class MarketsFixedIncome(CurvesFixedIncome):
             )
         if not records:
             raise ValueError(
-                f"The holdings of {', '.join(funds)} hold no US fixed-coupon bonds."
+                f"The holdings of {', '.join(funds)} hold no US fixed-coupon bonds with an ISIN."
             )
 
-        bonds = pd.DataFrame(records)
-        funds_held = bonds.groupby("ISIN", sort=False)["Fund"].agg(
+        held = pd.DataFrame(records)
+        funds_held = held.groupby("ISIN", sort=False)["Fund"].agg(
             lambda values: ", ".join(dict.fromkeys(values))
         )
-        bonds = bonds.drop_duplicates("ISIN").set_index("ISIN")
+        # A bond held by several funds takes the median of their prices on the latest Price
+        # Date among them, so the order of the funds does not decide its price.
+        held = held[
+            held["Price Date"] == held.groupby("ISIN")["Price Date"].transform("max")
+        ]
+        prices = held.groupby("ISIN")["Price"].median()
+        bonds = held.drop_duplicates("ISIN").set_index("ISIN")
+        bonds["Price"] = prices
         bonds["Funds"] = funds_held
 
         if identifiers:
@@ -448,13 +478,18 @@ class MarketsFixedIncome(CurvesFixedIncome):
         bonds["Yield to Maturity"] = [values[0] for values in analytics]
         bonds["Modified Duration"] = [values[1] for values in analytics]
 
+        # Each bond is compared with the Treasury curve of its own Price Date.
         try:
-            curve = self._latest_yield_curve(
-                "United States", date=str(max(bonds["Price Date"]))
+            treasury_yields = pd.concat(
+                [
+                    bond_data_model.interpolate_curve(
+                        self._latest_yield_curve("United States", date=str(price_date)),
+                        years,
+                    )
+                    for price_date, years in bonds.groupby("Price Date")["Years"]
+                ]
             )
-            bonds["G-Spread"] = bonds[
-                "Yield to Maturity"
-            ] - bond_data_model.interpolate_curve(curve, bonds["Years"])
+            bonds["G-Spread"] = bonds["Yield to Maturity"] - treasury_yields
         except (ValueError, requests.exceptions.RequestException) as error:
             logger.warning(
                 "The G-Spread is left empty: no Treasury curve (%s).",
@@ -558,9 +593,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         | Issuer            |     2Y |     5Y |    10Y |   Bonds |   Shortest |   Longest |
         |:------------------|-------:|-------:|-------:|--------:|-----------:|----------:|
-        | APPLE INC         | 0.0014 | 0.0026 | 0.0045 |      43 |     1.2361 |   35.7361 |
-        | BOEING CO         | 0.0064 | 0.0081 | 0.0094 |      20 |     1.2167 |   37.4667 |
-        | INTEL CORPORATION | 0.0078 | 0.0107 | 0.0146 |      35 |     1.2417 |   36.2417 |
+        | APPLE INC         | 0.0016 | 0.0031 | 0.0057 |      43 |     1.2167 |   35.7167 |
+        | BOEING CO         | 0.0065 | 0.0091 | 0.0105 |      20 |     1.1972 |   37.4472 |
+        | INTEL CORPORATION | 0.0074 | 0.0118 | 0.0157 |      35 |     1.2222 |   36.2222 |
         """
         maturities = [
             float(value) for value in helpers.split_values(maturity_years)

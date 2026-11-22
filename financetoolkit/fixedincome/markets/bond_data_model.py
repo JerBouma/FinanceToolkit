@@ -85,31 +85,6 @@ def parse_bond_name(name: str) -> dict | None:
     }
 
 
-def cusip_to_isin(cusip: str) -> str:
-    """
-    The ISIN of a US security from its CUSIP: "US", the CUSIP and a check digit (ISO 6166).
-
-    Args:
-        cusip (str): The nine-character CUSIP.
-
-    Returns:
-        str: The ISIN, or an empty string when the CUSIP is not nine characters.
-    """
-    cusip = str(cusip or "").strip().upper()
-    if len(cusip) != 9:  # noqa: PLR2004
-        return ""
-
-    # Letters count as 10 to 35; the digits are then doubled from the right, every other
-    # one, and the digits of the result summed (the Luhn algorithm).
-    digits = "".join(str(int(character, 36)) for character in f"US{cusip}")
-    total = 0
-    for position, digit in enumerate(reversed(digits)):
-        value = int(digit) * (2 if position % 2 == 0 else 1)
-        total += value // 10 + value % 10
-
-    return f"US{cusip}{(10 - total % 10) % 10}"
-
-
 def exclusion_reason(name: str, maturity: date | None = None) -> str | None:
     """
     The reason a holding is left out of the yield calculations, if any.

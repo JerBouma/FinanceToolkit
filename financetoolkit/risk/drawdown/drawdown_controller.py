@@ -6,6 +6,7 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.drawdown import drawdown_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -18,7 +19,7 @@ from financetoolkit.utilities.statistics_model import finalize_dataset
 @track_sources
 class DrawdownRisk:
     """
-    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series and table, the conditional drawdown at risk, the ulcer index and the pain index.
+    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series, table and statistics, the average drawdown, the drawdown at risk and its conditional and entropic versions, the ulcer index and the pain index.
     """
 
     @handle_portfolio
@@ -33,6 +34,7 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        compounded: bool = True,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -53,8 +55,18 @@ class DrawdownRisk:
 
         Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), the
         quantile interpolates linearly, and Wealth starts at 1, so a decline from the start of the window counts.
+        With compounded=False the drawdowns are measured on the summed returns instead, as an absolute decline
+        from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)), the
+        uncompounded drawdown of Chekhlov, Uryasev and Zabarankin (2005).
 
-        Also known as: CDaR.
+        For more information, see the following sources:
+
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
+        International Journal of Theoretical and Applied Finance, 8(1), 13-58.
+        - riskfolio-lib: RiskFunctions.CDaR_Rel and RiskFunctions.CDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.cdar (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: CDaR, uncompounded CDaR, absolute CDaR.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -75,6 +87,8 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -87,6 +101,10 @@ class DrawdownRisk:
         - The method retrieves historical return data based on the specified `period` and calculates CDaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of CDaR values using the specified `lag`.
+        - riskfolio-lib's CDaR_Rel and CDaR_Abs and skfolio's cdar take the exact tail average of Rockafellar and
+        Uryasev (2002), which counts the drawdown at the boundary with a fraction, and report the loss as a
+        positive number; the Toolkit averages the drawdowns up to the interpolated quantile, as its historic
+        CVaR does, which differs from them by up to 2e-4 on three years of daily returns.
 
         As an example:
 
@@ -139,14 +157,14 @@ class DrawdownRisk:
             returns = self._historical_data[period]["Return"]
             conditional_drawdown_at_risk = (
                 risk_model.get_rolling_conditional_drawdown_at_risk(
-                    returns, alpha, rolling
+                    returns, alpha, rolling, compounded=compounded
                 )
             )
         else:
             returns = self._get_returns(period, within_period)
 
             conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
-                returns, alpha
+                returns, alpha, compounded=compounded
             )
 
         if rolling or within_period:
@@ -169,6 +187,259 @@ class DrawdownRisk:
 
     @handle_portfolio
     @handle_errors
+    def get_drawdown_at_risk(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        compounded: bool = True,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Drawdown at Risk (DaR) of an investment portfolio or asset's returns.
+
+        The Drawdown at Risk is the Value at Risk of the drawdown series: the depth below the running peak
+        that the asset was at or beyond in only an alpha share of the periods (5% for the default alpha). Where
+        the Maximum Drawdown rests on the single worst moment of the sample, the DaR describes how deep the
+        drawdowns usually get in bad times, and the Conditional Drawdown at Risk (`get_conditional_drawdown_at_risk`)
+        averages the drawdowns beyond it. Chekhlov, Uryasev and Zabarankin (2005) introduced it as a constraint
+        for portfolio optimization: a fund manager whose clients leave after a deep drawdown cares about how
+        often the portfolio is far below its high, not only about its volatility.
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - DaR = Quantile(Drawdown, alpha)
+
+        Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), the
+        quantile interpolates linearly, and Wealth starts at 1, so a decline from the start of the window
+        counts. With compounded=False the drawdowns are measured on the summed returns instead, as an absolute
+        decline from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ
+        Return(s)). The result is a negative decimal (0 when the asset was at a high in more than 1 - alpha of
+        the periods).
+
+        For more information, see the following sources:
+
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
+        International Journal of Theoretical and Applied Finance, 8(1), 13-58.
+        - riskfolio-lib: RiskFunctions.DaR_Rel and RiskFunctions.DaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.drawdown_at_risk (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: DaR, drawdown quantile, uncompounded DaR, absolute DaR.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            alpha (float, optional): The tail probability for the DaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
+            within_period (bool, optional): Whether to calculate the DaR within the specified period or for the
+            entire period. Thus whether to look at the DaR within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the DaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`, every window starting from a wealth of 1. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the DaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: DaR values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the DaR
+        for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of DaR values using the specified `lag`.
+        - riskfolio-lib's DaR_Rel and DaR_Abs and skfolio's drawdown_at_risk take the order statistic at
+        ceil(alpha * n) of the sorted drawdowns instead of the interpolated quantile and report the drawdown
+        as a positive number; on three years of daily returns they differ by up to 1e-3.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["^STOXX50E", "^N225", "^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_drawdown_at_risk(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |   ^STOXX50E |   ^N225 |   ^GSPC |   Benchmark |
+        |:-----|------------:|--------:|--------:|------------:|
+        | 2021 |     -0.0527 | -0.0947 | -0.0385 |     -0.0375 |
+        | 2022 |     -0.2303 | -0.1148 | -0.2335 |     -0.2244 |
+        | 2023 |     -0.0821 | -0.0687 | -0.0715 |     -0.0693 |
+        | 2024 |     -0.07   | -0.1379 | -0.0445 |     -0.0433 |
+        | 2025 |     -0.077  | -0.1335 | -0.1164 |     -0.1122 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        drawdown_at_risk = drawdown_model.get_drawdown_at_risk(
+            returns, alpha=alpha, compounded=compounded, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            drawdown_at_risk,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_entropic_drawdown_at_risk(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        compounded: bool = True,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Entropic Drawdown at Risk (EDaR) of an investment portfolio or asset's returns.
+
+        The Entropic Drawdown at Risk is the historic Entropic Value at Risk (see `get_entropic_value_at_risk`
+        with distribution="historic") of the drawdown series: the tightest bound on the drawdowns that follows
+        from the Chernoff inequality. It is at least as severe as the Drawdown at Risk and the Conditional
+        Drawdown at Risk at the same alpha and at most as severe as the Maximum Drawdown, and as a coherent
+        risk measure it is the drawdown counterpart of the EVaR in Cajas' (2021) entropic portfolio
+        optimization. It weighs the deepest drawdowns more than the CDaR does, without resting on the single
+        worst moment as the Maximum Drawdown does.
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - EDaR = -inf over z > 0 of z * ln(mean(exp(-Drawdown(t) / z)) / alpha)
+
+        Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), and
+        Wealth starts at 1, so a decline from the start of the window counts. The bound is minimized over the
+        risk aversion z numerically (on the logarithm of 1 / z, with scipy's brentq). With compounded=False
+        the drawdowns are measured on the summed returns instead, as an absolute decline from their peak
+        (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)). The result is a
+        negative decimal.
+
+        For more information, see the following sources:
+
+        - Cajas, D. (2021). "Entropic Portfolio Optimization: a Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
+        Optimization Theory and Applications, 155(3), 1105-1123.
+        - riskfolio-lib: RiskFunctions.EDaR_Rel and RiskFunctions.EDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.edar (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: EDaR, entropic drawdown, uncompounded EDaR, absolute EDaR.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            alpha (float, optional): The tail probability for the EDaR calculation (e.g., 0.05 for the 95%
+            confidence level). Defaults to 0.05.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
+            within_period (bool, optional): Whether to calculate the EDaR within the specified period or for the
+            entire period. Thus whether to look at the EDaR within a specific year (if period = 'yearly') or look
+            at the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the EDaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`, every window starting from a wealth of 1. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the EDaR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: EDaR values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the EDaR
+        for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of EDaR values using the specified `lag`.
+        - Equals riskfolio-lib's EDaR_Rel and EDaR_Abs and skfolio's edar, which report the drawdown as a
+        positive number.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["^STOXX50E", "^N225", "^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_entropic_drawdown_at_risk(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |   ^STOXX50E |   ^N225 |   ^GSPC |   Benchmark |
+        |:-----|------------:|--------:|--------:|------------:|
+        | 2021 |     -0.0676 | -0.1046 | -0.0453 |     -0.0446 |
+        | 2022 |     -0.2426 | -0.1427 | -0.2474 |     -0.2382 |
+        | 2023 |     -0.0947 | -0.0864 | -0.0902 |     -0.0874 |
+        | 2024 |     -0.0911 | -0.2002 | -0.0702 |     -0.0695 |
+        | 2025 |     -0.1374 | -0.184  | -0.1606 |     -0.1592 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        entropic_drawdown_at_risk = drawdown_model.get_entropic_drawdown_at_risk(
+            returns, alpha=alpha, compounded=compounded, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            entropic_drawdown_at_risk,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_maximum_drawdown(
         self,
         period: str | None = None,
@@ -177,6 +448,8 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        compounded: bool = True,
+        rolling: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -201,9 +474,24 @@ class DrawdownRisk:
         - Maximum Drawdown = min(Drawdown(t))
 
         Wealth starts at 1, so a decline from the start of the window counts as well, and the result is a
-        negative decimal (0 when the value never fell below a previous high).
+        negative decimal (0 when the value never fell below a previous high). With compounded=False the
+        drawdowns are measured on the summed returns, as an absolute decline from their peak
+        (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)), which is the
+        Maximum Drawdown of Chekhlov, Uryasev and Zabarankin (2005) and riskfolio-lib's MDD_Abs. With
+        `rolling`, every window starts from a wealth of 1 at its first return, so it is the deepest decline
+        within the trailing window.
 
-        Also known as: max drawdown, peak-to-trough decline.
+        For more information, see the following sources:
+
+        - Magdon-Ismail, M. and Atiya, A.F. (2004). "Maximum Drawdown." Risk Magazine, 17(10), 99-102.
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
+        International Journal of Theoretical and Applied Finance, 8(1), 13-58.
+        - empyrical: max_drawdown and roll_max_drawdown (https://github.com/stefan-jansen/empyrical-reloaded).
+        - riskfolio-lib: RiskFunctions.MDD_Rel and RiskFunctions.MDD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.max_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: max drawdown, peak-to-trough decline, rolling maximum drawdown, uncompounded drawdown,
+        absolute drawdown.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -221,6 +509,11 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Maximum
+            Drawdown is calculated over a rolling window of this many periods across the full return history
+            instead of per `period` (e.g. the deepest decline of the last 252 days). Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -237,6 +530,8 @@ class DrawdownRisk:
         new high, even if prices fell within a year. Use period="daily" for the deepest decline, or
         within_period=True for the deepest decline within each year.
         - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
+        - Equals empyrical's max_drawdown and roll_max_drawdown, riskfolio-lib's MDD_Rel and MDD_Abs and skfolio's
+        max_drawdown, which report the decline as a positive number.
 
         As an example:
 
@@ -264,45 +559,19 @@ class DrawdownRisk:
         | 2025 | -0.3416 | -0.3073 | -0.3088 |     -0.1877 |
         """
         period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-        if growth and not within_period:
-            raise ValueError(
-                "Growth calculations need one value per period, while "
-                "within_period=False produces a single value for the entire period. "
-                "Set within_period=True to calculate growth."
-            )
+        maximum_drawdown = drawdown_model.get_maximum_drawdown(
+            returns, compounded=compounded, window_size=rolling
+        )
 
-        returns = self._get_returns(period, within_period)
-
-        maximum_drawdown = risk_model.get_max_drawdown(returns)
-
-        if within_period:
-            maximum_drawdown = maximum_drawdown.loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=maximum_drawdown,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
+        return self._finalize_measure(
+            maximum_drawdown,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )
 
     @handle_portfolio
@@ -824,6 +1093,117 @@ class DrawdownRisk:
 
         return drawdown_table
 
+    @handle_errors
+    def get_drawdown_statistics(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Summarize the drawdowns of each asset: how many there were, how deep they were on average, how much
+        their depth varied and how long they took to reach the bottom and to recover.
+
+        Where the drawdown table (`get_drawdown_table`) lists the largest drawdowns one by one, the statistics
+        average over all of them, which is what Bacon (2008) uses to describe the drawdown risk of a fund: a
+        manager with many shallow drawdowns that recover quickly and one with a few deep, long ones can have the
+        same Maximum Drawdown.
+
+        The formula is as follows:
+
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - Average Drawdown = Σ Drawdown(j) / d
+        - Drawdown Deviation = √(Σ Drawdown(j)^2 / n)
+        - Average To Trough = Σ (t(trough, j) - t(peak, j)) / d
+        - Average To Recovery = Σ (t(recovery, j) - t(trough, j)) / d_recovered
+        - Average Length = Σ (t(recovery, j) - t(peak, j)) / d_recovered
+
+        Where Drawdown(j) is the depth (the lowest Drawdown) of the j-th of the d drawdowns of
+        `get_drawdown_table`, n the number of returns and d_recovered the number of drawdowns that recovered
+        before the end of the window. The lengths count periods (trading days for daily data) and Average Length
+        (Days) the calendar days from peak to recovery. Average Drawdown is negative, Drawdown Deviation positive.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley & Sons,
+        2nd edition.
+        - PerformanceAnalytics (R): AverageDrawdown, DrawdownDeviation, AverageLength and AverageRecovery
+        (https://github.com/braverock/PerformanceAnalytics).
+        - ffn: PerformanceStats.avg_drawdown and avg_drawdown_days (https://github.com/pmorissette/ffn).
+
+        Also known as: drawdown summary, average drawdown, drawdown deviation, average drawdown length, average
+        recovery time, average drawdown days.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per ticker with the number of Drawdowns, the Average Drawdown, the Drawdown
+                Deviation, the Average To Trough, Average To Recovery and Average Length in periods and the
+                Average Length (Days) in calendar days.
+
+        Notes:
+        - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
+        - The Average Drawdown and Drawdown Deviation equal PerformanceAnalytics' AverageDrawdown and
+        DrawdownDeviation (which report the average as a positive number), and the Average Drawdown equals
+        ffn's avg_drawdown. A drawdown that has not recovered by the end of the window has no recovery, so it
+        is left out of the Average To Recovery and Average Length; PerformanceAnalytics' AverageRecovery and
+        AverageLength count it as recovered one period after the end. ffn's avg_drawdown_days counts calendar
+        days from the first day below the peak, Average Length (Days) from the peak itself.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["META", "NFLX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_drawdown_statistics().T
+        ```
+
+        Which returns:
+
+        |                       |    META |    NFLX |   Benchmark |
+        |:----------------------|--------:|--------:|------------:|
+        | Drawdowns             | 39      | 30      |     87      |
+        | Average Drawdown      | -0.072  | -0.0735 |     -0.0174 |
+        | Drawdown Deviation    |  0.0267 |  0.0249 |      0.0101 |
+        | Average To Trough     | 15.5641 | 15      |      5.977  |
+        | Average To Recovery   | 15.3684 | 25.931  |      7.3372 |
+        | Average Length        | 29.4737 | 37.5172 |     13.3372 |
+        | Average Length (Days) | 42.7895 | 54.7241 |     19.3605 |
+        """
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        # The first row holds the first close of the window, see get_drawdown_series.
+        returns = self._historical_data[period]["Return"]
+
+        drawdown_statistics = drawdown_model.get_drawdown_statistics(returns)
+        decimals = rounding if rounding is not None else self._rounding
+
+        return (
+            drawdown_statistics.round(decimals)
+            if decimals is not None
+            else drawdown_statistics
+        )
+
     @handle_portfolio
     @handle_errors
     def get_ulcer_index(
@@ -834,6 +1214,7 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        compounded: bool = True,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -865,7 +1246,16 @@ class DrawdownRisk:
         divided by the Ulcer Index) and is read best relative to peers over the same window, since the
         default 14-period lookback gives lower values than a since-inception high-water mark.
 
-        Also known as: UI, drawdown risk.
+        With compounded=False the drawdowns are the absolute declines of 1 plus the summed returns from their
+        high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; with
+        rolling=None this is riskfolio-lib's UCI_Abs.
+
+        For more information, see the following sources:
+
+        - Martin, P.G. and McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John Wiley & Sons.
+        - riskfolio-lib: RiskFunctions.UCI_Rel and RiskFunctions.UCI_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: UI, drawdown risk, uncompounded ulcer index.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -882,6 +1272,8 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns
+                are measured on, or to sum them (absolute drawdowns). Defaults to True.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -931,7 +1323,7 @@ class DrawdownRisk:
 
         returns = self._within_historical_data[period]["Return"]
 
-        ulcer_index = risk_model.get_ui(returns, rolling)
+        ulcer_index = risk_model.get_ui(returns, rolling, compounded=compounded)
 
         ulcer_index = ulcer_index.loc[self._start_date : self._end_date]
 
@@ -1068,4 +1460,143 @@ class DrawdownRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_average_drawdown(
+        self,
+        period: str | None = None,
+        method: str = "episode",
+        compounded: bool = True,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Average Drawdown of an investment portfolio or asset's returns.
+
+        The Average Drawdown has two definitions. Bacon (2008), PerformanceAnalytics and ffn average the depth
+        of the drawdown episodes: every decline from a high until the asset is back at it counts once, with its
+        deepest point. Chekhlov, Uryasev and Zabarankin (2005), riskfolio-lib and skfolio average the drawdown
+        of every period instead, the periods at a high counting as 0, which weighs a drawdown by how long it
+        lasted (the Pain Index, `get_pain_index`, is that average per year as a positive number). The episode
+        average says how deep a typical setback is, the period average how far below its high the asset
+        typically was. Both are less dominated by a single crash than the Maximum Drawdown.
+
+        The formula is as follows (with the default method="episode"):
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - Average Drawdown = Σ Trough(j) / d
+
+        Where Trough(j) is the lowest Drawdown of the j-th of the d episodes below a high (one that has not
+        recovered by the end of the window included). With method="observation":
+
+        - Average Drawdown = Σ Drawdown(t) / n
+
+        Where n is the number of returns. Wealth starts at 1, so a decline from the start of the window counts.
+        With compounded=False the drawdowns are measured on the summed returns instead, as an absolute decline
+        from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)).
+        The result is a negative decimal (0 when the value never fell below a previous high).
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley & Sons,
+        2nd edition.
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
+        International Journal of Theoretical and Applied Finance, 8(1), 13-58.
+        - PerformanceAnalytics (R): AverageDrawdown (https://github.com/braverock/PerformanceAnalytics).
+        - ffn: PerformanceStats.avg_drawdown (https://github.com/pmorissette/ffn).
+        - riskfolio-lib: RiskFunctions.ADD_Rel and RiskFunctions.ADD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.average_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: ADD, average drawdown depth, mean drawdown, uncompounded average drawdown.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            method (str, optional): "episode" for the average depth of the drawdown episodes or "observation"
+            for the average drawdown of every period. Defaults to "episode".
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
+            within_period (bool, optional): Whether to calculate the Average Drawdown within the specified period
+            or for the entire period. Thus whether to look at the Average Drawdown within a specific year (if
+            period = 'yearly') or look at the entirety of all years. Defaults to False. Note that this requires
+            intraday data when period = 'daily', since a single day only nests observations when intraday data
+            was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Average
+            Drawdown is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`, every window starting from a wealth of 1. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Average Drawdown values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Average Drawdown values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the Average
+        Drawdown for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of the Average Drawdown values using the
+        specified `lag`.
+        - method="episode" equals PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
+        riskfolio-lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
+        libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
+        geometric=FALSE divides the decline of 1 + the summed returns by its peak, where compounded=False here
+        (and in riskfolio-lib and skfolio) takes the absolute decline.
+        - The Sterling Ratio of `toolkit.performance` averages only the periods below a high, a third variant.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSLA", "GM", "F"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_average_drawdown(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    TSLA |      GM |       F |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 | -0.1491 | -0.0916 | -0.0589 |     -0.0128 |
+        | 2022 | -0.7272 | -0.5304 | -0.2025 |     -0.245  |
+        | 2023 | -0.1077 | -0.0943 | -0.13   |     -0.0164 |
+        | 2024 | -0.1443 | -0.0581 | -0.0914 |     -0.0129 |
+        | 2025 | -0.1155 | -0.0296 | -0.0561 |     -0.0195 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        average_drawdown = drawdown_model.get_average_drawdown(
+            returns, method=method, compounded=compounded, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            average_drawdown,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )

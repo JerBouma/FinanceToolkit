@@ -177,12 +177,21 @@ class ValueAtRiskRisk:
         - z_cf = z + (z^2 - 1) * S / 6 + (z^3 - 3 * z) * K / 24 - (2 * z^3 - 5 * z) * S^2 / 36
         - Student-T VaR = Location + Scale * t_v^-1(alpha)
         - EVT VaR = -(u + (Scale_GPD / xi) * ((alpha / p)^(-xi) - 1))
+        - Kernel VaR solves mean(Φ((VaR - Return_i) / h)) = alpha, with h = Std * (4 / (3 * n))^(1/5)
 
         Where z is the standard normal quantile at alpha, Std the sample standard deviation (ddof=1), S the
         sample skewness and K the sample excess kurtosis. The Student-T degrees of freedom v, Location and Scale
         are fitted by maximum likelihood. For "evt", u is the loss at `threshold_percentile`, xi and Scale_GPD the
         shape and scale of the Generalized Pareto Distribution fitted to the losses above it and p the fraction of
-        losses above it.
+        losses above it. The kernel VaR is the alpha quantile of a Gaussian kernel density of the n returns with
+        Silverman's bandwidth h, a smoothed historical quantile (Gourieroux, Laurent and Scaillet 2000), and Φ the
+        standard normal distribution function.
+
+        For more information about the kernel VaR, see the following sources:
+
+        - Gourieroux, C., Laurent, J.P. and Scaillet, O. (2000). "Sensitivity Analysis of Values at Risk."
+        Journal of Empirical Finance, 7(3-4), 225-245.
+        - Silverman, B.W. (1986). "Density Estimation for Statistics and Data Analysis." Chapman and Hall.
 
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
@@ -208,10 +217,11 @@ class ValueAtRiskRisk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             distribution (str): The distribution to use for the VaR calculations (historic, gaussian,
-            cornish-fisher, studentt or evt). Defaults to "historic". The parametric distributions use the
+            cornish-fisher, studentt, evt or kernel). Defaults to "historic". The parametric distributions use the
             sample standard deviation; "cornish-fisher" adjusts the gaussian quantile for the skewness and
-            excess kurtosis of the returns (see `var_model.get_var_cornish_fisher`) and "studentt" uses the
-            quantile of a Student-T distribution fitted by maximum likelihood.
+            excess kurtosis of the returns (see `var_model.get_var_cornish_fisher`), "studentt" uses the
+            quantile of a Student-T distribution fitted by maximum likelihood and "kernel" the quantile of a
+            Gaussian kernel density of the returns.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
@@ -229,6 +239,9 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates VaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
+        - The kernel VaR equals the quantile of scipy's gaussian_kde with bw_method="silverman". It differs
+        from PerformanceAnalytics' VaR(method="kernel"), which is the kernel estimator of the component VaR of
+        Epperlein and Smillie (2006) and is not defined for a single asset.
 
         As an example:
 
@@ -302,10 +315,12 @@ class ValueAtRiskRisk:
                 value_at_risk = var_model.get_var_evt(
                     returns, alpha, threshold_percentile
                 )
+            elif distribution == "kernel":
+                value_at_risk = var_model.get_var_kernel(returns, alpha)
             else:
                 raise ValueError(
-                    "Distribution must be historic, gaussian, cornish-fisher, studentt "
-                    "or evt."
+                    "Distribution must be historic, gaussian, cornish-fisher, studentt, "
+                    "evt or kernel."
                 )
 
         if rolling or within_period:
@@ -329,7 +344,7 @@ class ValueAtRiskRisk:
     def get_conditional_value_at_risk(
         self,
         period: str | None = None,
-        alpha: float = 0.05,
+        alpha: float | list[float] = 0.05,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -338,6 +353,7 @@ class ValueAtRiskRisk:
         standardize: bool = False,
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
+        alpha_weights: list[float] | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -373,18 +389,41 @@ class ValueAtRiskRisk:
         - Logistic CVaR = Mean - s * ln((1 - alpha)^(1 - 1 / alpha) / alpha), with s = Std * √3 / π
         - Cornish-Fisher CVaR = Mean of (Mean + z_cf(p) * Std) over 1,000 evenly spaced p in (0, alpha)
         - EVT CVaR = -(VaR_loss + Scale_GPD - xi * u) / (1 - xi)
+        - Kernel CVaR = mean(Return_i * Φ(u_i) - h * φ(u_i)) / alpha, with u_i = (VaR_kernel - Return_i) / h
 
         Where the Student-T v, Location and Scale are fitted by maximum likelihood (NaN for v <= 1), z_cf is the
         Cornish-Fisher quantile of `get_value_at_risk`, and u, xi, Scale_GPD and VaR_loss are the loss threshold,
-        the fitted Generalized Pareto shape and scale and the EVT VaR as a positive loss (NaN for xi >= 1).
+        the fitted Generalized Pareto shape and scale and the EVT VaR as a positive loss (NaN for xi >= 1). The
+        kernel CVaR is the mean return below the kernel VaR of `get_value_at_risk` under a Gaussian kernel
+        density of the returns with Silverman's bandwidth h = Std * (4 / (3 * n))^(1/5) (Scaillet 2004), with Φ
+        and φ the standard normal distribution and density.
 
-        Also known as: CVaR, expected shortfall, ES, tail risk.
+        With a list of tail probabilities in `alpha`, the result is the Weighted Conditional Value at Risk,
+        the weighted sum of the CVaR at each of them:
+
+        - Weighted CVaR = Σ_k Weight_k * CVaR(alpha_k)
+
+        With non-negative weights that sum to 1 this is a spectral risk measure (Acerbi 2002): it weighs the
+        worst returns more than the CVaR at the largest alpha does, and any weighting of the tail can be built
+        from enough tail probabilities. Each CVaR uses the chosen `distribution`.
+
+        For more information, see the following sources:
+
+        - Acerbi, C. (2002). "Spectral Measures of Risk: A Coherent Representation of Subjective Risk
+        Aversion." Journal of Banking & Finance, 26(7), 1505-1518.
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
+        SSRN Electronic Journal.
+        - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected Shortfall."
+        Mathematical Finance, 14(1), 115-129.
+        - riskfolio-lib: OwaWeights.owa_wcvar (the Weighted CVaR, https://github.com/dcajasn/Riskfolio-Lib).
+
+        Also known as: CVaR, expected shortfall, ES, tail risk, weighted CVaR, WCVaR, spectral risk measure.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            alpha (float, optional): The tail probability for the CVaR calculation (e.g., 0.05 for the 95%
-            confidence level). Defaults to 0.05.
+            alpha (float | list[float], optional): The tail probability for the CVaR calculation (e.g., 0.05 for
+            the 95% confidence level), or a list of them for the Weighted CVaR. Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
             period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
@@ -402,12 +441,14 @@ class ValueAtRiskRisk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace,
-            logistic, cornish-fisher or evt). Defaults to "historic".
+            logistic, cornish-fisher, evt or kernel). Defaults to "historic".
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
             The fit needs at least 10 losses above the threshold (about 200 returns at 0.95); a period
             with fewer is NaN, with a logged warning. Defaults to 0.95.
+            alpha_weights (list[float] | None, optional): The weight of the CVaR at each tail probability in `alpha`,
+            non-negative and summing to 1. Defaults to None, which weighs every tail probability equally.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -420,6 +461,14 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates CVaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of CVaR values using the specified `lag`.
+        - riskfolio-lib's Weighted CVaR applies the ordered weighted average weights of its CVaR, the exact
+        tail average of Rockafellar and Uryasev (2002) that counts the return at the boundary with a fraction,
+        where the historic CVaR here averages the returns up to the interpolated quantile; the weighted sum is
+        the same, so the two differ by the difference of the CVaR estimators. riskfolio-lib reports the loss
+        as a positive number, the Toolkit as a return.
+        - The kernel CVaR equals the mean below the quantile of scipy's gaussian_kde with
+        bw_method="silverman". PerformanceAnalytics' ES(method="kernel") is defined for the component
+        Expected Shortfall of a portfolio only.
 
         As an example:
 
@@ -474,37 +523,51 @@ class ValueAtRiskRisk:
                 "path under one of the parametric distributions instead."
             )
 
+        estimators = {
+            "historic": cvar_model.get_cvar_historic,
+            "gaussian": cvar_model.get_cvar_gaussian,
+            "studentt": cvar_model.get_cvar_studentt,
+            "laplace": cvar_model.get_cvar_laplace,
+            "logistic": cvar_model.get_cvar_logistic,
+            "cornish-fisher": cvar_model.get_cvar_cornish_fisher,
+            "evt": functools.partial(
+                cvar_model.get_cvar_evt, threshold_percentile=threshold_percentile
+            ),
+            "kernel": cvar_model.get_cvar_kernel,
+        }
+
+        if distribution not in estimators:
+            raise ValueError(
+                "Distribution must be historic, gaussian, studentt, laplace, "
+                "logistic, cornish-fisher, evt or kernel."
+            )
+
+        alphas = alpha if isinstance(alpha, list | tuple) else [alpha]
+
         if rolling:
             returns = self._historical_data[period]["Return"]
-            conditional_value_at_risk = cvar_model.get_rolling_cvar_historic(
-                returns, alpha, rolling
-            )
+            conditional_values_at_risk = [
+                cvar_model.get_rolling_cvar_historic(returns, tail, rolling)
+                for tail in alphas
+            ]
         else:
             returns = self._get_returns(period, within_period)
+            conditional_values_at_risk = [
+                estimators[distribution](returns, tail) for tail in alphas
+            ]
 
-            if distribution == "historic":
-                conditional_value_at_risk = cvar_model.get_cvar_historic(returns, alpha)
-            elif distribution == "gaussian":
-                conditional_value_at_risk = cvar_model.get_cvar_gaussian(returns, alpha)
-            elif distribution == "studentt":
-                conditional_value_at_risk = cvar_model.get_cvar_studentt(returns, alpha)
-            elif distribution == "laplace":
-                conditional_value_at_risk = cvar_model.get_cvar_laplace(returns, alpha)
-            elif distribution == "logistic":
-                conditional_value_at_risk = cvar_model.get_cvar_logistic(returns, alpha)
-            elif distribution == "cornish-fisher":
-                conditional_value_at_risk = cvar_model.get_cvar_cornish_fisher(
-                    returns, alpha
-                )
-            elif distribution == "evt":
-                conditional_value_at_risk = cvar_model.get_cvar_evt(
-                    returns, alpha, threshold_percentile
-                )
-            else:
-                raise ValueError(
-                    "Distribution must be historic, gaussian, studentt, laplace, "
-                    "logistic, cornish-fisher or evt."
-                )
+        conditional_value_at_risk = (
+            conditional_values_at_risk[0]
+            if not isinstance(alpha, list | tuple) and alpha_weights is None
+            else cvar_model.get_weighted_cvar(
+                conditional_values_at_risk,
+                (
+                    alpha_weights
+                    if alpha_weights is not None
+                    else [1 / len(alphas)] * len(alphas)
+                ),
+            )
+        )
 
         if rolling or within_period:
             conditional_value_at_risk = conditional_value_at_risk.loc[
@@ -535,6 +598,8 @@ class ValueAtRiskRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        distribution: str = "gaussian",
+        rolling: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -545,10 +610,12 @@ class ValueAtRiskRisk:
         level. EVaR is obtained from the Chernoff inequality. It provides insights into the downside risk
         associated with an investment and helps investors make informed decisions about risk tolerance.
 
-        The EVaR is calculated under the assumption that returns are normally distributed, for which the
-        Chernoff bound has a closed form.
+        By default the EVaR is calculated under the assumption that returns are normally distributed, for
+        which the Chernoff bound has a closed form. With distribution="historic" it uses the empirical moment
+        generating function of the returns instead, so it reflects their skewness and fat tails and always
+        lies between the historical CVaR and the worst return.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default distribution="gaussian" and alpha=0.05):
 
         - EVaR = Mean - Std * √(-2 * ln(alpha))
 
@@ -556,14 +623,23 @@ class ValueAtRiskRisk:
         deviation (ddof=1). It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
         Since it only uses the mean and the standard deviation of the returns, it does not reflect their
         skewness or fat tails, and at high confidence levels it can be less severe than the historical CVaR
-        of an asset with heavy tails.
+        of an asset with heavy tails. With distribution="historic":
 
-        For more information about the method, see the following paper:
+        - EVaR = -inf over z > 0 of z * ln(mean(exp(-Return_i / z)) / alpha)
+
+        Where z is the risk aversion of the entropic risk measure (see `get_entropic_risk_measure`), the
+        bound is minimized over it numerically (on the logarithm of 1 / z, with scipy's brentq) and the mean
+        runs over the n returns. When the worst return holds a share of the returns of at least alpha (for
+        instance fewer than 20 returns at alpha=0.05), the EVaR is that worst return.
+
+        For more information about the method, see the following sources:
 
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
+        - riskfolio-lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.evar (https://skfolio.org/api.html#module-skfolio.measures).
 
-        Also known as: EVaR.
+        Also known as: EVaR, historical EVaR, entropic VaR, Chernoff bound.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -571,7 +647,7 @@ class ValueAtRiskRisk:
             alpha (float, optional): The tail probability for the EVaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
-            period. Thus whether to look at the CVaR within a specific year (if period = 'yearly') or look at the entirety
+            period. Thus whether to look at the EVaR within a specific year (if period = 'yearly') or look at the entirety
             of all years. Defaults to False. Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -581,6 +657,11 @@ class ValueAtRiskRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            distribution (str, optional): "gaussian" for the closed form of normally distributed returns or
+            "historic" for the empirical moment generating function of the returns. Defaults to "gaussian".
+            rolling (int, optional): The rolling window size to use for the calculation. If set, EVaR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -593,6 +674,8 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates EVaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
+        - The historic EVaR equals riskfolio-lib's EVaR_Hist and skfolio's evar, which report the loss as a
+        positive number; the Toolkit keeps the sign of a return, as for the VaR and CVaR.
 
         As an example:
 
@@ -621,46 +704,147 @@ class ValueAtRiskRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-        if growth and not within_period:
-            raise ValueError(
-                "Growth calculations need one value per period, while "
-                "within_period=False produces a single value for the entire period. "
-                "Set within_period=True to calculate growth."
-            )
+        if distribution not in ["gaussian", "historic"]:
+            raise ValueError("Distribution must be gaussian or historic.")
 
-        returns = self._get_returns(period, within_period)
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
 
-        entropic_value_at_risk = evar_model.get_evar_gaussian(returns, alpha)
+        entropic_value_at_risk = (
+            evar_model.get_evar_historic(returns, alpha, window_size=rolling)
+            if distribution == "historic"
+            else evar_model.get_evar_gaussian(returns, alpha, window_size=rolling)
+        )
 
-        if within_period:
-            entropic_value_at_risk = entropic_value_at_risk.loc[
-                self._start_date : self._end_date
-            ]
+        return self._finalize_measure(
+            entropic_value_at_risk,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
 
-        return finalize_dataset(
-            dataset=entropic_value_at_risk,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
+    @handle_portfolio
+    @handle_errors
+    def get_entropic_risk_measure(
+        self,
+        period: str | None = None,
+        risk_aversion: float = 1.0,
+        alpha: float = 0.05,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Entropic Risk Measure (ERM) of an investment portfolio or asset's returns at a given
+        risk aversion.
+
+        The Entropic Risk Measure is the certainty equivalent loss of an investor with exponential utility,
+        shifted by the confidence level: by the Chernoff inequality the loss exceeds it with a probability of
+        at most alpha, whatever the risk aversion z. The Entropic Value at Risk is its smallest value over z
+        (see `get_entropic_value_at_risk` with distribution="historic"), so the ERM at any risk aversion is
+        at least as severe as the historic EVaR, and equal to it at the z that minimizes it. A z close to
+        the size of the returns (about 0.01 for daily returns) gives a value near the EVaR; a large z gives
+        a value dominated by z * ln(1 / alpha).
+
+        The formula is as follows (with the default risk_aversion=1 and alpha=0.05):
+
+        - ERM = -z * ln(mean(exp(-Return_i / z)) / alpha)
+
+        Where z is the risk aversion and the mean runs over the returns. The result is a return, negative
+        for a loss, as the VaR, CVaR and EVaR of the Toolkit are.
+
+        For more information, see the following sources:
+
+        - Föllmer, H. and Schied, A. (2002). "Convex Measures of Risk and Trading Constraints." Finance and
+        Stochastics, 6(4), 429-447.
+        - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
+        Optimization Theory and Applications, 155(3), 1105-1123.
+        - riskfolio-lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.entropic_risk_measure (https://skfolio.org/api.html#module-skfolio.measures).
+
+        Also known as: ERM, entropic risk, exponential utility risk measure.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            risk_aversion (float, optional): The risk aversion z, larger than 0, in the units of the returns.
+                Defaults to 1, the default of riskfolio-lib and skfolio.
+            alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
+                Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate the ERM within the specified period or for the
+            entire period. Thus whether to look at the ERM within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the ERM is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ERM values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: ERM values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the ERM
+        for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of ERM values using the specified `lag`.
+        - Equals riskfolio-lib's Entropic_RM and skfolio's entropic_risk_measure, which report the loss as a
+        positive number; the Toolkit keeps the sign of a return. The exponential average is taken in log
+        space (logsumexp), so a small risk aversion does not overflow.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GLD", "SLV", "USO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_entropic_risk_measure(period="yearly", within_period=True, risk_aversion=0.01)
+        ```
+
+        Which returns:
+
+        |      |     GLD |     SLV |     USO |   Benchmark |
+        |:-----|--------:|--------:|--------:|------------:|
+        | 2021 | -0.0349 | -0.0614 | -0.0871 |     -0.0326 |
+        | 2022 | -0.0345 | -0.0434 | -0.0922 |     -0.0423 |
+        | 2023 | -0.0329 | -0.0438 | -0.0502 |     -0.0323 |
+        | 2024 | -0.0346 | -0.0496 | -0.0448 |     -0.0329 |
+        | 2025 | -0.0444 | -0.0638 | -0.0612 |     -0.0429 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        entropic_risk_measure = evar_model.get_entropic_risk_measure(
+            returns, risk_aversion=risk_aversion, alpha=alpha, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            entropic_risk_measure,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )
 
     def _get_portfolio_weights(

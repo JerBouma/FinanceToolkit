@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.optimize import brentq
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
@@ -97,6 +98,95 @@ def get_var_gaussian(
     za = stats.norm.ppf(alpha, 0, 1)
 
     return returns.mean() + za * returns.std(ddof=1)
+
+
+def get_kernel_bandwidth(samples: np.ndarray) -> np.ndarray:
+    """
+    The bandwidth of a Gaussian kernel density of every row of returns, Silverman's (1986)
+    normal reference rule as scipy's gaussian_kde(bw_method="silverman") uses it:
+
+    - h = Std * (4 / (3 * n))^(1/5)
+
+    Where Std is the sample standard deviation (ddof=1) and n the number of returns.
+
+    Args:
+        samples (np.ndarray): The returns, one sample per row.
+
+    Returns:
+        np.ndarray: The bandwidth of every row.
+    """
+    return samples.std(axis=1, ddof=1) * (4 / (3 * samples.shape[1])) ** 0.2
+
+
+def get_var_kernel_samples(samples: np.ndarray, alpha: float) -> np.ndarray:
+    """
+    Calculate the kernel Value at Risk of every row of returns without missing values: the
+    alpha quantile of a Gaussian kernel density of the returns (see `get_kernel_bandwidth`),
+    the root of
+
+    - mean(Φ((VaR - Return_i) / h)) = alpha
+
+    Args:
+        samples (np.ndarray): The returns, one sample per row.
+        alpha (float): The tail probability, between 0 and 1.
+
+    Returns:
+        np.ndarray: The VaR of every row as a return, negative for a loss.
+    """
+    bandwidth = get_kernel_bandwidth(samples)
+    result = samples[:, 0].astype(float)
+
+    for row in np.flatnonzero(bandwidth > 0):
+        values, width = samples[row], bandwidth[row]
+        # The kernel distribution function is below alpha ten bandwidths under the lowest
+        # return and above it ten bandwidths over the highest.
+        result[row] = brentq(
+            lambda quantile, values=values, width=width: stats.norm.cdf(
+                (quantile - values) / width
+            ).mean()
+            - alpha,
+            values.min() - 10 * width,
+            values.max() + 10 * width,
+            xtol=1e-14,
+        )
+
+    return result
+
+
+def get_var_kernel(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the kernel Value at Risk (VaR) of returns: the alpha quantile of a Gaussian
+    kernel density estimate of the return distribution with Silverman's bandwidth, a
+    smoothed version of the historical quantile (Gourieroux, Laurent and Scaillet 2000).
+
+    The formula is as follows:
+
+    - VaR solves mean(Φ((VaR - Return_i) / h)) = alpha
+    - h = Std * (4 / (3 * n))^(1/5)
+
+    For more information see:
+
+    - Gourieroux, C., Laurent, J.P. and Scaillet, O. (2000). "Sensitivity Analysis of Values
+    at Risk." Journal of Empirical Finance, 7(3-4), 225-245.
+    - Silverman, B.W. (1986). "Density Estimation for Statistics and Data Analysis." Chapman
+    and Hall.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The VaR as a return, negative for a loss.
+    """
+    if not 0 < alpha < 1:
+        raise ValueError("Alpha must lie between 0 and 1.")
+
+    return risk_model.apply_to_observations(
+        returns, lambda samples: get_var_kernel_samples(samples, alpha)
+    )
 
 
 @by_own_trading_days

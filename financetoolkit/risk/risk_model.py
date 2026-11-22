@@ -66,6 +66,7 @@ def get_quantile(
 
 def get_wealth_and_peak(
     returns: pd.Series | pd.DataFrame,
+    compounded: bool = True,
 ) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
     """
     Compound returns into a wealth path and the running peak a drawdown is measured from.
@@ -76,14 +77,23 @@ def get_wealth_and_peak(
     the peak it would otherwise set. This matters most within a period, where every
     period's first return is a real one.
 
+    Without compounding the wealth is 1 plus the sum of the returns, so the difference
+    between it and its peak is the absolute (uncompounded) drawdown of riskfolio-lib and
+    skfolio.
+
     Args:
         returns (pd.Series | pd.DataFrame): The returns, missing returns counting as 0.
+        compounded (bool, optional): Whether to compound the returns. Defaults to True.
 
     Returns:
         tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]: The wealth path and
             its running peak.
     """
-    wealth = (1 + returns.fillna(0)).cumprod()
+    wealth = (
+        (1 + returns.fillna(0)).cumprod()
+        if compounded
+        else 1 + returns.fillna(0).cumsum()
+    )
 
     return wealth, wealth.cummax().clip(lower=1)
 
@@ -286,6 +296,7 @@ def get_ui(
     returns: pd.Series | pd.DataFrame,
     rolling: int | None = 14,
     method: str = "return",
+    compounded: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculates the Ulcer Index (UI), a measure of downside volatility.
@@ -327,6 +338,10 @@ def get_ui(
         input (the root mean squared drawdown of the levels), not the dimensionless
         index the name implies, so it is not comparable across assets/series with
         different scales. Defaults to "return".
+        compounded (bool, optional): Only for method="return". Whether to compound the
+        returns into the wealth path; without compounding the drawdowns are the absolute
+        declines of the summed returns from their peak (riskfolio-lib's UCI_Abs with
+        rolling=None). Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: UI values as a float if returns is a pd.Series, as
@@ -360,7 +375,11 @@ def get_ui(
             )
             drawdowns = returns - reference_max
         else:
-            cumulative_returns = per_period(1 + returns.fillna(0)).cumprod()
+            cumulative_returns = (
+                per_period(1 + returns.fillna(0)).cumprod()
+                if compounded
+                else 1 + per_period(returns.fillna(0)).cumsum()
+            )
 
             if rolling is None:
                 reference_max = per_period(cumulative_returns).cummax().clip(lower=1)
@@ -381,7 +400,9 @@ def get_ui(
                     lower=1
                 )
 
-            drawdowns = (cumulative_returns - reference_max) / reference_max
+            drawdowns = (cumulative_returns - reference_max) / (
+                reference_max if compounded else 1
+            )
 
         # The rows before a ticker's first and after its last return in a period are no observations of it.  # noqa: E501
         drawdowns = drawdowns.where(get_observed_span(returns, by_period=True))
@@ -401,7 +422,7 @@ def get_ui(
             )
             drawdowns = returns - reference_max
         else:
-            cumulative_returns, peak = get_wealth_and_peak(returns)
+            cumulative_returns, peak = get_wealth_and_peak(returns, compounded)
 
             if rolling is None:
                 reference_max = peak
@@ -415,7 +436,9 @@ def get_ui(
                     : max(rolling - 1, 0)
                 ].clip(lower=1)
 
-            drawdowns = (cumulative_returns - reference_max) / reference_max
+            drawdowns = (cumulative_returns - reference_max) / (
+                reference_max if compounded else 1
+            )
 
         # The rows before a ticker's first and after its last return (a later listing, a delisting) are no observations of it, see get_observed_span.  # noqa: E501
         drawdowns = drawdowns.where(get_observed_span(returns))
@@ -713,7 +736,10 @@ def get_volatility(
 
 @by_own_trading_days
 def get_conditional_drawdown_at_risk(
-    returns: pd.Series | pd.DataFrame, alpha: float, method: str = "return"
+    returns: pd.Series | pd.DataFrame,
+    alpha: float,
+    method: str = "return",
+    compounded: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Conditional Drawdown at Risk (CDaR) of returns.
@@ -732,6 +758,9 @@ def get_conditional_drawdown_at_risk(
         absolute drawdowns of the raw level series directly -- use this when
         `returns` is not a genuine percentage return (e.g. a series that can be zero
         or negative). Defaults to "return".
+        compounded (bool, optional): Only for method="return". Whether to compound the
+        returns; without compounding the drawdowns are the absolute declines of the summed
+        returns from their peak (riskfolio-lib's CDaR_Abs). Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: CDaR values as float if returns is a pd.Series,
@@ -752,7 +781,7 @@ def get_conditional_drawdown_at_risk(
 
         for sub_period in periods:
             period_data = get_conditional_drawdown_at_risk(
-                returns.loc[sub_period], alpha, method=method
+                returns.loc[sub_period], alpha, method=method, compounded=compounded
             )
             period_data.name = sub_period
 
@@ -766,8 +795,8 @@ def get_conditional_drawdown_at_risk(
     if method == "level":
         drawdowns = returns - returns.cummax()
     else:
-        wealth, peak = get_wealth_and_peak(returns)
-        drawdowns = wealth / peak - 1
+        wealth, peak = get_wealth_and_peak(returns, compounded)
+        drawdowns = wealth / peak - 1 if compounded else wealth - peak
 
     # The rows before a ticker's first and after its last return (a later listing, a delisting) are no observations of it, see get_observed_span.  # noqa: E501
     drawdowns = drawdowns.where(get_observed_span(returns))
@@ -841,6 +870,7 @@ def get_rolling_conditional_drawdown_at_risk(
     alpha: float,
     window_size: int,
     method: str = "return",
+    compounded: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the rolling Conditional Drawdown at Risk (CDaR) of returns.
@@ -859,6 +889,8 @@ def get_rolling_conditional_drawdown_at_risk(
         level values within each window directly -- use this when `returns` is not
         a genuine percentage return (e.g. a series that can be zero or negative).
         Defaults to "return".
+        compounded (bool, optional): Only for method="return". Whether to compound the
+        returns within each window. Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: Rolling CDaR values with time as index.
@@ -872,6 +904,12 @@ def get_rolling_conditional_drawdown_at_risk(
     def _cdar(windows):
         if method == "level":
             drawdowns = windows - np.maximum.accumulate(windows, axis=1)
+        elif not compounded:
+            cum_returns = np.cumsum(windows, axis=1)
+            # Each window starts from a sum of 0, see get_wealth_and_peak.
+            drawdowns = cum_returns - np.maximum(
+                np.maximum.accumulate(cum_returns, axis=1), 0
+            )
         else:
             cum_returns = np.cumprod(1 + windows, axis=1)
             # Each window starts from a wealth of 1, see get_wealth_and_peak.

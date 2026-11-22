@@ -8,11 +8,12 @@ from scipy.optimize import minimize
 from scipy.special import binom
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.value_at_risk import evar_model
 
 # The smallest tail probability of the Tail Gini's discretization, as in riskfolio-lib (Cajas 2021).
 TAIL_GINI_SMALLEST_ALPHA = 0.0001
 
-RANGE_MEASURES = ["range", "var", "cvar", "tail_gini"]
+RANGE_MEASURES = ["range", "var", "cvar", "tail_gini", "evar"]
 L_MOMENT_RISK_METHODS = ["msd", "mss", "crra"]
 
 # The order of the L-scale, the denominator of the L-moment ratios of order 3 and higher.
@@ -486,15 +487,18 @@ def get_risk_range(
         VaR Range = Quantile(Return, 1 - beta) - Quantile(Return, alpha)
         CVaR Range = mean(Return >= Quantile(Return, 1 - beta)) - mean(Return <= Quantile(Return, alpha))
         Tail Gini Range = -Tail Gini(-Return, beta) - Tail Gini(Return, alpha)
+        EVaR Range = -EVaR(-Return, beta) - EVaR(Return, alpha)
 
     The quantiles are interpolated linearly and the CVaR is the average of the returns
     beyond the quantile, as in the historic Value at Risk and Conditional Value at Risk of
-    the Toolkit; the Tail Gini is that of `get_tail_gini`.
+    the Toolkit; the Tail Gini is that of `get_tail_gini` and the EVaR the historic Entropic
+    Value at Risk of `evar_model.get_evar_historic`.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
-        measure (str, optional): "range", "var", "cvar" or "tail_gini". Defaults to "range".
+        measure (str, optional): "range", "var", "cvar", "tail_gini" or "evar". Defaults to
+            "range".
         alpha (float, optional): The tail probability of the losses. Defaults to 0.05.
         beta (float | None, optional): The tail probability of the gains. Defaults to None,
             which uses alpha.
@@ -506,7 +510,7 @@ def get_risk_range(
         pd.Series | pd.DataFrame | float: The range, a positive decimal.
     """
     if measure not in RANGE_MEASURES:
-        raise ValueError("Measure must be range, var, cvar or tail_gini.")
+        raise ValueError("Measure must be range, var, cvar, tail_gini or evar.")
 
     beta = alpha if beta is None else beta
 
@@ -519,6 +523,11 @@ def get_risk_range(
     def risk_range(samples: np.ndarray) -> np.ndarray:
         if measure == "range":
             return samples.max(axis=1) - samples.min(axis=1)
+
+        if measure == "evar":
+            return -evar_model.get_evar_samples(
+                -samples, beta
+            ) - evar_model.get_evar_samples(samples, alpha)
 
         if measure == "tail_gini":
             ordered = np.sort(samples, axis=1)

@@ -1691,3 +1691,39 @@ def test_get_volume_weighted_average_price_anchored(recorder, technical_module):
 def test_get_bollinger_bands_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands(moving_average="exponential"))
     recorder.capture(technical_module.get_bollinger_bands(moving_average="hull"))
+
+
+def test_get_candlestick_patterns(recorder, technical_module):
+    recorder.capture(technical_module.get_candlestick_patterns())
+    recorder.capture(
+        technical_module.get_candlestick_patterns(
+            patterns="belt-hold, Inside Bar", signals_only=True
+        )
+    )
+
+
+def test_get_heikin_ashi(recorder, technical_module):
+    recorder.capture(technical_module.get_heikin_ashi())
+    recorder.capture(technical_module.get_heikin_ashi(period="weekly"))
+
+
+def test_get_williams_fractal(recorder, technical_module):
+    recorder.capture(technical_module.get_williams_fractal())
+    recorder.capture(
+        technical_module.get_williams_fractal(
+            left_bars=3, right_bars=1, signals_only=True
+        )
+    )
+
+
+def test_williams_fractal_is_confirmed_after_the_right_bars(technical_module):
+    fractals = technical_module.get_williams_fractal(close_column="Close")
+    high = technical_module._historical_data["daily"]["High"]
+
+    ticker = high.columns[0]
+    confirmed = fractals["Up Fractal"][ticker].eq(1).to_numpy()
+    pivots = np.flatnonzero(confirmed) - 2
+    window = high[ticker].to_numpy()
+    for pivot in pivots:
+        neighbours = np.delete(window[pivot - 2 : pivot + 3], 2)
+        assert window[pivot] > neighbours.max()

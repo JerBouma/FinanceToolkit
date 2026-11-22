@@ -41,7 +41,7 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Recognise 15 classic candlestick patterns in every ticker's candles, with the definitions
+        Recognise 26 classic candlestick patterns in every ticker's candles, with the definitions
         of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
         period as one candle: the real body between the open and the close and the shadows up to
         the high and down to the low. Certain shapes and sequences are read as a sign that a move
@@ -50,8 +50,10 @@ class PatternTechnicals:
         Each pattern is 1 on the candle that completes it as a bullish pattern, -1 as a bearish
         pattern and 0 otherwise (TA-Lib's +100 and -100 divided by 100). The weaker engulfing and
         harami, where one end of the two real bodies is equal, are 0.8 and -0.8 (TA-Lib's 80). The
-        doji is indecision rather than a direction and is 1 when present; a marubozu and a spinning
-        top take the colour of the candle (1 white, -1 black).
+        dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw man and takuri) are
+        indecision rather than a direction and are 1 when present; a marubozu, a spinning top, a
+        belt-hold, a closing marubozu, a high-wave, long line and short line candle and an inside
+        bar take the colour of the candle (1 white, -1 black).
 
         The patterns:
 
@@ -73,12 +75,28 @@ class PatternTechnicals:
           real body.
         - Marubozu: a long real body with (almost) no shadows.
         - Spinning Top: a short real body with both shadows longer than the body.
+        - Belt-hold: a long real body without (or with a very short) shadow on the side of the
+          open: a white candle opening on its low (bullish) or a black candle opening on its high
+          (bearish).
+        - Closing Marubozu: a long real body without (or with a very short) shadow on the side of
+          the close.
+        - Dragonfly Doji and Takuri: a doji at the top of the range, with a lower shadow (a very
+          long one, more than twice the body, for the takuri).
+        - Gravestone Doji: a doji at the bottom of the range, with an upper shadow.
+        - Long-Legged Doji: a doji with at least one long shadow, and Rickshaw Man: a doji with
+          two long shadows and the body near the middle of the range.
+        - High-Wave Candle: a short real body with very long upper and lower shadows.
+        - Long Line Candle and Short Line Candle: a long (short) real body with short shadows.
+        - Inside Bar: a candle whose high is below and low is above the previous candle's, a
+          price-action pattern (pandas-ta-classic's cdl_inside) and the start of a hikkake.
 
         Sizes are relative to the ticker's own recent candles, as in TA-Lib: a real body is long
         (short) when it is longer (shorter) than the average real body of the 10 previous candles,
         a doji's body is at most 10% and a very short shadow less than 10% of their average
-        high-low range, a long shadow is longer than the candle's own real body, and "near" is
-        within 20% and "far" at least 60% of the average high-low range of the 5 previous candles.
+        high-low range, a short shadow is shorter than their average shadow (half the average sum
+        of both shadows), a long shadow is longer than the candle's own real body and a very long
+        shadow longer than twice that body, and "near" is within 20% and "far" at least 60% of the
+        average high-low range of the 5 previous candles.
 
         For more information, see the following sources:
 
@@ -86,8 +104,11 @@ class PatternTechnicals:
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
         - TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/).
+        - pandas-ta-classic: cdl_inside, for the inside bar (https://github.com/xgboosted/pandas-ta-classic).
 
-        Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks.
+        Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks, belt
+        hold, dragonfly doji, gravestone doji, long-legged doji, rickshaw man, takuri, high wave,
+        inside bar.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -97,7 +118,8 @@ class PatternTechnicals:
                 for dividends in the same way, so an ex-dividend day doesn't read as a gap. "Close"
                 uses the candles as traded (split-adjusted).
             patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
-                "Engulfing"]. Defaults to None, which returns all 15.
+                "Engulfing"] or "hammer, engulfing" (in any casing). Defaults to None, which returns
+                all 26.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 of the returned patterns occurs for at least one ticker. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -112,9 +134,12 @@ class PatternTechnicals:
         Notes:
         - The patterns match TA-Lib (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c) candle for
           candle, including its default candle settings and penetrations (30% for the stars, 50%
-          for the dark cloud cover).
+          for the dark cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
         - A pattern is empty until TA-Lib's lookback has passed: the 10 to 13 candles its
-          averages and the pattern itself need, counted from the ticker's own first candle.
+          averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
+          sets to 0 on the first candle), counted from the ticker's own first candle.
+        - TA-Lib marks the gravestone doji, which candlestick analysis reads as bearish after a
+          rise, as 1 like every doji; so does this method.
         - A pattern only describes the candles. The trend before it, which candlestick analysis
           requires for a reversal (a hammer after a decline, a hanging man after a rise), is not
           checked, as in TA-Lib; combine a pattern with a trend measure such as
@@ -162,12 +187,16 @@ class PatternTechnicals:
 
         if isinstance(patterns, str):
             patterns = [pattern.strip() for pattern in patterns.split(",")]
-        unknown = set(patterns or []) - set(pattern_model.PATTERN_LOOKBACK)
+        # Matched in any casing, as the names are typed by hand ("belt-hold" for "Belt-hold").
+        by_lowercase = {name.lower(): name for name in pattern_model.PATTERN_LOOKBACK}
+        patterns = [by_lowercase.get(name.lower(), name) for name in patterns or []]
+        unknown = set(patterns) - set(pattern_model.PATTERN_LOOKBACK)
         if unknown:
             raise ValueError(
                 f"Unknown pattern(s) {sorted(unknown)}, choose from "
                 f"{list(pattern_model.PATTERN_LOOKBACK)}."
             )
+        patterns = patterns or list(pattern_model.PATTERN_LOOKBACK)
 
         historical_data = self._get_historical_data(period, close_column)
 
@@ -187,15 +216,14 @@ class PatternTechnicals:
                 candles.iloc[:, 1],
                 candles.iloc[:, 2],
                 candles.iloc[:, 3],
+                patterns,
             ).reindex(close_prices.index)
 
         candlestick_patterns = calculate_per_ticker(
             historical_data,
             ["Open", "High", "Low", close_column],
             get_candlestick_patterns,
-        ).loc[self._start_date : self._end_date][
-            list(patterns or pattern_model.PATTERN_LOOKBACK)
-        ]
+        ).loc[self._start_date : self._end_date][patterns]
         candlestick_patterns = candlestick_patterns.reindex(
             columns=historical_data[close_column].columns, level=1
         )
@@ -208,6 +236,263 @@ class PatternTechnicals:
             ]
 
         return candlestick_patterns
+
+    @handle_errors
+    def get_heikin_ashi(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Heikin-Ashi ("average bar") candles of every ticker. Each candle averages
+        the prices of its period, and its open is the midpoint of the previous Heikin-Ashi
+        candle's body, so the candles smooth out the noise of single periods: a trend shows as a
+        run of candles of one colour, often without a shadow on the side of the open, and a
+        small body with long shadows on both sides hints at a turn.
+
+        The formula is as follows:
+
+        - HA Close = (Open + High + Low + Close) / 4
+        - HA Open = (previous HA Open + previous HA Close) / 2, starting from (Open + Close) / 2
+          on the first candle
+        - HA High = max(High, HA Open, HA Close)
+        - HA Low = min(Low, HA Open, HA Close)
+
+        The HA Open is an exponential average of the previous HA Closes with a smoothing factor
+        of 1/2.
+
+        For more information, see the following sources:
+
+        - Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of Stocks &
+          Commodities, 22(2).
+        - TA-Lib: HA, the reference implementation (https://ta-lib.org/functions/).
+        - pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
+
+        Also known as: Heikin-Ashi, Heikin Ashi, Heiken Ashi, HA candles, average bar.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way. "Close" uses the candles as traded (split-adjusted).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Heikin-Ashi Open, High, Low and Close per date and ticker.
+
+        Notes:
+        - The values equal TA-Lib's HA and pandas-ta-classic's ha on every candle, from the
+          ticker's own first candle on.
+        - The first candle's open is the seed (Open + Close) / 2, whose weight halves every
+          period, so the candles of the first few periods after the Toolkit's start date depend
+          on where the history starts.
+        - The Heikin-Ashi prices are averages, not traded prices: an order is filled at the
+          prices of the actual candles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        heikin_ashi = toolkit.technicals.get_heikin_ashi()
+
+        heikin_ashi.xs("AAPL", level=1, axis="columns").tail()
+        ```
+
+        Which returns:
+        | Date       |    Open |    High |     Low |   Close |
+        |:-----------|--------:|--------:|--------:|--------:|
+        | 2025-12-24 | 270.938 | 274.474 | 270.938 | 272.496 |
+        | 2025-12-26 | 271.717 | 274.414 | 271.717 | 272.996 |
+        | 2025-12-29 | 272.357 | 273.408 | 271.404 | 272.341 |
+        | 2025-12-30 | 272.349 | 273.128 | 271.335 | 272.115 |
+        | 2025-12-31 | 272.232 | 272.73  | 270.807 | 271.641 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        def get_heikin_ashi(
+            open_prices: pd.Series,
+            high_prices: pd.Series,
+            low_prices: pd.Series,
+            close_prices: pd.Series,
+        ) -> pd.DataFrame:
+            # The HA Open carries over from candle to candle, so it starts on the ticker's own
+            # first complete candle.
+            candles = pd.concat(
+                [open_prices, high_prices, low_prices, close_prices], axis=1
+            ).dropna()
+            return pattern_model.get_heikin_ashi(
+                candles.iloc[:, 0],
+                candles.iloc[:, 1],
+                candles.iloc[:, 2],
+                candles.iloc[:, 3],
+            ).reindex(close_prices.index)
+
+        heikin_ashi = calculate_per_ticker(
+            historical_data,
+            ["Open", "High", "Low", close_column],
+            get_heikin_ashi,
+        ).loc[self._start_date : self._end_date][["Open", "High", "Low", "Close"]]
+        heikin_ashi = heikin_ashi.reindex(
+            columns=historical_data[close_column].columns, level=1
+        )
+
+        return apply_rounding(
+            heikin_ashi, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_williams_fractal(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        left_bars: int = 2,
+        right_bars: int = 2,
+        signals_only: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Mark Bill Williams' fractals in every ticker's prices: an up fractal is a high above the
+        highs of the two bars before and the two bars after it, a down fractal a low below their
+        lows. They mark the swing highs and lows of a market; Williams buys a break above the last
+        up fractal and sells a break below the last down fractal.
+
+        A fractal needs the bars after it, so it is only known `right_bars` periods later. It is
+        therefore marked on the bar that confirms it, two periods after the high or low with the
+        defaults, and never on the bar of the high or low itself: the value on a date only uses
+        the prices up to that date, so it can be used in a backtest as it is. The fractal's price
+        is the High (Low) `right_bars` periods before the marked date.
+
+        The formula is as follows:
+
+        - Up Fractal (t) = 1 if High (t - right_bars) > every other High from t - left_bars -
+          right_bars to t, else 0
+        - Down Fractal (t) = 1 if Low (t - right_bars) < every other Low from t - left_bars -
+          right_bars to t, else 0
+
+        For more information, see the following sources:
+
+        - Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your
+          Profits." Wiley.
+        - TA-Lib: FRACTAL, the reference implementation (https://ta-lib.org/functions/).
+        - finta: WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
+
+        Also known as: Williams Fractal, fractals, swing high, swing low, FRACTAL.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the high and low prices are adjusted for
+                dividends in the same way. "Close" uses the prices as traded (split-adjusted).
+            left_bars (int, optional): The bars before the high or low it must exceed. Defaults to 2.
+            right_bars (int, optional): The bars after the high or low it must exceed, which is
+                also the delay before a fractal is confirmed. Defaults to 2.
+            signals_only (bool, optional): Whether to return only the periods in which at least one
+                ticker has a fractal. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Up Fractal and Down Fractal per date and ticker, 1 on the period that
+            confirms a fractal and 0 otherwise.
+
+        Notes:
+        - The fractals equal TA-Lib's FRACTAL (swinghigh and swinglow, 100 there), which also marks
+          the confirming bar. finta's WILLIAMS_FRACTAL marks the bar of the high or low itself,
+          which uses the prices of the following bars (look-ahead).
+        - The comparison is strict, as in TA-Lib: a high equal to one of the other highs is no
+          fractal.
+        - The first left_bars + right_bars periods of a ticker are empty.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        fractals = toolkit.technicals.get_williams_fractal(signals_only=True)
+
+        fractals["Up Fractal"].tail()
+        ```
+
+        Which returns:
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-19 |      0 |      0 |           0 |
+        | 2025-12-22 |      0 |      1 |           0 |
+        | 2025-12-26 |      0 |      0 |           0 |
+        | 2025-12-29 |      1 |      1 |           0 |
+        | 2025-12-30 |      0 |      0 |           1 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        def get_williams_fractal(
+            high_prices: pd.Series, low_prices: pd.Series
+        ) -> pd.DataFrame:
+            # The bars around a high are the ticker's own complete bars.
+            prices = pd.concat([high_prices, low_prices], axis=1).dropna()
+            return pattern_model.get_williams_fractal(
+                prices.iloc[:, 0], prices.iloc[:, 1], left_bars, right_bars
+            ).reindex(high_prices.index)
+
+        fractals = calculate_per_ticker(
+            historical_data, ["High", "Low"], get_williams_fractal
+        ).loc[self._start_date : self._end_date][["Up Fractal", "Down Fractal"]]
+        fractals = fractals.reindex(
+            columns=historical_data[close_column].columns, level=1
+        )
+
+        if signals_only:
+            # A fractal is a rare event, so most periods are all zeros.
+            fractals = fractals[fractals.abs().gt(0).any(axis=1)]
+
+        return fractals
 
     @handle_errors
     def get_signals(

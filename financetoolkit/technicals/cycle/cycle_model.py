@@ -7,163 +7,147 @@ import math
 import numpy as np
 import pandas as pd
 
-# The coefficients of Ehlers' discrete Hilbert transform.
-HILBERT_A = 0.0962
-HILBERT_B = 0.5769
-
-# The bar on which the recursion starts and the bars without a value (the lookback) of
-# TA-Lib's functions: those that only need the period start after 12 bars (as in Ehlers'
-# EasyLanguage listings) and show a value from bar 32, those that also need the phase over a
-# full cycle of up to 50 bars start after 37 and show a value from bar 63.
+# The bar on which the filters start from zero and the bars left empty while they settle: the indicators that
+# only need the period start on bar 12 and show a value from bar 32, those that also need the phase over a full
+# cycle of up to 50 bars start on bar 37 and show a value from bar 63. These are the start and warm-up of TA-Lib's
+# HT functions and MAMA.
 PERIOD_START, PERIOD_LOOKBACK = 12, 32
 PHASE_START, PHASE_LOOKBACK = 37, 63
 
 
 def _get_hilbert_transform(prices: pd.Series, start: int) -> pd.DataFrame:
     """
-    The Hilbert transform and homodyne discriminator of Ehlers (2001) that the HT
-    indicators and MAMA share, calculated bar by bar as in TA-Lib (Mario Fortier).
+    The Hilbert transform and homodyne discriminator of Ehlers (2001) that the HT indicators
+    and MAMA share, in the steps Ehlers describes.
 
-    The prices are smoothed with a 4-bar weighted moving average and detrended with a
-    discrete Hilbert transform whose gain follows the period of the bar before. The
-    detrended price lagged 3 bars is the in-phase component (I1), its Hilbert transform the
-    quadrature (Q1). Advancing both by 90 degrees (jI, jQ) gives the phasors I2 and Q2,
-    whose product with the phasor of the bar before (the homodyne discriminator) gives the
-    phase change per bar and so the period, limited to 6-50 bars and to between 0.67 and
-    1.5 times the period before. From the smoothed period follow the dominant cycle phase,
-    a discrete Fourier transform of the smoothed price over one cycle, and the
-    instantaneous trendline, the price averaged over one cycle.
+    1. Smooth the price with a 4-bar weighted moving average.
+    2. Detrend it with a discrete Hilbert transform whose bandwidth follows the period of the
+       bar before (0.075 * Period + 0.54). The detrended price lagged 3 bars is the in-phase
+       component I1, its Hilbert transform the quadrature Q1.
+    3. Advance both by 90 degrees (jI, jQ) and smooth the phasor I2 = I1 - jQ,
+       Q2 = Q1 + jI.
+    4. Multiply the phasor with the conjugate of the phasor of the bar before (the homodyne
+       discriminator): the angle of the smoothed product is the phase change per bar, and
+       360 degrees divided by it the period, limited to between 0.67 and 1.5 times the period
+       before and to 6-50 bars, then smoothed twice.
+    5. From the smoothed period follow the dominant cycle phase, a discrete Fourier transform
+       of the smoothed price over one cycle, and the instantaneous trendline, the price
+       averaged over one cycle and smoothed with a 4-bar weighted moving average.
 
-    The filters start from zero on bar `start`, as in TA-Lib, so the values only settle
-    after a number of bars; the callers leave TA-Lib's lookback empty.
+    By convention every filter is zero before bar `start` and starts from there, as in Ehlers'
+    listings and TA-Lib, so the values only settle after a number of bars; the callers leave
+    the warm-up empty.
 
     Args:
         prices (pd.Series): The prices without missing values.
-        start (int): The bar on which the recursion starts, 12 or 37 as in TA-Lib.
+        start (int): The bar on which the filters start, PERIOD_START or PHASE_START.
 
     Returns:
-        pd.DataFrame: Per bar the smoothed price, in-phase and quadrature components, the
+        pd.DataFrame: Per bar the smoothed price, the in-phase and quadrature components, the
         phase of the phasor (degrees), the smoothed period, the dominant cycle phase
         (degrees) and the instantaneous trendline.
     """
-    values = prices.to_numpy(dtype=float)
-    length = len(values)
-    a, b = HILBERT_A, HILBERT_B
-    radians_to_degrees = 180 / math.pi
+    price = prices.to_numpy(dtype=float)
+    bars = len(price)
+    degrees = 180 / math.pi
 
-    columns = {
-        name: np.full(length, np.nan)
-        for name in (
-            "Smoothed Price",
-            "In Phase",
-            "Quadrature",
-            "Phase",
-            "Smoothed Period",
-            "Dominant Cycle Phase",
-            "Trendline",
-        )
-    }
+    # 1. The 4-bar weighted moving average of the price.
+    smooth = np.zeros(bars)
+    smooth[3:] = (4 * price[3:] + 3 * price[2:-1] + 2 * price[1:-2] + price[:-3]) / 10
+    smooth[:start] = 0.0
 
-    # The inputs of the Hilbert transforms, zero before the start as TA-Lib's filters are.
-    smooth = [0.0] * length
-    detrender = [0.0] * length
-    in_phase = [0.0] * length
-    quadrature = [0.0] * length
-
-    def hilbert(series: list[float], today: int, gain: float) -> float:
-        # The discrete Hilbert transform, with a gain that follows the period of the bar before.
+    def hilbert(x: np.ndarray, t: int, bandwidth: float) -> float:
+        # The outer taps first, then the inner ones: the values depend on this order to the last digit.
         return (
-            -a * series[today - 6]
-            + a * series[today]
-            - b * series[today - 4]
-            + b * series[today - 2]
-        ) * gain
+            0.0962 * x[t] - 0.0962 * x[t - 6] - 0.5769 * x[t - 4] + 0.5769 * x[t - 2]
+        ) * bandwidth
 
-    period = smooth_period = dc_phase = 0.0
-    i2_previous = q2_previous = real = imaginary = 0.0
-    trend_averages = [0.0, 0.0, 0.0]
+    detrender, i1, q1 = np.zeros(bars), np.zeros(bars), np.zeros(bars)
+    smooth_period = np.full(bars, np.nan)
+    i2 = q2 = re = im = period = smoothed = 0.0
 
-    for today in range(start, length):
-        adjusted_period = 0.075 * period + 0.54
+    for t in range(start, bars):
+        bandwidth = 0.075 * period + 0.54
 
-        smooth[today] = (
-            4 * values[today]
-            + 3 * values[today - 1]
-            + 2 * values[today - 2]
-            + values[today - 3]
-        ) / 10
+        # 2. The in-phase and quadrature components.
+        detrender[t] = hilbert(smooth, t, bandwidth)
+        q1[t] = hilbert(detrender, t, bandwidth)
+        i1[t] = detrender[t - 3]
 
-        detrender[today] = hilbert(smooth, today, adjusted_period)
-        quadrature[today] = hilbert(detrender, today, adjusted_period)
-        in_phase[today] = detrender[today - 3]
-        j_in_phase = hilbert(in_phase, today, adjusted_period)
-        j_quadrature = hilbert(quadrature, today, adjusted_period)
+        # 3. The phasor advanced by 90 degrees, smoothed against noise.
+        ji = hilbert(i1, t, bandwidth)
+        jq = hilbert(q1, t, bandwidth)
+        i2_before, q2_before = i2, q2
+        i2 = 0.2 * (i1[t] - jq) + 0.8 * i2
+        q2 = 0.2 * (q1[t] + ji) + 0.8 * q2
 
-        # The phasor advanced by 90 degrees, smoothed against noise.
-        q2 = 0.2 * (quadrature[today] + j_in_phase) + 0.8 * q2_previous
-        i2 = 0.2 * (in_phase[today] - j_quadrature) + 0.8 * i2_previous
-
-        # The homodyne discriminator: the phase change per bar is the angle of the product
-        # of the phasor with the conjugate of the phasor of the bar before.
-        real = 0.8 * real + 0.2 * (i2 * i2_previous + q2 * q2_previous)
-        imaginary = 0.8 * imaginary + 0.2 * (i2 * q2_previous - q2 * i2_previous)
-        i2_previous, q2_previous = i2, q2
+        # 4. The homodyne discriminator and the period it measures.
+        re = 0.2 * (i2 * i2_before + q2 * q2_before) + 0.8 * re
+        im = 0.2 * (i2 * q2_before - q2 * i2_before) + 0.8 * im
 
         period_before = period
-        if imaginary != 0 and real != 0:
-            period = 360 / (math.atan(imaginary / real) * radians_to_degrees)
-        period = min(period, 1.5 * period_before)
-        period = max(period, 0.67 * period_before)
+        if im != 0 and re != 0:
+            period = 360 / (math.atan(im / re) * degrees)
+        period = max(min(period, 1.5 * period_before), 0.67 * period_before)
         period = min(max(period, 6), 50)
         period = 0.2 * period + 0.8 * period_before
-        smooth_period = 0.33 * period + 0.67 * smooth_period
+        smoothed = 0.33 * period + 0.67 * smoothed
+        smooth_period[t] = smoothed
 
-        # The dominant cycle phase: the discrete Fourier transform of the smoothed prices
-        # over one cycle, shifted by 90 degrees and by the lag of the smoothing.
-        cycle = int(smooth_period + 0.5)
-        real_part = imaginary_part = 0.0
+    # The phase of the phasor; by convention 0 where the in-phase component is 0.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        phase = np.where(i1 != 0, np.arctan(q1 / i1) * degrees, 0.0)
+
+    # 5. The dominant cycle phase and the price averaged over one cycle.
+    dc_phase = np.full(bars, np.nan)
+    cycle_average = np.zeros(bars)
+    angle = 0.0
+    for t in range(start, bars):
+        cycle = int(smooth_period[t] + 0.5)
+        real_part = imag_part = 0.0
         for bar in range(cycle):
-            angle = 2 * math.pi * bar / cycle
-            real_part += math.sin(angle) * smooth[today - bar]
-            imaginary_part += math.cos(angle) * smooth[today - bar]
-        if abs(imaginary_part) > 0:
-            dc_phase = math.atan(real_part / imaginary_part) * radians_to_degrees
-        elif real_part != 0:
-            dc_phase += math.copysign(90, real_part)
-        dc_phase += 90 + 360 / smooth_period
-        if imaginary_part < 0:
-            dc_phase += 180
-        if dc_phase > 315:  # noqa: PLR2004
-            dc_phase -= 360
+            real_part += math.sin(2 * math.pi * bar / cycle) * smooth[t - bar]
+            imag_part += math.cos(2 * math.pi * bar / cycle) * smooth[t - bar]
 
-        # The instantaneous trendline: the price averaged over one cycle and smoothed with
-        # a 4-bar weighted moving average.
-        average = (
-            values[max(today - cycle + 1, 0) : today + 1].sum() / cycle
-            if cycle
-            else 0.0
-        )
-        columns["Trendline"][today] = (
-            4 * average
-            + 3 * trend_averages[0]
-            + 2 * trend_averages[1]
-            + trend_averages[2]
-        ) / 10
-        trend_averages = [average, *trend_averages[:2]]
+        # Without an imaginary part the phase keeps its value and turns 90 degrees towards the real part.
+        if imag_part != 0:
+            angle = math.atan(real_part / imag_part) * degrees
+        else:
+            angle += 90 * np.sign(real_part)
+        # A quarter cycle for the sine, and the lag of the smoothing.
+        angle += 90 + 360 / smooth_period[t]
+        if imag_part < 0:
+            angle += 180
+        if angle > 315:  # noqa: PLR2004
+            angle -= 360
+        dc_phase[t] = angle
 
-        columns["Phase"][today] = (
-            math.atan(quadrature[today] / in_phase[today]) * radians_to_degrees
-            if in_phase[today] != 0
-            else 0.0
-        )
-        columns["Smoothed Period"][today] = smooth_period
-        columns["Dominant Cycle Phase"][today] = dc_phase
+        if cycle:
+            cycle_average[t] = price[max(t - cycle + 1, 0) : t + 1].sum() / cycle
 
-    columns["Smoothed Price"][start:] = smooth[start:]
-    columns["In Phase"][start:] = in_phase[start:]
-    columns["Quadrature"][start:] = quadrature[start:]
+    trendline = np.full(bars, np.nan)
+    trendline[3:] = (
+        4 * cycle_average[3:]
+        + 3 * cycle_average[2:-1]
+        + 2 * cycle_average[1:-2]
+        + cycle_average[:-3]
+    ) / 10
 
-    return pd.DataFrame(columns, index=prices.index)
+    output = pd.DataFrame(
+        {
+            "Smoothed Price": smooth,
+            "In Phase": i1,
+            "Quadrature": q1,
+            "Phase": phase,
+            "Smoothed Period": smooth_period,
+            "Dominant Cycle Phase": dc_phase,
+            "Trendline": trendline,
+        },
+        index=prices.index,
+    )
+    output.iloc[:start] = np.nan
+
+    return output
 
 
 def get_hilbert_dominant_cycle_period(prices: pd.Series) -> pd.Series:
@@ -402,7 +386,9 @@ def get_hilbert_trend_mode(prices: pd.Series) -> pd.Series:
 
     Notes:
         - Equals TA-Lib's HT_TRENDMODE after its lookback: the recursion starts from zero on
-          bar 37 of the series and the first 63 bars are NaN, where TA-Lib shows 0.
+          bar 37 of the series and the first 63 bars are NaN, where TA-Lib shows 0. The sine,
+          lead sine and phase before the first bar count as 0, so a crossing and the phase
+          change on the first bar are measured from zero.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -411,49 +397,42 @@ def get_hilbert_trend_mode(prices: pd.Series) -> pd.Series:
         pd.Series: 1 in a trend and 0 in a cycle.
     """
     clean = prices.dropna()
-    hilbert = _get_hilbert_transform(clean, PHASE_START)
+    hilbert = _get_hilbert_transform(clean, PHASE_START).iloc[PHASE_START:]
 
-    phase = hilbert["Dominant Cycle Phase"].to_numpy()
-    smooth_period = hilbert["Smoothed Period"].to_numpy()
-    smooth = hilbert["Smoothed Price"].to_numpy()
-    trendline = hilbert["Trendline"].to_numpy()
+    phase = hilbert["Dominant Cycle Phase"]
+    smooth_period = hilbert["Smoothed Period"]
+    trendline = hilbert["Trendline"]
     sine = np.sin(np.deg2rad(phase))
     lead_sine = np.sin(np.deg2rad(phase + 45))
+    sine_before = sine.shift(1, fill_value=0.0)
+    lead_sine_before = lead_sine.shift(1, fill_value=0.0)
 
-    trend_mode = np.full(len(clean), np.nan)
-    days_in_trend = 0
-    previous_phase = previous_sine = previous_lead_sine = 0.0
+    crossing = ((sine > lead_sine) & (sine_before <= lead_sine_before)) | (
+        (sine < lead_sine) & (sine_before >= lead_sine_before)
+    )
+    # The bars since the last crossing, counting the crossing itself (or since the first bar).
+    days_in_trend = crossing.groupby(crossing.cumsum()).cumcount() + 1
 
-    for today in range(PHASE_START, len(clean)):
-        trend = 1
-        if (sine[today] > lead_sine[today] and previous_sine <= previous_lead_sine) or (
-            sine[today] < lead_sine[today] and previous_sine >= previous_lead_sine
-        ):
-            days_in_trend = 0
-            trend = 0
-        days_in_trend += 1
-        if days_in_trend < 0.5 * smooth_period[today]:
-            trend = 0
-
-        phase_change = phase[today] - previous_phase
-        cycle_rate = 360 / smooth_period[today]
-        if 0.67 * cycle_rate < phase_change < 1.5 * cycle_rate:
-            trend = 0
-
-        if (
-            trendline[today] != 0
-            and abs((smooth[today] - trendline[today]) / trendline[today])
+    phase_change = phase - phase.shift(1, fill_value=0.0)
+    cycle_rate = 360 / smooth_period
+    with np.errstate(divide="ignore", invalid="ignore"):
+        far_from_trendline = (trendline != 0) & (
+            ((hilbert["Smoothed Price"] - trendline) / trendline).abs()
             >= 0.015  # noqa: PLR2004
-        ):
-            trend = 1
+        )
 
-        trend_mode[today] = trend
-        previous_phase = phase[today]
-        previous_sine, previous_lead_sine = sine[today], lead_sine[today]
+    cycle = (
+        crossing
+        | (days_in_trend < 0.5 * smooth_period)
+        | ((0.67 * cycle_rate < phase_change) & (phase_change < 1.5 * cycle_rate))
+    )
+    trend_mode = pd.Series(
+        np.where(far_from_trendline | ~cycle, 1.0, 0.0), index=hilbert.index
+    )
 
-    trend_mode[:PHASE_LOOKBACK] = np.nan
+    trend_mode.iloc[: PHASE_LOOKBACK - PHASE_START] = np.nan
 
-    return pd.Series(trend_mode, index=clean.index).reindex(prices.index)
+    return trend_mode.reindex(prices.index)
 
 
 def get_mesa_adaptive_moving_average(
@@ -488,6 +467,8 @@ def get_mesa_adaptive_moving_average(
           the series, as in TA-Lib and Ehlers' article, and the first 32 bars are NaN, TA-Lib's
           lookback. FAMA is then still several percent below the price and settles to within
           0.1% after about 80 bars.
+        - The phase is 0 on a bar whose in-phase component is 0 and before the first bar,
+          the convention TA-Lib uses.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -498,24 +479,19 @@ def get_mesa_adaptive_moving_average(
         pd.DataFrame: The "MAMA" and "FAMA" in price units.
     """
     clean = prices.dropna()
-    phase = _get_hilbert_transform(clean, PERIOD_START)["Phase"].to_numpy()
-    values = clean.to_numpy(dtype=float)
+    phase = _get_hilbert_transform(clean, PERIOD_START)["Phase"].iloc[PERIOD_START:]
 
-    mama = np.full(len(clean), np.nan)
-    fama = np.full(len(clean), np.nan)
-    mama_today = fama_today = previous_phase = 0.0
+    delta_phase = (phase.shift(1, fill_value=0.0) - phase).clip(lower=1.0)
+    alpha = (fast_limit / delta_phase).clip(lower=slow_limit).to_numpy()
+    price = clean.iloc[PERIOD_START:].to_numpy(dtype=float)
 
-    for today in range(PERIOD_START, len(clean)):
-        delta_phase = max(previous_phase - phase[today], 1.0)
-        previous_phase = phase[today]
-        alpha = max(fast_limit / delta_phase, slow_limit)
+    mama, fama = np.zeros(len(price)), np.zeros(len(price))
+    mama_before = fama_before = 0.0
+    for t, (a, p) in enumerate(zip(alpha, price, strict=True)):
+        mama[t] = mama_before = a * p + (1 - a) * mama_before
+        fama[t] = fama_before = 0.5 * a * mama_before + (1 - 0.5 * a) * fama_before
 
-        mama_today = alpha * values[today] + (1 - alpha) * mama_today
-        fama_today = 0.5 * alpha * mama_today + (1 - 0.5 * alpha) * fama_today
-        mama[today], fama[today] = mama_today, fama_today
-
-    result = pd.DataFrame({"MAMA": mama, "FAMA": fama}, index=clean.index)
-
-    result.iloc[:PERIOD_LOOKBACK] = np.nan
+    result = pd.DataFrame({"MAMA": mama, "FAMA": fama}, index=phase.index)
+    result.iloc[: PERIOD_LOOKBACK - PERIOD_START] = np.nan
 
     return result.reindex(prices.index)

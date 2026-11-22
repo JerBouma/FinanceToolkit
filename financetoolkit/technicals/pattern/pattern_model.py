@@ -9,24 +9,9 @@ from financetoolkit.technicals.momentum import momentum_model
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.volatility import volatility_model
 
-# TA-Lib's default candle settings (Mario Fortier's): what a candle part is measured against, over how many
-# previous candles it is averaged and the factor applied. "Shadows" averages are halved, as in TA-Lib, so they
-# measure one shadow against the average of a candle's two.
-CANDLE_SETTINGS = {
-    "BodyLong": ("RealBody", 10, 1.0),
-    "BodyVeryLong": ("RealBody", 10, 3.0),
-    "BodyShort": ("RealBody", 10, 1.0),
-    "BodyDoji": ("HighLow", 10, 0.1),
-    "ShadowLong": ("RealBody", 0, 1.0),
-    "ShadowVeryLong": ("RealBody", 0, 2.0),
-    "ShadowShort": ("Shadows", 10, 1.0),
-    "ShadowVeryShort": ("HighLow", 10, 0.1),
-    "Near": ("HighLow", 5, 0.2),
-    "Far": ("HighLow", 5, 0.6),
-    "Equal": ("HighLow", 5, 0.05),
-}
-
-# The candles TA-Lib needs before a pattern's first value (its lookback per function).
+# The first candle each pattern is evaluated on: the previous candles its reference sizes average plus the candles
+# before its last one. This is the warm-up of TA-Lib's CDL functions, which also gives the engulfing 2 and the
+# three outside 3 candles.
 PATTERN_LOOKBACK = {
     "Doji": 10,
     "Hammer": 11,
@@ -84,50 +69,40 @@ PATTERN_LOOKBACK = {
     "Gap Three Methods": 2,
 }
 
-# How far the third candle of a (doji) star and of an abandoned baby, and the second candle of a dark cloud
-# cover, must reach into the first candle's real body: TA-Lib's default optInPenetration.
+# How far the last candle of a (doji) star and of an abandoned baby, and the second candle of a dark cloud cover,
+# must reach into the first candle's real body: the default penetrations of TA-Lib.
 STAR_PENETRATION = 0.3
 DARK_CLOUD_PENETRATION = 0.5
 
 
-def get_candle_average(candles: pd.DataFrame, setting: str) -> pd.Series:
-    """
-    Calculate the reference size a candle part is compared with, as TA-Lib defines it.
-
-    The reference is the factor times the average range (real body, high-low range or the
-    sum of both shadows) of the candles before the candle itself, so a candle is never
-    compared with itself. A setting with an average period of 0 compares with the candle's
-    own range instead (e.g. a long shadow is longer than the candle's own real body).
-
-    Args:
-        candles (pd.DataFrame): The candles, as returned by `get_candle_parts`.
-        setting (str): The name of the setting in `CANDLE_SETTINGS`, e.g. "BodyLong".
-
-    Returns:
-        pd.Series: The reference size per candle.
-    """
-    range_type, period, factor = CANDLE_SETTINGS[setting]
-
-    if range_type == "RealBody":
-        ranges = candles["Body"]
-    elif range_type == "HighLow":
-        ranges = candles["Range"]
-    else:
-        ranges = candles["Upper Shadow"] + candles["Lower Shadow"]
-
-    average = ranges if period == 0 else ranges.shift(1).rolling(period).mean()
-
-    return factor * average / (2.0 if range_type == "Shadows" else 1.0)
-
-
-def get_candle_parts(
+def get_candle_features(
     prices_open: pd.Series,
     prices_high: pd.Series,
     prices_low: pd.Series,
     prices_close: pd.Series,
 ) -> pd.DataFrame:
     """
-    Split each candle into its real body and shadows.
+    Describe each candle by its parts and by the reference sizes its parts are compared with.
+
+    A candle is white when it closes at or above its open and black otherwise. Its real body
+    runs from the open to the close, the upper shadow from the top of the body to the high and
+    the lower shadow from the bottom of the body to the low. Whether a part is long, short or
+    tiny depends on the candles before it, so each candle also carries reference sizes measured
+    on the previous candles only (never on the candle itself). These are the default candle
+    settings of TA-Lib:
+
+    - Average Body = the average real body of the previous 10 candles: a body above it is long,
+      a body below it short.
+    - Tiny = 10% of the average high-low range of the previous 10 candles: a body at most this
+      size is a doji's, a shadow below it very short.
+    - Average Shadow = half the average sum of both shadows of the previous 10 candles (the
+      average single shadow): a shadow below it is short.
+    - Near = 20%, Far = 60% and Equal = 5% of the average high-low range of the previous 5
+      candles: the distances within which prices are near or equal and beyond which they are
+      far apart.
+
+    A shadow is long when it is longer than the candle's own real body and very long when it is
+    longer than twice that body.
 
     Args:
         prices_open (pd.Series): The open prices.
@@ -136,26 +111,40 @@ def get_candle_parts(
         prices_close (pd.Series): The close prices.
 
     Returns:
-        pd.DataFrame: The open, high, low and close with whether the candle is white (a close at
-        or above the open, as TA-Lib counts it), its colour (1 white, -1 black), the real body,
-        both shadows and the high-low range.
+        pd.DataFrame: Per candle the open, high, low and close, its colour (1 white, -1 black),
+        the top and bottom of the real body, the real body, the upper and lower shadow, the
+        high-low range and the reference sizes average_body, tiny, average_shadow, near, far
+        and equal.
     """
     white = prices_close >= prices_open
-    body_top = prices_close.where(white, prices_open)
-    body_bottom = prices_open.where(white, prices_close)
+    body = (prices_close - prices_open).abs()
+    upper_shadow = prices_high - prices_close.where(white, prices_open)
+    lower_shadow = prices_open.where(white, prices_close) - prices_low
+    high_low = prices_high - prices_low
+
+    average_range = high_low.shift(1).rolling(10).mean()
+    average_range_5 = high_low.shift(1).rolling(5).mean()
 
     return pd.DataFrame(
         {
-            "Open": prices_open,
-            "High": prices_high,
-            "Low": prices_low,
-            "Close": prices_close,
-            "White": white,
-            "Color": np.where(white, 1.0, -1.0),
-            "Body": (prices_close - prices_open).abs(),
-            "Upper Shadow": prices_high - body_top,
-            "Lower Shadow": body_bottom - prices_low,
-            "Range": prices_high - prices_low,
+            "open": prices_open,
+            "high": prices_high,
+            "low": prices_low,
+            "close": prices_close,
+            "color": np.where(white, 1.0, -1.0),
+            "top": np.maximum(prices_open, prices_close),
+            "bottom": np.minimum(prices_open, prices_close),
+            "body": body,
+            "upper_shadow": upper_shadow,
+            "lower_shadow": lower_shadow,
+            "high_low": high_low,
+            "average_body": body.shift(1).rolling(10).mean(),
+            "tiny": 0.1 * average_range,
+            "average_shadow": (upper_shadow + lower_shadow).shift(1).rolling(10).mean()
+            / 2.0,
+            "near": 0.2 * average_range_5,
+            "far": 0.6 * average_range_5,
+            "equal": 0.05 * average_range_5,
         }
     )
 
@@ -168,7 +157,7 @@ def get_candlestick_patterns(
     patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Recognise 54 candlestick patterns, following the definitions of TA-Lib's CDL functions.
+    Recognise 54 candlestick patterns of Nison and Bulkowski in their measurable form.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
     pattern and 0 otherwise, which is TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
@@ -179,15 +168,18 @@ def get_candlestick_patterns(
     high-wave, long line and short line candle and an inside bar take the colour of the candle
     (1 white, -1 black).
 
-    Sizes are relative, as TA-Lib defines them: a real body is long when it is longer than
-    the average real body of the 10 previous candles and short when it is shorter; it is a
-    doji's body when it is at most 10% of the average high-low range of the 10 previous
-    candles; a shadow is very short when it is shorter than 10% of that range, short when it
-    is shorter than half the average sum of both shadows of the 10 previous candles (the
-    average shadow), long when it is longer than the candle's own real body and very long
-    when it is longer than twice that body; "near" is within 20% and "far" at least 60% of the
-    average high-low range of the 5 previous candles, and two prices are "equal" when they are
-    within 5% of that range.
+    Each pattern is a set of conditions on the features of its candles (see
+    `get_candle_features`): their colour, real body, shadows, the gaps between their real
+    bodies and how each part compares with the candles before it. Sizes are relative: a real
+    body is long when it is longer than the average real body of the 10 previous candles and
+    short when it is shorter; it is a doji's body when it is at most 10% of the average
+    high-low range of the 10 previous candles; a shadow is very short when it is shorter than
+    10% of that range, short when it is shorter than half the average sum of both shadows of
+    the 10 previous candles (the average shadow), long when it is longer than the candle's own
+    real body and very long when it is longer than twice that body; "near" is within 20% and
+    "far" at least 60% of the average high-low range of the 5 previous candles, and two prices
+    are "equal" when they are within 5% of that range. These reference sizes are the default
+    candle settings of TA-Lib.
 
     The patterns and what they need:
 
@@ -302,18 +294,20 @@ def get_candlestick_patterns(
 
     Reference: Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
-    measurable rules and thresholds are TA-Lib's definitions of these patterns (Mario
-    Fortier), which turn the descriptions of Nison and others into candle-size comparisons.
+    measurable rules and thresholds are those TA-Lib (Mario Fortier) documents for these
+    patterns, which turn the descriptions of Nison and others into candle-size comparisons.
 
-    Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/);
+    Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/), which give the
+    same values candle for candle;
     pandas-ta-classic: cdl_inside for the inside bar
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
-        - A pattern is empty (NaN) until TA-Lib's lookback has passed: the candles its
-          averages and the pattern itself need (2 to 13 candles, 1 for the inside bar), so a
-          ticker is evaluated from the same candle on as TA-Lib. pandas-ta-classic's inside
-          bar is 0 instead of empty on the first candle.
+        - A pattern is empty (NaN) during its warm-up: the previous candles its reference
+          sizes average and the candles before its last one (2 to 13 candles, 1 for the
+          inside bar, `PATTERN_LOOKBACK`), the warm-up of TA-Lib's CDL functions, so a ticker
+          is evaluated from the same candle on as TA-Lib. pandas-ta-classic's inside bar is 0
+          instead of empty on the first candle.
         - TA-Lib marks the gravestone doji, which Nison reads as bearish after a rise, as 1
           like every doji; so does this function.
         - A pattern only describes the candles; the trend before it, which Nison requires for
@@ -323,7 +317,7 @@ def get_candlestick_patterns(
           continuation of the trend, and the in-neck, on-neck and thrusting are bearish
           continuation patterns (Nison, Bulkowski) that TA-Lib marks -1 whatever the trend.
         - The doji stars and the abandoned baby use the same 30% penetration as the stars
-          (STAR_PENETRATION, TA-Lib's default optInPenetration); Nison only asks for a close
+          (STAR_PENETRATION, TA-Lib's default penetration); Nison only asks for a close
           well into the first body.
         - The tasuki gap, side-by-side white lines and gap three methods are continuation
           patterns (Nison, Bulkowski) and follow the direction of the gap; the stick sandwich,
@@ -349,490 +343,470 @@ def get_candlestick_patterns(
             f"Unknown pattern(s) {sorted(unknown)}, choose from {list(PATTERN_LOOKBACK)}."
         )
 
-    candles = get_candle_parts(prices_open, prices_high, prices_low, prices_close)
-    o, h, low, c = candles["Open"], candles["High"], candles["Low"], candles["Close"]
-    white, color, body = candles["White"], candles["Color"], candles["Body"]
-    upper, lower = candles["Upper Shadow"], candles["Lower Shadow"]
+    # The last candle of a pattern and the one, two and three candles before it.
+    last = get_candle_features(prices_open, prices_high, prices_low, prices_close)
+    prev, prev2, prev3 = last.shift(1), last.shift(2), last.shift(3)
 
-    body_long = get_candle_average(candles, "BodyLong")
-    body_short = get_candle_average(candles, "BodyShort")
-    body_doji = get_candle_average(candles, "BodyDoji")
-    shadow_long = get_candle_average(candles, "ShadowLong")
-    shadow_very_short = get_candle_average(candles, "ShadowVeryShort")
-    near = get_candle_average(candles, "Near")
-    far = get_candle_average(candles, "Far")
-    shadow_very_long = get_candle_average(candles, "ShadowVeryLong")
-    shadow_short = get_candle_average(candles, "ShadowShort")
-    equal = get_candle_average(candles, "Equal")
+    def white(candle: pd.DataFrame) -> pd.Series:
+        return candle.color == 1
 
-    def previous(series: pd.Series, candles_back: int = 1) -> pd.Series:
-        return series.shift(candles_back)
+    def black(candle: pd.DataFrame) -> pd.Series:
+        return candle.color == -1
 
-    o1, h1, l1, c1 = previous(o), previous(h), previous(low), previous(c)
-    o2, c2 = previous(o, 2), previous(c, 2)
-    white1, white2 = previous(white).eq(True), previous(white, 2).eq(True)
-    black1, black2 = previous(white).eq(False), previous(white, 2).eq(False)
-    body1, body2 = previous(body), previous(body, 2)
+    def long_body(candle: pd.DataFrame) -> pd.Series:
+        return candle.body > candle.average_body
 
-    # The hammer family: a small body at one end of a long shadow.
-    small_body = body < body_short
-    doji = body <= body_doji
-    midpoint = low + (h - low) / 2
-    hammer_shape = small_body & (lower > shadow_long) & (upper < shadow_very_short)
-    inverted_shape = small_body & (upper > shadow_long) & (lower < shadow_very_short)
-    near1 = previous(near)
-    gap_down = (o < o1) & (o < c1) & (c < o1) & (c < c1)
-    gap_up = (o > o1) & (o > c1) & (c > o1) & (c > c1)
+    def short_body(candle: pd.DataFrame) -> pd.Series:
+        return candle.body < candle.average_body
 
-    # Engulfing and harami: TA-Lib's 100 when the bodies differ at both ends, 80 when one end is equal.
-    engulfs = (white & black1 & (((c >= o1) & (o < c1)) | ((c > o1) & (o <= c1)))) | (
-        ~white & white1 & (((o >= c1) & (c < o1)) | ((o > c1) & (c <= o1)))
+    def doji(candle: pd.DataFrame) -> pd.Series:
+        return candle.body <= candle.tiny
+
+    def marubozu(candle: pd.DataFrame) -> pd.Series:
+        return (
+            long_body(candle)
+            & (candle.upper_shadow < candle.tiny)
+            & (candle.lower_shadow < candle.tiny)
+        )
+
+    def gap_up(candle: pd.DataFrame, before: pd.DataFrame) -> pd.Series:
+        # A real body gap: the whole body above the body of the candle before.
+        return candle.bottom > before.top
+
+    def gap_down(candle: pd.DataFrame, before: pd.DataFrame) -> pd.Series:
+        return candle.top < before.bottom
+
+    def within(price: pd.Series, level: pd.Series, distance: pd.Series) -> pd.Series:
+        return (price <= level + distance) & (price >= level - distance)
+
+    def steps_up(candle: pd.DataFrame, before: pd.DataFrame) -> pd.Series:
+        # A white candle opening above the open of the white candle before, within or near its body.
+        return (candle.open > before.open) & (candle.open <= before.close + before.near)
+
+    # The direction in which the last candle's real body covers the one before: 1 when both of its ends lie
+    # beyond, 0.8 when one end is equal (the weaker form) and 0 otherwise.
+    engulfing = (
+        (last.color == -prev.color)
+        & (
+            ((last.top >= prev.top) & (last.bottom < prev.bottom))
+            | ((last.top > prev.top) & (last.bottom <= prev.bottom))
+        )
+    ) * np.where((last.top != prev.top) & (last.bottom != prev.bottom), 1.0, 0.8)
+    harami = np.where(
+        (last.top < prev.top) & (last.bottom > prev.bottom),
+        1.0,
+        np.where((last.top <= prev.top) & (last.bottom >= prev.bottom), 0.8, 0.0),
     )
-    engulfing_strength = np.where((o != c1) & (c != o1), 1.0, 0.8)
 
-    harami_sizes = (body1 > previous(body_long)) & (body <= body_short)
-    strictly_inside = (
-        ((c < c1) | (c < o1))
-        & ((o < c1) | (o < o1))
-        & ((c > c1) | (c > o1))
-        & ((o > c1) | (o > o1))
-    )
-    inside = (
-        ((c <= c1) | (c <= o1))
-        & ((o <= c1) | (o <= o1))
-        & ((c >= c1) | (c >= o1))
-        & ((o >= c1) | (o >= o1))
-    )
-    harami_strength = np.where(strictly_inside, 1.0, np.where(inside, 0.8, 0.0))
+    opposite = last.color != prev.color
+    open_shadow = last.lower_shadow.where(white(last), last.upper_shadow)
+    close_shadow = last.upper_shadow.where(white(last), last.lower_shadow)
+    middle = last.low + last.high_low / 2
+    opens_in_previous_body = (last.open < prev.top) & (last.open > prev.bottom)
 
-    star_sizes = (
-        (body2 > previous(body_long, 2))
-        & (body1 <= previous(body_short))
-        & (body > body_short)
-    )
-    doji_star_sizes = (
-        (body2 > previous(body_long, 2))
-        & (body1 <= previous(body_doji))
-        & (body > body_short)
-    )
-    gap_up1 = (o1 > o2) & (o1 > c2) & (c1 > o2) & (c1 > c2)
-    gap_down1 = (o1 < o2) & (o1 < c2) & (c1 < o2) & (c1 < c2)
-
-    # Two candles of opposite colour, and a black candle followed by a white one that opens below its low:
-    # the start of the counterattack, kicking and separating lines, and of the in-neck, on-neck and thrusting.
-    opposite = white != previous(white)
-    long_black1 = black1 & (body1 > previous(body_long))
-    white_below_low1 = long_black1 & white & (o < l1)
-    equal1 = previous(equal)
-
-    # A marubozu as the kicking patterns need it: a long real body with very short shadows on both sides.
-    marubozu = (
-        (body > body_long) & (upper < shadow_very_short) & (lower < shadow_very_short)
+    long_black_then_white_below = (
+        black(prev) & long_body(prev) & white(last) & (last.open < prev.low)
     )
     kicking = (
         opposite
-        & ((black1 & (low > h1)) | (white1 & (h < l1)))
-        & previous(marubozu).eq(True)
-        & marubozu
-    )
-
-    # The three-candle patterns: the candle two back, and the averages measured at the candles before.
-    h2, l2 = previous(h, 2), previous(low, 2)
-    upper1, upper2 = previous(upper), previous(upper, 2)
-    lower1, lower2 = previous(lower), previous(lower, 2)
-    long2 = body2 > previous(body_long, 2)
-    near2, far1, far2 = previous(near, 2), previous(far), previous(far, 2)
-    equal2 = previous(equal, 2)
-    shadow_very_short1 = previous(shadow_very_short)
-    shadow_very_short2 = previous(shadow_very_short, 2)
-    shadow_short1 = previous(shadow_short)
-    white_three = white2 & white1 & white
-    # Two crows and upside gap two crows: a white candle followed by a black real body that gaps above it.
-    black_gapping_up1 = white2 & black1 & gap_up1 & long2 & ~white
-    # The real body of the third candle gaps away from the first like the second does (side-by-side white lines).
-    gap_up_from2 = (o > o2) & (o > c2) & (c > o2) & (c > c2)
-    gap_down_from2 = (o < o2) & (o < c2) & (c < o2) & (c < c2)
-    # Every real body of a tri-star is a doji's body against the average before the first candle.
-    tri_star_dojis = (
-        (body2 <= previous(body_doji, 2))
-        & (body1 <= previous(body_doji, 2))
-        & (body <= previous(body_doji, 2))
-    )
-    body_top, body_bottom = c.where(white, o), o.where(white, c)
-    body_top1, body_bottom1 = previous(body_top), previous(body_bottom)
-    body_top2, body_bottom2 = previous(body_top, 2), previous(body_bottom, 2)
-
-    recognised = {
-        "Doji": (body <= body_doji).astype(float),
-        "Hammer": (hammer_shape & ((c <= l1 + near1) | (o <= l1 + near1))).astype(
-            float
-        ),
-        "Hanging Man": -(hammer_shape & (c >= h1 - near1) & (o >= h1 - near1)).astype(
-            float
-        ),
-        "Inverted Hammer": (inverted_shape & gap_down).astype(float),
-        "Shooting Star": -(inverted_shape & gap_up).astype(float),
-        "Engulfing": color * engulfing_strength * engulfs,
-        "Harami": -previous(color) * harami_strength * harami_sizes,
-        "Piercing Line": (
-            black1
-            & white
-            & (o < l1)
-            & (body1 > previous(body_long))
-            & (body > body_long)
-            & (c < o1)
-            & (c > c1 + body1 * 0.5)
-        ).astype(float),
-        "Dark Cloud Cover": -(
-            white1
-            & ~white
-            & (o > h1)
-            & (body1 > previous(body_long))
-            & (c > o1)
-            & (c < c1 - body1 * DARK_CLOUD_PENETRATION)
-        ).astype(float),
-        "Morning Star": (
-            black2
-            & white
-            & (o1 < o2)
-            & (o1 < c2)
-            & (c1 < o2)
-            & (c1 < c2)
-            & (c > c2 + body2 * STAR_PENETRATION)
-            & star_sizes
-        ).astype(float),
-        "Evening Star": -(
-            white2
-            & ~white
-            & (o1 > o2)
-            & (o1 > c2)
-            & (c1 > o2)
-            & (c1 > c2)
-            & (c < c2 - body2 * STAR_PENETRATION)
-            & star_sizes
-        ).astype(float),
-        "Three White Soldiers": (
-            white2
-            & white1
-            & white
-            & (previous(upper, 2) < previous(shadow_very_short, 2))
-            & (previous(upper) < previous(shadow_very_short))
-            & (upper < shadow_very_short)
-            & (c > c1)
-            & (c1 > c2)
-            & (o1 > o2)
-            & (o1 <= c2 + previous(near, 2))
-            & (o > o1)
-            & (o <= c1 + near1)
-            & (body1 > body2 - previous(far, 2))
-            & (body > body1 - previous(far))
-            & (body > body_short)
-        ).astype(float),
-        "Three Black Crows": -(
-            previous(white, 3).eq(True)
-            & black2
-            & black1
-            & ~white
-            & (o1 < o2)
-            & (o1 > c2)
-            & (o < o1)
-            & (o > c1)
-            & (previous(h, 3) > c2)
-            & (c2 > c1)
-            & (c1 > c)
-            & (previous(lower, 2) < previous(shadow_very_short, 2))
-            & (previous(lower) < previous(shadow_very_short))
-            & (lower < shadow_very_short)
-        ).astype(float),
-        "Marubozu": color
-        * (
-            (body > body_long)
-            & (upper < shadow_very_short)
-            & (lower < shadow_very_short)
-        ),
-        "Spinning Top": color * ((upper > body) & (lower > body) & small_body),
-        # The open side of a belt-hold is the lower shadow of a white candle and the upper of a black one.
-        "Belt-hold": color
-        * ((body > body_long) & (lower.where(white, upper) < shadow_very_short)),
-        "Closing Marubozu": color
-        * ((body > body_long) & (upper.where(white, lower) < shadow_very_short)),
-        "Dragonfly Doji": (
-            doji & (upper < shadow_very_short) & (lower > shadow_very_short)
-        ).astype(float),
-        "Gravestone Doji": (
-            doji & (lower < shadow_very_short) & (upper > shadow_very_short)
-        ).astype(float),
-        "High-Wave Candle": color
-        * (small_body & (upper > shadow_very_long) & (lower > shadow_very_long)),
-        "Long-Legged Doji": (
-            doji & ((lower > shadow_long) | (upper > shadow_long))
-        ).astype(float),
-        "Long Line Candle": color
-        * ((body > body_long) & (upper < shadow_short) & (lower < shadow_short)),
-        "Rickshaw Man": (
-            doji
-            & (lower > shadow_long)
-            & (upper > shadow_long)
-            & ((o <= midpoint + near) | (c <= midpoint + near))
-            & ((o >= midpoint - near) | (c >= midpoint - near))
-        ).astype(float),
-        "Short Line Candle": color
-        * (small_body & (upper < shadow_short) & (lower < shadow_short)),
-        "Takuri": (
-            doji & (upper < shadow_very_short) & (lower > shadow_very_long)
-        ).astype(float),
-        "Inside Bar": color * ((h < h1) & (low > l1)),
-        "Counterattack": color
-        * (
-            opposite
-            & (body1 > previous(body_long))
-            & (body > body_long)
-            & (c <= c1 + equal1)
-            & (c >= c1 - equal1)
-        ),
-        "Doji Star": -previous(color)
-        * (
-            (body1 > previous(body_long))
-            & doji
-            & ((white1 & gap_up) | (black1 & gap_down))
-        ),
-        "Harami Cross": -previous(color)
-        * harami_strength
-        * ((body1 > previous(body_long)) & doji),
-        "Homing Pigeon": (
-            long_black1 & ~white & (c > c1) & (o < o1) & (body <= body_short)
-        ).astype(float),
-        "In-Neck": -(white_below_low1 & (c <= c1 + equal1) & (c >= c1)).astype(float),
-        "On-Neck": -(white_below_low1 & (c <= l1 + equal1) & (c >= l1 - equal1)).astype(
-            float
-        ),
-        "Thrusting": -(
-            white_below_low1 & (c > c1 + equal1) & (c <= c1 + body1 * 0.5)
-        ).astype(float),
-        "Kicking": color * kicking,
-        # The longer of the two marubozus decides the direction.
-        "Kicking by Length": pd.Series(
-            np.where(body > body1, color, previous(color)), index=candles.index
+        & (
+            (black(prev) & (last.low > prev.high))
+            | (white(prev) & (last.high < prev.low))
         )
-        * kicking,
-        "Matching Low": (
-            black1 & ~white & (c <= c1 + equal1) & (c >= c1 - equal1)
-        ).astype(float),
-        "Separating Lines": color
+        & marubozu(prev)
+        & marubozu(last)
+    )
+    # A long white candle followed by a black real body gapping above it (two crows, upside gap two crows).
+    black_gap_above_white = (
+        white(prev2)
+        & long_body(prev2)
+        & black(prev)
+        & gap_up(prev, prev2)
+        & black(last)
+    )
+    star = long_body(prev2) & long_body(last)
+    rising_whites = (
+        white(prev2)
+        & white(prev)
+        & white(last)
+        & (last.close > prev.close)
+        & (prev.close > prev2.close)
+        & steps_up(prev, prev2)
+    )
+
+    bullish = {
+        "Hammer": short_body(last)
+        & (last.lower_shadow > last.body)
+        & (last.upper_shadow < last.tiny)
+        & (last.bottom <= prev.low + prev.near),
+        "Inverted Hammer": short_body(last)
+        & (last.upper_shadow > last.body)
+        & (last.lower_shadow < last.tiny)
+        & gap_down(last, prev),
+        "Piercing Line": black(prev)
+        & long_body(prev)
+        & white(last)
+        & long_body(last)
+        & (last.open < prev.low)
+        & (last.close < prev.open)
+        & (last.close > prev.close + prev.body * 0.5),
+        "Morning Star": black(prev2)
+        & gap_down(prev, prev2)
+        & (prev.body <= prev.average_body)
+        & white(last)
+        & (last.close > prev2.close + prev2.body * STAR_PENETRATION)
+        & star,
+        "Morning Doji Star": black(prev2)
+        & gap_down(prev, prev2)
+        & doji(prev)
+        & white(last)
+        & (last.close > prev2.close + prev2.body * STAR_PENETRATION)
+        & star,
+        "Three White Soldiers": rising_whites
+        & (prev2.upper_shadow < prev2.tiny)
+        & (prev.upper_shadow < prev.tiny)
+        & (last.upper_shadow < last.tiny)
+        & steps_up(last, prev)
+        & (prev.body > prev2.body - prev2.far)
+        & (last.body > prev.body - prev.far)
+        & long_body(last),
+        "Homing Pigeon": black(prev)
+        & long_body(prev)
+        & black(last)
+        & (last.body <= last.average_body)
+        & (last.open < prev.open)
+        & (last.close > prev.close),
+        "Matching Low": black(prev)
+        & black(last)
+        & within(last.close, prev.close, prev.equal),
+        "Three Stars in the South": black(prev2)
+        & long_body(prev2)
+        & (prev2.lower_shadow > prev2.body)
+        & black(prev)
+        & (prev.body < prev2.body)
+        & (prev.open > prev2.close)
+        & (prev.open <= prev2.high)
+        & (prev.low < prev2.close)
+        & (prev.low >= prev2.low)
+        & (prev.lower_shadow > prev.tiny)
+        & black(last)
+        & short_body(last)
+        & (last.lower_shadow < last.tiny)
+        & (last.upper_shadow < last.tiny)
+        & (last.low > prev.low)
+        & (last.high < prev.high),
+        "Stick Sandwich": black(prev2)
+        & white(prev)
+        & (prev.low > prev2.close)
+        & black(last)
+        & within(last.close, prev2.close, prev2.equal),
+        "Unique Three River": black(prev2)
+        & long_body(prev2)
+        & black(prev)
+        & (prev.close > prev2.close)
+        & (prev.open <= prev2.open)
+        & (prev.low < prev2.low)
+        & white(last)
+        & short_body(last)
+        & (last.open > prev.low),
+    }
+    bearish = {
+        "Hanging Man": short_body(last)
+        & (last.lower_shadow > last.body)
+        & (last.upper_shadow < last.tiny)
+        & (last.bottom >= prev.high - prev.near),
+        "Shooting Star": short_body(last)
+        & (last.upper_shadow > last.body)
+        & (last.lower_shadow < last.tiny)
+        & gap_up(last, prev),
+        "Dark Cloud Cover": white(prev)
+        & long_body(prev)
+        & black(last)
+        & (last.open > prev.high)
+        & (last.close > prev.open)
+        & (last.close < prev.close - prev.body * DARK_CLOUD_PENETRATION),
+        "Evening Star": white(prev2)
+        & gap_up(prev, prev2)
+        & (prev.body <= prev.average_body)
+        & black(last)
+        & (last.close < prev2.close - prev2.body * STAR_PENETRATION)
+        & star,
+        "Evening Doji Star": white(prev2)
+        & gap_up(prev, prev2)
+        & doji(prev)
+        & black(last)
+        & (last.close < prev2.close - prev2.body * STAR_PENETRATION)
+        & star,
+        "Three Black Crows": white(prev3)
+        & (prev3.high > prev2.close)
+        & black(prev2)
+        & black(prev)
+        & black(last)
+        & (prev2.lower_shadow < prev2.tiny)
+        & (prev.lower_shadow < prev.tiny)
+        & (last.lower_shadow < last.tiny)
+        & (prev.open < prev2.open)
+        & (prev.open > prev2.close)
+        & (last.open < prev.open)
+        & (last.open > prev.close)
+        & (prev2.close > prev.close)
+        & (prev.close > last.close),
+        "In-Neck": long_black_then_white_below
+        & (last.close <= prev.close + prev.equal)
+        & (last.close >= prev.close),
+        "On-Neck": long_black_then_white_below
+        & within(last.close, prev.low, prev.equal),
+        "Thrusting": long_black_then_white_below
+        & (last.close > prev.close + prev.equal)
+        & (last.close <= prev.close + prev.body * 0.5),
+        "Two Crows": black_gap_above_white
+        & (last.open < prev.open)
+        & (last.open > prev.close)
+        & (last.close > prev2.open)
+        & (last.close < prev2.close),
+        "Upside Gap Two Crows": black_gap_above_white
+        & (prev.body <= prev.average_body)
+        & (last.open > prev.open)
+        & (last.close < prev.close)
+        & (last.close > prev2.close),
+        "Identical Three Crows": black(prev2)
+        & black(prev)
+        & black(last)
+        & (prev2.lower_shadow < prev2.tiny)
+        & (prev.lower_shadow < prev.tiny)
+        & (last.lower_shadow < last.tiny)
+        & (prev2.close > prev.close)
+        & (prev.close > last.close)
+        & within(prev.open, prev2.close, prev2.equal)
+        & within(last.open, prev.close, prev.equal),
+        # The advance weakens: a far smaller second body, a far smaller third body, ever smaller bodies with
+        # an upper shadow that is not short, or a smaller third body with a long upper shadow.
+        "Advance Block": rising_whites
+        & long_body(prev2)
+        & (prev2.upper_shadow < prev2.average_shadow)
+        & steps_up(last, prev)
+        & (
+            ((prev.body < prev2.body - prev2.far) & (last.body < prev.body + prev.near))
+            | (last.body < prev.body - prev.far)
+            | (
+                (last.body < prev.body)
+                & (prev.body < prev2.body)
+                & (
+                    (last.upper_shadow > last.average_shadow)
+                    | (prev.upper_shadow > prev.average_shadow)
+                )
+            )
+            | ((last.body < prev.body) & (last.upper_shadow > last.body))
+        ),
+        "Stalled Pattern": rising_whites
+        & long_body(prev2)
+        & long_body(prev)
+        & (prev.upper_shadow < prev.tiny)
+        & short_body(last)
+        & (last.open >= prev.close - last.body - prev.near),
+    }
+    # Patterns that are 1 when present (the dojis), take the colour of the last candle, or point in a
+    # direction set by the pattern's candles.
+    signed = {
+        "Doji": doji(last),
+        "Dragonfly Doji": doji(last)
+        & (last.upper_shadow < last.tiny)
+        & (last.lower_shadow > last.tiny),
+        "Gravestone Doji": doji(last)
+        & (last.lower_shadow < last.tiny)
+        & (last.upper_shadow > last.tiny),
+        "Long-Legged Doji": doji(last)
+        & ((last.lower_shadow > last.body) | (last.upper_shadow > last.body)),
+        "Rickshaw Man": doji(last)
+        & (last.lower_shadow > last.body)
+        & (last.upper_shadow > last.body)
+        & (last.bottom <= middle + last.near)
+        & (last.top >= middle - last.near),
+        "Takuri": doji(last)
+        & (last.upper_shadow < last.tiny)
+        & (last.lower_shadow > 2.0 * last.body),
+        "Marubozu": last.color * marubozu(last),
+        "Spinning Top": last.color
+        * (
+            short_body(last)
+            & (last.upper_shadow > last.body)
+            & (last.lower_shadow > last.body)
+        ),
+        "Belt-hold": last.color * (long_body(last) & (open_shadow < last.tiny)),
+        "Closing Marubozu": last.color * (long_body(last) & (close_shadow < last.tiny)),
+        "High-Wave Candle": last.color
+        * (
+            short_body(last)
+            & (last.upper_shadow > 2.0 * last.body)
+            & (last.lower_shadow > 2.0 * last.body)
+        ),
+        "Long Line Candle": last.color
+        * (
+            long_body(last)
+            & (last.upper_shadow < last.average_shadow)
+            & (last.lower_shadow < last.average_shadow)
+        ),
+        "Short Line Candle": last.color
+        * (
+            short_body(last)
+            & (last.upper_shadow < last.average_shadow)
+            & (last.lower_shadow < last.average_shadow)
+        ),
+        "Inside Bar": last.color * ((last.high < prev.high) & (last.low > prev.low)),
+        "Engulfing": last.color * engulfing,
+        "Harami": -prev.color
+        * harami
+        * (long_body(prev) & (last.body <= last.average_body)),
+        "Harami Cross": -prev.color * harami * (long_body(prev) & doji(last)),
+        "Doji Star": -prev.color
+        * (
+            long_body(prev)
+            & doji(last)
+            & (
+                (white(prev) & gap_up(last, prev))
+                | (black(prev) & gap_down(last, prev))
+            )
+        ),
+        "Counterattack": last.color
         * (
             opposite
-            & (o <= o1 + equal1)
-            & (o >= o1 - equal1)
-            & (body > body_long)
-            & (lower.where(white, upper) < shadow_very_short)
+            & long_body(prev)
+            & long_body(last)
+            & within(last.close, prev.close, prev.equal)
         ),
-        "Three Inside": -previous(color, 2)
+        "Kicking": last.color * kicking,
+        # The longer of the two marubozus decides the direction, the first when both are equally long.
+        "Kicking by Length": last.color.where(last.body > prev.body, prev.color)
+        * kicking,
+        "Separating Lines": last.color
         * (
-            ((c1 < c2) | (c1 < o2))
-            & ((o1 < c2) | (o1 < o2))
-            & ((c1 > c2) | (c1 > o2))
-            & ((o1 > c2) | (o1 > o2))
-            & ((white2 & ~white & (c < o2)) | (black2 & white & (c > o2)))
-            & (body2 > previous(body_long, 2))
-            & (body1 <= previous(body_short))
+            opposite
+            & within(last.open, prev.open, prev.equal)
+            & long_body(last)
+            & (open_shadow < last.tiny)
         ),
-        "Three Outside": previous(color)
+        # A harami followed by a close beyond the first candle's open, against the first candle's colour.
+        "Three Inside": -prev2.color
         * (
-            (white1 & black2 & (c1 > o2) & (o1 < c2) & (c > c1))
-            | (black1 & white2 & (o1 > c2) & (c1 < o2) & (c < c1))
+            long_body(prev2)
+            & (prev.body <= prev.average_body)
+            & (prev.top < prev2.top)
+            & (prev.bottom > prev2.bottom)
+            & (
+                (white(prev2) & black(last) & (last.close < prev2.open))
+                | (black(prev2) & white(last) & (last.close > prev2.open))
+            )
         ),
-        "Morning Doji Star": (
-            black2
-            & white
-            & gap_down1
-            & (c > c2 + body2 * STAR_PENETRATION)
-            & doji_star_sizes
-        ).astype(float),
-        "Evening Doji Star": -(
-            white2
-            & ~white
-            & gap_up1
-            & (c < c2 - body2 * STAR_PENETRATION)
-            & doji_star_sizes
-        ).astype(float),
-        "Two Crows": -(
-            black_gapping_up1 & (o < o1) & (o > c1) & (c > o2) & (c < c2)
-        ).astype(float),
-        "Three Stars in the South": (
-            black2
-            & black1
-            & ~white
-            & long2
-            & (lower2 > previous(shadow_long, 2))
-            & (body1 < body2)
-            & (o1 > c2)
-            & (o1 <= h2)
-            & (l1 < c2)
-            & (l1 >= l2)
-            & (lower1 > shadow_very_short1)
-            & (body < body_short)
-            & (lower < shadow_very_short)
-            & (upper < shadow_very_short)
-            & (low > l1)
-            & (h < h1)
-        ).astype(float),
-        # A doji whose shadows gap away from both neighbours, in the direction of the third candle.
-        "Abandoned Baby": color
+        # An engulfing pattern followed by a close beyond the engulfing candle's close, in its direction.
+        "Three Outside": prev.color
         * (
-            long2
-            & (body1 <= previous(body_doji))
-            & (body > body_short)
+            (prev.color == -prev2.color)
+            & (prev.top > prev2.top)
+            & (prev.bottom < prev2.bottom)
+            & (
+                (white(prev) & (last.close > prev.close))
+                | (black(prev) & (last.close < prev.close))
+            )
+        ),
+        # A doji whose shadows gap away from both neighbours, in the direction of the last candle.
+        "Abandoned Baby": last.color
+        * (
+            star
+            & doji(prev)
             & (
                 (
-                    white2
-                    & ~white
-                    & (l1 > h2)
-                    & (h < l1)
-                    & (c < c2 - body2 * STAR_PENETRATION)
+                    white(prev2)
+                    & (prev.low > prev2.high)
+                    & black(last)
+                    & (last.high < prev.low)
+                    & (last.close < prev2.close - prev2.body * STAR_PENETRATION)
                 )
                 | (
-                    black2
-                    & white
-                    & (h1 < l2)
-                    & (low > h1)
-                    & (c > c2 + body2 * STAR_PENETRATION)
+                    black(prev2)
+                    & (prev.high < prev2.low)
+                    & white(last)
+                    & (last.low > prev.high)
+                    & (last.close > prev2.close + prev2.body * STAR_PENETRATION)
                 )
             )
         ),
-        "Advance Block": -(
-            white_three
-            & (c > c1)
-            & (c1 > c2)
-            & (o1 > o2)
-            & (o1 <= c2 + near2)
-            & (o > o1)
-            & (o <= c1 + near1)
-            & long2
-            & (upper2 < previous(shadow_short, 2))
-            # The advance weakens: a far smaller second body, a far smaller third body, ever smaller
-            # bodies with an upper shadow that is not short, or a smaller third body with a long upper shadow.
-            & (
-                ((body1 < body2 - far2) & (body < body1 + near1))
-                | (body < body1 - far1)
-                | (
-                    (body < body1)
-                    & (body1 < body2)
-                    & ((upper > shadow_short) | (upper1 > shadow_short1))
-                )
-                | ((body < body1) & (upper > shadow_long))
-            )
-        ).astype(float),
         # Bullish after a gap up, bearish after a gap down.
         "Side-by-Side White Lines": pd.Series(
-            np.where(body_bottom1 > body_top2, 1.0, -1.0), index=candles.index
+            np.where(prev.bottom > prev2.top, 1.0, -1.0), index=last.index
         )
         * (
-            white1
-            & white
-            & ((gap_up1 & gap_up_from2) | (gap_down1 & gap_down_from2))
-            & (body >= body1 - near1)
-            & (body <= body1 + near1)
-            & (o >= o1 - equal1)
-            & (o <= o1 + equal1)
+            white(prev)
+            & white(last)
+            & (
+                (gap_up(prev, prev2) & gap_up(last, prev2))
+                | (gap_down(prev, prev2) & gap_down(last, prev2))
+            )
+            & within(last.body, prev.body, prev.near)
+            & within(last.open, prev.open, prev.equal)
         ),
-        "Identical Three Crows": -(
-            black2
-            & black1
-            & ~white
-            & (lower2 < shadow_very_short2)
-            & (lower1 < shadow_very_short1)
-            & (lower < shadow_very_short)
-            & (c2 > c1)
-            & (c1 > c)
-            & (o1 <= c2 + equal2)
-            & (o1 >= c2 - equal2)
-            & (o <= c1 + equal1)
-            & (o >= c1 - equal1)
-        ).astype(float),
-        "Stalled Pattern": -(
-            white_three
-            & (c > c1)
-            & (c1 > c2)
-            & long2
-            & (body1 > previous(body_long))
-            & (upper1 < shadow_very_short1)
-            & (o1 > o2)
-            & (o1 <= c2 + near2)
-            & (body < body_short)
-            & (o >= c1 - body - near1)
-        ).astype(float),
-        "Stick Sandwich": (
-            black2
-            & white1
-            & ~white
-            & (l1 > c2)
-            & (c <= c2 + equal2)
-            & (c >= c2 - equal2)
-        ).astype(float),
-        # The second candle's colour, after a gap in its direction.
-        "Tasuki Gap": previous(color)
+        # The second candle's colour, after a gap in its direction; the last candle opens in the second real
+        # body and closes inside the gap.
+        "Tasuki Gap": prev.color
         * (
             (
                 (
-                    (gap_up1 & white1 & ~white & (o < c1) & (o > o1) & (c < o1))
-                    & (c > c2)
-                    & (c > o2)
+                    gap_up(prev, prev2)
+                    & white(prev)
+                    & black(last)
+                    & (last.close < prev.bottom)
+                    & (last.close > prev2.top)
                 )
                 | (
-                    (gap_down1 & black1 & white & (o < o1) & (o > c1) & (c > o1))
-                    & (c < c2)
-                    & (c < o2)
+                    gap_down(prev, prev2)
+                    & black(prev)
+                    & white(last)
+                    & (last.close > prev.top)
+                    & (last.close < prev2.bottom)
                 )
             )
-            & ((body1 - body).abs() < near1)
+            & opens_in_previous_body
+            & ((prev.body - last.body).abs() < prev.near)
         ),
-        # Three dojis, the middle one gapping away from the first and the third not beyond the middle.
+        # Three dojis against the reference size before the first, the middle one gapping away from the first
+        # and the last not beyond the middle: bullish when the middle one gaps down, bearish when it gaps up.
         "Tri-Star": pd.Series(
             np.where(
-                (body_top1 < body_bottom2) & (body_bottom > body_bottom1),
+                gap_down(prev, prev2) & (last.bottom > prev.bottom),
                 1.0,
-                np.where(
-                    (body_bottom1 > body_top2) & (body_top < body_top1), -1.0, 0.0
-                ),
+                np.where(gap_up(prev, prev2) & (last.top < prev.top), -1.0, 0.0),
             ),
-            index=candles.index,
+            index=last.index,
         )
-        * tri_star_dojis,
-        "Unique Three River": (
-            black2
-            & black1
-            & white
-            & (c1 > c2)
-            & (o1 <= o2)
-            & (l1 < l2)
-            & (o > l1)
-            & long2
-            & (body < body_short)
-        ).astype(float),
-        "Upside Gap Two Crows": -(
-            black_gapping_up1
-            & (body1 <= previous(body_short))
-            & (o > o1)
-            & (c < c1)
-            & (c > c2)
-        ).astype(float),
-        # The third candle opens in the second real body and closes in the first, in the direction of the gap.
-        "Gap Three Methods": previous(color, 2)
         * (
-            (white2 == white1)
-            & (white1 != white)
-            & ((o < c1) | (o < o1))
-            & ((o > c1) | (o > o1))
-            & ((c < c2) | (c < o2))
-            & ((c > c2) | (c > o2))
-            & ((white2 & gap_up1) | (black2 & gap_down1))
+            (prev2.body <= prev2.tiny)
+            & (prev.body <= prev2.tiny)
+            & (last.body <= prev2.tiny)
+        ),
+        # Two candles of one colour with a real body gap, then a candle of the other colour that opens in the
+        # second real body and closes in the first, in the direction of the gap.
+        "Gap Three Methods": prev2.color
+        * (
+            (prev2.color == prev.color)
+            & opposite
+            & opens_in_previous_body
+            & (last.close < prev2.top)
+            & (last.close > prev2.bottom)
+            & (
+                (white(prev2) & gap_up(prev, prev2))
+                | (black(prev2) & gap_down(prev, prev2))
+            )
         ),
     }
 
-    position = pd.Series(np.arange(len(candles)), index=candles.index)
+    recognised = (
+        {name: pattern.astype(float) for name, pattern in bullish.items()}
+        | {name: -pattern.astype(float) for name, pattern in bearish.items()}
+        | {name: pattern.astype(float) for name, pattern in signed.items()}
+    )
 
-    # A pattern is evaluated from the candle on which TA-Lib gives its first value; the -0.0 of a
-    # negated False becomes 0.
+    position = pd.Series(np.arange(len(last)), index=last.index)
+
+    # Each pattern is empty during its warm-up; adding 0.0 turns the -0.0 of a negated False into 0.
     return pd.DataFrame(
         {
             name: (recognised[name] + 0.0).where(position >= PATTERN_LOOKBACK[name])

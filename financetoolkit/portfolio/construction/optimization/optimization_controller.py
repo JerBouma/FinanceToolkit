@@ -25,7 +25,7 @@ logger = get_logger()
 @track_sources
 class OptimizationConstruction:
     """
-    Portfolio optimizers: minimum variance, maximum Sharpe, mean-variance, the efficient frontier, risk parity, hierarchical and nested clustered methods, inverse volatility, CVaR, drawdown, Omega, mean-risk (MAD, semideviation, Gini and other risk measures), diversification, tracking error, growth optimal, resampled and Black-Litterman weights.
+    Portfolio optimizers: minimum variance, maximum Sharpe, mean-variance, the efficient frontier, risk parity, hierarchical and nested clustered methods, inverse volatility, CVaR, drawdown, Omega, mean-risk (MAD, semideviation, Gini and other risk measures), the critical line algorithm, worst-case mean-variance, distributionally robust CVaR, diversification, tracking error, growth optimal, resampled and Black-Litterman weights.
     """
 
     def _get_current_weights(
@@ -2766,6 +2766,626 @@ class OptimizationConstruction:
         excess[PORTFOLIO_TICKER] = excess @ weights
         table[name] = measure
         table[f"{name} Ratio"] = excess / measure
+        return self._round(self._add_turnover(table, weights, current), rounding)
+
+    @handle_errors
+    def get_critical_line_weights(
+        self,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the corner portfolios of the efficient frontier with the critical line
+        algorithm of Markowitz (1956): the exact points where an asset enters or leaves the
+        portfolio. Between two neighbouring corners the efficient weights move along a
+        straight line, so the corners describe the whole long-only (or bounded) frontier
+        without a grid of target returns. The minimum variance portfolio (the last corner)
+        and the maximum Sharpe ratio portfolio follow from them exactly.
+
+        Every efficient portfolio minimizes ½ w'Σw - λ μ'w subject to the weights summing to
+        one and lying between their bounds, for some λ ≥ 0, the risk tolerance (the inverse
+        of the risk aversion). The algorithm starts at the portfolio with the highest
+        expected return (λ = ∞) and lowers λ. For the assets strictly between their bounds
+        (the free assets F, the others B are at a bound) the first-order conditions are a
+        linear system:
+
+        - Σ_FF w_F + γ 1 = λ μ_F - Σ_FB w_B
+        - 1'w_F = 1 - 1'w_B
+
+        so the weights are affine in λ until a free asset reaches a bound or the gradient
+        (Σw)_j - λ μ_j + γ of a bound asset changes sign, which frees it. That λ is a corner.
+        On the line between two corners the Sharpe ratio has a single stationary point,
+        which gives the maximum Sharpe ratio portfolio in closed form.
+
+        For more information, see the following papers:
+
+        - Markowitz, H. (1956). "The Optimization of a Quadratic Function Subject to Linear
+          Constraints." Naval Research Logistics Quarterly, 3(1-2), 111-133.
+        - Bailey, D. H. and López de Prado, M. (2013). "An Open-Source Implementation of the
+          Critical-Line Algorithm for Portfolio Optimization." Algorithms, 6(1), 169-196.
+        - PyPortfolioOpt: CLA (https://github.com/robertmartin8/PyPortfolioOpt), which the
+          corner portfolios, the minimum variance and the maximum Sharpe ratio portfolio
+          are referenced against.
+
+        Also known as: CLA, corner portfolios, turning points of the efficient frontier.
+
+        Args:
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020), "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022), "factor" (the covariance of the Fama and French five factor
+                model with OLS loadings, Fama and French, 1993), "minimum_covariance_determinant"
+                (the reweighted covariance of the half of the periods with the smallest
+                covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
+                "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
+                correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
+                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
+                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                The algorithm needs a positive definite covariance matrix. Defaults to
+                "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per corner portfolio, from "Corner 1" (the highest
+            expected return) to the minimum variance portfolio, followed by the "Minimum
+            Variance" and "Maximum Sharpe" portfolios, each with its Lambda (the risk
+            tolerance λ at which it is optimal), the annualized Expected Return,
+            Volatility and Sharpe Ratio and the weight per asset.
+
+        Notes:
+        - The critical line algorithm takes the weight bounds and the budget only; for
+          sector, country, gross exposure or turnover constraints use
+          get_efficient_frontier, which solves each target return numerically.
+        - λ is in the units of the annualized expected returns and covariance. The first
+          corner is optimal for every λ at or above its own, and the last one, at λ = 0,
+          is the minimum variance portfolio, so it is listed twice.
+        - PyPortfolioOpt's CLA lists the first portfolio twice (at λ = ∞ and at the first
+          corner); here it appears once.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_critical_line_weights().drop(columns="Sharpe Ratio")
+        ```
+
+        Which returns:
+
+        | Portfolio        |   Lambda |   Expected Return |   Volatility |   AAPL |   MSFT |    JNJ |    XOM |
+        |:-----------------|---------:|------------------:|-------------:|-------:|-------:|-------:|-------:|
+        | Corner 1         |   0.7508 |            0.2911 |       0.2702 | 0      | 0      | 0      | 1      |
+        | Corner 2         |   0.2405 |            0.2591 |       0.2031 | 0      | 0.3583 | 0      | 0.6417 |
+        | Corner 3         |   0.224  |            0.2578 |       0.2016 | 0.0103 | 0.3619 | 0      | 0.6278 |
+        | Corner 4         |   0      |            0.1577 |       0.135  | 0.0211 | 0.2167 | 0.5821 | 0.1801 |
+        | Minimum Variance |   0      |            0.1577 |       0.135  | 0.0211 | 0.2167 | 0.5821 | 0.1801 |
+        | Maximum Sharpe   |   0.147  |            0.2234 |       0.167  | 0.014  | 0.312  | 0.2    | 0.474  |
+        """
+        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        corners = optimization_model.get_critical_line_weights(
+            expected,
+            covariance_matrix,
+            risk_free_rate,
+            minimum_weight,
+            maximum_weight,
+        )
+        return self._round(corners, rounding)
+
+    @handle_errors
+    def get_worst_case_mean_variance_weights(
+        self,
+        uncertainty: str = "box",
+        confidence_level: float = 0.95,
+        objective: str = "maximum_sharpe",
+        risk_aversion: float = 2.5,
+        target_return: float | None = None,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of a worst-case (robust) mean-variance portfolio: the
+        portfolio that is optimal for the least favourable expected returns within a
+        confidence region around the estimates, instead of for the estimates themselves.
+        The expected returns are the noisiest input of a mean-variance optimization, and
+        the worst case penalizes the portfolios whose return rests most on them.
+
+        With μ the annualized expected returns, Σ the annualized covariance matrix,
+        Σ_μ = Σ × (periods per year) / T the covariance of the annualized average over T
+        periods and α the confidence level, the worst-case return R(w) is:
+
+        - "ellipsoid": μ'w - κ √(w'Σ_μ w) with κ² = χ²_n(α), the lowest return over the
+          joint confidence ellipsoid of the n expected returns (Goldfarb and Iyengar,
+          2003).
+        - "box": μ'w - δ'|w| with δ_i = z_(1+α)/2 √(Σ_μ,ii), the lowest return when each
+          expected return can lie anywhere in its own confidence interval (Tütüncü and
+          Koenig, 2004).
+
+        The objectives replace the expected return μ'w by R(w):
+
+        - "maximum_sharpe": maximize (R(w) - r_f) / √(w'Σw), solved with the
+          Charnes-Cooper transformation (Charnes and Cooper, 1962).
+        - "utility": maximize R(w) - (λ/2) w'Σw with λ the risk aversion.
+        - "minimum_variance": minimize w'Σw subject to R(w) ≥ the target return.
+
+        R(w) is concave, so every objective is a convex problem, solved with SLSQP.
+
+        For more information, see the following papers:
+
+        - Goldfarb, D. and Iyengar, G. (2003). "Robust Portfolio Selection Problems."
+          Mathematics of Operations Research, 28(1), 1-38.
+        - Tütüncü, R. H. and Koenig, M. (2004). "Robust Asset Allocation." Annals of
+          Operations Research, 132, 157-187.
+        - Charnes, A. and Cooper, W. W. (1962). "Programming with Linear Fractional
+          Functionals." Naval Research Logistics Quarterly, 9(3-4), 181-186.
+        - Riskfolio-Lib: Portfolio.wc_optimization with Umu="box" or "ellip" and
+          Ucov=None (https://github.com/dcajasn/Riskfolio-Lib), which the weights are
+          referenced against.
+        - skfolio: MeanRisk with EmpiricalMuUncertaintySet (https://skfolio.org), which
+          shares the ellipsoid κ² = χ²_n(α) and Σ_μ = Σ / T and is referenced against.
+
+        Also known as: robust mean-variance, robust Markowitz, max-min portfolio,
+        uncertainty set optimization.
+
+        Args:
+            uncertainty (str, optional): The uncertainty set of the expected returns:
+                "box" or "ellipsoid". Defaults to "box".
+            confidence_level (float, optional): The confidence level of the uncertainty
+                set, e.g. 0.95. A higher level widens the set and gives more cautious
+                weights. Defaults to 0.95.
+            objective (str, optional): "maximum_sharpe", "utility" or
+                "minimum_variance" (which needs a target return). Defaults to
+                "maximum_sharpe".
+            risk_aversion (float, optional): The risk aversion λ of the utility; higher
+                values give less risky portfolios. Defaults to 2.5.
+            target_return (float | None, optional): The lowest annualized worst-case
+                return of the minimum variance objective, e.g. 0.1 for 10%. Defaults to
+                None.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix, as in
+                get_maximum_sharpe_weights: "sample" (ddof=1), "ledoit_wolf",
+                "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor", "oas",
+                "shrunk", "semicovariance", "exponential", "denoised",
+                "denoised_spectral", "denoised_shrink", "gerber", "factor",
+                "minimum_covariance_determinant", "jlogo", "geodesic" or
+                "regime_adjusted_ew". It also sets Σ_μ. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns, as in
+                get_maximum_sharpe_weights: "mean", "geometric", "exponential",
+                "exponential_geometric", "capm", "bayes_stein", "james_stein" or
+                "bodnar_okhrin_parolya". Defaults to "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution, with the Worst-Case Return
+            and the Worst-Case Sharpe Ratio of every asset on its own and of the
+            portfolio. Returns and volatilities are annualized.
+
+        Notes:
+        - Only the uncertainty of the expected returns is modelled. Uncertainty sets on
+          the covariance matrix (as in Riskfolio-Lib's Ucov="box" or "ellip") need
+          semidefinite programming, which is not available with SciPy's solvers.
+        - Σ_μ = Σ / T is the covariance of the historical average. For the other
+          expected return estimators it is an approximation of their uncertainty.
+        - The box of each expected return is its own two-sided confidence interval
+          from the normal distribution. Riskfolio-Lib estimates its box and ellipsoid
+          by bootstrapping by default; with the same δ, Σ_μ and κ the weights agree.
+        - skfolio's EmpiricalMuUncertaintySet uses only the variances of Σ_μ by default
+          (diagonal=True); the full Σ_μ here equals its diagonal=False.
+        - With the ellipsoid, Σ_μ = Σ × (periods per year) / T is proportional to Σ, so
+          every Sharpe ratio falls by the same κ √((periods per year) / T) and the
+          maximum Sharpe portfolio equals that of get_maximum_sharpe_weights. The
+          ellipsoid changes the weights of the utility and minimum variance objectives,
+          and the box changes those of all three.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_worst_case_mean_variance_weights(
+            confidence_level=0.9, maximum_weight=0.5
+        )[["Weight", "Expected Return", "Worst-Case Return", "Worst-Case Sharpe Ratio"]]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   Worst-Case Return |   Worst-Case Sharpe Ratio |
+        |:----------|---------:|------------------:|--------------------:|--------------------------:|
+        | AAPL      |      0   |            0.1932 |             -0.0122 |                   -0.1649 |
+        | MSFT      |      0.5 |            0.2017 |              0.0121 |                   -0.084  |
+        | JNJ       |      0   |            0.0987 |             -0.0247 |                   -0.349  |
+        | XOM       |      0.5 |            0.2911 |              0.0919 |                    0.2152 |
+        | Portfolio |      1   |            0.2464 |              0.052  |                    0.0941 |
+        """
+        returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        # The covariance of the annualized average of T periods: Var(P r̄) = P Σ_annual / T.
+        mean_covariance = covariance_matrix * PERIODS_PER_YEAR[period] / len(returns)
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None,
+        )
+        weights = optimization_model.get_worst_case_mean_variance_weights(
+            expected,
+            covariance_matrix,
+            mean_covariance,
+            uncertainty,
+            confidence_level,
+            objective,
+            risk_free_rate,
+            risk_aversion,
+            target_return,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
+        )
+        table = self._weights_table(
+            weights, expected, covariance_matrix, risk_free_rate, rounding
+        )
+        portfolios = {
+            **{asset: pd.Series({asset: 1.0}) for asset in covariance_matrix.index},
+            PORTFOLIO_TICKER: weights,
+        }
+        worst = pd.Series(
+            {
+                name: optimization_model.get_worst_case_return(
+                    portfolio,
+                    expected,
+                    mean_covariance,
+                    uncertainty,
+                    confidence_level,
+                )
+                for name, portfolio in portfolios.items()
+            }
+        )
+        volatility = pd.Series(
+            {
+                name: np.sqrt(
+                    portfolio.reindex(covariance_matrix.index).fillna(0)
+                    @ covariance_matrix
+                    @ portfolio.reindex(covariance_matrix.index).fillna(0)
+                )
+                for name, portfolio in portfolios.items()
+            }
+        )
+        table["Worst-Case Return"] = worst
+        table["Worst-Case Sharpe Ratio"] = (worst - risk_free_rate) / volatility
+        return self._round(self._add_turnover(table, weights, current), rounding)
+
+    @handle_errors
+    def get_distributionally_robust_cvar_weights(
+        self,
+        confidence_level: float = 0.95,
+        wasserstein_radius: float = 0.0005,
+        risk_aversion: float = 1.0,
+        period: str = "daily",
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of the distributionally robust mean-CVaR portfolio: the
+        portfolio that minimizes the expected loss plus the risk aversion times the
+        Conditional Value at Risk (CVaR) under the least favourable distribution of the
+        returns within a Wasserstein ball around the historical returns. The historical
+        returns are one sample of the distribution; the ball holds every distribution that
+        lies within a transport distance ε of it, so the portfolio is protected against
+        distributions with heavier losses than the sample happened to show.
+
+        With X = ξ'w the portfolio return, β the confidence level, ρ the risk aversion and
+        ε the radius, the weights minimize
+
+        - sup over Q in the ball of E_Q[-X] + ρ CVaR_β,Q(-X),
+
+        where the distance between two distributions is the least average 1-norm change
+        in the returns of the assets that turns one into the other (the type-1
+        Wasserstein distance), and returns stay at or above -100%. Mohajerin Esfahani
+        and Kuhn (2018) show that this worst case is a linear programme: with the CVaR written as
+        min over τ of τ + E[max(-X - τ, 0)] / (1 - β) the loss is the maximum of two
+        linear pieces, and its worst case is min λε + Σ s_t / T over λ ≥ 0 with s_t bounding
+        each piece in period t after the most harmful shift of the returns. Per asset that
+        shift is either none or down to -100%, so the programme has n + 2 + T + 2n
+        variables and is solved exactly with HiGHS. At a radius of 0 it is the historical
+        mean-CVaR portfolio.
+
+        For more information, see the following papers:
+
+        - Mohajerin Esfahani, P. and Kuhn, D. (2018). "Data-Driven Distributionally Robust
+          Optimization Using the Wasserstein Metric: Performance Guarantees and Tractable
+          Reformulations." Mathematical Programming, 171(1-2), 115-166.
+        - Rockafellar, R. T. and Uryasev, S. (2000). "Optimization of Conditional
+          Value-at-Risk." Journal of Risk, 2(3), 21-41.
+        - skfolio: DistributionallyRobustCVaR (https://skfolio.org), which has the same
+          formulation (1-norm transport cost, returns of at least -100%) and the same
+          β = 0.95 and ρ = 1 by default, and which the weights are referenced against.
+
+        Also known as: Wasserstein robust CVaR, DRO CVaR, distributionally robust
+        mean-CVaR.
+
+        Args:
+            confidence_level (float, optional): The confidence level β of the CVaR, e.g.
+                0.95 for the average of the worst 5% of periods. Defaults to 0.95.
+            wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
+                returns per period of the chosen frequency: the average total change in
+                the returns of all assets that the distributions considered may have.
+                Defaults to 0.0005, which suits daily returns (see the Notes).
+            risk_aversion (float, optional): The weight ρ of the CVaR against the
+                expected loss; a high value gives the minimum worst-case CVaR portfolio.
+                Defaults to 1.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution, with the historical CVaR and
+            the Worst-Case CVaR over the Wasserstein ball (per period, positive for a
+            loss) of every asset on its own and of the portfolio.
+
+        Notes:
+        - The radius is in returns per period, so it depends on the frequency. For a
+          long-only portfolio and a small radius the worst case adds
+          ε (1 + ρ / (1 - β)) max_i w_i to the historical objective: the least
+          favourable distribution moves the asset with the largest weight down in the
+          tail periods, which favours spreading the weights. With daily returns a radius
+          of about 0.002 or more already gives equal weights, so the default is 0.0005
+          (skfolio's is 0.02).
+        - The worst-case CVaR of an asset or portfolio is the same programme with the
+          weights fixed, without the expected loss.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_distributionally_robust_cvar_weights()[
+            ["Weight", "Expected Return", "CVaR", "Worst-Case CVaR"]
+        ]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   CVaR |   Worst-Case CVaR |
+        |:----------|---------:|------------------:|-------:|------------------:|
+        | AAPL      |   0.0581 |            0.1932 | 0.039  |            0.049  |
+        | MSFT      |   0.2543 |            0.2017 | 0.0356 |            0.0456 |
+        | JNJ       |   0.4117 |            0.0987 | 0.0227 |            0.0327 |
+        | XOM       |   0.2759 |            0.2911 | 0.0373 |            0.0473 |
+        | Portfolio |   1      |            0.1835 | 0.0199 |            0.0241 |
+        """
+        returns, expected_returns, covariance, risk_free_rate = self._get_inputs(
+            period, include_benchmark
+        )
+        current = self._get_current_weights(
+            current_weights,
+            returns.columns.tolist(),
+            maximum_turnover is not None,
+        )
+        weights = optimization_model.get_distributionally_robust_cvar_weights(
+            returns,
+            confidence_level,
+            wasserstein_radius,
+            risk_aversion,
+            **self._get_constraints(
+                returns.columns.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
+        )
+        table = self._weights_table(
+            weights, expected_returns, covariance, risk_free_rate, rounding
+        )
+        portfolios = {
+            **{asset: pd.Series({asset: 1.0}) for asset in returns.columns},
+            PORTFOLIO_TICKER: weights,
+        }
+        table["CVaR"] = (
+            -returns.assign(**{PORTFOLIO_TICKER: returns @ weights})
+        ).apply(
+            optimization_model.get_expected_tail_loss, confidence_level=confidence_level
+        )
+        table["Worst-Case CVaR"] = pd.Series(
+            {
+                name: optimization_model.get_worst_case_cvar(
+                    returns, portfolio, confidence_level, wasserstein_radius
+                )
+                for name, portfolio in portfolios.items()
+            }
+        )
         return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors

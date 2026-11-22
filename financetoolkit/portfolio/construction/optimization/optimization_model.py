@@ -7,7 +7,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
-from scipy import sparse
+from scipy import sparse, stats
 from scipy.cluster.hierarchy import cut_tree, fcluster, leaves_list, linkage, to_tree
 from scipy.linalg import null_space
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
@@ -6011,3 +6011,882 @@ def get_portfolio_risk_metrics(
             ),
         }
     ).T
+
+
+# The uncertainty sets of the worst-case mean-variance optimizer and its objectives.
+WORST_CASE_UNCERTAINTY = ("box", "ellipsoid")
+WORST_CASE_OBJECTIVES = ("maximum_sharpe", "utility", "minimum_variance")
+
+# How close two values of λ of the critical line algorithm must be to count as the same
+# turning point, relative to the larger of them and 1.
+CRITICAL_LINE_TOLERANCE = 1e-12
+
+
+def get_critical_line_weights(
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    risk_free_rate: float = 0.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+) -> pd.DataFrame:
+    """
+    The corner portfolios of the efficient frontier with weight bounds and a budget,
+    computed exactly with the critical line algorithm (Markowitz, 1956), and the
+    minimum variance and maximum Sharpe ratio portfolios on that frontier.
+
+    Every efficient portfolio minimizes ½ w'Σw - λ μ'w subject to Σ w_i = 1 and
+    l_i ≤ w_i ≤ u_i for some λ ≥ 0. For a fixed split of the assets into free assets F
+    (strictly between their bounds) and bound assets B (at a bound), the first-order
+    conditions on the free assets are linear:
+
+    - Σ_FF w_F + γ 1 = λ μ_F - Σ_FB w_B and 1'w_F = 1 - 1'w_B,
+
+    so w_F and the multiplier γ of the budget are affine in λ, and so is the gradient
+    g_j = (Σw)_j - λ μ_j + γ of each bound asset, which must stay ≥ 0 at a lower bound
+    and ≤ 0 at an upper bound. Starting from the portfolio with the highest expected
+    return (λ = ∞), λ is lowered until a free asset reaches a bound or the gradient of a
+    bound asset changes sign, which frees it. Each such λ is a corner (turning point)
+    where the set of free assets changes; between two corners the weights move along a
+    straight line. The last corner, at λ = 0, is the minimum variance portfolio.
+
+    Along the line w(t) = (1 - t) w_k + t w_k+1 between two corners the Sharpe ratio
+    (m0 + t m1) / √(v0 + 2 t v1 + t² v2) has a single stationary point,
+    t* = (m0 v1 - m1 v0) / (m1 v1 - m0 v2), so the maximum Sharpe ratio portfolio is
+    found exactly by comparing the corners with these points.
+
+    See Markowitz, H. (1956), "The Optimization of a Quadratic Function Subject to
+    Linear Constraints", Naval Research Logistics Quarterly, 3(1-2), 111-133, and
+    Bailey, D. H. and López de Prado, M. (2013), "An Open-Source Implementation of the
+    Critical-Line Algorithm for Portfolio Optimization", Algorithms, 6(1), 169-196.
+
+    Args:
+        expected_returns (pd.Series): The annualized expected return per asset.
+        covariance (pd.DataFrame): The annualized covariance matrix, positive definite.
+        risk_free_rate (float, optional): The annualized risk free rate, for the Sharpe
+            ratios. Defaults to 0.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+
+    Returns:
+        pd.DataFrame: One row per corner portfolio ("Corner 1" has the highest expected
+        return, the last one is the minimum variance portfolio), followed by the
+        "Minimum Variance" and "Maximum Sharpe" portfolios, with the Lambda (λ, the
+        risk tolerance at which the portfolio is optimal), the Expected Return,
+        Volatility, Sharpe Ratio and the weight per asset.
+    """
+    _validate_covariance(covariance)
+    assets = covariance.index
+    if len(assets) < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets are needed.")
+    mu = expected_returns.reindex(assets).to_numpy(dtype=float)
+    if not np.all(np.isfinite(mu)):
+        raise ValueError("Every asset needs an expected return.")
+    sigma = covariance.to_numpy(dtype=float)
+    if np.linalg.eigvalsh(sigma).min() <= 0:
+        raise ValueError(
+            "The critical line algorithm needs a positive definite covariance matrix."
+        )
+    constraints = get_weight_constraints(assets, minimum_weight, maximum_weight)
+    lower = np.array([bound[0] for bound in constraints.bounds])
+    upper = np.array([bound[1] for bound in constraints.bounds])
+    count = len(assets)
+
+    # The portfolio with the highest expected return: every asset at its lower bound,
+    # then the budget left goes to the assets with the highest expected returns, each up
+    # to its upper bound. The asset that takes the last of the budget is free.
+    weights = lower.copy()
+    status = np.full(count, -1)  # -1 at the lower bound, 1 at the upper bound, 0 free
+    budget = 1 - lower.sum()
+    for i in np.argsort(-mu, kind="stable"):
+        if upper[i] <= lower[i]:
+            continue
+        step = min(upper[i] - lower[i], budget)
+        weights[i] += step
+        budget -= step
+        if budget <= ZERO_WEIGHT:
+            status[i] = 0
+            break
+        status[i] = 1
+
+    corners: list[tuple[float, np.ndarray]] = []
+    current = np.inf
+    moved = -1
+    for _ in range(10 * count + 100):
+        free = np.flatnonzero(status == 0)
+        bound = np.flatnonzero(status != 0)
+
+        # The weights w(λ) = intercept + λ slope and the budget multiplier γ(λ) from the
+        # first-order conditions of the free assets, as a bordered linear system.
+        system = np.zeros((len(free) + 1, len(free) + 1))
+        system[:-1, :-1] = sigma[np.ix_(free, free)]
+        system[:-1, -1] = 1
+        system[-1, :-1] = 1
+        held = weights[bound]
+        solution = np.linalg.solve(
+            system,
+            np.column_stack(
+                [
+                    np.append(-sigma[np.ix_(free, bound)] @ held, 1 - held.sum()),
+                    np.append(mu[free], 0.0),
+                ]
+            ),
+        )
+        intercept, slope = np.zeros(count), np.zeros(count)
+        intercept[bound] = held
+        intercept[free], slope[free] = solution[:-1, 0], solution[:-1, 1]
+        gradient_intercept = sigma[bound] @ intercept + solution[-1, 0]
+        gradient_slope = sigma[bound] @ slope - mu[bound] + solution[-1, 1]
+
+        # The λ at which each free asset reaches the bound it moves towards as λ falls
+        # (only with two or more free assets: a single one holds the rest of the
+        # budget), and at which the gradient of each bound asset changes sign.
+        events: list[tuple[float, int]] = []
+        if len(free) > 1:
+            for i in free:
+                if slope[i] > 0:
+                    events.append(((lower[i] - intercept[i]) / slope[i], i))
+                elif slope[i] < 0:
+                    events.append(((upper[i] - intercept[i]) / slope[i], i))
+        for j, constant, rate in zip(
+            bound, gradient_intercept, gradient_slope, strict=True
+        ):
+            if upper[j] > lower[j] and rate * status[j] < 0:
+                events.append((-constant / rate, j))
+
+        # The next corner is the largest λ below the current one; an event at the same
+        # λ (several assets changing at once) counts, except for the asset that just
+        # changed.
+        tolerance = CRITICAL_LINE_TOLERANCE * max(
+            1.0, abs(current) if np.isfinite(current) else 1.0
+        )
+        candidates = [
+            (value, asset)
+            for value, asset in events
+            if value < current - tolerance
+            or (value <= current + tolerance and asset != moved)
+        ]
+        value, asset = max(candidates, default=(-np.inf, -1))
+        if value <= 0:
+            corners.append((0.0, intercept.copy()))
+            break
+        weights = intercept + value * slope
+        corners.append((value, weights.copy()))
+        if status[asset] == 0:
+            status[asset] = -1 if slope[asset] > 0 else 1
+            weights[asset] = lower[asset] if status[asset] == -1 else upper[asset]
+        else:
+            status[asset] = 0
+        current, moved = value, asset
+    else:
+        raise ValueError("The critical line algorithm did not reach λ = 0.")
+
+    # Several assets changing at the same λ give the same corner more than once.
+    unique = [corners[0]]
+    for corner in corners[1:]:
+        if np.max(np.abs(corner[1] - unique[-1][1])) > ZERO_WEIGHT:
+            unique.append(corner)
+        else:
+            unique[-1] = corner
+
+    # The maximum Sharpe ratio along every line between two neighbouring corners.
+    best = (-np.inf, unique[0][0], unique[0][1])
+    for (start_lambda, start), (end_lambda, end) in zip(
+        unique, unique[1:] + [unique[-1]], strict=True
+    ):
+        step = end - start
+        m0, m1 = start @ mu - risk_free_rate, step @ mu
+        v0, v1, v2 = start @ sigma @ start, start @ sigma @ step, step @ sigma @ step
+        denominator = m1 * v1 - m0 * v2
+        points = [0.0, 1.0]
+        if abs(denominator) > 0:
+            stationary = (m0 * v1 - m1 * v0) / denominator
+            if 0 < stationary < 1:
+                points.append(stationary)
+        for t in points:
+            variance = v0 + 2 * t * v1 + t * t * v2
+            if variance <= ZERO_VOLATILITY_TOLERANCE**2:
+                continue
+            sharpe = (m0 + t * m1) / np.sqrt(variance)
+            if sharpe > best[0]:
+                best = (
+                    sharpe,
+                    (1 - t) * start_lambda + t * end_lambda,
+                    start + t * step,
+                )
+
+    labels = [f"Corner {number}" for number in range(1, len(unique) + 1)]
+    rows = []
+    for risk_tolerance, corner in [
+        *unique,
+        unique[-1],
+        (best[1], best[2]),
+    ]:
+        portfolio = _as_series(corner, assets)
+        rows.append(
+            pd.concat(
+                [
+                    pd.Series({"Lambda": risk_tolerance}),
+                    get_portfolio_statistics(
+                        portfolio, expected_returns, covariance, risk_free_rate
+                    ),
+                    portfolio,
+                ]
+            )
+        )
+    table = pd.DataFrame(rows, index=[*labels, "Minimum Variance", "Maximum Sharpe"])
+    table.index.name = "Portfolio"
+
+    return table
+
+
+def get_worst_case_return(
+    weights: pd.Series,
+    expected_returns: pd.Series,
+    mean_covariance: pd.DataFrame,
+    uncertainty: str = "box",
+    confidence_level: float = 0.95,
+) -> float:
+    """
+    The lowest expected return of a portfolio over an uncertainty set of the expected
+    returns centred on the estimate μ (Tütüncü and Koenig, 2004; Goldfarb and Iyengar,
+    2003), with Σ_μ the covariance of the estimate and α the confidence level:
+
+    - "box": every expected return within μ_i ± δ_i, δ_i = z_(1+α)/2 √(Σ_μ,ii), the
+      two-sided confidence interval of each estimate on its own. The worst case is
+      μ'w - δ'|w|.
+    - "ellipsoid": the expected returns within (m - μ)'Σ_μ⁻¹(m - μ) ≤ κ², with
+      κ² = χ²_n(α), the joint confidence region of the n estimates. The worst case is
+      μ'w - κ √(w'Σ_μ w).
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        expected_returns (pd.Series): The expected return per asset.
+        mean_covariance (pd.DataFrame): The covariance of the estimate of the expected
+            returns, e.g. the covariance of the returns divided by the number of periods
+            for the historical average, in the same units as the expected returns.
+        uncertainty (str, optional): "box" or "ellipsoid". Defaults to "box".
+        confidence_level (float, optional): The confidence level of the uncertainty set.
+            Defaults to 0.95.
+
+    Returns:
+        float: The worst-case expected return.
+    """
+    if uncertainty not in WORST_CASE_UNCERTAINTY:
+        raise ValueError(
+            f"The uncertainty must be one of {', '.join(WORST_CASE_UNCERTAINTY)}, not "
+            f"'{uncertainty}'."
+        )
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    assets = mean_covariance.index
+    w = weights.reindex(assets).fillna(0).to_numpy(dtype=float)
+    mu = expected_returns.reindex(assets).to_numpy(dtype=float)
+    uncertain = mean_covariance.to_numpy(dtype=float)
+    if uncertainty == "box":
+        half_width = stats.norm.ppf((1 + confidence_level) / 2) * np.sqrt(
+            np.diag(uncertain)
+        )
+        return float(mu @ w - half_width @ np.abs(w))
+    radius = np.sqrt(stats.chi2.ppf(confidence_level, len(assets)))
+    return float(mu @ w - radius * np.sqrt(max(w @ uncertain @ w, 0.0)))
+
+
+def get_worst_case_mean_variance_weights(
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    mean_covariance: pd.DataFrame,
+    uncertainty: str = "box",
+    confidence_level: float = 0.95,
+    objective: str = "maximum_sharpe",
+    risk_free_rate: float = 0.0,
+    risk_aversion: float = 2.5,
+    target_return: float | None = None,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+) -> pd.Series:
+    """
+    The robust mean-variance portfolio that is optimal for the worst expected returns
+    within an uncertainty set around the estimate (Tütüncü and Koenig, 2004; Goldfarb
+    and Iyengar, 2003). The expected return μ'w of the mean-variance objectives is
+    replaced by its worst case R(w) over the set (see get_worst_case_return):
+    μ'w - δ'|w| for a box and μ'w - κ √(w'Σ_μ w) for an ellipsoid. Both are concave in
+    w, so the problems stay convex:
+
+    - "maximum_sharpe": maximize (R(w) - r_f) / √(w'Σw), solved with the Charnes-Cooper
+      transformation y = κw, κ ≥ 0 (Charnes and Cooper, 1962): maximize R(y) - r_f κ
+      subject to y'Σy ≤ 1 and the weight constraints scaled by κ, then w = y / κ.
+    - "utility": maximize R(w) - (λ/2) w'Σw with λ the risk aversion.
+    - "minimum_variance": minimize w'Σw subject to R(w) ≥ the target return.
+
+    With Σ_μ proportional to Σ (such as Σ / T) the ellipsoid lowers every Sharpe ratio
+    by the same κ √(w'Σ_μ w) / √(w'Σw), so its maximum Sharpe portfolio is the ordinary
+    one; the box, the utility and the minimum variance objectives do change the weights.
+    The covariance Σ is taken as known: uncertainty in Σ needs semidefinite
+    programming, which the SciPy solvers do not provide.
+
+    See Tütüncü, R. H. and Koenig, M. (2004), "Robust Asset Allocation", Annals of
+    Operations Research, 132, 157-187, and Goldfarb, D. and Iyengar, G. (2003), "Robust
+    Portfolio Selection Problems", Mathematics of Operations Research, 28(1), 1-38.
+
+    Args:
+        expected_returns (pd.Series): The annualized expected return per asset.
+        covariance (pd.DataFrame): The annualized covariance matrix.
+        mean_covariance (pd.DataFrame): The covariance of the estimate of the expected
+            returns, in the same units; for the annualized historical average it is the
+            annualized covariance times the periods per year over the number of periods.
+        uncertainty (str, optional): "box" or "ellipsoid". Defaults to "box".
+        confidence_level (float, optional): The confidence level of the uncertainty set.
+            Defaults to 0.95.
+        objective (str, optional): "maximum_sharpe", "utility" or "minimum_variance".
+            Defaults to "maximum_sharpe".
+        risk_free_rate (float, optional): The annualized risk free rate. Defaults to 0.
+        risk_aversion (float, optional): The risk aversion λ of the utility. Defaults to
+            2.5.
+        target_return (float | None, optional): The lowest annualized worst-case
+            return of the minimum variance objective, which needs it. Defaults to None.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if uncertainty not in WORST_CASE_UNCERTAINTY:
+        raise ValueError(
+            f"The uncertainty must be one of {', '.join(WORST_CASE_UNCERTAINTY)}, not "
+            f"'{uncertainty}'."
+        )
+    if objective not in WORST_CASE_OBJECTIVES:
+        raise ValueError(
+            f"The objective must be one of {', '.join(WORST_CASE_OBJECTIVES)}, not "
+            f"'{objective}'."
+        )
+    if (target_return is None) == (objective == "minimum_variance"):
+        raise ValueError(
+            "A target return goes with the minimum_variance objective, which needs one."
+        )
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    _validate_covariance(covariance)
+    assets = covariance.index
+    mu = expected_returns.reindex(assets).to_numpy(dtype=float)
+    sigma = covariance.to_numpy(dtype=float)
+    uncertain = mean_covariance.reindex(index=assets, columns=assets).to_numpy(
+        dtype=float
+    )
+    if not np.all(np.isfinite(uncertain)):
+        raise ValueError("The covariance of the expected returns has missing values.")
+    count = len(assets)
+    scale = np.mean(np.diag(sigma)) or 1.0
+
+    arguments = (
+        assets,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+        current_weights,
+        maximum_turnover,
+    )
+    constraints = get_weight_constraints(*arguments)
+    short = any(bound[0] < 0 for bound in constraints.bounds[:count])
+    # δ'|w| of the box needs the absolute weights t_i ≥ |w_i| when short positions are
+    # allowed; a gross exposure no portfolio within the bounds can exceed adds them.
+    if uncertainty == "box" and short and gross_exposure is None:
+        constraints = get_weight_constraints(
+            *arguments[:6],
+            float(sum(max(abs(low), abs(high)) for low, high in constraints.bounds)),
+            current_weights,
+            maximum_turnover,
+        )
+    variables = len(constraints.bounds)
+
+    # The worst-case return and its gradient over all variables x of the constraints:
+    # linear for the box (on the absolute weights t when short positions are allowed),
+    # μ'w - κ√(w'Σ_μ w) for the ellipsoid. Both are positively homogeneous.
+    if uncertainty == "box":
+        half_width = stats.norm.ppf((1 + confidence_level) / 2) * np.sqrt(
+            np.diag(uncertain)
+        )
+        linear = np.zeros(variables)
+        linear[:count] = mu
+        if short:
+            linear[count : 2 * count] = -half_width
+        else:
+            linear[:count] -= half_width
+
+        def worst(x):
+            return linear @ x[: len(linear)]
+
+        def worst_gradient(x):
+            return np.concatenate([linear, np.zeros(len(x) - len(linear))])
+
+    else:
+        radius = np.sqrt(stats.chi2.ppf(confidence_level, count))
+
+        def worst(x):
+            weights = x[:count]
+            return mu @ weights - radius * np.sqrt(
+                max(weights @ uncertain @ weights, 0)
+            )
+
+        def worst_gradient(x):
+            weights = x[:count]
+            spread = np.sqrt(max(weights @ uncertain @ weights, 0))
+            slope = np.zeros(len(x))
+            slope[:count] = mu - (
+                radius * (uncertain @ weights) / spread if spread > 0 else 0
+            )
+            return slope
+
+    def variance_gradient(x, factor):
+        return np.concatenate([factor * (sigma @ x[:count]), np.zeros(len(x) - count)])
+
+    # SLSQP stops on an absolute change of the objective (ftol), so the returns and
+    # variances are expressed in units of the average variance, as in
+    # get_mean_variance_weights, which keeps the objectives of order one.
+    if objective == "utility":
+        weights = _solve(
+            lambda x: (-worst(x) + risk_aversion / 2 * (x[:count] @ sigma @ x[:count]))
+            / scale,
+            lambda x: (-worst_gradient(x) + variance_gradient(x, risk_aversion))
+            / scale,
+            constraints,
+            all_variables=True,
+        )
+        return _as_series(weights, assets)
+
+    # The highest worst-case return within the constraints bounds the target and must
+    # beat the risk free rate for a positive worst-case Sharpe ratio. The point keeps
+    # the absolute weights and trades at |w| and |w - w0|, their least values.
+    weights = _solve(
+        lambda x: -worst(x) / scale,
+        lambda x: -worst_gradient(x) / scale,
+        constraints,
+        all_variables=True,
+    )
+    trades = (
+        [np.abs(weights - constraints.current)]
+        if constraints.current is not None
+        else []
+    )
+    absolute = [np.abs(weights)] if variables - count * (1 + len(trades)) > 0 else []
+    highest_point = np.concatenate([weights, *absolute, *trades])
+    highest = float(worst(highest_point))
+
+    if objective == "minimum_variance" and target_return is not None:
+        if target_return > highest + 1e-9:
+            raise ValueError(
+                f"A worst-case return of {target_return:.4f} cannot be reached within "
+                f"the constraints (at most {highest:.4f})."
+            )
+        target = min(target_return, highest)
+        if uncertainty == "box":
+            # The box's worst case is linear, so R(x) ≥ target is one more row A x ≤ b.
+            constraints = constraints._replace(
+                inequality=np.vstack(
+                    [constraints.inequality.reshape(-1, variables), -linear[None, :]]
+                ),
+                upper=np.append(constraints.upper, -target),
+            )
+            extra = None
+        else:
+            extra = [
+                {
+                    "type": "ineq",
+                    "fun": lambda w: worst(w) - target,
+                    "jac": worst_gradient,
+                }
+            ]
+        weights = _solve(
+            lambda w: w @ sigma @ w / scale,
+            lambda w: 2 * sigma @ w / scale,
+            constraints,
+            extra,
+        )
+        return _as_series(weights, assets)
+
+    if highest <= risk_free_rate * net_exposure:
+        raise ValueError(
+            "No portfolio has a worst-case return above the risk free rate, so no "
+            "portfolio has a positive worst-case Sharpe ratio; a lower confidence level "
+            "narrows the uncertainty set."
+        )
+
+    # Charnes-Cooper: over z = (y, κ) maximize R(y) - r_f κ subject to y'Σy ≤ 1 (in
+    # units of the average variance) and the homogeneous weight constraints, starting
+    # from the portfolio with the highest worst-case return scaled onto y'Σy = 1.
+    scaled = sigma / scale
+    homogeneous, homogeneous_equality = _homogeneous_constraints(constraints)
+    size = np.sqrt(highest_point[:count] @ scaled @ highest_point[:count])
+    if size <= 0:
+        raise ValueError(
+            "The portfolio with the highest worst-case return has no risk."
+        )
+    start = np.append(highest_point, 1.0) / size
+    # The objective in units of its value at the start, which is positive.
+    unit = (highest - risk_free_rate * net_exposure) / size
+    result = minimize(
+        lambda z: -(worst(z[:-1]) - risk_free_rate * z[-1]) / unit,
+        start,
+        jac=lambda z: -np.append(worst_gradient(z[:-1]), -risk_free_rate) / unit,
+        method="SLSQP",
+        bounds=[(None, None)] * variables + [(0, None)],
+        constraints=[
+            {
+                "type": "ineq",
+                "fun": lambda z: 1 - z[:count] @ scaled @ z[:count],
+                "jac": lambda z: np.concatenate(
+                    [-2 * scaled @ z[:count], np.zeros(variables + 1 - count)]
+                ),
+            },
+            {
+                "type": "ineq",
+                "fun": lambda z: -(homogeneous @ z),
+                "jac": lambda z: -homogeneous,
+            },
+            {
+                "type": "eq",
+                "fun": lambda z: homogeneous_equality @ z,
+                "jac": lambda z: homogeneous_equality,
+            },
+        ],
+        options=OPTIMIZER_OPTIONS,
+    )
+    kappa = result.x[-1]
+    if kappa <= 0 or not (
+        result.success
+        or (
+            result.status == SLSQP_LINE_SEARCH_STATUS
+            and _is_feasible(
+                result.x[:-1] / kappa,
+                constraints.bounds,
+                _linear_constraints(constraints),
+            )
+        )
+    ):
+        raise ValueError(f"The optimization did not converge: {result.message}")
+
+    return _as_series(result.x[:count] / kappa, assets)
+
+
+class WassersteinProgramme(NamedTuple):
+    """
+    The rows of the distributionally robust mean-CVaR linear programme over the
+    variables (w, τ, λ, s, y): the weights w (n), the CVaR threshold τ, the multiplier
+    λ of the Wasserstein ball, the worst-case loss s_t per period (T) and the shifts
+    y_kj of the two loss pieces per asset (2n). The rows are A (w, τ, λ, s, y) ≤ 0.
+    """
+
+    cost: np.ndarray
+    weights: sparse.csr_matrix
+    auxiliary: sparse.csr_matrix
+    bounds: list[tuple[float | None, float | None]]
+
+
+def get_wasserstein_cvar_programme(
+    returns: np.ndarray,
+    confidence_level: float = 0.95,
+    wasserstein_radius: float = 0.0005,
+    risk_aversion: float = 1.0,
+    mean_weight: float = 1.0,
+) -> WassersteinProgramme:
+    """
+    The linear programme of the worst-case expectation of
+    -m X + ρ (τ + max(-X - τ, 0) / (1 - β)), with X = ξ'w the portfolio return, over
+    every distribution of the asset returns ξ within a type-1 Wasserstein ball of radius
+    ε around the T historical returns (Mohajerin Esfahani and Kuhn, 2018). The transport
+    cost is the 1-norm of the change in the returns, and returns cannot fall below -100%
+    (ξ ≥ -1). Minimized over τ it is the worst case of -m E[X] + ρ CVaR_β(-X).
+
+    The loss is the maximum of two linear pieces ℓ_k(ξ) = c_k w'ξ + b_k τ, with
+    c_1 = -m, b_1 = ρ, c_2 = -m - ρ / (1 - β) and b_2 = ρ (1 - 1 / (1 - β)), the pieces
+    of the paper's Section 7.1 with α = 1 - β. By its duality (Theorem 4.2; Corollary
+    5.1 for piecewise affine losses on a polyhedral support) the worst case equals
+    min λε + Σ s_t / T over λ ≥ 0 with s_t ≥ sup_(ξ ≥ -1) ℓ_k(ξ) - λ‖ξ - ξ_t‖₁ for
+    both pieces. The supremum separates per asset: moving ξ_j up gains c_k w_j - λ per
+    unit, which must not be positive (λ ≥ c_k w_j), and moving it down to -1 gains
+    (-c_k w_j - λ)(1 + ξ_tj) when that is positive. With y_kj ≥ max(0, -c_k w_j - λ),
+    which does not depend on the period, the rows are:
+
+    - c_k ξ_t'w + b_k τ + Σ_j (1 + ξ_tj) y_kj - s_t ≤ 0 per period and piece.
+    - -c_k w_j - λ - y_kj ≤ 0 and c_k w_j - λ ≤ 0 per asset and piece.
+
+    The programme has n + 2 + T + 2n variables and 2T + 4n rows.
+
+    See Mohajerin Esfahani, P. and Kuhn, D. (2018), "Data-Driven Distributionally
+    Robust Optimization Using the Wasserstein Metric: Performance Guarantees and
+    Tractable Reformulations", Mathematical Programming, 171(1-2), 115-166.
+
+    Args:
+        returns (np.ndarray): The returns per period (rows) and asset (columns), above
+            -100%.
+        confidence_level (float, optional): The confidence level β of the CVaR.
+            Defaults to 0.95.
+        wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
+            the units of the returns per period. Defaults to 0.0005.
+        risk_aversion (float, optional): The weight ρ of the CVaR. Defaults to 1.
+        mean_weight (float, optional): The weight m of the expected loss, 1 for the
+            mean-CVaR objective and 0 for the CVaR alone. Defaults to 1.
+
+    Returns:
+        WassersteinProgramme: The cost of every variable, the rows' coefficients of the
+            weights and of (τ, λ, s, y), and the bounds of (τ, λ, s, y).
+    """
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    if wasserstein_radius < 0:
+        raise ValueError("The Wasserstein radius cannot be negative.")
+    if risk_aversion < 0 or mean_weight < 0:
+        raise ValueError(
+            "The risk aversion and the weight of the mean cannot be negative."
+        )
+    periods, assets = returns.shape
+    if np.any(returns < -1):
+        raise ValueError("A return below -100% is not possible.")
+    tail = 1 / (1 - confidence_level)
+    slopes = np.array([-mean_weight, -mean_weight - risk_aversion * tail])
+    intercepts = np.array([risk_aversion, risk_aversion * (1 - tail)])
+    growth = sparse.csr_matrix(1 + returns)
+    identity = sparse.eye(assets, format="csr")
+    period_identity = sparse.eye(periods, format="csr")
+    assets_column = sparse.csr_matrix(np.ones((assets, 1)))
+
+    weight_rows, auxiliary_rows = [], []
+    for piece, (slope, intercept) in enumerate(zip(slopes, intercepts, strict=True)):
+        shifts = [sparse.csr_matrix((periods, assets))] * 2
+        shifts[piece] = growth
+        # Per period: c_k r_t'w + b_k τ + (1 + r_t)'y_k - s_t ≤ 0.
+        weight_rows.append(sparse.csr_matrix(slope * returns))
+        auxiliary_rows.append(
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(np.full((periods, 1), intercept)),
+                    sparse.csr_matrix((periods, 1)),
+                    -period_identity,
+                    *shifts,
+                ]
+            )
+        )
+    for piece, slope in enumerate(slopes):
+        shift = [sparse.csr_matrix((assets, assets))] * 2
+        shift[piece] = -identity
+        # Per asset: -c_k w_j - λ - y_kj ≤ 0, then c_k w_j - λ ≤ 0.
+        weight_rows += [-slope * identity, slope * identity]
+        auxiliary_rows += [
+            sparse.hstack(
+                [
+                    sparse.csr_matrix((assets, 1)),
+                    -assets_column,
+                    sparse.csr_matrix((assets, periods)),
+                    *shift,
+                ]
+            ),
+            sparse.hstack(
+                [
+                    sparse.csr_matrix((assets, 1)),
+                    -assets_column,
+                    sparse.csr_matrix((assets, periods + 2 * assets)),
+                ]
+            ),
+        ]
+
+    return WassersteinProgramme(
+        np.concatenate(
+            [
+                [0.0, wasserstein_radius],
+                np.full(periods, 1 / periods),
+                np.zeros(2 * assets),
+            ]
+        ),
+        sparse.vstack(weight_rows, format="csr"),
+        sparse.vstack(auxiliary_rows, format="csr"),
+        [(None, None), (0, None)]
+        + [(None, None)] * periods
+        + [(0, None)] * (2 * assets),
+    )
+
+
+def get_worst_case_cvar(
+    returns: pd.DataFrame,
+    weights: pd.Series,
+    confidence_level: float = 0.95,
+    wasserstein_radius: float = 0.0005,
+) -> float:
+    """
+    The highest CVaR of a portfolio over every distribution of the asset returns within
+    a Wasserstein ball of radius ε around the historical returns, with the 1-norm as the
+    transport cost and returns of at least -100% (Mohajerin Esfahani and Kuhn, 2018).
+    It is the programme of get_wasserstein_cvar_programme with the weights fixed, without the
+    expected loss (m = 0) and with ρ = 1; at a radius of 0 it is the historical CVaR of
+    get_expected_tail_loss.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        weights (pd.Series): The weight per asset.
+        confidence_level (float, optional): The confidence level of the CVaR. Defaults
+            to 0.95.
+        wasserstein_radius (float, optional): The radius ε of the Wasserstein ball, in
+            the units of the returns per period. Defaults to 0.0005.
+
+    Returns:
+        float: The worst-case CVaR, positive for a loss.
+    """
+    data = returns.dropna(how="any").to_numpy(dtype=float)
+    if len(data) == 0:
+        raise ValueError("No period has a return for every asset.")
+    programme = get_wasserstein_cvar_programme(
+        data, confidence_level, wasserstein_radius, 1.0, 0.0
+    )
+    fixed = programme.weights @ weights.reindex(returns.columns).fillna(0).to_numpy(
+        dtype=float
+    )
+    result = linprog(
+        programme.cost,
+        A_ub=programme.auxiliary,
+        b_ub=-fixed,
+        bounds=programme.bounds,
+        method="highs",
+    )
+    if not result.success:
+        raise ValueError(f"The optimization did not converge: {result.message}")
+    return float(result.fun)
+
+
+def get_distributionally_robust_cvar_weights(
+    returns: pd.DataFrame,
+    confidence_level: float = 0.95,
+    wasserstein_radius: float = 0.0005,
+    risk_aversion: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+) -> pd.Series:
+    """
+    The portfolio that minimizes the worst case of -E[X] + ρ CVaR_β(-X), with X the
+    portfolio return, over every distribution within a type-1 Wasserstein ball of radius
+    ε around the historical returns (Mohajerin Esfahani and Kuhn, 2018, Section 7.1),
+    solved exactly as one linear programme with HiGHS (see get_wasserstein_cvar_programme). At a
+    radius of 0 it is the historical mean-CVaR portfolio; a larger radius guards against
+    distributions that put more weight on losses than the sample did.
+
+    See Mohajerin Esfahani, P. and Kuhn, D. (2018), "Data-Driven Distributionally
+    Robust Optimization Using the Wasserstein Metric: Performance Guarantees and
+    Tractable Reformulations", Mathematical Programming, 171(1-2), 115-166.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        confidence_level (float, optional): The confidence level β of the CVaR, e.g.
+            0.95 for the average of the worst 5% of periods. Defaults to 0.95.
+        wasserstein_radius (float, optional): The radius ε of the Wasserstein ball: the
+            average total change in the returns of the assets (the 1-norm) per period that
+            the distributions considered may have. Defaults to 0.0005.
+        risk_aversion (float, optional): The weight ρ of the CVaR against the expected
+            loss. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    data = returns.dropna(how="any").to_numpy(dtype=float)
+    if len(data) == 0:
+        raise ValueError("No period has a return for every asset.")
+    constraints = get_weight_constraints(
+        returns.columns,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+        current_weights,
+        maximum_turnover,
+    )
+    programme = get_wasserstein_cvar_programme(
+        data, confidence_level, wasserstein_radius, risk_aversion
+    )
+    count = constraints.assets
+    variables = len(constraints.bounds)
+    extra = programme.auxiliary.shape[1]
+    # The variables of the weight constraints (weights first), then (τ, λ, s, y).
+    inequality = sparse.vstack(
+        [
+            sparse.hstack(
+                [
+                    programme.weights,
+                    sparse.csr_matrix((programme.weights.shape[0], variables - count)),
+                    programme.auxiliary,
+                ]
+            ),
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(constraints.inequality.reshape(-1, variables)),
+                    sparse.csr_matrix((len(constraints.upper), extra)),
+                ]
+            ),
+        ],
+        format="csr",
+    )
+    result = linprog(
+        np.concatenate([np.zeros(variables), programme.cost]),
+        A_ub=inequality,
+        b_ub=np.concatenate([np.zeros(programme.weights.shape[0]), constraints.upper]),
+        A_eq=np.hstack([constraints.equality, np.zeros((1, extra))]),
+        b_eq=constraints.target,
+        bounds=constraints.bounds + programme.bounds,
+        method="highs",
+    )
+    if not result.success:
+        raise ValueError(f"The optimization did not converge: {result.message}")
+
+    return _as_series(result.x[:count], returns.columns)

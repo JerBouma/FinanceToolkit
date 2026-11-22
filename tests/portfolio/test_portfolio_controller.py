@@ -1352,3 +1352,30 @@ def test_a_purchase_from_before_a_split_is_restated(monkeypatch):
     assert held._portfolio_dataset.loc[first, held._price_column] == pytest.approx(
         price
     )
+
+
+def test_the_performance_of_the_portfolio_in_its_toolkit_comes_from_its_own_returns():
+    toolkit = _offline_portfolio().toolkit
+    performance = toolkit.performance
+    performance._rounding = None
+    returns = performance._historical_data["daily"]["Return"]
+
+    # The Portfolio is listed once, next to the tickers whose returns it combines.
+    assert performance._tickers.count("Portfolio") == 1
+
+    # The excess returns over a trading day of the annualized risk free rate quoted on each date.
+    rate = risk_free_rate["Adj Close"].copy()
+    rate.index = pd.PeriodIndex(rate.index, freq="D")
+    rate = rate.reindex(rate.index.union(returns.index)).ffill().reindex(returns.index)
+    last_year = str(returns.index[-1].year)
+    portfolio = returns["Portfolio"].loc[last_year].dropna()
+    benchmark = returns["Benchmark"].loc[last_year].reindex(portfolio.index)
+    excess_return = portfolio - ((1 + rate.loc[portfolio.index]) ** (1 / 252) - 1)
+
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert sharpe_ratio.iloc[-1]["Portfolio"] == pytest.approx(
+        excess_return.mean() / excess_return.std()
+    )
+    assert performance.get_beta(period="yearly").iloc[-1]["Portfolio"] == pytest.approx(
+        np.cov(portfolio, benchmark)[0, 1] / benchmark.var()
+    )

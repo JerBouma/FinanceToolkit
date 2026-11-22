@@ -223,9 +223,24 @@ class Performance:
         )
 
     @cached_property
-    def _tickers_without_portfolio(self) -> list[str]:
-        """The tickers other than the Portfolio."""
-        return [ticker for ticker in self._tickers if ticker != "Portfolio"]
+    def _tickers_with_returns(self) -> list[str]:
+        """
+        The tickers the metrics are calculated for, each from its own returns. The Toolkit of a
+        Portfolio holds the Portfolio's own return series as the "Portfolio" ticker, so its
+        ratios are those of that series, which include how the holdings move together; a
+        weighted average of the holdings' ratios is not the ratio of the Portfolio. A Portfolio
+        without returns in the historical data is left out, and `handle_portfolio` gives it the
+        weighted average of the tickers' results instead.
+        """
+        historical_tickers = self._historical_data["daily"].columns.get_level_values(-1)
+
+        return list(
+            dict.fromkeys(
+                ticker
+                for ticker in self._tickers
+                if ticker != "Portfolio" or ticker in historical_tickers
+            )
+        )
 
     @cached_property
     def _daily_returns(self) -> pd.DataFrame:
@@ -264,7 +279,11 @@ class Performance:
                 return intraday_historical_data
             return self._add_intraday_excess_return(intraday_historical_data.copy())
 
-        daily_historical_data = self._historical_data["daily"]
+        # Historical data supplied with an "Excess Return" block of its own gets the one of this
+        # risk free rate instead, as the intraday data does: two blocks would duplicate every ticker.
+        daily_historical_data = self._historical_data["daily"].drop(
+            columns="Excess Return", level=0, errors="ignore"
+        )
         # Each ticker earns the risk free rate per observation of its own calendar: a
         # trading day of it per return, or the calendar days since its previous return
         # for a ticker that trades on weekends.
@@ -346,7 +365,7 @@ class Performance:
             get_observations_per_year(self._daily_returns)
             if not self._daily_returns.empty
             else pd.Series(
-                float(PERIODS_PER_YEAR["daily"]), index=self._tickers_without_portfolio
+                float(PERIODS_PER_YEAR["daily"]), index=self._tickers_with_returns
             )
         )
 
@@ -524,7 +543,7 @@ class Performance:
                 else self._historical_data[period]
             )
             self._data_cache[key] = frame.loc[:, column][
-                self._benchmark_name if benchmark else self._tickers_without_portfolio
+                self._benchmark_name if benchmark else self._tickers_with_returns
             ]
 
         return self._data_cache[key]
@@ -1347,7 +1366,7 @@ class Performance:
                     factor_dataset[factors],
                     rolling,
                 )
-                for ticker in self._tickers_without_portfolio
+                for ticker in self._tickers_with_returns
             },
             axis=1,
         )
@@ -1473,7 +1492,7 @@ class Performance:
         dataset_periods = merged_df.index.get_level_values(0).unique()
 
         logger.info("Calculating Factor Asset Correlations")
-        for ticker in self._tickers_without_portfolio:
+        for ticker in self._tickers_with_returns:
             factor_correlations[ticker] = {}
             for dataset_period in dataset_periods:
                 factor_data = merged_df.loc[dataset_period][factors_to_calculate]
@@ -1503,7 +1522,7 @@ class Performance:
             factor_asset_correlations.stack(level=1, future_stack=True)
             .unstack(level=0)
             .reindex(factor_order, level=1, axis=1)
-            .reindex(self._tickers_without_portfolio, level=0, axis=1)
+            .reindex(self._tickers_with_returns, level=0, axis=1)
         )
 
         self._factor_asset_correlations = apply_rounding(
@@ -1850,7 +1869,7 @@ class Performance:
             "Calculating %s Factor Exposures",
             "Multi" if method == "multi" else "Individual",
         )
-        for ticker in self._tickers_without_portfolio:
+        for ticker in self._tickers_with_returns:
             factor_scores[ticker] = {}
             daily_residuals[ticker] = {}
 
@@ -2183,7 +2202,7 @@ class Performance:
         dataset_periods = merged_df.index.get_level_values(0).unique()
 
         logger.info("Calculating Carhart Four Factor Exposures")
-        for ticker in self._tickers_without_portfolio:
+        for ticker in self._tickers_with_returns:
             factor_scores[ticker] = {}
 
             for dataset_period in dataset_periods:
@@ -2369,7 +2388,7 @@ class Performance:
             ).sort_index()
         funds = [
             ticker
-            for ticker in self._tickers_without_portfolio
+            for ticker in self._tickers_with_returns
             if ticker not in style_tickers
         ]
         if not funds:
@@ -2586,12 +2605,9 @@ class Performance:
                 self._start_date : self._end_date
             ]
             full_results.columns = (
-                [
-                    f"Actual Return {ticker}"
-                    for ticker in self._tickers_without_portfolio
-                ]
+                [f"Actual Return {ticker}" for ticker in self._tickers_with_returns]
                 + ["Benchmark Returns"]
-                + [f"Alpha {ticker}" for ticker in self._tickers_without_portfolio]
+                + [f"Alpha {ticker}" for ticker in self._tickers_with_returns]
             )
 
             return full_results
@@ -5323,8 +5339,8 @@ class Performance:
         method="arithmetic" the Upside and Downside Capture Ratios agree with PerformanceAnalytics' UpDownRatios,
         which also counts the days the benchmark did not move as down days for its Down Capture; its Up and
         Down Number and Percent equal the Toolkit's.
-        - There is no Portfolio column: a weighted average of capture ratios or counts is not the statistic
-        of the portfolio.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as a weighted
+        average of capture ratios or counts is not the statistic of the portfolio.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -5589,7 +5605,8 @@ class Performance:
         - With relative=False and windows=[12] it agrees with ffn's twelve_month_win_perc, except that ffn also counts
         the window that starts at the first price, one window more than the monthly returns hold.
         - Each ticker is measured over its own history, so a later listing has fewer windows.
-        - There is no Portfolio column: a weighted average of probabilities is not that of the portfolio.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as a weighted
+        average of probabilities is not that of the portfolio.
 
         As an example:
 
@@ -5713,7 +5730,8 @@ class Performance:
         - Unlike `get_beta` with method="upside" or "downside", which regresses the returns themselves, these
         regressions use excess returns, so the Alphas are the CAPM (Jensen's) Alphas of each market.
         - Each side needs at least three days with returns in a period, otherwise its values are NaN.
-        - There is no Portfolio column, as for the market timing models.
+        - The Portfolio of a Portfolio's Toolkit is regressed on its own daily return series, as the market
+        timing models do.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -6306,7 +6324,8 @@ class Performance:
         Toolkit's (0.2% lower for a year of daily returns), and its TotalRisk combines the two.
         - The specific risk here is that of the CAPM regression on the benchmark; the idiosyncratic volatility
         of the risk module uses the residuals of the Fama-French factor model instead.
-        - There is no Portfolio column: the risks of a portfolio do not add up as a weighted average.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as the risks of
+        a portfolio do not add up as a weighted average.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -6448,7 +6467,8 @@ class Performance:
         - The Regression Epsilon agrees with PerformanceAnalytics' CAPM.epsilon with a risk free rate of 0, where it
         uses the annualized returns as the period's. With a risk free rate PerformanceAnalytics adds it to the
         asset's return instead of subtracting it; the Toolkit uses excess returns throughout.
-        - There is no Portfolio column, as for the market timing models.
+        - The Portfolio of a Portfolio's Toolkit is regressed on its own daily return series, as the market
+        timing models do.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -6772,7 +6792,7 @@ class Performance:
 
         excess_returns = performance_model.get_geometric_excess_return(
             self._get_column("monthly", "Return", within_period=False),
-            self._risk_free_rate_data["monthly"][self._tickers_without_portfolio],
+            self._risk_free_rate_data["monthly"][self._tickers_with_returns],
         )
 
         if rolling:
@@ -7566,8 +7586,8 @@ class Performance:
         or without losses, the continuous form without variance.
         - The continuous form does not depend on the return frequency, since the average and the
         variance of the excess returns scale alike.
-        - There is no Portfolio row: a weighted average of each asset's Kelly Criterion is not the
-        Kelly Criterion of the portfolio.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as a weighted
+        average of each asset's Kelly Criterion is not the Kelly Criterion of the portfolio.
 
         As an example:
 
@@ -7616,7 +7636,7 @@ class Performance:
             if method == "continuous" and not within_period:
                 returns = performance_model.get_excess_return(
                     self._get_column(period, "Return", within_period=False),
-                    self._risk_free_rate_data[period][self._tickers_without_portfolio],
+                    self._risk_free_rate_data[period][self._tickers_with_returns],
                 )
             else:
                 returns = self._get_column(period, column, within_period=within_period)
@@ -7740,8 +7760,8 @@ class Performance:
         practically 0; it is meant for a series of trades or a short history.
         - A statistic without the returns it needs, such as the Profit Factor or the Payoff Ratio
         without losses, is NaN, as for the Omega Ratio.
-        - There is no Portfolio column: a weighted average of streak lengths or payoff ratios is
-        not the statistic of the portfolio.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as a weighted
+        average of streak lengths or payoff ratios is not the statistic of the portfolio.
 
         As an example:
 
@@ -8749,7 +8769,7 @@ class Performance:
         ).swaplevel(0, 1, axis=1)
 
         fama_decomposition = fama_decomposition.reindex(
-            self._tickers_without_portfolio, level=0, axis=1
+            self._tickers_with_returns, level=0, axis=1
         )
 
         return finalize_dataset(
@@ -9083,7 +9103,7 @@ class Performance:
 
         regression_results: dict[str, pd.DataFrame] = {}
 
-        for ticker in self._tickers_without_portfolio:
+        for ticker in self._tickers_with_returns:
             ticker_results: dict = {}
 
             for sub_period in excess_return.index.get_level_values(0).unique():
@@ -9207,7 +9227,7 @@ class Performance:
 
         regression_results: dict[str, pd.DataFrame] = {}
 
-        for ticker in self._tickers_without_portfolio:
+        for ticker in self._tickers_with_returns:
             ticker_results: dict = {}
 
             for sub_period in excess_return.index.get_level_values(0).unique():
@@ -9629,7 +9649,7 @@ class Performance:
         if rolling:
             excess_return = performance_model.get_excess_return(
                 self._get_column(period, "Return", within_period=False),
-                self._risk_free_rate_data[period][self._tickers_without_portfolio],
+                self._risk_free_rate_data[period][self._tickers_with_returns],
             )
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
                 excess_return, rolling
@@ -10817,8 +10837,9 @@ class Performance:
         returns = self._get_column("daily", "Return", within_period=False).loc[
             self._start_date : self._end_date
         ]
-        # The first date of the range has no return; dates no ticker traded hold no return either.
-        returns = returns.dropna(how="all")
+        # The first date of the range has no return; dates no ticker traded hold no return either. The Portfolio
+        # combines the tickers, so it is no candidate strategy of its own.
+        returns = returns.drop(columns="Portfolio", errors="ignore").dropna(how="all")
 
         probability_of_backtest_overfitting = (
             performance_model.get_probability_of_backtest_overfitting(returns, blocks)

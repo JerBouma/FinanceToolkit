@@ -1787,3 +1787,108 @@ def test_rolling_factor_models(recorder, performance_module, monkeypatch):
     )
 
     assert performance.get_fama_and_french_model(rolling=126, method="simple").empty
+
+
+def _hedged_performance(with_portfolio_returns=True, excess_return_block=False):
+    """
+    A stock, its inverse fund and the Portfolio of the two in equal weights, rebalanced daily: the
+    Portfolio's returns are nearly flat while each holding moves with the market.
+    """
+    rng = np.random.default_rng(7)
+    days = pd.bdate_range("2021-01-01", "2022-12-30").to_period("D")
+    market = rng.normal(0.0004, 0.012, len(days))
+    returns = pd.DataFrame(
+        {
+            "SPY": market + rng.normal(0, 0.001, len(days)),
+            "SH": -market + rng.normal(0, 0.001, len(days)),
+            "Benchmark": market,
+        },
+        index=days,
+    )
+    returns["Portfolio"] = 0.5 * returns["SPY"] + 0.5 * returns["SH"]
+    returns.iloc[0] = np.nan
+    if not with_portfolio_returns:
+        returns = returns.drop(columns="Portfolio")
+    prices = (1 + returns.fillna(0)).cumprod() * 100
+    daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
+    if excess_return_block:
+        # Historical data supplied with an "Excess Return" block of its own, as older Portfolio data has.
+        daily = pd.concat(
+            [daily, pd.concat({"Excess Return": returns}, axis=1)], axis=1
+        )
+    historical_data = {"daily": daily, "intraday": pd.DataFrame()}
+    period_prices = prices.groupby(days.asfreq("Y")).last()
+    historical_data["yearly"] = pd.concat(
+        {
+            "Return": period_prices / period_prices.shift() - 1,
+            "Adj Close": period_prices,
+            "Close": period_prices,
+        },
+        axis=1,
+    )
+    performance = Performance(
+        tickers=["SPY", "SH", "Portfolio"],
+        historical_data=historical_data,
+        risk_free_rate_data={"daily": pd.Series(0.0, index=days)},
+        rounding=None,
+    )
+    weights = pd.DataFrame(
+        {"SPY": 0.5, "SH": 0.5}, index=pd.period_range("2021", "2022", freq="Y")
+    )
+    performance._portfolio_weights = {"yearly": weights}
+    return performance, returns
+
+
+@pytest.mark.parametrize("excess_return_block", [False, True])
+def test_the_performance_of_the_portfolio_comes_from_its_own_returns(
+    excess_return_block,
+):
+    performance, returns = _hedged_performance(excess_return_block=excess_return_block)
+    portfolio = returns["Portfolio"].loc["2022"]
+    benchmark = returns["Benchmark"].loc["2022"]
+
+    # With a risk free rate of 0 the excess returns are the returns themselves.
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert list(sharpe_ratio.columns) == ["SPY", "SH", "Portfolio"]
+    assert sharpe_ratio.loc["2022", "Portfolio"] == pytest.approx(
+        portfolio.mean() / portfolio.std()
+    )
+    beta = performance.get_beta(period="yearly")
+    assert beta.loc["2022", "Portfolio"] == pytest.approx(
+        np.cov(portfolio, benchmark)[0, 1] / benchmark.var()
+    )
+    active = portfolio - benchmark
+    assert performance.get_information_ratio(period="yearly").loc[
+        "2022", "Portfolio"
+    ] == pytest.approx(active.mean() / active.std())
+    assert performance.get_sortino_ratio(period="yearly").loc[
+        "2022", "Portfolio"
+    ] == pytest.approx(
+        portfolio.mean() / np.sqrt((portfolio.clip(upper=0) ** 2).mean())
+    )
+
+    # The holdings move with and against the market, the Portfolio of the two hardly at all,
+    # and its Sharpe ratio is not the average of theirs.
+    assert abs(beta.loc["2022", "Portfolio"]) < 0.01  # noqa: PLR2004
+    assert sharpe_ratio.loc["2022", "Portfolio"] != pytest.approx(
+        sharpe_ratio.loc["2022", ["SPY", "SH"]].mean(), abs=1e-3
+    )
+
+    # The methods without a weighted average measure the Portfolio as well, except the
+    # backtest overfitting, where the Portfolio of the tickers is no candidate of its own.
+    capture_ratios = performance.get_capture_ratios(period="yearly")
+    assert "Portfolio" in capture_ratios.columns.get_level_values(0)
+    without_portfolio, _ = _hedged_performance(with_portfolio_returns=False)
+    pd.testing.assert_series_equal(
+        performance.get_probability_of_backtest_overfitting(blocks=4),
+        without_portfolio.get_probability_of_backtest_overfitting(blocks=4),
+    )
+
+
+def test_a_portfolio_without_returns_gets_the_weighted_average():
+    performance, _ = _hedged_performance(with_portfolio_returns=False)
+
+    sharpe_ratio = performance.get_sharpe_ratio(period="yearly")
+    assert sharpe_ratio.loc["2022", "Portfolio"] == pytest.approx(
+        sharpe_ratio.loc["2022", ["SPY", "SH"]].mean()
+    )

@@ -7051,7 +7051,8 @@ class Toolkit:
     def _get_historical_tickers(self, include_benchmark: bool) -> list[str]:
         """
         Returns the tickers of the daily historical data, retrieving it when needed, followed
-        by the Portfolio when the Toolkit holds one.
+        by the Portfolio when the Toolkit holds one. The Toolkit of a Portfolio has the
+        Portfolio's own return series in its historical data, where it is listed once.
 
         Args:
             include_benchmark (bool): Whether to keep the Benchmark.
@@ -7069,7 +7070,10 @@ class Toolkit:
         if not include_benchmark and "Benchmark" in tickers:
             tickers.remove("Benchmark")
 
-        return tickers + ["Portfolio"] if "Portfolio" in self._tickers else tickers
+        if "Portfolio" in self._tickers and "Portfolio" not in tickers:
+            tickers.append("Portfolio")
+
+        return tickers
 
     def _get_period_end_dates(
         self, statement: pd.DataFrame | None = None

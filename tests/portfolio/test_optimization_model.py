@@ -3026,3 +3026,312 @@ def test_factor_risk_contributions_match_riskfolio():
     assert table["Risk Contribution"].sum() == pytest.approx(
         np.sqrt(weights @ returns.cov() @ weights)
     )
+
+
+def _heavy_tailed_returns(periods: int = 300) -> pd.DataFrame:
+    """
+    Six assets with two common factors, Student-t noise with four degrees of freedom and
+    rising average returns. The reference weights below come from skfolio 1.12.7,
+    PyPortfolioOpt 1.6.0 and Riskfolio-Lib 7.4.1 run on these same returns.
+    """
+    rng = np.random.default_rng(11)
+    factors = rng.normal(0.0005, 0.01, size=(300, 2))
+    loadings = rng.uniform(0.2, 1.2, size=(2, 6))
+    data = (
+        factors @ loadings
+        + rng.standard_t(4, size=(300, 6)) * 0.008
+        + np.linspace(0.0001, 0.0008, 6)
+    )
+    return pd.DataFrame(data[:periods], columns=list("ABCDEF"))
+
+
+@pytest.mark.parametrize(
+    ("risk_measure", "objective", "options", "expected", "tolerance"),
+    [
+        # skfolio's MeanRisk(risk_measure=MEAN_ABSOLUTE_DEVIATION) and Riskfolio-Lib's
+        # rm="MAD", which is half the mean absolute deviation, with the same weights.
+        (
+            "mad",
+            "minimum_risk",
+            {},
+            [0, 0.0347734216, 0.5262817103, 0.3246192576, 0.1096908455, 0.004634765],
+            1e-6,
+        ),
+        # skfolio's GINI_MEAN_DIFFERENCE, solved there as a conic programme.
+        (
+            "gini_mean_difference",
+            "minimum_risk",
+            {},
+            [
+                0.0026359318,
+                0.031325571,
+                0.5055641101,
+                0.3383285235,
+                0.1057577612,
+                0.0163881023,
+            ],
+            1e-6,
+        ),
+        (
+            "gini_mean_difference",
+            "maximum_ratio",
+            {},
+            [0, 0, 0, 0.5692902921, 0.104815026, 0.3258946819],
+            1e-6,
+        ),
+        # skfolio's SEMI_DEVIATION (below the mean) and Riskfolio-Lib's rm="SLPM" (below
+        # zero, dividing by T - 1, which leaves the weights the same).
+        (
+            "semideviation",
+            "minimum_risk",
+            {"minimum_acceptable_return": "mean"},
+            [
+                0.0847075313,
+                0.0031361177,
+                0.3971334142,
+                0.3678331255,
+                0.0935467463,
+                0.0536430649,
+            ],
+            1e-5,
+        ),
+        (
+            "semideviation",
+            "minimum_risk",
+            {},
+            [0.0896392341, 0, 0.2906146879, 0.4204702169, 0.0993671961, 0.099908665],
+            1e-5,
+        ),
+        (
+            "worst_realization",
+            "maximum_ratio",
+            {},
+            [0.2659777981, 0.0461838133, 0, 0.4639749503, 0.1833094602, 0.0405539781],
+            1e-6,
+        ),
+        (
+            "ulcer_index",
+            "minimum_risk",
+            {},
+            [
+                0.0225897069,
+                0.0875584094,
+                0.0487951834,
+                0.4012491176,
+                0.1244854761,
+                0.3153221065,
+            ],
+            1e-5,
+        ),
+        # Riskfolio-Lib's rm="FLPM" (below zero, and below 3 bp with rf = 3 bp), "RG"
+        # and "CVRG".
+        (
+            "lower_partial_moment",
+            "minimum_risk",
+            {},
+            [0, 0.010412575, 0.3725869762, 0.4396263205, 0.0981088711, 0.0792652572],
+            1e-6,
+        ),
+        (
+            "lower_partial_moment",
+            "maximum_ratio",
+            {"minimum_acceptable_return": 0.0003, "risk_free_rate": 0.0003},
+            [0, 0, 0, 0.5678425424, 0.1325499623, 0.2996074953],
+            1e-6,
+        ),
+        (
+            "range",
+            "maximum_ratio",
+            {},
+            [0, 0, 0, 0.5495244465, 0.1971272058, 0.2533483476],
+            1e-6,
+        ),
+        (
+            "cvar_range",
+            "minimum_risk",
+            {},
+            [0.0577358746, 0.0459595966, 0.5635759213, 0.280878097, 0.0518505104, 0],
+            1e-6,
+        ),
+        (
+            "mad",
+            "minimum_risk",
+            {"target_return": 0.0019380920748932906},
+            [0, 0, 0.075071018, 0.5298867963, 0.1940962165, 0.2009459692],
+            1e-6,
+        ),
+    ],
+)
+def test_mean_risk_weights_match_skfolio_and_riskfolio(
+    risk_measure, objective, options, expected, tolerance
+):
+    weights = optimization_model.get_mean_risk_weights(
+        _heavy_tailed_returns(), risk_measure, objective, **options
+    )
+    np.testing.assert_allclose(weights, expected, atol=tolerance)
+
+
+def test_tail_gini_weights_match_riskfolio_owa_optimization():
+    # Riskfolio-Lib's owa_optimization with the exact OWA weights of the Tail Gini (its
+    # optimization(rm="TG") approximates them with power cones).
+    returns = _heavy_tailed_returns(120)
+    np.testing.assert_allclose(
+        optimization_model.get_mean_risk_weights(returns, "tail_gini"),
+        [0.2846084462, 0.0091859065, 0, 0.4045979515, 0.3016076958, 0],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_mean_risk_weights(
+            returns, "tail_gini_range", "maximum_ratio"
+        ),
+        [0.1755349998, 0, 0, 0.5456848296, 0.2132122843, 0.0655678864],
+        atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize(
+    ("risk_measure", "options", "expected"),
+    [
+        # skfolio's RiskBudgeting and Riskfolio-Lib's rp_optimization.
+        (
+            "cvar",
+            {},
+            [
+                0.1493162439,
+                0.1266643342,
+                0.1913236198,
+                0.2413999808,
+                0.1444466518,
+                0.1468491695,
+            ],
+        ),
+        (
+            "gini_mean_difference",
+            {},
+            [
+                0.1245107771,
+                0.1271034549,
+                0.240772619,
+                0.2225250969,
+                0.1519726552,
+                0.1331153969,
+            ],
+        ),
+        (
+            "ulcer_index",
+            {},
+            [
+                0.1084087756,
+                0.1124421422,
+                0.1331280362,
+                0.3086170678,
+                0.152221135,
+                0.1851828433,
+            ],
+        ),
+        (
+            "cdar",
+            {},
+            [
+                0.1257794487,
+                0.1147119552,
+                0.1377592667,
+                0.2537011554,
+                0.1645675781,
+                0.2034805959,
+            ],
+        ),
+        (
+            "semideviation",
+            {"minimum_acceptable_return": "mean"},
+            [
+                0.1307015766,
+                0.1285613263,
+                0.2212932522,
+                0.2323165828,
+                0.154607222,
+                0.1325200401,
+            ],
+        ),
+        (
+            "cvar",
+            {
+                "risk_budget": pd.Series(
+                    [0.3, 0.2, 0.2, 0.1, 0.1, 0.1], index=list("ABCDEF")
+                )
+            },
+            [
+                0.2264144742,
+                0.1285689762,
+                0.2159474907,
+                0.2302954138,
+                0.104429135,
+                0.09434451,
+            ],
+        ),
+    ],
+)
+def test_risk_budgeting_weights_match_skfolio_and_riskfolio(
+    risk_measure, options, expected
+):
+    returns = _heavy_tailed_returns()
+    weights = optimization_model.get_risk_budgeting_weights(
+        returns, risk_measure, **options
+    )
+    np.testing.assert_allclose(weights, expected, atol=1e-5)
+    if risk_measure not in ("gini_mean_difference", "semideviation"):
+        return
+    # Every asset contributes its share of the measure; the finite differences of the
+    # other measures straddle a kink at the optimum, where they average two slopes.
+    budget = options.get("risk_budget", pd.Series(1 / 6, index=returns.columns))
+    np.testing.assert_allclose(
+        optimization_model.get_mean_risk_contributions(
+            weights,
+            returns,
+            risk_measure,
+            minimum_acceptable_return=options.get("minimum_acceptable_return", 0.0),
+        ),
+        budget / budget.sum(),
+        atol=1e-3,
+    )
+
+
+def test_owa_risk_is_the_risk_module_measure_with_its_subgradient():
+    returns = _heavy_tailed_returns()
+    weights = np.linspace(1, 2, 6) / np.linspace(1, 2, 6).sum()
+    portfolio = pd.DataFrame({"P": returns.to_numpy() @ weights})
+    for measure in optimization_model.OWA_RISK_MEASURES:
+        value, slope = optimization_model.get_owa_risk(
+            returns.to_numpy(), weights, measure
+        )
+        assert value == pytest.approx(
+            optimization_model.get_mean_risk_measure(portfolio, measure).iloc[0]
+        )
+        # Positively homogeneous: the subgradient at w gives the measure back.
+        assert slope @ weights == pytest.approx(value)
+
+
+def test_mean_risk_weights_take_constraints_and_refuse_bad_input():
+    returns = _long_short_returns()
+    for measure in ("mad", "gini_mean_difference", "semideviation"):
+        weights = optimization_model.get_mean_risk_weights(
+            returns,
+            measure,
+            minimum_weight=-0.3,
+            maximum_weight={"E": 0.25},
+            groups=SECTORS.reindex(list("ABCDEF")),
+            group_bounds={"Sector": {"Tech": (0, 0.4)}},
+            gross_exposure=1.3,
+        )
+        assert weights.sum() == pytest.approx(1)
+        assert weights.abs().sum() <= 1.3 + 1e-7
+        assert weights["E"] <= 0.25 + 1e-7
+        assert weights[["A", "B"]].sum() <= 0.4 + 1e-7
+    with pytest.raises(ValueError, match="risk measure"):
+        optimization_model.get_mean_risk_weights(returns, "variance")
+    with pytest.raises(ValueError, match="target return"):
+        optimization_model.get_mean_risk_weights(returns, "mad", target_return=1.0)
+    with pytest.raises(ValueError, match="0 or 'mean'"):
+        optimization_model.get_risk_budgeting_weights(
+            returns, "mad", minimum_acceptable_return=0.001
+        )

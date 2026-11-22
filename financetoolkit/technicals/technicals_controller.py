@@ -16,6 +16,7 @@ from financetoolkit.technicals.helpers import (
     FACTOR_PRICE_DIFFERENCES,
     FACTOR_PRICE_LINES,
     PERIODS,
+    is_factor_listed,
 )
 from financetoolkit.technicals.momentum.momentum_controller import MomentumTechnicals
 from financetoolkit.technicals.overlap.overlap_controller import OverlapTechnicals
@@ -415,20 +416,23 @@ class TechnicalsBase:
         period is compared with the returns from that day's close onwards, using the dividend
         and split adjusted close. An indicator in price units does not compare across tickers
         with different share prices, so a price line (a moving average, band, channel, stop or
-        cloud line) is used as the distance of the close from it, close / line - 1, and a price
-        difference (the true range, ATR and average day range, MACD, momentum, awesome
-        oscillator, elder ray, detrended price oscillator, Hilbert phasor components, Swiss Army
-        Knife filter and detrended synthetic price) as a share of the close. The collections
-        evaluate every variant of an indicator with variants, such as each method of
-        `get_moving_average`, labelled with its method, e.g. "get_moving_average(method='t3')".
-        Each ticker
-        keeps its own history: a ticker without a value or a return in a period is left out
-        of that period only.
+        cloud line, and the Butterworth and Gaussian filters of the Swiss Army Knife) is used as
+        the distance of the close from it, close / line - 1, and a price difference as a share
+        of the close: the true range, the ATR and average day range, the price distance, the
+        market thermometer, the squeeze momentum, the MACD, the momentum (absolute rate of
+        change), the Qstick, the awesome and accelerator oscillators, the elder ray, the
+        detrended price oscillator, the force index, the Hilbert phasor components, the
+        high-pass and band-pass filters of the Swiss Army Knife and the detrended synthetic
+        price. The collections evaluate every variant of an indicator with variants, such as
+        each method of `get_moving_average`, labelled with its parameters, e.g.
+        "get_moving_average(method='t3')". Each ticker keeps its own history: a ticker without
+        a value or a return in a period is left out of that period only.
 
         Args:
             metrics (str | list[str], optional): An indicator method name, e.g.
-                "get_relative_strength_index", a variant of one by its label, e.g.
-                "get_relative_strength_index(method='connors')", a list of them, or a collection: "momentum",
+                "get_relative_strength_index", a variant of one by its label, the method with
+                its parameters as keyword arguments, e.g. "get_relative_strength_index(method='connors')"
+                or "get_moving_average(method='hull', window=10)", a list of them, or a collection: "momentum",
                 "overlap", "volatility", "breadth", "cycle" or "all". Defaults to "momentum",
                 the oscillators and momentum indicators. The collections leave out the market-wide
                 breadth measures, the volume-scaled indicators, the pivot points and
@@ -517,10 +521,6 @@ class TechnicalsBase:
             self._historical_data["daily"][kwargs.get("close_column", "Adj Close")],
             tickers,
         )
-        price_lines = {factor_model.get_metric_label(m) for m in FACTOR_PRICE_LINES}
-        price_differences = {
-            factor_model.get_metric_label(m) for m in FACTOR_PRICE_DIFFERENCES
-        }
         for metric in selected:
             label = factor_model.get_metric_label(metric)
             if label not in factors:
@@ -528,19 +528,24 @@ class TechnicalsBase:
             factor = factors[label]
 
             # The unit follows the method and, for a method with variants, the variant
-            # calculated: the one of the metric, the one given or the method's default.
+            # calculated: per parameter the value of the metric, the one given or the
+            # method's default, e.g. the method of a moving average or the filter of the
+            # Swiss Army Knife.
             name, variant = (metric, {}) if isinstance(metric, str) else metric
-            default = inspect.signature(getattr(self, name)).parameters.get("method")
-            method = variant.get(
-                "method",
-                kwargs.get("method", default.default if default else None),
-            )
-            names = {name, factor_model.get_metric_label((name, {"method": method}))}
+            arguments = {
+                key: variant.get(key, kwargs.get(key, parameter.default))
+                for key, parameter in inspect.signature(
+                    getattr(self, name)
+                ).parameters.items()
+            }
 
             # The Supertrend's direction is +1 or -1 and stays as it is.
-            if names & price_lines and column != "Trend Direction":
+            if (
+                is_factor_listed(FACTOR_PRICE_LINES, name, arguments)
+                and column != "Trend Direction"
+            ):
                 factors[label] = close.reindex_like(factor) / factor - 1
-            elif names & price_differences:
+            elif is_factor_listed(FACTOR_PRICE_DIFFERENCES, name, arguments):
                 factors[label] = factor / close.reindex_like(factor)
 
         result = factor_model.get_factor_analysis(

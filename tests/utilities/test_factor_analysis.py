@@ -9,6 +9,7 @@ from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.ratios import ratios_controller
 from financetoolkit.ratios.ratios_controller import Ratios
 from financetoolkit.technicals.technicals_controller import Technicals
+from financetoolkit.utilities import factor_model
 
 TICKERS = [f"T{number}" for number in range(10)]
 
@@ -234,3 +235,55 @@ def test_fewer_tickers_than_quantiles_say_so(monkeypatch):
     with pytest.raises(ValueError, match="5 quantiles need at least 5 tickers"):
         performance.get_factor_analysis(factor, horizons=1)
     assert not performance.get_factor_analysis(factor, horizons=1, quantiles=3).empty
+
+
+def test_the_swiss_army_knife_filter_is_a_price_line_or_difference_by_its_filter(
+    monkeypatch,
+):
+    # The low-pass filters return smoothed prices (a price line, close / line - 1), the
+    # high-pass and band-pass filters oscillate around zero (a share of the close).
+    close = daily_prices()["Adj Close"]
+    technicals = FakeModule()
+    technicals.get_swiss_army_knife_filter = (
+        lambda window=20, filter="band_pass", rounding=None: 2 * close
+    )
+    captured = {}
+    monkeypatch.setattr(
+        factor_model,
+        "get_factor_analysis",
+        lambda factors, *args, **kwargs: captured.update(factors) or pd.DataFrame(),
+    )
+
+    for metrics, kwargs, expected in [
+        ("get_swiss_army_knife_filter", {}, 2.0),
+        ("get_swiss_army_knife_filter", {"filter": "butterworth"}, -0.5),
+        ("get_swiss_army_knife_filter(filter='gaussian')", {}, -0.5),
+        ("get_swiss_army_knife_filter(filter='high_pass')", {}, 2.0),
+    ]:
+        captured.clear()
+        Technicals.get_factor_analysis(technicals, metrics, **kwargs)
+        (factor,) = captured.values()
+        assert np.allclose(factor.dropna(how="all").to_numpy(), expected)
+
+
+def test_a_variant_label_need_not_be_in_a_collection(monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    technicals = FakeModule()
+    calls = []
+
+    def get_moving_average(window=None, method="simple", rounding=None):
+        calls.append((window, method))
+        return daily_prices()["Adj Close"]
+
+    technicals.get_moving_average = get_moving_average
+
+    for label in [
+        "get_moving_average(method='hull')",
+        'get_moving_average(method="hull", window=10)',
+    ]:
+        Technicals.get_factor_analysis(technicals, label, horizons=1)
+    assert calls == [(None, "hull"), (10, "hull")]
+
+    # The parameters are checked against the method's signature.
+    with pytest.raises(ValueError, match="size is not a parameter"):
+        Technicals.get_factor_analysis(technicals, "get_moving_average(size=10)")

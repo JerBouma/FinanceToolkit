@@ -1694,10 +1694,11 @@ class BreadthTechnicals:
         - New Highs - New Lows = (Number of tickers at a window-period high) - (Number of tickers at a window-period low)
 
         The reading counts tickers at a high or low of the lookback window, so it needs a broad
-        universe and a history of at least one window before the start of the period of interest:
-        in the first periods every ticker is compared with only a few prices, so it is often counted
-        at a high or a low, and on the first date at both. Persistently more new lows than new highs
-        while an index still rises is a classic sign of narrowing breadth.
+        universe and a history of at least one window before the start of the period of interest: the
+        reading is NaN until a ticker has a full window of closes. The default window of 252 periods is
+        a year of daily closes; weekly data needs a shorter window, such as 52 periods for a year.
+        Persistently more new lows than new highs while an index still rises is a classic sign of
+        narrowing breadth.
 
         Each ticker's window counts its own closes and the ticker counts on the dates it traded,
         so the weekends of a cryptocurrency in the Toolkit do not shorten a stock's window.
@@ -1714,7 +1715,7 @@ class BreadthTechnicals:
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the new high / new low lookback.
-                Defaults to 252.
+                Defaults to 252, a year of daily closes (52 is a year of weekly closes).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -3568,7 +3569,8 @@ class BreadthTechnicals:
           `sort_close=False` splits the period into stretches of time instead). Its total is the up plus
           the down volume; here the Total Volume also includes the volume of unchanged closes and of the
           first period, which has no change.
-        - A close on an inner edge belongs to the lower bin.
+        - A close on an inner edge belongs to the lower bin. A ticker whose close does not change has all
+          its volume in the first bin, with every edge at that close.
 
         As an example:
 

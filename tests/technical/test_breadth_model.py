@@ -482,3 +482,14 @@ def test_archer_on_balance_volume_matches_pandas_ta():
         [22149.0, 19589.0, 22149.0, 21243.133545919194, 21103.21240503417], rel=1e-12
     )
     assert result.iloc[-1, 5:].tolist() == [0.0, 1.0]
+
+
+def test_volume_profile_of_a_constant_close_puts_the_volume_in_the_first_bin():
+    close = pd.Series([10.0, 10.0, 10.0])
+    volume = pd.Series([100.0, 200.0, 300.0])
+
+    result = breadth_model.get_volume_profile(close, volume, 4)
+
+    assert result["Total Volume"].tolist() == [600.0, 0.0, 0.0, 0.0]
+    assert result["Up Volume"].sum() == result["Down Volume"].sum() == 0
+    assert (result[["Low Price", "High Price"]] == 10.0).all().all()

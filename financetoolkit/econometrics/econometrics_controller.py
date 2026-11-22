@@ -281,7 +281,8 @@ class EconometricsBase:
         `self._tickers` for every simple "one dependent, one-or-more
         independent(s)" regression-style method on this controller. Defaults to
         `self._tickers[0]` as the dependent ticker and every other ticker in
-        `self._tickers` as independent, unless overridden.
+        `self._tickers` as independent, unless overridden. The Portfolio of a Portfolio's
+        Toolkit is left out of the default independents of a holding, as it combines them.
         """
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 
@@ -290,8 +291,13 @@ class EconometricsBase:
         )
 
         if independent_tickers is None:
+            # The Portfolio of a Portfolio's Toolkit is a combination of its holdings, so a
+            # holding regressed on the others and the Portfolio would be collinear by construction.
             independent_tickers = [
-                ticker for ticker in tickers if ticker != dependent_ticker
+                ticker
+                for ticker in tickers
+                if ticker != dependent_ticker
+                and (ticker != "Portfolio" or dependent_ticker == "Portfolio")
             ]
         else:
             independent_tickers = (

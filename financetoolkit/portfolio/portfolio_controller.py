@@ -941,12 +941,15 @@ class Portfolio:
         close (purchases and sales change the weights and are no return themselves), with
         Close, Adj Close and Cumulative Return as an index that starts at 1 on the first day
         something is held. The risk metrics (volatility, Value at Risk, drawdowns and the
-        other measures of the return distribution) and the technical indicators of the close
-        are calculated on that series, so they include how the holdings move together: a
-        stock next to its inverse fund has a low volatility, not the average of two high
-        ones. The other metrics, such as the ratios of the financial statements and the
-        performance ratios, are the weighted average of the assets' results with the
-        portfolio weights of each period.
+        other measures of the return distribution), the performance metrics (the Sharpe,
+        Sortino and Treynor ratios, Beta, Jensen's Alpha, the Information Ratio, the capture
+        ratios and the others, with the excess returns over the risk free rate and the
+        benchmark of the Portfolio), the statistical tests of the econometrics and the
+        technical indicators of the close are calculated on that series, so they include how
+        the holdings move together: a stock next to its inverse fund has a low volatility and
+        a Sharpe ratio of its own, not the average of two. The ratios of the financial
+        statements are the weighted average of the assets' results with the portfolio weights
+        of each period.
 
         As an example:
 

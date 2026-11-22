@@ -1218,3 +1218,22 @@ def test_rolling_statistics_default_windows():
         (Econometrics.get_slope, 1),
     ):
         assert inspect.signature(method).parameters["window"].default == window
+
+
+def test_the_portfolio_is_no_default_independent_of_its_holdings():
+    """A holding regressed on the others and their Portfolio is collinear by construction."""
+    from types import SimpleNamespace
+
+    from financetoolkit.econometrics.econometrics_controller import EconometricsBase
+
+    stub = SimpleNamespace(
+        _get_tickers=lambda include_benchmark=False: ["AAPL", "MSFT", "Portfolio"]
+    )
+
+    assert EconometricsBase._resolve_dependent_independent(stub) == ("AAPL", ["MSFT"])
+    assert EconometricsBase._resolve_dependent_independent(
+        stub, dependent_ticker="Portfolio"
+    ) == ("Portfolio", ["AAPL", "MSFT"])
+    assert EconometricsBase._resolve_dependent_independent(
+        stub, independent_tickers=["MSFT", "Portfolio"]
+    ) == ("AAPL", ["MSFT", "Portfolio"])

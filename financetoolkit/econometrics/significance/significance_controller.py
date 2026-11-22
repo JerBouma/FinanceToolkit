@@ -5,8 +5,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.diagnostics import diagnostics_model
+from financetoolkit.econometrics.helpers import get_observations_per_year
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -18,7 +18,7 @@ from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_ro
 
 @filter_shown_columns
 @track_sources
-class SignificanceEconometrics(EconometricsBase):
+class SignificanceEconometrics:
     """
     How unusual a level or a change is: the level and move significance, the change over the same window every year and streaks.
     """
@@ -98,6 +98,12 @@ class SignificanceEconometrics(EconometricsBase):
         - Annualised Change = (x(T) / x(0)) ^ (1 / years) - 1, years between the two dates
         - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
         - Recovery Date = the first date after the trough with x >= the peak before it
+        - First Above Level = the first date s with x(s) > level
+        - Above Level Since = the first date of the run above the level the latest value is in
+        - Last Above Level = the last date s < T with x(s) > level
+        - Last At Or Below Level = the last date s < T with x(s) <= level
+        - Observations Above Level = Count(x(s) > level), over s <= T
+        - Observations At Or Below Level = Count(x(s) <= level), over s <= T
 
         Where x(T) is the latest value of a series, x(0) its first observation and s runs over its
         earlier observations. An
@@ -123,7 +129,7 @@ class SignificanceEconometrics(EconometricsBase):
         change between two dates, cumulative change, event window, peak, trough, drawdown
         from the peak, change from the high, change from the low, multiple, compound annual
         growth rate (CAGR), annualised change, peak to trough, time to recover the peak,
-        change in percentage points.
+        change in percentage points, how often at or below a level, the last time above a level.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -145,9 +151,13 @@ class SignificanceEconometrics(EconometricsBase):
                 Defaults to False.
             level (float | None, optional): A level to compare every series with, such as an
                 earlier peak, which adds the Level, the First Above Level (the first date the
-                series exceeded it) and Above Level Since (the date it has been above it since
-                without a break, empty when the latest value is not above it). Defaults to
-                None, which leaves them out.
+                series exceeded it), Above Level Since (the date it has been above it since
+                without a break, empty when the latest value is not above it), the Last Above
+                Level and Last At Or Below Level (the last date before the latest observation
+                on either side of it, empty when there is none) and the Observations Above
+                Level and Observations At Or Below Level (how many observations of the range,
+                the latest included, are on either side of it: "6 weeks at or below 203,000
+                between 1970 and 2020"). Defaults to None, which leaves them out.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -164,7 +174,9 @@ class SignificanceEconometrics(EconometricsBase):
             Lowest Since dates, the Highest and Lowest with their Highest Date and Lowest Date
             and the Change From Highest and Change From Lowest (decimals), and the Largest
             Drawdown (decimal) with its Drawdown Peak Date, Drawdown Trough Date and Recovery
-            Date (NaN while it has not recovered). The dates are text: the dates of the observations, e.g.
+            Date (NaN while it has not recovered), and with a level the Level, First Above
+            Level, Above Level Since, Last Above Level, Last At Or Below Level, Observations
+            Above Level and Observations At Or Below Level. The dates are text: the dates of the observations, e.g.
             2002-05-31 for a monthly series, or the periods, e.g. 2002-05 with period="monthly".
 
         Notes:
@@ -181,7 +193,7 @@ class SignificanceEconometrics(EconometricsBase):
         ```python
         from financetoolkit import Economics, Econometrics
 
-        economics = Economics(start_date='2000-01-01', end_date='2026-10-31')
+        economics = Economics(start_date='2000-01-01', end_date='2026-10-31', rounding=None)
 
         long_term_rates = economics.get_long_term_interest_rate(
             countries=['United States', 'Germany', 'Japan'], period='monthly'
@@ -189,35 +201,42 @@ class SignificanceEconometrics(EconometricsBase):
 
         econometrics = Econometrics(data=long_term_rates)
 
-        econometrics.get_level_significance().T
+        econometrics.get_level_significance(level=0.05).T
         ```
 
         Which returns:
 
-        |                      | United States   | Germany    | Japan      |
-        |:---------------------|:----------------|:-----------|:-----------|
-        | Start Date           | 2000-01-31      | 2000-01-31 | 2000-01-31 |
-        | Start Value          | 0.0666          | 0.0554     | 0.0169     |
-        | Observations         | 322             | 322        | 322        |
-        | Latest Date          | 2026-10-31      | 2026-10-31 | 2026-10-31 |
-        | Latest Value         | 0.0513          | 0.0342     | 0.0276     |
-        | Change Since Start   | -0.2297         | -0.3827    | 0.6331     |
-        | Multiple Since Start | 0.7703          | 0.6173     | 1.6331     |
-        | Annualised Change    | -0.0097         | -0.0179    | 0.0185     |
-        | Percentile           | 0.9377          | 0.6854     | 0.9907     |
-        | Rank                 | 21              | 102        | 4          |
-        | Highest Since        | 2002-05-31      | 2026-09-30 | 2026-09-30 |
-        | Lowest Since         | 2026-09-30      | 2026-08-31 | 2026-06-30 |
-        | Highest              | 0.0666          | 0.0554     | 0.0305     |
-        | Highest Date         | 2000-01-31      | 2000-01-31 | 2026-09-30 |
-        | Change From Highest  | -0.2297         | -0.3827    | -0.0951    |
-        | Lowest               | 0.0062          | -0.0065    | -0.0028    |
-        | Lowest Date          | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Change From Lowest   | 7.2742          | 6.2615     | 10.8571    |
-        | Largest Drawdown     | -0.9069         | -1.1173    | -1.1429    |
-        | Drawdown Peak Date   | 2000-01-31      | 2000-01-31 | 2006-04-30 |
-        | Drawdown Trough Date | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Recovery Date        | nan             | nan        | 2025-12-31 |
+        |                                | United States   | Germany    | Japan      |
+        |:-------------------------------|:----------------|:-----------|:-----------|
+        | Start Date                     | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Start Value                    | 0.0666          | 0.0554     | 0.0169     |
+        | Observations                   | 322             | 322        | 322        |
+        | Latest Date                    | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value                   | 0.0513          | 0.0342     | 0.0276     |
+        | Change Since Start             | -0.2297         | -0.3834    | 0.6292     |
+        | Multiple Since Start           | 0.7703          | 0.6166     | 1.6292     |
+        | Annualised Change              | -0.0097         | -0.0179    | 0.0184     |
+        | Percentile                     | 0.9377          | 0.6854     | 0.9907     |
+        | Rank                           | 21              | 102        | 4          |
+        | Highest Since                  | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since                   | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        | Highest                        | 0.0666          | 0.0554     | 0.0305     |
+        | Highest Date                   | 2000-01-31      | 2000-01-31 | 2026-09-30 |
+        | Change From Highest            | -0.2297         | -0.3834    | -0.0967    |
+        | Lowest                         | 0.0062          | -0.0065    | -0.0028    |
+        | Lowest Date                    | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Change From Lowest             | 7.2742          | 6.2626     | 10.8393    |
+        | Largest Drawdown               | -0.9069         | -1.1172    | -1.1431    |
+        | Drawdown Peak Date             | 2000-01-31      | 2000-01-31 | 2006-04-30 |
+        | Drawdown Trough Date           | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Recovery Date                  | nan             | nan        | 2025-12-31 |
+        | Level                          | 0.05            | 0.05       | 0.05       |
+        | First Above Level              | 2000-01-31      | 2000-01-31 | nan        |
+        | Above Level Since              | 2026-10-31      | nan        | nan        |
+        | Last Above Level               | 2007-06-30      | 2002-06-30 | nan        |
+        | Last At Or Below Level         | 2026-09-30      | 2026-09-30 | 2026-09-30 |
+        | Observations Above Level       | 28              | 17         | 0          |
+        | Observations At Or Below Level | 294             | 305        | 322        |
         """
         period = period if period else "daily"
         levels = self._get_spreads(
@@ -270,7 +289,7 @@ class SignificanceEconometrics(EconometricsBase):
 
         - Volatility Multiple(t) = Change(t) / σ(Change(t - window), ..., Change(t - 1))
         - VaR Multiple(t) = Change(t) / |Quantile(Change(t - window), ..., Change(t - 1); alpha)|
-        - Percentile(t) = Count(|Change(s)| < |Change(t)|, s < t) / Count(s < t)
+        - Percentile(t) = (Count(|Change(s)| < |Change(t)|) + 0.5 * Count(|Change(s)| = |Change(t)|)) / Count(s), over s < t
         - Largest Since(t) = max(s < t : Change(s) <= Change(t)) if Change(t) < 0
         - Largest Since(t) = max(s < t : Change(s) >= Change(t)) if Change(t) > 0
 
@@ -279,6 +298,10 @@ class SignificanceEconometrics(EconometricsBase):
         The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated
         linearly. Each measure only uses the changes before the period itself (no look-ahead),
         and Largest Since compares falls with falls and rises with rises, as a headline does.
+        An earlier change of the same size counts as half in the percentile (the mid-rank, as
+        in `get_level_significance`), so a rate that is unchanged on most days puts an
+        unchanged day in the middle of its ties. The VaR Multiple is NaN when the trailing
+        alpha quantile is zero or positive, as there is no loss to scale the change by.
 
         Also known as: sigma move, largest move since, biggest daily rise since, standardized
         change, yield move significance.
@@ -289,7 +312,10 @@ class SignificanceEconometrics(EconometricsBase):
             window (int | None, optional): The number of earlier changes the volatility is
                 measured over, which the percentile also needs at least. Defaults to None, which
                 uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
-                monthly, quarterly or yearly changes).
+                monthly, quarterly or yearly changes). With `Econometrics(data=...)` and the
+                "daily" period, a year is counted in each series' own observations, from the
+                median spacing of its dates: 20 changes for a monthly or quarterly series and
+                52 for a weekly one.
             alpha (float, optional): The tail probability of the trailing historic Value at Risk
                 the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
             include_benchmark (bool, optional): Whether to include the benchmark of a Toolkit.
@@ -303,8 +329,8 @@ class SignificanceEconometrics(EconometricsBase):
 
         Returns:
             pd.DataFrame: Return (the change), Volatility Multiple, VaR Multiple, Percentile and
-            Largest Since (the date as text) per series, with time as the index and the measures
-            and series as the column levels.
+            Largest Since (the date as text, NaN when there is none) per series, with time as the
+            index and the measures and series as the column levels.
 
         Notes:
         - The history a move is compared with starts at the start of the data: the volatility,
@@ -319,7 +345,7 @@ class SignificanceEconometrics(EconometricsBase):
         ```python
         from financetoolkit import Econometrics, FixedIncome
 
-        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-11-10')
+        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-11-10', rounding=None)
 
         treasury_rates = fixedincome.get_treasury_rates(maturities=['2Y', '10Y'])
 
@@ -333,11 +359,7 @@ class SignificanceEconometrics(EconometricsBase):
         |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
         |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
         | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
-        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
-        |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
-        |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
-        | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
-        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
+        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9654 | 2026-09-23      |
         """
         period = period if period else "daily"
 
@@ -350,16 +372,29 @@ class SignificanceEconometrics(EconometricsBase):
                 "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
             )
 
-        window = window if window else max(PERIODS_PER_YEAR[period], 20)
         changes = self._filter_benchmark(
             self._get_series_column(period, "Return"),
             include_benchmark=include_benchmark,
         )
 
+        def default_window(series_changes: pd.Series) -> int:
+            # The "daily" period of data= holds every series at its own dates, so a monthly
+            # series would need 252 months (21 years) before its first measure: a year is
+            # counted in the series' own observations instead. The Toolkit's daily prices
+            # are trading days, which PERIODS_PER_YEAR already counts.
+            observations_per_year = (
+                get_observations_per_year(series_changes.index)
+                if period == "daily" and not self._fills_non_trading_days
+                else PERIODS_PER_YEAR[period]
+            )
+            return max(observations_per_year, 20)
+
         move_significance = pd.concat(
             {
                 series: risk_model.get_move_significance(
-                    changes[series].dropna(), window, alpha
+                    changes[series].dropna(),
+                    window if window else default_window(changes[series].dropna()),
+                    alpha,
                 )
                 for series in changes.columns
             },
@@ -422,7 +457,7 @@ class SignificanceEconometrics(EconometricsBase):
         February) runs into the next year and is labelled by the year it ends; the same
         month for both gives the change over twelve months. A year without the value of
         either month has no change, so the current year is empty until its last month is
-        published. Largest Since is NaN when no earlier year had a change as large. With
+        published. Largest Since is empty (<NA>) when no earlier year had a change as large. With
         `Econometrics(data=..., changes="difference")` the Change is x(to_month, y) -
         x(from_month, y), in percentage points for a rate.
 
@@ -453,7 +488,8 @@ class SignificanceEconometrics(EconometricsBase):
 
         Returns:
             pd.DataFrame: Per year (rows) and series the Start Value, End Value, Change
-            (decimal), Rank and Largest Since (columns, a level per series).
+            (decimal), Rank and Largest Since (columns, a level per series); the Rank and
+            Largest Since are whole numbers, <NA> when there is none.
 
         Notes:
         - The ranks and "largest since" depend on the history: start the data early enough,
@@ -479,16 +515,16 @@ class SignificanceEconometrics(EconometricsBase):
 
         Which returns:
 
-        |   Year |   Start Value |   End Value |   Change |   Rank |   Largest Since |
-        |-------:|--------------:|------------:|---------:|-------:|----------------:|
-        |   2019 |       115.923 |     118.019 |   0.0181 |      5 |             nan |
-        |   2020 |       118.629 |     119.414 |   0.0066 |      7 |            2019 |
-        |   2021 |       120.618 |     126.843 |   0.0516 |      1 |             nan |
-        |   2022 |       130.112 |     136.668 |   0.0504 |      2 |            2021 |
-        |   2023 |       137.965 |     141.098 |   0.0227 |      4 |            2022 |
-        |   2024 |       142.315 |     144.763 |   0.0172 |      6 |            2023 |
-        |   2025 |       146.331 |     nan     | nan      |    nan |             nan |
-        |   2026 |       149.863 |     154.782 |   0.0328 |      3 |            2022 |
+        |   Year |   Start Value |   End Value |   Change | Rank   | Largest Since   |
+        |-------:|--------------:|------------:|---------:|:-------|:----------------|
+        |   2019 |       115.923 |     118.019 |   0.0181 | 5      | <NA>            |
+        |   2020 |       118.629 |     119.414 |   0.0066 | 7      | 2019            |
+        |   2021 |       120.618 |     126.843 |   0.0516 | 1      | <NA>            |
+        |   2022 |       130.112 |     136.668 |   0.0504 | 2      | 2021            |
+        |   2023 |       137.965 |     141.098 |   0.0227 | 4      | 2022            |
+        |   2024 |       142.315 |     144.763 |   0.0172 | 6      | 2023            |
+        |   2025 |       146.331 |     nan     | nan      | <NA>   | <NA>            |
+        |   2026 |       149.863 |     154.782 |   0.0328 | 3      | 2022            |
         """
         levels = self._get_spreads(
             self._filter_benchmark(

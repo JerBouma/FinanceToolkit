@@ -52,7 +52,8 @@ def get_forward_rate(
 
     Raises:
         TypeError: If any of the inputs is not a float, int or pandas Series.
-        ValueError: If the far maturity is not greater than the near maturity.
+        ValueError: If the far maturity is not greater than the near maturity, for any
+            element when they are Series.
     """
     for value in (near_rate, far_rate, near_maturity, far_maturity):
         if not isinstance(value, int | float | pd.Series):
@@ -61,11 +62,14 @@ def get_forward_rate(
                 f"a float, int or pandas Series, received {type(value)} instead."
             )
 
-    if (
-        isinstance(near_maturity, int | float)
-        and isinstance(far_maturity, int | float)
-        and far_maturity <= near_maturity
-    ):
+    # A pair of a Series checks every element, so no row turns into a forward rate over a
+    # negative or zero period.
+    far, near = (
+        far_maturity.align(near_maturity)
+        if isinstance(far_maturity, pd.Series) and isinstance(near_maturity, pd.Series)
+        else (far_maturity, near_maturity)
+    )
+    if np.any(np.asarray(far <= near)):
         raise ValueError(
             "The far maturity must be greater than the near maturity to derive "
             "a forward rate."
@@ -178,6 +182,118 @@ def get_par_yield(
     )
 
     return float(par_yield)
+
+
+def get_carry_and_roll_down(
+    spot_rates: pd.Series,
+    maturities: list | np.ndarray | float,
+    horizon: float = 0.25,
+    short_rate: float | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate the carry and roll-down of zero-coupon bonds on a yield curve: the return in
+    excess of financing that a bond earns over a horizon if the curve does not change.
+
+    A bond held over the horizon earns its own yield (the carry over the financing rate)
+    and, as it ages, is priced at the yield of a shorter maturity. On an upward sloping
+    curve that yield is lower, so the price rises (the roll-down). Koijen, Moskowitz,
+    Pedersen and Vrugt (2018) define the carry of any asset as its return when market
+    conditions, here the yield curve, stay the same; for a bond it is the yield spread over
+    the short rate plus the roll-down. The bonds are zero-coupon bonds, so each one is
+    repriced exactly on the unchanged curve rather than approximated with its duration.
+
+    The formula is as follows:
+
+        Carry = (1 + z(T))^h - (1 + r)^h
+        Roll-Down = (1 + z(T))^T / (1 + z(T - h))^(T - h) - (1 + z(T))^h
+        Total = Carry + Roll-Down = P(T - h) / P(T) - (1 + r)^h
+
+    where z(m) is the zero-coupon rate of maturity m, annually compounded and interpolated
+    linearly between the maturities of `spot_rates` (flat beyond the shortest and the
+    longest), P(m) = (1 + z(m))^(-m) the price of a zero-coupon bond paying 1 at m, T the
+    maturity, h the horizon and r the financing rate over the horizon, annually compounded:
+    `short_rate`, or by default the zero-coupon rate of the horizon, z(h), so that a bond
+    maturing at the horizon has no carry and no roll-down. The carry is what the bond earns
+    over the financing if its yield stays z(T); the roll-down is the price change when its
+    yield moves from z(T) to z(T - h), the yield the unchanged curve has at its remaining
+    maturity, valued at the horizon. Every measure is a return over the horizon, not
+    annualized.
+
+    To first order, Carry ≈ (z(T) - r) × h and Roll-Down ≈ -D × (z(T - h) - z(T)), with
+    D = (T - h) / (1 + z(T)) the modified duration (annual compounding) of the bond at the
+    horizon, the approximation of Koijen et al. (2018).
+
+    For more information, see the following sources:
+
+    - Koijen, R.S.J., Moskowitz, T.J., Pedersen, L.H. and Vrugt, E.B. (2018). "Carry."
+      Journal of Financial Economics, 127(2), 197-225.
+    - Ilmanen, A. (2011). "Expected Returns: An Investor's Guide to Harvesting Market
+      Rewards." Wiley, chapter 9.
+
+    Args:
+        spot_rates (pd.Series): The zero-coupon (spot) yield curve as decimals, annually
+            compounded, indexed by maturity in years.
+        maturities (list | np.ndarray | float): The maturities of the bonds, in years.
+        horizon (float, optional): The holding period, in years. Defaults to 0.25 (three
+            months).
+        short_rate (float | None, optional): The financing rate over the horizon, as an
+            annually compounded decimal. Defaults to None, the zero-coupon rate of the
+            horizon on the curve.
+
+    Returns:
+        pd.DataFrame: The Carry, Roll-Down and Total (decimals, returns over the horizon)
+        by maturity in years. A maturity shorter than the horizon is NaN, as the bond is
+        repaid before the horizon ends.
+
+    Raises:
+        TypeError: If spot_rates is not a pandas Series or horizon or short_rate are not
+            a float or int.
+        ValueError: If the horizon is not positive.
+    """
+    if not isinstance(spot_rates, pd.Series):
+        raise TypeError(
+            f"Expected spot_rates to be a pandas Series, received {type(spot_rates)} instead."
+        )
+    if not isinstance(horizon, int | float):
+        raise TypeError(
+            f"Expected horizon to be a float or int, received {type(horizon)} instead."
+        )
+    if short_rate is not None and not isinstance(short_rate, int | float):
+        raise TypeError(
+            f"Expected short_rate to be a float, int or None, received {type(short_rate)} instead."
+        )
+    if horizon <= 0:
+        raise ValueError("The horizon must be greater than 0.")
+
+    curve = spot_rates.dropna().sort_index()
+    curve_maturities = curve.index.to_numpy(dtype=float)
+    curve_rates = curve.to_numpy(dtype=float)
+    maturities = np.atleast_1d(np.asarray(maturities, dtype=float))
+
+    def zero_rate(maturity: np.ndarray | float) -> np.ndarray:
+        return np.interp(maturity, curve_maturities, curve_rates)
+
+    financing = (
+        1 + (zero_rate(horizon) if short_rate is None else short_rate)
+    ) ** horizon
+
+    # A bond repaid before the horizon has no price at the horizon; at the horizon itself its
+    # remaining maturity is zero, which the price (1 + z)^0 = 1 handles.
+    rolled = np.maximum(maturities - horizon, 0.0)
+    held = (1 + zero_rate(maturities)) ** horizon
+    carry = held - financing
+    roll_down = (1 + zero_rate(maturities)) ** maturities / (
+        1 + zero_rate(rolled)
+    ) ** rolled - held
+
+    result = pd.DataFrame(
+        {"Carry": carry, "Roll-Down": roll_down, "Total": carry + roll_down},
+        index=pd.Index(maturities, name="Maturity"),
+    )
+    # A tolerance, so a label such as '3M' (3 / 12 years) counts as the horizon of 0.25 years.
+    result.loc[maturities < horizon - 1e-9] = np.nan
+
+    return result
 
 
 def get_yield_curve_spread(

@@ -52,13 +52,24 @@ def get_brinson_fachler_attribution(
     - Interaction = (w_p - w_b) x (r_p - r_b): the joint effect of both decisions.
 
     Here w are segment weights, r segment returns and R_b the benchmark's total return. The
-    three effects add up to the portfolio return minus the benchmark return.
+    three effects add up to the portfolio return minus the benchmark return. A segment held
+    short has a negative portfolio weight and keeps its own return; a segment the portfolio
+    does not hold gets the benchmark's segment return, so only its allocation effect
+    remains, and has no Portfolio Return in the table.
+
+    A benchmark segment without a return (NaN), such as a sector whose fund has no prices
+    for the whole period, keeps its benchmark weight: its return is unknown, not zero, and
+    leaving it out would hand its weight to the other segments. The benchmark's total
+    return is then unknown, and with it every allocation effect, the selection and
+    interaction effect of that segment and the Total row's effects; the other segments'
+    selection and interaction effects remain.
 
     Args:
         portfolio_weights (pd.Series): The portfolio weight per segment.
         portfolio_returns (pd.Series): The portfolio's return per segment.
         benchmark_weights (pd.Series): The benchmark weight per segment.
-        benchmark_returns (pd.Series): The benchmark's return per segment.
+        benchmark_returns (pd.Series): The benchmark's return per segment, NaN where it
+            is unknown.
 
     Returns:
         pd.DataFrame: Per segment and in total the weights, returns and the Allocation,
@@ -78,16 +89,16 @@ def get_brinson_fachler_attribution(
     wp, wb = wp / wp.sum(), wb / wb.sum()
     rb = benchmark_returns.reindex(segments)
     # A segment the portfolio does not hold has no portfolio return; using the benchmark
-    # segment return there leaves only its allocation effect, as the method intends.
-    rp = portfolio_returns.reindex(segments).where(wp > 0, rb)
+    # segment return there leaves only its allocation effect, as the method intends. A
+    # segment held short (a negative weight) keeps its own return, so the total stays
+    # the portfolio's return, Σ w_p x r_p.
+    rp = portfolio_returns.reindex(segments).where(wp != 0, rb)
 
-    if rb[wb > 0].isna().any():
-        missing = ", ".join(rb[(wb > 0) & rb.isna()].index)
-        raise ValueError(f"The benchmark has no return for: {missing}.")
-    total_benchmark = float((wb * rb.fillna(0)).sum())
+    # A segment in the benchmark without a return makes the benchmark's total unknown.
+    total_benchmark = float((wb * rb)[wb != 0].sum(skipna=False))
     # A segment outside the benchmark is compared with the benchmark as a whole, so it
     # adds no allocation effect and its result shows as interaction.
-    rb = rb.fillna(total_benchmark)
+    rb = rb.where(wb != 0, rb.fillna(total_benchmark))
     rp = rp.fillna(rb)
 
     allocation = (wp - wb) * (rb - total_benchmark)
@@ -99,7 +110,7 @@ def get_brinson_fachler_attribution(
         {
             "Portfolio Weight": wp,
             "Benchmark Weight": wb,
-            "Portfolio Return": rp.where(wp > 0),
+            "Portfolio Return": rp.where(wp != 0),
             "Benchmark Return": rb,
             "Allocation Effect": allocation,
             "Selection Effect": selection,
@@ -110,15 +121,202 @@ def get_brinson_fachler_attribution(
     result.loc["Total"] = [
         wp.sum(),
         wb.sum(),
-        float((wp * rp).sum()),
+        float((wp * rp)[wp != 0].sum()),
         total_benchmark,
-        allocation.sum(),
-        selection.sum(),
-        interaction.sum(),
-        total.sum(),
+        allocation.sum(skipna=False),
+        selection.sum(skipna=False),
+        interaction.sum(skipna=False),
+        total.sum(skipna=False),
     ]
 
     return result
+
+
+# The ways to link the attribution effects of sub-periods into effects over the whole range.
+LINKING_METHODS = ("carino", "menchero")
+
+
+def get_linking_coefficients(
+    portfolio_returns: pd.Series,
+    benchmark_returns: pd.Series,
+    linking: str = "carino",
+) -> pd.Series:
+    """
+    The coefficient per sub-period that turns the arithmetic attribution effects of that
+    sub-period into its share of the excess return over the whole range. Returns compound
+    over time while excess returns of sub-periods do not add up to the excess return over
+    the whole range, so each sub-period's effects are scaled such that the linked effects
+    sum to R - B, with R and B the portfolio and benchmark returns compounded over all
+    T sub-periods:
+
+    - Cariño (1999): coefficient_t = k_t / K, with
+      k_t = [ln(1 + R_t) - ln(1 + B_t)] / (R_t - B_t) and
+      K = [ln(1 + R) - ln(1 + B)] / (R - B), where k_t = 1 / (1 + R_t) when R_t = B_t
+      and K = 1 / (1 + R) when R = B (the limits of both ratios).
+    - Menchero (2000): coefficient_t = M + α_t, with
+      M = [(R - B) / T] / [(1 + R)^(1 / T) - (1 + B)^(1 / T)] and
+      α_t = [R - B - M x Σ (R_s - B_s)] / Σ (R_s - B_s)² x (R_t - B_t), where
+      M = (1 + R)^((T - 1) / T) when R = B (its limit). M is the average scaling and
+      α_t the smallest corrections (in the sum of squares) that make the effects add up.
+
+    Both make Σ coefficient_t x (R_t - B_t) equal R - B. Cariño's scaling follows the
+    logarithmic excess return of each sub-period; Menchero's stays as close as possible to
+    one uniform scaling factor. The forms follow Bacon, C. (2004), Practical Portfolio
+    Performance Measurement and Attribution, pp. 191-196.
+
+    Args:
+        portfolio_returns (pd.Series): The portfolio return per sub-period (R_t).
+        benchmark_returns (pd.Series): The benchmark return per sub-period (B_t).
+        linking (str, optional): "carino" or "menchero". Defaults to "carino".
+
+    Returns:
+        pd.Series: The linking coefficient per sub-period.
+    """
+    if linking not in LINKING_METHODS:
+        raise ValueError(f"linking must be one of {', '.join(LINKING_METHODS)}.")
+
+    returns = portfolio_returns.astype(float)
+    benchmark = benchmark_returns.reindex(returns.index).astype(float)
+    if returns.isna().any() or benchmark.isna().any():
+        raise ValueError("Linking needs a portfolio and benchmark return per period.")
+
+    total = float(np.prod(1 + returns) - 1)
+    total_benchmark = float(np.prod(1 + benchmark) - 1)
+    excess = returns - benchmark
+    periods = len(returns)
+
+    if linking == "carino":
+        if (returns <= -1).any() or (benchmark <= -1).any():
+            raise ValueError(
+                "Cariño linking needs sub-period returns above -100%; use linking='menchero'."
+            )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            k_t = np.where(
+                excess == 0,
+                1 / (1 + returns),
+                (np.log1p(returns) - np.log1p(benchmark)) / excess,
+            )
+        k = (
+            1 / (1 + total)
+            if total == total_benchmark
+            else (np.log1p(total) - np.log1p(total_benchmark))
+            / (total - total_benchmark)
+        )
+        return pd.Series(k_t / k, index=returns.index)
+
+    # The limit of M when R = B; the corrections α_t still apply, as Σ (R_t - B_t) need not be 0.
+    m = (
+        (1 + total) ** ((periods - 1) / periods)
+        if total == total_benchmark
+        else ((total - total_benchmark) / periods)
+        / ((1 + total) ** (1 / periods) - (1 + total_benchmark) ** (1 / periods))
+    )
+    squares = float((excess**2).sum())
+    alpha = (
+        (total - total_benchmark - m * float(excess.sum())) / squares * excess
+        if squares > 0
+        else 0 * excess
+    )
+    return m + alpha
+
+
+def get_linked_brinson_fachler_attribution(
+    portfolio_weights: pd.DataFrame,
+    portfolio_returns: pd.DataFrame,
+    benchmark_weights: pd.DataFrame,
+    benchmark_returns: pd.DataFrame,
+    linking: str = "carino",
+) -> pd.DataFrame:
+    """
+    The Brinson-Fachler attribution over several sub-periods, linked into effects over the
+    whole range. Every sub-period gets its own attribution with the weights at its start
+    (get_brinson_fachler_attribution), and its effects are scaled with the linking
+    coefficients of get_linking_coefficients and summed:
+
+    - Linked Effect = Σ_t coefficient_t x Effect_t
+
+    The linked Total Effects add up to the compounded portfolio return minus the compounded
+    benchmark return over the whole range. A segment without a benchmark return in a
+    sub-period (NaN) keeps its weight there, as in get_brinson_fachler_attribution: its
+    compounded benchmark return is unknown, and so are the compounded benchmark return and,
+    since every linking coefficient depends on it, all linked effects.
+
+    Args:
+        portfolio_weights (pd.DataFrame): The portfolio weight per sub-period (rows, at
+            its start) and segment (columns).
+        portfolio_returns (pd.DataFrame): The portfolio's return per sub-period and segment.
+        benchmark_weights (pd.DataFrame): The benchmark weight per sub-period and segment.
+        benchmark_returns (pd.DataFrame): The benchmark's return per sub-period and segment.
+        linking (str, optional): "carino" or "menchero". Defaults to "carino".
+
+    Returns:
+        pd.DataFrame: Per segment and in total the weights at the start of the first
+        sub-period, the returns compounded over all sub-periods and the linked Allocation,
+        Selection, Interaction and Total Effect.
+    """
+    if portfolio_weights.empty:
+        raise ValueError("The linked attribution needs at least one sub-period.")
+
+    tables = {
+        period: get_brinson_fachler_attribution(
+            portfolio_weights.loc[period].dropna(),
+            portfolio_returns.loc[period].dropna(),
+            benchmark_weights.loc[period].dropna(),
+            benchmark_returns.loc[period].dropna(),
+        )
+        for period in portfolio_weights.index
+    }
+    totals = pd.DataFrame(
+        {period: table.loc["Total"] for period, table in tables.items()}
+    ).T
+    # Every coefficient depends on the benchmark return compounded over all sub-periods.
+    coefficients = (
+        pd.Series(np.nan, index=totals.index)
+        if totals["Benchmark Return"].isna().any()
+        else get_linking_coefficients(
+            totals["Portfolio Return"], totals["Benchmark Return"], linking
+        )
+    )
+
+    # A segment missing from a sub-period (no weight in either) has no effect there.
+    segments = pd.Index([])
+    for table in tables.values():
+        segments = segments.union(table.index.drop("Total"))
+    segments = segments.append(pd.Index(["Total"]))
+    effects = [
+        "Allocation Effect",
+        "Selection Effect",
+        "Interaction Effect",
+        "Total Effect",
+    ]
+    linked = sum(
+        tables[period][effects].reindex(segments, fill_value=0) * coefficients[period]
+        for period in portfolio_weights.index
+    )
+
+    # Returns compound over the sub-periods; a segment the portfolio never holds has none,
+    # and a benchmark return unknown in one sub-period is unknown over the whole range.
+    returns = {
+        column: (
+            pd.DataFrame({period: table[column] for period, table in tables.items()})
+            .reindex(segments)
+            .add(1)
+            .prod(axis=1, min_count=1, skipna=column == "Portfolio Return")
+            .sub(1)
+        )
+        for column in ["Portfolio Return", "Benchmark Return"]
+    }
+    first = tables[portfolio_weights.index[0]].reindex(segments)
+    result = pd.DataFrame(
+        {
+            "Portfolio Weight": first["Portfolio Weight"].fillna(0),
+            "Benchmark Weight": first["Benchmark Weight"].fillna(0),
+            "Portfolio Return": returns["Portfolio Return"],
+            "Benchmark Return": returns["Benchmark Return"],
+        }
+    )
+
+    return pd.concat([result, linked], axis=1)
 
 
 # The highest annual money-weighted return searched for. Annualized, a short holding period
@@ -260,8 +458,12 @@ def get_scenario_returns(
 def get_stress_test(scenario_returns: pd.DataFrame, weights: pd.Series) -> pd.DataFrame:
     """
     The return of a buy-and-hold portfolio in each scenario. Assets without data for a
-    scenario (not yet listed) are left out and the remaining weights scaled up; the
-    Coverage column shows the share of the portfolio that had data.
+    scenario (not yet listed) are left out and the remaining weights scaled up to a net
+    weight of one; the Coverage column shows the share of the portfolio's gross exposure
+    that had data, Σ |w_i| over the assets with data / Σ |w_i|, between 0 and 1. When the
+    assets with data have a net weight of zero or less (only short positions, or a
+    hedge without the positions it hedges), they cannot be scaled to the portfolio and
+    the Portfolio Return is empty.
 
     Args:
         scenario_returns (pd.DataFrame): The return per scenario (rows) and asset (columns).
@@ -272,12 +474,13 @@ def get_stress_test(scenario_returns: pd.DataFrame, weights: pd.Series) -> pd.Da
     """
     weights = weights.reindex(scenario_returns.columns).fillna(0)
     available = scenario_returns.notna()
-    coverage = available.mul(weights, axis=1).sum(axis=1)
-    portfolio = scenario_returns.fillna(0).mul(weights, axis=1).sum(axis=1) / coverage
+    coverage = available.mul(weights.abs(), axis=1).sum(axis=1) / weights.abs().sum()
+    net_weight = available.mul(weights, axis=1).sum(axis=1)
+    portfolio = scenario_returns.fillna(0).mul(weights, axis=1).sum(
+        axis=1
+    ) / net_weight.where(net_weight > 0)
 
-    return pd.DataFrame(
-        {"Portfolio Return": portfolio.where(coverage > 0), "Coverage": coverage}
-    )
+    return pd.DataFrame({"Portfolio Return": portfolio, "Coverage": coverage})
 
 
 def get_look_through_exposure(

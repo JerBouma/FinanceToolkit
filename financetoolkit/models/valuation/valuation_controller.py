@@ -6,18 +6,19 @@ from functools import cache
 
 import pandas as pd
 
+from financetoolkit.helpers import calendar_periods, trailing_mean, trailing_sum
 from financetoolkit.models import helpers
-from financetoolkit.models.base.base_controller import ModelsBase
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
+    easton_model,
     enterprise_model,
     eva_model,
     intrinsic_model,
     wacc_model,
 )
 from financetoolkit.performance.performance_model import get_beta
-from financetoolkit.ratios import profitability_model, valuation_model
-from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
+from financetoolkit.ratios import valuation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -38,10 +39,14 @@ logger = get_logger()
 # the Monte Carlo valuation use it as their default perpetual growth rate as well.
 LONG_RUN_GROWTH_RATE = 0.025
 
+# The highest growth rate in Graham's table of the multiples his growth formula gives (The
+# Intelligent Investor, chapter 11), the limit of the growth rate the formula takes by default.
+GRAHAM_MAXIMUM_GROWTH_RATE = 0.20
+
 
 @filter_shown_columns
 @track_sources
-class ValuationModels(ModelsBase):
+class ValuationModels:
     """
     Valuation models: intrinsic value, discounted cash flows, dividend discount models, the cost of capital, economic value added and peer comparison.
     """
@@ -143,19 +148,13 @@ class ValuationModels(ModelsBase):
         | Cash and Cash Equivalents | 2.054e+10   | 2.5134e+10  | 2.4862e+10  | 2.2935e+10  | 2.3356e+10  |
         | Enterprise Value          | 1.73781e+11 | 1.43012e+11 | 1.60221e+11 | 1.62345e+11 | 1.81318e+11 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
-        years = self._cash_flow_statement.columns
-        begin, end = str(years[0]), str(years[-1])
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
+        share_prices = self._period_prices()
 
         enterprise_value_breakdown = enterprise_model.get_enterprise_value_breakdown(
             share_price=share_prices,
@@ -211,7 +210,6 @@ class ValuationModels(ModelsBase):
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        trailing: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -248,7 +246,6 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -263,6 +260,9 @@ class ValuationModels(ModelsBase):
         Total Liabilities, and the replacement cost of assets with the book value of Total
         Assets, consistent with the simplifications used in the Weighted Average Cost of
         Capital calculation elsewhere in this module.
+        - The market value of equity (the share price at the end of the fiscal period times the
+        period's weighted average shares) and the balances are taken at the end of the period,
+        the same date, on yearly and quarterly data alike.
 
         References:
         - Tobin, James. "A General Equilibrium Approach to Monetary Theory." Journal of Money,
@@ -287,51 +287,27 @@ class ValuationModels(ModelsBase):
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | INTC | 1.6843 | 1.0312 | 1.5308 | 0.9022 | 1.2499 |
-        | QCOM | 5.8537 | 3.1828 | 3.7679 | 3.671  | 4.3465 |
+        | INTC | 1.6797 | 1.0312 | 1.5308 | 0.9076 | 1.178  |
+        | QCOM | 4.3523 | 3.2533 | 3.0273 | 4.0076 | 4.3057 |
         | TXN  | 7.6086 | 6.0875 | 5.3046 | 5.3769 | 5.1094 |
         """
         tobins_q_ratio = {}
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
-        years = self._balance_sheet_statement.columns
-        begin, end = str(years[0]), str(years[-1])
+        share_prices = self._period_prices()
 
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
-
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
+        # The market value and the balances are taken at the end of the period, the same date.
+        total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
 
         market_cap = valuation_model.get_market_cap(
             share_price=share_prices,
-            total_shares_outstanding=(
-                average_shares.T.rolling(trailing).mean().T
-                if trailing
-                else average_shares
-            ),
+            total_shares_outstanding=average_shares,
         )
 
         tobins_q_ratio["Market Value of Equity"] = market_cap
@@ -343,26 +319,9 @@ class ValuationModels(ModelsBase):
             total_assets=total_assets,
         )
 
-        tobins_q_results = (
-            concat_frames(tobins_q_ratio)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            tobins_q_ratio, rounding, growth, lag, standardize
         )
-
-        tobins_q_results = finalize_dataset(
-            dataset=tobins_q_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return tobins_q_results
 
     @handle_errors
     def _capital_asset_pricing_inputs(
@@ -398,7 +357,8 @@ class ValuationModels(ModelsBase):
             benchmark_returns (pd.Series): The benchmark's return per period.
             market_risk_premium (float | None): An annual premium to use instead.
             trailing (int | None, optional): The number of periods the flows are summed
-                over. Defaults to None, which is a single period.
+                over. The window counts calendar periods, so a period without a report makes
+                it NaN. Defaults to None, which is a single period.
 
         Returns:
             tuple[pd.Series, pd.Series | pd.DataFrame]: The risk-free rate and the expected
@@ -406,7 +366,7 @@ class ValuationModels(ModelsBase):
             per ticker when the premium differs per company.
         """
         periods_per_year = 4 if self._quarterly else 1
-        span = trailing if trailing else 1
+        span = trailing or 1
 
         risk_free_rate = risk_free_rate / periods_per_year
         historical_premium = (benchmark_returns - risk_free_rate).mean()
@@ -456,27 +416,24 @@ class ValuationModels(ModelsBase):
 
         Args:
             diluted (bool, optional): Whether to use diluted shares. Defaults to True.
-            trailing (int | None, optional): The trailing period. Defaults to None.
+            trailing (int | None, optional): The trailing period. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium.
                 Defaults to None, see get_weighted_average_cost_of_capital.
 
         Returns:
             pd.DataFrame: The WACC and its components per ticker (rows) and period (columns).
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
 
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
+        share_prices = self._period_prices()
 
         risk_free_rate = self._risk_free_rate_data[
             "quarterly" if self._quarterly else "yearly"
@@ -492,46 +449,25 @@ class ValuationModels(ModelsBase):
             risk_free_rate, benchmark_returns, market_risk_premium, trailing
         )
 
-        if trailing:
-            return wacc_model.get_weighted_average_cost_of_capital(
-                share_price=share_prices,
-                total_shares_outstanding=average_shares.T.rolling(trailing).mean().T,
-                interest_expense=self._income_statement.loc[:, "Interest Expense", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                risk_free_rate=risk_free_rate,
-                beta=beta,
-                benchmark_returns=benchmark_returns,
-                income_tax_expense=self._income_statement.loc[
-                    :, "Income Tax Expense", :
-                ]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-            )
-        else:
-            return wacc_model.get_weighted_average_cost_of_capital(
-                share_price=share_prices,
-                total_shares_outstanding=average_shares,
-                interest_expense=self._income_statement.loc[:, "Interest Expense", :],
-                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-                risk_free_rate=risk_free_rate,
-                beta=beta,
-                benchmark_returns=benchmark_returns,
-                income_tax_expense=self._income_statement.loc[
-                    :, "Income Tax Expense", :
-                ],
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
-            )
+        return wacc_model.get_weighted_average_cost_of_capital(
+            share_price=share_prices,
+            # The capital weights are market values at the end of the period, so the shares
+            # and the debt are those of the period, not averages over the trailing periods.
+            total_shares_outstanding=average_shares,
+            interest_expense=trailing_sum(
+                self._income_statement.loc[:, "Interest Expense", :], trailing
+            ),
+            total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+            risk_free_rate=risk_free_rate,
+            beta=beta,
+            benchmark_returns=benchmark_returns,
+            income_tax_expense=trailing_sum(
+                self._income_statement.loc[:, "Income Tax Expense", :], trailing
+            ),
+            income_before_tax=trailing_sum(
+                self._income_statement.loc[:, "Income Before Tax", :], trailing
+            ),
+        )
 
     @handle_errors
     def get_weighted_average_cost_of_capital(
@@ -606,7 +542,8 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -633,9 +570,15 @@ class ValuationModels(ModelsBase):
         rates times `trailing` and the Beta is estimated from the daily returns of the trailing periods.
         With quarterly data and trailing=4, every rate is an annual rate on a year of daily returns.
         - The Market Value of Debt is approximated as the Total Debt.
-        - The Cost of Debt is the Interest Expense divided by the Total Debt at the end of the period
-        (the average over the trailing periods with `trailing` set), so debt raised or repaid during the
-        period moves it away from the rate on the average debt outstanding.
+        - The capital weights are taken at the end of the fiscal period, also with `trailing` set: the
+        Market Value of Equity is the closing share price on that day times the period's weighted
+        average shares, and the debt is the Total Debt on the balance sheet of that day.
+        - The Cost of Debt is the Interest Expense divided by the Total Debt at the end of the period,
+        so debt raised or repaid during the period moves it away from the rate on the average debt
+        outstanding. A period with debt but an Interest Expense of 0 (financial statements that
+        include the interest in another line item or leave it out) has an unknown Cost of Debt, so
+        its Cost of Debt and Weighted Average Cost of Capital are NaN rather than a WACC that treats
+        the debt as free. Without any debt the WACC is the Cost of Equity.
         - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax),
         kept within 0 and 1 so that a tax benefit does not turn the tax shield negative, and 0 for a
         period without a pre-tax profit, which leaves no taxable income for the interest to shield.
@@ -661,9 +604,9 @@ class ValuationModels(ModelsBase):
 
         |      |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|
-        | T    | 0.0453 | 0.0458 | 0.0358 | 0.0411 |
+        | T    | 0.0453 | 0.0457 | 0.0358 | 0.0411 |
         | TMUS | 0.0469 | 0.0437 | 0.0447 | 0.0425 |
-        | VZ   | 0.0304 | 0.0407 | 0.036  | 0.0358 |
+        | VZ   | 0.0304 | 0.0407 | 0.036  | 0.0377 |
         """
         weighted_average_cost_of_capital = self._weighted_average_cost_of_capital(
             diluted=diluted,
@@ -706,6 +649,207 @@ class ValuationModels(ModelsBase):
         ]
 
     @handle_errors
+    def get_implied_cost_of_capital(
+        self,
+        modified: bool = True,
+        min_analysts: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Easton's (2004) implied cost of equity capital, the expected rate of return
+        on equity at which the share price equals the value of the next two years of earnings
+        expected by analysts. Where the Cost of Equity of `get_weighted_average_cost_of_capital`
+        is the return the Capital Asset Pricing Model (CAPM) requires from a beta and a market
+        risk premium, this is the return the market price itself implies (ex-ante).
+
+        The formula is as follows:
+
+            - PEG: r = √((EPS₂ − EPS₁) / P₀)
+            - MPEG: r = A + √(A² + (EPS₂ − EPS₁) / P₀)
+            - A = DPS₁ / (2 × P₀)
+
+        Where EPS₁ and EPS₂ are the analyst consensus (average) EPS estimates of the two fiscal
+        years after the period, P₀ the share price at the end of the period and DPS₁ the
+        dividends per share of the next year. The MPEG rate is the positive root of Easton's
+        valuation equation P₀ = EPS₁ / r + (EPS₂ + r × DPS₁ − (1 + r) × EPS₁) / r², which assumes the
+        abnormal growth in earnings stays constant after the second year; the PEG rate leaves
+        the dividends out (DPS₁ = 0). The rate is a yearly rate, annually compounded.
+
+        See: Easton, P. D. (2004). PE Ratios, PEG Ratios, and Estimating the Implied Expected
+        Rate of Return on Equity Capital. The Accounting Review, 79(1), 73-95.
+
+        The estimates are the analysts' consensus from FinancialModelingPrep, the same estimates
+        as `get_forward_price_earnings_ratio` of the Ratios module uses, which requires an
+        `api_key` and a Premium FMP subscription. They are fetched once per Toolkit instance.
+
+        Also known as: implied cost of capital, ICC, PEG / MPEG cost of equity, Easton model.
+
+        Args:
+            modified (bool, optional): Whether to return the MPEG rate, which includes the
+                dividends and is the version Easton prefers, instead of the PEG rate. Defaults to
+                True.
+            min_analysts (int | None, optional): The minimum number of analysts behind the EPS
+                consensus of an estimate period; a period that relies on one covered by fewer is
+                NaN. The number per period is the "Number of Analysts EPS" of
+                `Toolkit.get_analyst_estimates`. Defaults to None, which keeps every period.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The implied cost of equity capital per ticker (rows) and fiscal period
+                (columns) as a decimal.
+
+        Notes:
+        - EPS₁ and EPS₂ of a fiscal year are the consensus estimates of the next two fiscal years.
+        On quarterly data each is a year of estimates, as in the forward P/E: EPS₁ the sum of the
+        estimates of the four quarters after the period and EPS₂ that of the four quarters after
+        those.
+        - P₀ is the traded close (adjusted for splits, not for dividends) on the last trading day up
+        to the end of the fiscal period, as the other market values of the Models module.
+        - DPS₁ is the dividends per share paid over the year up to the end of the fiscal period.
+        FinancialModelingPrep has no dividend forecasts, and Easton allows the current dividend in
+        their place; a growth assumption on top would add an input the data does not give. The
+        dividends move the rate little: A is half the dividend yield.
+        - The rate is NaN where the estimated earnings do not grow (EPS₂ ≤ EPS₁), the price is not
+        positive or an estimate is missing: the model has no real, positive rate there, so it is
+        never shown as 0.
+        - FinancialModelingPrep keeps the latest consensus for every fiscal year, not the consensus as
+        it stood at the end of each period, so for past periods the estimates may include later
+        revisions, the same as the forward P/E. Only the latest periods are ex-ante estimates;
+        earlier ones show the rate the price implied for the earnings now expected for those years.
+        - On quarterly data FinancialModelingPrep gives estimates for the coming quarters only, and a
+        rate needs eight quarters of estimates after its period, so only the latest periods have one.
+        - Without daily data from a year before the start date, the dividends of the first periods
+        cover less than a year, which is logged.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_implied_cost_of_capital()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |     2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|---------:|-------:|-------:|
+        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0921 | 0.0685 |
+        | MDLZ | 0.0793 | 0.0653 | nan      | 0.0695 | 0.0944 |
+        | PEP  | 0.0803 | 0.071  | nan      | 0.0639 | 0.0588 |
+        """
+        analyst_estimates = self._analyst_estimates
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return pd.DataFrame()
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+        if min_analysts is not None:
+            # A period without a reported count is left out too: its depth is unknown.
+            analyst_count = (
+                analyst_estimates.loc[:, "Number of Analysts EPS", :]
+                if "Number of Analysts EPS"
+                in analyst_estimates.index.get_level_values(1)
+                else pd.DataFrame(
+                    float("nan"),
+                    index=estimated_eps.index,
+                    columns=estimated_eps.columns,
+                )
+            )
+            estimated_eps = estimated_eps.where(
+                analyst_count.reindex_like(estimated_eps) >= min_analysts
+            )
+
+        # Every period from the first statement period to the last estimate, so that a shift by one column is a shift by one period and a missing estimate leaves a gap.  # noqa: E501
+        columns = self._balance_sheet_statement.columns
+        estimated_eps.columns = pd.PeriodIndex(estimated_eps.columns).asfreq(
+            columns.freq
+        )
+        periods = pd.period_range(
+            min(columns.min(), estimated_eps.columns.min()),
+            max(columns.max(), estimated_eps.columns.max()),
+            freq=columns.freq,
+        )
+        estimated_eps = estimated_eps.reindex(
+            index=self._tickers, columns=periods
+        ).astype(float)
+
+        # A year of estimates: on quarterly data each quarter with the three after it (a rolling sum over the reversed columns).  # noqa: E501
+        periods_per_year = 4 if self._quarterly else 1
+        if self._quarterly:
+            estimated_eps = (
+                estimated_eps.iloc[:, ::-1]
+                .T.rolling(4, min_periods=4)
+                .sum()
+                .T.iloc[:, ::-1]
+            )
+
+        earnings_per_share_one = estimated_eps.shift(-1, axis=1).reindex(
+            columns=columns
+        )
+        earnings_per_share_two = estimated_eps.shift(
+            -1 - periods_per_year, axis=1
+        ).reindex(columns=columns)
+
+        # The dividends paid over the year up to each fiscal period end, from the daily data of a year before the start date where available so the first periods have a full year.  # noqa: E501
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+            logger.warning(
+                "No daily data from a year before the start date, so the dividends per share of "
+                "the first periods cover less than a year in the implied cost of capital."
+            )
+        dividends = daily["Dividends"].reindex(columns=self._tickers).fillna(0)
+        dividends.index = dividends.index.to_timestamp()
+        dividends_per_share = self._values_at_market_dates(
+            dividends.rolling("365D").sum()
+        )
+
+        implied_cost_of_capital = easton_model.get_implied_cost_of_capital(
+            earnings_per_share_one=earnings_per_share_one,
+            earnings_per_share_two=earnings_per_share_two,
+            share_price=self._period_prices(),
+            dividends_per_share=dividends_per_share,
+            modified=modified,
+        )
+
+        return finalize_dataset(
+            dataset=implied_cost_of_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    @handle_errors
     def get_economic_value_added(
         self,
         rounding: int | None = None,
@@ -742,7 +886,12 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum the flows (EBIT, taxes)
+                over, with the Total Equity and Total Debt averaged over the trailing + 1 period ends
+                that open and close those periods, so trailing=1 equals the default average of the
+                opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). The window counts calendar periods, so a period without a report makes
+                it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -764,10 +913,11 @@ class ValuationModels(ModelsBase):
         - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax)
         kept within 0 and 1, and 0 for a period without a pre-tax profit, the same rate the
         Weighted Average Cost of Capital uses (see `get_weighted_average_cost_of_capital`).
-        - Invested Capital is the sum of the two-period average of Total Equity and the two-period
-        average of Total Debt, i.e. the capital employed over the course of the period rather than
-        its closing balance, consistent with the Return on Invested Capital calculation in the
-        Ratios module.
+        - Invested Capital is the sum of the average Total Equity and the average Total Debt over
+        the period ends that open and close the period (the trailing + 1 period ends with
+        `trailing` set), i.e. the capital employed over the course of the period rather than its
+        closing balance, consistent with the Return on Invested Capital calculation in the Ratios
+        module.
         - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
         with the market risk premium given by `market_risk_premium` (by default the equity risk
         premium of the company's country) and the same `trailing`, so that it
@@ -792,49 +942,26 @@ class ValuationModels(ModelsBase):
 
         |    |        2022 |        2023 |        2024 |          2025 |
         |:---|------------:|------------:|------------:|--------------:|
-        | HD | 1.51594e+10 | 1.23711e+10 | 1.21373e+10 | nan           |
-        | MA | 9.17378e+09 | 1.03453e+10 | 1.21332e+10 |   1.32984e+10 |
-        | V  | 1.14114e+10 | 1.30249e+10 | 1.54532e+10 |   1.53188e+10 |
+        | HD | 1.51586e+10 | 1.23634e+10 | 1.21182e+10 | nan           |
+        | MA | 8.78616e+09 | 9.83484e+09 | 1.15047e+10 |   1.32979e+10 |
+        | V  | 1.14346e+10 | 1.30385e+10 | 1.54653e+10 |   1.5322e+10  |
         """
         eva = {}
 
-        income_tax_expense = (
-            self._income_statement.loc[:, "Income Tax Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Tax Expense", :]
+        income_tax_expense = trailing_sum(
+            self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        # The invested capital of the return on invested capital of the Ratios module: averaged
+        # over the period ends that open and close the (trailing) periods the NOPAT covers.
+        period_ends = (trailing or 1) + 1
+        total_equity = trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Equity", :], period_ends
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_debt = trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], period_ends
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
@@ -869,26 +996,7 @@ class ValuationModels(ModelsBase):
             invested_capital=eva["Invested Capital"],
         )
 
-        eva_results = (
-            concat_frames(eva)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        eva_results = finalize_dataset(
-            dataset=eva_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return eva_results
+        return self._finalize_components(eva, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_market_value_added(
@@ -925,7 +1033,9 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods the Invested Capital is averaged
+                over. The window counts calendar periods, so a period without a report makes it
+                NaN. Defaults to None, which uses the closing balances.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -941,12 +1051,13 @@ class ValuationModels(ModelsBase):
         - The Market Value of Debt is approximated as the closing book value of Total Debt,
         the same simplification used in the Weighted Average Cost of Capital calculation
         elsewhere in this module.
-        - Invested Capital is the sum of the two-period average of Total Equity and the
-        two-period average of Total Debt, i.e. the capital that was employed *during* the
-        period, matching the Economic Value Added calculation elsewhere in this module. Note
-        that this leaves the two sides of the MVA measured on slightly different bases: the
-        market value is a closing (point-in-time) figure while the invested capital is an
-        average over the period.
+        - The Market Value of Equity is the closing share price at the end of the fiscal period
+        times the period's weighted average shares, and the Invested Capital is the Total
+        Equity plus the Total Debt on the balance sheet of that day, so both sides of the MVA
+        have the same date. With the debt at its book value on both sides, it cancels out:
+        the MVA is the market value of equity minus the book Total Equity.
+        - With `trailing` set, the Invested Capital is the average of the closing balances of
+        the trailing periods, while the market values stay those at the end of the period.
 
         References:
         - Stern, Joel M., G. Bennett Stewart, and Donald H. Chew. "The EVA Financial
@@ -971,68 +1082,37 @@ class ValuationModels(ModelsBase):
 
         |     |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:----|------------:|------------:|------------:|------------:|------------:|
-        | JNJ | 3.88033e+11 | 3.9811e+11  | 3.23373e+11 | 2.84859e+11 | 4.31897e+11 |
-        | LLY | 2.56073e+11 | 3.37326e+11 | 5.20216e+11 | 6.89575e+11 | 9.49091e+11 |
-        | MRK | 1.63289e+11 | 2.38554e+11 | 2.37969e+11 | 2.11776e+11 | 2.20502e+11 |
+        | JNJ | 3.83418e+11 | 3.93774e+11 | 3.32543e+11 | 2.80894e+11 | 4.22872e+11 |
+        | LLY | 2.4267e+11  | 3.2017e+11  | 5.15679e+11 | 6.83662e+11 | 9.3853e+11  |
+        | MRK | 1.56255e+11 | 2.35977e+11 | 2.40039e+11 | 2.06407e+11 | 2.11225e+11 |
         """
         mva = {}
 
-        years = self._cash_flow_statement.columns
-        begin, end = str(years[0]), str(years[-1])
+        share_prices = self._period_prices()
 
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        # The invested capital on the balance sheet of the day the market value is taken on (an
+        # average over the trailing periods only with `trailing` set), so both sides of the MVA
+        # have the same date.
+        total_equity = trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
         )
-
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(2)
-            .mean()
-            .T
-        )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_debt = trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
         )
 
         market_cap = valuation_model.get_market_cap(
             share_price=share_prices,
-            total_shares_outstanding=(
-                average_shares.T.rolling(trailing).mean().T
-                if trailing
-                else average_shares
-            ),
+            total_shares_outstanding=average_shares,
         )
 
-        # A market value is a point-in-time quantity, so the closing balance of Total Debt is used as its proxy — not the averaged balance that Invested Capital is built from, which would otherwise cancel the debt out of the Market Value Added entirely  # noqa: E501
-        market_value_of_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-        )
+        # A market value is a point-in-time quantity, so the closing balance of Total Debt is its proxy. With the invested capital at the same date, the debt cancels out and the MVA is the market value of equity minus the book Total Equity.  # noqa: E501
+        market_value_of_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
 
         mva["Market Value of Equity"] = market_cap
         mva["Market Value of Debt"] = market_value_of_debt
@@ -1048,26 +1128,7 @@ class ValuationModels(ModelsBase):
             invested_capital=mva["Invested Capital"],
         )
 
-        mva_results = (
-            concat_frames(mva)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        mva_results = finalize_dataset(
-            dataset=mva_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return mva_results
+        return self._finalize_components(mva, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_intrinsic_valuation(
@@ -1103,8 +1164,8 @@ class ValuationModels(ModelsBase):
             (Weighted Average Cost of Capital — Perpetual Growth Rate)
             - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value /
             (1 + Weighted Average Cost of Capital)^Periods
-            - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents + Short Term
-            Investments
+            - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
+            Total Debt — Minority Interest — Preferred Stock
             - Intrinsic Value = Equity Value / Weighted Average Shares Diluted
 
         The base cash flow is by default the Free Cash Flow to the Firm (see `get_free_cash_flow_to_firm`),
@@ -1141,9 +1202,10 @@ class ValuationModels(ModelsBase):
             Cash Flow" as reported on the cash flow statement; both are after interest, so discounting
             them at the WACC and subtracting the debt counts the cost of debt twice.
             trailing (int | None, optional): The number of trailing periods to sum for the base cash flow.
-            When set, uses the sum of the last N periods instead of only the most recent period. Defaults to
-            None, which uses 4 (the trailing twelve months) with quarterly data and the most recent year with
-            yearly data.
+                The window counts calendar periods, so a period without a report makes it NaN.
+            When set, uses the sum of the latest N consecutive calendar periods that are all reported instead
+            of only the most recent period. Defaults to None, which uses 4 (the trailing twelve months) with
+            quarterly data and the most recent year with yearly data.
             historical (bool, optional): Whether to value every period instead of only the most recent one,
             which gives the intrinsic value per share over time. Each period is valued from the base cash
             flow ending in it and the cash, debt and shares reported at its end. Defaults to False.
@@ -1162,8 +1224,10 @@ class ValuationModels(ModelsBase):
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
         ensure the results are accurate (given your beliefs)
         - The growth rate, perpetual growth rate and WACC are annual rates, so the base cash flow is an annual
-        one: with quarterly data the last four quarters are summed. Setting `trailing` with yearly data sums
-        several years into one base cash flow, which logs a warning.
+        one: with quarterly data the four quarters of the latest year with all four reported are summed. A
+        company reporting half-yearly has no such year and is not valued with quarterly data (use yearly
+        data). Setting `trailing` with yearly data sums several years into one base cash flow, which logs a
+        warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
         with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
@@ -1195,9 +1259,9 @@ class ValuationModels(ModelsBase):
 
         |      |   Periods = 5 |
         |:-----|--------------:|
-        | ADBE |      212.653  |
-        | CRM  |       67.9487 |
-        | INTU |      173.559  |
+        | ADBE |      213.31   |
+        | CRM  |       67.9174 |
+        | INTU |      172.144  |
 
         And the same valuation for every period with `historical=True`:
 
@@ -1311,45 +1375,43 @@ class ValuationModels(ModelsBase):
             ].dropna()
             if shares_outstanding.empty:
                 continue
-            cash_flow_series = cash_flows.loc[ticker].dropna()
+            # Summed on the calendar periods before the NaNs are dropped, so that the base is the
+            # latest complete trailing window: a company reporting half-yearly has no complete
+            # four-quarter year and is not valued, rather than summing two years of cash flow.
+            cash_flow_series = (
+                trailing_sum(cash_flows.loc[[ticker]], trailing).loc[ticker].dropna()
+            )
+            if cash_flow_series.empty:
+                logger.warning(
+                    "%s has no %s periods in a row with a %s, so its intrinsic value is not calculated.",
+                    ticker,
+                    trailing,
+                    cash_flow_type,
+                )
+                continue
 
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
-                cash_flow=(
-                    cash_flow_series.iloc[-trailing:].sum()
-                    if trailing
-                    else cash_flow_series.iloc[-1]
-                ),
+                cash_flow=cash_flow_series.iloc[-1],
                 growth_rate=growth_rate_float,
                 perpetual_growth_rate=perpetual_growth_rate_float,
                 weighted_average_cost_of_capital=weighted_average_cost_of_capital_float,
-                cash_and_cash_equivalents=self._balance_sheet_statement.loc[
-                    ticker, "Cash and Cash Equivalents"
-                ]
-                .dropna()
-                .iloc[-1],
-                total_debt=self._balance_sheet_statement.loc[ticker, "Total Debt"]
-                .dropna()
-                .iloc[-1],
-                # Added back with the cash, as get_enterprise_value_breakdown deducts both.
-                short_term_investments=(
-                    self._balance_sheet_statement.loc[ticker, "Short Term Investments"]
-                    .dropna()
-                    .iloc[-1]
-                    if "Short Term Investments"
-                    in self._balance_sheet_statement.loc[ticker].index
-                    and self._balance_sheet_statement.loc[
-                        ticker, "Short Term Investments"
-                    ]
-                    .notna()
-                    .any()
-                    else 0.0
-                ),
+                # The cash and short term investments added, the debt, minority interest
+                # and preferred stock deducted, as get_enterprise_value_breakdown does the
+                # reverse.
+                **{
+                    name: value
+                    for name, value in self._latest_capital(ticker).items()
+                    if name != "shares_outstanding"
+                },
                 shares_outstanding=shares_outstanding.iloc[-1],
                 periods=periods,
             )
             intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].pipe(
                 apply_rounding, rounding if rounding is not None else self._rounding
             )
+
+        if not intrinsic_values_dict:
+            return pd.DataFrame()
 
         return pd.concat(intrinsic_values_dict).loc[:, self._start_date :]
 
@@ -1369,14 +1431,20 @@ class ValuationModels(ModelsBase):
         period (ticker by period frames), so that no period uses figures reported after it.
         """
         cash_flows = cash_flows.reindex(self._tickers)
-        base_cash_flows = (
-            cash_flows.T.rolling(trailing).sum().T if trailing else cash_flows
-        )
+        base_cash_flows = trailing_sum(cash_flows, trailing)
         cash = self._rows(self._balance_sheet_statement, "Cash and Cash Equivalents")
         debt = self._rows(self._balance_sheet_statement, "Total Debt")
-        # Added back with the cash, as get_enterprise_value_breakdown deducts both.
+        # Added back with the cash, and the minority interest and preferred stock deducted
+        # with the debt, as get_enterprise_value_breakdown does the reverse; not reported
+        # counts as zero.
         investments = self._rows(
             self._balance_sheet_statement, "Short Term Investments"
+        ).fillna(0)
+        minority_interest = self._rows(
+            self._balance_sheet_statement, "Minority Interest"
+        ).fillna(0)
+        preferred_stock = self._rows(
+            self._balance_sheet_statement, "Preferred Stock"
         ).fillna(0)
         shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
 
@@ -1421,6 +1489,8 @@ class ValuationModels(ModelsBase):
                         cash_and_cash_equivalents=float(cash.loc[ticker, period]),
                         total_debt=float(debt.loc[ticker, period]),
                         short_term_investments=float(investments.loc[ticker, period]),
+                        minority_interest=float(minority_interest.loc[ticker, period]),
+                        preferred_stock=float(preferred_stock.loc[ticker, period]),
                         shares_outstanding=float(shares.loc[ticker, period]),
                         periods=periods,
                     )
@@ -1467,7 +1537,8 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1514,45 +1585,25 @@ class ValuationModels(ModelsBase):
         """
         fcff = {}
 
-        income_tax_expense = (
-            self._income_statement.loc[:, "Income Tax Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Tax Expense", :]
+        income_tax_expense = trailing_sum(
+            self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        depreciation_and_amortization = (
-            self._income_statement.loc[:, "Depreciation and Amortization", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        depreciation_and_amortization = trailing_sum(
+            self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            )
         )
         change_in_net_working_capital = -1 * (
-            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Change in Working Capital", :],
+                trailing,
+            )
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
@@ -1579,26 +1630,7 @@ class ValuationModels(ModelsBase):
             change_in_net_working_capital=fcff["Change in Net Working Capital"],
         )
 
-        fcff_results = (
-            concat_frames(fcff)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        fcff_results = finalize_dataset(
-            dataset=fcff_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fcff_results
+        return self._finalize_components(fcff, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_free_cash_flow_to_equity(
@@ -1631,7 +1663,8 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1676,42 +1709,25 @@ class ValuationModels(ModelsBase):
         """
         fcfe = {}
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        depreciation_and_amortization = (
-            self._income_statement.loc[:, "Depreciation and Amortization", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        depreciation_and_amortization = trailing_sum(
+            self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            )
         )
         change_in_net_working_capital = -1 * (
-            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Change in Working Capital", :],
+                trailing,
+            )
         )
-        net_borrowing = (
-            self._cash_flow_statement.loc[:, "Net Debt Issued", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Net Debt Issued", :]
+        net_borrowing = trailing_sum(
+            self._cash_flow_statement.loc[:, "Net Debt Issued", :], trailing
         )
 
         fcfe["Net Income"] = net_income
@@ -1728,26 +1744,7 @@ class ValuationModels(ModelsBase):
             net_borrowing=fcfe["Net Borrowing"],
         )
 
-        fcfe_results = (
-            concat_frames(fcfe)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        fcfe_results = finalize_dataset(
-            dataset=fcfe_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fcfe_results
+        return self._finalize_components(fcfe, rounding, growth, lag, standardize)
 
     def _complete_period_dividends(self) -> pd.DataFrame:
         """
@@ -2339,8 +2336,10 @@ class ValuationModels(ModelsBase):
             diluted (bool, optional): Whether to use the diluted share count for the actual
                 multiples. Defaults to True.
             trailing (int | None, optional): Sum the flows over this many periods and measure
-                the Return on Equity on the equity that many periods back. Defaults to None,
-                which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
+                the Return on Equity on the equity that many periods back. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 for quarterly data (a trailing twelve months) and 1
+                otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
@@ -2386,11 +2385,11 @@ class ValuationModels(ModelsBase):
         |                         |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:------------------------|--------:|--------:|--------:|--------:|--------:|
         | Payout Ratio            |  0.7422 |  0.7982 |  0.7422 |  0.7863 |  0.6698 |
-        | Return on Equity        |  0.4591 |  0.3838 |  0.4149 |  0.3869 |  0.497  |
+        | Return on Equity        |  0.5063 |  0.4149 |  0.4445 |  0.4098 |  0.5273 |
         | Growth Rate             |  0.025  |  0.025  |  0.025  |  0.025  |  0.025  |
-        | Justified Trailing P/E  | 59.0857 | 31.0277 | 23.9439 | 41.7365 | 34.3856 |
-        | Justified Leading P/E   | 57.6446 | 30.2709 | 23.3599 | 40.7185 | 33.5469 |
-        | Justified P/B           | 33.7137 | 13.609  | 12.2701 | 18.7394 | 23.6405 |
+        | Justified Trailing P/E  | 58.5587 | 31.0455 | 23.9391 | 41.6972 | 34.3992 |
+        | Justified Leading P/E   | 57.1304 | 30.2883 | 23.3552 | 40.6802 | 33.5602 |
+        | Justified P/B           | 37.0476 | 14.7954 | 13.1996 | 19.9092 | 25.1687 |
         | Price-to-Earnings Ratio | 26.2994 | 28.9985 | 23.8657 | 25.2999 | 23.0046 |
         | Price-to-Book Ratio     | 11.1732 | 11.4791 |  9.8569 | 10.8209 |  9.3731 |
         """
@@ -2427,8 +2426,7 @@ class ValuationModels(ModelsBase):
             )
 
         net_income = self._rows(self._income_statement, "Net Income")
-        if trailing:
-            net_income = net_income.T.rolling(trailing).sum().T
+        net_income = trailing_sum(net_income, trailing)
         shares = self._rows(
             self._income_statement,
             "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
@@ -2487,7 +2485,8 @@ class ValuationModels(ModelsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -2547,16 +2546,14 @@ class ValuationModels(ModelsBase):
         """
         residual_income = {}
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The capital charge applies to the book value the shareholders had invested at the start of the period (Ohlson, 1995): the closing balance of the previous period, or of `trailing` periods back for a trailing sum of Net Income.  # noqa: E501
         beginning_book_value_of_equity = (
             self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
             - self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-        ).shift(trailing if trailing else 1, axis=1)
+        ).shift(trailing or 1, axis=1)
 
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
@@ -2591,26 +2588,9 @@ class ValuationModels(ModelsBase):
             book_value_of_equity=residual_income["Book Value of Equity"],
         )
 
-        residual_income_results = (
-            concat_frames(residual_income)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            residual_income, rounding, growth, lag, standardize
         )
-
-        residual_income_results = finalize_dataset(
-            dataset=residual_income_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return residual_income_results
 
     @handle_errors
     def get_present_value_of_growth_opportunities(
@@ -2645,7 +2625,8 @@ class ValuationModels(ModelsBase):
             include_dividends (bool, optional): Whether to deduct Preferred Dividends Paid from Net
             Income when calculating the Earnings per Share, so that the earnings figure reflects what is
             attributable to common shareholders only. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -2692,43 +2673,37 @@ class ValuationModels(ModelsBase):
 
         Which returns:
 
-        | Date   |     ADI |     NVDA |      TXN |
-        |:-------|--------:|---------:|---------:|
-        | 2022   | 103.653 |  13.245  |  44.4637 |
-        | 2023   | 129.817 |  40.3285 |  96.3362 |
-        | 2024   | 183.861 | 115.999  | 136.661  |
-        | 2025   | 230.965 | nan      | 119.911  |
+        | Date   |      ADI |     NVDA |      TXN |
+        |:-------|---------:|---------:|---------:|
+        | 2022   |  84.5011 |  18.9955 |  44.4789 |
+        | 2023   |  91.829  |  51.8345 |  96.3404 |
+        | 2024   | 196.881  | 124.329  | 136.656  |
+        | 2025   | 193.895  | nan      | 119.909  |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
         cost_of_equity = self._weighted_average_cost_of_capital(
             trailing=trailing, market_risk_premium=market_risk_premium
         ).xs("Cost of Equity", level=1)
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         if include_dividends:
             dividends = self._cash_flow_statement.loc[
                 :, "Preferred Dividends Paid", :
             ].abs()
-            preferred_dividends = (
-                dividends.T.rolling(trailing).sum().T if trailing else dividends
-            )
+            preferred_dividends = trailing_sum(dividends, trailing)
         else:
             preferred_dividends = 0
-        avg_shares = (
-            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
-        )
+        avg_shares = trailing_mean(average_shares, trailing)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -2736,19 +2711,18 @@ class ValuationModels(ModelsBase):
             average_outstanding_shares=avg_shares,
         )
 
-        historical_prices = (
-            self._historical_data["daily"]["Close"]
-            if calculate_daily
-            else self._historical_data["quarterly" if self._quarterly else "yearly"][
-                "Close"
-            ]
-        )
-
+        # The period values compare the earnings with the close at the end of the fiscal
+        # period, and the daily values apply each period's earnings from that day on.
         pvgo = growth_model.get_present_value_of_growth_opportunities(
             cost_of_equity=cost_of_equity,
             earnings_per_share=earnings_per_share,
-            close_prices=historical_prices[self._tickers],
+            close_prices=(
+                self._historical_data["daily"]["Close"][self._tickers]
+                if calculate_daily
+                else self._period_prices().T.rename_axis("Date")
+            ),
             calculate_daily=calculate_daily,
+            period_end_dates=self._market_dates(),
         )
 
         if growth:
@@ -2817,9 +2791,10 @@ class ValuationModels(ModelsBase):
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
-                which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
-                with yearly data.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None, which uses 4
+                (the trailing twelve months of earnings) with quarterly data and a single period with yearly
+                data.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
@@ -2872,26 +2847,12 @@ class ValuationModels(ModelsBase):
         if trailing is None and self._quarterly:
             trailing = 4
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
-
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
-        )
-        avg_shares = (
-            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
-        )
-
-        earnings_per_share = valuation_model.get_earnings_per_share(
-            net_income=net_income,
-            preferred_dividends=0,
-            average_outstanding_shares=avg_shares,
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
+        earnings_per_share = self._trailing_earnings_per_share(diluted, trailing)
 
         # Book value is a stock at the balance sheet date, so equity and preferred stock stay point in time and are divided by the latest shares; only the earnings, a flow, cover the trailing year.  # noqa: E501
         book_value_per_share = valuation_model.get_book_value_per_share(
@@ -2917,6 +2878,240 @@ class ValuationModels(ModelsBase):
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+        )
+
+    @handle_errors
+    def get_graham_intrinsic_value(
+        self,
+        growth_rate: float | list | dict[str, float] | None = None,
+        bond_yield: float | list | dict[str, float] | None = None,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the intrinsic value of a share with Benjamin Graham's growth formula, the
+        value of a growth stock from its earnings, their expected growth and the yield of high
+        grade corporate bonds.
+
+        Graham gave the formula in The Intelligent Investor (fourth revised edition, 1973,
+        chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5 the price-to-earnings ratio of
+        a company without growth and g the growth rate of its earnings expected over the next
+        7 to 10 years, in percent. In 1974 he scaled it by 4.4 / Y, with 4.4 the average yield
+        of AAA corporate bonds in 1962 and Y their current yield, so that the value falls when
+        interest rates rise.
+
+        The formula is as follows:
+
+        - Intrinsic Value = Earnings per Share x (8.5 + 2 x g) x 4.4 / Y
+
+        Graham wrote g and Y in percent (5 for 5%). The growth rate and the bond yield of this
+        method are decimals like every rate in the Finance Toolkit (0.05 for 5%), and the
+        formula multiplies them by 100 before it applies Graham's constants, so the value is
+        Graham's. The bond yield is Moody's seasoned Aaa corporate bond yield, the yield to
+        maturity of bonds with 20 years or more to maturity that Moody's publishes on their
+        semi-annual coupon basis, used as published, as Graham's 4.4 was.
+
+        Graham meant the formula as a way to compare growth stocks and warned that growth
+        projections are unreliable: a higher g raises the value without limit, so the value
+        of a fast grower rests mostly on the growth assumed. A company with a loss has no
+        value by the formula, so it is NaN.
+
+        Also known as: Graham formula, Graham growth formula, Benjamin Graham intrinsic value,
+        revised Graham formula.
+
+        Args:
+            growth_rate (float, list or dict, optional): The expected annual growth rate of the
+                earnings per share over the next 7 to 10 years, as a decimal: one number, or a
+                list or dict with a rate per ticker. Defaults to None, which uses the compound
+                annual growth of the company's Earnings per Share over the 10 years up to each
+                period (or all the years before it when there are fewer, at least three, NaN
+                with less history), kept within 0 and 0.20, the range of Graham's own table of
+                growth rates, and NaN where the earnings at either end are not positive.
+            bond_yield (float, list or dict, optional): The yield of AAA corporate bonds, as a
+                decimal: one number, or a list or dict with a yield per ticker. Defaults to None,
+                which uses Moody's seasoned Aaa corporate bond yield (FRED series DAAA) on the
+                last day up to the end of each fiscal period, which needs a FRED API key.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None, which uses 4
+                (the trailing twelve months of earnings) with quarterly data and a single period with yearly
+                data.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the intrinsic value per share.
+
+        Notes:
+        - Graham's formula takes the earnings of the last twelve months, so with quarterly data the
+        Earnings per Share are the sum of the last four quarters by default; it is the Net Income divided
+        by the Weighted Average Shares Diluted (or the Weighted Average Shares with diluted=False), as in
+        `get_graham_number`.
+        - The default growth rate looks back, while Graham's g is the growth expected ahead: pass a
+        growth_rate (e.g. from analyst estimates, see `toolkit.get_analyst_estimates`) to value on a
+        forecast. Each period only uses the earnings up to it, and the bond yield of the end of that
+        period, so no period is valued with figures that were only known later. The growth reaches back
+        as far as the statements the Toolkit holds (a year before the start date) and needs three
+        years of them, so the first periods are NaN and an earlier start_date gives a longer growth
+        window.
+        - Compare the value with the share price (`toolkit.get_historical_data`) for Graham's margin of
+        safety.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "JNJ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            fred_api_key="FRED_API_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_graham_intrinsic_value()
+        ```
+
+        Which returns:
+
+        |     |   2021 |   2022 |    2023 |     2024 |     2025 |
+        |:----|-------:|-------:|--------:|---------:|---------:|
+        | JNJ |    nan |    nan | 630.081 |  51.9832 | 349.49   |
+        | KO  |    nan |    nan |  72.556 |  50.1366 |  76.9353 |
+        | PEP |    nan |    nan | 160.224 | 138.396  |  74.4379 |
+        """
+        # Graham's formula values the earnings of the last twelve months, so a quarterly Earnings per Share is the trailing twelve months.  # noqa: E501
+        if trailing is None and self._quarterly:
+            trailing = 4
+
+        earnings_per_share = self._trailing_earnings_per_share(diluted, trailing)
+
+        growth_rates = helpers.rates_per_period(
+            growth_rate,
+            self._tickers,
+            earnings_per_share.columns,
+            "growth rate",
+            lambda: self._earnings_per_share_growth(earnings_per_share),
+        )
+        bond_yields = helpers.rates_per_period(
+            bond_yield,
+            self._tickers,
+            earnings_per_share.columns,
+            "bond yield",
+            self._aaa_corporate_bond_yields,
+        )
+
+        graham_intrinsic_value = intrinsic_model.get_graham_intrinsic_value(
+            earnings_per_share=earnings_per_share.reindex(self._tickers),
+            growth_rate=growth_rates,
+            bond_yield=bond_yields,
+        )
+
+        return finalize_dataset(
+            dataset=graham_intrinsic_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    def _trailing_earnings_per_share(
+        self, diluted: bool, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        The Earnings per Share of Graham's formulas per ticker (rows) and period (columns): the
+        Net Income summed over `trailing` periods divided by the average (diluted) shares over
+        those periods.
+        """
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
+
+        return valuation_model.get_earnings_per_share(
+            net_income=trailing_sum(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+            preferred_dividends=0,
+            average_outstanding_shares=trailing_mean(average_shares, trailing),
+        )
+
+    def _earnings_per_share_growth(
+        self, earnings_per_share: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        The growth rate of Graham's intrinsic value when none is given: the compound annual
+        growth of the Earnings per Share over the 10 years up to each period (columns), or
+        from the first period with earnings when that is later, from at least three years
+        back, as a shorter span says little about the 7 to 10 years Graham's g looks ahead
+        (NaN with less history). Each period only uses the earnings up to it. A compound rate needs positive earnings
+        at both ends, so it is NaN otherwise, and it is kept within 0 and 0.20, the growth
+        rates Graham tabulated in The Intelligent Investor (chapter 11).
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        window = 10 * periods_per_year
+        growth = pd.DataFrame(
+            float("nan"),
+            index=earnings_per_share.index,
+            columns=earnings_per_share.columns,
+        )
+
+        for ticker in earnings_per_share.index:
+            history = earnings_per_share.loc[ticker]
+            first = history.first_valid_index()
+            if first is None:
+                continue
+            first_position = history.index.get_loc(first)
+
+            for position in range(first_position + 3 * periods_per_year, len(history)):
+                base_position = max(first_position, position - window)
+                base, latest = history.iloc[base_position], history.iloc[position]
+                if base > 0 and latest > 0:
+                    years = (position - base_position) / periods_per_year
+                    growth.iloc[growth.index.get_loc(ticker), position] = (
+                        latest / base
+                    ) ** (1 / years) - 1
+
+        return growth.clip(lower=0, upper=GRAHAM_MAXIMUM_GROWTH_RATE)
+
+    def _aaa_corporate_bond_yields(self) -> pd.DataFrame:
+        """
+        Moody's seasoned Aaa corporate bond yield per ticker (rows) and period (columns), on
+        the last day with a yield up to each ticker's fiscal period end (see _market_dates),
+        so that no period is valued with a yield that was only known later.
+        """
+        if self._corporate_bond_yield_function is None:
+            raise ValueError(
+                "No source for the AAA corporate bond yield was given, so pass a bond_yield."
+            )
+
+        market_dates = self._market_dates()
+        # The yield up to 10 days before a date counts (a holiday or weekend before it).
+        start = (market_dates.min().min() - pd.Timedelta(days=15)).strftime("%Y-%m-%d")
+        end = market_dates.max().max().strftime("%Y-%m-%d")
+
+        return self._values_at_market_dates(
+            self._corporate_bond_yield_function(start, end)
         )
 
     def _latest_value(self, statement: pd.DataFrame, ticker: str, row: str) -> float:
@@ -3088,18 +3283,30 @@ class ValuationModels(ModelsBase):
         Without min_periods every window must be complete, so a missing period leaves the
         sums that include it NaN instead of letting them span more periods.
         """
-        frame = self._calendar(self._rows(statement, row))
-        return frame.T.rolling(trailing).sum().T if trailing else frame
+        return trailing_sum(calendar_periods(self._rows(statement, row)), trailing)
 
     def _latest_capital(self, ticker: str) -> dict[str, float]:
-        """The latest cash, total debt and diluted shares of a ticker, as a DCF takes them."""
+        """
+        The latest cash, short term investments, total debt, minority interest, preferred
+        stock and diluted shares of a ticker, as a DCF takes them: the claims and assets
+        get_intrinsic_valuation adds to and deducts from the Enterprise Value, so that every
+        valuation on it arrives at the same Equity Value. A short term investment, minority
+        interest or preferred stock that is not reported counts as zero.
+        """
+        balance = self._balance_sheet_statement
+
+        def optional(row: str) -> float:
+            value = self._latest_value(balance, ticker, row)
+            return 0.0 if pd.isna(value) else value
+
         return {
             "cash_and_cash_equivalents": self._latest_value(
-                self._balance_sheet_statement, ticker, "Cash and Cash Equivalents"
+                balance, ticker, "Cash and Cash Equivalents"
             ),
-            "total_debt": self._latest_value(
-                self._balance_sheet_statement, ticker, "Total Debt"
-            ),
+            "short_term_investments": optional("Short Term Investments"),
+            "total_debt": self._latest_value(balance, ticker, "Total Debt"),
+            "minority_interest": optional("Minority Interest"),
+            "preferred_stock": optional("Preferred Stock"),
             "shares_outstanding": self._latest_value(
                 self._income_statement, ticker, "Weighted Average Shares Diluted"
             ),
@@ -3129,7 +3336,9 @@ class ValuationModels(ModelsBase):
         if cash_flow_type != "Free Cash Flow to Firm":
             return summed(self._cash_flow_statement, cash_flow_type)
 
-        effective_tax_rate = profitability_model.get_effective_tax_rate(
+        # The tax rate of the WACC and the EVA (the effective rate within 0 and 1, and 0 without
+        # a pre-tax profit), so that a tax benefit or a loss does not raise the NOPAT above EBIT.
+        effective_tax_rate = wacc_model.get_corporate_tax_rate(
             income_tax_expense=summed(self._income_statement, "Income Tax Expense"),
             income_before_tax=summed(self._income_statement, "Income Before Tax"),
         )
@@ -3176,7 +3385,8 @@ class ValuationModels(ModelsBase):
 
             - Cash Flow Projection_t = Cash Flow_t-1 * (1 + Implied Growth Rate)
             - Terminal Value = Last Projection * (1 + Perpetual Growth Rate) / (WACC - Perpetual Growth Rate)
-            - Equity Value = Present Value of Projections and Terminal Value + Cash - Total Debt
+            - Equity Value = Present Value of Projections and Terminal Value + Cash + Short Term
+              Investments - Total Debt - Minority Interest - Preferred Stock
             - Implied Growth Rate solves Equity Value / Shares Outstanding = Share Price
 
         For more information, see the following book:
@@ -3203,9 +3413,10 @@ class ValuationModels(ModelsBase):
                 to equity), so that discounting them at the WACC and subtracting the debt
                 counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
-                4 quarters) instead of taking the latest one. Defaults to None, which sums
-                the last 4 quarters (a trailing twelve months) for quarterly data and takes
-                the latest year otherwise, as the projection periods are years.
+                4 quarters) instead of taking the latest one. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                sums the last 4 quarters (a trailing twelve months) for quarterly data and
+                takes the latest year otherwise, as the projection periods are years.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3247,9 +3458,9 @@ class ValuationModels(ModelsBase):
 
         |      |   Share Price |   Cash Flow |   Weighted Average Cost of Capital |   Perpetual Growth Rate |   Implied Growth Rate |   Historical Growth Rate |
         |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
-        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.308  |                   0.0545 |
-        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.333  |                   0.1183 |
-        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4454 |                   1.0031 |
+        | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.3068 |                   0.0545 |
+        | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.328  |                   0.1183 |
+        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4431 |                   1.0031 |
         """
         perpetual = helpers.rates_per_ticker(
             perpetual_growth_rate, self._tickers, "perpetual growth rate"
@@ -3329,7 +3540,8 @@ class ValuationModels(ModelsBase):
             - Normalized Operating Income = Average Operating Margin * Latest Revenue
             - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
             - Earnings Power Value = NOPAT / WACC
-            - EPV per Share = (EPV + Cash - Total Debt) / Shares Outstanding
+            - EPV per Share = (EPV + Cash + Short Term Investments - Total Debt - Minority Interest -
+              Preferred Stock) / Shares Outstanding
 
         A share price well above the EPV per share means the market pays for growth, which
         only adds value when the company earns more than its cost of capital on it.
@@ -3354,7 +3566,8 @@ class ValuationModels(ModelsBase):
                 the average. Defaults to 5.
             trailing (int | None, optional): Sum the revenue, operating income, taxes and
                 income before tax over this many periods (e.g. 4 quarters), so that the
-                margin is applied to a year of revenue. Defaults to None, which uses 4 (a
+                margin is applied to a year of revenue. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses 4 (a
                 trailing twelve months) for quarterly data and the yearly figures otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -3395,9 +3608,9 @@ class ValuationModels(ModelsBase):
 
         |      |   Average Operating Margin |   Normalized Operating Income |   Tax Rate |   Normalized NOPAT |   Weighted Average Cost of Capital |   Earnings Power Value |   Equity Value |   Earnings Power Value per Share |   Share Price |   Price to EPV |
         |:-----|---------------------------:|------------------------------:|-----------:|-------------------:|-----------------------------------:|-----------------------:|---------------:|---------------------------------:|--------------:|---------------:|
-        | AAPL |                     0.3067 |                   1.27656e+11 |     0.1679 |        1.06229e+11 |                               0.08 |            1.32786e+12 |    1.25141e+12 |                          83.4015 |        271.86 |         3.2597 |
-        | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.66388e+10 |                          20.0878 |         69.91 |         3.4802 |
-        | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.18871e+12 |                         159.238  |        483.62 |         3.0371 |
+        | AAPL |                     0.3067 |                   1.27656e+11 |     0.1679 |        1.06229e+11 |                               0.08 |            1.32786e+12 |    1.27018e+12 |                          84.652  |        271.86 |         3.2115 |
+        | KO   |                     0.2534 |                   1.21476e+10 |     0.1861 |        9.88662e+09 |                               0.08 |            1.23583e+11 |    8.81348e+10 |                          20.4347 |         69.91 |         3.4211 |
+        | MSFT |                     0.4314 |                   1.2153e+11  |     0.1636 |        1.01652e+11 |                               0.08 |            1.27066e+12 |    1.25303e+12 |                         167.853  |        483.62 |         2.8812 |
         """
         # The NOPAT is capitalized as a yearly amount, so quarterly figures are summed into a
         # year (a trailing twelve months) before the margin is applied to the revenue.
@@ -3530,9 +3743,10 @@ class ValuationModels(ModelsBase):
                 to equity), so that discounting them at the WACC and subtracting the debt
                 counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
-                4 quarters) instead of taking the latest one. Defaults to None, which sums
-                the last 4 quarters (a trailing twelve months) for quarterly data and takes
-                the latest year otherwise, as the projection periods are years.
+                4 quarters) instead of taking the latest one. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                sums the last 4 quarters (a trailing twelve months) for quarterly data and
+                takes the latest year otherwise, as the projection periods are years.
             seed (int | None, optional): The seed of the random numbers, so that results
                 can be reproduced. Defaults to 0; None gives different draws every time.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -3566,8 +3780,8 @@ class ValuationModels(ModelsBase):
 
         |      |     Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
         |:-----|---------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
-        | AAPL |  82.5536 |              16.2524 |          61.0122 |            71.306 |           80.2468 |           91.1154 |           112.314 |        271.86 |                    0      |
-        | MSFT | 201.341  |              54.6203 |         137.524  |           165.728 |          191.35   |          225.201  |           297.467 |        483.62 |                    0.0026 |
+        | AAPL |  83.9988 |              16.3235 |          62.3819 |           72.7029 |           81.6781 |           92.6049 |           113.888 |        271.86 |                    0.0001 |
+        | MSFT | 209.732  |              54.4736 |         146.029  |          174.188  |          199.786  |          233.56   |           305.64  |        483.62 |                    0.0026 |
         """
         operating_growth = cache(lambda: self._latest(self._operating_growth()))
         growth = helpers.rates_per_ticker(
@@ -3650,7 +3864,11 @@ class ValuationModels(ModelsBase):
         The metrics are the Price-to-Earnings, EV-to-EBITDA, Price-to-Book and
         Price-to-Sales ratios, the Gross, Operating and Net Profit Margin, the Return on
         Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
-        Dividend Yield, all of the latest fiscal year.
+        Dividend Yield, all of the latest period up to the Toolkit's end date: the fiscal year,
+        or with quarterly=True the quarter, with the ratios over the trailing year and the
+        Revenue Growth over the same quarter a year earlier. The peers are retrieved with the
+        Toolkit's settings (quarterly, point_in_time and convert_currency), so the Company
+        column equals the Toolkit's own ratios of that period.
 
         The Peer Mean of the four valuation multiples is the harmonic mean of the positive
         values, the standard average of multiples: the arithmetic mean is dominated by
@@ -3708,18 +3926,18 @@ class ValuationModels(ModelsBase):
 
         |                                        |   Company |   Peer Median |   Peer Mean |   Percentile |   Peers |
         |:---------------------------------------|----------:|--------------:|------------:|-------------:|--------:|
-        | ('MSFT', 'Price-to-Earnings')          |   29.5676 |       30.6062 |     27.9825 |          0.5 |      10 |
-        | ('MSFT', 'EV-to-EBITDA')               |   20.677  |       19.9245 |     18.115  |          0.5 |      10 |
-        | ('MSFT', 'Price-to-Book')              |    8.9393 |        7.3435 |      6.2418 |          0.6 |      10 |
-        | ('MSFT', 'Price-to-Sales')             |   11.9173 |        6.1931 |      4.3639 |          0.9 |      10 |
-        | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6243 |      0.6164 |          0.6 |      10 |
-        | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1999 |      0.2226 |          1   |      10 |
-        | ('MSFT', 'Net Profit Margin')          |    0.4031 |        0.1682 |      0.187  |          1   |      10 |
-        | ('MSFT', 'Return on Equity')           |    0.3404 |        0.2392 |      0.2864 |          0.6 |      10 |
-        | ('MSFT', 'Return on Invested Capital') |    0.2437 |        0.1307 |      0.166  |          0.8 |      10 |
-        | ('MSFT', 'Revenue Growth')             |    0.1779 |        0.1145 |      0.1197 |          0.9 |      10 |
-        | ('MSFT', 'Debt-to-Equity')             |    0.2912 |        0.3313 |      0.7927 |          0.5 |      10 |
-        | ('MSFT', 'Dividend Yield')             |    0.0051 |        0.0094 |      0.01   |          0.4 |      10 |
+        | ('MSFT', 'Price-to-Earnings')          |   36.4636 |       30.6062 |     29.3028 |          0.7 |      10 |
+        | ('MSFT', 'EV-to-EBITDA')               |   22.9332 |       20.9841 |     19.0334 |          0.6 |      10 |
+        | ('MSFT', 'Price-to-Book')              |   10.8105 |        7.3435 |      6.5553 |          0.7 |      10 |
+        | ('MSFT', 'Price-to-Sales')             |   13.1802 |        6.2949 |      4.5172 |          1   |      10 |
+        | ('MSFT', 'Gross Margin')               |    0.6882 |        0.6508 |      0.6211 |          0.5 |      10 |
+        | ('MSFT', 'Operating Margin')           |    0.4562 |        0.1875 |      0.2187 |          1   |      10 |
+        | ('MSFT', 'Net Profit Margin')          |    0.3615 |        0.1602 |      0.1816 |          1   |      10 |
+        | ('MSFT', 'Return on Equity')           |    0.3328 |        0.2406 |      0.3172 |          0.6 |      10 |
+        | ('MSFT', 'Return on Invested Capital') |    0.2576 |        0.1339 |      0.1691 |          0.8 |      10 |
+        | ('MSFT', 'Revenue Growth')             |    0.1493 |        0.0962 |      0.1108 |          0.8 |      10 |
+        | ('MSFT', 'Debt-to-Equity')             |    0.3266 |        0.22   |      0.9011 |          0.6 |      10 |
+        | ('MSFT', 'Dividend Yield')             |    0.0065 |        0.008  |      0.009  |          0.5 |      10 |
         """
         if self._peer_function is None:
             raise ValueError("Peer data is not available for this Toolkit.")

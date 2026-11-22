@@ -54,6 +54,7 @@ DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
 DAMODARAN = "Damodaran"
 FINRA = "FINRA"
+FEDERAL_HOUSING_FINANCE_AGENCY = "FHFA"
 
 # The market risk premium is published per country, so it is one cache entry. The name
 # marks the premiums as decimals, so an entry holding percentages under another name is
@@ -81,8 +82,8 @@ class CachePolicy:
     Attributes:
         ttl_seconds (int): How long a stored range is served without contacting the
             source at all.
-        revision_days (int): How many days back from the end of the request are
-            re-requested once the stored range has gone stale. Zero means the whole
+        revision_days (int): How many days back from today are re-requested once the
+            stored range has gone stale; a stored range that ends before them is not. Zero means the whole
             stale range is requested again, which is the right behaviour for sources
             that cannot be queried by date range anyway.
         settles_at_close (bool): Whether the data holds a bar per trading day. The bar
@@ -147,6 +148,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{YAHOO_FINANCE}.statements": CachePolicy(ttl_seconds=DAY),
     # Company descriptors barely move.
     f"{FINANCIAL_MODELING_PREP}.profile": CachePolicy(ttl_seconds=30 * DAY),
+    # The statement currency and fiscal year end, Yahoo Finance's part of the profile.
+    f"{YAHOO_FINANCE}.company_information": CachePolicy(ttl_seconds=30 * DAY),
     f"{FINANCIAL_MODELING_PREP}.rating": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.quote": CachePolicy(ttl_seconds=60),
     f"{FINANCIAL_MODELING_PREP}.analyst_estimates": CachePolicy(ttl_seconds=DAY),
@@ -290,11 +293,15 @@ POLICIES: dict[str, CachePolicy] = {
     f"{EIOPA}.releases": CachePolicy(ttl_seconds=DAY),
     # Republished monthly with the full daily history.
     f"{EIOPA}.symmetric_adjustment": CachePolicy(ttl_seconds=7 * DAY),
-    f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
+    f"{INTERNATIONAL_MONETARY_FUND}.codelist_raw": CachePolicy(ttl_seconds=30 * DAY),
     # Updated about once a month.
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
     # The Pink Sheet is updated in the first days of every month.
     f"{WORLD_BANK}.commodity_prices": CachePolicy(ttl_seconds=7 * DAY),
+    # The World Development Indicators are yearly, updated a few times a year, and the list
+    # of economies and aggregates rarely changes.
+    f"{WORLD_BANK}.indicator": CachePolicy(ttl_seconds=7 * DAY),
+    f"{WORLD_BANK}.economies": CachePolicy(ttl_seconds=30 * DAY),
     # PortWatch adds the latest days once a week, on Tuesdays, and the chokepoints rarely.
     f"{IMF_PORTWATCH}.chokepoint_transits": CachePolicy(ttl_seconds=DAY),
     f"{IMF_PORTWATCH}.chokepoints": CachePolicy(ttl_seconds=30 * DAY),
@@ -324,12 +331,22 @@ POLICIES: dict[str, CachePolicy] = {
     # A published day of short sale volume does not change, but FINRA publishes the file of
     # a day in the evening, so once a day has passed the last week is asked for again.
     f"{FINRA}.short_volume": CachePolicy(ttl_seconds=DAY, revision_days=7),
-    f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
+    # The National Mortgage Database statistics are published once a quarter, about three
+    # months after the quarter ends, as one file with the full history.
+    f"{FEDERAL_HOUSING_FINANCE_AGENCY}.outstanding_mortgages": CachePolicy(
+        ttl_seconds=7 * DAY
+    ),
+    f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices_by_code": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),
-    # Government finance and national accounts, published quarterly or yearly and revised
-    # back years when a country revises its national accounts.
-    f"{INTERNATIONAL_MONETARY_FUND}.government_finance": CachePolicy(
+    # Government finance, national accounts, the international investment position and
+    # end-of-period exchange rates, published quarterly or yearly and revised back years
+    # when a country revises its national accounts or balance of payments. Stored
+    # by IMF code under a name of its own, so that no entry stored under "government_finance",
+    # read while a series without observations (<Series .../>) took the observations of the
+    # series after it, is ever served: its revision window would never reach the older
+    # misread years.
+    f"{INTERNATIONAL_MONETARY_FUND}.series_by_code": CachePolicy(
         ttl_seconds=7 * DAY, revision_days=1095
     ),
     f"{EUROPEAN_CENTRAL_BANK}.convergence_yields": CachePolicy(

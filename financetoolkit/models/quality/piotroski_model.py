@@ -158,7 +158,9 @@ def get_accruals_criteria(
 
     operating_cf_to_total_assets = operating_cashflow / beginning_total_assets
 
-    accruals_criteria = operating_cf_to_total_assets > return_on_assets
+    # The cash flow statement can hold a period or ticker the income statement does not (or the
+    # other way around); gt aligns both sides, where > raises on frames labelled differently.
+    accruals_criteria = operating_cf_to_total_assets.gt(return_on_assets)
 
     return accruals_criteria
 

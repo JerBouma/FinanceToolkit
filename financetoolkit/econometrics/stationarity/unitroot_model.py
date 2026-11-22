@@ -282,12 +282,12 @@ def get_phillips_perron_test(
     - s = sqrt(SUM(u_hat_t^2) / (n - k))    (degrees-of-freedom corrected residual
     standard error, with `k` the number of estimated coefficients)
     - lambda^2 = Newey-West long-run variance of u_hat_t, `lags` truncation lag
-    - Z_t = sqrt(gamma_0 / lambda^2) * t_rho
-            - (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * s) * (n * se(rho_hat))
+    - Z_t = sqrt(gamma_0 / lambda^2) * t_rho -
+      (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * s) * (n * se(rho_hat))
 
-    This "Z_t" variant (as opposed to the "Z_rho" variant, which corrects `n * (rho_hat
-    - 1)` directly rather than the t-statistic) is implemented here because it is
-    asymptotically pivotal to the same Dickey-Fuller tau distribution as the ADF
+    This "Z_t" variant (as opposed to the "Z_rho" variant, which corrects
+    `n * (rho_hat - 1)` directly rather than the t-statistic) is implemented here because it
+    is asymptotically pivotal to the same Dickey-Fuller tau distribution as the ADF
     t-statistic, so the same MacKinnon response surfaces apply: the finite-sample
     critical values for `n` observations of MacKinnon (2010) and the approximate p-value
     of MacKinnon (1994), via `statsmodels.tsa.adfvalues.mackinnoncrit` and `mackinnonp`.
@@ -323,7 +323,7 @@ def get_phillips_perron_test(
     Returns:
         pd.Series: The Phillips-Perron Z_t statistic, its MacKinnon p-value, the truncation lag
         used, the number of observations used, the finite-sample 1%/5%/10% critical values, and
-        whether the unit root is rejected at the 5% level.
+        whether the unit root is rejected at the 5% level (a p-value below 0.05).
 
     Raises:
         ValueError: If `regression` is not one of "c" or "ct".
@@ -397,7 +397,10 @@ def get_phillips_perron_test(
             "Critical Value 1%": critical_value_1,
             "Critical Value 5%": critical_value_5,
             "Critical Value 10%": critical_value_10,
-            "Reject Unit Root (5%)": bool(z_t_statistic < critical_value_5),
+            # From the p-value, as the ADF, KPSS and Zivot-Andrews tests decide: the
+            # asymptotic p-value and the finite-sample 5% critical value can disagree for a
+            # statistic right at the boundary, and the flag should match the reported p-value.
+            "Reject Unit Root (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
         }
     )
 

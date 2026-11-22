@@ -19,6 +19,8 @@ def get_intrinsic_value(
     shares_outstanding: float,
     periods: int = 5,
     short_term_investments: float = 0.0,
+    minority_interest: float = 0.0,
+    preferred_stock: float = 0.0,
 ) -> pd.DataFrame:
     """
     Intrinsic value is a fundamental concept in finance and investing that represents the true
@@ -34,8 +36,8 @@ def get_intrinsic_value(
         - Terminal Value = Last Cash Flow Projection * (1 + Perpetual Growth Rate) /
         (Weighted Average Cost of Capital — Perpetual Growth Rate)
         - Enterprise Value = Sum of Present Value of Cash Flow Projections + Terminal Value
-        - Equity Value = Enterprise Value — Total Debt + Cash and Cash Equivalents + Short Term
-        Investments
+        - Equity Value = Enterprise Value + Cash and Cash Equivalents + Short Term Investments —
+        Total Debt — Minority Interest — Preferred Stock
         - Intrinsic Value = Equity Value / Total Shares Outstanding
 
     Args:
@@ -52,6 +54,10 @@ def get_intrinsic_value(
         periods (int, optional): The number of periods to project the cash flow for. Defaults to 5.
         short_term_investments (float, optional): The marketable securities that are not cash
         equivalents, added back with the cash. Defaults to 0.0.
+        minority_interest (float, optional): The minority (non-controlling) interest, deducted as a
+        claim on the Enterprise Value that does not belong to the shareholders. Defaults to 0.0.
+        preferred_stock (float, optional): The preferred stock, deducted as a claim senior to the
+        common shareholders. Defaults to 0.0.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Terminal Value, Cash Flow Projection, Enterprise
@@ -70,6 +76,10 @@ def get_intrinsic_value(
     - The cash and the short term investments are added back together, the mirror image of the
     Enterprise Value that deducts cash and marketable securities together (Damodaran). The
     operating cash flows do not include the income on these assets, so they are valued separately.
+    - The Enterprise Value of the whole firm also belongs to the minority shareholders of its
+    subsidiaries and to the preferred shareholders, so their claims are deducted with the debt
+    to arrive at the value of the common equity (Damodaran, Investment Valuation, chapter 16), the
+    mirror image of the Enterprise Value that adds them.
     """
     if weighted_average_cost_of_capital <= perpetual_growth_rate:
         raise ValueError(
@@ -109,12 +119,14 @@ def get_intrinsic_value(
     # Calculate the Enterprise Value, using fsum so the total is correctly rounded rather than accumulation-order dependent (builtin sum only compensates on 3.12+)  # noqa: E501
     enterprise_value = fsum(cash_flow_present_value)
 
-    # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value.  # noqa: E501
+    # Calculate the Equity Value: the cash and the marketable securities belong to the shareholders on top of the operating Enterprise Value, while the debt, the minority interest and the preferred stock are claims ahead of them.  # noqa: E501
     equity_value = (
         enterprise_value
         + cash_and_cash_equivalents
         + short_term_investments
         - total_debt
+        - minority_interest
+        - preferred_stock
     )
 
     # Calculate the Intrinsic Value
@@ -208,6 +220,59 @@ def get_graham_number(
         return np.sqrt(product.where(profitable_with_equity))
 
     return float(np.sqrt(product)) if profitable_with_equity else np.nan
+
+
+def get_graham_intrinsic_value(
+    earnings_per_share: float | pd.Series | pd.DataFrame,
+    growth_rate: float | pd.Series | pd.DataFrame,
+    bond_yield: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Calculate the intrinsic value of a share with Benjamin Graham's growth formula, in the
+    form he gave it in 1974 with the yield of high grade corporate bonds.
+
+    The formula is as follows:
+
+        Intrinsic Value = Earnings per Share x (8.5 + 2 x g) x 4.4 / Y
+
+    Graham wrote g, the expected annual growth rate of the earnings over the next 7 to 10
+    years, and Y, the current yield of AAA corporate bonds, in percent (5 for 5%), and 4.4 is
+    the average AAA yield of 1962. Here both are decimals (0.05 for 5%), which the formula
+    multiplies by 100 before it applies Graham's constants, so the value is the same.
+
+    Args:
+        earnings_per_share (float | pd.Series | pd.DataFrame): The annual earnings per share.
+        growth_rate (float | pd.Series | pd.DataFrame): The expected annual growth rate of
+            the earnings, as a decimal.
+        bond_yield (float | pd.Series | pd.DataFrame): The yield of AAA corporate bonds, as a
+            decimal.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The intrinsic value per share, NaN where the
+        earnings or the bond yield are not positive.
+
+    References:
+    - Graham, Benjamin. "The Intelligent Investor." Fourth revised edition, Harper & Row,
+    1973, chapter 11 (Intrinsic Value = Earnings per Share x (8.5 + 2 x g)).
+    - Graham, Benjamin. "The Decade 1965-1974: Its Significance for Financial Analysts." In
+    "The Renaissance of Value," Financial Analysts Research Foundation, 1974 (the 4.4 / Y
+    adjustment).
+    """
+    # Graham's constants are in percent: 8.5 is the multiple of a company without growth,
+    # 2 the multiple per percentage point of growth and 4.4 the AAA yield of 1962 in percent.
+    value = (
+        earnings_per_share * (8.5 + 2 * growth_rate * 100) * 4.4 / (bond_yield * 100)
+    )
+
+    # A loss has no growth value, and a yield of zero or less divides by nothing meaningful.
+    valid = (earnings_per_share > 0) & (bond_yield > 0)
+
+    if isinstance(valid, pd.Series | pd.DataFrame):
+        return value.where(valid)
+    if isinstance(value, pd.Series | pd.DataFrame):
+        return value if valid else value * np.nan
+
+    return float(value) if valid else np.nan
 
 
 def get_free_cash_flow_to_firm(
@@ -711,6 +776,9 @@ def get_implied_growth_rate(
     total_debt: float,
     shares_outstanding: float,
     periods: int = 5,
+    short_term_investments: float = 0.0,
+    minority_interest: float = 0.0,
+    preferred_stock: float = 0.0,
 ) -> float:
     """
     The growth rate the share price implies (a reverse DCF): the yearly growth of the cash
@@ -733,6 +801,12 @@ def get_implied_growth_rate(
         total_debt (float): The total debt.
         shares_outstanding (float): The number of shares outstanding.
         periods (int, optional): The number of projection periods. Defaults to 5.
+        short_term_investments (float, optional): The marketable securities that are not cash
+            equivalents, added with the cash. Defaults to 0.0.
+        minority_interest (float, optional): The minority interest, deducted with the debt.
+            Defaults to 0.0.
+        preferred_stock (float, optional): The preferred stock, deducted with the debt.
+            Defaults to 0.0.
 
     Returns:
         float: The implied yearly growth rate, or NaN when no growth rate between -90% and
@@ -741,7 +815,15 @@ def get_implied_growth_rate(
     if cash_flow <= 0 or weighted_average_cost_of_capital <= perpetual_growth_rate:
         return np.nan
 
-    net_cash = cash_and_cash_equivalents - total_debt
+    # The same net claims as get_intrinsic_value, so that the implied growth rate put back
+    # into it returns the share price.
+    net_cash = (
+        cash_and_cash_equivalents
+        + short_term_investments
+        - total_debt
+        - minority_interest
+        - preferred_stock
+    )
 
     def difference(growth: float) -> float:
         return (
@@ -776,6 +858,9 @@ def get_earnings_power_value(
     cash_and_cash_equivalents: float,
     total_debt: float,
     shares_outstanding: float,
+    short_term_investments: float = 0.0,
+    minority_interest: float = 0.0,
+    preferred_stock: float = 0.0,
 ) -> pd.Series:
     """
     The Earnings Power Value (Greenwald): the value of the company's current, sustainable
@@ -800,6 +885,12 @@ def get_earnings_power_value(
         cash_and_cash_equivalents (float): The latest cash and cash equivalents.
         total_debt (float): The latest total debt.
         shares_outstanding (float): The number of shares outstanding.
+        short_term_investments (float, optional): The marketable securities that are not cash
+            equivalents, added with the cash. Defaults to 0.0.
+        minority_interest (float, optional): The minority interest, deducted with the debt.
+            Defaults to 0.0.
+        preferred_stock (float, optional): The preferred stock, deducted with the debt.
+            Defaults to 0.0.
 
     Returns:
         pd.Series: The Average Operating Margin, Normalized Operating Income, Tax Rate,
@@ -815,7 +906,16 @@ def get_earnings_power_value(
     tax_rate = float(np.clip((income_tax_expense / income_before_tax).mean(), 0, 1))
     nopat = normalized_operating_income * (1 - tax_rate)
     earnings_power_value = nopat / weighted_average_cost_of_capital
-    equity_value = earnings_power_value + cash_and_cash_equivalents - total_debt
+    # The Equity Value as in get_intrinsic_value: the cash and marketable securities added,
+    # the claims ahead of the common shareholders deducted.
+    equity_value = (
+        earnings_power_value
+        + cash_and_cash_equivalents
+        + short_term_investments
+        - total_debt
+        - minority_interest
+        - preferred_stock
+    )
 
     return pd.Series(
         {
@@ -844,6 +944,9 @@ def get_monte_carlo_intrinsic_value(
     periods: int = 5,
     simulations: int = 10000,
     seed: int | None = 0,
+    short_term_investments: float = 0.0,
+    minority_interest: float = 0.0,
+    preferred_stock: float = 0.0,
 ) -> np.ndarray:
     """
     The distribution of the Discounted Cash Flow value per share when the growth rate, the
@@ -867,6 +970,12 @@ def get_monte_carlo_intrinsic_value(
         simulations (int, optional): The number of simulations. Defaults to 10,000.
         seed (int | None, optional): The seed of the random numbers, for reproducible
             results. Defaults to 0.
+        short_term_investments (float, optional): The marketable securities that are not cash
+            equivalents, added with the cash. Defaults to 0.0.
+        minority_interest (float, optional): The minority interest, deducted with the debt.
+            Defaults to 0.0.
+        preferred_stock (float, optional): The preferred stock, deducted with the debt.
+            Defaults to 0.0.
 
     Returns:
         np.ndarray: The simulated values per share.
@@ -904,7 +1013,11 @@ def get_monte_carlo_intrinsic_value(
         growth,
         perpetual,
         wacc,
-        cash_and_cash_equivalents - total_debt,
+        cash_and_cash_equivalents
+        + short_term_investments
+        - total_debt
+        - minority_interest
+        - preferred_stock,
         shares_outstanding,
         periods,
     )

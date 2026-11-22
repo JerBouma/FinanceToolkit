@@ -10,6 +10,7 @@ from financetoolkit.utilities.statistics_model import drop_non_finite
 
 def get_log_of_total_assets(
     total_assets: float | pd.Series | pd.DataFrame,
+    price_level_index: float | pd.Series | pd.DataFrame | None = None,
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Log of Total Assets (SIZE) is a proxy for firm size used in the Ohlson O-Score model. Larger
@@ -23,23 +24,26 @@ def get_log_of_total_assets(
     Args:
         total_assets (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current
         assets.
+        price_level_index (float | pd.Series | pd.DataFrame | None, optional): The US GNP implicit
+        price deflator with 1968 = 100, of the period of the total assets (with a DataFrame of total
+        assets, a Series indexed by its columns). Defaults to None, which leaves the total assets
+        undeflated: ln(Total Assets).
 
     Returns:
-        float | pd.Series | pd.DataFrame: The (simplified) Log of Total Assets.
+        float | pd.Series | pd.DataFrame: The Log of Total Assets.
 
     Notes:
-    - Ohlson's original 1980 specification deflates Total Assets by the US GNP implicit price-level
-      deflator (rebased to 1968 = 100) before taking the natural log. That index is a US-specific,
-      1970s-vintage macro series that is not available in this toolkit and is not meaningful outside
-      the original US sample period, so it is simplified/omitted here — this function returns
-      ln(Total Assets) in nominal terms instead of ln(Total Assets / GNP index).
-    - Because the deflator is (approximately) constant across companies observed in the same period and
-      currency, omitting it shifts the SIZE term, and therefore the resulting O-Score, by roughly the
-      same constant amount for every observation in that period. This does not change the *ranking* of
-      companies relative to one another, but it does mean the absolute O-Score (and the bankruptcy
-      probability derived from it) is not an exact reproduction of Ohlson (1980) and should not be
-      compared directly to probabilities reported in studies that do apply the deflator.
+    - Ohlson (1980) deflates Total Assets by the US GNP implicit price-level deflator rebased to
+      1968 = 100 (SIZE = ln(Total Assets / index)), which keeps SIZE on the scale the coefficients
+      were estimated on. Without the deflator, SIZE is higher by ln(index) and the O-Score lower by
+      0.407 times that: about 2.7 with the US price level of the 2020s at an index of about 700; the
+      ranking of companies within a period is the same either way.
+    - The total assets are taken in the units of the statements (currency units, not thousands or
+      millions).
     """
+    if price_level_index is not None:
+        total_assets = total_assets / price_level_index
+
     # np.log keeps the pandas container at runtime, but the ufunc stubs describe an
     # ndarray; the ufunc fast path of `.apply` produces the same values with a typed result.
     if isinstance(total_assets, pd.Series | pd.DataFrame):
@@ -313,12 +317,13 @@ def get_ohlson_o_score(
 
     The formula is as follows:
 
-        O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA - 1.72 * OENEG
-        - 2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
+        O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA - 1.72 * OENEG -
+          2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
 
     The nine variables are:
 
-        - SIZE: Log of Total Assets (deflator simplified/omitted, see `get_log_of_total_assets`)
+        - SIZE: Log of Total Assets deflated by the US GNP price-level index (1968 = 100), see
+          `get_log_of_total_assets`
         - TLTA: Total Liabilities to Total Assets Ratio
         - WCTA: Working Capital to Total Assets Ratio
         - CLCA: Current Liabilities to Current Assets Ratio
@@ -332,7 +337,7 @@ def get_ohlson_o_score(
     Also known as: Ohlson O-Score, bankruptcy prediction, financial distress score.
 
     Args:
-        log_of_total_assets (float | pd.Series | pd.DataFrame): The (simplified) Log of Total Assets (SIZE).
+        log_of_total_assets (float | pd.Series | pd.DataFrame): The Log of Total Assets (SIZE).
         total_liabilities_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Total Liabilities
         to Total Assets Ratio (TLTA).
         working_capital_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Working Capital to
@@ -360,11 +365,9 @@ def get_ohlson_o_score(
       far below the naive 0.50 midpoint because bankruptcy is a rare event. In raw O-Score terms that
       corresponds to ln(0.038 / 0.962), i.e. approximately -3.23. As with the Altman Z-Score, thresholds
       should be interpreted with caution and alongside further fundamental analysis.
-    - The GNP price-level deflator used in the original SIZE term and the Funds from Operations line item
-      used in the original FUTL term are both simplified/approximated in this implementation, see
-      `get_log_of_total_assets` and `get_funds_from_operations_to_total_liabilities_ratio` for details.
-      This means the absolute O-Score (and derived probability) will not be an exact reproduction of
-      Ohlson (1980), while the relative ranking of companies is preserved.
+    - The Funds from Operations line item of the original FUTL term is approximated with the Operating
+      Cash Flow, see `get_funds_from_operations_to_total_liabilities_ratio`, so the absolute O-Score
+      (and derived probability) is close to, but not an exact reproduction of, Ohlson (1980).
 
     References:
     - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
@@ -411,11 +414,9 @@ def get_ohlson_bankruptcy_probability(
         and 1.
 
     Notes:
-    - Because this implementation simplifies/omits the GNP price-level deflator (see
-      `get_log_of_total_assets`) and approximates Funds from Operations with Operating Cash Flow (see
+    - Because this implementation approximates Funds from Operations with Operating Cash Flow (see
       `get_funds_from_operations_to_total_liabilities_ratio`), the absolute probability produced here
-      will differ somewhat from a probability computed with Ohlson's (1980) exact original inputs. The
-      *ranking* of companies by this probability is unaffected by the deflator simplification.
+      will differ somewhat from a probability computed with Ohlson's (1980) exact original inputs.
 
     References:
     - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of

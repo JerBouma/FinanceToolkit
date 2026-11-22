@@ -6,22 +6,19 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
 
 @filter_shown_columns
 @track_sources
-class DrawdownRisk(RiskBase):
+class DrawdownRisk:
     """
-    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series and table, the conditional drawdown at risk and the ulcer index.
+    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series and table, the conditional drawdown at risk, the ulcer index and the pain index.
     """
 
     @handle_portfolio
@@ -110,11 +107,11 @@ class DrawdownRisk(RiskBase):
 
         |      |   ^STOXX50E |   ^N225 |   ^GSPC |   Benchmark |
         |:-----|------------:|--------:|--------:|------------:|
-        | 2021 |     -0.0628 | -0.1001 | -0.042  |     -0.0413 |
-        | 2022 |     -0.24   | -0.1312 | -0.2422 |     -0.2344 |
-        | 2023 |     -0.0912 | -0.0813 | -0.0834 |     -0.0807 |
-        | 2024 |     -0.0818 | -0.1612 | -0.0574 |     -0.0565 |
-        | 2025 |     -0.123  | -0.1603 | -0.1469 |     -0.1457 |
+        | 2021 |     -0.0629 | -0.1002 | -0.0421 |     -0.0414 |
+        | 2022 |     -0.2395 | -0.131  | -0.2429 |     -0.2341 |
+        | 2023 |     -0.091  | -0.0816 | -0.0833 |     -0.0805 |
+        | 2024 |     -0.0826 | -0.1616 | -0.0585 |     -0.0576 |
+        | 2025 |     -0.1185 | -0.1602 | -0.1445 |     -0.1432 |
         """
         period = period if period else "daily"
 
@@ -917,11 +914,11 @@ class DrawdownRisk(RiskBase):
 
         |      |     BA |   AIR.PA |   Benchmark |
         |:-----|-------:|---------:|------------:|
-        | 2021 | 0.0555 |   0.0408 |      0.0129 |
-        | 2022 | 0.0901 |   0.0606 |      0.0477 |
-        | 2023 | 0.0433 |   0.0288 |      0.0194 |
-        | 2024 | 0.0686 |   0.0423 |      0.0162 |
-        | 2025 | 0.0635 |   0.0499 |      0.0267 |
+        | 2021 | 0.0564 |   0.041  |      0.0131 |
+        | 2022 | 0.0917 |   0.0606 |      0.0481 |
+        | 2023 | 0.0442 |   0.0289 |      0.0198 |
+        | 2024 | 0.0696 |   0.0426 |      0.0164 |
+        | 2025 | 0.0642 |   0.0503 |      0.027  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -940,6 +937,128 @@ class DrawdownRisk(RiskBase):
 
         return finalize_dataset(
             dataset=ulcer_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_pain_index(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        The Pain Index, developed by Zephyr Associates and described by Bacon (2013), measures the
+        downside risk of an investment portfolio or asset as the average depth of its drawdowns over
+        every day of a period, the days at a new high counting as a drawdown of 0.
+
+        Like the Ulcer Index it grows with both the depth and the duration of the drawdowns, so an asset
+        that falls 10% and stays there for months scores worse than one that drops 10% and recovers
+        within a week. Where the Ulcer Index takes the root mean square of the drawdowns, which makes the
+        deepest ones dominate, the Pain Index takes their plain average: the area under water divided by
+        the number of days. It is the risk measure behind the Pain Ratio (excess return divided by the Pain
+        Index, see `toolkit.performance.get_pain_ratio`).
+
+        The formula is as follows:
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t
+        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - Pain Index = Σ |Drawdown(t)| / n
+
+        Where Wealth(t) compounds the daily returns within each period from a starting value of 1, so a
+        loss on the first day of the period is a drawdown as well, the drawdowns are measured from the
+        highest wealth since the start of the period and n is the number of daily returns in the period.
+        The result is a positive decimal (0.05 is an average drawdown of 5%). Each ticker is measured over
+        its own trading days, and the days before its first or after its last return (a later listing,
+        a delisting) are no observations of it.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley & Sons,
+        chapter 5 (the Pain Index of Zephyr Associates).
+        - PerformanceAnalytics (R), `PainIndex`.
+
+        Also known as: average drawdown, mean drawdown.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Pain Index values over time. Defaults
+                to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Pain Index values with the periods as index and the tickers as columns.
+
+        Notes:
+        - The method retrieves the daily returns within each `period` and calculates the Pain Index for each
+        asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the Pain Index values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["BA", "AIR.PA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_pain_index()
+        ```
+
+        Which returns:
+
+        |      |     BA |   AIR.PA |   Benchmark |
+        |:-----|-------:|---------:|------------:|
+        | 2021 | 0.1321 |   0.0404 |      0.009  |
+        | 2022 | 0.2629 |   0.1135 |      0.139  |
+        | 2023 | 0.0702 |   0.031  |      0.0223 |
+        | 2024 | 0.3182 |   0.1191 |      0.0113 |
+        | 2025 | 0.0715 |   0.0447 |      0.0278 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "daily" and self._historical_data["intraday"].empty:
+            raise ValueError("Intraday data is required for daily calculations.")
+
+        returns = self._within_historical_data[period]["Return"]
+
+        pain_index = risk_model.get_pain_index(returns)
+
+        pain_index = pain_index.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=pain_index,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

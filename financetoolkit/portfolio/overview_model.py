@@ -3,6 +3,10 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.portfolio.helpers import (
+    divide_by_capital,
+    get_trading_day_locations,
+)
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
@@ -13,29 +17,6 @@ logger = logger_model.get_logger()
 TRADING_DAYS_PER_YEAR = 252
 # Units left to sell below this are floating point residue of the volumes, not an oversold position.
 OVERSOLD_TOLERANCE = 1e-9
-
-
-def _safe_divide(
-    numerator: pd.Series | pd.DataFrame, denominator: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Divide two objects, returning NaN wherever the denominator is zero or negative.
-
-    A return is only defined against capital that was actually deployed. Dividing by a
-    zero or negative denominator produces an infinite or sign-flipped number that reads
-    as a real result, so those cases are reported as missing instead.
-
-    Args:
-        numerator (pd.Series | pd.DataFrame): The numerator of the division.
-        denominator (pd.Series | pd.DataFrame): The denominator of the division.
-
-    Returns:
-        pd.Series | pd.DataFrame: The element-wise division with non-positive
-            denominators replaced by NaN.
-    """
-    result = numerator / denominator.where(denominator > 0)
-
-    return drop_non_finite(result)
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -86,7 +67,9 @@ def create_transactions_overview(
 
             The DataFrame is indexed by the asset tickers from the `portfolio_volume` index.
             Missing or invalid values are replaced with 0.0. Sell transactions have no current
-            value, dividends or return, since their result is the realized PnL instead.
+            value, dividends or return, since their result is the realized PnL instead. Units bought
+            of an asset without a latest price are worth an unknown amount, not nothing, so their
+            "Current Value", "% Return" and "Return" are NaN.
     """
     dividends_per_unit = _per_transaction(dividends, len(portfolio_volume))
 
@@ -133,10 +116,12 @@ def create_transactions_overview(
         index=["Invested Amount", "Current Value", "Dividends", "% Return", "Return"],
     ).T
 
-    zero_cost_buys = (portfolio_volume > 0).to_numpy() & (
-        new_columns["Invested Amount"] <= 0
-    ).to_numpy()
+    buys = (portfolio_volume > 0).to_numpy()
+    zero_cost_buys = buys & (new_columns["Invested Amount"] <= 0).to_numpy()
+    # Units bought without a latest price are worth an unknown amount, not nothing, so their value and return stay NaN.  # noqa: E501
+    unpriced_buys = buys & new_columns["Current Value"].isna().to_numpy()
     new_columns = new_columns.fillna(0.0)
+    new_columns.loc[unpriced_buys, ["Current Value", "% Return", "Return"]] = np.nan
     new_columns.loc[zero_cost_buys, "% Return"] = np.nan
 
     return new_columns
@@ -266,6 +251,39 @@ def _calculate_portfolio_volatility(
     return float(sum(fallback_volatilities * weights))
 
 
+def is_open_position(volume: pd.Series, largest_volume: pd.Series) -> pd.Series:
+    """
+    Determine which positions are still open, long or short, from their net volume.
+
+    A position whose sales add up to its purchases is closed, but the sum of fractional volumes
+    rarely lands on exactly zero: 1.1 + 2.2 - 3.3 leaves 4.4e-16 units. Such a remainder is
+    floating point residue that grows with the volumes traded, so a position counts as open
+    only when its net volume exceeds `OVERSOLD_TOLERANCE` times the largest volume traded in
+    the asset (at least one unit), the scale the profit and loss overview uses for the same
+    residue. A negative net volume beyond that is a short position, which is open as well.
+
+    Args:
+        volume (pd.Series): The net volume of every position, indexed by identifier or by
+            period and identifier, with the identifier as the last index level.
+        largest_volume (pd.Series): The largest absolute volume of a single transaction in
+            every identifier, indexed by identifier.
+
+    Returns:
+        pd.Series: True for every open position, aligned with `volume`.
+    """
+    scale = np.maximum(
+        1.0,
+        largest_volume.reindex(volume.index.get_level_values(-1))
+        .fillna(0.0)
+        .to_numpy(dtype=float),
+    )
+
+    return pd.Series(
+        volume.abs().to_numpy(dtype=float) > OVERSOLD_TOLERANCE * scale,
+        index=volume.index,
+    )
+
+
 def create_portfolio_overview(
     portfolio_name: pd.Series,
     portfolio_volume: pd.Series,
@@ -389,6 +407,12 @@ def create_portfolio_overview(
           Finance, 7(1), 77-91.). This is used whenever `asset_returns` is supplied.
         - The portfolio row's "Volume", "Price" and "Latest Price" sum or average units of different
           assets and therefore carry no economic meaning; they are reported only for completeness.
+        - Units held of an asset without a latest price, such as a ticker without data, are worth an
+          unknown amount rather than nothing. The value of the whole portfolio is then unknown, so every
+          "Weight" and the "Portfolio" row's "Latest Price", "Latest Value", "Return", "Return Value",
+          "Alpha", "Volatility", "Beta" and "Weight" are NaN, while the sums of known amounts
+          ("Volume", "Costs", "Invested", "Dividends") and the "Benchmark Return" remain. A closed
+          position is worth nothing, priced or not.
 
     References:
         Markowitz, H. (1952). Portfolio Selection. The Journal of Finance, 7(1), 77-91.
@@ -448,7 +472,7 @@ def create_portfolio_overview(
         2,
         "Price",
         # The volume-weighted price actually paid for the units that were bought.
-        _safe_divide(
+        divide_by_capital(
             portfolio_overview_grouped["Buy Value"],
             portfolio_overview_grouped["Buy Volume"],
         ),
@@ -457,9 +481,18 @@ def create_portfolio_overview(
     portfolio_overview_grouped["Latest Price"] = latest_returns.reindex(
         portfolio_overview_grouped.index
     )
+    # Only the open positions count, long or short: a sold position has no beta over the window and a weight of zero, also when float residue of its volumes leaves a sliver of a unit.  # noqa: E501
+    held = is_open_position(
+        portfolio_overview_grouped["Volume"],
+        portfolio_volume.abs().groupby(level="Identifier", observed=True).max(),
+    )
+    # Units held without a price are worth an unknown amount, not nothing; a closed position is worth nothing, priced or not.  # noqa: E501
     portfolio_overview_grouped["Latest Value"] = (
         portfolio_overview_grouped["Volume"]
         * portfolio_overview_grouped["Latest Price"]
+    ).where(held | portfolio_overview_grouped["Latest Price"].notna(), 0.0)
+    unpriced_holding = bool(
+        (held & portfolio_overview_grouped["Latest Value"].isna()).any()
     )
 
     benchmark_latest_value = (
@@ -473,11 +506,11 @@ def create_portfolio_overview(
         + portfolio_overview_grouped["Dividends"]
         - portfolio_overview_grouped["Invested"]
     )
-    portfolio_overview_grouped["Return"] = _safe_divide(
+    portfolio_overview_grouped["Return"] = divide_by_capital(
         portfolio_overview_grouped["Return Value"],
         portfolio_overview_grouped["Invested"],
     )
-    portfolio_overview_grouped["Benchmark Return"] = _safe_divide(
+    portfolio_overview_grouped["Benchmark Return"] = divide_by_capital(
         benchmark_latest_value
         + portfolio_overview_grouped["Proceeds"]
         - portfolio_overview_grouped["Invested"],
@@ -493,9 +526,12 @@ def create_portfolio_overview(
     )
 
     portfolio_overview_grouped["Beta"] = betas
+    # The value of the whole portfolio is unknown as long as one of its holdings has no price, and so is the share of every position in it.  # noqa: E501
+    total_latest_value = (
+        np.nan if unpriced_holding else portfolio_overview_grouped["Latest Value"].sum()
+    )
     portfolio_overview_grouped["Weight"] = (
-        portfolio_overview_grouped["Latest Value"]
-        / portfolio_overview_grouped["Latest Value"].sum()
+        portfolio_overview_grouped["Latest Value"] / total_latest_value
     )
 
     if include_portfolio:
@@ -507,17 +543,21 @@ def create_portfolio_overview(
         costs = totals["Costs"]
         proceeds = totals["Proceeds"]
         invested = totals["Invested"]
-        latest_value = totals["Latest Value"]
+        latest_value = total_latest_value
         dividends_received = totals["Dividends"]
         benchmark_latest_value_sum = benchmark_latest_value.sum()
 
-        portfolio_volatility = _calculate_portfolio_volatility(
-            weights=portfolio_overview_grouped["Weight"],
-            fallback_volatilities=portfolio_overview_grouped["Volatility"],
-            asset_returns=asset_returns,
+        # Without the weights of the holdings neither the volatility nor the beta of the portfolio can be combined from those of its assets.  # noqa: E501
+        portfolio_volatility = (
+            np.nan
+            if unpriced_holding
+            else _calculate_portfolio_volatility(
+                weights=portfolio_overview_grouped["Weight"],
+                fallback_volatilities=portfolio_overview_grouped["Volatility"],
+                asset_returns=asset_returns,
+            )
         )
-        # Only the positions still held count: a sold position has no beta over the window, but with a weight of zero it does not change the portfolio's beta either.  # noqa: E501
-        held = portfolio_overview_grouped["Weight"] != 0
+        # A sold position's missing beta would otherwise turn the portfolio's beta into NaN.
         portfolio_beta = (
             (
                 portfolio_overview_grouped.loc[held, "Beta"]
@@ -559,7 +599,11 @@ def create_portfolio_overview(
             "Benchmark Volatility": benchmark_volatility,
             "Alpha": np.nan,
             "Beta": portfolio_beta,
-            "Weight": portfolio_overview_grouped["Weight"].sum(),
+            "Weight": (
+                np.nan
+                if unpriced_holding
+                else portfolio_overview_grouped["Weight"].sum()
+            ),
         }
 
         portfolio_summary["Alpha"] = (
@@ -816,16 +860,17 @@ def create_transactions_performance(
             "Buy Value": "sum",
             "Buy Costs": "sum",
             "Realized Proceeds": "sum",
-            "Current Value": lambda values: values.sum(min_count=1),
+            # One purchase without a price leaves the value of the period's purchases unknown, not smaller.
+            "Current Value": lambda values: values.sum(skipna=False),
             "Dividends": "sum",
-            "Benchmark Value": lambda values: values.sum(min_count=1),
+            "Benchmark Value": lambda values: values.sum(skipna=False),
         }
     )
 
     period_performance_grouped.insert(
         1,
         price_column,
-        _safe_divide(
+        divide_by_capital(
             period_performance_grouped["Buy Value"],
             period_performance_grouped["Buy Volume"],
         ),
@@ -839,14 +884,14 @@ def create_transactions_performance(
     # A period in which nothing was bought deployed no capital, so there is no return to report on it.
     bought_in_period = period_performance_grouped["Buy Value"] > 0
 
-    period_performance_grouped["Return"] = _safe_divide(
+    period_performance_grouped["Return"] = divide_by_capital(
         period_performance_grouped["Current Value"]
         + period_performance_grouped["Dividends"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
     ).where(bought_in_period)
 
-    period_performance_grouped["Benchmark Return"] = _safe_divide(
+    period_performance_grouped["Benchmark Return"] = divide_by_capital(
         period_performance_grouped["Benchmark Value"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
@@ -921,8 +966,9 @@ def create_positions_overview(
               of the portfolio.
 
     Notes:
-        - Transactions dated on a day without a price, such as a weekend or an exchange holiday, are
-          carried forward to the first following date that does have a price. Aligning them on the
+        - Transactions dated on a day their asset did not trade, such as a weekend or an exchange
+          holiday, are carried forward to the first following date the asset traded on, also when
+          another asset (such as a cryptocurrency) has a price on that day. Aligning them on the
           date itself would drop the transaction from every position metric without any warning.
           A transaction after the last date with a price, such as one of today before today's close
           is available, is placed on that last date, the date of the closing price it is priced at.
@@ -936,7 +982,8 @@ def create_positions_overview(
         - "Cumulative Return" is NaN before the first purchase, since a return against zero deployed
           capital is undefined. Every other column is zero before the first purchase.
         - The weights are normalized based on the total invested amount and current value across all
-          positions in the portfolio.
+          positions in the portfolio. On a date a held position has no price the current value of the
+          portfolio is unknown, so the "Current Weight" of every position is NaN on that date.
     """
     transaction_volume = portfolio_dataset[volume_column]
     transaction_value = transaction_volume * portfolio_dataset[price_column]
@@ -951,11 +998,13 @@ def create_positions_overview(
         transaction_volume < 0, 0.0
     )
 
-    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date that does exist. One after the last date lands on the last date, the close it is priced at.  # noqa: E501
+    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date its ticker traded on: a date only another ticker traded (a Saturday next to a cryptocurrency) holds the ticker's carried-forward close, not the close it is priced at. One after the last date lands on the last date, the close it is priced at.  # noqa: E501
     price_dates = pd.Index(period_dates).unique().sort_values()
-    transaction_dates = transactions.index.get_level_values(0)
-    date_locations = price_dates.get_indexer(transaction_dates, method="bfill")
-    date_locations[date_locations == -1] = len(price_dates) - 1
+    date_locations = get_trading_day_locations(
+        historical_prices.reindex(price_dates),
+        transactions.index.get_level_values(0),
+        portfolio_dataset.index.get_level_values(1),
+    )
 
     transactions.index = pd.MultiIndex.from_arrays(
         [
@@ -1007,7 +1056,7 @@ def create_positions_overview(
     positions["Current Value"] = (positions["Volume"] * closing_prices).where(
         positions["Volume"] != 0, 0.0
     )
-    positions["Cumulative Return"] = _safe_divide(
+    positions["Cumulative Return"] = divide_by_capital(
         positions["Current Value"]
         + positions["Realized Proceeds"]
         + positions["Dividends"]
@@ -1017,8 +1066,10 @@ def create_positions_overview(
     positions["Invested Weight"] = positions["Invested Amount"].div(
         positions["Invested Amount"].sum(axis=1), axis=0
     )
+    # On a date a holding has no price the value of the portfolio is unknown, and so is the weight of every position.  # noqa: E501
+    total_current_value = positions["Current Value"].sum(axis=1, skipna=False)
     positions["Current Weight"] = positions["Current Value"].div(
-        positions["Current Value"].sum(axis=1), axis=0
+        total_current_value, axis=0
     )
 
     positions_df = drop_non_finite(pd.concat(positions, axis=1))
@@ -1028,6 +1079,7 @@ def create_positions_overview(
         ["Cumulative Return", "Current Value"]
     )
     positions_df.loc[:, other_columns] = positions_df.loc[:, other_columns].fillna(0.0)
+    positions_df.loc[total_current_value.isna(), "Current Weight"] = np.nan
 
     return positions_df
 
@@ -1077,8 +1129,9 @@ def create_portfolio_performance(
           observation of each period.
         - The function aggregates data at the specified frequency using the `.asfreq()` method.
         - The Return is NaN in a period without capital invested, and the Current Value and
-          Return are NaN for units held before their ticker has a price. Other missing values
-          are zero.
+          Return are NaN for units held before their ticker has a price. The Current Weight of
+          every position is NaN in a period in which a held position has no price, since the value
+          of the portfolio is then unknown. Other missing values are zero.
     """
     positions_dataset_stacked = positions_dataset.stack()
     positions_dataset_stacked.index.names = [date_column, ticker_column]
@@ -1113,7 +1166,7 @@ def create_portfolio_performance(
         else 0.0
     )
 
-    positions_dataset_grouped["Return"] = _safe_divide(
+    positions_dataset_grouped["Return"] = divide_by_capital(
         positions_dataset_grouped["Current Value"]
         + positions_dataset_grouped["Realized Proceeds"]
         + dividends_received
@@ -1122,7 +1175,9 @@ def create_portfolio_performance(
     )
 
     # The return is NaN without capital invested or without a price for the units held, and so is the value of those units.  # noqa: E501
-    other_columns = ~positions_dataset_grouped.columns.isin(["Return", "Current Value"])
+    other_columns = ~positions_dataset_grouped.columns.isin(
+        ["Return", "Current Value", "Current Weight"]
+    )
     positions_dataset_grouped.loc[:, other_columns] = positions_dataset_grouped.loc[
         :, other_columns
     ].fillna(0.0)

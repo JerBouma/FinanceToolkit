@@ -1,10 +1,11 @@
 """Portfolio Controller Tests""" ""
 import warnings
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit import Portfolio, Toolkit
+from financetoolkit import Portfolio, Toolkit, historical_model
 
 historical = pd.read_pickle("tests/datasets/portfolio_historical_dataset.pickle")
 benchmark = pd.read_pickle("tests/datasets/portfolio_benchmark_dataset.pickle")
@@ -322,11 +323,38 @@ def test_the_portfolio_overview_adds_up_with_dividends():
     assert (overview["Return Value"] >= return_value - 1e-6).all()
 
 
-def _self_benchmarked_portfolio(monkeypatch, transactions):
+def _with_a_cryptocurrency(holdings):
+    """
+    The holdings next to "BTC", a ticker trading every calendar day, as the historical data
+    holds them: the stocks keep their last close on the weekends, without a return.
+    """
+    days = pd.period_range(holdings.index[0], holdings.index[-1], freq="D")
+    cryptocurrency = (
+        holdings.xs("AAPL", level=1, axis=1)
+        .reindex(days)
+        .interpolate()
+        .assign(Dividends=0.0)
+    )
+    cryptocurrency["Return"] = cryptocurrency["Adj Close"].pct_change()
+    cryptocurrency.columns = pd.MultiIndex.from_product(
+        [cryptocurrency.columns, ["BTC"]]
+    )
+    combined = pd.concat([holdings.reindex(days), cryptocurrency], axis=1)
+    stock_weekends = combined["Return"].isna() & combined["Close"].ffill().notna()
+    combined = historical_model.fill_non_trading_days(combined)
+    # A carried-forward bar pays no dividend again.
+    combined["Dividends"] = combined["Dividends"].mask(stock_weekends, 0.0).to_numpy()
+
+    return combined
+
+
+def _self_benchmarked_portfolio(monkeypatch, transactions, cryptocurrency=False):
     """A portfolio of transactions whose benchmark is AAPL for every ticker."""
     prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
     # The dataset's own benchmark column is left out, so it does not pose as a holding.
     holdings = prices.drop(columns="Benchmark", level=1)
+    if cryptocurrency:
+        holdings = _with_a_cryptocurrency(holdings)
 
     def price_toolkit(self, tickers, start_date):  # noqa: ARG001
         self._toolkit = Toolkit(
@@ -503,6 +531,32 @@ def test_a_portfolio_of_one_ticker(monkeypatch):
     money_weighted = single.get_money_weighted_return()
     assert {"AAPL", "Portfolio"} <= set(money_weighted.index)
     assert money_weighted["Money-Weighted Return"].notna().all()
+
+
+def test_a_portfolio_of_one_ticker_reads_its_statistics_as_a_series(monkeypatch):
+    # A Toolkit of one ticker returns its historical statistics as a Series, not a table.
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01"],
+            "Ticker": ["AAPL", "AAPL"],
+            "Volume": [10, 5],
+            "Costs": [0, 0],
+        }
+    )
+    single, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.Series(
+            {"Currency": "USD", "Exchange Name": "NMS"}, name="AAPL"
+        ),
+    )
+
+    positions = single.get_positions_overview()
+
+    assert positions[("Volume", "AAPL")].iloc[-1] == pytest.approx(15.0)
+    assert single._historical_statistics.loc["Currency", "AAPL"] == "USD"
+    assert set(single._portfolio_dataset["Currency"]) == {"USD"}
 
 
 class _EmptyToolkit:
@@ -846,3 +900,256 @@ def test_a_transaction_without_a_currency_keeps_its_price(monkeypatch, caplog):
     assert dataset.loc["NOVO", "Costs"] == pytest.approx(-1.0)
     assert dataset.loc["MSFT", "Price"] == pytest.approx(125.0)
     assert "NOVO" in caplog.text
+
+
+def test_a_weekend_transaction_belongs_to_the_period_of_its_trading_day(monkeypatch):
+    # Saturday 2021-07-31 is priced at the close of Monday 2021-08-02, so it is an August purchase, valued at the August close and receiving the AAPL dividend of 2021-08-06.  # noqa: E501
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-07-31", "2021-06-01"],
+            "Ticker": ["AAPL", "MSFT"],
+            "Volume": [10, 5],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    weekend, prices = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    performance = weekend.get_transactions_performance(period="monthly", rounding=12)
+
+    close = prices[("Close", "AAPL")]
+    close.index = close.index.to_timestamp()
+    dividends = prices[("Dividends", "AAPL")]
+    dividends.index = dividends.index.to_timestamp()
+    aapl = performance.xs("AAPL", level=1)
+    assert aapl.index.tolist() == [pd.Period("2021-08", freq="M")]
+    august = aapl.iloc[0]
+    assert august["Price"] == pytest.approx(float(close.loc["2021-08-02"]))
+    assert august["Current Value"] == pytest.approx(10 * float(close.loc["2021-08-31"]))
+    assert august["Dividends"] == pytest.approx(
+        10 * float(dividends.loc["2021-08-03":"2021-08-31"].sum())
+    )
+    assert august["Dividends"] > 0
+
+
+def test_the_money_weighted_return_values_a_price_below_the_rounding(monkeypatch):
+    # A token priced at 0.00002 rounds to 0 at four decimals, which would value the position at nothing.  # noqa: E501
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    holdings = prices.drop(columns="Benchmark", level=1).copy()
+    for column in ["Open", "High", "Low", "Close", "Adj Close", "Dividends"]:
+        if (column, "MSFT") in holdings.columns:
+            holdings[(column, "MSFT")] = holdings[(column, "MSFT")] / 1e7
+
+    def price_toolkit(self, tickers, start_date):  # noqa: ARG001
+        self._toolkit = Toolkit(
+            tickers=tickers,
+            historical=holdings,
+            benchmark_ticker=None,
+            start_date="2019-12-31",
+            sleep_timer=False,
+            rounding=None,
+        )
+        return self._toolkit
+
+    monkeypatch.setattr(Portfolio, "_price_toolkit", price_toolkit)
+    monkeypatch.setattr(Portfolio, "_ticker_currencies", lambda self, toolkit: {})
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+    tiny = Portfolio(
+        transactions=pd.DataFrame(
+            {
+                "Date": ["2021-01-11"],
+                "Ticker": ["MSFT"],
+                "Volume": [1e9],
+                "Costs": [0.0],
+            }
+        )
+    )
+    tiny._benchmark_tickers = dict.fromkeys(tiny._original_tickers, "AAPL")
+    tiny._benchmark_toolkit = Toolkit(
+        tickers=["AAPL"],
+        historical=prices.xs("AAPL", level=1, axis=1, drop_level=False),
+        benchmark_ticker=None,
+        start_date="2019-12-31",
+        sleep_timer=False,
+    )
+
+    result = tiny.get_money_weighted_return(rounding=12)
+
+    latest_close = float(holdings[("Close", "MSFT")].iloc[-1])
+    assert latest_close < 5e-5
+    assert result.loc["MSFT", "Latest Value"] == pytest.approx(1e9 * latest_close)
+    # Bought at 0.000021749 and worth 0.000023982 two years later, with dividends: a gain.
+    assert result.loc["MSFT", "Money-Weighted Return"] > 0.05
+
+
+def test_sold_positions_leave_the_overview_and_short_positions_stay(monkeypatch):
+    # 1.1 + 2.2 - 3.3 leaves 4.4e-16 AAPL units; MSFT is sold short.
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-02-01", "2021-03-01", "2021-01-11"],
+            "Ticker": ["AAPL", "AAPL", "AAPL", "MSFT"],
+            "Volume": [1.1, 2.2, -3.3, -5.0],
+            "Costs": [0.0, 0.0, 0.0, 0.0],
+        }
+    )
+    traded, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    overview = traded.get_portfolio_overview(rounding=12)
+    performance = traded.get_portfolio_performance(period="yearly", rounding=12)
+
+    assert overview.index.tolist() == ["MSFT", "Portfolio"]
+    assert overview.loc["MSFT", "Volume"] == -5.0
+    assert performance.index.get_level_values(1).unique().tolist() == ["MSFT"]
+    every_position = traded.get_portfolio_overview(
+        rounding=12, exclude_sold_positions=False
+    )
+    assert every_position.index.tolist() == ["AAPL", "MSFT", "Portfolio"]
+
+
+def test_a_weekend_cash_flow_is_dated_on_its_trading_day(monkeypatch):
+    # Saturday 2021-07-31 is bought at Monday 2021-08-02's close, so it flows on that Monday.
+    def money_weighted(date):
+        trades = pd.DataFrame(
+            {
+                "Date": [date, "2021-06-01"],
+                "Ticker": ["AAPL", "MSFT"],
+                "Volume": [10, 5],
+                "Costs": [0.0, 0.0],
+            }
+        )
+        portfolio, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+        return portfolio.get_money_weighted_return(rounding=12)
+
+    saturday = money_weighted("2021-07-31")
+    monday = money_weighted("2021-08-02")
+
+    assert saturday.loc["Portfolio"].tolist() == pytest.approx(
+        monday.loc["Portfolio"].tolist()
+    )
+
+
+def test_a_portfolio_without_transactions_says_so(monkeypatch):
+    with pytest.raises(ValueError, match="no transactions"):
+        _self_benchmarked_portfolio(
+            monkeypatch,
+            pd.DataFrame(columns=["Date", "Ticker", "Volume", "Costs"]),
+        )
+
+
+@pytest.mark.parametrize("other", ["MSFT", "BTC"])
+@pytest.mark.parametrize("date", ["2021-01-30", "2021-02-01"])
+def test_a_weekend_transaction_next_to_a_cryptocurrency_waits_for_its_own_trading_day(
+    monkeypatch, other, date
+):
+    # Saturday 2021-01-30 is bought at the close of Monday 2021-02-01 and is a February purchase, also when a cryptocurrency in the portfolio traded that Saturday and the data holds AAPL's Friday close on it.  # noqa: E501
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-04", date],
+            "Ticker": [other, "AAPL"],
+            "Volume": [1, 10],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    weekend, prices = _self_benchmarked_portfolio(
+        monkeypatch, trades, cryptocurrency=other == "BTC"
+    )
+    monday_close = float(prices[("Close", "AAPL")].loc["2021-02-01"])
+    assert monday_close != pytest.approx(
+        float(prices[("Close", "AAPL")].loc["2021-01-29"])
+    )
+
+    assert weekend.get_portfolio_overview(rounding=12).loc[
+        "AAPL", "Price"
+    ] == pytest.approx(monday_close)
+    performance = weekend.get_transactions_performance(period="monthly", rounding=12)
+    assert performance.xs("AAPL", level=1).index[0] == pd.Period("2021-02", freq="M")
+
+    # The position starts on Monday as well, so the Saturday shows no loss against the Friday close carried forward.  # noqa: E501
+    positions = weekend.get_positions_overview(rounding=12)
+    assert positions.loc[:"2021-01-31", ("Volume", "AAPL")].iloc[-1] == pytest.approx(
+        0.0
+    )
+    assert positions.loc["2021-02-01", ("Volume", "AAPL")] == pytest.approx(10.0)
+    assert positions.loc["2021-02-01", ("Cumulative Return", "AAPL")] == pytest.approx(
+        0.0, abs=1e-12
+    )
+
+
+def test_a_weekend_cash_flow_next_to_a_cryptocurrency_is_dated_on_its_trading_day(
+    monkeypatch,
+):
+    def money_weighted(date):
+        trades = pd.DataFrame(
+            {
+                "Date": ["2021-01-04", date],
+                "Ticker": ["BTC", "AAPL"],
+                "Volume": [1, 10],
+                "Costs": [0.0, 0.0],
+            }
+        )
+        portfolio, _ = _self_benchmarked_portfolio(
+            monkeypatch, trades, cryptocurrency=True
+        )
+        return portfolio.get_money_weighted_return(rounding=12)
+
+    saturday = money_weighted("2021-01-30")
+    monday = money_weighted("2021-02-01")
+
+    numeric = ["Invested", "Latest Value", "Money-Weighted Return"]
+    pd.testing.assert_frame_equal(saturday[numeric], monday[numeric])
+
+
+def test_the_weekly_data_converts_each_day_at_its_own_rate(monkeypatch):
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    # A rate that changes every day, so a week's first day and last day differ.
+    pounds_per_dollar = pd.DataFrame(
+        {"USDGBP=X": np.linspace(0.7, 0.9, len(prices))}, index=prices.index
+    )
+    monkeypatch.setattr(Portfolio, "_price_toolkit", _offline_price_toolkit)
+    monkeypatch.setattr(
+        Portfolio,
+        "_ticker_currencies",
+        lambda self, toolkit: {"AAPL": "USD", "MSFT": "GBp"},
+    )
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: pounds_per_dollar[sorted(rate_tickers)],
+    )
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+
+    weighted = Portfolio(weights="AAPL:0.5, MSFT:0.5", rebalancing="yearly")
+    weighted.collect_historical_data()
+    daily = weighted._daily_historical_data
+    weekly = weighted._weekly_historical_data
+
+    weeks = pd.PeriodIndex(daily.index, freq="W")
+    for column, aggregation in (
+        ("Open", "first"),
+        ("High", "max"),
+        ("Low", "min"),
+        ("Close", "last"),
+        ("Dividends", "sum"),
+    ):
+        expected = daily[(column, "MSFT")].groupby(weeks).agg(aggregation)
+        pd.testing.assert_series_equal(
+            weekly[(column, "MSFT")],
+            expected.reindex(weekly.index),
+            check_names=False,
+            check_freq=False,
+        )
+    # The Open of a week is converted at the rate of its first day, not its last.
+    week = weekly.index[10]
+    first_day = daily.index[weeks == week][0]
+    assert float(weekly.loc[week, ("Open", "MSFT")]) == pytest.approx(
+        float(prices.loc[first_day.to_timestamp(), ("Open", "MSFT")])
+        / 100
+        / float(pounds_per_dollar.loc[first_day.to_timestamp(), "USDGBP=X"])
+    )

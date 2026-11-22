@@ -529,13 +529,17 @@ def get_level_significance(
     - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
     - Recovery Date = the first date after the trough with x >= the peak before it
     - First Above Level = the first date s with x(s) > level
+    - Above Level Since = the first date of the run of observations above the level that
+      the latest one belongs to
+    - Last Above Level = the last date s < T with x(s) > level
+    - Last At Or Below Level = the last date s < T with x(s) <= level
+    - Observations Above Level = Count(x(s) > level), over s <= T
+    - Observations At Or Below Level = Count(x(s) <= level), over s <= T
 
     With difference=True the changes are differences instead, in the unit of the series
     (percentage points for a rate): Change Since Start = x(T) - x(0), Change From Highest =
     x(T) - max(x), Change From Lowest = x(T) - min(x) and Largest Drawdown = min over t of
     (x(t) - max(x(s), s <= t)); the Multiple Since Start and Annualised Change are NaN.
-    - Above Level Since = the first date of the run of observations above the level that
-      the latest one belongs to
 
     Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
     an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
@@ -554,12 +558,16 @@ def get_level_significance(
     With a level, such as an
     earlier peak, the First Above Level is the first date the series exceeded it ("the first
     month above the 1980 high") and the Above Level Since the date it has been above it since
-    without a break, NaN when it never was or the latest value is not above it.
+    without a break, NaN when it never was or the latest value is not above it. The Last
+    Above Level and Last At Or Below Level are the last earlier dates on either side of it
+    ("the last week at or below 203,000"), NaN when no earlier observation was, and the
+    Observations Above Level and Observations At Or Below Level count the observations on
+    either side, the latest included, so they add up to the Observations.
 
     Args:
         levels (pd.Series): The values of a single series by date; missing values are left out.
         level (float | None, optional): A level to compare the series with. Defaults to None,
-            which leaves out the Level, First Above Level and Above Level Since.
+            which leaves out the Level and the rows that compare with it.
         difference (bool, optional): Whether the changes are differences (points) rather
             than relative changes, for rates and other series where a relative change has
             no meaning. Defaults to False.
@@ -570,7 +578,9 @@ def get_level_significance(
         Percentile, Rank, Highest Since, Lowest Since, Highest, Highest Date, Change From Highest (a
         decimal), Lowest, Lowest Date, Change From Lowest (a decimal), Largest Drawdown (a
         decimal), Drawdown Peak Date, Drawdown Trough Date and Recovery Date, and with a level
-        the Level, First Above Level and Above Level Since, the dates as text.
+        the Level, First Above Level, Above Level Since, Last Above Level, Last At Or Below
+        Level, Observations Above Level and Observations At Or Below Level, the dates as
+        text.
     """
     observed = levels.dropna()
 
@@ -635,6 +645,8 @@ def get_level_significance(
     if level is not None:
         above = np.flatnonzero(values > level)
         below = np.flatnonzero(values <= level)
+        earlier_above = np.flatnonzero(earlier > level)
+        earlier_below = np.flatnonzero(earlier <= level)
         above_level = {
             "Level": level,
             "First Above Level": labels[above[0]] if above.size else np.nan,
@@ -643,6 +655,15 @@ def get_level_significance(
                 if values[-1] > level
                 else np.nan
             ),
+            # The earlier observations only, so it is the last time before the latest one.
+            "Last Above Level": (
+                labels[earlier_above[-1]] if earlier_above.size else np.nan
+            ),
+            "Last At Or Below Level": (
+                labels[earlier_below[-1]] if earlier_below.size else np.nan
+            ),
+            "Observations Above Level": int(above.size),
+            "Observations At Or Below Level": int(below.size),
         }
 
     def change(start: float) -> float:
@@ -702,7 +723,7 @@ def get_window_change_by_year(
     than it starts (November to February) runs into the next year and is labelled by the
     year it ends; the same month for both is the change over twelve months. A year without
     the value of either month has no change, so the current year is empty until its last
-    month is published. Largest Since is NaN when no earlier year had a change as large,
+    month is published. Largest Since is <NA> when no earlier year had a change as large,
     which makes the change the largest of the history up to that year.
 
     Args:
@@ -716,7 +737,7 @@ def get_window_change_by_year(
 
     Returns:
         pd.DataFrame: Per year the Start Value, End Value, Change (decimal), Rank and
-        Largest Since.
+        Largest Since, the last two as whole numbers (Int64) that are <NA> when missing.
 
     Raises:
         ValueError: When a month is not between 1 and 12.
@@ -758,6 +779,11 @@ def get_window_change_by_year(
         for position, change in enumerate(changes)
     ]
     window.index.name = "Year"
+
+    # Whole numbers (a rank and a year), with <NA> for a year without a change or without
+    # an earlier change as large, rather than floats such as 2022.0.
+    window["Rank"] = window["Rank"].astype("Int64")
+    window["Largest Since"] = window["Largest Since"].astype("Int64")
 
     return window
 

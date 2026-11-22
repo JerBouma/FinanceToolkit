@@ -156,34 +156,48 @@ def get_treasury_rates(
     # 10-year default lookback goes from ~40 sequential requests to a few rounds.
     treasury_rates_list = helpers.run_in_parallel(fetch_window, windows)
 
-    treasury_rates = pd.concat(treasury_rates_list, axis=0)
+    def tidy_window(window_rates: pd.DataFrame) -> pd.DataFrame:
+        window_rates = window_rates.set_index("date")
+        window_rates.index = pd.PeriodIndex(
+            pd.to_datetime(window_rates.index), freq="D"
+        )
+        window_rates.index.name = "Date"
 
-    if "date" not in treasury_rates.columns:
-        return treasury_rates
+        window_rates = window_rates.rename(columns=NAMING)
 
-    treasury_rates = treasury_rates.set_index("date")
-    treasury_rates.index = pd.PeriodIndex(
-        pd.to_datetime(treasury_rates.index), freq="D"
-    )
-    treasury_rates.index.name = "Date"
+        return window_rates[
+            [column for column in NAMING.values() if column in window_rates.columns]
+        ]
+
+    # A window that failed (a rate limit, a timeout) answers with an error frame without a
+    # "date" column. Only the windows that answered are kept and cached, each with its own
+    # range: caching the whole span would mark the failed window as covered and, since a
+    # stored answer replaces the cached rows within its range, delete what the cache held there.  # noqa: E501
+    answered = [
+        (window, tidy_window(window_rates))
+        for window, window_rates in zip(windows, treasury_rates_list, strict=True)
+        if "date" in window_rates.columns
+    ]
+
+    if not answered:
+        return pd.concat(treasury_rates_list, axis=0)
+
+    if cache is not None:
+        for (window_start, window_end), window_rates in answered:
+            if not window_rates.empty:
+                cache.store(
+                    source=policy_model.FINANCIAL_MODELING_PREP,
+                    dataset="treasury_rates",
+                    entity="united_states",
+                    data=window_rates,
+                    start=window_start.strftime("%Y-%m-%d"),
+                    end=window_end.strftime("%Y-%m-%d"),
+                )
+
+    treasury_rates = pd.concat([window_rates for _, window_rates in answered], axis=0)
 
     treasury_rates = treasury_rates[~treasury_rates.index.duplicated(keep="first")]
     treasury_rates = treasury_rates.sort_index()
-
-    treasury_rates = treasury_rates.rename(columns=NAMING)
-    treasury_rates = treasury_rates[
-        [column for column in NAMING.values() if column in treasury_rates.columns]
-    ]
-
-    if cache is not None and not treasury_rates.empty:
-        cache.store(
-            source=policy_model.FINANCIAL_MODELING_PREP,
-            dataset="treasury_rates",
-            entity="united_states",
-            data=treasury_rates,
-            start=start_date_value.strftime("%Y-%m-%d"),
-            end=end_date_value.strftime("%Y-%m-%d"),
-        )
 
     if cached_rates is not None and not cached_rates.empty:
         treasury_rates = frame_model.merge_frames(cached_rates, treasury_rates)

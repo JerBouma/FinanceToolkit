@@ -28,6 +28,8 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of
     Stock Returns." Journal of Finance, 47(5), 1731-1764.
 
+    TA-Lib: SMA, the reference implementation (https://ta-lib.org/functions/sma.html).
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for the moving average.
@@ -62,15 +64,18 @@ def get_exponential_moving_average(
     standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
     Financial Markets." New York Institute of Finance.
 
+    TA-Lib: EMA, the reference implementation (https://ta-lib.org/functions/ema.html).
+
     Notes:
         - The recursion is seeded with the Simple Moving Average of the first `window`
           values, placed on the last of them, and the periods before it are missing. This
           is the convention of TA-Lib (`ta_EMA.c`) and StockCharts. Seeding with the first
           price instead gives every early value a weight on that single price that a
           `window`-period average does not have.
-        - A missing value inside the series leaves the average unchanged on that period
-          and the recursion continues from it on the next value, as with Wilder's
-          smoothing.
+        - A missing value has no average: the period is missing, and the recursion
+          continues from the last average on the next value, as with Wilder's smoothing.
+          A series that ends early, such as a delisted ticker's, therefore stops where
+          its prices stop instead of repeating its last average.
         - A DataFrame is smoothed per column, each column seeded on its own first
           `window` values, so tickers with a later first price get their own warm-up.
 
@@ -94,7 +99,7 @@ def get_exponential_moving_average(
         span=window, adjust=False, ignore_na=True
     ).mean()
 
-    return exponential_moving_average.where(has_seed)
+    return exponential_moving_average.where(has_seed & prices.notna())
 
 
 def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -116,6 +121,8 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
 
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Faster Moving Averages." Technical
     Analysis of Stocks & Commodities, 12(1).
+
+    TA-Lib: DEMA, the reference implementation (https://ta-lib.org/functions/dema.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -155,6 +162,8 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
     Technical Analysis of Stocks & Commodities, 1(5).
 
+    TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for Trix calculation.
@@ -192,6 +201,8 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
+
+    TA-Lib: TRIMA, the reference implementation (https://ta-lib.org/functions/trima.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -231,6 +242,8 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
+
+    TA-Lib: WMA, the reference implementation (https://ta-lib.org/functions/wma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -306,6 +319,8 @@ def get_kaufman_adaptive_moving_average(
 
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
 
+    TA-Lib: KAMA, the reference implementation (https://ta-lib.org/functions/kama.html).
+
     Notes:
         - The recursion is seeded with the closing price of the period before the first
           period where the Efficiency Ratio is defined, and the first KAMA value is one
@@ -379,7 +394,11 @@ def get_kaufman_adaptive_moving_average(
 
         averages[i] = previous_average
 
-    return pd.Series(averages, index=prices.index, dtype="float64")
+    # A period without a price has no average, while the recursion carries on from the
+    # last one, so a series that ends early stops instead of repeating its last value.
+    return pd.Series(averages, index=prices.index, dtype="float64").where(
+        prices.notna()
+    )
 
 
 def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -398,6 +417,8 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Also known as: HMA.
 
     Reference: Hull, A. (2005). "Hull Moving Average."
+
+    TA-Lib: HMA, the reference implementation (https://ta-lib.org/functions/hma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -441,6 +462,9 @@ def get_volume_weighted_average_price(
     Transactions on the NYSE." Journal of Finance, 43(1), 97-112 — the paper that introduced
     the volume-weighted average price as a transaction-cost benchmark.
 
+    TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html), which
+    accumulates from the first period instead of over a rolling window.
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -474,10 +498,33 @@ def get_parabolic_sar(
     acceleration factor increases as the trend extends, causing the SAR to converge
     towards price over time.
 
+    The formula is as follows:
+
+    - SAR(t + 1) = SAR(t) + AF * (EP - SAR(t)), where EP (the extreme point) is the highest
+      high of a long trade or the lowest low of a short one
+    - AF starts at `af_start` and rises by `af_increment` with every new extreme point, up
+      to `af_max`
+    - In a long trade the SAR is at most the lows of the current and prior bar, in a short
+      one at least their highs
+    - A long reverses to a short when the low reaches the SAR (Low <= SAR), a short to a
+      long when the high reaches it (High >= SAR); the SAR of that bar is the extreme
+      point of the trade that ends, and AF starts again
+
     Also known as: SAR, Stop and Reverse.
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    TA-Lib: SAR, the reference implementation (https://ta-lib.org/functions/sar.html).
+
+    Notes:
+        - The start follows TA-Lib's `ta_SAR.c`: the first bar only sets the direction
+          and the starting SAR, so the first value is on the second bar. The trade starts
+          short when the second bar's low fell by more than its high rose (a positive -DM),
+          otherwise long, with the SAR at the first bar's low (long) or high (short) and
+          the extreme point at the second bar's high (long) or low (short).
+        - Bars without a high or low are left out, so a ticker that lists later starts on
+          its own first bars and a missing day is NaN.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -498,7 +545,8 @@ def get_parabolic_sar(
     prices_high, prices_low = prices_high[valid], prices_low[valid]
     length = len(prices_high)
 
-    if length == 0:
+    # The first bar only sets the starting direction and SAR, so a value needs two bars.
+    if length < 2:  # noqa: PLR2004
         return sar
 
     # The recursion runs on plain Python lists, since reading and writing pandas Series
@@ -506,41 +554,59 @@ def get_parabolic_sar(
     high = prices_high.to_numpy(dtype="float64").tolist()
     low = prices_low.to_numpy(dtype="float64").tolist()
 
-    uptrend = True
+    # The direction comes from the directional movement of the second bar, as in TA-Lib's
+    # ta_SAR.c: a short when the low fell by more than the high rose, otherwise a long. The
+    # SAR starts at the first bar's extreme on the other side of the trade.
+    up_move = high[1] - high[0]
+    down_move = low[0] - low[1]
+    uptrend = not (down_move > 0 and down_move > up_move)
     af = af_start
-    extreme_point = high[0]
+    extreme_point = high[1] if uptrend else low[1]
+    current_sar = low[0] if uptrend else high[0]
+
     sar_values = [math.nan] * length
-    sar_values[0] = low[0]
+    # On the second bar the previous bar's range is taken as its own, as in TA-Lib.
+    new_high, new_low = high[1], low[1]
 
     for i in range(1, length):
-        prior_sar = sar_values[i - 1]
+        previous_high, previous_low = new_high, new_low
+        new_high, new_low = high[i], low[i]
 
         if uptrend:
-            current_sar = prior_sar + af * (extreme_point - prior_sar)
-            current_sar = min(current_sar, low[i - 1], low[max(i - 2, 0)])
-
-            if low[i] < current_sar:
+            if new_low <= current_sar:
+                # The low reaches the SAR: the trade reverses to a short with the SAR at the
+                # extreme point of the long, at least the highs of this and the prior bar.
                 uptrend = False
-                current_sar = max(extreme_point, high[i], high[i - 1])
-                extreme_point = low[i]
+                current_sar = max(extreme_point, previous_high, new_high)
+                sar_values[i] = current_sar
                 af = af_start
-            elif high[i] > extreme_point:
-                extreme_point = high[i]
-                af = min(af + af_increment, af_max)
+                extreme_point = new_low
+                current_sar = current_sar + af * (extreme_point - current_sar)
+                current_sar = max(current_sar, previous_high, new_high)
+            else:
+                sar_values[i] = current_sar
+                if new_high > extreme_point:
+                    extreme_point = new_high
+                    af = min(af + af_increment, af_max)
+                current_sar = current_sar + af * (extreme_point - current_sar)
+                current_sar = min(current_sar, previous_low, new_low)
+        elif new_high >= current_sar:
+            # The high reaches the SAR: the trade reverses to a long with the SAR at the
+            # extreme point of the short, at most the lows of this and the prior bar.
+            uptrend = True
+            current_sar = min(extreme_point, previous_low, new_low)
+            sar_values[i] = current_sar
+            af = af_start
+            extreme_point = new_high
+            current_sar = current_sar + af * (extreme_point - current_sar)
+            current_sar = min(current_sar, previous_low, new_low)
         else:
-            current_sar = prior_sar - af * (prior_sar - extreme_point)
-            current_sar = max(current_sar, high[i - 1], high[max(i - 2, 0)])
-
-            if high[i] > current_sar:
-                uptrend = True
-                current_sar = min(extreme_point, low[i], low[i - 1])
-                extreme_point = high[i]
-                af = af_start
-            elif low[i] < extreme_point:
-                extreme_point = low[i]
+            sar_values[i] = current_sar
+            if new_low < extreme_point:
+                extreme_point = new_low
                 af = min(af + af_increment, af_max)
-
-        sar_values[i] = current_sar
+            current_sar = current_sar + af * (extreme_point - current_sar)
+            current_sar = max(current_sar, previous_high, new_high)
 
     return pd.Series(sar_values, index=prices_high.index, dtype="float64").reindex(
         sar.index

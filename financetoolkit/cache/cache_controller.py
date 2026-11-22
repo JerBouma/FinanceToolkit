@@ -6,7 +6,6 @@ import contextlib
 import os
 import platform
 import time
-import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -421,8 +420,10 @@ class Cache:
         Two things make a range worth requesting. It was never fetched at all, or
         it was fetched so long ago that the dataset's time-to-live has lapsed. The
         first always has to be requested; the second is narrowed to the dataset's
-        revision window, so a daily rerun asks for the volatile tail rather than
-        the whole history. A rerun inside the time-to-live makes no request at all.
+        revision window, the days before today a source still revises, so a daily
+        rerun asks for the volatile tail rather than the whole history and a closed
+        range that ends before the window is not asked for again. A rerun inside the
+        time-to-live makes no request at all.
 
         Args:
             source (str): The external data source.
@@ -433,8 +434,8 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
             reference_date (date | None): The date the revision window is measured
-                back from when the requested range has no end or ends after it. Defaults to None,
-                which uses today; mainly useful for testing.
+                back from, and the end of a requested range without an end or ending after it.
+                Defaults to None, which uses today; mainly useful for testing.
 
         Returns:
             CachePlan: The cached data per entity and the gaps still to be fetched.
@@ -464,10 +465,14 @@ class Cache:
         minimum_fetched_at = time.time() - policy.ttl_seconds
         request = (requested_start, requested_end)
 
-        # A revision window of 0 means the source takes no sub-range, so refetch it whole.
+        # Sources revise the days before today, so the revision window runs back from today:
+        # a closed range that ends before it holds no volatile days and stays fresh, while an
+        # open range refetches its tail. A window that starts after the requested end
+        # overlaps no gap. A revision window of 0 means the source takes no sub-range, so
+        # the stale range is refetched whole.
         revision_tail = (
             (
-                max(requested_start, requested_end - timedelta(policy.revision_days)),
+                max(requested_start, reference - timedelta(policy.revision_days)),
                 requested_end,
             )
             if policy.revision_days > 0
@@ -608,15 +613,27 @@ class Cache:
             Returns:
                 bytes: The payload to store in its place.
             """
-            existing = None
-
-            # A payload that can't be read (another format, such as a pickle) is replaced.
+            # A payload that can't be read (another format, such as a pickle) or merged
+            # (a frame of another layout) is replaced by the incoming frame, rather than
+            # failing the write and leaving the broken payload in place.
             if existing_payload is not None:
-                with contextlib.suppress(ValueError, zlib.error):
+                try:
                     existing = serialization_model.decode_dataframe(existing_payload)
 
+                    return serialization_model.encode_dataframe(
+                        frame_model.merge_frames(existing, data, date_axis, coverage)
+                    )
+                except Exception as error:  # noqa: BLE001
+                    logger.debug(
+                        "Replacing the cached %s.%s for %s that could not be merged: %s",
+                        source,
+                        dataset,
+                        entity,
+                        error,
+                    )
+
             return serialization_model.encode_dataframe(
-                frame_model.merge_frames(existing, data, date_axis)
+                frame_model.merge_frames(None, data, date_axis)
             )
 
         try:

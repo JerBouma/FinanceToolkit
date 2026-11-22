@@ -232,25 +232,44 @@ HYBRID_SECURITY_PATTERN = re.compile(
 MAXIMUM_SCREENER_LIMIT = 10000
 
 # The share of the US dollar lower market cap bound sent to the screener, low enough that
-# a listing in a currency worth up to twice a dollar is not left out before converting.
-MARKET_CAP_BOUND_MARGIN = 0.5
+# a listing in a currency worth up to four dollars (the Kuwaiti dinar, the strongest, is worth
+# about 3.3; the Bahraini and Omani rials about 2.6) is not left out before converting.
+MARKET_CAP_BOUND_MARGIN = 0.25
+
+# The factor the upper market cap bound in a known currency is widened by, for the exchange
+# rate moving between the quote it is converted with and the screener's market caps.
+LOCAL_MARKET_CAP_BOUND_MARGIN = 0.5
 
 # The currency of the exchanges of each country Financial Modeling Prep lists (UK, not GB).
 # A helper column of the screener: whether a listing trades in the company's own country.
 HOME_LISTING = "_home_listing"
+# A helper column: the exchange rate from a listing's currency to the US dollar.
+DOLLAR_RATE = "_dollar_rate"
 
 COUNTRY_CURRENCIES = {
+    # The Americas.
     "US": "USD",
     "CA": "CAD",
     "MX": "MXN",
     "BR": "BRL",
     "AR": "ARS",
     "CL": "CLP",
+    "CO": "COP",
+    "PE": "PEN",
+    "UY": "UYU",
+    "VE": "VES",
+    "CR": "CRC",
+    "PA": "USD",
+    "JM": "JMD",
+    "TT": "TTD",
+    "BM": "BMD",
+    # Europe, with the euro area (Croatia since 2023, Bulgaria since 2026).
     "UK": "GBP",
     "GB": "GBP",
     "IE": "EUR",
     "NL": "EUR",
     "BE": "EUR",
+    "LU": "EUR",
     "FR": "EUR",
     "DE": "EUR",
     "AT": "EUR",
@@ -259,21 +278,54 @@ COUNTRY_CURRENCIES = {
     "PT": "EUR",
     "FI": "EUR",
     "GR": "EUR",
+    "EE": "EUR",
+    "LV": "EUR",
+    "LT": "EUR",
+    "SK": "EUR",
+    "SI": "EUR",
+    "HR": "EUR",
+    "CY": "EUR",
+    "MT": "EUR",
+    "BG": "EUR",
     "CH": "CHF",
+    "LI": "CHF",
     "SE": "SEK",
     "NO": "NOK",
     "DK": "DKK",
     "IS": "ISK",
     "PL": "PLN",
     "CZ": "CZK",
+    "HU": "HUF",
+    "RO": "RON",
+    "RS": "RSD",
+    "UA": "UAH",
     "TR": "TRY",
     "RU": "RUB",
+    "KZ": "KZT",
+    # The Middle East and Africa.
     "IL": "ILS",
     "SA": "SAR",
     "AE": "AED",
     "QA": "QAR",
+    "KW": "KWD",
+    "BH": "BHD",
+    "OM": "OMR",
+    "JO": "JOD",
+    "EG": "EGP",
+    "MA": "MAD",
+    "TN": "TND",
+    "NG": "NGN",
+    "KE": "KES",
+    "GH": "GHS",
     "ZA": "ZAR",
+    "BW": "BWP",
+    "NA": "NAD",
+    "MU": "MUR",
+    # Asia and the Pacific.
     "IN": "INR",
+    "PK": "PKR",
+    "LK": "LKR",
+    "BD": "BDT",
     "CN": "CNY",
     "HK": "HKD",
     "TW": "TWD",
@@ -283,6 +335,8 @@ COUNTRY_CURRENCIES = {
     "MY": "MYR",
     "TH": "THB",
     "ID": "IDR",
+    "PH": "PHP",
+    "VN": "VND",
     "AU": "AUD",
     "NZ": "NZD",
 }
@@ -337,6 +391,7 @@ def get_stock_screener(
     limit: int = 1000,
     user_subscription: str = "Free",
     primary_only: bool = False,
+    truncation_advice: str = "Narrow the criteria or raise the limit to see the remainder.",
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on the screening criteria provided. It defaults
@@ -370,14 +425,18 @@ def get_stock_screener(
         exchange (str, optional): The exchange code to restrict the screen to, e.g. "NASDAQ".
         is_etf (bool, optional): True for ETFs only. Defaults to None, which screens stocks
             only (no ETFs or funds), as does False.
-        limit (int, optional): The maximum number of results the API returns. Defaults to 1000,
-            which is also the API's own default, so hitting exactly this number means the result
-            was truncated.
+        limit (int, optional): The maximum number of results returned, the largest market caps
+            first. Defaults to 1000, which is also the API's own default. When more listings
+            match, a warning is logged.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         primary_only (bool, optional): Whether to keep only the home listing (on an exchange in
             the company's country, the most traded one among several) of each
             company, rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
             Frankfurt). Defaults to False.
+        truncation_advice (str, optional): What the warning logged when the screener returns
+            its maximum number of results advises, so that a function screening on behalf of
+            its caller can point to its own parameters instead of the limit. Defaults to
+            "Narrow the criteria or raise the limit to see the remainder."
 
     Returns:
         pd.DataFrame: DataFrame of instruments matching the query, with each listing's currency
@@ -467,6 +526,7 @@ def get_stock_screener(
             "price": "Price",
             "lastAnnualDividend": "Dividend",
             "volume": "Volume",
+            "avgVolume": "Average Volume",
             "exchange": "Exchange",
             "exchangeShortName": "Exchange Code",
             "country": "Country",
@@ -529,15 +589,23 @@ def get_stock_screener(
         primary_listings = most_traded[~most_traded["Name"].duplicated()].index
         stock_screener = stock_screener[stock_screener.index.isin(primary_listings)]
 
-    stock_screener = stock_screener.drop(columns=HOME_LISTING, errors="ignore").head(
-        limit
-    )
+    if len(stock_screener) > limit:
+        logger.warning(
+            "More than %s listings match the criteria, so only the largest %s are returned. "
+            "Raise the limit or narrow the criteria to see the others.",
+            limit,
+            limit,
+        )
+
+    stock_screener = stock_screener.drop(
+        columns=[HOME_LISTING, DOLLAR_RATE], errors="ignore"
+    ).head(limit)
 
     if truncated:
         logger.warning(
-            "The screener returned the maximum of %s results, so the list is truncated. "
-            "Narrow the criteria or raise the limit to see the remainder.",
+            "The screener returned the maximum of %s results, so the list is truncated. %s",
             requested_limit,
+            truncation_advice,
         )
         if market_cap_lower is not None and upper_bound is None:
             logger.warning(
@@ -562,8 +630,8 @@ def _local_upper_market_cap_bound(
     The upper market cap bound in the currency of the listings, when that currency is known:
     the currency of the exchange, or of the country for its home listings (primary_only).
     Listings elsewhere can trade in any currency, and a bound in the wrong one would leave
-    out companies that fit it, so no bound is returned then. The bound is widened by the
-    margin of the lower bound, and the exact one is applied after converting.
+    out companies that fit it, so no bound is returned then. The bound is widened by
+    LOCAL_MARKET_CAP_BOUND_MARGIN, and the exact one is applied after converting.
 
     Args:
         market_cap_lower (float): The upper market cap bound in US dollars.
@@ -616,7 +684,7 @@ def _local_upper_market_cap_bound(
         if not np.isfinite(rate) or rate <= 0:
             return None
 
-    return int(market_cap_lower / rate / MARKET_CAP_BOUND_MARGIN)
+    return int(market_cap_lower / rate / LOCAL_MARKET_CAP_BOUND_MARGIN)
 
 
 def _add_market_cap_in_dollars(
@@ -625,7 +693,8 @@ def _add_market_cap_in_dollars(
     """
     Adds each listing's currency and its market cap in US dollars. The currency follows
     from the country of the listing's exchange, and the exchange rates are the latest
-    quotes. Without them, the listings are returned as they are, with a warning.
+    quotes. Without them, the listings are returned as they are, with a warning. The rate
+    of every listing is kept in the helper column DOLLAR_RATE.
 
     Args:
         listings (pd.DataFrame): The listings, with an "Exchange Code" and "Market Cap".
@@ -698,9 +767,8 @@ def _add_market_cap_in_dollars(
                 }
             )
 
-    listings["Market Cap (USD)"] = listings["Market Cap"] * listings["Currency"].map(
-        rates
-    )
+    listings[DOLLAR_RATE] = listings["Currency"].map(rates)
+    listings["Market Cap (USD)"] = listings["Market Cap"] * listings[DOLLAR_RATE]
 
     # A market cap belongs to the company, not to one of its listings: a depositary receipt
     # abroad (such as a CEDEAR in Buenos Aires) can report one many times too large, so every
@@ -760,7 +828,8 @@ def get_stock_shares_float(
     api_key: str, user_subscription: str = "Free"
 ) -> pd.DataFrame:
     """
-    Get the shares float for all stocks.
+    Get the shares float for all stocks. A free float, float or number of outstanding
+    shares the source reports as zero is missing and returned as NaN.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -808,6 +877,14 @@ def get_stock_shares_float(
             "outstandingShares": "Outstanding Shares",
         }
     )
+
+    # A listed company always has shares in issue and trading, so a free float or a number of
+    # shares of zero is a missing figure (the source writes 0 for one it does not have).
+    for column in ("Free Float", "Float Shares", "Outstanding Shares"):
+        if column in stock_shares_float.columns:
+            stock_shares_float[column] = pd.to_numeric(
+                stock_shares_float[column], errors="coerce"
+            ).replace(0, np.nan)
 
     # The free float is published in percent and returned as a decimal (0.85 is 85%), the
     # same as the per-company shares float.
@@ -880,7 +957,9 @@ def get_sectors_performance(
         pd.concat(sector_changes, axis=1).apply(pd.to_numeric, errors="coerce") / 100
     )
 
-    sectors_performance.index = pd.PeriodIndex(sectors_performance.index, freq="D")
+    # Dated like the history of one sector (get_sector_performance).
+    sectors_performance.index = pd.to_datetime(sectors_performance.index)
+    sectors_performance.index.name = "Date"
 
     sectors_performance = sectors_performance.sort_index()
 
@@ -1873,6 +1952,52 @@ def search_forex_news(
     return _format_news(forex_news)
 
 
+# The longest range the IPO and stock split calendars answer in one request: a longer range
+# is asked for in parts of this many days.
+CALENDAR_RANGE_DAYS = 90
+
+
+def _get_calendar(
+    url: str,
+    start_date: str | None,
+    end_date: str | None,
+    user_subscription: str,
+) -> pd.DataFrame:
+    """
+    Retrieve a calendar over a date range, in parts of at most CALENDAR_RANGE_DAYS days
+    when both dates are given, as the endpoint answers a longer range with its first months
+    only.
+
+    Args:
+        url (str): The request URL, including the API key, without the dates.
+        start_date (str | None): The start date.
+        end_date (str | None): The end date.
+        user_subscription (str): The user subscription level.
+
+    Returns:
+        pd.DataFrame: The calendar entries of every part, empty when there are none.
+    """
+    if not (start_date and end_date):
+        url += f"&from={start_date}" if start_date else ""
+        url += f"&to={end_date}" if end_date else ""
+        return get_cached_financial_data(url=url, user_subscription=user_subscription)
+
+    start, end = pd.Timestamp(start_date), pd.Timestamp(end_date)
+    parts = []
+    while start <= end:
+        part_end = min(start + pd.Timedelta(days=CALENDAR_RANGE_DAYS - 1), end)
+        parts.append(
+            get_cached_financial_data(
+                url=f"{url}&from={start:%Y-%m-%d}&to={part_end:%Y-%m-%d}",
+                user_subscription=user_subscription,
+            )
+        )
+        start = part_end + pd.Timedelta(days=1)
+
+    parts = [part for part in parts if not part.empty]
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
 def get_ipo_calendar(
     api_key: str,
     start_date: str | None = None,
@@ -1884,22 +2009,19 @@ def get_ipo_calendar(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with (max 90-day range).
-        end_date (str, optional): The end date to filter data with (max 90-day range).
+        start_date (str, optional): The start date to filter data with. A range longer than
+            90 days is retrieved in parts of 90 days.
+        end_date (str, optional): The end date to filter data with.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of upcoming and recent IPOs.
     """
-    url = f"https://financialmodelingprep.com/stable/ipos-calendar?apikey={api_key}"
-
-    if start_date:
-        url += f"&from={start_date}"
-    if end_date:
-        url += f"&to={end_date}"
-
-    ipo_calendar = get_cached_financial_data(
-        url=url, user_subscription=user_subscription
+    ipo_calendar = _get_calendar(
+        f"https://financialmodelingprep.com/stable/ipos-calendar?apikey={api_key}",
+        start_date,
+        end_date,
+        user_subscription,
     )
 
     if ipo_calendar.empty:
@@ -2041,22 +2163,19 @@ def get_stock_splits_calendar(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with (max 90-day range).
-        end_date (str, optional): The end date to filter data with (max 90-day range).
+        start_date (str, optional): The start date to filter data with. A range longer than
+            90 days is retrieved in parts of 90 days.
+        end_date (str, optional): The end date to filter data with.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of upcoming and recent stock splits.
     """
-    url = f"https://financialmodelingprep.com/stable/splits-calendar?apikey={api_key}"
-
-    if start_date:
-        url += f"&from={start_date}"
-    if end_date:
-        url += f"&to={end_date}"
-
-    splits_calendar = get_cached_financial_data(
-        url=url, user_subscription=user_subscription
+    splits_calendar = _get_calendar(
+        f"https://financialmodelingprep.com/stable/splits-calendar?apikey={api_key}",
+        start_date,
+        end_date,
+        user_subscription,
     )
 
     if splits_calendar.empty:
@@ -2643,7 +2762,14 @@ def get_earnings_calendar(
     listings = _add_market_cap_in_dollars(listings, api_key, user_subscription)
     if "Market Cap (USD)" not in listings.columns:
         listings["Market Cap (USD)"] = np.nan
-    rates = listings["Market Cap (USD)"] / listings["Market Cap"]
+    # The exchange rate of each listing's currency, also for a listing without a market cap
+    # of its own (whose traded value still decides the primary listing), and not the ratio
+    # of the converted market cap to its own, which is the home listing's for every listing.
+    rates = (
+        listings[DOLLAR_RATE]
+        if DOLLAR_RATE in listings.columns
+        else pd.Series(np.nan, index=listings.index)
+    )
 
     # The listings of one company share its name, apart from accents, punctuation and the
     # depositary receipt words; the most traded of them is its primary listing.
@@ -2711,6 +2837,12 @@ def get_earnings_calendar(
             country=country,
             limit=MAXIMUM_SCREENER_LIMIT,
             user_subscription=user_subscription,
+            # The limit is already the screener's maximum, so the advice is about the
+            # calendar's own parameters.
+            truncation_advice=(
+                "The releases of the companies beyond them are left out of the earnings "
+                "calendar: set a (higher) min_market_cap to look up fewer companies."
+            ),
         )
         earnings_calendar = earnings_calendar[
             earnings_calendar.index.isin(companies.index)

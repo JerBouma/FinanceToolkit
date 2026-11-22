@@ -1,7 +1,7 @@
 ,,,2020,2021,2022,2023
-AAPL,Log of Total Assets,Lag 1,,0.003,0.0002,0.0
-AAPL,Log of Total Assets,Lag 2,,,0.0032,0.0002
-AAPL,Log of Total Assets,Lag 3,,,,0.0032
+AAPL,Log of Total Assets,Lag 1,,0.0018,-0.0032,-0.0019
+AAPL,Log of Total Assets,Lag 2,,,-0.0014,-0.005
+AAPL,Log of Total Assets,Lag 3,,,,-0.0032
 AAPL,Total Liabilities to Total Assets,Lag 1,,0.0275,0.044,-0.0381
 AAPL,Total Liabilities to Total Assets,Lag 2,,,0.0728,0.0042
 AAPL,Total Liabilities to Total Assets,Lag 3,,,,0.0319
@@ -26,15 +26,15 @@ AAPL,Negative Income Indicator,Lag 3,,,,
 AAPL,Change in Net Income,Lag 1,,,-0.8925,-1.5417
 AAPL,Change in Net Income,Lag 2,,,,-1.0582
 AAPL,Change in Net Income,Lag 3,,,,
-AAPL,Ohlson O-Score,Lag 1,,,0.0406,-0.0232
-AAPL,Ohlson O-Score,Lag 2,,,,0.0184
+AAPL,Ohlson O-Score,Lag 1,,,0.063,-0.0314
+AAPL,Ohlson O-Score,Lag 2,,,,0.0335
 AAPL,Ohlson O-Score,Lag 3,,,,
-AAPL,Ohlson Bankruptcy Probability,Lag 1,,,0.4171,-0.1738
-AAPL,Ohlson Bankruptcy Probability,Lag 2,,,,0.1708
+AAPL,Ohlson Bankruptcy Probability,Lag 1,,,0.4559,-0.1609
+AAPL,Ohlson Bankruptcy Probability,Lag 2,,,,0.2216
 AAPL,Ohlson Bankruptcy Probability,Lag 3,,,,
-MSFT,Log of Total Assets,Lag 1,,0.0039,0.0034,0.0046
-MSFT,Log of Total Assets,Lag 2,,,0.0072,0.0079
-MSFT,Log of Total Assets,Lag 3,,,,0.0118
+MSFT,Log of Total Assets,Lag 1,,0.0029,0.001,0.0042
+MSFT,Log of Total Assets,Lag 2,,,0.0039,0.0052
+MSFT,Log of Total Assets,Lag 3,,,,0.0081
 MSFT,Total Liabilities to Total Assets,Lag 1,,-0.0539,-0.0541,-0.0811
 MSFT,Total Liabilities to Total Assets,Lag 2,,,-0.1051,-0.1308
 MSFT,Total Liabilities to Total Assets,Lag 3,,,,-0.1777
@@ -59,9 +59,9 @@ MSFT,Negative Income Indicator,Lag 3,,,,
 MSFT,Change in Net Income,Lag 1,,,-0.4684,-1.0304
 MSFT,Change in Net Income,Lag 2,,,,-1.0161
 MSFT,Change in Net Income,Lag 3,,,,
-MSFT,Ohlson O-Score,Lag 1,,,-0.0182,-0.0149
-MSFT,Ohlson O-Score,Lag 2,,,,-0.0334
+MSFT,Ohlson O-Score,Lag 1,,,-0.0208,-0.018
+MSFT,Ohlson O-Score,Lag 2,,,,-0.0391
 MSFT,Ohlson O-Score,Lag 3,,,,
-MSFT,Ohlson Bankruptcy Probability,Lag 1,,,-0.1709,-0.1442
-MSFT,Ohlson Bankruptcy Probability,Lag 2,,,,-0.2905
+MSFT,Ohlson Bankruptcy Probability,Lag 1,,,-0.1472,-0.1313
+MSFT,Ohlson Bankruptcy Probability,Lag 2,,,,-0.2592
 MSFT,Ohlson Bankruptcy Probability,Lag 3,,,,

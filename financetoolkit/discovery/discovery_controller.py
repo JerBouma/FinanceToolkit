@@ -253,9 +253,9 @@ class Discovery:
         - Dividend (dividend_higher, dividend_lower)
         - Classification (sector, industry, country, exchange, is_etf)
 
-        The result is capped at `limit` companies, 1000 by default. Getting back exactly that
-        many means the list was truncated, which is warned about in the log; narrow the criteria
-        or raise the limit to see the remainder.
+        The result is capped at `limit` companies, the largest first, 1000 by default. When more
+        companies match, the log warns that the list was truncated; narrow the criteria or raise
+        the limit to see the remainder.
 
         Market caps are in each listing's own currency in "Market Cap" and in US dollars in
         "Market Cap (USD)", which the market cap bounds and the ranking use.
@@ -288,8 +288,8 @@ class Discovery:
                 or a name ("United States"). Defaults to None, which applies no filter.
             exchange (str | None): The exchange code to restrict the screen to, e.g. "NASDAQ". Defaults to None, which
                 applies no filter.
-            is_etf (bool | None): Whether to restrict the screen to ETFs or to exclude them. Defaults to None, which
-                applies no filter.
+            is_etf (bool | None): True to screen ETFs only. Defaults to None, which screens stocks only (no ETFs
+                or funds), as does False.
             limit (int): The maximum number of companies to return. Defaults to 1000.
             primary_only (bool): Whether to keep only the home listing of each company (on an
                 exchange in its own country, the most traded one among several) rather than
@@ -328,27 +328,24 @@ class Discovery:
 
         Which returns:
 
-        | Symbol   | Name                                         |   Market Cap | Sector             | Industry                            |   Beta |   Price |   Dividend |   Volume |   avgVolume | Exchange                | Exchange Code   | Country   | Currency   |   Market Cap (USD) |
-        |:---------|:---------------------------------------------|-------------:|:-------------------|:------------------------------------|-------:|--------:|-----------:|---------:|------------:|:------------------------|:----------------|:----------|:-----------|-------------------:|
-        | WPM.TO   | Wheaton Precious Metals Corp.                |  7.68348e+10 | Basic Materials    | Gold                                | 1.243  |  169.18 |     1.0425 |   549294 |      784311 | Toronto Stock Exchange  | TSX             | CA        | CAD        |        5.48769e+10 |
-        | ODFL     | Old Dominion Freight Line, Inc.              |  3.79958e+10 | Industrials        | Trucking                            | 1.204  |  182.7  |     1.15   |  1993098 |     1766126 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        3.79958e+10 |
-        | EXPD     | Expeditors International of Washington, Inc. |  2.55055e+10 | Industrials        | Integrated Freight & Logistics      | 1.064  |  196.21 |     1.58   |   989988 |     1040746 | New York Stock Exchange | NYSE            | US        | USD        |        2.55055e+10 |
-        | IHG      | InterContinental Hotels Group PLC            |  2.37383e+10 | Consumer Cyclical  | Travel Lodging                      | 1.028  |  162.4  |     1.231  |   333742 |      219735 | New York Stock Exchange | NYSE            | GB        | USD        |        2.37383e+10 |
-        | TOL      | Toll Brothers, Inc.                          |  1.28914e+10 | Consumer Cyclical  | Residential Construction            | 1.302  |  139.9  |     1.03   |   996905 |      996604 | New York Stock Exchange | NYSE            | US        | USD        |        1.28914e+10 |
-        | RRX      | Regal Rexnord Corporation                    |  9.84697e+09 | Industrials        | Industrial - Machinery              | 1.069  |  147.92 |     1.4    |   833290 |     1254610 | New York Stock Exchange | NYSE            | US        | USD        |        9.84697e+09 |
-        | TFII     | TFI International Inc.                       |  9.24671e+09 | Industrials        | Trucking                            | 1.469  |  112.5  |     1.88   |   217798 |      316092 | New York Stock Exchange | NYSE            | CA        | USD        |        9.24671e+09 |
-        | TKR      | The Timken Company                           |  7.57622e+09 | Industrials        | Manufacturing - Tools & Accessories | 1.183  |  109.33 |     1.42   |   836982 |      921212 | New York Stock Exchange | NYSE            | US        | USD        |        7.57622e+09 |
-        | SSD      | Simpson Manufacturing Co., Inc.              |  7.55594e+09 | Basic Materials    | Construction Materials              | 1.318  |  184.36 |     1.18   |   489272 |      287909 | New York Stock Exchange | NYSE            | US        | USD        |        7.55594e+09 |
-        | AGCO     | AGCO Corporation                             |  7.43037e+09 | Industrials        | Agricultural - Machinery            | 1.074  |  106.1  |     1.18   |   574467 |     1028668 | New York Stock Exchange | NYSE            | US        | USD        |        7.43037e+09 |
-        | AWI      | Armstrong World Industries, Inc.             |  7.10776e+09 | Basic Materials    | Construction Materials              | 1.158  |  168.18 |     1.356  |   432292 |      400187 | New York Stock Exchange | NYSE            | US        | USD        |        7.10776e+09 |
-        | JCOM     | Ziff Davis, Inc.                             |  6.75066e+09 | Technology         | Software - Infrastructure           | 1.0328 |  142.84 |     1.76   |   355657 |      357547 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        6.75066e+09 |
-        | VCTR     | Victory Capital Holdings, Inc.               |  6.61843e+09 | Financial Services | Asset Management                    | 1.133  |  107.6  |     1.98   |   379475 |      645526 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        6.61843e+09 |
-        | ENS      | EnerSys                                      |  5.98971e+09 | Industrials        | Electrical Equipment & Parts        | 1.186  |  166.08 |     1.075  |   374598 |      537471 | New York Stock Exchange | NYSE            | US        | USD        |        5.98971e+09 |
-        | CAKE     | The Cheesecake Factory Incorporated          |  5.39256e+09 | Consumer Cyclical  | Restaurants                         | 1.037  |  108.37 |     1.17   |  1802234 |     1574028 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        5.39256e+09 |
-        | EXP      | Eagle Materials Inc.                         |  5.35929e+09 | Basic Materials    | Construction Materials              | 1.335  |  174.71 |     1      |   432955 |      442898 | New York Stock Exchange | NYSE            | US        | USD        |        5.35929e+09 |
-        | SIG      | Signet Jewelers Limited                      |  4.49001e+09 | Consumer Cyclical  | Luxury Goods                        | 1.104  |  117.18 |     1.37   |   860622 |      862382 | New York Stock Exchange | NYSE            | BM        | USD        |        4.49001e+09 |
-        | MCRI     | Monarch Casino & Resort, Inc.                |  2.01951e+09 | Consumer Cyclical  | Gambling, Resorts & Casinos         | 1.405  |  112.68 |     1.2    |   142490 |      156229 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        2.01951e+09 |
-        | ALG      | Alamo Group Inc.                             |  1.77915e+09 | Industrials        | Industrial - Machinery              | 1.078  |  146.18 |     1.36   |   208708 |      169615 | New York Stock Exchange | NYSE            | US        | USD        |        1.77915e+09 |
+        | Symbol   | Name                                         |   Market Cap | Sector             | Industry                            |   Beta |   Price |   Dividend |   Volume |   Average Volume | Exchange                | Exchange Code   | Country   | Currency   |   Market Cap (USD) |
+        |:---------|:---------------------------------------------|-------------:|:-------------------|:------------------------------------|-------:|--------:|-----------:|---------:|-----------------:|:------------------------|:----------------|:----------|:-----------|-------------------:|
+        | WPM.TO   | Wheaton Precious Metals Corp.                |  8.23036e+10 | Basic Materials    | Gold                                | 1.253  |  181.21 |     1.0425 |   759819 |           786401 | Toronto Stock Exchange  | TSX             | CA        | CAD        |        5.75006e+10 |
+        | EXPD     | Expeditors International of Washington, Inc. |  2.52205e+10 | Industrials        | Integrated Freight & Logistics      | 1.068  |  195.34 |     1.58   |  1136837 |          1101850 | New York Stock Exchange | NYSE            | US        | USD        |        2.52205e+10 |
+        | TOL      | Toll Brothers, Inc.                          |  1.35668e+10 | Consumer Cyclical  | Residential Construction            | 1.3    |  147.23 |     1.03   |   863304 |          1067650 | New York Stock Exchange | NYSE            | US        | USD        |        1.35668e+10 |
+        | RRX      | Regal Rexnord Corporation                    |  1.12529e+10 | Industrials        | Industrial - Machinery              | 1.094  |  168.97 |     1.4    |  1683816 |          1214826 | New York Stock Exchange | NYSE            | US        | USD        |        1.12529e+10 |
+        | SSD      | Simpson Manufacturing Co., Inc.              |  8.05033e+09 | Basic Materials    | Construction Materials              | 1.36   |  198.57 |     1.18   |   265736 |           303957 | New York Stock Exchange | NYSE            | US        | USD        |        8.05033e+09 |
+        | AGCO     | AGCO Corporation                             |  7.49909e+09 | Industrials        | Agricultural - Machinery            | 1.099  |  108.76 |     1.18   |   523043 |          1027114 | New York Stock Exchange | NYSE            | US        | USD        |        7.49909e+09 |
+        | VCTR     | Victory Capital Holdings, Inc.               |  7.41585e+09 | Financial Services | Asset Management                    | 1.125  |  119.99 |     1.98   |   482632 |           665968 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        7.41585e+09 |
+        | AWI      | Armstrong World Industries, Inc.             |  7.30504e+09 | Basic Materials    | Construction Materials              | 1.14   |  174.62 |     1.39   |   352215 |           421006 | New York Stock Exchange | NYSE            | US        | USD        |        7.30504e+09 |
+        | TKR      | The Timken Company                           |  7.29715e+09 | Industrials        | Manufacturing - Tools & Accessories | 1.178  |  106.31 |     1.42   |   615685 |           899823 | New York Stock Exchange | NYSE            | US        | USD        |        7.29715e+09 |
+        | JCOM     | Ziff Davis, Inc.                             |  6.75066e+09 | Technology         | Software - Infrastructure           | 1.0328 |  142.84 |     1.76   |   355657 |           357547 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        6.75066e+09 |
+        | CAKE     | The Cheesecake Factory Incorporated          |  5.47063e+09 | Consumer Cyclical  | Restaurants                         | 1.126  |  109.73 |     1.2    |  1696691 |          1464132 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        5.47063e+09 |
+        | EXP      | Eagle Materials Inc.                         |  5.44106e+09 | Basic Materials    | Construction Materials              | 1.306  |  178.99 |     1      |   289980 |           429121 | New York Stock Exchange | NYSE            | US        | USD        |        5.44106e+09 |
+        | ENS      | EnerSys                                      |  4.93517e+09 | Industrials        | Electrical Equipment & Parts        | 1.201  |  138.68 |     1.075  |   674504 |           575042 | New York Stock Exchange | NYSE            | US        | USD        |        4.93517e+09 |
+        | SIG      | Signet Jewelers Limited                      |  4.18348e+09 | Consumer Cyclical  | Luxury Goods                        | 1.066  |  109.18 |     1.37   |   848533 |           872301 | New York Stock Exchange | NYSE            | BM        | USD        |        4.18348e+09 |
+        | MCRI     | Monarch Casino & Resort, Inc.                |  1.95742e+09 | Consumer Cyclical  | Gambling, Resorts & Casinos         | 1.41   |  110.99 |     1.2    |   111435 |           166081 | NASDAQ Global Select    | NASDAQ          | US        | USD        |        1.95742e+09 |
+        | ALG      | Alamo Group Inc.                             |  1.65553e+09 | Industrials        | Industrial - Machinery              | 1.068  |  136.09 |     1.36   |   167394 |           175404 | New York Stock Exchange | NYSE            | US        | USD        |        1.65553e+09 |
 
         """
         _validate_arguments(limit=limit)
@@ -462,16 +459,16 @@ class Discovery:
 
         | Symbol   | Date                |   Free Float |   Float Shares |   Outstanding Shares |
         |:---------|:--------------------|-------------:|---------------:|---------------------:|
-        | IMFP     | NaT                 |     0        |    0           |          2.11197e+06 |
-        | IMG      | 2026-08-02 20:04:15 |     0.813132 |    7.30965e+06 |          8.9895e+06  |
-        | IMG.TO   | 2026-10-24 09:52:25 |     0.997654 |    5.6966e+08  |          5.71e+08    |
-        | IMGI     | NaT                 |     0        |    0           |          1.19912e+10 |
-        | IMGN     | NaT                 |     0.887214 |    2.47847e+08 |          2.79354e+08 |
-        | IMGP.L   | 2026-10-23 22:27:50 |     0.980184 |    3.62615e+07 |          3.69946e+07 |
-        | IMGX     | NaT                 |     0        |    0           |          6.42041e+09 |
-        | IMH      | 2026-08-05 02:12:51 |     0.57308  |    2.09569e+07 |          3.65689e+07 |
-        | IMH.BK   | 2026-10-24 08:24:50 |     0.247494 |    5.86566e+07 |          2.37002e+08 |
-        | IMHC     | NaT                 |     0.217776 |    4.5493e+07  |          2.08898e+08 |
+        | IDWR.L   | 2026-11-16 17:32:35 |   nan        |  nan           |          9.11957e+07 |
+        | IDX      | 2026-11-16 23:32:25 |   nan        |  nan           |          3.45107e+06 |
+        | IDX.AX   | 2026-11-16 17:06:10 |     0.909021 |    3.39173e+08 |          3.73119e+08 |
+        | IDXAF    | 2026-11-16 09:56:30 |     0.68609  |    5.30409e+07 |          7.73089e+07 |
+        | IDXG     | 2026-11-17 01:05:50 |     0.783684 |    4.62527e+06 |          5.90196e+06 |
+        | IDXQX    | 2026-11-16 03:17:15 |   nan        |  nan           |          4.23143e+07 |
+        | IDXX     | 2026-11-16 08:17:45 |     0.99621  |    7.84877e+07 |          7.87863e+07 |
+        | IDY      | 2020-10-23 18:08:55 |   nan        |  nan           |          1.09281e+06 |
+        | IDYA     | 2026-11-16 14:12:30 |     0.93357  |    9.02712e+07 |          9.66946e+07 |
+        | IDYLF    | 2026-11-16 23:55:30 |     0.477036 |    4.92996e+06 |          1.03346e+07 |
 
         """
 
@@ -527,13 +524,13 @@ class Discovery:
 
         Which returns:
 
-        | Date       |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |      Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |    Utilities |
-        |:-----------|------------------:|-------------------------:|--------------------:|---------------------:|------------:|---------------------:|-------------:|--------------:|--------------:|-------------:|-------------:|
-        | 2026-10-19 |       0.00875661  |              -0.00107542 |          0.022757   |           0.00868844 | -0.00464467 |          -0.00881873 |  0.000189793 |   -0.00922967 |   -0.017014   |  -0.00402035 | -0.0337457   |
-        | 2026-10-20 |      -0.000397105 |              -0.00517301 |          0.00326353 |          -0.0077103  | -0.00762765 |           0.0113436  |  0.0203693   |    0.0078808  |    0.0143695  |   0.00333534 |  0.000870726 |
-        | 2026-10-21 |       0.00524548  |              -0.00377267 |          0.00255038 |           0.00805013 | -0.00226659 |           0.00122279 |  0.0128648   |   -0.00171778 |   -0.010997   |   0.0036553  |  0.00699986  |
-        | 2026-10-22 |       0.0158222   |              -0.0267501  |         -0.0112764  |           0.0126416  | -0.019561   |           0.0161104  |  0.00804433  |   -0.0265981  |   -0.0313195  |  -0.0187846  | -0.024581    |
-        | 2026-10-23 |      -0.00121107  |               0.00150168 |         -0.00270255 |          -0.0133687  |  0.0308545  |           0.0101811  | -0.00300935  |    0.00179638 |    0.00460377 |   0.00759818 | -0.00308007  |
+        | Date                |   Basic Materials |   Communication Services |   Consumer Cyclical |   Consumer Defensive |       Energy |   Financial Services |   Healthcare |   Industrials |   Real Estate |   Technology |   Utilities |
+        |:--------------------|------------------:|-------------------------:|--------------------:|---------------------:|-------------:|---------------------:|-------------:|--------------:|--------------:|-------------:|------------:|
+        | 2026-11-10 00:00:00 |        0.00766678 |             -0.000579755 |          0.0152907  |          0.00177333  |  0.00536171  |           0.00510942 |  -0.00311315 |    0.0195985  |   0.00693261  |  -0.00235296 |  0.00107415 |
+        | 2026-11-11 00:00:00 |        0.0049664  |             -0.00769347  |         -0.00641159 |          0.00740712  |  0.00138152  |           0.00914104 |   0.0131706  |   -0.0133056  |   0.00195094  |   0.00311834 |  0.00674619 |
+        | 2026-11-12 00:00:00 |       -0.0139384  |              0.00574992  |          0.0069575  |         -0.00495906  | -0.000496598 |          -0.00764824 |  -0.0117068  |    0.00451085 |   0.00695833  |   0.015018   |  0.0227593  |
+        | 2026-11-13 00:00:00 |       -0.00124148 |             -0.00137442  |         -0.0150488  |          0.010745    |  0.00453935  |           0.00192342 |  -0.0031631  |   -0.0066374  |  -0.0182614   |  -0.0111599  | -0.0128275  |
+        | 2026-11-16 00:00:00 |       -0.0105583  |             -0.0261657   |         -0.0172101  |         -0.000317526 | -0.0207931   |          -0.004043   |  -0.0177063  |   -0.0092908  |   0.000393979 |  -0.0123701  | -0.00394424 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -1781,7 +1778,7 @@ class Discovery:
         including expected pricing, exchange, and share count. This is distinct from
         the "IPO Date" field on a company's profile, which only shows a single past date.
 
-        Note that the date range is limited to a maximum of 90 days.
+        A date range longer than 90 days is retrieved in parts of 90 days, one request each.
 
         Also known as: IPO pipeline, upcoming listings.
 
@@ -1951,7 +1948,7 @@ class Discovery:
         including the split date and ratio. Same calendar pattern as the earnings and
         dividend calendars.
 
-        Note that the date range is limited to a maximum of 90 days.
+        A date range longer than 90 days is retrieved in parts of 90 days, one request each.
 
         Also known as: split schedule, upcoming stock splits.
 
@@ -2060,7 +2057,7 @@ class Discovery:
         | 2026-10-22 00:00:00 | Energy   | NASDAQ     |      -0.019561   |
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |       0.0308545  |
         """
-        _validate_arguments(date=date)
+        _validate_arguments(date=date, start_date=start_date, end_date=end_date)
 
         sector_performance = discovery_model.get_sector_performance(
             api_key=self._api_key,
@@ -2135,7 +2132,7 @@ class Discovery:
         | 2026-10-22 00:00:00 | Biotechnology | NASDAQ     |       0.00288922 |
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |      -0.00890932 |
         """
-        _validate_arguments(date=date)
+        _validate_arguments(date=date, start_date=start_date, end_date=end_date)
 
         industry_performance = discovery_model.get_industry_performance(
             api_key=self._api_key,
@@ -2209,7 +2206,7 @@ class Discovery:
         | 2026-10-22 00:00:00 | Energy   | NASDAQ     |    14.2938 |
         | 2026-10-23 00:00:00 | Energy   | NASDAQ     |    14.8163 |
         """
-        _validate_arguments(date=date)
+        _validate_arguments(date=date, start_date=start_date, end_date=end_date)
 
         sector_pe = discovery_model.get_sector_pe(
             api_key=self._api_key,
@@ -2284,7 +2281,7 @@ class Discovery:
         | 2026-10-22 00:00:00 | Biotechnology | NASDAQ     |    15.0816 |
         | 2026-10-23 00:00:00 | Biotechnology | NASDAQ     |    15.0327 |
         """
-        _validate_arguments(date=date)
+        _validate_arguments(date=date, start_date=start_date, end_date=end_date)
 
         industry_pe = discovery_model.get_industry_pe(
             api_key=self._api_key,
@@ -2502,7 +2499,8 @@ class Discovery:
         for others (Richemont's estimated revenue is in euros in Zurich and in US dollars
         for its depositary receipt), so they are not converted or used for ranking.
 
-        Note that the date range is limited to a maximum of 90 days.
+        The source returns at most 4,000 releases per request, so a range that holds more is
+        retrieved in parts, one request each; a long range takes many.
 
         Also known as: earnings season, earnings release dates, upcoming earnings.
 
@@ -2550,11 +2548,11 @@ class Discovery:
 
         | Symbol   | Date                | Name                                 | Exchange Code   |   Market Cap (USD) |   Estimated EPS |
         |:---------|:--------------------|:-------------------------------------|:----------------|-------------------:|----------------:|
-        | CSCO     | 2026-11-12 00:00:00 | Cisco Systems, Inc.                  | NASDAQ          |        3.70012e+11 |            1.32 |
-        | AMAT     | 2026-11-12 00:00:00 | Applied Materials, Inc.              | NASDAQ          |        2.64042e+11 |            4.06 |
-        | 8306.T   | 2026-11-13 00:00:00 | Mitsubishi UFJ Financial Group, Inc. | JPX             |        2.29059e+11 |           67.1  |
-        | SIE.DE   | 2026-11-12 00:00:00 | Siemens AG                           | XETRA           |        2.23956e+11 |            2.86 |
-        | ALV.DE   | 2026-11-12 00:00:00 | Allianz SE                           | XETRA           |        1.91145e+11 |            8.82 |
+        | CSCO     | 2026-11-12 00:00:00 | Cisco Systems, Inc.                  | NASDAQ          |        3.72123e+11 |            1.33 |
+        | AMAT     | 2026-11-12 00:00:00 | Applied Materials, Inc.              | NASDAQ          |        2.77958e+11 |            4.06 |
+        | 8306.T   | 2026-11-13 00:00:00 | Mitsubishi UFJ Financial Group, Inc. | JPX             |        2.33997e+11 |           67.1  |
+        | SIE.DE   | 2026-11-12 00:00:00 | Siemens AG                           | XETRA           |        2.28231e+11 |            2.82 |
+        | ALV.DE   | 2026-11-12 00:00:00 | Allianz SE                           | XETRA           |        1.95238e+11 |            8.89 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 

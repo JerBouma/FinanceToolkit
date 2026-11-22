@@ -11,6 +11,32 @@ from financetoolkit.utilities.statistics_model import (
     to_datetime_index,
 )
 
+# A ratio whose denominator is 0, or rounding noise of constant returns (about 1e-16 times the numerator once a
+# constant risk-free rate is subtracted), is undefined rather than infinite or astronomically large. No Sharpe,
+# Sortino, Treynor or drawdown ratio of real returns comes near this size.
+RATIO_LIMIT = 1e10
+
+
+def remove_undefined_ratios(
+    ratio: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Set a ratio to NaN where its denominator was 0 or rounding noise, i.e. where the ratio
+    is infinite or at least `RATIO_LIMIT` in size. A denominator under 1 / `RATIO_LIMIT`
+    (1e-10) times the numerator, such as the standard deviation of constant returns or the
+    downside deviation of returns without a loss, leaves the ratio undefined.
+
+    Args:
+        ratio (pd.Series | pd.DataFrame | float): The ratio, numerator / denominator.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The ratio, NaN where it is undefined.
+    """
+    if isinstance(ratio, pd.Series | pd.DataFrame):
+        return ratio.where(ratio.abs() < RATIO_LIMIT)
+
+    return ratio if abs(ratio) < RATIO_LIMIT else np.nan
+
 
 def determine_within_dataset(
     dataset: pd.DataFrame, period: str, correlation: bool = False

@@ -265,12 +265,17 @@ def merge_frames(
     existing: pd.DataFrame | pd.Series | None,
     incoming: pd.DataFrame | pd.Series,
     date_axis: int = 0,
+    replaced: Interval | None = None,
 ) -> pd.DataFrame | pd.Series:
     """
     Combine a newly fetched frame with what the cache already holds.
 
     Where the two overlap the incoming values win, because they come from a more
     recent call to the source and therefore reflect any revision or restatement.
+    Within the replaced range the incoming frame is the whole answer of the source,
+    so a date it no longer holds (a removed bar, a corrected date) is dropped from
+    the existing frame rather than kept beside the new data. An empty incoming frame
+    leaves the existing one as it is, since an empty answer can be a rate limit.
     The result is sorted along the date axis so the merged frame is
     indistinguishable from one fetched in a single request.
 
@@ -278,6 +283,9 @@ def merge_frames(
         existing (pd.DataFrame | pd.Series | None): The frame already cached, if any.
         incoming (pd.DataFrame | pd.Series): The newly fetched frame.
         date_axis (int): 0 when the index holds the dates, 1 when the columns do.
+        replaced (Interval | None): The inclusive range the incoming frame answers in
+            full, whose existing dates are dropped first. Labels that are not dates are
+            kept. Defaults to None, which drops nothing.
 
     Returns:
         pd.DataFrame | pd.Series: The merged frame.
@@ -286,6 +294,24 @@ def merge_frames(
         return tidy_date_axis(incoming, date_axis)
     if incoming is None or len(incoming) == 0:
         return tidy_date_axis(existing, date_axis)
+
+    if replaced is not None:
+        axis = get_date_axis(existing, date_axis)
+        dates = axis_as_dates(axis)
+        start, end = pd.Timestamp(replaced[0]), pd.Timestamp(replaced[1])
+
+        if dates is not None:
+            within = np.asarray((dates >= start) & (dates <= end))
+        else:
+            within = []
+            for label in axis:
+                try:
+                    within.append(start <= pd.Timestamp(normalize_date(label)) <= end)
+                except (TypeError, ValueError):
+                    within.append(False)
+            within = np.asarray(within, dtype=bool)
+
+        existing = existing.loc[~within] if date_axis == 0 else existing.loc[:, ~within]
 
     if date_axis == 1:
         merged = pd.concat([existing, incoming], axis=1)

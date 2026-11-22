@@ -35,6 +35,8 @@ def get_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
+    TA-Lib: TRANGE, the reference implementation (https://ta-lib.org/functions/trange.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -74,6 +76,9 @@ def get_wilder_moving_average(
 
     - First value = SMA(values, window) — a simple average seeds the recursion
     - Value(t) = Value(t-1) + (1 / window) * (Series(t) - Value(t-1)), for every period after
+
+    A period without a value has no average (NaN), and the next value continues from the
+    last average.
 
     Also known as: Wilder's Moving Average, Modified Moving Average, Running Moving Average,
     Smoothed Moving Average.
@@ -129,7 +134,12 @@ def get_wilder_moving_average(
             current_value - previous_average
         )
 
-    return pd.Series(averages, index=values.index, dtype="float64")
+    # A period without a value has no average, while the recursion carries on from the last
+    # one on the next value, so a series that ends early (a delisted ticker) stops instead
+    # of repeating its last average.
+    return pd.Series(averages, index=values.index, dtype="float64").where(
+        values.notna()
+    )
 
 
 def get_average_true_range(
@@ -151,6 +161,8 @@ def get_average_true_range(
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    TA-Lib: ATR, the reference implementation (https://ta-lib.org/functions/atr.html).
 
     Notes:
         - This follows the StockCharts convention: the first period, which has no previous
@@ -174,6 +186,62 @@ def get_average_true_range(
     atr = get_wilder_moving_average(true_range, window)
 
     return atr
+
+
+def get_mass_index(
+    prices_high: pd.Series, prices_low: pd.Series, ema_window: int, sum_window: int
+) -> pd.Series:
+    """
+    Calculate the Mass Index of a given price series.
+
+    The Mass Index looks for reversals in the width of the trading range rather than in
+    price. It divides an EMA of the High - Low range by an EMA of that EMA, which is above
+    1 while the range widens and below 1 while it narrows, and sums that ratio over
+    `sum_window` periods. Dorsey's "reversal bulge" is the Mass Index rising above 27 and
+    then falling back below 26.5, after which the trend is expected to reverse; the index
+    does not say in which direction.
+
+    The formula is as follows:
+
+    - Single EMA = EMA(High - Low, ema_window)
+    - Double EMA = EMA(Single EMA, ema_window)
+    - Mass Index = Sum(Single EMA / Double EMA, sum_window)
+
+    The conventional parameters are 9 periods for the EMAs and 25 for the sum, so the
+    Mass Index of a range that neither widens nor narrows is 25.
+
+    Also known as: Mass Index, MI.
+
+    Reference: Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks &
+    Commodities, 10(6). The calculation follows StockCharts ChartSchool, "Mass Index".
+
+    TA-Lib: MASSI, the reference implementation (https://ta-lib.org/functions/massi.html).
+
+    Notes:
+        - Both EMAs are seeded with the Simple Moving Average of their first values (see
+          `overlap_model.get_exponential_moving_average`), so the ratio starts on the
+          2 * `ema_window` - 1st period and the Mass Index `sum_window` - 1 periods later,
+          on the 2 * (`ema_window` - 1) + `sum_window`th period (the 41st with 9 and 25).
+        - The calculation runs over the periods with both a high and a low, so a missing
+          period does not empty the next `sum_window` sums; the missing periods stay NaN.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        ema_window (int): Number of periods of the single and double EMA.
+        sum_window (int): Number of periods over which the EMA ratio is summed.
+
+    Returns:
+        pd.Series: Mass Index values.
+    """
+    observed = prices_high.notna() & prices_low.notna()
+    price_range = prices_high[observed] - prices_low[observed]
+
+    single_ema = get_exponential_moving_average(price_range, ema_window)
+    double_ema = get_exponential_moving_average(single_ema, ema_window)
+    mass_index = (single_ema / double_ema).rolling(window=sum_window).sum()
+
+    return mass_index.reindex(prices_high.index)
 
 
 def get_supertrend(
@@ -214,6 +282,8 @@ def get_supertrend(
           a published financial paper.
         - The trend is initialized as an uptrend (Trend Direction = 1) on the first available
           period, since there is no prior period to determine the starting direction from.
+        - A period with a missing price has no Supertrend; the bands carry on from the last
+          period with prices.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -319,12 +389,84 @@ def get_supertrend(
             direction[i] = -1.0
             trend[i] = final_upper[i]
 
-    supertrend = pd.Series(trend, index=prices_close.index, dtype="float64")
-    trend_direction = pd.Series(direction, index=prices_close.index, dtype="float64")
+    # A period without bands (a missing price) has no Supertrend, while the recursion
+    # carries on from the last bands, so a series that ends early stops there.
+    has_bands = basic_upper_band.notna() & basic_lower_band.notna()
+    supertrend = pd.Series(trend, index=prices_close.index, dtype="float64").where(
+        has_bands
+    )
+    trend_direction = pd.Series(
+        direction, index=prices_close.index, dtype="float64"
+    ).where(has_bands)
 
     return pd.concat(
         [supertrend, trend_direction], keys=["Supertrend", "Trend Direction"], axis=1
     )
+
+
+def get_chandelier_exit(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+    multiplier: float,
+) -> pd.DataFrame:
+    """
+    Calculate the Chandelier Exit of a given price series.
+
+    The Chandelier Exit is a trailing stop set a multiple of the Average True Range away
+    from the most extreme price of the last `window` periods, so the stop "hangs" from the
+    highest high of a long position like a chandelier from a ceiling. The long exit sits
+    below the highest high and the short exit above the lowest low; because the distance
+    is in ATRs, the stop is wider in volatile markets and tighter in quiet ones.
+
+    The formula is as follows:
+
+    - Long Exit = Highest High(window) - multiplier * ATR(window)
+    - Short Exit = Lowest Low(window) + multiplier * ATR(window)
+
+    The conventional parameters are 22 periods (about a month of trading days) and a
+    multiplier of 3.
+
+    Also known as: Chandelier Exit, Chandelier Stop, CE.
+
+    Reference: Le Beau, C., & Lucas, D.W. (1992). "Technical Traders Guide to Computer
+    Analysis of the Futures Market." Business One Irwin; popularized in Elder, A. (2002).
+    "Come Into My Trading Room." John Wiley & Sons. The calculation follows StockCharts
+    ChartSchool, "Chandelier Exit".
+
+    Notes:
+        - The ATR is `get_average_true_range`: Wilder's smoothing of the True Range, the
+          first True Range High - Low and the first ATR the average of the first `window`
+          True Ranges (the StockCharts convention), so the exits start on period
+          `window` - 1, together with the first full window of highs and lows.
+        - The highest high and lowest low include the current period, as on StockCharts.
+        - The calculation runs over the periods with a high, a low and a close, so a missing
+          period does not empty the next `window` extremes; the missing periods stay NaN.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the highest high, the lowest low and the ATR.
+        multiplier (float): Number of ATRs the exits sit from the highest high and the
+            lowest low.
+
+    Returns:
+        pd.DataFrame: The Long Exit and Short Exit as columns, in price units.
+    """
+    observed = prices_high.notna() & prices_low.notna() & prices_close.notna()
+    high, low = prices_high[observed], prices_low[observed]
+
+    average_true_range = get_average_true_range(
+        high, low, prices_close[observed], window
+    )
+    long_exit = high.rolling(window=window).max() - multiplier * average_true_range
+    short_exit = low.rolling(window=window).min() + multiplier * average_true_range
+
+    return pd.concat(
+        [long_exit, short_exit], keys=["Long Exit", "Short Exit"], axis=1
+    ).reindex(prices_high.index)
 
 
 def get_keltner_channels(
@@ -355,6 +497,9 @@ def get_keltner_channels(
     Reference: Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
     envelope, as implemented here) was popularized by Linda Bradford Raschke in the 1980s.
+
+    TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html), which
+    centres the channel on an EMA of the typical price instead of the close.
 
     Notes:
         - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
@@ -412,6 +557,9 @@ def get_donchian_channels(
     Reference: Donchian, R.D. (1960s). Popularized through his "5- and 20-Day Moving Average
     Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
+
+    TA-Lib: DONCHIAN, the reference implementation (https://ta-lib.org/functions/donchian.html),
+    which includes the current period.
 
     Notes:
         - The current period is deliberately excluded from the lookback. StockCharts states
@@ -538,6 +686,8 @@ def get_bollinger_bands(
 
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
+    TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+
     Notes:
         - The rolling standard deviation uses the *population* convention (dividing by n,
           i.e. `ddof=0`), not pandas' default sample convention (dividing by n-1). This is
@@ -566,3 +716,57 @@ def get_bollinger_bands(
         axis=1,
         keys=["Upper Band", "Middle Band", "Lower Band", "Close"],
     )
+
+
+def get_bollinger_percent_b_and_bandwidth(
+    prices: pd.Series, window: int, num_std_dev: float
+) -> pd.DataFrame:
+    """
+    Calculate the Bollinger %B and BandWidth of a given price series.
+
+    Bollinger derived two indicators from his bands. %B places the close within the bands:
+    0 is on the lower band, 0.5 on the middle band and 1 on the upper band, with values
+    below 0 or above 1 for a close outside the bands. BandWidth is the distance between the
+    bands relative to the middle band, a normalized measure of volatility in which a
+    six-month low marks "the Squeeze" that often precedes a volatility expansion.
+
+    The formula is as follows:
+
+    - %B = (Close - Lower Band) / (Upper Band - Lower Band)
+    - BandWidth = (Upper Band - Lower Band) / Middle Band
+
+    Both are returned as decimals (a %B of 1 is a close on the upper band, a BandWidth of
+    0.10 is bands 10% of the middle band apart); StockCharts shows BandWidth multiplied by
+    100.
+
+    Also known as: Percent B, %b, Bollinger Band Width, BBW.
+
+    Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill, chapters
+    7 (%b) and 8 (BandWidth).
+
+    TA-Lib: PERCENTB and BBW, the reference implementations
+    (https://ta-lib.org/functions/percentb.html, https://ta-lib.org/functions/bbw.html).
+
+    Notes:
+        - The bands are those of `get_bollinger_bands`: a Simple Moving Average with the
+          *population* standard deviation (ddof=0), as Bollinger specifies.
+        - A window of identical prices has bands with no width, which leaves %B undefined
+          (missing) and BandWidth at 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods for the moving average and standard deviation.
+        num_std_dev (float): Number of standard deviations for the bands.
+
+    Returns:
+        pd.DataFrame: %B and BandWidth as columns, both decimals.
+    """
+    bollinger_bands = get_bollinger_bands(prices, window, num_std_dev)
+    band_range = bollinger_bands["Upper Band"] - bollinger_bands["Lower Band"]
+
+    percent_b = (prices - bollinger_bands["Lower Band"]) / band_range.where(
+        band_range != 0
+    )
+    bandwidth = band_range / bollinger_bands["Middle Band"]
+
+    return pd.concat([percent_b, bandwidth], keys=["%B", "BandWidth"], axis=1)

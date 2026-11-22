@@ -57,8 +57,9 @@ def _to_month(value: float) -> pd.Period:
 def get_stock_market_data() -> pd.DataFrame:
     """
     Retrieves Robert Shiller's monthly US stock market data from 1871: the S&P Composite
-    price, dividends and earnings, the consumer price index, the long-term interest rate
-    and the cyclically adjusted price-earnings ratio (CAPE), in nominal and real terms.
+    price, dividends and earnings, the consumer price index, the long-term interest rate,
+    the trailing price-earnings ratio (P/E) and the cyclically adjusted price-earnings ratio
+    (CAPE), in nominal and real terms.
 
     Returns:
         pd.DataFrame: One column per measure, indexed by month. The long interest rate is a
@@ -113,10 +114,24 @@ def get_stock_market_data() -> pd.DataFrame:
 
         return data.dropna(how="all")
 
-    return collect_cached_data(
+    data = collect_cached_data(
         source=policy_model.SHILLER,
         dataset="stock_market_data",
         entity="ie_data",
         fetch=fetch,
         description=description,
     )
+
+    if data.empty:
+        return data
+
+    # The trailing P/E: the month's price over the earnings of the twelve months up to it,
+    # next to the CAPE's ten-year average; without positive earnings it has no value. It is
+    # derived after the cache, so a cached copy of the file gets it as well.
+    data.insert(
+        data.columns.get_loc("CAPE"),
+        "P/E",
+        data["Price"] / data["Earnings"].where(data["Earnings"] > 0),
+    )
+
+    return data

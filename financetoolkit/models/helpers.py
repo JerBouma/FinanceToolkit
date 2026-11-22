@@ -338,3 +338,40 @@ def values_on_or_before(
         )
 
     return values
+
+
+def least_squares_coefficients(
+    dependent: np.ndarray, regressors: np.ndarray, min_observations: int
+) -> np.ndarray:
+    """
+    The ordinary least squares coefficients of a regression of `dependent` on the columns
+    of `regressors` as given (add a column of ones for an intercept), over the rows where
+    every value is finite.
+
+    The columns are scaled to unit length before solving and the coefficients scaled back
+    afterwards. Regressors of very different magnitudes, such as one over the total assets
+    of a company reporting in Indonesian rupiah (around 1e-15) next to ratios around 1,
+    would otherwise fall below the singular value cut-off of the solver and be treated as
+    collinear.
+
+    Args:
+        dependent (np.ndarray): The dependent variable, one value per observation.
+        regressors (np.ndarray): The regressors, observations (rows) by regressors (columns).
+        min_observations (int): The fewest complete observations to estimate on.
+
+    Returns:
+        np.ndarray: One coefficient per regressor, all NaN when fewer than `min_observations`
+        observations are complete, a regressor is zero in all of them, or the regressors are
+        collinear in them (no unique fit).
+    """
+    complete = np.isfinite(dependent) & np.isfinite(regressors).all(axis=1)
+    coefficients = np.full(regressors.shape[1], np.nan)
+    if complete.sum() < max(min_observations, regressors.shape[1]):
+        return coefficients
+    norms = np.linalg.norm(regressors[complete], axis=0)
+    if not (norms > 0).all():
+        return coefficients
+    scaled_fit, _, rank, _ = np.linalg.lstsq(
+        regressors[complete] / norms, dependent[complete], rcond=None
+    )
+    return scaled_fit / norms if rank == regressors.shape[1] else coefficients

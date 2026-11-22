@@ -2,25 +2,20 @@
 
 __docformat__ = "google"
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
-from financetoolkit.economics.helpers import (
-    buffered_start_date,
-)
+from financetoolkit.economics.helpers import buffered_start_date, validate_period
 from financetoolkit.economics.sources import (
     eurostat_model,
     gmdb_model,
+    imf_model,
     oecd_model,
     ons_model,
+    world_bank_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -29,9 +24,9 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class OutputEconomics(EconomicsBase):
+class OutputEconomics:
     """
-    National accounts and trade: GDP, its growth and deflator, real GDP per capita, the output gap, consumption, investment, exports, imports, the trade balance and the current account.
+    National accounts and trade: GDP, its growth and deflator, real GDP per capita, the output gap, consumption, investment, exports, imports, the trade balance, the current account, the net international investment position and foreign exchange reserves.
     """
 
     @staticmethod
@@ -112,7 +107,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -246,7 +242,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -366,7 +363,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -386,24 +384,24 @@ class OutputEconomics(EconomicsBase):
 
         economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
 
-        economics.get_gross_domestic_product_deflator(countries=['United States', 'Canada', 'Russian Federation'])
+        economics.get_gross_domestic_product_deflator(countries=['United States', 'Canada', 'Russia'])
         ```
 
         Which returns:
 
-        |      |   United States |   Canada |   Russian Federation |
-        |:-----|----------------:|---------:|---------------------:|
-        | 2015 |         100     |  100     |              100     |
-        | 2016 |         100.95  |  100.717 |              102.844 |
-        | 2017 |         102.758 |  103.306 |              108.345 |
-        | 2018 |         105.112 |  105.012 |              119.179 |
-        | 2019 |         106.847 |  106.636 |              123.068 |
-        | 2020 |         108.284 |  107.778 |              124.173 |
-        | 2021 |         113.225 |  116.168 |              146.784 |
-        | 2022 |         121.278 |  125.325 |              173.542 |
-        | 2023 |         125.766 |  127.261 |              185.098 |
-        | 2024 |         128.887 |  130.738 |              204.816 |
-        | 2025 |         132.537 |  134.076 |              214.754 |
+        |      |   United States |   Canada |   Russia |
+        |:-----|----------------:|---------:|---------:|
+        | 2015 |         100     |  100     |  100     |
+        | 2016 |         100.95  |  100.717 |  102.844 |
+        | 2017 |         102.758 |  103.306 |  108.345 |
+        | 2018 |         105.112 |  105.012 |  119.179 |
+        | 2019 |         106.847 |  106.636 |  123.068 |
+        | 2020 |         108.284 |  107.778 |  124.173 |
+        | 2021 |         113.225 |  116.168 |  146.784 |
+        | 2022 |         121.278 |  125.325 |  173.542 |
+        | 2023 |         125.766 |  127.261 |  185.098 |
+        | 2024 |         128.887 |  130.738 |  204.816 |
+        | 2025 |         132.537 |  134.076 |  214.754 |
 
         """
 
@@ -474,7 +472,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -595,7 +594,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -692,7 +692,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -818,7 +819,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -917,7 +919,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1023,7 +1026,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1120,7 +1124,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1219,7 +1224,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1318,7 +1324,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1419,7 +1426,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1439,24 +1447,24 @@ class OutputEconomics(EconomicsBase):
 
         economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
 
-        economics.get_exports_to_gdp_ratio(countries=['United States', 'Canada', 'Russian Federation'])
+        economics.get_exports_to_gdp_ratio(countries=['United States', 'Canada', 'Russia'])
         ```
 
         Which returns:
 
-        |      |   United States |   Canada |   Russian Federation |
-        |:-----|----------------:|---------:|---------------------:|
-        | 2015 |          0.1241 |   0.3185 |               0.287  |
-        | 2016 |          0.1189 |   0.315  |               0.2585 |
-        | 2017 |          0.1218 |   0.3145 |               0.2609 |
-        | 2018 |          0.1229 |   0.3233 |               0.3079 |
-        | 2019 |          0.1179 |   0.3235 |               0.2843 |
-        | 2020 |          0.1012 |   0.2947 |               0.2552 |
-        | 2021 |          0.1083 |   0.3118 |               0.3    |
-        | 2022 |          0.1165 |   0.3372 |               0.2771 |
-        | 2023 |          0.1105 |   0.3334 |               0.2277 |
-        | 2024 |          0.1097 |   0.3247 |               0.2179 |
-        | 2025 |          0.1079 |   0.3133 |               0.1815 |
+        |      |   United States |   Canada |   Russia |
+        |:-----|----------------:|---------:|---------:|
+        | 2015 |          0.1241 |   0.3185 |   0.287  |
+        | 2016 |          0.1189 |   0.315  |   0.2585 |
+        | 2017 |          0.1218 |   0.3145 |   0.2609 |
+        | 2018 |          0.1229 |   0.3233 |   0.3079 |
+        | 2019 |          0.1179 |   0.3235 |   0.2843 |
+        | 2020 |          0.1012 |   0.2947 |   0.2552 |
+        | 2021 |          0.1083 |   0.3118 |   0.3    |
+        | 2022 |          0.1165 |   0.3372 |   0.2771 |
+        | 2023 |          0.1105 |   0.3334 |   0.2277 |
+        | 2024 |          0.1097 |   0.3247 |   0.2179 |
+        | 2025 |          0.1079 |   0.3133 |   0.1815 |
         """
 
         exports_to_gdp_ratio = gmdb_model.get_exports_to_gdp_ratio(
@@ -1517,7 +1525,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1624,7 +1633,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1735,7 +1745,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1831,7 +1842,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1940,7 +1952,8 @@ class OutputEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1993,6 +2006,476 @@ class OutputEconomics(EconomicsBase):
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Current Account Balance to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_net_international_investment_position(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Net International Investment Position (NIIP) for a variety of countries over time from the International
+        Monetary Fund (IMF). The Net International Investment Position is the value of the external financial assets of a
+        country's residents (direct investment, portfolio investment, financial derivatives, other investment and reserve
+        assets) less the value of their external liabilities, at the end of each period.
+
+        Where the current account is the flow, the international investment position is the stock it builds up: a country
+        that runs current account deficits for years finances them by borrowing from or selling assets to the rest of the
+        world, and ends up with a negative position, a net debtor. The position also moves without any transaction, with
+        exchange rates and the prices of the assets and liabilities held.
+
+        The position follows the IMF's Balance of Payments and International Investment Position Manual, sixth edition
+        (BPM6), and is published by the IMF in millions of US dollars, converted at the exchange rate at the end of the
+        period, for about 130 economies quarterly and 175 yearly, and the euro area. A negative value marks a net
+        debtor, a positive value a net creditor.
+
+        For more information, see the following sources:
+
+        - International Monetary Fund (2009). Balance of Payments and International Investment Position Manual, Sixth
+          Edition (BPM6), chapter 7: https://www.imf.org/external/pubs/ft/bop/2007/pdf/bpm6.pdf
+        - IMF International Investment Position dataset: https://data.imf.org
+
+        The formula is as follows:
+
+        - Net International Investment Position = External Financial Assets - External Liabilities, at the end of the
+          quarter (period="quarterly") or the year (period="yearly")
+
+        Also known as: NIIP, net foreign assets, net external position, net external assets.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the position at the end of each quarter)
+                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
+                highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Net International Investment Position in millions of US dollars
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_net_international_investment_position(
+            countries=['United States', 'Netherlands', 'Spain', 'Japan'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Netherlands |    Spain |   Japan |
+        |:-----|----------------:|--------------:|---------:|--------:|
+        | 2015 |        -7590470 |        208976 | -1038360 | 2715260 |
+        | 2016 |        -8258387 |        299722 |  -997827 | 2879336 |
+        | 2017 |        -7830723 |        356302 | -1183935 | 2916758 |
+        | 2018 |        -9795821 |        455332 | -1082426 | 3080841 |
+        | 2019 |       -11666440 |        634921 | -1013505 | 3271768 |
+        | 2020 |       -11894319 |        884178 | -1159871 | 3473817 |
+        | 2021 |       -15357982 |        730264 |  -971356 | 3659120 |
+        | 2022 |       -14226691 |        590199 |  -825201 | 3166226 |
+        | 2023 |       -17123596 |        625354 |  -818813 | 3327381 |
+        | 2024 |       -22127875 |        753541 |  -663085 | 3435052 |
+        | 2025 |       -21873581 |        656342 |  -847469 | 3594052 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "net international investment position",
+        )
+
+        net_international_investment_position = (
+            imf_model.get_net_international_investment_position(
+                period, self._start_date, self._end_date, to_gdp=False
+            )
+        )
+
+        return finalize_dataset(
+            dataset=net_international_investment_position,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Net International Investment Position",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_net_international_investment_position_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Net International Investment Position (NIIP) to GDP Ratio for a variety of countries over time from the
+        International Monetary Fund (IMF). The ratio is the value of the external financial assets of a country's residents
+        less the value of their external liabilities, at the end of each period, relative to the country's nominal Gross
+        Domestic Product (GDP).
+
+        The ratio shows how much a country owes to (negative) or is owed by (positive) the rest of the world compared to the
+        size of its economy. A large negative position leaves a country dependent on foreign financing and exposed to a
+        sudden stop of capital inflows, which is why the European Union's macroeconomic imbalance procedure (MIP) uses a
+        position below -35% of GDP as its indicative threshold. Large creditors, such as Japan, Germany and the Netherlands,
+        earn net investment income on their position.
+
+        The IMF publishes the position in US dollars only, converted at the exchange rate at the end of the period. It is
+        converted back to national currency at that same IMF end-of-period exchange rate (the euro area's for the euro
+        members) and divided by the IMF's nominal GDP in national currency, so the ratio does not move with the gap between
+        the end-of-period and the average exchange rate. This is the convention of Eurostat's MIP scoreboard (tipsii10),
+        whose figures differ from it only by the vintage of the GDP and the position each publisher holds. The
+        IMF's national accounts of some countries, such as the euro members, end a few quarters before their position,
+        which leaves the latest periods of those countries empty.
+
+        For more information, see the following sources:
+
+        - International Monetary Fund (2009). Balance of Payments and International Investment Position Manual, Sixth
+          Edition (BPM6), chapter 7: https://www.imf.org/external/pubs/ft/bop/2007/pdf/bpm6.pdf
+        - European Commission (2016). The Macroeconomic Imbalance Procedure: Rationale, Process, Application: A
+          Compendium. Institutional Paper 039 (scoreboard threshold of -35% of GDP).
+        - Eurostat MIP scoreboard: https://ec.europa.eu/eurostat/databrowser/view/tipsii10/default/table
+
+        The ratio is expressed as a decimal fraction (-0.35 for -35% of GDP).
+
+        The formula is as follows:
+
+        - Net International Investment Position to GDP Ratio = (External Financial Assets - External Liabilities) in US
+          Dollars x National Currency per US Dollar at the End of the Period / Nominal GDP in National Currency
+        - The position is the stock at the end of the quarter or year; the GDP is summed over the four quarters up to and
+          including that quarter (not seasonally adjusted) for period="quarterly" or over the calendar year for
+          period="yearly"
+
+        Also known as: NIIP to GDP, net foreign assets to GDP, net external position.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the position at the end of each quarter)
+                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
+                highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Net International Investment Position to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_net_international_investment_position_to_gdp_ratio(
+            countries=['United States', 'Netherlands', 'Spain', 'Japan'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Netherlands |    Spain |   Japan |
+        |:-----|----------------:|--------------:|---------:|--------:|
+        | 2015 |         -0.4149 |        0.2745 |  -0.8773 |  0.5961 |
+        | 2016 |         -0.4392 |        0.3948 |  -0.843  |  0.6049 |
+        | 2017 |         -0.3993 |        0.3957 |  -0.8437 |  0.5827 |
+        | 2018 |         -0.4742 |        0.5051 |  -0.7798 |  0.5999 |
+        | 2019 |         -0.5416 |        0.6811 |  -0.7196 |  0.6243 |
+        | 2020 |         -0.5565 |        0.8825 |  -0.8371 |  0.6497 |
+        | 2021 |         -0.6473 |        0.7232 |  -0.6942 |  0.7285 |
+        | 2022 |         -0.546  |        0.5568 |  -0.5632 |  0.7186 |
+        | 2023 |         -0.6157 |        0.5301 |  -0.4946 |  0.7657 |
+        | 2024 |         -0.7553 |        0.6396 |  -0.401  |  0.8449 |
+        | 2025 |         -0.7111 |      nan      | nan      |  0.8429 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "net international investment position to GDP ratio",
+        )
+
+        net_international_investment_position_to_gdp_ratio = (
+            imf_model.get_net_international_investment_position(
+                period, self._start_date, self._end_date, to_gdp=True
+            )
+        )
+
+        return finalize_dataset(
+            dataset=net_international_investment_position_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Net International Investment Position to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_foreign_exchange_reserves(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the total reserves, including gold, of a variety of countries over time from the
+        World Bank's World Development Indicators (FI.RES.TOTL.CD), which takes them from
+        the IMF's International Financial Statistics. Reserve assets are the external assets that a central bank or other monetary
+        authority controls and can use at once to finance a balance of payments need, to
+        intervene in the currency market or to keep confidence in the currency: foreign
+        currency deposits and securities, monetary gold, special drawing rights (SDRs) and
+        the reserve position in the IMF (IMF Balance of Payments and International
+        Investment Position Manual, sixth edition; IMF (2013), International Reserves and
+        Foreign Currency Liquidity: Guidelines for a Data Template).
+
+        Reserves are a country's buffer against a sudden stop of capital inflows: they
+        let a central bank pay for imports and service foreign debt, and defend its
+        currency, when foreign financing dries up. Their adequacy is judged against what
+        they may have to cover, such as months of imports (see get_reserves_import_cover)
+        or short-term external debt (the Greenspan-Guidotti rule asks for reserves at least
+        equal to the external debt falling due within a year).
+
+        The reserves are the end-of-year stock in millions of current US dollars, so a
+        change includes valuation effects (exchange rates, the gold price) as well as
+        purchases and sales. Data is annual. The euro area and the European Union are
+        included as aggregates.
+
+        See definition: https://data.worldbank.org/indicator/FI.RES.TOTL.CD
+
+        Also known as: international reserves, FX reserves, official reserve assets.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Foreign Exchange Reserves in millions of US dollars.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2016-01-01', end_date="2025-12-31")
+
+        economics.get_foreign_exchange_reserves(
+            countries=['China', 'Japan', 'United States', 'India'])
+        ```
+
+        Which returns:
+
+        |      |   China |   Japan |   United States |   India |
+        |:-----|--------:|--------:|----------------:|--------:|
+        | 2016 | 3097658 | 1216519 |          405942 |  361694 |
+        | 2017 | 3235682 | 1264141 |          451285 |  412614 |
+        | 2018 | 3168216 | 1270467 |          449907 |  399167 |
+        | 2019 | 3222895 | 1322443 |          516701 |  463470 |
+        | 2020 | 3357241 | 1390809 |          628370 |  590227 |
+        | 2021 | 3427931 | 1405749 |          716152 |  638485 |
+        | 2022 | 3306839 | 1227573 |          706644 |  567298 |
+        | 2023 | 3449544 | 1294636 |          773426 |  627793 |
+        | 2024 | 3456025 | 1230667 |          910037 |  643043 |
+        | 2025 | 3748745 | 1371402 |         1385447 |  700074 |
+        """
+        # The World Bank publishes the reserves in US dollars.
+        foreign_exchange_reserves = (
+            world_bank_model.get_indicator("FI.RES.TOTL.CD", "total reserves") / 1e6
+        )
+
+        return finalize_dataset(
+            dataset=foreign_exchange_reserves,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Foreign Exchange Reserves",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_reserves_import_cover(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the total reserves, including gold, in months of imports for a variety of
+        countries over time from the World Bank's World Development Indicators
+        (FI.RES.TOTL.MO), which takes them from the IMF's International Financial
+        Statistics: the number of months of imports of goods and services the reserves
+        could pay for. Reserve assets are the external assets that a central bank or other monetary
+        authority controls and can use at once to finance a balance of payments need, to
+        intervene in the currency market or to keep confidence in the currency: foreign
+        currency deposits and securities, monetary gold, special drawing rights (SDRs) and
+        the reserve position in the IMF (IMF Balance of Payments and International
+        Investment Position Manual, sixth edition; IMF (2013), International Reserves and
+        Foreign Currency Liquidity: Guidelines for a Data Template).
+
+        Import cover is the classic measure of reserve adequacy for countries whose main
+        external risk runs through the current account rather than the capital account:
+        three months of imports is the traditional rule of thumb for the minimum, and the
+        IMF's reserve adequacy assessments use it next to measures of short-term external
+        debt and broad money for countries with open capital accounts.
+
+        The cover is a number of months (3.5 means three and a half months of imports),
+        not a decimal ratio. Data is annual. The euro area, the European Union and the
+        world are included as aggregates.
+
+        The ratio is the World Bank's own figure (the source's calculation).
+
+        The formula is as follows:
+
+        - Reserves Import Cover = Total Reserves / (Imports of Goods and Services / 12)
+
+        See definition: https://data.worldbank.org/indicator/FI.RES.TOTL.MO
+
+        Also known as: import cover, reserves in months of imports, reserve adequacy.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Reserves Import Cover in months of imports.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2016-01-01', end_date="2025-12-31")
+
+        economics.get_reserves_import_cover(
+            countries=['China', 'Japan', 'United States', 'Turkey'])
+        ```
+
+        Which returns:
+
+        |      |   China |   Japan |   United States |   Turkey |
+        |:-----|--------:|--------:|----------------:|---------:|
+        | 2016 | 16.7161 | 16.969  |          1.4483 |   5.4317 |
+        | 2017 | 15.4175 | 16.2733 |          1.4924 |   4.7879 |
+        | 2018 | 13.1417 | 14.6891 |          1.3675 |   4.2176 |
+        | 2019 | 13.6333 | 15.4234 |          1.5576 |   5.1843 |
+        | 2020 | 14.497  | 18.5186 |          2.1028 |   4.6221 |
+        | 2021 | 11.4763 | 16.0722 |          1.9792 |   4.4464 |
+        | 2022 | 11.046  | 12.3369 |          1.6876 |   3.8766 |
+        | 2023 | 11.4423 | 13.5201 |          1.7943 |   4.1542 |
+        | 2024 | 11.0155 | 12.9547 |          1.9364 |   4.6984 |
+        | 2025 | 11.943  | 14.0094 |          2.7991 |   5.1277 |
+        """
+        reserves_import_cover = world_bank_model.get_indicator(
+            "FI.RES.TOTL.MO", "total reserves in months of imports"
+        )
+
+        return finalize_dataset(
+            dataset=reserves_import_cover,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Reserves Import Cover",
             countries=countries,
             rolling=rolling,
             trailing=trailing,

@@ -382,6 +382,41 @@ def test_get_level_significance_compares_with_a_level():
     assert "Level" not in diagnostics_model.get_level_significance(levels)
 
 
+def test_get_level_significance_counts_and_dates_the_observations_on_either_side():
+    weeks = pd.PeriodIndex(
+        pd.date_range("2019-01-05", periods=8, freq="W-SAT"), freq="D"
+    )
+    claims = pd.Series(
+        [210.0, 203.0, 199.0, 220.0, 203.0, 250.0, 260.0, 202.0], index=weeks
+    )
+
+    result = diagnostics_model.get_level_significance(claims, level=203.0)
+
+    # At or below counts a value equal to the level; the latest week is counted, but the
+    # last dates are the earlier weeks before it.
+    assert result["Observations Above Level"] == 4
+    assert result["Observations At Or Below Level"] == 4
+    assert (
+        result["Observations Above Level"] + result["Observations At Or Below Level"]
+        == result["Observations"]
+    )
+    assert result["Last Above Level"] == str(weeks[6])
+    assert result["Last At Or Below Level"] == str(weeks[4])
+
+    # Never on one side before the latest observation: NaN, not the latest date.
+    rising = pd.Series([1.0, 2.0, 3.0], index=weeks[:3])
+    first_above = diagnostics_model.get_level_significance(rising, level=2.5)
+    assert pd.isna(first_above["Last Above Level"])
+    assert first_above["Last At Or Below Level"] == str(weeks[1])
+    assert first_above["Observations Above Level"] == 1
+    never = diagnostics_model.get_level_significance(rising, level=0.5)
+    assert pd.isna(never["Last At Or Below Level"])
+    assert never["Observations At Or Below Level"] == 0
+    assert "Observations Above Level" not in diagnostics_model.get_level_significance(
+        rising
+    )
+
+
 def test_window_change_by_year_ranks_the_same_months_of_every_year():
     months = pd.period_range("2021-01", "2024-06", freq="M")
     values = pd.Series(100.0, index=months)
@@ -478,3 +513,19 @@ def test_window_change_by_year_in_points():
     assert window.loc[2025, "Change"] == pytest.approx(
         rates[pd.Period("2025-10", "M")] - rates[pd.Period("2025-02", "M")]
     )
+
+
+def test_window_change_by_year_ranks_and_years_are_whole_numbers():
+    months = pd.period_range("2021-01", "2024-06", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2021-10", "M")] = 105
+    values[pd.Period("2023-10", "M")] = 104
+
+    window = diagnostics_model.get_window_change_by_year(values, 2, 10)
+
+    assert str(window["Rank"].dtype) == "Int64"
+    assert str(window["Largest Since"].dtype) == "Int64"
+    # 2024 has no change yet and 2021 no earlier year: missing, not a float year.
+    assert window.loc[2024, "Rank"] is pd.NA
+    assert window.loc[2021, "Largest Since"] is pd.NA
+    assert window.loc[2023, "Largest Since"] == 2021

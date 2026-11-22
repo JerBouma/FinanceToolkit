@@ -2,21 +2,204 @@
 
 __docformat__ = "google"
 
+from collections.abc import Callable
+from functools import cached_property
+
 import pandas as pd
 
+from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk.dependence.dependence_controller import DependenceRisk
 from financetoolkit.risk.distribution.distribution_controller import DistributionRisk
 from financetoolkit.risk.drawdown.drawdown_controller import DrawdownRisk
+from financetoolkit.risk.helpers import (
+    determine_within_historical_data,
+    get_risk_free_rate_per_ticker,
+    mask_non_trading_days,
+)
 from financetoolkit.risk.liquidity.liquidity_controller import LiquidityRisk
 from financetoolkit.risk.value_at_risk.value_at_risk_controller import ValueAtRiskRisk
 from financetoolkit.risk.volatility.volatility_controller import VolatilityRisk
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import (
-    apply_rounding,
-)
+from financetoolkit.utilities.statistics_model import apply_rounding
+
+logger = get_logger()
+
+
+@filter_shown_columns
+@track_sources
+class RiskBase:
+    """
+    The data every risk topic shares: the tickers, returns and prices.
+    """
+
+    def __init__(
+        self,
+        tickers: list[str] | Callable[[], list[str]],
+        historical_data: dict[str, pd.DataFrame] | None = None,
+        risk_free_rate_data: dict[str, pd.Series] | None = None,
+        intraday_period: str | None = None,
+        quarterly: bool = False,
+        rounding: int | None = 4,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ):
+        """
+        Initializes the Risk Controller Class.
+
+        The Toolkit passes the tickers as a function without arguments and the period
+        dictionaries as a LazyDict (financetoolkit.helpers), so a metric retrieves the data of
+        the period it is calculated over when it is first needed, and nothing else.
+
+        Args:
+            tickers (list[str] | Callable[[], list[str]]): The tickers to use for the Toolkit instance.
+            historical_data (dict[str, pd.DataFrame] | None, optional): The historical data per period.
+                Defaults to None, which is treated as an empty dictionary.
+            risk_free_rate_data (dict[str, pd.Series] | None, optional): The annualized risk free rate
+                per period frequency, used for the Excess Volatility calculations. Defaults to None.
+            intraday_period (str | None, optional): The intraday period used for within-period calculations.
+                Defaults to None.
+            quarterly (bool, optional): Whether to use quarterly data. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
+            start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
+            end_date (str | None, optional): The end date to use for the calculations. Defaults to None.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_value_at_risk(period='yearly')
+        ```
+
+        Which returns:
+
+        |           |       0 |
+        |:----------|--------:|
+        | AAPL      | -0.2109 |
+        | MSFT      | -0.2188 |
+        | Benchmark | -0.1279 |
+        """
+        self._historical_data = historical_data if historical_data is not None else {}
+        self._annualized_risk_free_rate_data = (
+            risk_free_rate_data if risk_free_rate_data is not None else {}
+        )
+        # The risk free rate is quoted as an annualized yield, so it is converted to the rate each ticker earns per period of its returns, on its own calendar (see `_get_risk_free_rate`).  # noqa: E501
+        self._risk_free_rate_data = LazyDict(self._get_risk_free_rate)
+        self._tickers_source = tickers
+        self._quarterly = quarterly
+        self._rounding: int | None = rounding
+        self._start_date: str | None = start_date
+        self._end_date: str | None = end_date
+        self._portfolio_weights: dict | None = None
+
+        # The returns within each period, built when a metric first asks for a period. Missing values stay missing: filling them with 0 would turn a period without data (e.g. before a listing, or the lone boundary observation at the start of the range) into 0% returns, i.e. a VaR, skewness or drawdown of exactly 0 instead of no value.  # noqa: E501
+        self._within_historical_data = LazyDict(
+            lambda period: determine_within_historical_data(
+                period, self._historical_data, intraday_period
+            )
+        )
+
+        # Memo for the return slices handed to the calculations, keyed by (period,
+        # within_period): nearly every method starts from that slice and the MCP server
+        # collects many metrics per session. Neither frame is mutated after this point.
+        self._data_cache: dict[tuple[str, bool], pd.DataFrame] = {}
+
+    @cached_property
+    def _tickers(self) -> list[str]:
+        """The tickers, retrieved when first needed."""
+        return (
+            self._tickers_source()
+            if callable(self._tickers_source)
+            else self._tickers_source
+        )
+
+    def _get_risk_free_rate(self, period: str) -> pd.DataFrame:
+        """
+        The risk free return per period of each ticker (and the Benchmark) on its own
+        calendar, see `financetoolkit.risk.helpers.get_risk_free_rate_per_ticker`.
+        """
+        return get_risk_free_rate_per_ticker(
+            self._annualized_risk_free_rate_data, self._historical_data, period
+        )
+
+    @handle_portfolio
+    def _get_returns(self, period: str, within_period: bool) -> pd.DataFrame:
+        """
+        The Return slice a calculation runs on, memoized per (period, within_period)
+        pair (see `_data_cache` in `__init__`).
+
+        The whole-series slice drops the rows without any return: a resampled series
+        starts with a NaN return (there is no previous period to compare against).
+        Rows where only some tickers miss a return (e.g. a ticker that listed later)
+        are kept, so every ticker uses its own full history; the calculations skip the
+        missing returns per column. The within-period frames keep their missing values
+        as well, so a period without observations for a ticker gives NaN rather than 0.
+        """
+        key = (period, within_period)
+
+        if key not in self._data_cache:
+            self._data_cache[key] = (
+                self._within_historical_data[period]["Return"]
+                if within_period
+                else self._historical_data[period]["Return"].dropna(how="all")
+            )
+
+        returns = self._data_cache[key]
+
+        if not within_period:
+            # A measure over the whole range compares returns with each other, so a single
+            # return (e.g. one yearly return in a range within one year) gives a drawdown of
+            # 0 and an undefined volatility, which reads as "no risk" without this note.
+            short_history = returns.columns[returns.count() < 2]  # noqa: PLR2004
+
+            if len(short_history):
+                logger.warning(
+                    "Fewer than two %s returns between %s and %s for %s, so measures over the whole range "  # noqa: E501
+                    "are 0 or NaN. Use a higher frequency period, or within_period=True for a value per period.",  # noqa: E501
+                    period,
+                    self._start_date,
+                    self._end_date,
+                    ", ".join(map(str, short_history)),
+                )
+
+        return returns
+
+    def _get_prices(
+        self, column: str, period: str = "daily", within_period: bool = False
+    ) -> pd.DataFrame:
+        """
+        The `column` prices on the dates each ticker traded, see
+        `helpers.mask_non_trading_days`.
+        """
+        frame = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        )
+
+        return mask_non_trading_days(frame, column)
+
+    def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
+        # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        # Only rows without any value are dropped: the pairwise calculations (copulas, tail dependence, CoVaR) align each pair themselves, so a joint dropna would cut every ticker's sample down to the shortest history.  # noqa: E501
+        return self._historical_data[period][column].dropna(how="all")
+
 
 # ruff: noqa: E501
 
@@ -53,6 +236,7 @@ class Risk(
     DependenceRisk,
     DistributionRisk,
     LiquidityRisk,
+    RiskBase,
 ):
     """
     The Risk module is meant to calculate important risk metrics such
@@ -200,6 +384,13 @@ class Risk(
                 standardize=standardize,
             ),
             "Ulcer Index": self.get_ulcer_index(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Pain Index": self.get_pain_index(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -395,14 +586,14 @@ class Risk(
         Which returns:
         |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:----------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_volatility', '1 Month')           |    0.0967 |                  0.368  |                 0.2628 |        2.8673 |    0.0049 |           0.6218 |            119 |             0.0184 |              0.4702 |                 0.586  |
-        | ('get_volatility', '12 Months')         |    0.2766 |                  0.3693 |                 0.7489 |        7.7824 |    0      |           0.7685 |            108 |             0.3166 |              0.4702 |                 0.586  |
-        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3311 |                -0.0775 |       -0.8451 |    0.3997 |           0.4538 |            119 |            -0.0038 |              0.6275 |                 0.2711 |
-        | ('get_maximum_drawdown', '12 Months')   |   -0.1745 |                  0.3544 |                -0.4923 |       -5.1158 |    0      |           0.3241 |            108 |            -0.2068 |              0.6275 |                 0.2711 |
-        | ('get_skewness', '1 Month')             |    0.0137 |                  0.2949 |                 0.0464 |        0.5066 |    0.6134 |           0.5378 |            119 |            -0.0005 |              0.7521 |                 0.0583 |
-        | ('get_skewness', '12 Months')           |    0.0107 |                  0.2985 |                 0.0358 |        0.3717 |    0.7109 |           0.5185 |            108 |             0.0142 |              0.7521 |                 0.0583 |
-        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3897 |                -0.0732 |       -0.7985 |    0.4262 |           0.479  |            119 |            -0.0059 |              0.1852 |                 0.9003 |
-        | ('get_amihud_illiquidity', '12 Months') |   -0.1158 |                  0.3791 |                -0.3054 |       -3.1735 |    0.002  |           0.3611 |            108 |            -0.08   |              0.1852 |                 0.9003 |
+        | ('get_volatility', '1 Month')           |    0.0963 |                  0.3676 |                 0.262  |        2.8586 |    0.005  |           0.6218 |            119 |             0.0185 |              0.4688 |                 0.5848 |
+        | ('get_volatility', '12 Months')         |    0.2759 |                  0.3703 |                 0.7451 |        7.7428 |    0      |           0.7685 |            108 |             0.3154 |              0.4688 |                 0.5848 |
+        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3315 |                -0.0774 |       -0.8443 |    0.4002 |           0.4622 |            119 |            -0.0041 |              0.6275 |                 0.2719 |
+        | ('get_maximum_drawdown', '12 Months')   |   -0.1759 |                  0.3542 |                -0.4965 |       -5.1603 |    0      |           0.3241 |            108 |            -0.2094 |              0.6275 |                 0.2719 |
+        | ('get_skewness', '1 Month')             |    0.0136 |                  0.2943 |                 0.0464 |        0.5056 |    0.6141 |           0.5462 |            119 |            -0.0007 |              0.7521 |                 0.0593 |
+        | ('get_skewness', '12 Months')           |    0.0081 |                  0.2996 |                 0.0271 |        0.2815 |    0.7789 |           0.5093 |            108 |             0.0142 |              0.7521 |                 0.0593 |
+        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3896 |                -0.0731 |       -0.7971 |    0.427  |           0.479  |            119 |            -0.0059 |              0.1905 |                 0.8996 |
+        | ('get_amihud_illiquidity', '12 Months') |   -0.1164 |                  0.3789 |                -0.3072 |       -3.1927 |    0.0019 |           0.3611 |            108 |            -0.0796 |              0.1905 |                 0.8996 |
         """
         factors = factor_model.get_daily_factors(
             self,
@@ -422,6 +613,7 @@ class Risk(
             detail,
             self._start_date,
             self._end_date,
+            returns=self._historical_data["daily"].get("Return"),
         )
 
         return apply_rounding(

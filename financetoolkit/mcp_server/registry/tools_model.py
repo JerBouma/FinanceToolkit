@@ -31,6 +31,10 @@ from financetoolkit.mcp_server.analytics.analytics_model import (
     UsageAnalytics,
     run_in_thread,
 )
+from financetoolkit.mcp_server.registry.registry_controller import (
+    keep_unknown_arguments,
+    name_unknown_arguments,
+)
 from financetoolkit.utilities.logger_model import get_logger
 
 if TYPE_CHECKING:
@@ -113,6 +117,16 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
         "get_ohlson_o_score",
         "get_zmijewski_score",
         "get_campbell_hilscher_szilagyi_score",
+    ),
+    "constraints": (
+        "get_kaplan_zingales_index",
+        "get_whited_wu_index",
+        "get_size_age_index",
+    ),
+    "constrained": (
+        "get_kaplan_zingales_index",
+        "get_whited_wu_index",
+        "get_size_age_index",
     ),
     "default": (
         "get_altman_z_score",
@@ -234,7 +248,7 @@ class UtilityToolRegistry:
             (self.search_metrics, "search_metrics", "Search Metrics"),
         ]
         for method, tool_name, title in tools:
-            tool = run_in_thread(method)
+            tool = run_in_thread(name_unknown_arguments(method, tool_name))
             self._mcp.add_tool(
                 (
                     self._analytics.counted(tool_name, tool)
@@ -250,6 +264,8 @@ class UtilityToolRegistry:
                     ),
                 ),
             )
+            # A misspelt or foreign argument is named in the answer rather than dropped.
+            keep_unknown_arguments(self._mcp, tool_name)
         logger.info("Registered %d utility tools.", len(tools))
         return len(tools)
 

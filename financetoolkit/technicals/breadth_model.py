@@ -6,6 +6,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.helpers import apply_on_own_closes
 from financetoolkit.technicals.overlap_model import get_exponential_moving_average
 
 
@@ -133,6 +134,9 @@ def get_on_balance_volume(
     Reference: Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
+    TA-Lib: OBV, the reference implementation (https://ta-lib.org/functions/obv.html), whose
+    running total starts at the first volume instead of 0.
+
     Args:
         prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker when
             a DataFrame is given.
@@ -157,6 +161,52 @@ def get_on_balance_volume(
     obv = direction * volumes[observed]
 
     return obv.cumsum().reindex(prices_close.index)
+
+
+def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
+    """
+    Calculate the Price Volume Trend (PVT) of a given price series.
+
+    The Price Volume Trend is a running total of volume weighted by the period's percentage
+    change in price. Where On-Balance Volume adds or subtracts the whole volume depending on
+    the direction of the close, the PVT adds only the share of the volume that matches the
+    size of the move, so a close 0.1% higher adds a tenth of what a close 1% higher adds.
+    A rising PVT confirms an uptrend carried by volume, and a divergence from price warns
+    that the move lacks participation.
+
+    The formula is as follows:
+
+    - PVT(t) = PVT(t-1) + Volume(t) * (Close(t) - Close(t-1)) / Close(t-1)
+    - PVT = 0 on the first observation, which has no previous close
+
+    Also known as: PVT, Price and Volume Trend, Volume Price Trend.
+
+    Reference: StockCharts ChartSchool, "Price Volume Trend (PVT)". The PVT has no single
+    published origin; it refines Granville's On-Balance Volume (Granville, J.E. (1963).
+    "Granville's New Key to Stock Market Profits." Prentice-Hall) by weighting volume with
+    the percentage change in price.
+
+    TA-Lib: PVT, the reference implementation (https://ta-lib.org/functions/pvt.html).
+
+    Notes:
+        - The running total starts at 0 on the first observation with both a close and a
+          volume, so its level depends on the first date of the data; only its direction
+          and its divergences from price carry meaning.
+        - The change is taken over the observations with both a close and a volume, so the
+          observation after a missing one compares with the last close before it; the
+          missing observations stay NaN.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        volumes (pd.Series): Series of trading volumes.
+
+    Returns:
+        pd.Series: PVT values, in units of volume.
+    """
+    observed = prices_close.notna() & volumes.notna()
+    weighted_volume = prices_close[observed].pct_change() * volumes[observed]
+
+    return weighted_volume.fillna(0).cumsum().reindex(prices_close.index)
 
 
 def _get_money_flow_multiplier(
@@ -220,6 +270,8 @@ def get_accumulation_distribution_line(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
+    TA-Lib: AD, the reference implementation (https://ta-lib.org/functions/ad.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -257,13 +309,16 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
     Analysis of Stock and Bond Markets." Business One Irwin, for the definitive treatment.
 
     Args:
-        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns,
+            NaN on the dates a ticker did not trade. A ticker's change runs from its own
+            previous close, and a ticker without a close on a date is not counted on it.
         volumes (pd.DataFrame): DataFrame of trading volumes with tickers as columns.
 
     Returns:
         pd.Series: TRIN values.
     """
-    price_change = prices_close.diff()
+    # Each ticker's change since its own previous close, so a ticker without a close on a date (it did not trade) is neither advancing nor declining.  # noqa: E501
+    price_change = apply_on_own_closes(prices_close, lambda close: close.diff())
 
     advancing = price_change > 0
     declining = price_change < 0
@@ -301,7 +356,8 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
     R.W. (2003). "The Encyclopedia of Technical Market Indicators." 2nd ed. McGraw-Hill.
 
     Args:
-        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns,
+            NaN on the dates a ticker did not trade (its window counts its own closes).
         window (int): Number of periods to consider for the new high / new low lookback.
 
     Returns:
@@ -341,6 +397,8 @@ def get_chaikin_oscillator(
     Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
+
+    TA-Lib: ADOSC, the reference implementation (https://ta-lib.org/functions/adosc.html).
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
@@ -396,6 +454,8 @@ def get_chaikin_money_flow(
     Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
+
+    TA-Lib: CMF, the reference implementation (https://ta-lib.org/functions/cmf.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -461,6 +521,8 @@ def get_ease_of_movement(
 
     Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
     Analysis of Stock and Bond Markets." Business One Irwin.
+
+    TA-Lib: EMV, the reference implementation (https://ta-lib.org/functions/emv.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -555,6 +617,8 @@ def get_negative_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
+    TA-Lib: NVI, the reference implementation (https://ta-lib.org/functions/nvi.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
@@ -594,6 +658,8 @@ def get_positive_volume_index(
 
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
+
+    TA-Lib: PVI, the reference implementation (https://ta-lib.org/functions/pvi.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -658,7 +724,9 @@ def get_market_breadth(
       of constituents); unchanged issues are left out. Each average starts from the simple
       average of its first 19 or 39 values, so the oscillator starts once the 39-period
       average exists (NaN before), and so does its running total, the McClellan Summation
-      Index.
+      Index. When a constituent has dates without a close inside its history, such as a
+      stock next to a cryptocurrency, the averages run over the dates on which such a
+      constituent traded and are NaN on the others (a cryptocurrency's weekend).
     - Percentage Above the Moving Averages: the share of constituents whose close is above its
       short and long moving average.
     - New Highs and New Lows: the constituents whose close is above the highest (below the
@@ -666,13 +734,18 @@ def get_market_breadth(
       of the last `high_low_window` periods. A close that only equals the previous high is no
       new high. NaN until at least one constituent has `high_low_window` closes.
 
+    Every change, moving average and high or low of a constituent runs over its own closes,
+    and a constituent is counted on the dates it has a close, so a stock is not counted as
+    unchanged on the weekends of a cryptocurrency in the same universe.
+
     For more information, see the following book:
 
     - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan Oscillator
       and Summation Index." Trade Levels Inc.
 
     Args:
-        prices_close (pd.DataFrame): The closes of the constituents, a column each.
+        prices_close (pd.DataFrame): The closes of the constituents, a column each, NaN on
+            the dates a constituent did not trade.
         short_window (int, optional): The short moving average window. Defaults to 50.
         long_window (int, optional): The long moving average window. Defaults to 200.
         high_low_window (int, optional): The number of periods, including the current one, of
@@ -681,7 +754,8 @@ def get_market_breadth(
     Returns:
         pd.DataFrame: The breadth measures per date.
     """
-    changes = prices_close.diff()
+    # Each constituent's change since its own previous close: a constituent without a close on a date (such as a stock on a weekend next to a cryptocurrency) is not counted on it, and its next change spans the days it did not trade.  # noqa: E501
+    changes = apply_on_own_closes(prices_close, lambda close: close.diff())
     observed = changes.notna()
     advancers = (changes > 0).sum(axis=1)
     decliners = (changes < 0).sum(axis=1)
@@ -694,20 +768,39 @@ def get_market_breadth(
         .fillna(0)
         .where(observed.any(axis=1))
     )
+    # A constituent with dates inside its history without a close, such as a stock next to a cryptocurrency, sets the dates of the averages: they run over the dates on which such a constituent traded, so the weekends of a cryptocurrency in the universe do not add periods that the 19 and 39 count, while a universe that trades every date (only cryptocurrencies, or stocks of one exchange) keeps all its dates.  # noqa: E501
+    inside_gaps = (
+        prices_close.isna()
+        & prices_close.ffill().notna()
+        & prices_close.bfill().notna()
+    )
+    with_gaps = inside_gaps.any()
+    if with_gaps.any():
+        ratio_adjusted = ratio_adjusted.where(
+            prices_close.loc[:, with_gaps].notna().any(axis=1)
+        )
     short_average = _get_seeded_exponential_moving_average(ratio_adjusted, 19)
     long_average = _get_seeded_exponential_moving_average(ratio_adjusted, 39)
     mcclellan = short_average - long_average
 
     def share_above(window: int) -> pd.Series:
-        average = prices_close.rolling(window).mean()
+        average = apply_on_own_closes(
+            prices_close, lambda close: close.rolling(window).mean()
+        )
         counted = average.notna() & prices_close.notna()
         above = (prices_close > average).astype(float).where(counted)
         return above.sum(axis=1) / counted.sum(axis=1).replace(0, np.nan)
 
     # Against the closes before today, so a close that merely equals the previous high (or low) is not counted as a new one day after day.  # noqa: E501
     if high_low_window > 1:
-        previous_closes = prices_close.shift(1).rolling(high_low_window - 1)
-        previous_high, previous_low = previous_closes.max(), previous_closes.min()
+        previous_high = apply_on_own_closes(
+            prices_close,
+            lambda close: close.shift(1).rolling(high_low_window - 1).max(),
+        )
+        previous_low = apply_on_own_closes(
+            prices_close,
+            lambda close: close.shift(1).rolling(high_low_window - 1).min(),
+        )
     else:
         # A window of a single period has no earlier close to set a high or a low.
         previous_high = previous_low = prices_close * np.nan

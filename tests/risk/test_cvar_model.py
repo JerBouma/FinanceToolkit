@@ -341,3 +341,14 @@ def test_out_of_sample_gaussian_estimates_match_a_fit_per_window():
         )
 
         pd.testing.assert_frame_equal(estimates, expected, rtol=1e-12)
+
+
+def test_get_cvar_historic_of_a_period_with_a_single_return_is_nan():
+    index = pd.period_range("2021-12-31", periods=6, freq="D")
+    returns = pd.DataFrame({"A": [-0.02, 0.01, -0.03, 0.02, 0.0, -0.01]}, index=index)
+    within = returns.set_axis(pd.MultiIndex.from_arrays([index.asfreq("Y"), index]))
+
+    result = cvar_model.get_cvar_historic(within, 0.2)
+
+    assert np.isnan(result.loc[pd.Period("2021", "Y"), "A"])
+    assert result.loc[pd.Period("2022", "Y"), "A"] == pytest.approx(-0.03)

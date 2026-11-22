@@ -6,9 +6,14 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.risk.helpers import average_two_day_spreads
 from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
+    VOLATILITY_WINDOW_TRANSLATION,
     by_own_trading_days,
     drop_non_finite,
+    to_period_index,
+    validate_period,
 )
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
@@ -16,6 +21,15 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 # The Roll Spread needs a few consecutive changes for a lag-1 autocovariance.
 MINIMUM_ROLL_OBSERVATIONS = 3
+
+# The denominator 3 - 2√2 of alpha in Corwin and Schultz (2012).
+CORWIN_SCHULTZ_DENOMINATOR = 3 - 2 * np.sqrt(2)
+
+# EDGE needs at least two pairs of days with a price change, as in the authors' implementation.
+MINIMUM_EDGE_PRICE_CHANGES = 2
+
+# Ang, Hodrick, Xing and Zhang (2006) require at least 15 daily returns within a month.
+MINIMUM_IDIOSYNCRATIC_OBSERVATIONS = 15
 
 
 def get_amihud_illiquidity(
@@ -215,3 +229,618 @@ def get_roll_spread(
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_corwin_schultz_spread(
+    high_prices: pd.Series | pd.DataFrame,
+    low_prices: pd.Series | pd.DataFrame,
+    close_prices: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Corwin and Schultz (2012) high-low bid-ask spread per period.
+
+    The daily High is almost always a trade at the ask and the daily Low one at the bid, so
+    the High/Low ratio holds both the volatility and the spread. The variance part grows
+    with the length of the window while the spread part does not, so comparing the range
+    of two single days with the range over both days separates the two:
+
+    - β = [ln(H_t / L_t)]^2 + [ln(H_(t+1) / L_(t+1))]^2
+    - γ = [ln(max(H_t, H_(t+1)) / min(L_t, L_(t+1)))]^2
+    - α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
+    - S = 2 * (e^α - 1) / (1 + e^α)
+
+    Before β and γ are calculated, the second day is adjusted for an overnight return as in
+    section III.B of the paper: when its Low is above the previous Close, its High and Low
+    are lowered by the gap (Low - previous Close), and when its High is below the previous
+    Close, they are raised by the gap (previous Close - High). A two-day spread below zero
+    (the range over both days is wide relative to the single days, mostly from a move in
+    the price) is set to 0, the paper's main convention, before the spreads of a period
+    are averaged.
+
+    The pairs are consecutive trading days of the asset itself (the rows with a High, Low
+    and Close, which are each positive) and both days of a pair fall within the period.
+
+    For more information about the method, see the following paper:
+
+    - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from
+    Daily High and Low Prices." The Journal of Finance, 67(2), 719-760.
+
+    Args:
+        high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
+        low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
+        prices, used for the overnight adjustment.
+        period (str, optional): The period to average the two-day spreads over: weekly,
+        monthly, quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Average the two-day spreads of the last `rolling`
+        periods instead of those of a single period. A window with a period without
+        spreads is NaN. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The spread as a decimal of the price (0.005 is 0.5%), with
+        the periods as the index (and the assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(high_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_corwin_schultz_spread(
+                    high_prices[column],
+                    low_prices[column],
+                    close_prices[column],
+                    period,
+                    rolling,
+                )
+                for column in high_prices.columns
+            }
+        )
+    if not isinstance(high_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    prices = pd.concat([high_prices, low_prices, close_prices], axis=1)
+    # A bad bar (a price of 0 or below) has no logarithm, and a day without a High, Low or Close is not a trading day of the asset, so both leave the pairs.  # noqa: E501
+    prices = prices.where(prices > 0).dropna()
+    periods = to_period_index(prices.index).asfreq(PERIOD_TRANSLATION[period])
+
+    high, low, close = (prices.iloc[:, number].to_numpy() for number in range(3))
+
+    # The overnight adjustment of the second day: only one of the two gaps can be positive.
+    shift = np.maximum(close[:-1] - high[1:], 0) - np.maximum(low[1:] - close[:-1], 0)
+    second_high = high[1:] + shift
+    second_low = low[1:] + shift
+
+    beta = np.log(high[:-1] / low[:-1]) ** 2 + np.log(second_high / second_low) ** 2
+    gamma = (
+        np.log(np.maximum(high[:-1], second_high) / np.minimum(low[:-1], second_low))
+        ** 2
+    )
+    alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / CORWIN_SCHULTZ_DENOMINATOR - np.sqrt(
+        gamma / CORWIN_SCHULTZ_DENOMINATOR
+    )
+    spread = np.maximum(2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha)), 0)
+
+    same_period = np.asarray(periods[1:] == periods[:-1])
+    spreads = pd.Series(spread[same_period], index=periods[1:][same_period])
+
+    return average_two_day_spreads(spreads, rolling, high_prices.name)
+
+
+def get_abdi_ranaldo_spread(
+    high_prices: pd.Series | pd.DataFrame,
+    low_prices: pd.Series | pd.DataFrame,
+    close_prices: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Abdi and Ranaldo (2017) close-high-low bid-ask spread per period.
+
+    The mid-range (the average of the log High and log Low) of a day is a proxy for the
+    efficient price that holds no spread, while the Close is a trade at the bid or the ask.
+    The distance of the Close to the mid-range of its own day and to that of the next day
+    therefore moves with the spread, and their product removes the volatility of the
+    efficient price between the two days:
+
+    - η_t = (ln H_t + ln L_t) / 2
+    - c_t = ln C_t
+    - S_t^2 = 4 * (c_t - η_t) * (c_t - η_(t+1))
+    - S_t = √(max(S_t^2, 0))
+    - S = Mean(S_t within the period)
+
+    This is the "two-day corrected" version of the paper (equation 11), which the authors
+    use in their empirical analysis: a two-day estimate of the squared spread below zero
+    is set to 0 before the square root is taken and the two-day spreads of a period are
+    averaged. Unlike the Corwin-Schultz spread, the estimator needs no adjustment for the
+    overnight return.
+
+    The pairs are consecutive trading days of the asset itself (the rows with a High, Low
+    and Close, which are each positive) and both days of a pair fall within the period.
+
+    For more information about the method, see the following paper:
+
+    - Abdi, F., & Ranaldo, A. (2017). "A Simple Estimation of Bid-Ask Spreads from Daily
+    Close, High, and Low Prices." The Review of Financial Studies, 30(12), 4437-4480.
+
+    Args:
+        high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
+        low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
+        prices.
+        period (str, optional): The period to average the two-day spreads over: weekly,
+        monthly, quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Average the two-day spreads of the last `rolling`
+        periods instead of those of a single period. A window with a period without
+        spreads is NaN. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The spread as a decimal of the price (0.005 is 0.5%), with
+        the periods as the index (and the assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(high_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_abdi_ranaldo_spread(
+                    high_prices[column],
+                    low_prices[column],
+                    close_prices[column],
+                    period,
+                    rolling,
+                )
+                for column in high_prices.columns
+            }
+        )
+    if not isinstance(high_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    prices = pd.concat([high_prices, low_prices, close_prices], axis=1)
+    # A bad bar (a price of 0 or below) has no logarithm, and a day without a High, Low or Close is not a trading day of the asset, so both leave the pairs.  # noqa: E501
+    prices = np.log(prices.where(prices > 0).dropna())
+    periods = to_period_index(prices.index).asfreq(PERIOD_TRANSLATION[period])
+
+    high, low, close = (prices.iloc[:, number].to_numpy() for number in range(3))
+    mid_range = (high + low) / 2
+
+    squared_spread = 4 * (close[:-1] - mid_range[:-1]) * (close[:-1] - mid_range[1:])
+    spread = np.sqrt(np.maximum(squared_spread, 0))
+
+    same_period = np.asarray(periods[1:] == periods[:-1])
+    spreads = pd.Series(spread[same_period], index=periods[1:][same_period])
+
+    return average_two_day_spreads(spreads, rolling, high_prices.name)
+
+
+def get_edge_spread(
+    open_prices: pd.Series | pd.DataFrame,
+    high_prices: pd.Series | pd.DataFrame,
+    low_prices: pd.Series | pd.DataFrame,
+    close_prices: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the EDGE bid-ask spread of Ardia, Guidotti and Kroencke (2024) per period.
+
+    EDGE (the Efficient Discrete Generalized Estimator) combines four moment conditions on
+    the Open, High, Low and Close: two measure the spread at the open (OHL and OHLC) and
+    two at the close (CHL, a generalization of Abdi and Ranaldo (2017), and CHLO). They
+    are paired into two conditions and weighted by the Generalized Method of Moments, which
+    minimizes the variance of the estimate. With the log prices o, h, l and c and the
+    mid-range η = (h + l) / 2 of two consecutive trading days t-1 and t:
+
+    - τ_t = 1 if h_t ≠ l_t or l_t ≠ c_(t-1), else 0
+    - π_o = -8 / (P[o_t ≠ h_t, τ_t = 1] + P[o_t ≠ l_t, τ_t = 1])
+    - π_c = -8 / (P[c_(t-1) ≠ h_(t-1), τ_t = 1] + P[c_(t-1) ≠ l_(t-1), τ_t = 1])
+    - x_1 = π_o / 2 * (η_t - o_t) * (o_t - η_(t-1)) + π_c / 2 * (η_t - c_(t-1)) * (c_(t-1) - η_(t-1))
+    - x_2 = π_o / 2 * (η_t - o_t) * (o_t - c_(t-1)) + π_c / 2 * (o_t - c_(t-1)) * (c_(t-1) - η_(t-1))
+    - w_1 = Var[x_2] / (Var[x_1] + Var[x_2]) and w_2 = Var[x_1] / (Var[x_1] + Var[x_2])
+    - S^2 = w_1 * E[x_1] + w_2 * E[x_2]
+    - S = √(max(S^2, 0))
+
+    The returns η_t - o_t, η_t - c_(t-1) and o_t - c_(t-1) in the first factor of each
+    product are de-meaned over the days with τ_t = 1, as in the authors' implementation,
+    and the probabilities, expectations and (population) variances are the averages over
+    the pairs of the period. When Var[x_1] + Var[x_2] is not positive, the two expectations
+    get equal weights.
+
+    A squared spread below zero is set to 0 after the estimate of the period, as the paper
+    does (equation 26). Unlike resetting each two-day estimate, which the Corwin-Schultz
+    and Abdi-Ranaldo spreads do, this keeps the estimate consistent: its bias declines as
+    the period gets longer. A period with fewer than two pairs with τ_t = 1, or in which
+    the Open (or the previous Close) equals both the High and the Low on every pair with
+    τ_t = 1 (only single-price days), is NaN.
+
+    The pairs are consecutive trading days of the asset itself (the rows with an Open,
+    High, Low and Close, which are each positive) and both days of a pair fall within the
+    period.
+
+    For more information about the method, see the following paper:
+
+    - Ardia, D., Guidotti, E., & Kroencke, T. A. (2024). "Efficient Estimation of Bid-Ask
+    Spreads from Open, High, Low, and Close Prices." Journal of Financial Economics, 161,
+    103916.
+
+    Args:
+        open_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Open prices.
+        high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
+        low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
+        prices.
+        period (str, optional): The period to estimate the spread over: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Estimate the spread from the pairs of the last
+        `rolling` periods together instead of those of a single period. A window with a
+        period without pairs is NaN. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The spread as a decimal of the price (0.005 is 0.5%), with
+        the periods as the index (and the assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(high_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_edge_spread(
+                    open_prices[column],
+                    high_prices[column],
+                    low_prices[column],
+                    close_prices[column],
+                    period,
+                    rolling,
+                )
+                for column in high_prices.columns
+            }
+        )
+    if not isinstance(high_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    prices = pd.concat([open_prices, high_prices, low_prices, close_prices], axis=1)
+    # A bad bar (a price of 0 or below) has no logarithm, and a day without all four prices is not a trading day of the asset, so both leave the pairs.  # noqa: E501
+    prices = np.log(prices.where(prices > 0).dropna())
+    periods = to_period_index(prices.index).asfreq(PERIOD_TRANSLATION[period])
+
+    open_, high, low, close = (prices.iloc[:, number].to_numpy() for number in range(4))
+    mid_range = (high + low) / 2
+
+    # Day t-1 is the first day of a pair and day t the second, as in the paper.
+    previous_high, previous_low, previous_close = high[:-1], low[:-1], close[:-1]
+    previous_mid_range = mid_range[:-1]
+    open_, high, low, mid_range = open_[1:], high[1:], low[1:], mid_range[1:]
+
+    # τ_t marks the pairs with a price change: a day without trades repeats the previous Close as its Open, High, Low and Close.  # noqa: E501
+    tau = ((high != low) | (low != previous_close)).astype(float)
+    pairs = pd.DataFrame(
+        {
+            "Mid To Open": mid_range - open_,
+            "Open To Previous Mid": open_ - previous_mid_range,
+            "Mid To Previous Close": mid_range - previous_close,
+            "Previous Close To Previous Mid": previous_close - previous_mid_range,
+            "Open To Previous Close": open_ - previous_close,
+            "Tau": tau,
+            "Open Not High": tau * (open_ != high),
+            "Open Not Low": tau * (open_ != low),
+            "Previous Close Not High": tau * (previous_close != previous_high),
+            "Previous Close Not Low": tau * (previous_close != previous_low),
+        },
+        index=periods[1:],
+    )
+    pairs = pairs[np.asarray(periods[1:] == periods[:-1])]
+
+    if pairs.empty:
+        return pd.Series(dtype=float, name=high_prices.name)
+
+    # x_1 and x_2 are each π_o / 2 * (r_a - ā_a * τ_t) * r_b + π_c / 2 * (r_c - ā_c * τ_t) * r_d, with ā the mean return over the pairs with τ_t = 1 of the period. As the product of the coefficients (π_o / 2, -π_o / 2 * ā_a, π_c / 2, -π_c / 2 * ā_c) and z = (r_a * r_b, τ_t * r_b, r_c * r_d, τ_t * r_d), E[x] and E[x^2] follow from the means of z and of z * z' per period, so the pairs are summed once rather than revisited per period or window.  # noqa: E501
+    conditions = {
+        "First": [
+            "Mid To Open",
+            "Open To Previous Mid",
+            "Mid To Previous Close",
+            "Previous Close To Previous Mid",
+        ],
+        "Second": [
+            "Mid To Open",
+            "Open To Previous Close",
+            "Open To Previous Close",
+            "Previous Close To Previous Mid",
+        ],
+    }
+    blocks, labels = [pairs.to_numpy()], list(pairs.columns)
+    for condition, (r_a, r_b, r_c, r_d) in conditions.items():
+        z = np.column_stack(
+            [
+                pairs[r_a] * pairs[r_b],
+                pairs["Tau"] * pairs[r_b],
+                pairs[r_c] * pairs[r_d],
+                pairs["Tau"] * pairs[r_d],
+            ]
+        )
+        blocks += [z, (z[:, :, None] * z[:, None, :]).reshape(len(z), 16)]
+        labels += [f"{condition} {i}" for i in range(4)]
+        labels += [f"{condition} {i}{j}" for i in range(4) for j in range(4)]
+
+    moments = pd.DataFrame(np.hstack(blocks), index=pairs.index, columns=labels)
+    grouped = moments.groupby(level=0)
+    sums, counts = grouped.sum(), grouped.size()
+
+    # Per period, or per window of `rolling` periods with every pair in it together rather than the mean of the period estimates. A window with a period without pairs is NaN.  # noqa: E501
+    if rolling:
+        full_range = pd.period_range(
+            sums.index.min(), sums.index.max(), freq=sums.index.freq
+        )
+        sums = sums.reindex(full_range).rolling(rolling).sum()
+        counts = counts.reindex(full_range).rolling(rolling).sum()
+
+    means = sums.div(counts, axis=0)
+
+    tau_share = means["Tau"]
+    open_probability = means["Open Not High"] + means["Open Not Low"]
+    close_probability = (
+        means["Previous Close Not High"] + means["Previous Close Not Low"]
+    )
+
+    # π_o / 2 and π_c / 2 are -4 divided by the probabilities.
+    open_weight = -4 / open_probability
+    close_weight = -4 / close_probability
+
+    # A period that is not estimable has an infinite weight; it is set to NaN below.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expectations, variances = {}, {}
+        for condition, (r_a, _, r_c, _) in conditions.items():
+            # The second and fourth coefficients de-mean r_a and r_c over the pairs with τ_t = 1 (a pair without a price change keeps its return of 0).  # noqa: E501
+            coefficients = np.column_stack(
+                [
+                    open_weight,
+                    -open_weight * means[r_a] / tau_share,
+                    close_weight,
+                    -close_weight * means[r_c] / tau_share,
+                ]
+            )
+            mean_z = means[[f"{condition} {i}" for i in range(4)]].to_numpy()
+            mean_zz = (
+                means[[f"{condition} {i}{j}" for i in range(4) for j in range(4)]]
+                .to_numpy()
+                .reshape(-1, 4, 4)
+            )
+
+            expectations[condition] = (coefficients * mean_z).sum(axis=1)
+            variances[condition] = (
+                np.einsum("wi,wij,wj->w", coefficients, mean_zz, coefficients)
+                - expectations[condition] ** 2
+            )
+
+        total_variance = variances["First"] + variances["Second"]
+        squared_spread = np.where(
+            total_variance > 0,
+            (
+                variances["Second"] * expectations["First"]
+                + variances["First"] * expectations["Second"]
+            )
+            / total_variance,
+            (expectations["First"] + expectations["Second"]) / 2,
+        )
+
+    estimable = (
+        (sums["Tau"] >= MINIMUM_EDGE_PRICE_CHANGES)
+        & (open_probability != 0)
+        & (close_probability != 0)
+    )
+
+    # A negative squared spread of the period (or window) is set to 0 (equation 26).
+    return pd.Series(
+        np.sqrt(np.maximum(squared_spread, 0)), index=means.index, name=high_prices.name
+    ).where(estimable)
+
+
+def get_share_turnover(
+    volume: pd.Series | pd.DataFrame,
+    shares_outstanding: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Share Turnover per period: the number of shares traded relative to the
+    number of shares outstanding.
+
+    Datar, Naik and Radcliffe (1998) use the turnover as a liquidity proxy: a share that
+    changes hands often can be traded at a lower cost, and they find that stocks with a
+    lower turnover earn higher returns. The turnover of a period is the sum of the daily
+    turnover within it, i.e. the share of the outstanding shares traded in the period:
+
+    - Daily Turnover = Volume_t / Shares Outstanding_t
+    - Turnover = SUM(Daily Turnover within the period)
+
+    The paper measures the turnover per month and averages it over the three months
+    before the month of the returns; `rolling=3` with monthly periods gives that average.
+
+    A period in which a trading day has a Volume but no (positive) number of shares
+    outstanding is NaN, as its turnover would be incomplete.
+
+    For more information about the method, see the following paper:
+
+    - Datar, V. T., Naik, N. Y., & Radcliffe, R. (1998). "Liquidity and Stock Returns: An
+    Alternative Test." Journal of Financial Markets, 1(2), 203-219.
+
+    Args:
+        volume (pd.Series | pd.DataFrame): A Series or Dataframe of daily Volume, NaN on
+        the days the asset did not trade.
+        shares_outstanding (pd.Series | pd.DataFrame): The shares outstanding on each day,
+        aligned to the same index (and columns) as `volume`.
+        period (str, optional): The period to sum the daily turnover over: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): The mean of the turnover of the last `rolling`
+        periods instead of the turnover per period. A window with a period without any
+        trading day is NaN. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The turnover as a decimal (0.1 is 10% of the shares
+        outstanding traded), with the periods as the index.
+
+    Raises:
+        TypeError: If `volume` is not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if not isinstance(volume, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    daily_turnover = volume / shares_outstanding.where(shares_outstanding > 0)
+    dates = to_period_index(volume.index).asfreq(PERIOD_TRANSLATION[period])
+
+    turnover = daily_turnover.groupby(dates).sum(min_count=1)
+    complete = (
+        daily_turnover.notna().groupby(dates).sum()
+        == volume.notna().groupby(dates).sum()
+    )
+    turnover = turnover.where(complete)
+
+    if rolling:
+        # A period without any trading day in the data (a halt) is a row of its own, so a window always spans `rolling` periods and one that holds such a period is NaN.  # noqa: E501
+        full_range = pd.period_range(
+            turnover.index.min(),
+            turnover.index.max(),
+            freq=turnover.index.freq,
+            name=turnover.index.name,
+        )
+        turnover = turnover.reindex(full_range).rolling(rolling).mean()
+
+    return turnover
+
+
+def get_idiosyncratic_volatility(
+    excess_returns: pd.Series | pd.DataFrame,
+    factors: pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+    annualize: bool = False,
+    minimum_observations: int = MINIMUM_IDIOSYNCRATIC_OBSERVATIONS,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Idiosyncratic Volatility per period: the standard deviation of the
+    residuals of a regression of the daily excess returns on the daily factor returns
+    within each period.
+
+    Ang, Hodrick, Xing and Zhang (2006) regress the daily excess returns of a stock on the
+    Fama and French three factors within each month and find that stocks with a high
+    volatility of the residuals earn low returns the next month:
+
+    - Excess Return_t = α + β_1 * (Mkt-RF)_t + β_2 * SMB_t + β_3 * HML_t + ε_t
+    - Idiosyncratic Volatility = Std(ε_t) * √(Trading Days per Period)
+
+    Where Std is the sample standard deviation (ddof=1) of the residuals and the trading
+    days per period are 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly), the
+    scaling of the Volatility of the Risk module; with `annualize` the scaling is √252 for
+    every period. Any set of factors works the same way, e.g. the excess return of a
+    benchmark alone for the market model (CAPM).
+
+    The regression runs on the days on which the asset and every factor have a return, and
+    a period with fewer than `minimum_observations` of those days (or no more than the
+    number of coefficients) is NaN. The periods run up to the last date of `excess_returns`, so a period
+    after the last factor return is NaN as well.
+
+    For more information about the method, see the following paper:
+
+    - Ang, A., Hodrick, R. J., Xing, Y., & Zhang, X. (2006). "The Cross-Section of
+    Volatility and Expected Returns." The Journal of Finance, 61(1), 259-299.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily excess
+        returns.
+        factors (pd.DataFrame): The daily factor returns, one column per factor, on the
+        same dates as `excess_returns`.
+        period (str, optional): The period each regression runs within: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Regress on the days of the last `rolling` periods
+        instead of a single period, from the period in which the asset's history first
+        spans `rolling` periods. Defaults to None.
+        annualize (bool, optional): Whether to scale the daily standard deviation by √252
+        instead of the square root of the trading days per period. Defaults to False.
+        minimum_observations (int, optional): The fewest days a regression runs on.
+        Defaults to 15.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Idiosyncratic Volatility with the periods as the
+        index (and the assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If `excess_returns` is not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(excess_returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_idiosyncratic_volatility(
+                    excess_returns[column],
+                    factors,
+                    period,
+                    rolling,
+                    annualize,
+                    minimum_observations,
+                )
+                for column in excess_returns.columns
+            }
+        )
+    if not isinstance(excess_returns, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat(
+        [excess_returns.rename("Excess Return"), factors.reindex(excess_returns.index)],
+        axis=1,
+    ).dropna()
+
+    if data.empty:
+        return pd.Series(dtype=float, name=excess_returns.name)
+
+    periods = to_period_index(data.index).asfreq(PERIOD_TRANSLATION[period])
+    # The periods run up to the last date of the returns, so the periods after the last
+    # factor return (the Fama-French data lag a month or more, and so does their risk-free
+    # rate the excess returns are taken over) are NaN rows rather than missing, also with a
+    # rolling window that still holds earlier days.
+    last_period = (
+        to_period_index(excess_returns.index).asfreq(PERIOD_TRANSLATION[period]).max()
+    )
+    window = rolling if rolling else 1
+    scale = np.sqrt(VOLATILITY_WINDOW_TRANSLATION["yearly" if annualize else period])
+    minimum = max(minimum_observations, factors.shape[1] + 2)
+
+    target = data["Excess Return"].to_numpy()
+    design = np.column_stack([np.ones(len(data)), data[factors.columns].to_numpy()])
+
+    volatility = {}
+
+    # A rolling window starts once it holds `rolling` periods of the asset's history.
+    for end in pd.period_range(
+        periods.min() + window - 1, periods.max(), freq=periods.freq
+    ):
+        rows = np.asarray((periods > end - window) & (periods <= end))
+
+        if rows.sum() < minimum:
+            volatility[end] = np.nan
+            continue
+
+        coefficients = np.linalg.lstsq(design[rows], target[rows], rcond=None)[0]
+        residuals = target[rows] - design[rows] @ coefficients
+        volatility[end] = residuals.std(ddof=1) * scale
+
+    volatility = pd.Series(volatility, name=excess_returns.name, dtype=float)
+
+    if last_period > periods.max():
+        volatility = volatility.reindex(
+            pd.period_range(periods.min() + window - 1, last_period, freq=periods.freq)
+        )
+
+    return volatility.rename_axis(excess_returns.index.name)

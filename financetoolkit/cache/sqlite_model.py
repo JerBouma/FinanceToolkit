@@ -14,7 +14,7 @@ from financetoolkit.cache.coverage_model import (
     merge_intervals,
     normalize_date,
 )
-from financetoolkit.cache.policy_model import FINANCIAL_MODELING_PREP
+from financetoolkit.cache.policy_model import FINANCIAL_MODELING_PREP, get_policy
 
 SCHEMA_VERSION = 1
 
@@ -455,7 +455,9 @@ class SQLiteBackend:
         Runs inside the caller's write transaction so that the rows are never
         momentarily absent to another process. Merged rows inherit the oldest of
         the timestamps they replace, so compaction can never make a stale range
-        look freshly fetched.
+        look freshly fetched. The rows still within the dataset's time-to-live are
+        merged apart from the stale ones, so the range just fetched is not made
+        stale by the older rows beside it either.
 
         Args:
             connection (sqlite3.Connection): An open connection inside a write
@@ -475,19 +477,17 @@ class SQLiteBackend:
         if len(rows) < threshold:
             return
 
-        merged = merge_intervals(
-            [(normalize_date(start), normalize_date(end)) for start, end, _ in rows]
-        )
-        oldest = min(fetched_at for _, _, fetched_at in rows)
+        minimum_fetched_at = time.time() - get_policy(source, dataset).ttl_seconds
+        merged_rows = []
 
-        connection.execute(
-            "DELETE FROM coverage WHERE key = ? AND entity = ?", (key, entity)
-        )
-        connection.executemany(
-            "INSERT INTO coverage "
-            "(key, entity, source, dataset, start_date, end_date, fetched_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
+        # Each class is merged on its own: plan() reads every row for what was ever
+        # fetched and the fresh rows for what is still fresh, so both stay as they were.
+        for fresh in (True, False):
+            group = [row for row in rows if (row[2] >= minimum_fetched_at) is fresh]
+            if not group:
+                continue
+            oldest = min(fetched_at for _, _, fetched_at in group)
+            merged_rows += [
                 (
                     key,
                     entity,
@@ -497,8 +497,22 @@ class SQLiteBackend:
                     end.isoformat(),
                     oldest,
                 )
-                for start, end in merged
-            ],
+                for start, end in merge_intervals(
+                    [
+                        (normalize_date(start), normalize_date(end))
+                        for start, end, _ in group
+                    ]
+                )
+            ]
+
+        connection.execute(
+            "DELETE FROM coverage WHERE key = ? AND entity = ?", (key, entity)
+        )
+        connection.executemany(
+            "INSERT INTO coverage "
+            "(key, entity, source, dataset, start_date, end_date, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            merged_rows,
         )
 
     def read_blob(self, key: str, entity: str) -> tuple[bytes, float] | None:

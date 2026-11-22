@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import pandas as pd
 import requests
@@ -26,6 +26,7 @@ from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.helpers import split_values
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
 
@@ -72,31 +73,6 @@ COUNTRY_CODES: dict[str, str] = {
     "EU27_2020": "European Union",
 }  # fmt: skip
 
-# The countries the OECD names differently from the Global Macro Database. An OECD series
-# combined with a GMDB series (the real interest rate and the misery index, whose inflation
-# leg is always the GMDB's) is renamed to the GMDB names first, as columns that differ only
-# in name would otherwise not line up and give a column of NaN for each spelling.
-OECD_TO_GMDB_COUNTRY_NAMES: dict[str, str] = {
-    "Russia": "Russian Federation",
-    "Swaziland": "Eswatini",
-    "Democratic Republic of the Congo": "Congo DR",
-}
-
-
-def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Renames the country columns of an OECD series to the names the Global Macro Database
-    uses, so the two can be combined column by column.
-
-    Args:
-        data (pd.DataFrame): The OECD series with a column per country.
-
-    Returns:
-        pd.DataFrame: The same series with the GMDB country names.
-    """
-    return data.rename(columns=OECD_TO_GMDB_COUNTRY_NAMES)
-
-
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
 PERIOD_FREQUENCIES = {
@@ -109,7 +85,7 @@ PERIOD_FREQUENCIES = {
 
 # History requested before the start date, so growth, lag and rolling windows can be
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
-START_BUFFER_DAYS = {"daily": 400, "weekly": 400, "monthly": 731}
+START_BUFFER_DAYS = {"daily": 400, "weekly": 400, "monthly": 731, "quarterly": 1096}
 
 # Gateway errors, timeouts and dropped connections the public statistics services answer
 # with when briefly overloaded. The ECB Data Portal answers around a third of its requests with a 504 at
@@ -440,7 +416,7 @@ def buffered_start_date(start_date: str, period: str) -> str:
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
-        period (str): "daily", "weekly" or "monthly".
+        period (str): "daily", "weekly", "monthly" or "quarterly".
 
     Returns:
         str: The earlier start date (YYYY-MM-DD).
@@ -448,6 +424,39 @@ def buffered_start_date(start_date: str, period: str) -> str:
     return (
         pd.Timestamp(start_date) - pd.Timedelta(days=START_BUFFER_DAYS[period])
     ).strftime("%Y-%m-%d")
+
+
+def normalize_requested_countries(
+    countries: list[str] | str | None, known: Iterable[str]
+) -> list[str] | None:
+    """
+    The requested countries as a list of the names the sources use, so a short form or
+    another casing ("USA", "united kingdom", "uk") selects the same sources as the name
+    itself. A string may hold several countries separated by commas; blank entries (a
+    trailing comma in "Germany,") are skipped and a country spelled twice is listed once.
+    A country that matches nothing known is kept as given, so it is reported as
+    unavailable later on.
+
+    Args:
+        countries (list[str] | str | None): The countries as passed to a method.
+        known (Iterable[str]): The country names the sources use.
+
+    Returns:
+        list[str] | None: The normalized countries, or None when every country is requested.
+    """
+    if countries is None:
+        return None
+
+    requested = countries.split(",") if isinstance(countries, str) else countries
+    known = list(known)
+
+    return list(
+        dict.fromkeys(
+            normalize_country_name(str(country).strip(), known)
+            for country in requested
+            if str(country).strip()
+        )
+    )
 
 
 def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> None:
@@ -722,6 +731,64 @@ def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return resampled
 
 
+# How the weeks of a weekly series can be combined into a month, quarter or year.
+WEEKLY_AGGREGATIONS = ["mean", "max", "min", "last"]
+
+
+def aggregate_weekly_series(
+    data: pd.DataFrame, period: str, aggregation: str = "mean"
+) -> pd.DataFrame:
+    """
+    Converts a weekly series, indexed by the day each week ends, to a monthly, quarterly or
+    yearly one: the average of the weeks of every period (the default with which FRED
+    converts its weekly series), or the highest, lowest or last week. A week
+    belongs to the period of the day it ends, as FRED aggregates its weekly series. A period
+    is only returned once all of its weeks are published, so a month that is still running
+    is not mistaken for a full one (nor the first period when the data starts within it).
+
+    Args:
+        data (pd.DataFrame): The weekly series, indexed by a daily PeriodIndex of the days
+            the weeks end (all on the same weekday).
+        period (str): "weekly", which returns the data as it is, "monthly", "quarterly" or
+            "yearly".
+        aggregation (str, optional): "mean", "max", "min" or "last". Defaults to "mean".
+
+    Returns:
+        pd.DataFrame: The series at the requested frequency.
+
+    Raises:
+        ValueError: When the aggregation is not one of the options.
+    """
+    if aggregation not in WEEKLY_AGGREGATIONS:
+        raise ValueError(
+            f"The aggregation '{aggregation}' does not exist. Choose from "
+            f"{', '.join(repr(option) for option in WEEKLY_AGGREGATIONS)}."
+        )
+
+    if data.empty or period == "weekly":
+        return data
+
+    days = data.index.to_timestamp()
+    periods = days.to_period(PERIOD_FREQUENCIES[period])
+    grouped = data.groupby(periods)
+    aggregated = grouped.agg(aggregation)
+
+    # The weeks every period has: its days on the weekday the weeks end.
+    weekday = days[0].strftime("%a").upper()
+    expected = pd.Series(
+        [
+            len(pd.date_range(period.start_time, period.end_time, freq=f"W-{weekday}"))
+            for period in aggregated.index
+        ],
+        index=aggregated.index,
+    )
+
+    aggregated = aggregated.where(grouped.count().eq(expected, axis=0))
+    aggregated.index.name = data.index.name
+
+    return aggregated.dropna(how="all")
+
+
 def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
     Converts a monthly index to a quarterly or yearly one by averaging the months of
@@ -743,6 +810,83 @@ def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     grouped = data.groupby(periods)
 
     return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
+
+
+# The consecutive quarters a monthly series has to repeat its value in before those quarters
+# are taken as a quarterly series spread over its months. A monthly series repeats one value
+# over a quarter now and then (about 2% of the quarters of the BIS consumer price indices),
+# never over several quarters in a row.
+MINIMUM_REPEATED_QUARTERS = 2
+
+
+def keep_quarter_end_of_repeated_quarters(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keeps only the last month of each quarter in which a monthly series repeats the
+    quarter's value over its months, such as the BIS consumer prices of Australia and New
+    Zealand, which publish their CPI quarterly. Repeated months would otherwise show a
+    monthly rate of change of 0 twice a quarter and count each quarter three times in
+    averages and rolling windows.
+
+    The decision is made per country and per quarter, so a country that moves from
+    quarterly to monthly publication keeps its monthly months while its earlier quarters
+    are thinned out. A complete quarter counts as repeated when its three months hold a
+    single value, and repeated quarters are thinned out only in runs of at least
+    MINIMUM_REPEATED_QUARTERS consecutive quarters, since a monthly series repeats a
+    value over a single quarter now and then. A quarter cut off by the start or end of
+    the range (two months with a single value) is thinned out as well when it adjoins
+    such a run, keeping its last month in the range. A range that holds fewer complete
+    repeated quarters in a row than MINIMUM_REPEATED_QUARTERS, such as a range of a few
+    months, cannot be told apart from a monthly series and is returned unchanged.
+
+    Args:
+        data (pd.DataFrame): The series, indexed by a monthly PeriodIndex with a column
+            per country.
+
+    Returns:
+        pd.DataFrame: The series with every month but the last of each repeated quarter
+        empty.
+    """
+    if data.empty:
+        return data
+
+    quarter_of_month = data.index.asfreq("Q")
+    quarters = data.groupby(quarter_of_month)
+    # Every quarter of the range, so that a quarter without any month in the index
+    # interrupts a run instead of joining the quarters around it.
+    all_quarters = pd.period_range(
+        quarter_of_month.min(), quarter_of_month.max(), freq="Q"
+    )
+    count = quarters.count().reindex(all_quarters, fill_value=0)
+    single_value = (quarters.max() == quarters.min()).reindex(
+        all_quarters, fill_value=False
+    )
+    repeated = single_value & (count == 3)  # noqa: PLR2004
+    cut_off = single_value & (count == 2)  # noqa: PLR2004
+
+    # The length of the run of consecutive repeated quarters each quarter belongs to.
+    run_id = (~repeated).cumsum()
+    run_length = repeated.apply(
+        lambda column: column.groupby(run_id[column.name]).transform("sum")
+    )
+    thinned_quarters = repeated & (run_length >= MINIMUM_REPEATED_QUARTERS)
+    thinned_quarters |= cut_off & (
+        thinned_quarters.shift(1, fill_value=False)
+        | thinned_quarters.shift(-1, fill_value=False)
+    )
+
+    if not thinned_quarters.to_numpy().any():
+        return data
+
+    thinned_months = thinned_quarters.reindex(quarter_of_month).set_axis(data.index)
+
+    # The last observed month of each quarter, which is the third month of a complete one.
+    observed = data.notna()
+    observed_from_here = (
+        observed.iloc[::-1].groupby(quarter_of_month[::-1]).cumsum().iloc[::-1]
+    )
+    last_observed = observed & (observed_from_here == 1)
+
+    return data.mask(thinned_months & ~last_observed)
 
 
 def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
@@ -859,9 +1003,11 @@ def extend_with_recent(
         shared.empty
         or (existing[shared] - newer[shared]).abs().max() > EXTENSION_TOLERANCE
     ):
-        logger.debug(
-            "The recent %s figures do not match the history on the months both cover, so "
-            "the history is not extended.",
+        # Logged as information rather than a warning: the history is complete as it
+        # is, it only lacks the days or months the faster publisher has since.
+        logger.info(
+            "The recent %s figures do not match the history on the periods both cover, so "
+            "the history is not extended with them.",
             country,
         )
         return history

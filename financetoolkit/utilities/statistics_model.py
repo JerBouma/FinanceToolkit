@@ -62,6 +62,9 @@ COUNTRY_ALIASES = {
     "us": "United States",
     "u.s.": "United States",
     "usa": "United States",
+    "russian federation": "Russia",
+    "eswatini": "Swaziland",
+    "congo dr": "Democratic Republic of the Congo",
     "u.s.a.": "United States",
     "america": "United States",
     "united states of america": "United States",
@@ -251,6 +254,73 @@ def convert_annualized_rate_to_period(
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
 
 
+# The periods a missing base period warning names per series before it counts the rest.
+SKIPPED_BASE_PERIODS_SHOWN = 3
+
+
+def warn_about_missing_base_periods(
+    levels: pd.Series | pd.DataFrame,
+    lag: int,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    columns: Iterable | None = None,
+) -> None:
+    """
+    Logs a warning naming the periods whose change over lag periods is empty because the
+    period it compares with (the base period) has no value, although the series has
+    values before it: a month a statistics office did not publish leaves the change of the
+    same month a year later empty, which would otherwise disappear without a reason.
+
+    Args:
+        levels (pd.Series | pd.DataFrame): The values the change is taken of, a column per
+            series, on consecutive periods (rows).
+        lag (int): The number of periods (rows) the change compares with.
+        start_date (str | None, optional): The first period to name. Defaults to None.
+        end_date (str | None, optional): The last period to name. Defaults to None.
+        columns (Iterable | None, optional): The series to name. Defaults to None, which
+            names every column.
+    """
+    frame = levels.to_frame() if isinstance(levels, pd.Series) else levels
+    if (
+        frame.empty
+        or isinstance(frame.columns, pd.MultiIndex)
+        or not frame.index.is_monotonic_increasing
+        or frame.index.has_duplicates
+    ):
+        return
+
+    has_value = frame.notna()
+    # The base period has no value but an earlier period has, so it is a gap in the series
+    # rather than the start of it.
+    base_is_gap = (~has_value & has_value.cummax()).shift(lag, fill_value=False)
+    missing = (has_value & base_is_gap).loc[start_date:end_date]
+    base_periods = pd.Series(frame.index, index=frame.index).shift(lag)
+
+    for column in frame.columns if columns is None else columns:
+        if column not in missing.columns or not missing[column].any():
+            continue
+        periods = missing.index[missing[column].to_numpy()]
+        shown = periods[:SKIPPED_BASE_PERIODS_SHOWN]
+        more = (
+            f" and {len(periods) - len(shown)} more"
+            if len(periods) > len(shown)
+            else ""
+        )
+        logger.warning(
+            "No change for %s in %s%s: %s no value.",
+            column,
+            ", ".join(map(str, shown)),
+            more,
+            (
+                f"its base period {base_periods[shown[0]]} has"
+                if len(periods) == 1
+                else "the base periods "
+                + ", ".join(str(base_periods[period]) for period in shown)
+                + " have"
+            ),
+        )
+
+
 def finalize_dataset(
     dataset: pd.Series | pd.DataFrame,
     start_date: str | None,
@@ -365,6 +435,8 @@ def finalize_dataset(
     if trailing:
         dataset = dataset.rolling(window=trailing).sum()
 
+    levels = dataset
+
     if growth:
         dataset = calculate_growth(
             dataset=dataset, lag=lag, rounding=rounding, axis=axis, compound=compound
@@ -415,7 +487,10 @@ def finalize_dataset(
     if countries:
         # Economic indicators are indexed by date with countries as columns.
         if isinstance(countries, str):
-            countries = [countries]
+            # "United States,Japan" selects both, as the sources accept it.
+            countries = [
+                country.strip() for country in countries.split(",") if country.strip()
+            ]
         # Common short forms and any casing resolve to the names the sources use, e.g.
         # "USA" or "united states" to "United States".
         # A column per country and item (e.g. a maturity) is selected by its country.
@@ -424,9 +499,14 @@ def finalize_dataset(
             if isinstance(dataset.columns, pd.MultiIndex)
             else dataset.columns
         )
-        selected_countries: list[object] = [
-            normalize_country_name(country, known_countries) for country in countries
-        ]
+        # Two spellings of one country ("USA" and "United States") select it once, as a
+        # repeated column would be counted twice by anything that aggregates the result.
+        selected_countries: list[object] = list(
+            dict.fromkeys(
+                normalize_country_name(country, known_countries)
+                for country in countries
+            )
+        )
         missing_countries = [
             country for country in selected_countries if country not in dataset.columns
         ]
@@ -480,6 +560,31 @@ def finalize_dataset(
                 ),
                 euro_area_hint(available_countries, unsliced),
             )
+
+    # A change that is empty because its base period has no value (a month the source
+    # skipped, a year back) is named for the series and window shown. Monthly data dated
+    # on the first day of each month (the US Census Bureau's) counts as months too.
+    if (
+        growth
+        and axis == "rows"
+        and isinstance(lag, int)
+        and isinstance(dataset, pd.DataFrame)
+        and (
+            calendar_periods
+            or (
+                isinstance(levels.index, pd.PeriodIndex | pd.DatetimeIndex)
+                and len(levels.index)
+                and bool((levels.index.day == 1).all())
+            )
+        )
+    ):
+        warn_about_missing_base_periods(
+            levels,
+            lag,
+            start_date if apply_slice and row_slice else None,
+            end_date if apply_slice and row_slice else None,
+            columns=dataset.columns,
+        )
 
     # After the country selection, so a row that is empty for every selected country goes
     # too, such as a month only an unselected country has published yet. Months, quarters
@@ -808,17 +913,20 @@ def bounded_ffill(
     Returns:
         pd.Series | pd.DataFrame: The data with each bounded single-period gap filled.
     """
-    if isinstance(dataset, pd.DataFrame):
-        # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its
-        # stubs only spell out the numeric form.
-        axis_number = 0 if axis in ("rows", "index") else 1
-        filled = dataset.ffill(axis=axis_number, limit=1)
-        has_future_data = dataset.bfill(axis=axis_number).notna()
-    else:
-        filled = dataset.ffill(limit=1)
-        has_future_data = dataset.bfill().notna()
+    # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its stubs
+    # only spell out the numeric form. A Series has a single axis.
+    axis_number = (
+        0 if axis in ("rows", "index") or isinstance(dataset, pd.Series) else 1
+    )
+    previous = dataset.shift(1, axis=axis_number)
 
-    return filled.where(has_future_data, dataset)
+    # A gap of one observation has a value on both sides. The first observation of a longer
+    # run has a value before it but not after it, so it stays empty as the rest of the run.
+    single_gap = (
+        dataset.isna() & previous.notna() & dataset.shift(-1, axis=axis_number).notna()
+    )
+
+    return dataset.mask(single_gap, previous)
 
 
 def calculate_growth(
@@ -939,6 +1047,49 @@ def calculate_growth(
     )
 
 
+def shift_periods(
+    dataset: pd.Series | pd.DataFrame, periods: int = 1, axis: str = "columns"
+) -> pd.Series | pd.DataFrame:
+    """
+    Shifts a dataset by a number of periods, so each value lines up with the value that
+    many periods earlier. On yearly, quarterly, monthly or weekly periods (a PeriodIndex)
+    the shift counts calendar periods: a period missing from the data (2018, 2019, 2021)
+    leaves the value after it without a previous value, rather than comparing 2021 with
+    2019 as if they were a year apart. Other axes, daily periods among them (markets
+    close on weekends and holidays), shift by position.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to shift.
+        periods (int): the number of periods to shift by. Defaults to 1.
+        axis (str): the axis that holds the periods of a DataFrame ("columns" or "rows").
+            Defaults to "columns".
+
+    Returns:
+        pd.Series | pd.DataFrame: the dataset shifted, with the same labels.
+    """
+    axis_number = (
+        0 if isinstance(dataset, pd.Series) or axis in ("rows", "index") else 1
+    )
+    labels = dataset.axes[axis_number]
+
+    if (
+        isinstance(labels, pd.PeriodIndex)
+        and len(labels) > 0
+        and labels.is_unique
+        and not labels.hasnans
+        and labels.freqstr.upper().startswith(("Y", "A", "Q", "M", "W"))
+    ):
+        every_period = pd.period_range(labels.min(), labels.max(), freq=labels.freq)
+
+        return (
+            dataset.reindex(every_period, axis=axis_number)
+            .shift(periods, axis=axis_number)
+            .reindex(labels, axis=axis_number)
+        )
+
+    return dataset.shift(periods, axis=axis_number)
+
+
 def calculate_change_over_absolute_base(
     dataset: pd.Series | pd.DataFrame, periods: int = 1, axis: str = "columns"
 ) -> pd.Series | pd.DataFrame:
@@ -956,11 +1107,7 @@ def calculate_change_over_absolute_base(
     Returns:
         pd.Series | pd.DataFrame: the change relative to the absolute previous value.
     """
-    if isinstance(dataset, pd.DataFrame):
-        axis_number = 0 if axis in ("rows", "index") else 1
-        previous = dataset.shift(periods, axis=axis_number)
-    else:
-        previous = dataset.shift(periods)
+    previous = shift_periods(dataset, periods, axis)
 
     return (dataset - previous) / previous.abs()
 
@@ -1020,11 +1167,7 @@ def calculate_compound_growth(
         pd.Series | pd.DataFrame: the compound annual growth rate, missing where either value
             is zero or negative.
     """
-    if isinstance(dataset, pd.DataFrame):
-        axis_number = 0 if axis in ("rows", "index") else 1
-        previous = dataset.shift(periods, axis=axis_number)
-    else:
-        previous = dataset.shift(periods)
+    previous = shift_periods(dataset, periods, axis)
 
     # A compound rate between a loss and a profit (or from zero) does not exist.
     ratio = (dataset / previous).where((dataset > 0) & (previous > 0))
@@ -1080,6 +1223,10 @@ def calculate_standardization(
     Returns:
         pd.Series | pd.DataFrame: the standardized (Z-Score) dataset.
     """
+    # An infinity (a division by zero upstream) is undefined rather than a value, and left
+    # in it would make the mean and standard deviation of its whole series NaN.
+    dataset = drop_non_finite(dataset)
+
     if isinstance(dataset, pd.Series):
         return apply_rounding((dataset - dataset.mean()) / dataset.std(), rounding)
 

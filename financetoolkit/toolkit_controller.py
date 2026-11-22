@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 
 from financetoolkit import currencies_model, earnings_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
@@ -59,6 +60,7 @@ from financetoolkit.helpers import (
     determine_availability_dates,
     determine_period_end_dates,
     prepare_supplied_historical_data,
+    trailing_sum,
 )
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
@@ -73,7 +75,12 @@ from financetoolkit.normalization_model import (
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    calculate_growth,
+    normalize_country_name,
+    shift_periods,
+)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING only: the module controllers are imported when first used, so that
@@ -297,8 +304,9 @@ class Toolkit:
             on the Toolkit as _fiscal_year_adjustments.
 
             The last day of each fiscal period is kept as well: daily ratios apply a period's figures
-            from that day on (not from the end of its calendar label), and currency translation uses
-            the closing rate on that day and the average rate over the fiscal period. The dates come
+            from that day on (not from the end of its calendar label), the price-based ratios of the
+            period take the close of that day, and currency translation uses the closing rate on that
+            day and the average rate over the fiscal period. The dates come
             from the Period End Date in the statistics statement; when a source does not report it,
             the latest day the period can end on given its label is used, so that figures are never
             applied before the period ended.
@@ -532,6 +540,8 @@ class Toolkit:
 
         # Resolved per ticker and range on request, so an overlap is reused.
         self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
+        # The period, return column and fill_nan the intraday data was retrieved with.
+        self._intraday_historical_data_params: tuple | None = None
 
         # Use provided historical data if available, otherwise start empty. Supplied data is
         # checked and sorted once here, as every calculation slices it by date.
@@ -734,6 +744,28 @@ class Toolkit:
                 api_key=self._api_key,
             ).get_gross_domestic_product(usd=True)
 
+        def consumer_price_index(country: str) -> pd.Series:
+            # Imported when first used, as only the cyclically adjusted P/E needs it.
+            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+                Economics,
+            )
+
+            # Every month of the Economics history, as the earnings go back up to decades.
+            consumer_price_index = Economics(
+                rounding=None,
+                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+                cache=self._cache,
+                api_key=self._api_key,
+            ).get_consumer_price_index(countries=country, period="monthly")
+
+            # Economics returns the name its sources use ("USA" gives "United States").
+            country = normalize_country_name(country, consumer_price_index.columns)
+
+            if country not in consumer_price_index.columns:
+                return pd.Series(dtype=float)
+
+            return consumer_price_index[country]
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
@@ -763,6 +795,7 @@ class Toolkit:
             ),
             currency_function=self._get_listing_currencies,
             gross_domestic_product_function=gross_domestic_product,
+            consumer_price_index_function=consumer_price_index,
         )
 
         if self._portfolio_weights:
@@ -828,22 +861,35 @@ class Toolkit:
             universe = sorted(
                 set(tickers) | {peer for group in peer_map.values() for peer in group}
             )
-            # The latest fiscal year is what is compared, so three years of data suffice.
+            # The latest period up to this Toolkit's end date is what is compared, so three
+            # years before it suffice (the Toolkit adds the lookback that growth and trailing
+            # figures need). The settings that change the figures are this Toolkit's, so the
+            # Company column equals what its own ratios show for that period.
             others = Toolkit(
                 tickers=universe,
                 api_key=self._api_key,
-                start_date=(datetime.today() - timedelta(days=365 * 3)).strftime(
-                    "%Y-%m-%d"
-                ),
+                start_date=(
+                    datetime.strptime(self._end_date, "%Y-%m-%d")
+                    - relativedelta(years=3)
+                ).strftime("%Y-%m-%d"),
+                end_date=self._end_date,
+                quarterly=self._quarterly,
+                point_in_time=self._point_in_time,
+                convert_currency=self._convert_currency,
                 use_cached_data=self._cache,
                 enforce_source=self._enforce_source,
+                sleep_timer=self._sleep_timer,
                 benchmark_ticker=None,
                 progress_bar=False,
                 # Unrounded, as the comparison is calculated (and rounded) here.
                 rounding=None,
             )
             ratios = others.ratios
-            income = others.get_income_statement(growth=True)
+            # Quarterly growth is over a year, as the growth of a quarter on the quarter before
+            # it mixes in the seasons.
+            income = others.get_income_statement(
+                growth=True, lag=4 if self._quarterly else 1
+            )
             metrics = pd.DataFrame(
                 {
                     "Price-to-Earnings": peers_model.get_latest_values(
@@ -916,6 +962,19 @@ class Toolkit:
             )
             return index_data, market_value
 
+        def corporate_bond_yield(start: str, end: str) -> pd.Series:
+            # Imported when first used, as only the Graham intrinsic value needs it.
+            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
+            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
+
+            require_fred_api_key(
+                self._fred_api_key,
+                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
+            )
+            return fred_model.get_moodys_corporate_bond_yields(
+                "daily", start, end, self._fred_api_key
+            )["Aaa"]
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
             # "lookback" is the daily data from a year before the start date, for the
@@ -943,6 +1002,10 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
             sp500_function=sp500,
+            # The same fetch and cache as the forward ratios, so the estimates are retrieved once; the lambda keeps the Ratios module from being built until a model asks for them.
+            analyst_estimates=lambda: self.ratios._get_or_fetch_analyst_estimates(),  # noqa: PLW0108, SLF001
+            profile=self._get_statement_profile,
+            corporate_bond_yield_function=corporate_bond_yield,
         )
 
     @property
@@ -1192,8 +1255,8 @@ class Toolkit:
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
         as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
-        houses cross-asset systemic risk and liquidity measures (CoVaR, Tail Dependence, Amihud Illiquidity,
-        Roll Spread).
+        houses cross-asset systemic risk and liquidity measures (CoVaR, Marginal Expected Shortfall, SRISK,
+        Tail Dependence, Amihud Illiquidity, Roll Spread).
 
         Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
         causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
@@ -1244,6 +1307,64 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
         )
+
+        # The Share Turnover divides the Volume by the share count of the statements, which
+        # are retrieved when it is first calculated, as are the days the counts apply from.
+        def shares_outstanding() -> tuple[pd.DataFrame, pd.DataFrame]:
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            return (
+                income_statement.loc[:, "Weighted Average Shares", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._shares_outstanding_function = shares_outstanding
+
+        # SRISK takes the debt from the balance sheet and the market cap from the diluted
+        # share count, as get_market_cap does, each from the day its period's figures apply.
+        def capital_shortfall() -> (
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        ):
+            balance_sheet = self._get_module_statement(
+                "balance_sheet_statement", "Ratios"
+            )
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            # Without a conversion the liabilities stay in the reported currency while the market
+            # cap is in the currency the ticker is listed in, so SRISK would mix the two.
+            if (
+                not (self._convert_currency and not self._statement_currencies.empty)
+                and not self._statistics_statement.empty
+            ):
+                reported = (
+                    self._statistics_statement.xs("Reported Currency", axis=0, level=1)
+                    .T.ffill()
+                    .iloc[-1]
+                )
+                listed = self._get_listing_currencies().reindex(reported.index)
+                mismatched = [
+                    f"{ticker} ({reported[ticker]} statements, {listed[ticker]} prices)"
+                    for ticker in reported.index
+                    if pd.notna(reported[ticker])
+                    and pd.notna(listed[ticker])
+                    and reported[ticker] != listed[ticker]
+                ]
+                if mismatched:
+                    logger.warning(
+                        "SRISK compares the liabilities with the market cap, but the statements "
+                        "are in another currency than the prices for %s; set convert_currency=True "
+                        "to convert the statements to the currency of the historical data.",
+                        ", ".join(mismatched),
+                    )
+
+            return (
+                balance_sheet.loc[:, "Total Liabilities", :],
+                self._get_daily_start_dates(balance_sheet),
+                income_statement.loc[:, "Weighted Average Shares Diluted", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._capital_shortfall_function = capital_shortfall
 
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights
@@ -1402,6 +1523,12 @@ class Toolkit:
                 return pd.Series(dtype=object)
             return profile.loc["Sector"]
 
+        def holding_currencies(tickers: list[str]) -> pd.Series:
+            # The holdings' prices are converted into the fund's currency for their contributions.
+            return self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies()
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1413,6 +1540,8 @@ class Toolkit:
             currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
+            holding_currency_function=holding_currencies,
+            benchmark_ticker=self._benchmark_ticker,
         )
 
     @property
@@ -1651,10 +1780,11 @@ class Toolkit:
         if not self._basket or statement.empty:
             return statement
 
+        # The basket is made of the tickers requested, not of the tickers that have statements:
+        # a ticker without any leaves the Total empty, as a missing value does, rather than
+        # the Total quietly becoming the sum of the others.
         tickers = [
-            ticker
-            for ticker in statement.index.unique(level=0)
-            if ticker not in ("Portfolio", "Total")
+            ticker for ticker in self._tickers if ticker not in ("Portfolio", "Total")
         ]
         if len(tickers) < 2:  # noqa: PLR2004
             logger.warning(
@@ -1686,6 +1816,18 @@ class Toolkit:
             )
             return statement
 
+        without_statements = [
+            ticker
+            for ticker in tickers
+            if ticker not in statement.index.unique(level=0)
+        ]
+        if without_statements:
+            logger.warning(
+                "%s has no financial statements, so the Total of the basket is left empty, "
+                "as the sum of the other tickers would understate it.",
+                ", ".join(without_statements),
+            )
+
         return add_basket_total(
             statement,
             tickers,
@@ -1694,6 +1836,10 @@ class Toolkit:
                 "EPS Diluted",
                 "Weighted Average Shares",
                 "Weighted Average Shares Diluted",
+                "Share Issued",
+                "Ordinary Shares Number",
+                "Treasury Shares Number",
+                "Tax Rate for Calcs",
             ],
         )
 
@@ -3031,6 +3177,9 @@ class Toolkit:
         Keep in mind that this data is available for a shorter period. This means that the start date is
         ignored if the difference between the start and end date is bigger than the maximum period.
 
+        The data covers the start date to the end date of the Toolkit, both days included. It is retrieved
+        once per period, return_column and fill_nan, so calling again with other values retrieves it again.
+
         If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
         By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
@@ -3045,7 +3194,8 @@ class Toolkit:
                 Defaults to "1hour".
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
-            rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
+            rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3093,7 +3243,21 @@ class Toolkit:
                 "Please choose from 1min, 5min, 15min, 30min or 1hour as period."
             )
 
-        if self._intraday_period != period or self._intraday_historical_data.empty:
+        # Retrieved again when a setting that changes the data does, so a call with another
+        # return_column does not get the returns of the first call. The data is kept
+        # unrounded, as the modules calculate on it; only the returned frame is rounded.
+        intraday_params = (period, return_column, fill_nan)
+        # None means the data was not retrieved here (it is empty, or was set on the Toolkit).
+        params_changed = (
+            self._intraday_historical_data_params is not None
+            and self._intraday_historical_data_params != intraday_params
+        )
+
+        if (
+            self._intraday_historical_data.empty
+            or self._intraday_period != period
+            or params_changed
+        ):
             (
                 self._intraday_historical_data,
                 self._invalid_tickers,
@@ -3111,24 +3275,26 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=False,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_errors=True,
                 log_message="Obtaining intraday data",
                 user_subscription=self._fmp_plan,
                 cache=self._cache,
             )
+            self._intraday_historical_data_params = intraday_params
+
+            # Change the benchmark ticker name to Benchmark
+            if not self._intraday_historical_data.empty:
+                self._intraday_historical_data = self._intraday_historical_data.rename(
+                    columns={self._benchmark_ticker: "Benchmark"}, level=1
+                )
 
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
 
         if self._intraday_historical_data.empty:
             return pd.DataFrame()
-
-        # Change the benchmark ticker name to Benchmark
-        self._intraday_historical_data = self._intraday_historical_data.rename(
-            columns={self._benchmark_ticker: "Benchmark"}, level=1
-        )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3137,9 +3303,10 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        historical_data = self._intraday_historical_data.loc[
-            self._start_date : self._end_date, :
-        ]
+        historical_data = apply_rounding(
+            self._intraday_historical_data.loc[self._start_date : self._end_date, :],
+            rounding if rounding is not None else self._rounding,
+        )
 
         # The first row of the window has no preceding observation, so its Return stays NaN rather than being reported as an unchanged period.
 
@@ -3502,6 +3669,28 @@ class Toolkit:
                     )
 
         return self._market_risk_premium
+
+    def _get_statement_profile(self) -> pd.DataFrame:
+        """
+        Returns the company profiles of the tickers (FinancialModelingPrep), with the profile
+        items as index and the tickers as columns, for the models that need a company's
+        industry or IPO date. Empty without an API key or with YahooFinance as the source.
+
+        Returns:
+            pd.DataFrame: The profiles, or an empty DataFrame when they are not available.
+        """
+        if not self._api_key or self._enforce_source == "YahooFinance":
+            return pd.DataFrame()
+
+        # With remove_invalid_tickers, the profile drops invalid tickers from the Toolkit;
+        # reading it for a model must not change the Toolkit's tickers.
+        toolkit_tickers = self._tickers
+        try:
+            profile = self.get_profile()
+        finally:
+            self._tickers = toolkit_tickers
+
+        return profile if profile is not None else pd.DataFrame()
 
     def _get_country_risk_premiums(self) -> pd.Series:
         """
@@ -5927,6 +6116,12 @@ class Toolkit:
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._balance_sheet_statement, rate="closing"
                         ),
+                        # Yahoo Finance's share counts are numbers of shares, not amounts.
+                        items_not_to_adjust=[
+                            "Share Issued",
+                            "Ordinary Shares Number",
+                            "Treasury Shares Number",
+                        ],
                         financial_statement_name="balance sheet statement",
                     )
 
@@ -6013,8 +6208,8 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
-            window.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. The window counts calendar periods, so a
+            period without a report makes it NaN. Defaults to None, which uses no trailing window.
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
@@ -6165,7 +6360,7 @@ class Toolkit:
             ]
 
             # The rolling window is calculated for the rest of the income statement.
-            income_statement = self._income_statement.T.rolling(trailing).sum().T
+            income_statement = trailing_sum(self._income_statement, trailing)
 
             income_statement.loc[not_summed.index] = not_summed
 
@@ -6237,8 +6432,8 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
-            window.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. The window counts calendar periods, so a
+            period without a report makes it NaN. Defaults to None, which uses no trailing window.
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
@@ -6385,7 +6580,7 @@ class Toolkit:
         cash_flow_statement = self._cash_flow_statement
 
         if trailing:
-            cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
+            cash_flow_statement = trailing_sum(self._cash_flow_statement, trailing)
 
             # Cash held is a balance, not a flow: the window starts with the cash at the
             # beginning of its first period and ends with the cash at the end of its last one.
@@ -6395,11 +6590,9 @@ class Toolkit:
             cash_flow_statement.loc[cash_end] = self._cash_flow_statement.loc[
                 cash_end
             ].where(cash_flow_statement.loc[cash_end].notna())
-            cash_flow_statement.loc[cash_beginning] = (
-                self._cash_flow_statement.loc[cash_beginning]
-                .shift(trailing - 1, axis=1)
-                .where(cash_flow_statement.loc[cash_beginning].notna())
-            )
+            cash_flow_statement.loc[cash_beginning] = shift_periods(
+                self._cash_flow_statement.loc[cash_beginning], trailing - 1
+            ).where(cash_flow_statement.loc[cash_beginning].notna())
 
         if growth:
             self._cash_flow_statement_growth = calculate_growth(
@@ -6666,7 +6859,9 @@ class Toolkit:
         Returns the historical data of a period for the modules, retrieved when a calculation
         first asks for that period. The daily data is downloaded once and the weekly, monthly,
         quarterly and yearly data is converted from it; the intraday data is only downloaded
-        when the Toolkit has an intraday_period.
+        when the Toolkit has an intraday_period. Every period covers the start to the end date
+        of the Toolkit, as get_historical_data returns it, also when the historical data was
+        supplied over a longer range.
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -6688,7 +6883,17 @@ class Toolkit:
 
         self.get_historical_data(period=period)
 
-        return getattr(self, f"_{period}_historical_data")
+        historical_data = getattr(self, f"_{period}_historical_data")
+
+        # Supplied daily data is stored over its full range; the rows outside the dates would
+        # otherwise enter whole-sample measures (such as a maximum drawdown with
+        # within_period=False). Data in range is returned as the same frame.
+        if period == "daily" and not historical_data.empty:
+            within = historical_data.loc[self._start_date : self._end_date]
+            if len(within) != len(historical_data):
+                historical_data = within
+
+        return historical_data
 
     def _get_lookback_historical_data(self, period: str) -> pd.DataFrame:
         """
@@ -6700,8 +6905,9 @@ class Toolkit:
         the start date alone would differ, for months, from the same indicator on the same day
         with an earlier start date; the daily dividend yield likewise sums the dividends of the
         year before each day. The values are calculated from these earlier prices and returned
-        from the start date. Pre-supplied historical data and intraday data are used as they
-        are.
+        from the start date. Pre-supplied daily data is used from its first row to the end
+        date, so that its rows before the start date serve as these earlier prices; the other
+        periods of pre-supplied data and intraday data are used as the other modules get them.
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -6713,6 +6919,9 @@ class Toolkit:
             KeyError: For any other period, as a dictionary of the periods would.
         """
         if period == "intraday" or not self._historical.empty:
+            if period == "daily" and not self._historical.empty:
+                self.get_historical_data(period="daily")
+                return self._daily_historical_data.loc[: self._end_date]
             return self._get_module_historical_data(period)
 
         if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
@@ -6834,8 +7043,9 @@ class Toolkit:
         Statement columns are calendar periods (see "Fiscal periods and calendar periods" on
         the Toolkit), while the fiscal period they hold ends on its own date, e.g. 30 June for
         Microsoft's yearly statements and the end of January for NVIDIA's. These dates are
-        what the daily ratios apply the figures from and what the closing and average exchange
-        rates of the statements are taken over. They come from the Period End Date statistic
+        what the daily ratios apply the figures from, the day whose close the price-based period
+        ratios take, and what the closing and average exchange rates of the statements are taken
+        over. They come from the Period End Date statistic
         (FinancialModelingPrep) and otherwise from the latest date the period can end on given
         its label and _fiscal_year_adjustments (see helpers.determine_period_end_dates).
 

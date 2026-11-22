@@ -177,15 +177,51 @@ def get_net_debt_to_ebitda_ratio(
     Calculates the net debt to EBITDA ratio, which measures the net debt of the company
     relative to its EBITDA.
 
+    The formula is as follows:
+
+        Net Debt to EBITDA Ratio = Net Debt / (Operating Income + Depreciation and Amortization)
+
+    A multiple of a negative or zero EBITDA does not measure leverage, so those periods
+    are NaN.
+
     Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
-        net_debt (float or pd.Series): Net debt of the company.
+        operating_income (pd.Series | pd.DataFrame): Operating income of the company.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): Depreciation and
+            amortization of the company.
+        net_debt (pd.Series | pd.DataFrame): Net debt of the company.
 
     Returns:
-        float | pd.Series: The net debt to EBITDA ratio.
+        pd.Series | pd.DataFrame: The net debt to EBITDA ratio.
     """
-    return net_debt / (operating_income + depreciation_and_amortization)
+    ebitda = operating_income + depreciation_and_amortization
+
+    return net_debt / ebitda.where(ebitda > 0)
+
+
+def get_net_debt_to_equity_ratio(
+    net_debt: pd.Series | pd.DataFrame,
+    total_equity: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the net debt to equity ratio (net gearing), which measures the debt of the
+    company net of its cash relative to its equity.
+
+    The formula is as follows:
+
+        Net Debt to Equity Ratio = Net Debt / Total Equity
+
+    With an equity of zero or less the ratio no longer measures leverage (a negative ratio
+    would read as a net cash position), so those periods are NaN.
+
+    Args:
+        net_debt (pd.Series | pd.DataFrame): Net debt of the company, the total debt minus
+            the cash and cash equivalents.
+        total_equity (pd.Series | pd.DataFrame): Total equity of the company.
+
+    Returns:
+        pd.Series | pd.DataFrame: The net debt to equity ratio.
+    """
+    return net_debt / total_equity.where(total_equity > 0)
 
 
 def get_gross_debt_to_ebitda_ratio(
@@ -208,15 +244,21 @@ def get_gross_debt_to_ebitda_ratio(
 
         Gross Debt to EBITDA Ratio = Total Debt / (Operating Income + Depreciation and Amortization)
 
+    A multiple of a negative or zero EBITDA does not measure leverage, so those periods
+    are NaN.
+
     Args:
-        total_debt (float or pd.Series): Total debt of the company.
-        operating_income (float or pd.Series): Operating income of the company.
-        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+        total_debt (pd.Series | pd.DataFrame): Total debt of the company.
+        operating_income (pd.Series | pd.DataFrame): Operating income of the company.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): Depreciation and
+            amortization of the company.
 
     Returns:
-        float | pd.Series: The gross debt to EBITDA ratio.
+        pd.Series | pd.DataFrame: The gross debt to EBITDA ratio.
     """
-    return total_debt / (operating_income + depreciation_and_amortization)
+    ebitda = operating_income + depreciation_and_amortization
+
+    return total_debt / ebitda.where(ebitda > 0)
 
 
 def get_asset_coverage_ratio(
@@ -242,8 +284,8 @@ def get_asset_coverage_ratio(
 
     The formula is as follows:
 
-        Asset Coverage Ratio = [(Total Assets - Intangible Assets)
-            - (Current Liabilities - Short-Term Debt)] / Total Debt
+        Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+            (Current Liabilities - Short-Term Debt)] / Total Debt
 
     Args:
         total_assets (float or pd.Series): Total assets of the company.
@@ -439,8 +481,8 @@ def get_ebitda_minus_capex_interest_coverage_ratio(
 
     The formula is as follows (Moody's):
 
-        (EBITDA - CapEx) / Interest = (Operating Income + Depreciation and Amortization
-            - |Capital Expenditure|) / Interest Expense
+        (EBITDA - CapEx) / Interest = (Operating Income + Depreciation and Amortization -
+            |Capital Expenditure|) / Interest Expense
 
     Capital expenditure is reported as a negative cash outflow, so its magnitude is
     deducted. A zero interest expense gives NaN.
@@ -477,8 +519,8 @@ def get_cash_interest_coverage_ratio(
 
     The formula is as follows (CFA Institute):
 
-        Cash Interest Coverage = (Cash Flow from Operations + Interest Paid
-            + Income Taxes Paid) / Interest Paid
+        Cash Interest Coverage = (Cash Flow from Operations + Interest Paid +
+            Income Taxes Paid) / Interest Paid
 
     The interest and taxes paid are added back because the cash flow from operations
     is after both (US GAAP). A zero interest paid gives NaN.
@@ -567,8 +609,8 @@ def get_discretionary_cash_flow_to_debt_ratio(
 
     The formula is as follows (S&P Global Ratings):
 
-        DCF = Cash Flow from Operations - |Capital Expenditure| - |Dividends Paid|
-            - |Share Buybacks|
+        DCF = Cash Flow from Operations - |Capital Expenditure| - |Dividends Paid| -
+            |Share Buybacks|
 
         DCF to Debt = DCF / Total Debt
 

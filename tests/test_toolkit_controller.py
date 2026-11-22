@@ -1068,3 +1068,244 @@ def test_basket_statements_hold_the_sum_of_the_tickers(test_toolkit, basket_tool
     # Per-share figures and share counts do not add up across companies.
     assert basket.loc[("Total", "EPS")].isna().all()
     assert basket.loc[("Total", "Weighted Average Shares Diluted")].isna().all()
+
+
+def test_yahoo_share_counts_are_neither_translated_nor_summed(
+    monkeypatch, known_fmp_plan
+):
+    from financetoolkit import toolkit_controller
+
+    periods = pd.PeriodIndex(["2021", "2022"], freq="Y")
+    items = [
+        "Total Assets",
+        "Share Issued",
+        "Ordinary Shares Number",
+        "Treasury Shares Number",
+    ]
+    balance = pd.DataFrame(
+        [[1000.0, 1100.0], [55.0, 55.0], [50.0, 50.0], [5.0, 5.0]] * 2,
+        index=pd.MultiIndex.from_product([["A", "B"], items]),
+        columns=periods,
+    )
+    statistics = pd.DataFrame(
+        [["EUR", "EUR"], ["2021-12-31", "2022-12-31"]] * 2,
+        index=pd.MultiIndex.from_product(
+            [["A", "B"], ["Reported Currency", "Period End Date"]]
+        ),
+        columns=periods,
+    )
+    monkeypatch.setattr(
+        toolkit_controller,
+        "collect_financial_statements",
+        lambda *args, **kwargs: (balance.copy(), statistics, [], {}),
+    )
+
+    toolkit = Toolkit(
+        tickers=["A", "B"],
+        api_key="KEY",
+        start_date="2021-01-01",
+        end_date="2022-12-31",
+        convert_currency=True,
+        sleep_timer=False,
+        basket=True,
+    )
+    days = pd.period_range("2020-01-01", "2022-12-31", freq="D")
+
+    def exchange_rates(*args, **kwargs):
+        toolkit._statement_currencies = pd.Series({"A": "EURUSD=X", "B": "EURUSD=X"})
+        toolkit._daily_exchange_rate_data = pd.DataFrame(
+            {("Adj Close", "EURUSD=X"): pd.Series(1.1, index=days)}
+        )
+
+    monkeypatch.setattr(toolkit, "get_exchange_rates", exchange_rates)
+    monkeypatch.setattr(
+        toolkit,
+        "_get_listing_currencies",
+        lambda: pd.Series({"A": "USD", "B": "USD"}),
+    )
+
+    statement = toolkit.get_balance_sheet_statement(rounding=None)
+
+    # The amounts are translated at the closing rate, the numbers of shares are not.
+    assert statement.loc[("A", "Total Assets")].tolist() == pytest.approx(
+        [1100.0, 1210.0]
+    )
+    assert statement.loc[("A", "Share Issued")].tolist() == [55.0, 55.0]
+    assert statement.loc[("Total", "Total Assets")].tolist() == pytest.approx(
+        [2200.0, 2420.0]
+    )
+    # Share counts of different companies do not add up to a share count of the basket.
+    for item in items[1:]:
+        assert statement.loc[("Total", item)].isna().all()
+
+
+def test_supplied_historical_data_is_cut_to_the_dates_for_the_modules():
+    # Supplied data over 2020-2022 with a Toolkit on the second half of 2020: the whole-sample
+    # measures equal those of the same data supplied for that half year only.
+    def toolkit_on(historical):
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            historical=historical,
+            start_date="2020-07-01",
+            end_date="2020-12-31",
+            sleep_timer=False,
+        )
+        toolkit._daily_risk_free_rate = risk_free_rate
+        toolkit._daily_treasury_data = treasury_data
+        return toolkit
+
+    full = toolkit_on(historical_dataset)
+    half_year = toolkit_on(historical_dataset.loc["2020-07-01":"2020-12-31"])
+
+    daily = full._get_module_historical_data("daily")
+    assert str(daily.index[0]) == "2020-07-01"
+    assert str(daily.index[-1]) == "2020-12-31"
+
+    for method in ("get_maximum_drawdown", "get_value_at_risk"):
+        pd.testing.assert_series_equal(
+            getattr(full.risk, method)(period="daily", within_period=False),
+            getattr(half_year.risk, method)(period="daily", within_period=False),
+        )
+
+    # The technical indicators and daily ratios keep the supplied rows before the start date
+    # as their warm-up, but no rows after the end date.
+    lookback = full._get_lookback_historical_data("daily")
+    assert lookback.index[0] == historical_dataset.index[0]
+    assert str(lookback.index[-1]) == "2020-12-31"
+
+
+def test_data_within_the_dates_is_handed_to_the_modules_as_it_is():
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+
+    assert (
+        toolkit._get_module_historical_data("daily") is toolkit._daily_historical_data
+    )
+
+
+def test_toolkit_trailing_statements_count_calendar_periods():
+    """A year that is not reported leaves the windows that hold it empty."""
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        cash=cash_dataset.drop(columns=pd.Period("2021", freq="Y")),
+        convert_currency=False,
+        start_date="2017-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    statement = toolkit.get_cash_flow_statement(rounding=None).loc["AAPL"]
+    trailing = toolkit.get_cash_flow_statement(trailing=2, rounding=None).loc["AAPL"]
+
+    assert pd.Period("2021", freq="Y") not in statement.columns
+
+    # 2022 would otherwise be summed with 2020, two years earlier.
+    for item in ("Net Change in Cash", "Cash Beginning of Period"):
+        assert pd.isna(trailing.loc[item, pd.Period("2022", freq="Y")])
+
+    assert trailing.loc["Net Change in Cash", pd.Period("2023", freq="Y")] == (
+        statement.loc[
+            "Net Change in Cash", pd.period_range("2022", "2023", freq="Y")
+        ].sum()
+    )
+    assert (
+        trailing.loc["Cash Beginning of Period", pd.Period("2023", freq="Y")]
+        == statement.loc["Cash Beginning of Period", pd.Period("2022", freq="Y")]
+    )
+
+
+class PeerToolkitBuilt(Exception):
+    """Stops the peer comparison once its Toolkit of peers is built."""
+
+
+@pytest.mark.parametrize("quarterly", [False, True])
+def test_peer_comparison_uses_the_settings_of_the_toolkit(monkeypatch, quarterly):
+    from financetoolkit import toolkit_controller
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        balance=balance_dataset,
+        income=income_dataset,
+        cash=cash_dataset,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2021-12-31",
+        quarterly=quarterly,
+        point_in_time=True,
+        sleep_timer=False,
+    )
+    settings = {}
+
+    def peer_toolkit(**kwargs):
+        settings.update(kwargs)
+        raise PeerToolkitBuilt
+
+    monkeypatch.setattr(toolkit_controller, "Toolkit", peer_toolkit)
+
+    with pytest.raises(PeerToolkitBuilt):
+        toolkit.models.get_peer_comparison(
+            peers={"AAPL": ["MSFT", "GOOGL"], "MSFT": ["AAPL"]}
+        )
+
+    # The peers are compared on the latest period up to the Toolkit's end date, not today,
+    # with the settings that change the figures, so the Company column equals the Toolkit's own ratios.
+    assert settings["tickers"] == ["AAPL", "GOOGL", "MSFT"]
+    assert settings["start_date"] == "2018-12-31"
+    assert settings["end_date"] == "2021-12-31"
+    assert settings["quarterly"] is quarterly
+    assert settings["point_in_time"] is True
+    assert settings["convert_currency"] is False
+
+
+def test_intraday_data_follows_the_return_column_and_rounding(monkeypatch):
+    from financetoolkit import toolkit_controller
+
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        start_date="2026-11-16",
+        end_date="2026-11-20",
+        benchmark_ticker=None,
+        sleep_timer=False,
+    )
+    toolkit._api_key = "K"
+    requested = []
+
+    def fake_historical_data(tickers, interval, return_column, **kwargs):
+        requested.append((interval, return_column))
+        index = pd.period_range("2026-11-16 09:00", periods=4, freq="h")
+        prices = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 103.0, 102.0],
+                "Close": [101.0, 102.123456, 101.0, 104.0],
+            },
+            index=index,
+        )
+        prices["Return"] = prices[return_column].pct_change()
+        return pd.concat({"AAPL": prices}, axis=1).swaplevel(axis=1), []
+
+    monkeypatch.setattr(
+        toolkit_controller, "_get_historical_data", fake_historical_data
+    )
+
+    on_close = toolkit.get_intraday_data(period="1hour", return_column="Close")
+    on_open = toolkit.get_intraday_data(period="1hour", return_column="Open")
+    on_open_again = toolkit.get_intraday_data(
+        period="1hour", return_column="Open", rounding=1
+    )
+
+    # Another return column retrieves the data again; the same one with another rounding
+    # rounds the data already retrieved.
+    assert requested == [("1hour", "Close"), ("1hour", "Open")]
+    assert on_close["Return"].iloc[1] == pytest.approx(0.0112, abs=1e-4)
+    assert on_open["Return"].iloc[1] == pytest.approx(0.01)
+    assert on_open["Close"].iloc[1] == pytest.approx(102.1235)
+    assert on_open_again["Close"].iloc[1] == pytest.approx(102.1)
+    # The data the modules calculate on is unrounded.
+    assert toolkit._intraday_historical_data[("Close", "AAPL")].iloc[1] == 102.123456

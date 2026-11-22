@@ -1,5 +1,42 @@
 """Models Controller Tests""" ""
+import numpy as np
 import pandas as pd
+import pytest
+
+# The GNP implicit price deflator of the U.S. Bureau of Economic Analysis (NIPA table 1.7.9,
+# 2017 = 100) for the years the offline datasets cover, which the Ohlson O-Score deflates the
+# total assets with.
+GNP_DEFLATOR = pd.DataFrame(
+    {
+        "United States": [
+            18.246,
+            97.339,
+            98.262,
+            100.0,
+            102.225,
+            103.909,
+            105.306,
+            110.081,
+            117.942,
+            122.361,
+            125.496,
+            128.801,
+        ]
+    },
+    index=pd.PeriodIndex(
+        ["1968"] + [str(year) for year in range(2015, 2026)], freq="Y", name="Date"
+    ),
+)
+
+
+@pytest.fixture(autouse=True)
+def offline_gnp_deflator(monkeypatch):
+    """Serves the GNP deflator of the Ohlson O-Score without a download."""
+    from financetoolkit.economics.sources import bea_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bea_model, "get_gross_national_product_deflator", lambda: GNP_DEFLATOR
+    )
 
 
 def test_get_dupont_analysis(recorder, models_module):
@@ -932,6 +969,7 @@ def synthetic_models(items, quarterly=True):
     models._rounding = 10
     models._start_date = None
     models._end_date = None
+    models._period_end_dates_source = None
     models._historical_data = {
         "daily": pd.DataFrame(
             {("Close", ticker): [100.0] for ticker in tickers},
@@ -1144,7 +1182,15 @@ def test_quarterly_valuations_use_a_year_of_cash_flow_and_revenue():
     )
     expected = float(
         intrinsic_model.get_intrinsic_value(
-            20 * last_year, 0.05, 0.02, 0.09, 80 * g[-1], 180 * g[-1], 10, 5
+            20 * last_year,
+            0.05,
+            0.02,
+            0.09,
+            80 * g[-1],
+            180 * g[-1],
+            10,
+            5,
+            short_term_investments=20 * g[-1],
         )
         .loc["Intrinsic Value"]
         .iloc[0]
@@ -1185,15 +1231,34 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
 
     models = copy.copy(models_module)
     income = models_module._income_statement.copy()
+    balance = models_module._balance_sheet_statement.copy()
     period = income.columns[-1]
-    # A reported zero means nothing to cover, a missing interest expense is unknown.
+    # A reported zero without debt means nothing to cover, a missing interest expense is unknown.
     income.loc[("AAPL", "Interest Expense"), period] = 0.0
+    balance.loc[("AAPL", "Total Debt"), period] = 0.0
     income.loc[("MSFT", "Interest Expense"), period] = np.nan
     models._income_statement = income
+    models._balance_sheet_statement = balance
 
     rating = models.get_synthetic_credit_rating(firm_type="large")
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
     assert pd.isna(rating.loc[("MSFT", "Rating"), period])
+
+    # A zero interest expense next to debt is unreported interest: no rating, not the best.
+    models._balance_sheet_statement = models_module._balance_sheet_statement
+    rating = models.get_synthetic_credit_rating(firm_type="large")
+    assert period not in rating.columns or pd.isna(
+        rating.loc[("AAPL", "Rating"), period]
+    )
+    models._balance_sheet_statement = balance
+
+    # Without interest but with an operating loss there is nothing the coverage says about a
+    # rating: no rating rather than the best one.
+    income.loc[("AAPL", "Operating Income"), period] = -1e9
+    rating = models.get_synthetic_credit_rating(firm_type="large")
+    assert period not in rating.columns or pd.isna(
+        rating.loc[("AAPL", "Rating"), period]
+    )
 
 
 def test_valuations_default_to_the_free_cash_flow_to_firm():
@@ -1228,7 +1293,15 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
     )
     expected = float(
         intrinsic_model.get_intrinsic_value(
-            fcff, 0.05, 0.02, 0.09, 80 * g[-1], 180 * g[-1], 10, 5
+            fcff,
+            0.05,
+            0.02,
+            0.09,
+            80 * g[-1],
+            180 * g[-1],
+            10,
+            5,
+            short_term_investments=20 * g[-1],
         )
         .loc["Intrinsic Value"]
         .iloc[0]
@@ -1240,7 +1313,7 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
 
 
 def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
-    from financetoolkit.models.base import base_controller  # noqa: PLC0415
+    from financetoolkit.models import models_controller  # noqa: PLC0415
 
     items = {
         row: {ticker: values[:6] for ticker, values in tickers.items()}
@@ -1249,7 +1322,7 @@ def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
     models = synthetic_models(items)
     warnings = []
     monkeypatch.setattr(
-        base_controller.logger,
+        models_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )
@@ -1320,11 +1393,11 @@ def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
 def test_magic_formula_on_a_short_quarterly_window(monkeypatch):
     import pandas as pd  # noqa: PLC0415
 
-    from financetoolkit.models.base import base_controller  # noqa: PLC0415
+    from financetoolkit.models import models_controller  # noqa: PLC0415
 
     warnings = []
     monkeypatch.setattr(
-        base_controller.logger,
+        models_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )
@@ -1685,4 +1758,942 @@ def test_basket_models_leave_the_tickers_as_they_are(
     assert "Total" not in intrinsic_valuation.index.get_level_values(0)
     pd.testing.assert_frame_equal(
         intrinsic_valuation, models_module.get_intrinsic_valuation()
+    )
+
+
+def _fiscal_year_ends(models_module):
+    """Apple's fiscal years end on 30 September and Microsoft's on 30 June."""
+    columns = models_module._balance_sheet_statement.columns
+    return pd.DataFrame(
+        {
+            period: [
+                pd.Timestamp(f"{period.year}-09-30"),
+                pd.Timestamp(f"{period.year}-06-30"),
+            ]
+            for period in columns
+        },
+        index=["AAPL", "MSFT"],
+    )
+
+
+def _daily(models_module, column, data=None):
+    """A daily column of the historical data with a DatetimeIndex."""
+    # Not `data or ...`: the risk free rate data is a LazyDict, empty (so falsy) until a
+    # calculation first asks for a period.
+    daily = (models_module._historical_data if data is None else data)["daily"][
+        column
+    ].copy()
+    daily.index = daily.index.to_timestamp()
+    return daily
+
+
+def test_market_values_use_the_close_at_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    close = _daily(models_module, "Close")
+    shares = models_module._income_statement.xs(
+        "Weighted Average Shares Diluted", level=1
+    )
+    periods = [pd.Period("2021", freq="Y"), pd.Period("2022", freq="Y")]
+
+    prices = models_module._period_prices()
+    for ticker in ["AAPL", "MSFT"]:
+        for period in periods:
+            expected = close[ticker].loc[: dates.loc[ticker, period]].dropna().iloc[-1]
+            assert prices.loc[ticker, period] == pytest.approx(expected)
+    # The close of the last trading day of Apple's fiscal year 2021, not of December 2021.
+    assert prices.loc["AAPL", periods[0]] == pytest.approx(141.5)
+    assert prices.loc["MSFT", periods[0]] == pytest.approx(270.9)
+
+    market_cap = prices * shares
+    altman = models_module.get_altman_z_score(rounding=10)
+    tobin = models_module.get_tobins_q_ratio(rounding=10)
+    breakdown = models_module.get_enterprise_value_breakdown(rounding=10)
+    wacc = models_module.get_weighted_average_cost_of_capital(rounding=10)
+    mva = models_module.get_market_value_added(rounding=10)
+    merton = models_module.get_merton_distance_to_default(rounding=10)
+    multiples = models_module.get_justified_multiples(
+        rate_of_return=0.1, growth_rate=0.02, rounding=10
+    )
+    total_liabilities = models_module._balance_sheet_statement.xs(
+        "Total Liabilities", level=1
+    )
+    equity = models_module._balance_sheet_statement.xs(
+        "Total Shareholder Equity", level=1
+    )
+    for ticker in ["AAPL", "MSFT"]:
+        for period in periods:
+            cap = market_cap.loc[ticker, period]
+            assert altman.loc[
+                (ticker, "Market Value to Total Liabilities"), period
+            ] == pytest.approx(cap / total_liabilities.loc[ticker, period])
+            assert tobin.loc[(ticker, "Market Value of Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert breakdown.loc[(ticker, "Market Capitalization"), period] == (
+                pytest.approx(cap)
+            )
+            assert wacc.loc[(ticker, "Market Value Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert mva.loc[(ticker, "Market Value of Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert merton.loc[(ticker, "Equity Value"), period] == pytest.approx(cap)
+            assert multiples.loc[
+                (ticker, "Price-to-Book Ratio"), period
+            ] == pytest.approx(
+                prices.loc[ticker, period]
+                / (equity.loc[ticker, period] / shares.loc[ticker, period])
+            )
+
+
+def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    returns = _daily(models_module, "Return")
+    volatility = returns.rolling(252, min_periods=60).std() * 252**0.5
+    risk_free = _daily(models_module, "Adj Close", models_module._risk_free_rate_data)
+
+    merton = models_module.get_merton_distance_to_default(rounding=10)
+    period = pd.Period("2021", freq="Y")
+    for ticker in ["AAPL", "MSFT"]:
+        date = dates.loc[ticker, period]
+        assert merton.loc[(ticker, "Equity Volatility"), period] == pytest.approx(
+            volatility[ticker].loc[:date].dropna().iloc[-1]
+        )
+    # The model is solved with the rate of the fiscal period end: the same inputs give the
+    # same distance to default.
+    from financetoolkit.models.distress import credit_model  # noqa: PLC0415
+
+    date = dates.loc["AAPL", period]
+    balance = models_module._balance_sheet_statement
+    expected = credit_model.get_merton_model(
+        equity_value=float(merton.loc[("AAPL", "Equity Value"), period]),
+        equity_volatility=float(merton.loc[("AAPL", "Equity Volatility"), period]),
+        default_point=float(
+            balance.loc[("AAPL", "Short Term Debt"), period]
+            + 0.5 * balance.loc[("AAPL", "Long Term Debt"), period]
+        ),
+        risk_free_rate=float(risk_free.loc[:date].dropna().iloc[-1]),
+    )
+    assert merton.loc[("AAPL", "Distance to Default"), period] == pytest.approx(
+        expected["Distance to Default"]
+    )
+
+
+def test_present_value_of_growth_opportunities_uses_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    period = pd.Period("2021", freq="Y")
+    label = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    label_prices = models_module._period_prices()
+
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    fiscal = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    fiscal_prices = models_module._period_prices()
+
+    # The no-growth value is the same; only the price is taken on another day.
+    for ticker in ["AAPL", "MSFT"]:
+        assert fiscal.loc[period, ticker] - label.loc[period, ticker] == (
+            pytest.approx(
+                fiscal_prices.loc[ticker, period] - label_prices.loc[ticker, period]
+            )
+        )
+
+    # Daily, the fiscal year's earnings apply from the day after it ends, not from January.
+    no_growth = fiscal_prices.loc["AAPL", period] - fiscal.loc[period, "AAPL"]
+    daily = models_module.get_present_value_of_growth_opportunities(
+        calculate_daily=True, rounding=10
+    )
+    close = models_module._historical_data["daily"]["Close"]["AAPL"]
+    after = pd.Period("2021-10-01", freq="D")
+    before = pd.Period("2021-09-29", freq="D")
+    previous_no_growth = (
+        fiscal_prices.loc["AAPL", period - 1] - fiscal.loc[period - 1, "AAPL"]
+    )
+    assert daily.loc[after, "AAPL"] == pytest.approx(close.loc[after] - no_growth)
+    assert daily.loc[before, "AAPL"] == pytest.approx(
+        close.loc[before] - previous_no_growth
+    )
+
+
+def test_return_decomposition_takes_the_dividends_of_the_fiscal_period(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    dividends = _daily(models_module, "Dividends")
+    prices = models_module._period_prices()
+
+    decomposition = models_module.get_return_decomposition(rounding=10)
+    period = pd.Period("2022", freq="Y")
+    for ticker in ["AAPL", "MSFT"]:
+        begin, end = dates.loc[ticker, period - 1], dates.loc[ticker, period]
+        paid = dividends[ticker].loc[begin:end].drop(begin, errors="ignore").sum()
+        assert decomposition.loc[(ticker, "Dividend Return"), period] == (
+            pytest.approx(paid / prices.loc[ticker, period - 1])
+        )
+        assert decomposition.loc[(ticker, "Price Return"), period] == (
+            pytest.approx(
+                prices.loc[ticker, period] / prices.loc[ticker, period - 1] - 1
+            )
+        )
+
+
+def test_return_on_equity_excludes_minority_interests(models_module, monkeypatch):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    balance = models_module._balance_sheet_statement.copy()
+    # A minority interest makes the Total Equity larger than the shareholders' equity.
+    for ticker in ["AAPL", "MSFT"]:
+        balance.loc[(ticker, "Total Equity")] = (
+            balance.loc[(ticker, "Total Shareholder Equity")] + 1e10
+        )
+    models._balance_sheet_statement = balance
+
+    equity = balance.xs("Total Shareholder Equity", level=1)
+    assets = balance.xs("Total Assets", level=1)
+    net_income = models_module._income_statement.xs("Net Income", level=1)
+    period = pd.Period("2022", freq="Y")
+    average_equity = (equity[period] + equity[period - 1]) / 2
+    average_assets = (assets[period] + assets[period - 1]) / 2
+
+    dupont = models.get_dupont_analysis(rounding=10)
+    extended = models.get_extended_dupont_analysis(rounding=10)
+    for ticker in ["AAPL", "MSFT"]:
+        for analysis in (dupont, extended):
+            assert analysis.loc[(ticker, "Equity Multiplier"), period] == (
+                pytest.approx(average_assets[ticker] / average_equity[ticker])
+            )
+            assert analysis.loc[(ticker, "Return on Equity"), period] == (
+                pytest.approx(net_income.loc[ticker, period] / average_equity[ticker])
+            )
+
+    return_on_equity, _ = models._return_on_equity_and_payout(None)
+    assert return_on_equity.loc["AAPL", period] == pytest.approx(
+        net_income.loc["AAPL", period] / equity.loc["AAPL", period - 1]
+    )
+
+
+def test_trailing_scores_use_the_balances_at_the_period_end(models_module):
+    balance = models_module._balance_sheet_statement
+    period = pd.Period("2022", freq="Y")
+
+    def closing(item):
+        return balance.loc[("AAPL", item), period]
+
+    # With trailing=2 the flows cover two years, while the balances, the shares and the
+    # market values stay those at the end of the period.
+    altman = models_module.get_altman_z_score(trailing=2, rounding=10)
+    assert altman.loc[("AAPL", "Working Capital to Total Assets"), period] == (
+        pytest.approx(
+            (closing("Total Current Assets") - closing("Total Current Liabilities"))
+            / closing("Total Assets")
+        )
+    )
+    market_cap = (
+        models_module._period_prices()
+        * models_module._income_statement.xs("Weighted Average Shares Diluted", level=1)
+    ).loc["AAPL", period]
+    assert altman.loc[("AAPL", "Market Value to Total Liabilities"), period] == (
+        pytest.approx(market_cap / closing("Total Liabilities"))
+    )
+
+    for method, item, row in [
+        (models_module.get_ohlson_o_score, "Total Liabilities to Total Assets", None),
+        (models_module.get_zmijewski_score, None, None),
+        (models_module.get_springate_score, None, None),
+        (models_module.get_grover_score, None, None),
+        (models_module.get_fulmer_h_score, None, None),
+        (models_module.get_taffler_z_score, None, None),
+    ]:
+        trailing = method(trailing=2, rounding=10)
+        single = method(rounding=10)
+        if item:
+            assert trailing.loc[("AAPL", item), period] == pytest.approx(
+                closing("Total Liabilities") / closing("Total Assets")
+            )
+        # Every component without a flow is the same as without trailing.
+        balance_only = [
+            component
+            for component in single.loc["AAPL"].index
+            if component
+            in (
+                "Total Liabilities to Total Assets",
+                "Working Capital to Total Assets",
+                "Current Liabilities to Current Assets",
+                "Current Assets to Total Liabilities",
+                "Current Liabilities to Total Assets",
+                "Current Ratio",
+                "Debt to Assets",
+            )
+        ]
+        for component in balance_only:
+            assert trailing.loc[("AAPL", component), period] == pytest.approx(
+                single.loc[("AAPL", component), period]
+            )
+
+    tobin = models_module.get_tobins_q_ratio(rounding=10)
+    assert tobin.loc[("AAPL", "Total Assets"), period] == closing("Total Assets")
+    assert tobin.loc[("AAPL", "Market Value of Equity"), period] == (
+        pytest.approx(market_cap)
+    )
+
+    wacc = models_module.get_weighted_average_cost_of_capital(
+        trailing=2, rounding=10, market_risk_premium=0.05
+    )
+    assert wacc.loc[("AAPL", "Market Value Debt"), period] == closing("Total Debt")
+    assert wacc.loc[("AAPL", "Market Value Equity"), period] == pytest.approx(
+        market_cap
+    )
+
+
+def test_free_cash_flow_to_firm_clips_the_tax_rate():
+    import numpy as np  # noqa: PLC0415
+
+    items = growing_company()
+    items["Change in Working Capital"] = {"A": growing(-5)}
+    # A tax benefit on a profit: the corporate tax rate is 0, not negative, so the NOPAT
+    # does not exceed the operating income.
+    items["Income Tax Expense"] = {"A": growing(-8)}
+    models = synthetic_models(items)
+    last_year = (GROWTH ** np.arange(QUARTERS))[-4:].sum()
+
+    reverse = models.get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09
+    )
+    assert reverse.loc["A", "Cash Flow"] == pytest.approx(
+        (50 + 10 - 10 - 5) * last_year
+    )
+
+
+def test_ohlson_size_is_deflated_by_the_gnp_price_level(models_module, monkeypatch):
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.models.distress import distress_controller  # noqa: PLC0415
+
+    total_assets = models_module._balance_sheet_statement.xs("Total Assets", level=1)
+    ohlson = models_module.get_ohlson_o_score(rounding=10)
+    deflator = GNP_DEFLATOR["United States"]
+    for year in ["2021", "2022"]:
+        period = pd.Period(year, freq="Y")
+        index = deflator[period] / deflator[pd.Period("1968", freq="Y")] * 100
+        assert ohlson.loc[("AAPL", "Log of Total Assets"), period] == pytest.approx(
+            np.log(total_assets.loc["AAPL", period] / index)
+        )
+
+    # A year the deflator is not published for yet uses the latest published year.
+    columns = pd.PeriodIndex(["2025Q4", "2026Q1"], freq="Q")
+    latest = models_module._gross_national_product_price_level(columns)
+    assert latest.iloc[1] == latest.iloc[0]
+
+    # Without the deflator, the size and the score are NaN rather than on another scale.
+    warnings = []
+    monkeypatch.setattr(
+        distress_controller.bea_model,
+        "get_gross_national_product_deflator",
+        pd.DataFrame,
+    )
+    monkeypatch.setattr(
+        distress_controller.logger,
+        "warning",
+        lambda message, *args: warnings.append(message % args),
+    )
+    missing = models_module.get_ohlson_o_score()
+    assert missing.xs("Log of Total Assets", level=1).isna().all().all()
+    assert missing.xs("Ohlson O-Score", level=1).isna().all().all()
+    assert missing.xs("Total Liabilities to Total Assets", level=1).notna().any().any()
+    assert any("GNP price deflator" in warning for warning in warnings)
+
+
+def test_market_value_added_compares_values_at_the_same_date(models_module):
+    balance = models_module._balance_sheet_statement
+    mva = models_module.get_market_value_added(rounding=10)
+    period = pd.Period("2022", freq="Y")
+
+    for ticker in ["AAPL", "MSFT"]:
+        invested_capital = (
+            balance.loc[(ticker, "Total Equity"), period]
+            + balance.loc[(ticker, "Total Debt"), period]
+        )
+        assert mva.loc[(ticker, "Invested Capital"), period] == pytest.approx(
+            invested_capital
+        )
+        # The debt at its book value cancels out: market value of equity minus book equity.
+        assert mva.loc[(ticker, "Market Value Added"), period] == pytest.approx(
+            mva.loc[(ticker, "Market Value of Equity"), period]
+            - balance.loc[(ticker, "Total Equity"), period]
+        )
+
+    averaged = models_module.get_market_value_added(trailing=2, rounding=10)
+    assert averaged.loc[("AAPL", "Invested Capital"), period] == pytest.approx(
+        (
+            balance.loc[("AAPL", "Total Equity"), [period - 1, period]].sum()
+            + balance.loc[("AAPL", "Total Debt"), [period - 1, period]].sum()
+        )
+        / 2
+    )
+
+
+def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    income = models_module._income_statement.copy()
+    period = income.columns[-2]
+    # A zero interest expense next to debt is interest the statements do not report.
+    income.loc[("AAPL", "Interest Expense"), period] = 0.0
+    models._income_statement = income
+
+    wacc = models.get_weighted_average_cost_of_capital()
+
+    assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
+    assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
+    assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+def _models_with_estimates(test_toolkit):
+    """A Models instance with yearly consensus EPS estimates for 2017-2026."""
+    models = test_toolkit.models
+    years = pd.period_range("2017", periods=10, freq="Y")
+    models._analyst_estimates = pd.DataFrame(
+        [
+            [1 + 0.1 * year for year in range(10)],
+            [12] * 10,
+            [2 + 0.3 * year for year in range(10)],
+            [12] * 5 + [3] + [12] * 4,
+        ],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("AAPL", "Estimated EPS Average"),
+                ("AAPL", "Number of Analysts EPS"),
+                ("MSFT", "Estimated EPS Average"),
+                ("MSFT", "Number of Analysts EPS"),
+            ]
+        ),
+        columns=years,
+    )
+    return models
+
+
+def test_get_implied_cost_of_capital(recorder, test_toolkit):
+    models = _models_with_estimates(test_toolkit)
+
+    recorder.capture(models.get_implied_cost_of_capital())
+    recorder.capture(models.get_implied_cost_of_capital(modified=False))
+    recorder.capture(models.get_implied_cost_of_capital(min_analysts=5))
+
+
+def test_implied_cost_of_capital_uses_the_next_two_years_and_the_period_end_close(
+    test_toolkit,
+):
+    models = _models_with_estimates(test_toolkit)
+    result = models.get_implied_cost_of_capital(rounding=None)
+    peg = models.get_implied_cost_of_capital(modified=False, rounding=None)
+
+    # 2020: EPS1 the 2021 estimate (1.4), EPS2 the 2022 estimate (1.5), the close on
+    # 2020-12-31 and the dividends paid over 2020.
+    daily = test_toolkit._get_module_historical_data("daily")
+    price = daily["Close"]["AAPL"].loc["2020-12-31"]
+    dividends = daily["Dividends"]["AAPL"].loc["2020-01-01":"2020-12-31"].sum()
+    half_yield = dividends / (2 * price)
+    expected = half_yield + np.sqrt(half_yield**2 + 0.1 / price)
+
+    assert result.loc["AAPL", "2020"] == pytest.approx(expected, abs=1e-4)
+    assert peg.loc["AAPL", "2020"] == pytest.approx(np.sqrt(0.1 / price), abs=1e-4)
+    # 2023 has no price in the offline data; MSFT 2021 needs the 2022 estimate, which
+    # three analysts cover.
+    assert result.loc[:, "2023"].isna().all()
+    restricted = models.get_implied_cost_of_capital(min_analysts=5)
+    assert pd.isna(restricted.loc["MSFT", "2021"])
+    assert pd.isna(restricted.loc["MSFT", "2020"])
+    assert not pd.isna(restricted.loc["MSFT", "2022"])
+
+
+def test_implied_cost_of_capital_without_estimates_is_empty(test_toolkit):
+    models = test_toolkit.models
+    models._analyst_estimates = pd.DataFrame()
+
+    assert models.get_implied_cost_of_capital().empty
+
+
+def test_get_nissim_penman_decomposition(recorder, models_module):
+    recorder.capture(models_module.get_nissim_penman_decomposition())
+    recorder.capture(models_module.get_nissim_penman_decomposition(growth=True))
+
+
+def test_nissim_penman_decomposition_equals_the_ratios(models_module, test_toolkit):
+    decomposition = models_module.get_nissim_penman_decomposition(rounding=10)
+    ratios = test_toolkit.ratios
+    equity = models_module._balance_sheet_statement.xs(
+        "Total Shareholder Equity", level=1
+    ) - models_module._balance_sheet_statement.xs("Preferred Stock", level=1).fillna(0)
+    net_income = models_module._income_statement.xs("Net Income", level=1)
+    return_on_common_equity = net_income / equity.T.rolling(2).mean().T
+
+    for name, method in [
+        ("Return on Net Operating Assets", ratios.get_return_on_net_operating_assets),
+        ("Net Borrowing Cost", ratios.get_net_borrowing_cost),
+        ("Financial Leverage", ratios.get_financial_leverage),
+    ]:
+        expected = method(rounding=10)
+        shown = decomposition.xs(name, level=1)
+        pd.testing.assert_frame_equal(
+            shown, expected.reindex_like(shown), check_names=False, atol=1e-9
+        )
+
+    shown = decomposition.xs("Return on Common Equity", level=1)
+    pd.testing.assert_frame_equal(
+        shown,
+        return_on_common_equity.reindex_like(shown),
+        check_names=False,
+        atol=1e-9,
+    )
+
+
+def test_nissim_penman_decomposition_is_nan_without_interest_rows(models_module):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    income = models_module._income_statement.copy()
+    period = pd.Period("2022", freq="Y")
+    income.loc[("AAPL", "Interest Expense"), period] = 0
+    income.loc[("AAPL", "Interest Income"), period] = 0
+    models._income_statement = income
+
+    base = models_module.get_nissim_penman_decomposition(rounding=10)
+    decomposition = models.get_nissim_penman_decomposition(rounding=10)
+
+    unknown = [
+        "Return on Net Operating Assets",
+        "Net Borrowing Cost",
+        "Spread",
+        "Leverage Effect",
+        "Return on Common Equity",
+    ]
+    assert decomposition.loc[[("AAPL", name) for name in unknown], period].isna().all()
+    assert decomposition.loc[("AAPL", "Financial Leverage"), period] == pytest.approx(
+        base.loc[("AAPL", "Financial Leverage"), period]
+    )
+    # Every other cell is unchanged.
+    pd.testing.assert_frame_equal(
+        decomposition.drop(columns=period), base.drop(columns=period)
+    )
+    pd.testing.assert_series_equal(
+        decomposition.loc["MSFT", period], base.loc["MSFT", period]
+    )
+
+
+# The US CPI-U of the BIS (2010 = 100) that the size-age index deflates the total assets with,
+# rising 0.25% a month from its 2004 level.
+CONSUMER_PRICES = pd.DataFrame(
+    {"United States": [85.0 * 1.0025**month for month in range(240)]},
+    index=pd.period_range("2004-01", periods=240, freq="M"),
+)
+
+PROFILE = pd.DataFrame(
+    {
+        "AAPL": {"IPO Date": "1980-12-12", "Industry": "Consumer Electronics"},
+        "MSFT": {"IPO Date": "1986-03-13", "Industry": "Software - Infrastructure"},
+    }
+)
+
+
+@pytest.fixture
+def constraints_module(test_toolkit, monkeypatch):
+    """A Models instance with company profiles and the CPI, without a download."""
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bis_model, "get_consumer_prices", lambda *args, **kwargs: CONSUMER_PRICES
+    )
+    module = test_toolkit.models
+    module._profile_source = PROFILE
+    return module
+
+
+def test_get_kaplan_zingales_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_kaplan_zingales_index())
+    recorder.capture(constraints_module.get_kaplan_zingales_index(growth=True))
+    recorder.capture(constraints_module.get_kaplan_zingales_index(standardize=True))
+
+
+def test_get_whited_wu_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_whited_wu_index())
+    recorder.capture(constraints_module.get_whited_wu_index(growth=True))
+
+
+def test_get_whited_wu_index_averages_the_industry(constraints_module):
+    constraints_module._profile_source = PROFILE.replace(
+        "Software - Infrastructure", "Consumer Electronics"
+    )
+    result = constraints_module.get_whited_wu_index()
+    sales_growth = result.xs("Sales Growth", level=1)
+    industry = result.xs("Industry Sales Growth", level=1)
+
+    # Rounded to the Toolkit's 4 decimals after averaging.
+    for ticker in ["AAPL", "MSFT"]:
+        pd.testing.assert_series_equal(
+            industry.loc[ticker], sales_growth.mean(), check_names=False, atol=1e-4
+        )
+
+
+def test_get_size_age_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_size_age_index())
+    recorder.capture(constraints_module.get_size_age_index(growth=True))
+
+
+def test_get_size_age_index_without_a_profile_is_nan(constraints_module):
+    constraints_module._profile_source = None
+    result = constraints_module.get_size_age_index()
+
+    assert result.empty or result.xs("Size-Age Index", level=1).isna().all().all()
+
+
+def test_get_size_age_index_deflates_periods_before_the_base_year(
+    constraints_module, monkeypatch
+):
+    import copy  # noqa: PLC0415
+    import math  # noqa: PLC0415
+
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    # The CPI from 1990, 0.25% a month, returned from the requested start onwards.
+    consumer_prices = pd.DataFrame(
+        {"United States": [60.0 * 1.0025**month for month in range(480)]},
+        index=pd.period_range("1990-01", periods=480, freq="M"),
+    )
+    requested = []
+
+    def get_consumer_prices(measure, start_date, end_date):
+        requested.append(start_date)
+        return consumer_prices[consumer_prices.index >= pd.Period(start_date, "M")]
+
+    monkeypatch.setattr(bis_model, "get_consumer_prices", get_consumer_prices)
+
+    models = copy.copy(constraints_module)
+    balance = constraints_module._balance_sheet_statement.copy()
+    # The same statements labelled 1998 onwards, ending on the calendar year end.
+    balance.columns = pd.period_range("1998", periods=len(balance.columns), freq="Y")
+    # $100 million of assets, below the cap, so the Size moves with the price level.
+    balance.loc[(slice(None), "Total Assets"), :] = 100e6
+    models._balance_sheet_statement = balance
+    models._period_end_dates = None
+
+    size = models.get_size_age_index(rounding=10).xs("Size", level=1)
+
+    assert requested[0] < "1998-01-01"
+    base = consumer_prices.loc["2004"].mean().iloc[0]
+    for period in size.columns:
+        price_level = consumer_prices.loc[pd.Period(f"{period.year}-12", "M")].iloc[0]
+        assert size.loc["AAPL", period] == pytest.approx(
+            math.log(100 / (price_level / base))
+        )
+
+
+def test_get_size_age_index_does_not_warn_about_the_basket_total(
+    constraints_module, caplog
+):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(constraints_module)
+    # The basket's Total has no profile, so no IPO date, and is no company.
+    models._tickers = ["AAPL", "MSFT", "Total"]
+
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date" not in caplog.text
+
+    models._profile = PROFILE.drop(columns="MSFT")
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date is available for MSFT," in caplog.text
+
+
+def test_get_graham_intrinsic_value(recorder, models_module, monkeypatch):
+    import pandas as pd
+
+    # Moody's Aaa yield offline: 4% rising by a basis point a month.
+    days = pd.date_range("2015-01-01", "2023-12-31", freq="B")
+    aaa = pd.Series(
+        0.04 + 0.0001 * ((days.year - 2015) * 12 + days.month - 1), index=days
+    )
+    monkeypatch.setattr(
+        models_module,
+        "_corporate_bond_yield_function",
+        lambda start, end: aaa.loc[start:end],
+    )
+
+    recorder.capture(models_module.get_graham_intrinsic_value())
+    recorder.capture(models_module.get_graham_intrinsic_value(0.05, 0.044))
+
+    # By hand: the EPS of the period, its compound growth since the first period (from
+    # three years of history, kept within 0 and 0.20) and the yield on the last business
+    # day up to the period end.
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    value = models_module.get_graham_intrinsic_value(rounding=10)
+    market_dates = models_module._market_dates()
+    checked = 0
+    for ticker in value.index:
+        history = earnings_per_share.loc[ticker].dropna()
+        for position, period in enumerate(history.index[1:], start=1):
+            if period not in value.columns:
+                continue
+            if position < 3:
+                assert pd.isna(value.loc[ticker, period])
+                continue
+            growth = min(
+                max((history[period] / history.iloc[0]) ** (1 / position) - 1, 0), 0.2
+            )
+            bond_yield = aaa.loc[: market_dates.loc[ticker, period]].iloc[-1]
+            expected = history[period] * (8.5 + 200 * growth) * 4.4 / (bond_yield * 100)
+            assert value.loc[ticker, period] == pytest.approx(expected, rel=1e-9)
+            checked += 1
+    assert checked >= 2
+
+
+def test_graham_intrinsic_value_without_a_bond_yield_source(models_module, monkeypatch):
+    monkeypatch.setattr(models_module, "_corporate_bond_yield_function", None)
+
+    # Without a source the bond yield must be given.
+    assert models_module.get_graham_intrinsic_value().empty
+    assert not models_module.get_graham_intrinsic_value(bond_yield=0.05).empty
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, trailing):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        # Eight quarters out of the four years of the datasets, so that a trailing year of
+        # four quarters, which averages the balances over five quarter ends, has values.
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+
+    return_on_equity = ratios.get_return_on_equity(trailing=trailing)
+    asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
+    return_on_assets = ratios.get_return_on_assets(trailing=trailing)
+    dupont = models.get_dupont_analysis(trailing=trailing)
+    extended = models.get_extended_dupont_analysis(trailing=trailing)
+
+    for ticker in tickers:
+        reported = return_on_equity.loc[ticker]
+        assert reported.notna().sum() >= 2
+
+        margin = dupont.loc[(ticker, "Net Profit Margin")]
+        turnover = dupont.loc[(ticker, "Asset Turnover")]
+        product = margin * turnover * dupont.loc[(ticker, "Equity Multiplier")]
+        extended_product = (
+            extended.loc[(ticker, "Interest Burden Ratio")]
+            * extended.loc[(ticker, "Tax Burden Ratio")]
+            * extended.loc[(ticker, "Operating Profit Margin")]
+            * extended.loc[(ticker, "Asset Turnover")]
+            * extended.loc[(ticker, "Equity Multiplier")]
+        )
+
+        for decomposed in (
+            product,
+            extended_product,
+            dupont.loc[(ticker, "Return on Equity")],
+            extended.loc[(ticker, "Return on Equity")],
+        ):
+            pd.testing.assert_series_equal(
+                decomposed, reported, check_names=False, rtol=1e-12, atol=0
+            )
+        pd.testing.assert_series_equal(
+            turnover, asset_turnover.loc[ticker], check_names=False, rtol=1e-12
+        )
+        pd.testing.assert_series_equal(
+            margin * turnover,
+            return_on_assets.loc[ticker],
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_economic_value_added_uses_the_invested_capital_of_the_roic(
+    quarterly, trailing
+):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+    # The WACC needs market data and does not enter the NOPAT or the invested capital.
+    wacc = pd.DataFrame(
+        0.08,
+        index=pd.MultiIndex.from_product(
+            [tickers, ["Weighted Average Cost of Capital"]]
+        ),
+        columns=statements[0].columns,
+    )
+    models._weighted_average_cost_of_capital = lambda **_: wacc
+
+    eva = models.get_economic_value_added(trailing=trailing)
+    return_on_invested_capital = ratios.get_return_on_invested_capital(
+        trailing=trailing
+    )
+
+    for ticker in tickers:
+        reported = return_on_invested_capital.loc[ticker]
+        assert reported.notna().sum() >= 2
+        pd.testing.assert_series_equal(
+            eva.loc[(ticker, "Net Operating Profit After Taxes")]
+            / eva.loc[(ticker, "Invested Capital")],
+            reported,
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )
+
+
+def test_get_discretionary_accruals(recorder, models_module):
+    # The offline statements cover too few years (and tickers) to estimate on, so only the
+    # Total Accruals have values; the estimates are tested on synthetic statements below.
+    recorder.capture(models_module.get_discretionary_accruals())
+
+
+def test_discretionary_accruals_estimate_on_the_same_quarter_of_earlier_years():
+    import numpy as np  # noqa: PLC0415
+
+    rng = np.random.default_rng(7)
+    quarters = 4 * 14
+    assets = 1000 * np.cumprod(1 + rng.normal(0.01, 0.03, quarters))
+    revenue = assets * rng.uniform(0.1, 0.3, quarters)
+    fixed_assets = assets * rng.uniform(0.2, 0.6, quarters)
+    # Accruals that follow the Jones model exactly on trailing twelve months and changes
+    # over a year: a1 + a2 ΔRevenue + a3 PPE, spread evenly over the quarters.
+    yearly_revenue = np.convolve(revenue, np.ones(4))[: len(revenue)]
+    change = np.full(quarters, np.nan)
+    change[4:] = yearly_revenue[4:] - yearly_revenue[:-4]
+    yearly_accruals = 30 + 0.04 * change + -0.06 * fixed_assets
+    quarterly_accruals = np.full(quarters, np.nan)
+    quarterly_accruals[:4] = 1.0
+    for quarter in range(4, quarters):
+        quarterly_accruals[quarter] = (
+            yearly_accruals[quarter] - quarterly_accruals[quarter - 3 : quarter].sum()
+        )
+
+    models = synthetic_models(
+        {
+            "Total Assets": {"A": list(assets)},
+            "Revenue": {"A": list(revenue)},
+            "Accounts Receivable": {"A": [50.0] * quarters},
+            "Property, Plant and Equipment": {"A": list(fixed_assets)},
+            "Net Income": {"A": list(quarterly_accruals)},
+            "Operating Cash Flow": {"A": [0.0] * quarters},
+        },
+        quarterly=True,
+    )
+    result = models.get_discretionary_accruals().loc["A"]
+    discretionary = result.loc["Discretionary Accruals"].dropna()
+    # The first change of trailing twelve months is in the eighth quarter (position 7),
+    # so the first estimate on ten earlier years of the same quarter is at position 47.
+    assert len(discretionary) == quarters - (7 + 4 * 10)
+    assert np.abs(discretionary.to_numpy()).max() < 1e-10
+    # Accruals that follow the model without a constant give a zero constant when one is added.
+    with_intercept = models.get_discretionary_accruals(intercept=True).loc["A"]
+    np.testing.assert_allclose(
+        with_intercept.loc["Discretionary Accruals"].dropna(), 0, atol=1e-10
+    )
+    assert with_intercept.loc["Discretionary Accruals"].notna().sum() == len(
+        discretionary
+    )
+
+    cross_section = models.get_discretionary_accruals(method="cross_section")
+    assert cross_section.loc["A"].loc["Discretionary Accruals"].isna().all()
+    assert models.get_discretionary_accruals(method="panel").empty
+
+
+def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
+    import numpy as np  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    g = GROWTH ** np.arange(QUARTERS)
+    settings = {
+        "growth_rate": 0.0,
+        "perpetual_growth_rate": 0.02,
+        "weighted_average_cost_of_capital": 0.09,
+        "cash_flow_type": "Free Cash Flow",
+    }
+
+    # Every quarter reported: the base is the trailing twelve months.
+    models = synthetic_models(growing_company())
+    valuation = models.get_intrinsic_valuation(**settings)
+    assert valuation.loc["A"].iloc[:, -1]["Cash Flow Projection"] == pytest.approx(
+        20 * g[-4:].sum()
+    )
+
+    # The latest quarter but one is not reported (no column at all): the base is the latest
+    # four quarters in a row, not the latest four reported columns spanning five quarters.
+    models = synthetic_models(growing_company())
+    kept = models._cash_flow_statement.columns.delete(QUARTERS - 2)
+    models._balance_sheet_statement = models._income_statement = (
+        models._cash_flow_statement
+    ) = models._cash_flow_statement.loc[:, kept]
+    valuation = models.get_intrinsic_valuation(**settings)
+    assert valuation.loc["A"].iloc[:, -1]["Cash Flow Projection"] == pytest.approx(
+        20 * g[-6:-2].sum()
+    )
+    historical = models.get_intrinsic_valuation(historical=True, **settings)
+    # The fourth quarter's year includes the missing third quarter: only the second
+    # quarter's trailing year, the latest complete one, is valued last.
+    assert str(historical.loc["A"].dropna().index[-1]) == "2023Q2"
+
+    # A company reporting half-yearly (second and fourth quarters only) has no complete year
+    # of quarters, so it is not valued instead of summing two years of cash flow.
+    models = synthetic_models(growing_company())
+    columns = models._cash_flow_statement.columns
+    half_yearly = columns[columns.quarter.isin([2, 4])]
+    models._balance_sheet_statement = models._income_statement = (
+        models._cash_flow_statement
+    ) = models._cash_flow_statement.loc[:, half_yearly]
+    assert models.get_intrinsic_valuation(**settings).empty
+    assert (
+        models.get_intrinsic_valuation(historical=True, **settings).isna().all().all()
     )

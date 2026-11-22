@@ -8,12 +8,8 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.analysis import backtest_model
-from financetoolkit.portfolio.construction.base.base_controller import (
-    BENCHMARK_TICKER,
-    PORTFOLIO_TICKER,
-    PortfolioConstructionBase,
-)
 from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -51,7 +47,7 @@ DEFAULT_BACKTEST_METHODS = (
 
 @filter_shown_columns
 @track_sources
-class AnalysisConstruction(PortfolioConstructionBase):
+class AnalysisConstruction:
     """
     Analysis of a set of weights: risk contributions, diversification and risk metrics, the discrete allocation and the walk-forward optimization backtest.
     """
@@ -161,6 +157,9 @@ class AnalysisConstruction(PortfolioConstructionBase):
             pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or
             per period terms of the other measures, with losses and drawdowns positive.
+            The assets held (a weight other than zero) are listed, over the periods in
+            which each of them has a return; a loaded asset without weight does not
+            shorten the sample.
 
         As an example:
 
@@ -196,10 +195,16 @@ class AnalysisConstruction(PortfolioConstructionBase):
                 f"The risk measure must be one of {', '.join(measures)}, not "
                 f"'{risk_measure}'."
             )
+        # Only the assets held decide the periods, so an asset left out of the weights with
+        # a shorter history does not shorten the sample.
+        resolved = self._get_held_weights(weights, period, include_benchmark)
         returns, _, covariance_matrix, _ = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            assets=resolved.index.tolist(),
         )
-        resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
         if risk_measure == "volatility":
             table = optimization_model.get_risk_contributions(
                 resolved, covariance_matrix
@@ -290,7 +295,9 @@ class AnalysisConstruction(PortfolioConstructionBase):
 
         Returns:
             pd.Series: The Herfindahl-Hirschman Index, Effective Number of Assets,
-            Diversification Ratio and Effective Number of Bets of the portfolio.
+            Diversification Ratio and Effective Number of Bets of the portfolio, from
+            the covariance of the assets held (a weight other than zero) over the periods
+            in which each of them has a return.
 
         As an example:
 
@@ -318,10 +325,14 @@ class AnalysisConstruction(PortfolioConstructionBase):
         | Diversification Ratio      |      1.343  |
         | Effective Number of Bets   |      1.1298 |
         """
+        resolved = self._get_held_weights(weights, period, include_benchmark)
         _, _, covariance_matrix, _ = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            assets=resolved.index.tolist(),
         )
-        resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
         metrics = optimization_model.get_diversification_metrics(
             resolved, covariance_matrix
         )
@@ -392,7 +403,9 @@ class AnalysisConstruction(PortfolioConstructionBase):
         Returns:
             pd.DataFrame: The Annualized Return, Annualized Volatility, Sharpe Ratio,
             Sortino Ratio, Maximum Drawdown, Value at Risk and Conditional Value at Risk of
-            the Portfolio and, when there is one, the Benchmark over the same periods.
+            the Portfolio and, when there is one, the Benchmark over the same periods:
+            those in which every asset held (a weight other than zero) has a return, so a
+            loaded asset without weight does not shorten the sample.
 
         As an example:
 
@@ -423,8 +436,10 @@ class AnalysisConstruction(PortfolioConstructionBase):
         | Value at Risk             |     -0.0185 |     -0.0166 |
         | Conditional Value at Risk |     -0.0263 |     -0.0248 |
         """
-        returns = self._get_returns(period, include_benchmark)
-        resolved = self._resolve_weights(weights, returns.columns.tolist())
+        # Only the assets held decide the periods, so an asset left out of the weights with
+        # a shorter history does not shorten the sample.
+        resolved = self._get_held_weights(weights, period, include_benchmark)
+        returns = self._get_returns(period, include_benchmark, resolved.index.tolist())
         series = {PORTFOLIO_TICKER: returns @ resolved}
         benchmark = self._get_benchmark_returns(period)
         if benchmark is not None:
@@ -469,7 +484,10 @@ class AnalysisConstruction(PortfolioConstructionBase):
         A short weight becomes a negative number of shares, with the proceeds funding
         the long positions: weights that sum to one keep a net investment of the
         portfolio value. Short positions are rounded to a larger short, so the leftover
-        cash is never negative.
+        cash is never negative. The integer programme holds a long position at no more
+        than the whole shares that reach its target, but leaves the size of a short
+        position open: one more share short raises the cash for a long share that is
+        further below its own target, which can lower the total deviation.
 
         For more information, see the following book:
 

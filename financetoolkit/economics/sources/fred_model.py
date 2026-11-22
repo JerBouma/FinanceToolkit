@@ -101,6 +101,34 @@ def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.Dat
     return _get_fred_series("PAYEMS", start_date, end_date, api_key)
 
 
+def get_job_openings_rate(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
+    """
+    Retrieves the job openings rate of total nonfarm from FRED (series JTSJOR), which
+    republishes the BLS Job Openings and Labor Turnover Survey, seasonally adjusted, from
+    December 2000.
+
+    Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: The job openings rate as a decimal (0.045 for 4.5%), a single
+        "United States" column indexed by month.
+    """
+    data = _get_fred_series("JTSJOR", start_date, end_date, api_key)
+
+    if not data.empty:
+        # FRED dates a month on its first day; the other sources index it by month.
+        data.index = data.index.asfreq("M")
+        data.index.name = None
+
+    # FRED publishes the rate in percent.
+    return data / 100
+
+
 def get_initial_jobless_claims(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
@@ -120,6 +148,49 @@ def get_initial_jobless_claims(
             adjusted.
     """
     return _get_fred_series("ICSA", start_date, end_date, api_key)
+
+
+def get_continuing_jobless_claims(
+    start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves Continued Claims (Insured Unemployment) from FRED (series CCSA).
+
+    Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: A single-column ("United States") DataFrame of continued jobless
+            claims, as a count of claims, weekly (the Saturday ending the week of
+            unemployment) and seasonally adjusted.
+    """
+    return _get_fred_series("CCSA", start_date, end_date, api_key)
+
+
+def get_insured_unemployment_rate(
+    start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves the Insured Unemployment Rate from FRED (series IURSA).
+
+    Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: A single-column ("United States") DataFrame of the insured
+            unemployment rate as a decimal (0.012 for 1.2%), weekly (the Saturday ending
+            the week of unemployment) and seasonally adjusted.
+    """
+    # FRED publishes the rate in percent.
+    return _get_fred_series("IURSA", start_date, end_date, api_key) / 100
 
 
 def get_retail_sales(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:

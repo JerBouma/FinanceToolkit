@@ -455,6 +455,17 @@ def test_semicovariance_and_exponential_covariance_match_pyportfolioopt():
     assert exponential.loc["C", "C"] == pytest.approx(4.810124354274288e-05, rel=1e-12)
 
 
+def test_the_exponential_covariance_weights_deviations_from_the_sample_mean():
+    deviations = SHRINKAGE_RETURNS - SHRINKAGE_RETURNS.mean()
+    exponential = optimization_model.get_exponential_covariance(SHRINKAGE_RETURNS)
+
+    # Normalized weights (1 - 2 / (span + 1)) ** age on the deviations from the sample mean.
+    expected = (
+        (deviations["A"] * deviations["B"]).ewm(span=180, adjust=True).mean().iloc[-1]
+    )
+    assert exponential.loc["A", "B"] == pytest.approx(expected, rel=1e-12)
+
+
 def test_shrinkage_keeps_the_average_variance_and_pulls_correlations_in():
     sample = SHRINKAGE_RETURNS.cov(ddof=0)
     covariance, _ = optimization_model.get_ledoit_wolf_covariance(SHRINKAGE_RETURNS)
@@ -770,10 +781,13 @@ def test_sector_bounds_match_skfolio_for_diversification_cvar_and_tracking_error
         [0.1827515508, 0.1679373687, 0.1443273254, 0.0412642027, 0.4637195524],
         atol=1e-7,
     )
+    # The tracking error is nearly flat between the two Tech assets (a shift of 4e-7
+    # between A and B changes the tracking variance by about 1e-14), so SLSQP lands within
+    # 1e-6 of the cvxpy weights rather than 1e-7.
     np.testing.assert_allclose(
         tracking,
         [0.1497636622, 0.1502363378, 0.2233589641, 0.2266410359, 0.25],
-        atol=1e-7,
+        atol=1e-6,
     )
 
 
@@ -2190,3 +2204,72 @@ def test_market_implied_risk_aversion():
     ) == pytest.approx(expected)
     with pytest.raises(ValueError, match="no positive risk aversion"):
         optimization_model.get_market_implied_risk_aversion(benchmark, 12, 0.5)
+
+
+def test_minimum_variance_of_near_cash_assets_matches_the_closed_form():
+    # Annualized variances of about 1e-5, as of Treasury bill funds: an absolute tolerance
+    # on the variance would stop the solver long before the optimum.
+    rng = np.random.default_rng(0)
+    volatility = np.array([0.002, 0.0025, 0.003, 0.0035, 0.004])
+    loadings = rng.normal(size=(5, 5))
+    correlation = np.corrcoef(loadings @ loadings.T + 5 * np.eye(5))
+    assets = list("ABCDE")
+    covariance = pd.DataFrame(
+        np.outer(volatility, volatility) * correlation, index=assets, columns=assets
+    )
+    inverse = np.linalg.solve(covariance.to_numpy(), np.ones(5))
+
+    weights = optimization_model.get_minimum_variance_weights(
+        covariance, minimum_weight=-1, maximum_weight=2
+    )
+    np.testing.assert_allclose(weights, inverse / inverse.sum(), atol=1e-8)
+
+    # The same holds for a target return: the Lagrange conditions of
+    # min w'Σw s.t. 1'w = 1 and μ'w = target, solved as one linear system.
+    mu = pd.Series([0.040, 0.041, 0.042, 0.043, 0.044], index=assets)
+    target = float(mu @ (inverse / inverse.sum())) + 0.0005
+    system = np.zeros((7, 7))
+    system[:5, :5] = 2 * covariance.to_numpy()
+    system[:5, 5], system[5, :5] = 1, 1
+    system[:5, 6], system[6, :5] = mu, mu
+    exact = np.linalg.solve(system, np.r_[np.zeros(5), 1, target])[:5]
+    weights = optimization_model.get_mean_variance_weights(
+        mu, covariance, target_return=target, minimum_weight=-1, maximum_weight=2
+    )
+    np.testing.assert_allclose(weights, exact, atol=1e-6)
+
+
+def test_discrete_allocation_shorts_beyond_the_target_to_fund_a_long_share():
+    weights = pd.Series([1.1, -0.1], index=["MSFT", "AAPL"])
+    prices = pd.Series([239.82, 129.93], index=["MSFT", "AAPL"])
+    table = optimization_model.get_discrete_allocation(weights, prices, 22000)
+
+    # 18 shares short instead of the 17 that reach the target pay for a 101st long share.
+    assert table.loc["MSFT", "Shares"] == 101  # noqa: PLR2004
+    assert table.loc["AAPL", "Shares"] == -18  # noqa: PLR2004
+    deviation = (weights * 22000 - table["Amount"].drop("Leftover Cash")).abs().sum()
+    assert deviation + table.loc["Leftover Cash", "Amount"] == pytest.approx(277.48)
+
+    # Every allocation within the budget, with shorts up to twice their target, tried one by one.
+    best = min(
+        abs(24200 - long * 239.82)
+        + abs(-2200 + short * 129.93)
+        + 22000
+        - long * 239.82
+        + short * 129.93
+        for long in range(102)
+        for short in range(35)
+        if long * 239.82 - short * 129.93 <= 22000  # noqa: PLR2004
+    )
+    assert best == pytest.approx(277.48)
+
+
+def test_discrete_allocation_solves_a_long_short_portfolio_in_any_currency_amount():
+    weights = pd.Series([1.3, -0.3], index=["AAPL", "MSFT"])
+    prices = pd.Series([129.93, 239.82], index=["AAPL", "MSFT"])
+    for value in (19000, 19000 * 1e4, 190):
+        table = optimization_model.get_discrete_allocation(weights, prices, value)
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert table["Amount"].sum() == pytest.approx(value)
+    table = optimization_model.get_discrete_allocation(weights, prices, 19000)
+    assert table["Shares"].dropna().tolist() == [190, -24]

@@ -1,0 +1,7 @@
+Ticker,Expiration,Forward Price,Expected Log Return,Volatility,Skewness,Kurtosis
+AAPL,Expiry 1,130.0369,-0.0009,0.251,-0.1359,2.8059
+AAPL,Expiry 2,130.1867,-0.0021,0.251,-0.2155,2.9136
+AAPL,Expiry 3,130.412,-0.0039,0.2517,-0.3024,3.0136
+MSFT,Expiry 1,240.0172,-0.0009,0.2513,-0.1403,2.8811
+MSFT,Expiry 2,240.2938,-0.0021,0.2512,-0.2196,2.9576
+MSFT,Expiry 3,240.7096,-0.0039,0.2518,-0.3038,3.0452

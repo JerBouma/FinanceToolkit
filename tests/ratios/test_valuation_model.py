@@ -380,3 +380,86 @@ def test_get_market_cap_to_gdp_uses_the_year_before():
     assert valuation_model.get_market_cap_to_gdp(yearly, gross_domestic_product).iloc[
         0, 0
     ] == pytest.approx(3.0)
+
+
+def test_multiples_of_non_positive_denominators_are_nan():
+    ev_to_ebitda = valuation_model.get_ev_to_ebitda_ratio(
+        enterprise_value=pd.Series([1000.0, 1000.0, 1000.0]),
+        operating_income=pd.Series([100.0, -50.0, -20.0]),
+        depreciation_and_amortization=pd.Series([20.0, 30.0, 20.0]),
+    )
+    price_to_book = valuation_model.get_price_to_book_ratio(
+        price_per_share=pd.Series([50.0, 50.0, 50.0]),
+        book_value_per_share=pd.Series([10.0, -5.0, 0.0]),
+    )
+
+    assert ev_to_ebitda.iloc[0] == pytest.approx(1000 / 120)
+    assert ev_to_ebitda.iloc[1:].isna().all()
+    assert price_to_book.iloc[0] == pytest.approx(5.0)
+    assert price_to_book.iloc[1:].isna().all()
+
+
+def test_get_cyclically_adjusted_price_to_earnings_ratio():
+    periods = pd.period_range("2020", "2023", freq="Y")
+    price = pd.DataFrame([[10.0, 20.0, 30.0, 40.0]], index=["A"], columns=periods)
+    eps = pd.DataFrame([[1.0, 2.0, -9.0, 4.0]], index=["A"], columns=periods)
+    cpi = pd.DataFrame([[100.0, 110.0, 120.0, 132.0]], index=["A"], columns=periods)
+
+    cape = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, cpi, years=2
+    )
+    nominal = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, years=2
+    )
+
+    # 2021: the 2020 EPS in 2021 prices is 1 x 110 / 100.
+    assert cape.loc["A", periods[1]] == pytest.approx(20 / ((1.1 + 2) / 2))
+    assert nominal.loc["A", periods[1]] == pytest.approx(20 / 1.5)
+    # 2022 averages to a loss, so it is NaN; 2023 is (-9 x 132 / 120 + 4) / 2 < 0 as well.
+    assert cape.loc["A", periods[2:]].isna().all()
+    # 2020 has no year before it.
+    assert pd.isna(cape.loc["A", periods[0]])
+
+    # Quarterly: trailing twelve month EPS of the same quarter one year apart (lags 0 and 4).
+    quarters = pd.period_range("2020Q1", "2021Q4", freq="Q")
+    quarterly_eps = pd.DataFrame([[1.0] * 4 + [3.0] * 4], index=["A"], columns=quarters)
+    quarterly_price = pd.DataFrame([[40.0] * 8], index=["A"], columns=quarters)
+    quarterly = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        quarterly_price, quarterly_eps, years=2, periods_per_year=4
+    )
+
+    assert quarterly.loc["A", quarters[:4]].isna().all()
+    assert quarterly.loc["A", quarters[4:]].tolist() == pytest.approx([20.0] * 4)
+
+
+def test_get_dividend_adjusted_price_to_earnings_growth_ratio():
+    price_earnings = pd.Series([30.0, 11.0, 12.0])
+    growth_rate = pd.Series([0.2, 0.1, 0.05])
+    dividend_yield = pd.Series([0.0, 0.02, 0.03])
+
+    pegy = valuation_model.get_dividend_adjusted_price_to_earnings_growth_ratio(
+        price_earnings, growth_rate, dividend_yield
+    )
+
+    # Growth and yield enter in percent: 12 / (5 + 3) = 1.5.
+    assert pegy.tolist() == pytest.approx([30 / 20, 11 / 12, 12 / 8])
+    # Without a dividend it is the PEG ratio.
+    assert pegy.iloc[0] == pytest.approx(
+        valuation_model.get_price_to_earnings_growth_ratio(30.0, 0.2 * 100)
+    )
+
+
+def test_cyclically_adjusted_price_to_earnings_ratio_counts_calendar_years():
+    # 2021 is not reported, so the two-year window of 2022 lacks a year.
+    years = pd.PeriodIndex(["2019", "2020", "2022", "2023"], freq="Y")
+    eps = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], index=["XYZ"], columns=years)
+    price = pd.DataFrame([[10.0] * 4], index=["XYZ"], columns=years)
+
+    cape = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, years=2
+    )
+
+    # 2020 averages 2019 and 2020, 2022 has no 2021 and 2023 averages 2022 and 2023.
+    assert cape.loc["XYZ", years[1]] == pytest.approx(10 / 1.5)
+    assert pd.isna(cape.loc["XYZ", years[2]])
+    assert cape.loc["XYZ", years[3]] == pytest.approx(10 / 3.5)

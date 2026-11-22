@@ -266,6 +266,18 @@ def _offline_construction(test_toolkit) -> PortfolioConstruction:
         index=days,
         columns=["AAPL", "MSFT", "SPY", "XLK", "XLV"],
     )
+    # The sector funds of the attribution cover the date range of the assets.
+    fund_days = pd.bdate_range("2019-12-31", "2022-12-30").to_period("D")
+    sector_funds = pd.DataFrame(
+        100 * np.cumprod(1 + rng.normal(0.0003, 0.012, (len(fund_days), 2)), axis=0),
+        index=fund_days,
+        columns=["XLK", "XLV"],
+    )
+
+    def price_function(tickers, start, end):
+        if set(tickers) <= set(sector_funds.columns):
+            return sector_funds.reindex(columns=tickers)
+        return prices.reindex(columns=tickers)
 
     profile = pd.DataFrame(
         {
@@ -297,7 +309,7 @@ def _offline_construction(test_toolkit) -> PortfolioConstruction:
         historical_data=original._historical_data,
         risk_free_rate_data=original._risk_free_rate_data,
         benchmark_name="SPY",
-        price_function=lambda tickers, start, end: prices.reindex(columns=tickers),
+        price_function=price_function,
         profile_function=lambda: profile,
         fund_function=funds,
     )
@@ -331,6 +343,42 @@ def test_get_brinson_attribution(recorder, test_toolkit):
     )
 
 
+def test_get_brinson_attribution_linked(recorder, test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    weights = {"AAPL": 0.6, "MSFT": 0.4}
+    single = construction.get_brinson_attribution(weights=weights, rounding=16)
+    effects = ["Allocation Effect", "Selection Effect", "Interaction Effect"]
+
+    for period, linking in [("monthly", "carino"), ("quarterly", "menchero")]:
+        linked = construction.get_brinson_attribution(
+            weights=weights, period=period, linking=linking, rounding=16
+        )
+        recorder.capture(linked.round(6))
+        total = linked.loc["Total"]
+        # The linked effects add up to the compounded excess return, and buy and hold
+        # over the sub-periods compounds to the returns of the whole range.
+        assert total["Total Effect"] == pytest.approx(
+            total["Portfolio Return"] - total["Benchmark Return"], abs=1e-12
+        )
+        assert total[effects].sum() == pytest.approx(total["Total Effect"], abs=1e-12)
+        assert total["Total Effect"] == pytest.approx(
+            single.loc["Total", "Total Effect"], abs=1e-12
+        )
+        pd.testing.assert_frame_equal(
+            linked.iloc[:, :4], single.iloc[:, :4], check_exact=False, atol=1e-12
+        )
+        # The weights drift, so the effects differ from those of one period.
+        assert not np.allclose(linked[effects], single[effects])
+
+
+def test_get_brinson_attribution_invalid_period_and_linking(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    assert construction.get_brinson_attribution(period="hourly").empty
+    assert construction.get_brinson_attribution(
+        period="monthly", linking="frongello"
+    ).empty
+
+
 def test_get_brinson_attribution_looks_through_funds(test_toolkit):
     # MSFT stands in for a fund: its profile names the issuer's sector, while its sector
     # weightings split it over Technology and Healthcare.
@@ -352,6 +400,31 @@ def test_get_brinson_attribution_looks_through_funds(test_toolkit):
     assert "Financial Services" not in attribution.index
     assert attribution.loc["Technology", "Portfolio Weight"] == pytest.approx(0.75)
     assert attribution.loc["Healthcare", "Portfolio Weight"] == pytest.approx(0.25)
+
+    # Linked over weeks, the fund's slices drift with its return and the effects still add
+    # up to the excess return of the whole range.
+    for linking in ("carino", "menchero"):
+        linked = construction.get_brinson_attribution(
+            weights={"AAPL": 0.5, "MSFT": 0.5},
+            period="weekly",
+            linking=linking,
+            rounding=16,
+        )
+        pd.testing.assert_frame_equal(
+            linked.iloc[:, :4],
+            construction.get_brinson_attribution(
+                weights={"AAPL": 0.5, "MSFT": 0.5}, rounding=16
+            ).iloc[:, :4],
+            check_exact=False,
+            atol=1e-12,
+        )
+        total = linked.loc["Total"]
+        assert total["Total Effect"] == pytest.approx(
+            total["Portfolio Return"] - total["Benchmark Return"], abs=1e-12
+        )
+        assert linked["Total Effect"].iloc[:-1].sum() == pytest.approx(
+            total["Total Effect"], abs=1e-12
+        )
 
 
 def test_get_stress_test_notes_a_scenario_before_any_listing(test_toolkit, caplog):
@@ -951,3 +1024,80 @@ def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
     assert portfolio_module.get_black_litterman_weights(
         market_weights=market, risk_aversion="equilibrium"
     ).empty
+
+
+def test_an_asset_without_weight_does_not_shorten_the_sample(test_toolkit):
+    # A third asset listed halfway through the range, as a ticker with a short history.
+    construction = _offline_construction(test_toolkit)
+    data = construction._historical_data["daily"]
+    returns = data["Return"]
+    late = returns["MSFT"].copy()
+    late.iloc[: len(late) // 2] = np.nan
+    construction._historical_data = {
+        "daily": pd.concat(
+            [data, pd.concat({"Return": late.to_frame("LATE")}, axis=1)], axis=1
+        )
+    }
+    construction._tickers = [*construction._tickers, "LATE"]
+    weights = {"AAPL": 0.5, "MSFT": 0.5}
+
+    metrics = construction.get_portfolio_risk_metrics(weights=weights, rounding=12)
+    portfolio = returns[["AAPL", "MSFT"]].dropna() @ pd.Series(weights)
+    assert metrics.loc["Annualized Volatility", "Portfolio"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+
+    contributions = construction.get_risk_contributions(weights=weights, rounding=12)
+    assert contributions.index.tolist() == ["AAPL", "MSFT", "Total"]
+    assert contributions.loc["Total", "Risk Contribution"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+
+    # An optimizer chooses among every loaded asset, so all of them decide the periods.
+    assert len(construction._get_returns("daily", False)) == late.notna().sum()
+
+
+def test_get_brinson_attribution_keeps_a_sector_whose_fund_starts_later(
+    test_toolkit, caplog
+):
+    construction = _offline_construction(test_toolkit)
+    prices = construction._price_function
+
+    def late_healthcare_fund(tickers, start, end):
+        funds = prices(tickers, start, end)
+        funds.loc[: pd.Period("2021-01-04", freq="D"), "XLV"] = np.nan
+        return funds
+
+    complete = construction.get_brinson_attribution(rounding=16)
+    construction._price_function = late_healthcare_fund
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        attribution = construction.get_brinson_attribution(rounding=16)
+
+    assert "Healthcare (XLV, first price on 2021-01-05)" in caplog.text
+    # Healthcare keeps its weight of 0.6 and has no return over the range, rather than the
+    # return of its fund from 2021-01-05.
+    assert attribution.loc["Healthcare", "Benchmark Weight"] == pytest.approx(0.6)
+    assert np.isnan(attribution.loc["Healthcare", "Benchmark Return"])
+    assert attribution.loc["Technology", "Benchmark Return"] == pytest.approx(
+        complete.loc["Technology", "Benchmark Return"]
+    )
+    assert attribution.loc["Total", ["Benchmark Return", "Total Effect"]].isna().all()
+    assert attribution.loc["Total", "Portfolio Return"] == pytest.approx(
+        complete.loc["Total", "Portfolio Return"]
+    )
+
+    # Linked over years, 2021 and 2022 have a Healthcare return but 2020 does not, so the
+    # compounded benchmark return and the linked effects stay unknown.
+    linked = construction.get_brinson_attribution(period="yearly", rounding=16)
+    assert linked.loc["Healthcare", "Benchmark Weight"] == pytest.approx(0.6)
+    assert np.isnan(linked.loc["Healthcare", "Benchmark Return"])
+    assert linked.loc["Total", "Allocation Effect":].isna().all()
+
+    # From the fund's first price onwards the attribution is complete.
+    construction._start_date = "2021-01-05"
+    later = construction.get_brinson_attribution(period="yearly", rounding=16)
+    assert later.notna().loc["Total"].all()
+    assert later.loc["Total", "Total Effect"] == pytest.approx(
+        later.loc["Total", "Portfolio Return"] - later.loc["Total", "Benchmark Return"],
+        abs=1e-12,
+    )

@@ -995,6 +995,106 @@ def test_prices_are_incomplete_only_after_a_temporary_failure(
     assert data["Adj Close"].tolist() == data["Close"].tolist()
 
 
+def _fake_prices_with_a_dividend(monkeypatch, dividends):
+    """Serve five closes with FMP's adjusted close for a dividend of 2 on 2024-01-04."""
+    days = ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"]
+    closes = [100, 101, 99, 100, 102.0]
+    factor = 1 - 2 / 101
+    adjusted = [round(100 * factor, 2), round(101 * factor, 2), 99, 100, 102.0]
+
+    def fake(url, **kwargs):  # noqa: ARG001
+        if "dividend-adjusted" in url:
+            return [{"date": d, "adjClose": a} for d, a in zip(days, adjusted)]
+        if "/dividends" in url:
+            return dividends
+        return [
+            {"date": d, "open": c, "high": c, "low": c, "close": c, "volume": 1}
+            for d, c in zip(days, closes)
+        ]
+
+    monkeypatch.setattr(fmp_model, "get_financial_data", fake)
+
+    return adjusted
+
+
+@pytest.mark.parametrize(
+    "dividends",
+    [pd.DataFrame(columns=["LIMIT REACH"]), []],
+    ids=["failed", "none returned"],
+)
+def test_adjusted_close_is_kept_from_fmp_without_the_dividends(monkeypatch, dividends):
+    adjusted = _fake_prices_with_a_dividend(monkeypatch, dividends)
+
+    data = fmp_model.get_historical_data(
+        "X",
+        api_key="KEY",
+        start="2024-01-02",
+        end="2024-01-08",
+        user_subscription="Premium",
+    )
+
+    # Rebuilding from the close with no dividends would make the ex-dividend day a loss
+    # of 99 / 101 - 1 = -1.98%; FMP's adjusted close holds the dividend (a 0% return).
+    assert data["Adj Close"].tolist() == adjusted
+    assert data["Return"].iloc[2] == pytest.approx(0)
+
+
+def test_adjusted_close_is_kept_from_fmp_when_older_free_dividends_are_missing(
+    monkeypatch,
+):
+    # A Free plan's five latest payments, the first after the start of the prices.
+    latest = [{"date": f"2024-01-0{day}", "adjDividend": 0.0001} for day in range(4, 9)]
+    adjusted = _fake_prices_with_a_dividend(monkeypatch, latest)
+    monkeypatch.setattr(
+        fmp_model,
+        "_complete_older_dividends",
+        lambda ticker, paid: (paid, False),  # noqa: ARG005
+    )
+
+    data = fmp_model.get_historical_data(
+        "X", api_key="KEY", start="2024-01-02", end="2024-01-08"
+    )
+
+    assert data["Adj Close"].tolist() == adjusted
+
+
+def test_adjusted_close_is_rebuilt_unrounded_with_every_dividend(monkeypatch):
+    _fake_prices_with_a_dividend(
+        monkeypatch, [{"date": "2024-01-04", "adjDividend": 2.0}]
+    )
+
+    data = fmp_model.get_historical_data(
+        "X",
+        api_key="KEY",
+        start="2024-01-02",
+        end="2024-01-08",
+        user_subscription="Premium",
+    )
+
+    assert data["Adj Close"].iloc[0] == pytest.approx(100 * (1 - 2 / 101))
+    assert data["Return"].iloc[2] == pytest.approx(0)
+
+
+def test_dividends_are_divided_with_the_prices(monkeypatch):
+    _fake_prices_with_a_dividend(
+        monkeypatch, [{"date": "2024-01-04", "adjDividend": 2.0}]
+    )
+
+    data = fmp_model.get_historical_data(
+        "X",
+        api_key="KEY",
+        start="2024-01-02",
+        end="2024-01-08",
+        divide_ohlc_by=100,
+        user_subscription="Premium",
+    )
+
+    # The dividend yield of the ex-dividend day is 2 / 99, whatever the divisor.
+    assert data["Close"].iloc[2] == pytest.approx(0.99)
+    assert data["Dividends"].iloc[2] == pytest.approx(0.02)
+    assert data["Return"].iloc[2] == pytest.approx(0)
+
+
 def test_free_plan_dividends_are_completed_with_older_yahoo_payments(monkeypatch):
     import yfinance as yf
 
@@ -1014,7 +1114,9 @@ def test_free_plan_dividends_are_completed_with_older_yahoo_payments(monkeypatch
         yf, "Ticker", lambda symbol: type("T", (), {"dividends": yahoo})()
     )
 
-    completed = fmp_model._complete_older_dividends("AAPL", latest)
+    completed, complete = fmp_model._complete_older_dividends("AAPL", latest)
+
+    assert complete
 
     # The two earlier payments come first; the overlapping one is kept from FMP.
     assert completed.index[:2].astype(str).tolist() == ["2023-05-01", "2023-08-01"]
@@ -1038,7 +1140,10 @@ def test_free_plan_dividends_without_yahoo_history_warn(monkeypatch):
     from unittest.mock import patch
 
     with patch.object(fmp_model.logger, "warning") as warning:
-        assert fmp_model._complete_older_dividends("XYZ", latest).equals(latest)
+        completed, complete = fmp_model._complete_older_dividends("XYZ", latest)
+
+    assert completed.equals(latest)
+    assert not complete
 
     assert warning.call_args[0][0].startswith("No dividend data is available for")
 
@@ -1067,7 +1172,10 @@ def test_free_plan_dividends_when_yahoo_fails(monkeypatch, ticker):
     from unittest.mock import patch
 
     with patch.object(fmp_model.logger, "warning") as warning:
-        assert fmp_model._complete_older_dividends("AAPL", latest).equals(latest)
+        completed, complete = fmp_model._complete_older_dividends("AAPL", latest)
+
+    assert completed.equals(latest)
+    assert not complete
 
     assert warning.call_args[0][0].startswith("No dividend data is available for")
 
@@ -1618,6 +1726,21 @@ def test_price_targets_without_any_published_target_have_no_latest_date(response
         # A flash estimate released in the month it covers keeps the year.
         ("Inflation Rate YoY (Oct)", "2026-10-31", "Inflation Rate YoY", "2026-10"),
         ("GDP Growth Rate QoQ (Q4)", "2026-02-14", "GDP Growth Rate QoQ", "2025Q4"),
+        # A survey published ahead of its month keeps the year, or takes the next one.
+        (
+            "Consumer Confidence (Nov)",
+            "2025-10-28 07:00",
+            "Consumer Confidence",
+            "2025-11",
+        ),
+        (
+            "Consumer Confidence (Jan)",
+            "2025-12-23 07:00",
+            "Consumer Confidence",
+            "2026-01",
+        ),
+        # A figure two months later than the release month is last year's.
+        ("Retail Sales YoY (Dec)", "2026-10-15", "Retail Sales YoY", "2025-12"),
         ("GDP Growth Rate QoQ (Q3)", "2026-10-29", "GDP Growth Rate QoQ", "2026Q3"),
         (
             "Continuing Jobless Claims (Dec/27)",
@@ -1804,3 +1927,28 @@ def test_futures_are_quoted_under_the_commodity_symbol(responses):
     assert fmp_model.FUTURES_SYMBOLS["KC=F"] == "KCUSX"
     fmp_model.get_quote(["TTF=F"], api_key="K")
     assert "symbol=TTF=F&" in requested[-1]
+
+
+def test_intraday_bars_of_a_single_day_are_returned(responses):
+    canned, _ = responses
+    canned["historical-chart/1hour"] = [
+        {
+            "date": f"2026-11-20 {hour:02d}:30:00",
+            "open": 100.0 + hour,
+            "high": 101.0 + hour,
+            "low": 99.0 + hour,
+            "close": 100.5 + hour,
+            "volume": 1000,
+        }
+        for hour in range(9, 16)
+    ]
+
+    # The bars are timestamps on the end date, which count as within a window of that day.
+    intraday = fmp_model.get_intraday_data(
+        "AAPL", api_key="K", start="2026-11-20", end="2026-11-20"
+    )
+
+    assert len(intraday) == 7
+    assert str(intraday.index[0]) == "2026-11-20 09:00"
+    assert str(intraday.index[-1]) == "2026-11-20 15:00"
+    assert intraday["Close"].iloc[-1] == pytest.approx(115.5)

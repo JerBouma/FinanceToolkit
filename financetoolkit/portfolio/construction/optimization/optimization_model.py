@@ -19,7 +19,8 @@ from financetoolkit.risk.value_at_risk import cvar_model, var_model
 # pylint: disable=too-many-arguments,too-many-locals
 
 # Tolerances for the numerical optimizers: tight enough that the weights are stable to the
-# fourth decimal, which is the default rounding of the Finance Toolkit.
+# fourth decimal, which is the default rounding of the Finance Toolkit. The ftol is absolute,
+# so objectives in variances are expressed in units of the average variance of the assets.
 OPTIMIZER_OPTIONS = {"ftol": 1e-12, "maxiter": 1000}
 
 # Weights closer to zero than this are numerical noise of the optimizer.
@@ -800,15 +801,27 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     periods count most and the matrix follows changes in volatility and correlation.
 
     The deviations are taken from the mean over the whole range and the weights are
-    normalized to sum to one.
+    normalized to sum to one, as PyPortfolioOpt's `exp_cov` does. The weighting is the one
+    of RiskMetrics with decay factor λ = 1 − α, but the matrix differs from the RiskMetrics
+    estimate in two ways: RiskMetrics assumes a mean return of zero rather than demeaning
+    by the sample mean, and its daily decay factor λ = 0.94 is a span of about 32 periods,
+    while the default span of 180 is λ ≈ 0.989 (a half-life of about 62 periods). Pass
+    `span=32` for the RiskMetrics daily weighting.
 
-    See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5.
+    See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5, for the
+    exponential weighting.
+
+    The formula is as follows:
+
+    - α = 2 / (span + 1), λ = 1 − α
+    - w_t = λ^(T − t) / Σ λ^(T − s), for the periods t = 1, ..., T
+    - Covariance(i, j) = Σ w_t × (r_i,t − mean(r_i)) × (r_j,t − mean(r_j))
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         span (int, optional): The span of the weights in periods; the weight halves
-            after about span / 2.9 periods. Defaults to 180.
+            after about span / 2.9 periods. Defaults to 180 (λ ≈ 0.989).
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -1186,7 +1199,11 @@ def get_minimum_variance_weights(
         maximum_turnover,
     )
 
-    weights = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
+    # SLSQP stops on an absolute change of the objective (ftol), which variances of
+    # near-cash assets (about 1e-5 a year) reach long before the optimum. In units of the
+    # average variance the objective is of order one, with the same minimum.
+    scaled = sigma / (np.mean(np.diag(sigma)) or 1.0)
+    weights = _solve(lambda w: w @ scaled @ w, lambda w: 2 * scaled @ w, constraints)
 
     return _as_series(weights, covariance.index)
 
@@ -1368,6 +1385,11 @@ def get_mean_variance_weights(
         )
     mu = expected_returns.to_numpy()
     sigma = covariance.to_numpy()
+    # SLSQP stops on an absolute change of the objective (ftol), which variances of
+    # near-cash assets (about 1e-5 a year) reach long before the optimum. In units of the
+    # average variance the objective is of order one, with the same minimum.
+    variance_scale = np.mean(np.diag(sigma)) or 1.0
+    scaled = sigma / variance_scale
     constraints = get_weight_constraints(
         covariance.index,
         minimum_weight,
@@ -1393,15 +1415,15 @@ def get_mean_variance_weights(
                 f"constraints ({lowest:.4f} to {highest:.4f})."
             )
         weights = _solve(
-            lambda w: w @ sigma @ w,
-            lambda w: 2 * sigma @ w,
+            lambda w: w @ scaled @ w,
+            lambda w: 2 * scaled @ w,
             constraints,
             [_target_return(mu, target_return)],
         )
     elif target_volatility is not None:
         if target_volatility <= 0:
             raise ValueError("The target volatility must be positive.")
-        lowest = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
+        lowest = _solve(lambda w: w @ scaled @ w, lambda w: 2 * scaled @ w, constraints)
         lowest_volatility = float(np.sqrt(lowest @ sigma @ lowest))
         if target_volatility < lowest_volatility - 1e-9:
             raise ValueError(
@@ -1427,8 +1449,9 @@ def get_mean_variance_weights(
                 {
                     "type": "ineq",
                     "fun": lambda w: max(target_volatility, lowest_volatility) ** 2
-                    - w @ sigma @ w,
-                    "jac": lambda w: -2 * sigma @ w,
+                    / variance_scale
+                    - w @ scaled @ w,
+                    "jac": lambda w: -2 * scaled @ w,
                 }
             ],
             all_variables=True,
@@ -1541,12 +1564,14 @@ def get_efficient_frontier(
     _, highest, highest_weights = _return_range(mu, constraints)
     targets = np.linspace(lowest, highest, points)
 
+    # In units of the average variance, as in get_minimum_variance_weights.
+    scaled = sigma / (np.mean(np.diag(sigma)) or 1.0)
     rows = []
     for number, target in enumerate(targets, start=1):
         try:
             weights = _solve(
-                lambda w: w @ sigma @ w,
-                lambda w: 2 * sigma @ w,
+                lambda w: w @ scaled @ w,
+                lambda w: 2 * scaled @ w,
                 constraints,
                 [_target_return(mu, target)],
             )
@@ -3017,9 +3042,11 @@ def get_minimum_tracking_error_weights(
         )
 
     if objective == "tracking_error":
+        # In units of the average variance, as in get_minimum_variance_weights.
+        variance_scale = np.mean(np.diag(sigma)) or 1.0
         weights = _solve(
-            tracking_variance,
-            lambda w: 2 * sigma @ w - 2 * with_benchmark,
+            lambda w: tracking_variance(w) / variance_scale,
+            lambda w: (2 * sigma @ w - 2 * with_benchmark) / variance_scale,
             constraints,
         )
     else:
@@ -3848,7 +3875,9 @@ def get_discrete_allocation(
       target amounts with the leftover cash counted as a holding with a target of zero,
       min Σ |t_i - n_i p_i| + c subject to Σ n_i p_i + c = V, c ≥ 0 and n_i whole, with
       the absolute deviations written as d_i ≥ ±(t_i - n_i p_i), solved with branch and
-      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11).
+      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11). The amounts are rescaled for
+      the solver, and its allocation replaces the greedy one only when it deviates less,
+      so it is never further from the targets than "greedy".
     - "greedy": every position is first rounded down to whole shares, ⌊t_i / p_i⌋, and
       the leftover cash then buys one more share at a time of the asset furthest below
       its target amount, while one is below it and its price fits the cash. A share of
@@ -3859,7 +3888,12 @@ def get_discrete_allocation(
     A short weight is held as a negative number of shares: rounding down makes a
     short position larger, so the proceeds never fall short of the long positions they
     fund and the leftover cash is never negative. The integer programme keeps each
-    position on the side of its weight.
+    position on the side of its weight. It holds a long position at no more than
+    ⌈t_i / p_i⌉ shares, beyond which it only moves further from its target, but lets a
+    short position go beyond its target: shorting a share more raises the cash for a long
+    share that is further below its own target, which can lower the total deviation. A
+    short position is bounded only by |n_i| p_i - |t_i| ≤ D, with D the deviation of the
+    greedy allocation, which no better allocation can exceed.
 
     See Cornuejols, G., Peña, J. and Tütüncü, R. (2018), "Optimization Methods in
     Finance", 2nd edition, Cambridge University Press.
@@ -3890,51 +3924,78 @@ def get_discrete_allocation(
     price = prices.to_numpy()
     target = weights.to_numpy(dtype=float) * portfolio_value
 
-    if method == "greedy":
-        shares = np.floor(target / price)
-        cash = portfolio_value - shares @ price
-        for _ in range(len(price)):
-            shortfall = target - shares * price
-            candidates = np.flatnonzero((shortfall > 0) & (price <= cash))
-            if not len(candidates):
-                break
-            asset = candidates[np.argmax(shortfall[candidates])]
-            shares[asset] += 1
-            cash -= price[asset]
-    else:
+    # The greedy allocation, which also bounds the integer programme below.
+    shares = np.floor(target / price)
+    cash = portfolio_value - shares @ price
+    for _ in range(len(price)):
+        shortfall = target - shares * price
+        candidates = np.flatnonzero((shortfall > 0) & (price <= cash))
+        if not len(candidates):
+            break
+        asset = candidates[np.argmax(shortfall[candidates])]
+        shares[asset] += 1
+        cash -= price[asset]
+
+    if method == "integer":
         assets = len(price)
-        # The variables are the shares n_i and the absolute deviations d_i. The cash
-        # c = V - Σ n_i p_i is substituted, which leaves Σ d_i - Σ n_i p_i to minimize
-        # with Σ n_i p_i ≤ V.
-        identity = np.eye(assets)
-        deviations = LinearConstraint(
-            np.block([[np.diag(price), identity], [-np.diag(price), identity]]),
-            np.concatenate([target, -target]),
-            np.inf,
-        )
-        budget = LinearConstraint(
-            np.concatenate([price, np.zeros(assets)]), -np.inf, portfolio_value
-        )
-        # Beyond ⌈|t_i| / p_i⌉ shares a position only moves further from its target.
+        # Beyond ⌈t_i / p_i⌉ shares a long position only moves further from its target. A short position can go beyond its target, as one more share short raises the cash for a long share further below its own target, but its deviation |n_i| p_i - |t_i| alone can never exceed the total deviation D of the greedy allocation in an optimum, so |n_i| ≤ (|t_i| + D) / p_i bounds it without excluding one; an open bound leaves the branch and bound of millions of shares to the time limit.  # noqa: E501
         limit = np.ceil(np.abs(target) / price)
-        result = milp(
-            np.concatenate([-price, np.ones(assets)]),
-            constraints=[deviations, budget],
-            integrality=np.concatenate([np.ones(assets), np.zeros(assets)]),
-            bounds=Bounds(
-                np.concatenate([np.where(target < 0, -limit, 0), np.zeros(assets)]),
-                np.concatenate(
-                    [np.where(target > 0, limit, 0), np.full(assets, np.inf)]
-                ),
+        greedy_deviation = np.abs(target - shares * price).sum() + cash
+        short_limit = np.floor((np.abs(target) + greedy_deviation) / price)
+        bounds = Bounds(
+            np.concatenate(
+                [np.where(target < 0, -short_limit, 0), np.zeros(assets + 1)]
             ),
-            options={"time_limit": DISCRETE_ALLOCATION_TIME_LIMIT},
+            np.concatenate(
+                [np.where(target > 0, limit, 0), np.full(assets + 1, np.inf)]
+            ),
         )
-        if result.x is None:
-            raise ValueError(f"No allocation was found: {result.message}")
-        shares = np.round(result.x[:assets])
-        cash = portfolio_value - shares @ price
-        if cash < -FEASIBILITY_TOLERANCE * portfolio_value:
-            raise ValueError("The allocation costs more than the portfolio value.")
+        identity = np.eye(assets)
+        no_cash = np.zeros((assets, 1))
+        found, message = False, ""
+        # The variables are the shares n_i, the absolute deviations d_i and the cash c. An objective of Σ d_i + c itself, rather than one offset by the portfolio value, makes the solver's relative gap a gap in the deviation. The amounts are scaled for the solver, as amounts in the thousands next to share counts leave HiGHS with a solve error on some portfolios: first to multiples of the average price and, should that fail or not improve on the greedy allocation, to fractions of the portfolio value. The greedy allocation stays when the solver finds nothing closer, which it then is by definition.  # noqa: E501
+        for scale in (float(price.mean()), portfolio_value):
+            scaled_price, scaled_target = price / scale, target / scale
+            result = milp(
+                np.concatenate([np.zeros(assets), np.ones(assets + 1)]),
+                constraints=[
+                    LinearConstraint(
+                        np.block(
+                            [
+                                [np.diag(scaled_price), identity, no_cash],
+                                [-np.diag(scaled_price), identity, no_cash],
+                            ]
+                        ),
+                        np.concatenate([scaled_target, -scaled_target]),
+                        np.inf,
+                    ),
+                    LinearConstraint(
+                        np.concatenate([scaled_price, np.zeros(assets), [1.0]]),
+                        portfolio_value / scale,
+                        portfolio_value / scale,
+                    ),
+                ],
+                integrality=np.concatenate([np.ones(assets), np.zeros(assets + 1)]),
+                bounds=bounds,
+                options={"time_limit": DISCRETE_ALLOCATION_TIME_LIMIT},
+            )
+            message = result.message
+            if result.x is None:
+                continue
+            candidate = np.round(result.x[:assets])
+            candidate_cash = portfolio_value - candidate @ price
+            if candidate_cash < -FEASIBILITY_TOLERANCE * portfolio_value:
+                message = "the allocation costs more than the portfolio value"
+                continue
+            found = True
+            if (
+                np.abs(target - candidate * price).sum() + candidate_cash
+                <= np.abs(target - shares * price).sum() + cash
+            ):
+                shares, cash = candidate, candidate_cash
+                break
+        if not found:
+            raise ValueError(f"No allocation was found: {message}")
 
     table = pd.DataFrame(
         {

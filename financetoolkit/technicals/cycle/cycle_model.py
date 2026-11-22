@@ -6,6 +6,9 @@ import math
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
+
+from financetoolkit.technicals.overlap import overlap_model
 
 # The bar on which the filters start from zero and the bars left empty while they settle: the indicators that
 # only need the period start on bar 12 and show a value from bar 32, those that also need the phase over a full
@@ -493,5 +496,503 @@ def get_mesa_adaptive_moving_average(
 
     result = pd.DataFrame({"MAMA": mama, "FAMA": fama}, index=phase.index)
     result.iloc[: PERIOD_LOOKBACK - PERIOD_START] = np.nan
+
+    return result.reindex(prices.index)
+
+
+def get_swiss_army_knife_filter(
+    prices: pd.Series,
+    window: int = 20,
+    filter: str = "band_pass",
+    delta: float = 0.1,
+) -> pd.Series:
+    """
+    Calculate Ehlers' Swiss Army Knife filter of a price series.
+
+    The Swiss Army Knife indicator is one second-order recursive filter whose coefficients
+    select the response: a one-pole or two-pole high-pass filter that removes the trend and
+    keeps the cycles shorter than the window, a band-pass filter that keeps only the cycles
+    around the window, or a two-pole Butterworth or Gaussian low-pass filter that smooths
+    away the cycles shorter than the window.
+
+    The formula is as follows:
+
+    - Filter = c0 * (b0 * Price + b1 * Price(t-1) + b2 * Price(t-2)) + a1 * Filter(t-1)
+      + a2 * Filter(t-2), with b0 = 1 and the other coefficients 0 unless set below
+    - One-pole alpha = (cos(360 / Window) + sin(360 / Window) - 1) / cos(360 / Window)
+    - Two-pole alpha = -Beta + √(Beta² + 2 * Beta), Beta = 2.415 * (1 - cos(360 / Window))
+    - High-pass: c0 = 1 - alpha / 2, b1 = -1, a1 = 1 - alpha (one-pole alpha)
+    - Two-pole high-pass: c0 = (1 - alpha / 2)², b1 = -2, b2 = 1, a1 = 2 * (1 - alpha),
+      a2 = -(1 - alpha)² (two-pole alpha)
+    - Butterworth: c0 = alpha² / 4, b1 = 2, b2 = 1, a1 = 2 * (1 - alpha), a2 = -(1 - alpha)²
+    - Gaussian: c0 = alpha², a1 = 2 * (1 - alpha), a2 = -(1 - alpha)²
+    - Band-pass: Beta = cos(360 / Window), Gamma = 1 / cos(720 * Delta / Window),
+      alpha = Gamma - √(Gamma² - 1), c0 = (1 - alpha) / 2, b2 = -1, a1 = Beta * (1 + alpha),
+      a2 = -alpha
+
+    Reference: Ehlers, J.F. (2006). "Swiss Army Knife Indicator." Technical Analysis of
+    Stocks & Commodities, 24(1), 28-31, 50-53.
+
+    Referenced against TA-Lib's SWAK_HP, SWAK_2PHP, SWAK_BP, SWAK_BUTTER and SWAK_GAUSS
+    (https://ta-lib.org/functions/).
+
+    Notes:
+        - The filter starts in the steady state of a constant price equal to the first
+          price: the low-pass filters on that price, the high-pass and band-pass filters on
+          zero. Ehlers' listing starts every filter from zero, which leaves the low-pass
+          filters far below the price for many bars. TA-Lib starts in the same steady state,
+          and the two are equal from the first price.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The cutoff period of the high-pass and low-pass filters and the
+            centre period of the band-pass filter, at least 5. Defaults to 20.
+        filter (str): "high_pass", "two_pole_high_pass", "band_pass", "butterworth" or
+            "gaussian". Defaults to "band_pass", the default of Ehlers' listing.
+        delta (float): The half bandwidth of the band-pass filter as a fraction of its
+            centre frequency, between 0 and 0.5. Defaults to 0.1.
+
+    Returns:
+        pd.Series: The filtered prices: in price units for the low-pass filters and
+        centred on zero for the high-pass and band-pass filters.
+    """
+    if window < 5:  # noqa: PLR2004
+        raise ValueError("The window must be at least 5 periods.")
+    if not 0 < delta <= 0.5:  # noqa: PLR2004
+        raise ValueError("The delta must be above 0 and at most 0.5.")
+
+    angle = 2 * math.pi / window
+    c0, b0, b1, b2, a1, a2 = 1.0, 1.0, 0.0, 0.0, 0.0, 0.0
+
+    if filter == "high_pass":
+        alpha = (math.cos(angle) + math.sin(angle) - 1) / math.cos(angle)
+        c0, b1, a1 = 1 - alpha / 2, -1.0, 1 - alpha
+    elif filter in ["two_pole_high_pass", "butterworth", "gaussian"]:
+        beta = 2.415 * (1 - math.cos(angle))
+        alpha = -beta + math.sqrt(beta * beta + 2 * beta)
+        a1, a2 = 2 * (1 - alpha), -(1 - alpha) * (1 - alpha)
+        if filter == "two_pole_high_pass":
+            c0, b1, b2 = (1 - alpha / 2) * (1 - alpha / 2), -2.0, 1.0
+        elif filter == "butterworth":
+            c0, b1, b2 = alpha * alpha / 4, 2.0, 1.0
+        else:
+            c0 = alpha * alpha
+    elif filter == "band_pass":
+        beta = math.cos(angle)
+        gamma = 1 / math.cos(2 * angle * delta)
+        alpha = gamma - math.sqrt(gamma * gamma - 1)
+        c0, b2, a1, a2 = (1 - alpha) / 2, -1.0, beta * (1 + alpha), -alpha
+    else:
+        raise ValueError(
+            "Filter must be high_pass, two_pole_high_pass, band_pass, butterworth or gaussian."
+        )
+
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    result = np.full(len(price), np.nan)
+
+    # The steady state of a constant first price: the filter's gain at zero frequency times that price.
+    gain = c0 * (b0 + b1 + b2) / (1 - a1 - a2)
+    price_1 = price_2 = price[0]
+    filter_1 = filter_2 = gain * price[0]
+
+    for t, value in enumerate(price):
+        result[t] = (
+            c0 * (b0 * value + b1 * price_1 + b2 * price_2)
+            + a1 * filter_1
+            + a2 * filter_2
+        )
+        price_1, price_2 = value, price_1
+        filter_1, filter_2 = result[t], filter_1
+
+    return pd.Series(result, index=clean.index).reindex(prices.index)
+
+
+def get_super_smoother_filter(
+    prices: pd.Series, window: int = 10, poles: int = 2
+) -> pd.Series:
+    """
+    Calculate Ehlers' SuperSmoother filter of a price series.
+
+    The SuperSmoother is a low-pass filter built from an analog Butterworth filter: it removes
+    the cycles shorter than the window (the aliasing noise) with less lag than a moving
+    average of the same length. The two-pole filter of Ehlers (2013) also averages the last
+    two prices, which removes the two-bar cycle completely; the three-pole filter of Ehlers
+    (2004) is smoother at the cost of more lag.
+
+    The formula is as follows:
+
+    - Two poles: a = exp(-√2 * π / Window), b = 2 * a * cos(√2 * 180 / Window),
+      c2 = b, c3 = -a², c1 = 1 - c2 - c3
+    - Filter = c1 * (Price + Price(t-1)) / 2 + c2 * Filter(t-1) + c3 * Filter(t-2)
+    - Three poles: a = exp(-π / Window), b = 2 * a * cos(√3 * 180 / Window), c = a²,
+      c2 = b + c, c3 = -(c + b * c), c4 = c², c1 = 1 - c2 - c3 - c4
+    - Filter = c1 * Price + c2 * Filter(t-1) + c3 * Filter(t-2) + c4 * Filter(t-3)
+
+    Reference: Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading
+    Concepts." John Wiley & Sons; Ehlers, J.F. (2014). "Predictive And Successful
+    Indicators." Technical Analysis of Stocks & Commodities, 32(1), 16-25; Ehlers, J.F.
+    (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons.
+
+    Referenced against pandas-ta-classic's ssf (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The filter equals the price on its first two (three) prices and runs from there,
+          as pandas-ta-classic starts it. Ehlers' listing starts it from zero.
+        - pandas-ta-classic's two-pole ssf filters the price itself rather than the average of
+          the last two prices; on that average the two are equal.
+        - √2, √3 and π are exact, where Ehlers' listings write 1.414 and 3.14159.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The critical period: cycles shorter than it are removed. Defaults to 10.
+        poles (int): The number of poles, 2 or 3. Defaults to 2.
+
+    Returns:
+        pd.Series: The smoothed prices in price units.
+    """
+    if poles not in [2, 3]:
+        raise ValueError("The number of poles must be 2 or 3.")
+
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    result = price.copy()
+
+    if poles == 2:  # noqa: PLR2004
+        a = math.exp(-math.sqrt(2) * math.pi / window)
+        b = 2 * a * math.cos(math.sqrt(2) * math.pi / window)
+        c2, c3 = b, -a * a
+        c1 = 1 - c2 - c3
+        for t in range(2, len(price)):
+            result[t] = (
+                c1 * (price[t] + price[t - 1]) / 2
+                + c2 * result[t - 1]
+                + c3 * result[t - 2]
+            )
+    else:
+        a = math.exp(-math.pi / window)
+        b = 2 * a * math.cos(math.sqrt(3) * math.pi / window)
+        c = a * a
+        c2, c3, c4 = b + c, -(c + b * c), c * c
+        c1 = 1 - c2 - c3 - c4
+        for t in range(3, len(price)):
+            result[t] = (
+                c1 * price[t]
+                + c2 * result[t - 1]
+                + c3 * result[t - 2]
+                + c4 * result[t - 3]
+            )
+
+    return pd.Series(result, index=clean.index).reindex(prices.index)
+
+
+def get_even_better_sinewave(
+    prices: pd.Series, window: int = 40, smoothing_window: int = 10
+) -> pd.Series:
+    """
+    Calculate Ehlers' Even Better Sinewave of a price series.
+
+    The Even Better Sinewave removes the trend with a one-pole high-pass filter, smooths the
+    remaining cycles with a SuperSmoother and divides their average over three bars by the
+    square root of their power over the same bars. The result swings between -1 and 1 like a
+    sine wave in a cycling market and stays near 1 (or -1) in an up (or down) trend.
+
+    The formula is as follows:
+
+    - alpha = (1 - sin(360 / Window)) / cos(360 / Window)
+    - HP = 0.5 * (1 + alpha) * (Price - Price(t-1)) + alpha * HP(t-1)
+    - a = exp(-√2 * π / Smoothing Window), b = 2 * a * cos(√2 * 180 / Smoothing Window),
+      c2 = b, c3 = -a², c1 = 1 - c2 - c3
+    - Filter = c1 * (HP + HP(t-1)) / 2 + c2 * Filter(t-1) + c3 * Filter(t-2)
+    - Wave = (Filter + Filter(t-1) + Filter(t-2)) / 3
+    - Power = (Filter² + Filter(t-1)² + Filter(t-2)²) / 3
+    - Even Better Sinewave = Wave / √Power
+
+    Reference: Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading
+    Concepts." John Wiley & Sons.
+
+    Referenced against pandas-ta-classic's ebsw (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The high-pass filter and the SuperSmoother start from zero on the first price, as in
+          Ehlers' listing, and the first `window` periods are NaN while they settle.
+          pandas-ta-classic starts them on the 12th price; on prices that do not move before
+          it the two are equal, and otherwise they converge as the start fades.
+        - A bar without power (three filter values of zero) is NaN, where pandas-ta-classic
+          gives 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The cutoff period of the high-pass filter, the longest cycle kept.
+            Defaults to 40.
+        smoothing_window (int): The critical period of the SuperSmoother. Defaults to 10.
+
+    Returns:
+        pd.Series: The Even Better Sinewave, between -1 and 1.
+    """
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    bars = len(price)
+
+    alpha = (1 - math.sin(2 * math.pi / window)) / math.cos(2 * math.pi / window)
+    a = math.exp(-math.sqrt(2) * math.pi / smoothing_window)
+    b = 2 * a * math.cos(math.sqrt(2) * math.pi / smoothing_window)
+    c2, c3 = b, -a * a
+    c1 = 1 - c2 - c3
+
+    high_pass, smoothed = np.zeros(bars), np.zeros(bars)
+    for t in range(1, bars):
+        high_pass[t] = (
+            0.5 * (1 + alpha) * (price[t] - price[t - 1]) + alpha * high_pass[t - 1]
+        )
+        smoothed[t] = (
+            c1 * (high_pass[t] + high_pass[t - 1]) / 2
+            + c2 * smoothed[t - 1]
+            + c3 * (smoothed[t - 2] if t > 1 else 0.0)
+        )
+
+    smoothed_series = pd.Series(smoothed, index=clean.index)
+    wave = smoothed_series.rolling(3, min_periods=1).sum() / 3
+    power = (smoothed_series**2).rolling(3, min_periods=1).sum() / 3
+
+    result = wave / np.sqrt(power.where(power > 0))
+    result.iloc[:window] = np.nan
+
+    return result.reindex(prices.index)
+
+
+def get_detrended_synthetic_price(prices: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Calculate Ehlers' Detrended Synthetic Price of a price series.
+
+    The Detrended Synthetic Price is the difference between an exponential moving average
+    over a quarter of the dominant cycle and one over half of it. The difference removes the
+    trend and leaves a wave that is in phase with the dominant cycle of the price.
+
+    The formula is as follows:
+
+    - Detrended Synthetic Price = EMA(Price, Window / 4) - EMA(Price, Window / 2)
+
+    Reference: Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
+
+    Referenced against pandas-ta-classic's dsp (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The averages span a quarter and half of the window rounded down, and are seeded
+          with their simple average, as every exponential moving average of the Toolkit.
+        - pandas-ta-classic's dsp subtracts one exponential moving average from the price,
+          Price - EMA(Price, 14), a simpler detrender that also keeps the shorter cycles.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The period of the dominant cycle, at least 4. Defaults to 20.
+
+    Returns:
+        pd.Series: The Detrended Synthetic Price in price units.
+    """
+    if window < 4:  # noqa: PLR2004
+        raise ValueError("The window must be at least 4 periods.")
+
+    quarter_cycle = overlap_model.get_exponential_moving_average(prices, window // 4)
+    half_cycle = overlap_model.get_exponential_moving_average(prices, window // 2)
+
+    return quarter_cycle - half_cycle
+
+
+def get_mesa_sine_wave(prices: pd.Series, window: int = 5) -> pd.DataFrame:
+    """
+    Calculate the MESA Sine Wave of a price series.
+
+    The MESA Sine Wave is the sine of the phase of the price within a cycle of a fixed
+    window, measured with a discrete Fourier transform over that window, and the lead sine
+    the sine of the phase advanced by 45 degrees. In a cycling market the two lines cross a
+    little before the turning points; in a trend they run side by side. It is Ehlers'
+    sinewave indicator over a fixed window, where the Hilbert Transform SineWave measures the
+    window as the dominant cycle.
+
+    The formula is as follows:
+
+    - Real = Σ sin(360 * i / Window) * Price(t-i), Imaginary = Σ cos(360 * i / Window) *
+      Price(t-i) for i from 0 to Window - 1
+    - Phase = arctan(Real / Imaginary) + 90 degrees, plus 180 when Imaginary is negative
+    - Phase = 90 * sign(Real) + 90 degrees when |Imaginary| is at most 0.001
+    - Sine = sin(Phase), Lead Sine = sin(Phase + 45 degrees)
+
+    Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
+    Applications." John Wiley & Sons; Ehlers, J.F. (1992). "MESA and Trading Market Cycles."
+    John Wiley & Sons.
+
+    Referenced against Tulip Indicators' msw (https://tulipindicators.org/msw) and
+    pandas-ta-classic's msw (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The first value is on the last price of the first full window; Tulip Indicators and
+          pandas-ta-classic start one price later.
+        - Without an imaginary part the phase is 90 degrees times the sign of the real part,
+          as in Ehlers' sinewave indicator, where Tulip Indicators takes 180 degrees.
+        - Tulip Indicators takes 3.1415926 for π, which moves its values by up to 3e-4.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The number of periods of the cycle. Defaults to 5.
+
+    Returns:
+        pd.DataFrame: The "Sine" and "Lead Sine", between -1 and 1.
+    """
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    sine = np.full(len(price), np.nan)
+    lead_sine = np.full(len(price), np.nan)
+
+    if len(price) >= window:
+        # Each row holds a window with the latest price first, so column i is Price(t-i).
+        windows = sliding_window_view(price, window)[:, ::-1]
+        angles = 2 * np.pi * np.arange(window) / window
+        real = windows @ np.sin(angles)
+        imaginary = windows @ np.cos(angles)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            phase = np.where(
+                np.abs(imaginary) > 0.001,  # noqa: PLR2004
+                np.degrees(np.arctan(real / imaginary)),
+                90 * np.sign(real),
+            )
+        phase = phase + 90 + np.where(imaginary < 0, 180, 0)
+
+        sine[window - 1 :] = np.sin(np.radians(phase))
+        lead_sine[window - 1 :] = np.sin(np.radians(phase + 45))
+
+    result = pd.DataFrame({"Sine": sine, "Lead Sine": lead_sine}, index=clean.index)
+
+    return result.reindex(prices.index)
+
+
+def get_center_of_gravity_oscillator(
+    prices: pd.Series, window: int = 10
+) -> pd.DataFrame:
+    """
+    Calculate Ehlers' Center of Gravity (CG) Oscillator of a price series.
+
+    The Center of Gravity is the balance point of the prices in the window, with the latest
+    price at position 1. When prices rise the weight shifts to the latest prices and the
+    balance point moves towards them, so its negative rises with the price, smoothed and with
+    almost no lag. The trigger is the previous value, and a crossing of the two marks a turn.
+
+    The formula is as follows:
+
+    - CG = -Σ (i + 1) * Price(t-i) / Σ Price(t-i), for i from 0 to Window - 1
+    - Trigger = CG(t-1)
+
+    Reference: Ehlers, J.F. (2002). "The Center Of Gravity Oscillator." Technical Analysis of
+    Stocks & Commodities, 20(5), 20-24.
+
+    Referenced against TA-Lib's CG (https://ta-lib.org/functions/cg.html) and
+    pandas-ta-classic's cg (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The oscillator is not centred on zero: for flat prices it is -(Window + 1) / 2.
+        - A window whose prices sum to zero is NaN, where Ehlers' listing keeps the value
+          before.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): The number of periods, ideally half the dominant cycle. Defaults to 10.
+
+    Returns:
+        pd.DataFrame: The "Center of Gravity" and its "Trigger".
+    """
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    center_of_gravity = np.full(len(price), np.nan)
+
+    if len(price) >= window:
+        # Each row holds a window with the latest price first, at position 1.
+        windows = sliding_window_view(price, window)[:, ::-1]
+        numerator = windows @ np.arange(1, window + 1)
+        denominator = windows.sum(axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            center_of_gravity[window - 1 :] = np.where(
+                denominator != 0, -numerator / denominator, np.nan
+            )
+
+    result = pd.DataFrame({"Center of Gravity": center_of_gravity}, index=clean.index)
+    result["Trigger"] = result["Center of Gravity"].shift(1)
+
+    return result.reindex(prices.index)
+
+
+def get_laguerre_relative_strength_index(
+    prices: pd.Series, gamma: float = 0.5
+) -> pd.Series:
+    """
+    Calculate Ehlers' Laguerre Relative Strength Index (Laguerre RSI) of a price series.
+
+    The Laguerre RSI is an RSI over four samples of a Laguerre filter instead of four prices.
+    The first element of the filter is an exponential moving average and each next one an
+    all-pass element that delays the low frequencies more than the high ones, which warps
+    time: four elements see as far back as a much longer window, so the RSI is smooth yet
+    reacts quickly. It moves between 0 and 1, and Ehlers buys when it crosses back above 0.2
+    and sells when it crosses back below 0.8.
+
+    The formula is as follows:
+
+    - L0 = (1 - Gamma) * Price + Gamma * L0(t-1)
+    - L1 = -Gamma * L0 + L0(t-1) + Gamma * L1(t-1)
+    - L2 = -Gamma * L1 + L1(t-1) + Gamma * L2(t-1)
+    - L3 = -Gamma * L2 + L2(t-1) + Gamma * L3(t-1)
+    - CU = the sum of L0 - L1, L1 - L2 and L2 - L3 where positive
+    - CD = the sum of L1 - L0, L2 - L1 and L3 - L2 where positive
+    - Laguerre RSI = CU / (CU + CD)
+
+    Reference: Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley
+    & Sons, chapter 14, "Time Warp - Without Space Travel."
+
+    Referenced against pandas-ta-classic's lrsi (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - A decimal between 0 and 1, as in Ehlers' listing; pandas-ta-classic multiplies it
+          by 100.
+        - The filter elements start on the first price, as pandas-ta-classic starts them, so
+          the first value is NaN. Ehlers' listing starts them from zero.
+        - When the elements are equal (CU + CD is zero) the value before is kept, as in
+          Ehlers' listing, where pandas-ta-classic gives 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        gamma (float): The damping factor of the Laguerre filter, between 0 and 1: a higher
+            value smooths more and lags more. Defaults to 0.5.
+
+    Returns:
+        pd.Series: The Laguerre RSI, between 0 and 1.
+    """
+    if not 0 <= gamma < 1:
+        raise ValueError("Gamma must be at least 0 and below 1.")
+
+    clean = prices.dropna()
+    price = clean.to_numpy(dtype=float)
+    laguerre = np.zeros((len(price), 4))
+    if len(price):
+        laguerre[0] = price[0]
+
+    for t in range(1, len(price)):
+        laguerre[t, 0] = (1 - gamma) * price[t] + gamma * laguerre[t - 1, 0]
+        for element in range(1, 4):
+            laguerre[t, element] = (
+                -gamma * laguerre[t, element - 1]
+                + laguerre[t - 1, element - 1]
+                + gamma * laguerre[t - 1, element]
+            )
+
+    differences = laguerre[:, :3] - laguerre[:, 1:]
+    closes_up = np.clip(differences, 0, None).sum(axis=1)
+    closes_down = np.clip(-differences, 0, None).sum(axis=1)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        relative_strength = np.where(
+            closes_up + closes_down != 0,
+            closes_up / (closes_up + closes_down),
+            np.nan,
+        )
+    result = pd.Series(relative_strength, index=clean.index).ffill()
 
     return result.reindex(prices.index)

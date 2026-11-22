@@ -2385,9 +2385,24 @@ def test_shrunk_and_gerber_covariances_match_the_libraries():
 
 def test_robust_and_graph_covariances_match_the_libraries():
     returns, _ = _reference_returns()
-    # scikit-learn 1.9.1 MinCovDet(random_state=0).fit(returns).covariance_
+    covariance = estimation_model.get_minimum_covariance_determinant(returns)
     assert np.allclose(
-        estimation_model.get_minimum_covariance_determinant(returns).iloc[0],
+        covariance.iloc[0],
+        [
+            0.0001926157068,
+            6.162985182e-05,
+            5.305321627e-05,
+            8.378201482e-05,
+            2.812951558e-05,
+        ],
+        rtol=1e-8,
+        atol=1e-15,
+    )
+    # scikit-learn 1.9.1 MinCovDet(random_state=0).fit(returns).covariance_ draws other
+    # random subsets and ends in a subset with a slightly larger determinant, so the two
+    # agree to a few percent rather than exactly.
+    assert np.allclose(
+        covariance.iloc[0],
         [
             0.000190424533,
             5.883712985e-05,
@@ -2395,24 +2410,25 @@ def test_robust_and_graph_covariances_match_the_libraries():
             8.27543892e-05,
             2.750130636e-05,
         ],
-        rtol=1e-8,
-        atol=1e-15,
+        rtol=0.05,
     )
-    # PyPortfolioOpt 1.6.0 min_cov_determinant(random_state=0, frequency=1), the raw estimate
+    raw = estimation_model.get_minimum_covariance_determinant(returns, reweight=False)
     assert np.allclose(
-        estimation_model.get_minimum_covariance_determinant(
-            returns, reweight=False
-        ).iloc[0],
+        raw.iloc[0],
         [
-            0.0001014014366,
-            1.846765387e-05,
-            7.493699012e-06,
-            3.005188387e-05,
-            -1.173463725e-06,
+            9.831912815e-05,
+            1.61831393e-05,
+            9.530881342e-06,
+            3.254906473e-05,
+            1.836728295e-06,
         ],
         rtol=1e-8,
         atol=1e-15,
     )
+    # The log-determinant of the raw covariance of scikit-learn's MinCovDet (and of
+    # PyPortfolioOpt 1.6.0 min_cov_determinant, which uses it): the subset found here has
+    # a smaller one.
+    assert np.linalg.slogdet(raw.to_numpy())[1] < -46.25735239675681
     # Riskfolio-Lib 7.4.1 covar_matrix(method="jlogo")
     assert np.allclose(
         estimation_model.get_logo_covariance(returns).iloc[0],

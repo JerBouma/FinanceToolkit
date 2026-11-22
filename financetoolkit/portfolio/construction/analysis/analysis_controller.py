@@ -122,7 +122,7 @@ class AnalysisConstruction:
           the uncompounded cumulative return, as the Risk module calculates them, losses
           positive. The marginal contribution is found by central finite differences,
           (ρ(w + h e_i) - ρ(w - h e_i)) / 2h with h = 1e-7 (1e-4 for the entropic
-          measures), as Riskfolio-Lib's Risk_Contribution does; the risk contribution is the
+          measures), as in Riskfolio-Lib's Risk_Contribution; the risk contribution is the
           weight times that (half of it for "kurtosis", whose square root of the fourth
           moment doubles when the weights double twice over), so the contributions add up
           to the measure. Per period, not annualized.
@@ -217,7 +217,7 @@ class AnalysisConstruction:
         - The Value at Risk and Drawdown at Risk are the Risk module's quantiles,
           interpolated between two periods, where Riskfolio-Lib takes a single period (the
           ⌈αT⌉-th worst), so their contributions mix two periods and differ from
-          Riskfolio-Lib's; the other measures equal Riskfolio-Lib's ("EVaR", "WR", "GMD",
+          Riskfolio-Lib's; the other measures match Riskfolio-Lib's ("EVaR", "WR", "GMD",
           "TG", "FLPM", "KT", "MDD", "ADD", "EDaR", "UCI") to 1e-8.
 
         As an example:
@@ -1209,12 +1209,12 @@ class AnalysisConstruction:
           the factors have.
         - "minimum_covariance_determinant": the covariance of the h = ⌈(T + N + 1) / 2⌉
           periods whose covariance matrix has the smallest determinant, found with the
-          C-steps of FastMCD from random subsets (seed), made consistent at the normal
+          C-steps of FAST-MCD from random subsets (seed), made consistent at the normal
           distribution and reweighted: the periods with a Mahalanobis distance below the
           97.5% quantile of χ²_N are kept and their covariance is multiplied by
           c = 0.975 / F_(N+2)(χ²_N(0.975)) (Rousseeuw and Van Driessen, 1999; Croux and
-          Haesbroeck, 1999; scikit-learn's MinCovDet). Crashes and data errors barely move
-          it.
+          Haesbroeck, 1999; referenced against scikit-learn's MinCovDet). Crashes and data
+          errors barely move it.
         - "jlogo": Σ = J⁻¹ with J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ the sparse inverse
           covariance over the 4-cliques C and separators S of the Triangulated Maximally
           Filtered Graph of the similarities (1 + ρ) / 2, a planar graph with 3(N - 2)
@@ -1315,9 +1315,8 @@ class AnalysisConstruction:
             half_life (float, optional): The half-life in periods of the exponential
                 weights of "regime_adjusted_ew". Defaults to 40, skfolio's default as well.
             seed (int | None, optional): The seed of the random subsets of
-                "minimum_covariance_determinant", so the same returns give the same
-                estimate; scikit-learn's random_state gives the same subsets. Defaults
-                to 0.
+                "minimum_covariance_determinant" (numpy's default generator), so the
+                same returns give the same estimate. Defaults to 0.
             correlation (bool, optional): Whether to return the correlation matrix of
                 the estimate instead. Defaults to False.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -1341,13 +1340,15 @@ class AnalysisConstruction:
         - "shrunk" shrinks the sample covariance with ddof=1 (as PyPortfolioOpt);
           skfolio, scikit-learn and Riskfolio-Lib shrink the one divided by T.
         - "minimum_covariance_determinant" divides by the number of periods kept (ddof=0),
-          as scikit-learn does, since the consistency factors assume it. PyPortfolioOpt's
+          as in scikit-learn, since the consistency factors assume it. Its random subsets
+          differ from scikit-learn's, so the two can end in different local minima of the
+          determinant, a few percent apart on small samples. PyPortfolioOpt's
           min_cov_determinant returns the raw estimate (scikit-learn's fast_mcd), without
           the consistency factor and the reweighting.
-        - "jlogo", "geodesic" and "regime_adjusted_ew" equal Riskfolio-Lib's and skfolio's
-          estimates. "regime_adjusted_ew" takes the returns around zero, as skfolio does by
-          default, and uses the whole history, where "exponential" takes a span of 180
-          periods.
+        - "jlogo", "geodesic" and "regime_adjusted_ew" are referenced against
+          Riskfolio-Lib's and skfolio's estimates, which they match. "regime_adjusted_ew"
+          takes the returns around zero, as skfolio does by default, and uses the whole
+          history, where "exponential" takes a span of 180 periods.
 
         As an example:
 
@@ -1581,8 +1582,8 @@ class AnalysisConstruction:
           a cluster with every remaining asset whose average codependence with H and L is
           above it; otherwise H forms a cluster with the remaining assets above the
           threshold with H, and then L with those above it with L. This repeats until
-          every asset belongs to a cluster. It equals ffn's calc_ftca on the Pearson
-          correlation and needs no number of clusters.
+          every asset belongs to a cluster. It needs no number of clusters and is
+          referenced against ffn's calc_ftca, which it matches on the Pearson correlation.
 
         For more information, see the following papers:
 
@@ -1734,10 +1735,10 @@ class AnalysisConstruction:
             the periods in which every asset has a return, per period (not annualized).
 
         Notes:
-        - The unstandardized "sample" matrix equals PerformanceAnalytics' M3.MM
+        - The unstandardized "sample" matrix matches PerformanceAnalytics' M3.MM
           (unbiased=FALSE). Its M3.ewma (default λ = 0.97, a span of about 65.7) assumes
           returns with a zero mean; "exponential" takes the deviations from the average
-          return and equals M3.ewma of the demeaned returns.
+          return and matches M3.ewma on the demeaned returns.
         - Unstandardized co-moments of daily returns are of the order of 1e-6, below the
           default rounding of 4 decimals; pass rounding= to see them.
 
@@ -1829,9 +1830,9 @@ class AnalysisConstruction:
             period (not annualized).
 
         Notes:
-        - The unstandardized "sample" matrix equals PerformanceAnalytics' M4.MM;
+        - The unstandardized "sample" matrix matches PerformanceAnalytics' M4.MM;
           Riskfolio-Lib's cokurt_matrix ("hist", "semi") holds the same numbers as an
-          N² × N² matrix. "exponential" equals M4.ewma of the demeaned returns.
+          N² × N² matrix. "exponential" matches M4.ewma on the demeaned returns.
 
         As an example:
 
@@ -2078,7 +2079,7 @@ class AnalysisConstruction:
         - The Fama and French factors are excess returns while the asset returns are
           total returns, so the Alpha holds the risk free rate. Ken French publishes the
           factors about a month after each month ends, so the latest weeks are left out.
-        - The loadings equal Riskfolio-Lib's loadings_matrix (with OLS as a backward
+        - The loadings match Riskfolio-Lib's loadings_matrix (with OLS as a backward
           selection at a threshold of 1) for every selection and criterion; AIC and BIC
           are statsmodels' (Riskfolio-Lib's "AIC" and "SIC").
 
@@ -2239,7 +2240,7 @@ class AnalysisConstruction:
             which the assets held and the factors all have a return.
 
         Notes:
-        - Equals Riskfolio-Lib's Factors_Risk_Contribution with OLS loadings: the
+        - Matches Riskfolio-Lib's Factors_Risk_Contribution with OLS loadings: the
           volatility uses the sample covariance (ddof=1) of the asset returns, annualized,
           and the other measures their historical returns.
 
@@ -2338,8 +2339,9 @@ class AnalysisConstruction:
         A view is an equality (a number) or an inequality, a pair (">=", 0.10) or
         ("<=", 0.10). The views on volatilities hold the means found with the mean views,
         and the views on correlations hold both the means and the volatilities, the
-        sequential scheme of skfolio's EntropyPooling. The problem is solved through its
-        dual with SciPy's truncated Newton method.
+        sequential treatment of Meucci, Ardia and Keel (2011), in the order skfolio's
+        EntropyPooling takes them. The problem is solved through its dual with SciPy's
+        L-BFGS-B.
 
         With opinions, a list of views of several experts, each a dictionary with the
         keys "views", "volatility_views" and "correlation_views", every opinion gets its
@@ -2406,9 +2408,10 @@ class AnalysisConstruction:
           skfolio), so it equals the sample covariance with equal probabilities; a
           volatility view holds the variance without that correction, which is
           Σ p_t² ≈ 1 / T (about 0.1% for daily data) lower.
-        - Equals skfolio's EntropyPooling to 1e-11 for mean and volatility views; with
-          correlation views both meet the views to the solver's tolerance, and the
-          posterior here lies closer to the prior (a lower relative entropy).
+        - Referenced against skfolio's EntropyPooling: with mean and volatility views the
+          probabilities agree to 1e-9; with correlation views the views are met here more
+          tightly and the posterior lies at least as close to the prior (a lower relative
+          entropy).
 
         As an example:
 
@@ -2598,7 +2601,7 @@ class AnalysisConstruction:
             Portfolio return, compounded within the period.
 
         Notes:
-        - Equals PerformanceAnalytics' to.period.contributions of the daily contributions;
+        - Matches PerformanceAnalytics' to.period.contributions of the daily contributions;
           with given weights these are rebalanced every day (Return.portfolio with
           rebalance_on="days"), not left to drift.
         - A day on which an asset has no return (it did not trade) is a contribution of 0.

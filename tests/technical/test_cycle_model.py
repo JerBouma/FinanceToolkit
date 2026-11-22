@@ -118,3 +118,161 @@ def test_cycle_indicators_skip_missing_prices():
         .all()
         .all()
     )
+
+
+def test_swiss_army_knife_filters_match_talib():
+    prices = _cycle_prices()
+
+    # TA-Lib's SWAK_HP, SWAK_2PHP, SWAK_BP, SWAK_BUTTER and SWAK_GAUSS with a period of 20.
+    expected = {
+        "high_pass": [
+            0.0,
+            1.1809263632508717,
+            -0.5002414658646386,
+            -0.3983532283224965,
+        ],
+        "two_pole_high_pass": [
+            0.0,
+            0.8951209149289664,
+            -0.6737373023236648,
+            -0.7581624209599329,
+        ],
+        "band_pass": [0.0, 0.04168023215374073, 0.2327054799461198, 0.955742658385626],
+        "butterworth": [
+            100.0,
+            100.04994903007196,
+            102.39005265321173,
+            109.26126235675781,
+        ],
+        "gaussian": [100.0, 100.19979612028784, 102.38746533742817, 109.30433044093685],
+    }
+    for filter_type, values in expected.items():
+        result = cycle_model.get_swiss_army_knife_filter(prices, 20, filter_type)
+
+        assert result.notna().all()
+        assert result.iloc[[0, 1, 9, 149]].tolist() == pytest.approx(values)
+
+
+def test_swiss_army_knife_filter_rejects_invalid_input():
+    with pytest.raises(ValueError, match="Filter must be"):
+        cycle_model.get_swiss_army_knife_filter(_cycle_prices(), filter="band_stop")
+    with pytest.raises(ValueError, match="at least 5"):
+        cycle_model.get_swiss_army_knife_filter(_cycle_prices(), window=4)
+    with pytest.raises(ValueError, match="delta"):
+        cycle_model.get_swiss_army_knife_filter(_cycle_prices(), delta=0.6)
+
+
+def test_super_smoother_filter_matches_pandas_ta():
+    prices = _cycle_prices()
+
+    # pandas-ta-classic's ssf with three poles.
+    three_poles = cycle_model.get_super_smoother_filter(prices, 10, 3)
+    assert three_poles.iloc[[0, 1, 2, 63, 149]].tolist() == pytest.approx(
+        [
+            100.0,
+            101.36796672435885,
+            102.35081971296832,
+            103.86503313418095,
+            109.75173990544826,
+        ]
+    )
+
+    # pandas-ta-classic's two-pole ssf applied to the average of the last two prices, Ehlers' 2013 form.
+    two_poles = cycle_model.get_super_smoother_filter(prices, 10, 2)
+    assert two_poles.iloc[[0, 1, 2, 63, 149]].tolist() == pytest.approx(
+        [
+            100.0,
+            101.36796672435885,
+            102.05495695336685,
+            103.75969956047857,
+            109.72074394230435,
+        ]
+    )
+
+    with pytest.raises(ValueError, match="poles"):
+        cycle_model.get_super_smoother_filter(prices, poles=4)
+
+
+def test_even_better_sinewave_matches_pandas_ta():
+    prices = _cycle_prices()
+    # Flat before the 12th price, where pandas-ta-classic starts the filters.
+    flat_start = prices.copy()
+    flat_start.iloc[:11] = flat_start.iloc[0]
+
+    result = cycle_model.get_even_better_sinewave(flat_start, 40, 10)
+
+    assert result.iloc[:40].isna().all()
+    assert result.iloc[[40, 63, 149]].tolist() == pytest.approx(
+        [-0.7954201926449976, 0.94033245344123, 0.9850251715493064]
+    )
+    # From the first price the start differs, which fades.
+    assert cycle_model.get_even_better_sinewave(prices).iloc[149] == pytest.approx(
+        0.9850251715478667
+    )
+
+
+def test_detrended_synthetic_price_matches_pandas_ta_averages():
+    result = cycle_model.get_detrended_synthetic_price(_cycle_prices(), 20)
+
+    # pandas-ta-classic's ema(5) - ema(10).
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[[9, 63, 149]].tolist() == pytest.approx(
+        [0.09451196293056796, 0.9161444969996069, 0.4869817943215651]
+    )
+
+
+def test_mesa_sine_wave_matches_pandas_ta():
+    result = cycle_model.get_mesa_sine_wave(_cycle_prices(), 5)
+
+    assert list(result.columns) == ["Sine", "Lead Sine"]
+    # The first full window ends on the 5th price, a price before pandas-ta-classic and Tulip start.
+    assert result.iloc[:4].isna().all().all()
+    assert result.iloc[4].notna().all()
+    assert result.iloc[9].tolist() == pytest.approx(
+        [-0.9816143074765472, -0.5591369676674672]
+    )
+    assert result.iloc[63].tolist() == pytest.approx(
+        [0.7123444103506107, 0.007434764441586148]
+    )
+    assert result.dropna().abs().le(1).all().all()
+
+
+def test_center_of_gravity_oscillator_matches_talib():
+    result = cycle_model.get_center_of_gravity_oscillator(_cycle_prices(), 10)
+
+    assert list(result.columns) == ["Center of Gravity", "Trigger"]
+    assert result["Center of Gravity"].iloc[:9].isna().all()
+    # TA-Lib's CG.
+    assert result["Center of Gravity"].iloc[[9, 63, 149]].tolist() == pytest.approx(
+        [-5.486768506497331, -5.443123592362679, -5.487616625075256]
+    )
+    assert result["Trigger"].iloc[64] == result["Center of Gravity"].iloc[63]
+
+    # Flat prices balance in the middle of the window.
+    flat = cycle_model.get_center_of_gravity_oscillator(pd.Series([10.0] * 12), 10)
+    assert flat["Center of Gravity"].iloc[-1] == pytest.approx(-5.5)
+
+
+def test_laguerre_relative_strength_index_matches_pandas_ta():
+    result = cycle_model.get_laguerre_relative_strength_index(_cycle_prices(), 0.5)
+
+    # pandas-ta-classic's lrsi divided by 100.
+    assert np.isnan(result.iloc[0])
+    assert result.iloc[[1, 2, 63, 149]].tolist() == pytest.approx(
+        [0.7142857142857132, 0.8000000000000026, 1.0, 0.84145775443844]
+    )
+
+    # Without damping the elements are the last four prices; once they are equal the value
+    # before is kept, as in Ehlers' listing.
+    prices = pd.Series([10.0, 11.0, 12.0, 11.0, 12.0, 12.0, 12.0, 12.0])
+    held = cycle_model.get_laguerre_relative_strength_index(prices, gamma=0)
+    assert held.iloc[4] == pytest.approx(2 / 3)
+    assert held.iloc[5:7].tolist() == pytest.approx([0.5, 1.0])
+    assert held.iloc[7] == held.iloc[6]
+
+    # Flat prices never move the elements apart, so there is no value to keep.
+    assert (
+        cycle_model.get_laguerre_relative_strength_index(pd.Series([5.0] * 6))
+        .isna()
+        .all()
+    )

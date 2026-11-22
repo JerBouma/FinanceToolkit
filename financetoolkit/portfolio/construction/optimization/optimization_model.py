@@ -533,9 +533,9 @@ def get_ledoit_wolf_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, flo
     well-conditioned when there are many assets compared to the number of periods, which
     is where the sample covariance makes optimizers chase estimation noise.
 
-    The formula and the maximum likelihood sample covariance it shrinks (divided by the
-    number of periods, not one less) follow scikit-learn's LedoitWolf, so the results
-    agree with it.
+    The maximum likelihood sample covariance it shrinks (divided by the number of
+    periods, not one less) is the one scikit-learn's LedoitWolf takes; referenced against
+    it, the results agree.
 
     See Ledoit, O. and Wolf, M. (2004), "A well-conditioned estimator for large-dimensional
     covariance matrices", Journal of Multivariate Analysis, 88(2), 365-411.
@@ -581,8 +581,8 @@ def get_oracle_approximating_shrinkage_covariance(
     average variance, but with an intensity derived for normally distributed returns,
     which converges faster and shrinks more when there are few periods.
 
-    The formula and the maximum likelihood sample covariance it shrinks follow
-    scikit-learn's OAS, so the results agree with it.
+    The maximum likelihood sample covariance it shrinks is the one scikit-learn's OAS
+    takes; referenced against it, the results agree.
 
     See Chen, Y., Wiesel, A., Eldar, Y. C. and Hero, A. O. (2010), "Shrinkage Algorithms
     for MMSE Covariance Estimation", IEEE Transactions on Signal Processing, 58(10),
@@ -809,7 +809,7 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     periods count most and the matrix follows changes in volatility and correlation.
 
     The deviations are taken from the mean over the whole range and the weights are
-    normalized to sum to one, as PyPortfolioOpt's `exp_cov` does. The weighting is the one
+    normalized to sum to one, as in PyPortfolioOpt's `exp_cov`. The weighting is the one
     of RiskMetrics with decay factor λ = 1 − α, but the matrix differs from the RiskMetrics
     estimate in two ways: RiskMetrics assumes a mean return of zero rather than demeaning
     by the sample mean, and its daily decay factor λ = 0.94 is a span of about 32 periods,
@@ -877,8 +877,9 @@ def get_denoised_covariance(
 
     The correlation matrix is rescaled to a unit diagonal after the replacement and
     turned back into a covariance with the sample standard deviations (ddof=1). The
-    three methods equal Riskfolio-Lib's denoiseCov (kind="fixed", "spectral", "shrink");
-    "fixed" also equals skfolio's DenoiseCovariance. Riskfolio-Lib's covar_matrix
+    three methods are referenced against Riskfolio-Lib's denoiseCov (kind="fixed",
+    "spectral", "shrink") and "fixed" also against skfolio's DenoiseCovariance, whose
+    values they match. Riskfolio-Lib's covar_matrix
     defaults to α = 0.1 for "shrink"; the default here is López de Prado's α = 0.
 
     See Laloux, L., Cizeau, P., Potters, M. and Bouchaud, J.-P. (2000), "Random Matrix
@@ -1149,15 +1150,16 @@ def get_expected_returns(
     - "mean": the average return per period times the number of periods in a year, the
       arithmetic historical mean.
     - "geometric": the compounded (geometric) average return, (Π (1 + r_t))^(P / T) - 1
-      for T periods with P periods in a year, PyPortfolioOpt's mean_historical_return
-      with compounding=True (its default).
+      for T periods with P periods in a year, matching PyPortfolioOpt's
+      mean_historical_return with compounding=True (its default).
     - "exponential": the exponentially weighted average return, with the weight of a
       period (1 - α)^age, α = 2 / (span + 1), normalized to sum to one, so recent
       periods count most (pandas' ewm with adjust=True), times P. With adjust=False the
       average is the recursion m_t = α r_t + (1 - α) m_(t-1) seeded with the first
-      return (Riskfolio-Lib's mean_vector "ewma2"; "ewma1" is adjust=True).
+      return (as Riskfolio-Lib's mean_vector "ewma2"; its "ewma1" matches adjust=True).
     - "exponential_geometric": the exponentially weighted average compounded over a
-      year, (1 + m)^P - 1, PyPortfolioOpt's ema_historical_return with compounding=True.
+      year, (1 + m)^P - 1, matching PyPortfolioOpt's ema_historical_return with
+      compounding=True.
     - "capm": the return the Capital Asset Pricing Model implies, r_f + β_i (E[r_m] -
       r_f), with β_i = Cov(r_i, r_m) / Var(r_m) of the returns per period and E[r_m]
       the annualized average return of the benchmark (Sharpe, 1964).
@@ -1992,8 +1994,8 @@ def get_codependence(
     get_codependence_distance turns into the distance the clusters are formed on.
 
     - "pearson": the linear correlation ρ_ij = σ_ij / (σ_i σ_j) of the covariance matrix,
-      so a shrinkage or denoised covariance estimator also shapes the clusters (skfolio's
-      CovarianceDistance).
+      so a shrinkage or denoised covariance estimator also shapes the clusters (as in
+      skfolio's CovarianceDistance).
     - "spearman": the rank correlation of Spearman (1904), the Pearson correlation of the
       ranks of the returns, 1 - 6 Σ d_t² / (T (T² - 1)) without ties, with d_t the
       difference between the ranks of the two assets' returns in period t.
@@ -2015,8 +2017,8 @@ def get_codependence(
     The rank, Gerber, distance, information and tail measures depend on the returns
     themselves, whatever the covariance estimator; the rank correlations capture any
     monotonic co-movement and the distance correlation and mutual information also
-    non-monotonic co-movement. These are the codependences of Riskfolio-Lib's codep_dist
-    and of skfolio's distance estimators.
+    non-monotonic co-movement. Riskfolio-Lib's codep_dist and skfolio's distance
+    estimators offer the same codependences.
 
     See Spearman, C. (1904), "The Proof and Measurement of Association between Two
     Things", The American Journal of Psychology, 15(1), 72-101, Kendall, M. G. (1938),
@@ -2093,11 +2095,11 @@ def get_codependence_distance(
 
     - "pearson", "spearman", "kendall", "gerber", "detoned": the correlation distance
       d = √((1 - ρ) / 2) of Mantegna (1999) and López de Prado (2016).
-    - "distance": d = √(1 - dCor), as skfolio's DistanceCorrelation and Riskfolio-Lib's
+    - "distance": d = √(1 - dCor), as in skfolio's DistanceCorrelation and Riskfolio-Lib's
       codep_dist.
     - "mutual_information": the normalized variation of information, VI(X, Y) / H(X, Y),
-      as skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
-    - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as
+      as in skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
+    - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as in
       Riskfolio-Lib's codep_dist ("tail").
 
     Args:
@@ -5102,8 +5104,8 @@ def get_bayesian_black_litterman_returns(
     - Π̂ = μ_f + τΣ_f P'(P τΣ_f P' + Ω)⁻¹ (Q - P μ_f)
 
     and the asset returns follow from the factor model: μ = α + B Π̂ and
-    Σ_post = B Σ_f B' + D + B Ŝ B', with D the residual variances. This is Riskfolio-Lib's
-    black_litterman_bayesian written without inverting Σ: its Π_BLB = Σ_BLB S⁻¹ B (Ŝ⁻¹ +
+    Σ_post = B Σ_f B' + D + B Ŝ B', with D the residual variances. Referenced against
+    Riskfolio-Lib's black_litterman_bayesian, which inverts Σ to the same result: its Π_BLB = Σ_BLB S⁻¹ B (Ŝ⁻¹ +
     B'S⁻¹B)⁻¹ Ŝ⁻¹ Π̂ equals B Π̂ and its Σ_BLB = (S⁻¹ - S⁻¹B(Ŝ⁻¹ + B'S⁻¹B)⁻¹B'S⁻¹)⁻¹ equals
     S + B Ŝ B' (Woodbury). Riskfolio-Lib takes the prior N(μ_f, Σ_f) and Ω with τ = 1 / T;
     with tau=1 and a confidence of T / (T + 1) for every view this gives its result.
@@ -5460,7 +5462,7 @@ FINITE_DIFFERENCE_RISK_MEASURES = {
     "ulcer_index": 1,
 }
 
-# The step of the central differences: Riskfolio-Lib's 1e-7, and 1e-4 for the entropic
+# The step of the central differences: 1e-7, as in Riskfolio-Lib, and 1e-4 for the entropic
 # measures, which are found by a numerical minimization of their own.
 FINITE_DIFFERENCE_STEP = 1e-7
 ENTROPIC_FINITE_DIFFERENCE_STEP = 1e-4
@@ -5533,7 +5535,7 @@ def get_finite_difference_risk_contributions(
     """
     How much each asset adds to a risk measure of a portfolio's historical returns (Euler
     allocation), with the derivative of the measure found by central finite differences,
-    as Riskfolio-Lib's Risk_Contribution does: ∂ρ/∂w_i ≈ (ρ(w + h e_i) - ρ(w - h e_i)) /
+    as in Riskfolio-Lib's Risk_Contribution: ∂ρ/∂w_i ≈ (ρ(w + h e_i) - ρ(w - h e_i)) /
     (2h), with h = 1e-7 (1e-4 for the entropic measures). A measure that is homogeneous of
     order k in the weights satisfies Σ w_i ∂ρ/∂w_i = k ρ (Euler's theorem), so the risk
     contribution w_i ∂ρ/∂w_i / k adds up to ρ (Tasche, 2000). The measures that are not
@@ -5607,8 +5609,8 @@ def get_factor_risk_contributions(
 ) -> pd.DataFrame:
     """
     How much each factor of a factor model adds to the risk of a portfolio, the factor
-    risk contributions of Meucci (2009) and Roncalli and Weisang (2016), as Riskfolio-Lib's
-    Factors_Risk_Contribution computes them. With B the N × K loadings of the assets on the
+    risk contributions of Meucci (2009) and Roncalli and Weisang (2016), referenced against
+    Riskfolio-Lib's Factors_Risk_Contribution. With B the N × K loadings of the assets on the
     factors, the portfolio's exposure to the factors is y = B'w, and the marginal risk of
     a factor follows from the marginal risk of the assets m = ∂ρ/∂w through the
     pseudo-inverse, ∂ρ/∂y = B⁺'m with B⁺ = pinv(B'). The risk contribution of factor f is

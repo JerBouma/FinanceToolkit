@@ -1950,3 +1950,57 @@ def test_get_mesa_adaptive_moving_average(recorder, technical_module):
         )
     )
     recorder.capture(technical_module.get_mesa_adaptive_moving_average(growth=True))
+
+
+def test_get_swiss_army_knife_filter(recorder, technical_module):
+    recorder.capture(technical_module.get_swiss_army_knife_filter())
+    recorder.capture(
+        technical_module.get_swiss_army_knife_filter(
+            filter="gaussian", median_price=False
+        )
+    )
+    recorder.capture(technical_module.get_swiss_army_knife_filter(filter="high_pass"))
+    recorder.capture(
+        technical_module.get_swiss_army_knife_filter(
+            filter="two_pole_high_pass", window=30
+        )
+    )
+    recorder.capture(technical_module.get_swiss_army_knife_filter(filter="butterworth"))
+    recorder.capture(technical_module.get_swiss_army_knife_filter(delta=0.3))
+
+
+def test_get_super_smoother_filter(recorder, technical_module):
+    recorder.capture(technical_module.get_super_smoother_filter())
+    recorder.capture(technical_module.get_super_smoother_filter(poles=3, window=20))
+    recorder.capture(technical_module.get_super_smoother_filter(period="weekly"))
+
+
+def test_get_even_better_sinewave(recorder, technical_module):
+    recorder.capture(technical_module.get_even_better_sinewave())
+    recorder.capture(
+        technical_module.get_even_better_sinewave(window=50, smoothing_window=15)
+    )
+
+
+def test_get_detrended_synthetic_price(recorder, technical_module):
+    recorder.capture(technical_module.get_detrended_synthetic_price())
+    recorder.capture(technical_module.get_detrended_synthetic_price(window=30))
+
+
+def test_get_mesa_sine_wave(recorder, technical_module):
+    recorder.capture(technical_module.get_mesa_sine_wave())
+    recorder.capture(technical_module.get_mesa_sine_wave(median_price=False, window=20))
+
+
+def test_get_center_of_gravity_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_center_of_gravity_oscillator())
+    recorder.capture(
+        technical_module.get_center_of_gravity_oscillator(
+            median_price=False, close_column="Close"
+        )
+    )
+
+
+def test_get_laguerre_relative_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_laguerre_relative_strength_index())
+    recorder.capture(technical_module.get_laguerre_relative_strength_index(gamma=0.8))

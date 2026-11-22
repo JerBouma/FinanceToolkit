@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import itertools
+
 import numpy as np
 import pandas as pd
 from scipy import linalg, stats
@@ -14,12 +16,12 @@ from financetoolkit.risk.dependence import copula_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 
-# The smallest eigenvalue a repaired correlation matrix keeps, the same floor skfolio's cov_nearest uses.
+# The smallest eigenvalue a repaired correlation matrix keeps, a floor of 1e-13 as in skfolio's cov_nearest.
 MINIMUM_EIGENVALUE = 1e-13
 
-# The lowest codependence that the tail distance -ln(λ) is taken of (Riskfolio-Lib uses the same
-# floor), so that two assets that never fall into their tails together get a large but finite
-# distance.
+# The lowest codependence that the tail distance -ln(λ) is taken of, a floor of 1e-8 as in
+# Riskfolio-Lib, so that two assets that never fall into their tails together get a large but
+# finite distance.
 MINIMUM_TAIL_DEPENDENCE = 1e-8
 
 GERBER_STATISTICS = (0, 1, 2)
@@ -40,8 +42,8 @@ def get_james_stein_expected_returns(
     λ_1, ..., λ_N the eigenvalues of the sample covariance matrix S (ddof=1), the estimate
     is μ = (1 - β) μ̂ + β μ̄ 1 with β = (Σ λ_k - 2 max λ_k) / (T ‖μ̂ - μ̄ 1‖²), clipped to
     [0, 1] (the positive-part James-Stein estimator). This is the form of Meucci (2005)
-    for an unknown covariance matrix, which skfolio's ShrunkMu (JAMES_STEIN) and
-    Riskfolio-Lib's mean_vector (method="JS") use; they do not clip β, which only differs
+    for an unknown covariance matrix. Referenced against skfolio's ShrunkMu (JAMES_STEIN)
+    and Riskfolio-Lib's mean_vector (method="JS"), which do not clip β; that only differs
     when the averages lie so close together that β leaves [0, 1]. With two assets
     Σ λ_k - 2 max λ_k is negative, so the estimator needs at least three assets to shrink.
 
@@ -92,8 +94,8 @@ def get_bodnar_okhrin_parolya_expected_returns(
     - α = ((u - N / (T - N)) w - v²) / (u w - v²)
     - β = (1 - α) v / w
 
-    This equals skfolio's ShrunkMu (BODNAR_OKHRIN) and Riskfolio-Lib's mean_vector
-    (method="BOP") with the grand mean as the target.
+    Referenced against skfolio's ShrunkMu (BODNAR_OKHRIN) and Riskfolio-Lib's mean_vector
+    (method="BOP"), whose values it matches with the grand mean as the target.
 
     See Bodnar, T., Okhrin, O. and Parolya, N. (2019), "Optimal Shrinkage Estimator for
     High-Dimensional Mean Vector", Journal of Multivariate Analysis, 170, 63-79.
@@ -135,8 +137,8 @@ def get_shrunk_covariance(
     matrix (ddof=1) of the N assets. Unlike Ledoit-Wolf and OAS, the intensity δ is
     chosen rather than estimated.
 
-    This equals PyPortfolioOpt's CovarianceShrinkage.shrunk_covariance, which defaults to
-    δ = 0.2. scikit-learn's ShrunkCovariance, skfolio's ShrunkCovariance and
+    Referenced against PyPortfolioOpt's CovarianceShrinkage.shrunk_covariance, whose
+    values it matches; that defaults to δ = 0.2. scikit-learn's ShrunkCovariance, skfolio's ShrunkCovariance and
     Riskfolio-Lib's covar_matrix (method="shrunk") default to δ = 0.1, the default here,
     and shrink the maximum likelihood covariance (divided by T rather than T - 1), which
     is T / (T - 1) times smaller.
@@ -169,7 +171,8 @@ def get_nearest_correlation(correlation: np.ndarray) -> np.ndarray:
     """
     The correlation matrix itself when it is positive definite, otherwise the nearest one
     by eigenvalue clipping: the eigenvalues below 1e-13 are raised to it and the matrix is
-    rescaled to a unit diagonal, as skfolio's cov_nearest does without Higham's algorithm.
+    rescaled to a unit diagonal. Shares similar logic as skfolio's cov_nearest
+    (higham=False).
 
     See Higham, N. J. (2002), "Computing the Nearest Correlation Matrix - A Problem from
     Finance", IMA Journal of Numerical Analysis, 22(3), 329-343.
@@ -206,18 +209,20 @@ def get_gerber_covariance(
 
     - Statistic 0: g_ij = (n_c - n_d) / (n_c + n_d), the original pairwise statistic,
       which need not give a positive semidefinite matrix.
-    - Statistic 1: g_ij = (n_c - n_d) / (T - n_n), which is skfolio's GerberCovariance
-      (psd_variant=True, its default) and Riskfolio-Lib's gerber_cov_stat1.
+    - Statistic 1: g_ij = (n_c - n_d) / (T - n_n), referenced against skfolio's
+      GerberCovariance (psd_variant=True, its default) and Riskfolio-Lib's
+      gerber_cov_stat1.
     - Statistic 2: G = H / √(diag(H) diag(H)'), with H = U'U + D'D - U'D - D'U, the
-      matrix form that is positive semidefinite by construction, Riskfolio-Lib's
-      gerber_cov_stat2 and skfolio's GerberCovariance with psd_variant=False.
+      matrix form that is positive semidefinite by construction, referenced against
+      Riskfolio-Lib's gerber_cov_stat2 and skfolio's GerberCovariance with
+      psd_variant=False.
 
     A matrix that is not positive definite is replaced by the nearest one by clipping the
-    eigenvalues of G (see get_nearest_correlation), as skfolio does. The thresholds apply
+    eigenvalues of G (see get_nearest_correlation), as in skfolio. The thresholds apply
     to the returns themselves, not to their deviations from the mean, as in the paper and
-    both libraries. Both libraries take the standard deviations with ddof=0; here they
-    take ddof=1, which equals their result with the threshold multiplied by √(T / (T - 1))
-    and the covariance by T / (T - 1).
+    both libraries. Unlike the libraries, which take the standard deviations with ddof=0,
+    they take ddof=1 here, which gives their result with the threshold multiplied by
+    √(T / (T - 1)) and the covariance by T / (T - 1).
 
     See Gerber, S., Markowitz, H. M., Ernst, P. A., Miao, Y., Javid, B. and Sargen, P.
     (2022), "The Gerber Statistic: A Robust Co-Movement Measure for Portfolio
@@ -279,9 +284,10 @@ def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.Dat
     it is singular: it suits clustering (codependence="detoned") but cannot be inverted
     by an optimizer.
 
-    This equals skfolio's DetoneCovariance on the sample covariance (which also replaces
-    the zero eigenvalues by 1e-13) and López de Prado's detoning applied to the
-    correlation matrix itself rather than to a denoised one.
+    This is the detoning of López de Prado (2020), applied to the correlation matrix
+    itself rather than to a denoised one. Referenced against skfolio's DetoneCovariance on
+    the sample covariance, whose values it matches (it also raises the zero eigenvalues to
+    1e-13).
 
     See López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge
     University Press, chapter 2.
@@ -326,42 +332,62 @@ def get_minimum_covariance_determinant(
     The Minimum Covariance Determinant (MCD) covariance matrix: the covariance of the h
     periods whose covariance matrix has the smallest determinant, so that the periods far
     from the bulk of the returns (crashes, squeezes, data errors) do not inflate it. With
-    T periods and N assets, h = ⌈(T + N + 1) / 2⌉ by default, the largest share of
-    outliers the estimator withstands.
+    T periods and N assets, h = ⌊(T + N + 1) / 2⌋ by default, the subset size with the
+    highest breakdown point: the estimate withstands up to ⌊(T - N + 1) / 2⌋ outlying
+    periods (Rousseeuw, 1985).
 
-    The FastMCD algorithm of Rousseeuw and Van Driessen (1999) finds that subset with
-    C-steps: from a subset with mean μ and covariance S, the next subset is the h periods
-    with the smallest Mahalanobis distance d²_t = (r_t - μ)' S⁻¹ (r_t - μ), which never
-    raises the determinant. It starts from random subsets, keeps the 10 best after two
-    C-steps and iterates those to convergence; above 500 periods it first does so within
-    random parts of about 300 periods and merges the best subsets of each part.
+    The subset is found with the FAST-MCD algorithm of Rousseeuw and Van Driessen (1999).
+    Its building block is the C-step (concentration step): from the mean μ and covariance
+    S of a subset, the next subset is the h periods with the smallest Mahalanobis distance
+    d²_t = (r_t - μ)' S⁻¹ (r_t - μ), whose covariance never has a larger determinant.
 
-    The raw estimate is then made consistent at the normal distribution and reweighted:
-    the distances are divided by c(N, h / T) with c(N, α) = α / F_(N+2)(χ²_N(α)) (Croux and
-    Haesbroeck, 1999), the periods with a distance below the 97.5% quantile of χ²_N are
-    kept, and their covariance is multiplied by c(N, 0.975).
+    - Up to 600 periods: 500 random subsets of N + 1 periods (extended with further random
+      periods while their covariance is singular) each give a first subset of h periods,
+      followed by two C-steps. The 50 with the smallest determinant are iterated until
+      the determinant no longer falls, and the best of them is the raw MCD.
+    - Above 600 periods: the same search runs within k = min(5, ⌊T / 300⌋) disjoint random
+      groups (of all periods, or of 1500 drawn at random above 1500 periods), with 500 / k
+      starts and a subset size scaled to the group. The 10 best of each group take two
+      C-steps on the merged groups and are then iterated to convergence on all periods.
 
-    This equals scikit-learn's MinCovDet(random_state=seed).fit(returns).covariance_ for the
-    same seed (it draws the random subsets with numpy's RandomState in the same order).
-    With reweight=False it is the raw covariance of the best subset, without the
-    consistency factor, which PyPortfolioOpt's risk_models.min_cov_determinant returns.
-    Both divide the covariances by the number of periods (ddof=0), on which the
-    consistency factors are based, and so does this function.
+    The paper iterates the 10 best starts to convergence; iterating 50 costs little more
+    and, on returns without outliers, where many subsets have nearly the same
+    determinant, more often finds the smallest one.
 
-    See Rousseeuw, P. J. and Van Driessen, K. (1999), "A Fast Algorithm for the Minimum
-    Covariance Determinant Estimator", Technometrics, 41(3), 212-223, and Croux, C. and
-    Haesbroeck, G. (1999), "Influence Function and Efficiency of the Minimum Covariance
-    Determinant Scatter Matrix Estimator", Journal of Multivariate Analysis, 71(2), 161-190.
+    The raw estimate is then made consistent at the normal distribution and reweighted
+    (Rousseeuw and Van Driessen, 1999): the distances are divided by the consistency
+    factor c(N, h / T), with c(N, α) = α / F_(N+2)(χ²_N(α)) (Croux and Haesbroeck, 1999),
+    the periods with a distance below the 97.5% quantile of χ²_N are kept, and their
+    covariance is multiplied by c(N, 0.975). The covariances divide by the number of
+    periods (ddof=0), on which the consistency factors are based.
+
+    Unlike the median rule of Rousseeuw and Van Driessen (1999), med d²_t / χ²_N(0.5), the
+    consistency factors are the exact ones at the normal distribution, and the reweighted
+    covariance is made consistent as well, as in robustbase's covMcd and scikit-learn's
+    MinCovDet. Referenced against scikit-learn's MinCovDet, which starts from 30 random
+    subsets of h periods: the random subsets differ, so the two can end in different
+    local minima of the determinant, which on small samples moves the estimate by a few
+    percent; periods far from the bulk are flagged by both. With reweight=False it is the
+    raw covariance of the best subset, without the consistency factor, as
+    PyPortfolioOpt's risk_models.min_cov_determinant returns it.
+
+    See Rousseeuw, P. J. (1985), "Multivariate Estimation with High Breakdown Point", in
+    Grossmann, W., Pflug, G., Vincze, I. and Wertz, W. (eds.), Mathematical Statistics and
+    Applications, Vol. B, Reidel, 283-297; Rousseeuw, P. J. and Van Driessen, K. (1999), "A
+    Fast Algorithm for the Minimum Covariance Determinant Estimator", Technometrics, 41(3),
+    212-223; and Croux, C. and Haesbroeck, G. (1999), "Influence Function and Efficiency of
+    the Minimum Covariance Determinant Scatter Matrix Estimator", Journal of Multivariate
+    Analysis, 71(2), 161-190.
 
     Args:
         returns (pd.DataFrame): The returns per period, at least two assets, without missing
             values.
         support_fraction (float | None, optional): The share of the periods h / T in the
-            subset, between 0 and 1. Defaults to None, ⌈(T + N + 1) / 2⌉ periods.
+            subset, between 0 and 1. Defaults to None, ⌊(T + N + 1) / 2⌋ periods.
         reweight (bool, optional): Whether to make the estimate consistent and reweight
             it. Defaults to True.
-        seed (int | None, optional): The seed of the random subsets, so the same returns
-            give the same estimate. Defaults to 0.
+        seed (int | None, optional): The seed of the random subsets (numpy's default
+            generator), so the same returns give the same estimate. Defaults to 0.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -373,7 +399,7 @@ def get_minimum_covariance_determinant(
             "The minimum covariance determinant needs at least two assets."
         )
     if support_fraction is None:
-        size = min(int(np.ceil(0.5 * (periods + assets + 1))), periods)
+        size = min((periods + assets + 1) // 2, periods)
     elif 0 < support_fraction <= 1:
         size = int(support_fraction * periods)
     else:
@@ -382,110 +408,112 @@ def get_minimum_covariance_determinant(
         raise ValueError(
             "The minimum covariance determinant needs more periods than assets."
         )
-    generator = np.random.RandomState(seed)  # noqa: NPY002 (scikit-learn's draws)
+    rng = np.random.default_rng(seed)
 
-    def log_determinant(covariance: np.ndarray) -> float:
-        sign, value = np.linalg.slogdet(covariance)
-        return value if sign > 0 else -np.inf
+    def mahalanobis(sample: np.ndarray, centres: np.ndarray, scatters: np.ndarray):
+        # The squared distance of every period to every (centre, scatter) pair, one row per
+        # pair, in blocks of 50 pairs to bound the memory; the pseudo-inverse keeps an
+        # exact fit (a singular scatter) usable.
+        inverses = np.linalg.pinv(scatters, hermitian=True)
+        distances = np.empty((len(centres), len(sample)))
+        for block in range(0, len(centres), 50):
+            deviations = sample[None] - centres[block : block + 50, None, :]
+            distances[block : block + 50] = (
+                (deviations @ inverses[block : block + 50]) * deviations
+            ).sum(axis=2)
+        return distances
 
-    def c_steps(sample: np.ndarray, size: int, iterations: int, start=None) -> tuple:
-        # The C-steps of Rousseeuw and Van Driessen (1999), from a random subset or from a
-        # location and covariance; the distances returned use the covariance before the last
-        # step, the same convention as scikit-learn's MinCovDet.
-        if start is None:
-            selected = generator.permutation(len(sample))[:size]
-        else:
-            centred = sample - start[0]
-            distance = ((centred @ linalg.pinvh(start[1])) * centred).sum(axis=1)
-            selected = np.argpartition(distance, size - 1)[:size]
-        location = sample[selected].mean(axis=0)
-        covariance = np.cov(sample[selected].T, bias=True)
-        determinant = log_determinant(covariance)
-        precision = linalg.pinvh(covariance)
-        previous = (location, covariance, np.inf)
-        while determinant < previous[2] and iterations > 0 and np.isfinite(determinant):
-            previous = (location, covariance, determinant)
-            precision = linalg.pinvh(covariance)
-            centred = sample - location
-            distance = ((centred @ precision) * centred).sum(axis=1)
-            selected = np.argpartition(distance, size - 1)[:size]
-            location = sample[selected].mean(axis=0)
-            covariance = np.cov(sample[selected].T, bias=True)
-            determinant = log_determinant(covariance)
-            iterations -= 1
-        if (
-            iterations > 0
-            and determinant > previous[2]
-            and not np.isclose(determinant, previous[2])
-        ):
-            location, covariance, determinant = previous
-        centred = sample - location
-        return (
-            location,
-            covariance,
-            determinant,
-            ((centred @ precision) * centred).sum(1),
-        )
-
-    def select(
-        sample: np.ndarray, size: int, starts, keep: int, iterations: int
-    ) -> list:
-        # The `keep` results with the smallest determinant, from random or given starts.
-        if isinstance(starts, int):
-            results = [c_steps(sample, size, iterations) for _ in range(starts)]
-        else:
-            results = [c_steps(sample, size, iterations, start) for start in starts]
-        order = np.argsort([result[2] for result in results])[:keep]
-        return [results[index] for index in order]
-
-    if periods > 500:  # noqa: PLR2004
-        parts = periods // 300
-        part_size = periods // parts
-        shuffle = generator.permutation(periods)
-        part_support = int(np.ceil(part_size * (size / float(periods))))
-        candidates = []
-        for part in range(parts):
-            candidates += select(
-                data[shuffle[part * part_size : (part + 1) * part_size]],
-                part_support,
-                max(10, 500 // parts),
-                10,
-                2,
+    def concentrate(sample: np.ndarray, h: int, centres, scatters, steps: int):
+        # Up to `steps` C-steps for every (centre, scatter) pair; a pair stops once its
+        # determinant no longer falls, which includes a subset that no longer changes.
+        signs, logarithms = np.linalg.slogdet(scatters)
+        logarithms = np.where(signs > 0, logarithms, -np.inf)
+        active = np.ones(len(centres), dtype=bool)
+        first = True
+        for _ in range(steps):
+            if not active.any():
+                break
+            closest = np.argpartition(
+                mahalanobis(sample, centres[active], scatters[active]), h - 1, axis=1
+            )[:, :h]
+            chosen = sample[closest]
+            centre = chosen.mean(axis=1)
+            deviations = chosen - centre[:, None, :]
+            scatter = np.einsum("mti,mtj->mij", deviations, deviations) / h
+            signs, logarithm = np.linalg.slogdet(scatter)
+            logarithm = np.where(signs > 0, logarithm, -np.inf)
+            # The first step leaves the starting scatter (of another subset size), so it
+            # always counts; after that a step that does not lower the determinant ends.
+            improved = (
+                np.ones(len(logarithm), dtype=bool)
+                if first
+                else (logarithm < logarithms[active] - 1e-12)
             )
-        merged_size = min(1500, periods)
-        selection = generator.permutation(periods)[:merged_size]
-        merged = select(
-            data[selection],
-            int(np.ceil(merged_size * (size / float(periods)))),
-            [result[:2] for result in candidates],
-            10 if periods > 1500 else 1,  # noqa: PLR2004
-            30,
+            indices = np.flatnonzero(active)
+            centres[indices[improved]] = centre[improved]
+            scatters[indices[improved]] = scatter[improved]
+            logarithms[indices[improved]] = logarithm[improved]
+            active[indices[~improved | ~np.isfinite(logarithm)]] = False
+            first = False
+        return centres, scatters, logarithms
+
+    def best(centres, scatters, logarithms, count: int):
+        order = np.argsort(logarithms, kind="stable")[:count]
+        return centres[order], scatters[order]
+
+    def random_starts(sample: np.ndarray, h: int, starts: int, count: int):
+        # Random (N + 1)-subsets, each extended with the next periods of its random order
+        # while its covariance is singular; the first of three steps turns each into an
+        # h-subset and two C-steps follow.
+        orders = rng.permuted(np.tile(np.arange(len(sample)), (starts, 1)), axis=1)
+        centres, scatters = [], []
+        for order in orders:
+            members = assets + 1
+            scatter = np.cov(sample[order[:members]], rowvar=False, ddof=0)
+            while np.linalg.slogdet(scatter)[0] <= 0 and members < len(sample):
+                members += 1
+                scatter = np.cov(sample[order[:members]], rowvar=False, ddof=0)
+            centres.append(sample[order[:members]].mean(axis=0))
+            scatters.append(scatter)
+        return best(
+            *concentrate(sample, h, np.array(centres), np.array(scatters), 3), count
         )
-        if periods < 1500:  # noqa: PLR2004
-            location, covariance, _, merged_distance = merged[0]
-            distance = np.zeros(periods)
-            distance[selection] = merged_distance
-        else:
-            location, covariance, _, distance = select(
-                data, size, [result[:2] for result in merged], 1, 30
-            )[0]
+
+    if periods <= 600:  # noqa: PLR2004
+        centres, scatters = random_starts(data, size, 500, 50)
     else:
-        best = select(data, size, 30, 10, 2)
-        location, covariance, _, distance = select(
-            data, size, [result[:2] for result in best], 1, 30
-        )[0]
+        groups = min(5, periods // 300)
+        merged = rng.permutation(periods)[: min(periods, 1500)]
+        candidates = [
+            random_starts(
+                data[group],
+                int(np.ceil(len(group) * size / periods)),
+                500 // groups,
+                10,
+            )
+            for group in np.array_split(merged, groups)
+        ]
+        centres, scatters = best(
+            *concentrate(
+                data[merged],
+                int(np.ceil(len(merged) * size / periods)),
+                np.concatenate([centre for centre, _ in candidates]),
+                np.concatenate([scatter for _, scatter in candidates]),
+                2,
+            ),
+            50,
+        )
+    centres, scatters = best(*concentrate(data, size, centres, scatters, 100), 1)
+    location, covariance = centres[0], scatters[0]
 
     if reweight:
-        alpha = size / periods
-        distance = distance / (
-            alpha / stats.chi2.cdf(stats.chi2.ppf(alpha, assets), assets + 2)
-        )
-        kept = distance < stats.chi2(assets).isf(0.025)
-        covariance = (
-            np.cov(data[kept].T, bias=True)
-            * 0.975
-            / stats.chi2.cdf(stats.chi2.ppf(0.975, assets), assets + 2)
-        )
+
+        def consistency(alpha: float) -> float:
+            return alpha / stats.chi2.cdf(stats.chi2.ppf(alpha, assets), assets + 2)
+
+        distance = mahalanobis(data, location[None], covariance[None])[0]
+        kept = distance / consistency(size / periods) < stats.chi2.ppf(0.975, assets)
+        covariance = np.cov(data[kept], rowvar=False, ddof=0) * consistency(0.975)
     return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
 
 
@@ -498,16 +526,22 @@ def get_triangulated_maximally_filtered_graph(
     3(N - 2) of the N(N - 1) / 2, built from 4-cliques (tetrahedra) joined by 3-cliques
     (triangles, the separators).
 
-    It starts from the tetrahedron of the four vertices with the largest strength (the
-    sum of their weights above the average weight) and inserts the other vertices one by
-    one: each time the vertex and triangular face with the largest gain (the sum of the
-    weights from the vertex to the three corners of the face) are joined, which turns the
-    face into a separator, adds the 4-clique of the face and the vertex and splits the face
-    into three new ones.
+    The graph grows by T2 moves (Massara, Di Matteo and Aste, 2017), each of which
+    inserts a vertex into a triangular face:
 
-    The construction follows Massara, Di Matteo and Aste (2017). It shares similar logic as
-    Riskfolio-Lib's PMFG_T2s, with the same order of insertion and the same tie-breaking (the
-    gains rounded to six decimals), so the two give the same graph.
+    - The first 4-clique joins the four vertices with the largest strength, the sum of
+      their weights above the average weight: a quick stand-in for the tetrahedron with
+      the largest total weight, the choice of Aste's MATLAB code for the TMFG (DBHT,
+      MATLAB Central File Exchange 46750).
+    - The gain of a vertex v not yet in the graph and a face {a, b, c} is the weight of the
+      three links it would add, w_va + w_vb + w_vc. Every step inserts the vertex and face
+      with the largest gain: the face becomes a separator, the face and the vertex form a
+      new 4-clique, and the face splits into three new faces that hold the vertex.
+
+    Ties in the gain go to the earliest face and then to the lowest vertex index. Shares
+    similar logic as Riskfolio-Lib's PMFG_T2s, which gives the same graph on the test
+    data; it compares the gains rounded to six decimals, so two gains within 1e-6 of each
+    other can make it choose another face.
 
     See Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
     Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
@@ -522,74 +556,49 @@ def get_triangulated_maximally_filtered_graph(
     vertices = len(weights)
     if vertices < 4:  # noqa: PLR2004
         raise ValueError("The TMFG needs at least four vertices.")
-    strength = np.sum(weights * (weights > np.mean(weights)), axis=1)
-    inserted = list(np.argsort(strength)[::-1][:4])
-    remaining = np.setdiff1d(np.arange(vertices), inserted)
-    first, second, third, fourth = inserted
-    triangles = np.zeros((2 * vertices - 4, 3), dtype=int)
-    triangles[:4] = [
-        [first, second, third],
-        [second, third, fourth],
-        [first, second, fourth],
-        [first, third, fourth],
-    ]
-    separators = np.zeros((vertices - 4, 3), dtype=int)
-    gain = np.zeros((vertices, 2 * vertices - 4))
-    for face in range(4):
-        gain[remaining, face] = np.sum(
-            weights[np.ix_(remaining, triangles[face])], axis=1
-        )
+    strength = (weights * (weights > weights.mean())).sum(axis=1)
+    tetrahedron = np.argsort(strength)[::-1][:4]
+    faces = [list(face) for face in itertools.combinations(tetrahedron, 3)]
+    outside = np.setdiff1d(np.arange(vertices), tetrahedron)
+    cliques, separators = [list(tetrahedron)], []
 
-    last = 3
-    for step in range(4, vertices):
-        if len(remaining) == 1:
-            position, face = 0, int(np.argmax(gain[remaining, :]))
-        else:
-            best = np.argmax(gain[remaining, :], axis=0)
-            face = int(np.argmax(np.round(np.max(gain[remaining, :], axis=0), 6)))
-            position = best[face]
-        vertex = remaining[position]
-        remaining = np.delete(remaining, position)
-        inserted.append(vertex)
-        separators[step - 4] = triangles[face]
-        corner_one, corner_two, corner_three = triangles[face]
-        triangles[last + 1] = [corner_one, corner_three, vertex]
-        triangles[last + 2] = [corner_two, corner_three, vertex]
-        triangles[face] = [corner_one, corner_two, vertex]
-        gain[vertex, :] = 0
-        for new_face in (face, last + 1, last + 2):
-            gain[remaining, new_face] = np.sum(
-                weights[np.ix_(remaining, triangles[new_face])], axis=1
-            )
-        last += 2
+    while len(outside):
+        # The gain of every face (rows) and vertex outside the graph (columns); the first
+        # largest entry in row order is the earliest face and the lowest vertex.
+        gain = weights[np.ix_(np.ravel(faces), outside)].reshape(len(faces), 3, -1)
+        face, column = divmod(int(np.argmax(gain.sum(axis=1))), len(outside))
+        vertex = outside[column]
+        first, second, third = faces[face]
+        separators.append([first, second, third])
+        cliques.append([first, second, third, vertex])
+        faces[face] = [first, second, vertex]
+        faces += [[first, third, vertex], [second, third, vertex]]
+        outside = np.delete(outside, column)
 
-    cliques = np.vstack(
-        [np.array(inserted[:4]), np.column_stack([separators, inserted[4:]])]
-    ).astype(int)
-    return cliques, separators
+    return np.array(cliques, dtype=int), np.array(separators, dtype=int).reshape(-1, 3)
 
 
 def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
     """
     The j-LoGo covariance matrix: the inverse of the sparse inverse covariance (precision
-    matrix) that the Local-Global (LoGo) method builds on the TMFG of the correlations.
-    Two assets that the planar graph does not link are conditionally independent given
-    the others, so most of the precision matrix is zero and far fewer parameters are
-    estimated than in the full matrix.
+    matrix) that the Local-Global (LoGo) method of Barfuss, Massara, Di Matteo and Aste
+    (2016) builds on the TMFG of the correlations. Two assets that the planar graph does
+    not link are conditionally independent given the others, so most of the precision
+    matrix is zero and far fewer parameters are estimated than in the full matrix.
 
-    With S the sample covariance (ddof=1) and the TMFG of the similarities 1 - d²_ij =
-    (1 + ρ_ij) / 2 (see get_triangulated_maximally_filtered_graph), the precision matrix is
-    the sum of the local inverses over the 4-cliques C minus those over the separators S:
+    The TMFG is a tree of 4-cliques joined by separators, and for such a graph the
+    precision matrix of a Gaussian follows from the local covariances alone. With S the
+    sample covariance (ddof=1) and the TMFG of the similarities (1 + ρ_ij) / 2 (see
+    get_triangulated_maximally_filtered_graph):
 
-    - J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ (each inverse added to the rows and columns of its
-      vertices), and Σ = J⁻¹.
+    - J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹, each local inverse added to the rows and columns of
+      its vertices, over the 4-cliques C and the separators S.
+    - Σ = J⁻¹.
 
-    With four or fewer assets the graph links every pair and the estimate is the sample
-    covariance.
-
-    The estimator is that of Barfuss, Massara, Di Matteo and Aste (2016); the planar graph
-    follows Massara, Di Matteo and Aste (2017). It shares similar logic as Riskfolio-Lib's
-    covar_matrix(method="jlogo") (j_LoGo with PMFG_T2s), and the two agree.
+    The similarity (1 + ρ_ij) / 2 = 1 - d²_ij, with d_ij = √((1 - ρ_ij) / 2) the
+    correlation distance, is the choice of Riskfolio-Lib's covar_matrix(method="jlogo");
+    referenced against it, the two agree to 1e-10. With four or fewer assets the graph
+    links every pair and the estimate is the sample covariance.
 
     See Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Parsimonious
     Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306, and
@@ -608,14 +617,13 @@ def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(sample, index=returns.columns, columns=returns.columns)
     correlation = np.corrcoef(returns.to_numpy(dtype=float), rowvar=False)
     cliques, separators = get_triangulated_maximally_filtered_graph(
-        1 - np.clip((1 - correlation) / 2, 0.0, 1.0)
+        np.clip((1 + correlation) / 2, 0.0, 1.0)
     )
     precision = np.zeros_like(sample)
-    for vertices, sign in [(clique, 1) for clique in cliques] + [
-        (separator, -1) for separator in separators
-    ]:
-        precision[np.ix_(vertices, vertices)] += sign * np.linalg.inv(
-            sample[np.ix_(vertices, vertices)]
+    for groups, sign in ((cliques, 1.0), (separators, -1.0)):
+        rows, columns = groups[:, :, None], groups[:, None, :]
+        np.add.at(
+            precision, (rows, columns), sign * np.linalg.inv(sample[rows, columns])
         )
     return pd.DataFrame(
         np.linalg.inv(precision), index=returns.columns, columns=returns.columns
@@ -642,8 +650,8 @@ def get_geodesic_shrinkage_covariance(
     that is not positive definite is first replaced by the nearest one (see
     get_nearest_correlation).
 
-    This equals skfolio's GeodesicShrinkageCovariance on its default EmpiricalCovariance
-    (ddof=1), with the same default intensity of 0.1.
+    Referenced against skfolio's GeodesicShrinkageCovariance, whose values it matches on
+    its default EmpiricalCovariance (ddof=1), with the same default intensity of 0.1.
 
     See Bhatia, R. (2007), Positive Definite Matrices, Princeton University Press, and
     Musolas, A., Smith, S. T. and Marzouk, Y. (2021), "Geodesically Parameterized
@@ -717,9 +725,11 @@ def get_regime_adjusted_exponential_covariance(
     covariance (the Mahalanobis distance), since the directions of the smallest
     eigenvalues, which an inverse volatility portfolio hardly holds, are estimated worst.
 
-    This equals skfolio's RegimeAdjustedEWCovariance with its defaults (half_life=40, the
-    PORTFOLIO target with inverse volatility weights, the FIRST_MOMENT method, the
-    multiplier clipped to (0.7, 1.6), assume_centered=True, no HAC correction).
+    The short-term volatility update follows Paleologo (2025). Referenced against
+    skfolio's RegimeAdjustedEWCovariance, whose values it matches with its defaults
+    (half_life=40, the PORTFOLIO target with inverse volatility weights, the FIRST_MOMENT
+    method, the multiplier clipped to (0.7, 1.6), assume_centered=True, no HAC
+    correction).
 
     See Paleologo, G. A. (2025), The Elements of Quantitative Investing, Wiley Finance,
     and Hawkins, D. M. and Maboudou-Tchao, E. M. (2008), "Multivariate Exponentially
@@ -789,8 +799,9 @@ def get_distance_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     - dCov²(x, y) = (1 / T²) Σ A_st B_st
     - dCor(x, y) = √(dCov²(x, y) / √(dCov²(x, x) dCov²(y, y)))
 
-    This equals skfolio's DistanceCorrelation and Riskfolio-Lib's dcorr_matrix. It builds
-    a T × T matrix per asset, so it grows with the square of the number of periods.
+    Referenced against skfolio's DistanceCorrelation and Riskfolio-Lib's dcorr_matrix,
+    whose values it matches. It builds a T × T matrix per asset, so it grows with the
+    square of the number of periods.
 
     See Székely, G. J., Rizzo, M. L. and Bakirov, N. K. (2007), "Measuring and Testing
     Dependence by Correlation of Distances", The Annals of Statistics, 35(6), 2769-2794.
@@ -837,12 +848,12 @@ def get_number_of_bins(
 
     - "freedman": the rule of Freedman and Diaconis (1981), ⌈(max - min) / (2 IQR /
       T^(1/3))⌉ per series (5 for a series without an interquartile range), and the
-      larger of the two for a pair, as skfolio's MutualInformation does by default.
+      larger of the two for a pair, also the default of skfolio's MutualInformation.
     - "hacine_gharbi": the rule of Hacine-Gharbi et al. (2012) for one series,
       round(z / 6 + 2 / (3 z) + 1 / 3) with z = (8 + 324 T + 12 √(36 T + 729 T²))^(1/3),
       and of Hacine-Gharbi and Ravier (2018) for a pair with correlation ρ,
-      round(√(1 + √(1 + 24 T / (1 - ρ²))) / √2), Riskfolio-Lib's numBins and the choice
-      of López de Prado (2020).
+      round(√(1 + √(1 + 24 T / (1 - ρ²))) / √2), the choice of López de Prado (2020),
+      as in Riskfolio-Lib's numBins.
 
     See Freedman, D. and Diaconis, P. (1981), "On the Histogram as a Density Estimator:
     L2 Theory", Zeitschrift für Wahrscheinlichkeitstheorie und verwandte Gebiete, 57,
@@ -908,8 +919,9 @@ def get_mutual_information_matrix(
     - normalized: I(X, Y) / min(H(X), H(Y)) between 0 and 1, and VI(X, Y) / H(X, Y)
       between 0 (identical) and 1 (independent)
 
-    This equals skfolio's MutualInformation (codependence and distance) and
-    Riskfolio-Lib's mutual_info_matrix and var_info_matrix with the same number of bins.
+    Referenced against skfolio's MutualInformation (codependence and distance) and
+    Riskfolio-Lib's mutual_info_matrix and var_info_matrix, whose values it matches with
+    the same number of bins.
 
     See Meilă, M. (2007), "Comparing Clusterings - An Information Based Distance",
     Journal of Multivariate Analysis, 98(5), 873-895, and López de Prado, M. (2020),
@@ -1024,8 +1036,8 @@ def get_fast_threshold_clusters(
     remaining that is correlated above it with L. This repeats until every asset belongs
     to a cluster; a last single asset forms its own.
 
-    This equals ffn's calc_ftca, which clusters on the Pearson correlation of the
-    returns; any codependence matrix can be passed here.
+    Referenced against ffn's calc_ftca, whose clusters it matches on the Pearson
+    correlation of the returns; any codependence matrix can be passed here.
 
     See Varadi, D. (2013), "The Fast Threshold Clustering Algorithm (FTCA)", CSS
     Analytics.
@@ -1050,7 +1062,7 @@ def get_fast_threshold_clusters(
             labels[remaining.pop()] = cluster
             break
         average = matrix[np.ix_(remaining, remaining)].mean(axis=0)
-        # A stable sort keeps the first asset on ties, as ffn's pandas sort does.
+        # On ties the stable sort takes the earliest asset, the order ffn's calc_ftca gives.
         order = np.argsort(average, kind="stable")
         low, high = remaining[order[0]], remaining[order[-1]]
         remaining.remove(low)
@@ -1113,15 +1125,16 @@ def get_coskewness_matrix(
     w'M3(w ⊗ w) / σ_p³, so M3 is what a mean-variance-skewness optimization or a modified
     VaR of a portfolio needs.
 
-    - "sample": w_t = 1 / T, PerformanceAnalytics' M3.MM (unbiased=FALSE) and
-      CoSkewnessMatrix.
+    - "sample": w_t = 1 / T, referenced against PerformanceAnalytics' M3.MM
+      (unbiased=FALSE) and CoSkewnessMatrix.
     - "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent
       periods weigh most. PerformanceAnalytics' M3.ewma uses the same weights (its
       default λ = 0.97 is a span of about 65.7) on returns it assumes to have a zero
       mean; here the deviations are taken from the average return, as in the
-      exponential covariance, so it equals M3.ewma of the demeaned returns.
+      exponential covariance, so it matches M3.ewma on the demeaned returns.
     - "semi": the lower semi co-moment, with min(r_ti - μ_i, 0) in place of the
-      deviations, so only returns below the average count (Cajas, Riskfolio-Lib).
+      deviations, so only returns below the average count, as defined by Cajas in
+      Riskfolio-Lib.
 
     With standardize, every m_ijk is divided by σ_i σ_j σ_k, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iii is
@@ -1175,12 +1188,15 @@ def get_cokurtosis_matrix(
     average returns and w_t the weight of period t. The kurtosis of a portfolio with
     weights w is w'M4(w ⊗ w ⊗ w) / σ_p⁴.
 
-    - "sample": w_t = 1 / T, PerformanceAnalytics' M4.MM and CoKurtosisMatrix; its
-      N² × N² rearrangement is Riskfolio-Lib's cokurt_matrix (method="hist").
+    - "sample": w_t = 1 / T, referenced against PerformanceAnalytics' M4.MM and
+      CoKurtosisMatrix and, in its N² × N² arrangement, Riskfolio-Lib's cokurt_matrix
+      (method="hist").
     - "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent
-      periods weigh most; PerformanceAnalytics' M4.ewma of the demeaned returns.
+      periods weigh most; it matches PerformanceAnalytics' M4.ewma on the demeaned
+      returns.
     - "semi": the lower semi cokurtosis, with min(r_ti - μ_i, 0) in place of the
-      deviations, Riskfolio-Lib's cokurt_matrix (method="semi") rearranged.
+      deviations (Cajas, 2022), referenced against Riskfolio-Lib's cokurt_matrix
+      (method="semi") in its N² × N² arrangement.
 
     With standardize, every m_ijkl is divided by σ_i σ_j σ_k σ_l, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iiii
@@ -1243,7 +1259,8 @@ def get_bootstrap_indices(
     - "moving": blocks of block_size periods that start at a random period from which a
       whole block fits (Künsch, 1989).
 
-    These are the schemes of the arch package that Riskfolio-Lib's bootstrapping uses.
+    The arch package (Sheppard) offers the same schemes, which Riskfolio-Lib's
+    bootstrapping draws from.
 
     See Politis, D. N. and Romano, J. P. (1994), "The Stationary Bootstrap", Journal of
     the American Statistical Association, 89(428), 1303-1313, and Künsch, H. R. (1989),
@@ -1391,8 +1408,9 @@ def get_stepwise_factors(
     threshold: float = 0.05,
 ) -> list[str]:
     """
-    The factors a stepwise regression of an asset's returns on factor returns (with a
-    constant) selects, as Riskfolio-Lib's forward_regression and backward_regression do.
+    The factors a stepwise regression (Efroymson, 1960) of an asset's returns on factor
+    returns (with a constant) selects. Shares similar logic as Riskfolio-Lib's
+    forward_regression and backward_regression.
 
     - direction="forward", criterion="pvalue": starting without factors, add the factor
       with the lowest p-value among those that keep every p-value of the model at or below
@@ -1411,9 +1429,9 @@ def get_stepwise_factors(
     See Efroymson, M. A. (1960), "Multiple Regression Analysis", in Ralston, A. and Wilf,
     H. S. (eds.), Mathematical Methods for Digital Computers, Wiley; Akaike, H. (1974), "A
     New Look at the Statistical Model Identification", IEEE Transactions on Automatic
-    Control, 19(6), 716-723; Schwarz, G. (1978), "Estimating the Dimension of a Model", The
-    Annals of Statistics, 6(2), 461-464; and Riskfolio-Lib's forward_regression and
-    backward_regression (https://github.com/dcajasn/Riskfolio-Lib).
+    Control, 19(6), 716-723; and Schwarz, G. (1978), "Estimating the Dimension of a Model",
+    The Annals of Statistics, 6(2), 461-464. Riskfolio-Lib:
+    https://github.com/dcajasn/Riskfolio-Lib.
 
     Args:
         returns (pd.Series): The returns per period of the asset.
@@ -1502,16 +1520,16 @@ def get_principal_components_loadings(
 ) -> pd.Series:
     """
     The intercept and factor loadings of a principal components regression (PCR) of an
-    asset's returns on factor returns, as Riskfolio-Lib's PCR estimates them. The factors
+    asset's returns on factor returns (Jolliffe, 1982). The factors
     are standardized (ddof=1), their first k principal components Z = X_std V_k are the
     regressors of an OLS regression with a constant, and the coefficients γ of the
     components are mapped back to the factors: β = V_k γ / σ_f and the intercept
     α = mean(r) - Σ β_f mean(f). Leaving out the components with little variance removes
-    the instability that correlated factors give OLS loadings.
+    the instability that correlated factors give OLS loadings. Shares similar logic as
+    Riskfolio-Lib's PCR (https://github.com/dcajasn/Riskfolio-Lib).
 
     See Jolliffe, I. T. (1982), "A Note on the Use of Principal Components in
-    Regression", Journal of the Royal Statistical Society, Series C, 31(3), 300-303, and
-    Riskfolio-Lib's PCR (https://github.com/dcajasn/Riskfolio-Lib).
+    Regression", Journal of the Royal Statistical Society, Series C, 31(3), 300-303.
 
     Args:
         returns (pd.Series): The returns per period of the asset.
@@ -1559,8 +1577,8 @@ def get_factor_loadings(
     """
     The loadings matrix of a time series factor model: the intercept and factor loadings
     of the regression of every asset's returns on the factor returns, r_i,t = α_i +
-    Σ_f β_i,f F_f,t + ε_i,t (Fama and French, 1993; Connor, 1995), as Riskfolio-Lib's
-    loadings_matrix estimates it.
+    Σ_f β_i,f F_f,t + ε_i,t (Fama and French, 1993; Connor, 1995). Shares similar logic as
+    Riskfolio-Lib's loadings_matrix.
 
     - "ols": every factor, ordinary least squares.
     - "forward", "backward": the factors a stepwise regression selects (see
@@ -1621,9 +1639,9 @@ def get_factor_model(
     returns: pd.DataFrame, factors: pd.DataFrame, loadings: pd.DataFrame
 ) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
     """
-    The expected returns and covariance matrix a time series factor model implies, as
-    Riskfolio-Lib's risk_factors and skfolio's FactorModel compute them: with B the
-    loadings, α the intercepts, μ_f and Σ_f the mean and sample covariance (ddof=1) of the
+    The expected returns and covariance matrix a time series factor model implies
+    (Connor, 1995), referenced against Riskfolio-Lib's risk_factors and skfolio's
+    FactorModel: with B the loadings, α the intercepts, μ_f and Σ_f the mean and sample covariance (ddof=1) of the
     factor returns and D the diagonal matrix of the variances (ddof=1) of the residuals
     ε = r - α - F B',
 
@@ -1665,6 +1683,8 @@ def get_factor_model(
 
 
 VIEW_OPERATORS = ("==", ">=", "<=")
+# The largest miss of a view (on the scaled constraints) that still counts as met.
+VIEW_TOLERANCE = 1e-8
 
 
 def get_entropy_pooling(
@@ -1685,18 +1705,22 @@ def get_entropy_pooling(
     relative view "AAPL-MSFT"), a volatility view Σ p_t (r_i,t - m_i)² = σ² with m_i the
     mean after the mean views, and a correlation view Σ p_t r_i,t r_j,t = m_i m_j +
     ρ √(v_i v_j) with the means and variances after the mean and volatility views, which
-    are then held at those values, the sequential scheme of skfolio's EntropyPooling. A
+    are then held at those values: the sequential treatment of views on higher moments of
+    Meucci, Ardia and Keel (2011), in the order skfolio's EntropyPooling takes them. A
     view is an equality (a number) or an inequality, (">=", value) or ("<=", value).
 
     The problem is solved through its dual (Csiszár, 1975; Boyd and Vandenberghe, 2004,
-    5.2.3): with the constraints A'p = b and A'p ≤ b (every column of A scaled to unit
-    length), p_t = q_t exp(-1 - a_t'λ) at the multipliers λ that minimize
-    Σ q_t exp(-1 - a_t'λ) + λ'b, with λ ≥ 0 for the inequalities, by SciPy's truncated
-    Newton method (TNC), as skfolio does. The multipliers of the moments held fixed are
-    bounded to ±1000, which relaxes them when the views cannot be met exactly.
+    5.2.3). With the constraints A'p = b and A'p ≤ b (every column of A scaled to unit
+    length), the posterior has the exponential-family form p_t ∝ q_t exp(-a_t'λ), and the
+    multipliers λ minimize ln Σ q_t exp(-a_t'λ) + λ'b, with λ ≥ 0 for the inequalities
+    (SciPy's L-BFGS-B). The multipliers of the moments held fixed are bounded to ±1000, as
+    in skfolio, which relaxes them when the views cannot be met exactly. A solution that
+    misses a view by more than 1e-8 (on the scaled constraints) raises an error.
+    Referenced against skfolio's EntropyPooling (https://github.com/skfolio/skfolio).
 
     See Meucci, A. (2008), "Fully Flexible Views: Theory and Practice", Risk, 21(10),
-    97-102, and skfolio's EntropyPooling (https://github.com/skfolio/skfolio).
+    97-102, and Meucci, A., Ardia, D. and Keel, S. (2011), "Fully Flexible Extreme Views",
+    Journal of Risk, 14(2), 39-49.
 
     Args:
         returns (pd.DataFrame): The returns per period (the scenarios), one column per
@@ -1758,48 +1782,58 @@ def get_entropy_pooling(
             add("inequality", -column, -target)
 
     def solve() -> np.ndarray:
+        # The posterior has the exponential-family form p_t ∝ q_t exp(-a_t'λ), so only one
+        # multiplier per view is searched: λ minimizes the dual ln Σ q_t exp(-a_t'λ) + λ'b,
+        # whose gradient is b - A'p. Inequalities (A'p ≤ b) need λ ≥ 0, and the moments
+        # held fixed get |λ| ≤ 1000 so that conflicting views relax them rather than fail.
         if not any(constraints.values()):
             return prior
-        columns = [np.full(periods, 1 / np.sqrt(periods))]
-        values = [1 / np.sqrt(periods)]
-        bounds: list[tuple[float | None, float | None]] = [(None, None)]
-        for kind, bound in (
-            ("equality", (None, None)),
-            ("inequality", (0, None)),
-            ("fixed", (-1000, 1000)),
-        ):
-            for column, value in constraints[kind]:
-                columns.append(column)
-                values.append(value)
-                bounds.append(bound)
-        matrix = np.column_stack(columns)
-        target = np.array(values)
+        kinds = {
+            "equality": (None, None),
+            "inequality": (0, None),
+            "fixed": (-1000, 1000),
+        }
+        rows = [(row, kinds[kind]) for kind in kinds for row in constraints[kind]]
+        matrix = np.column_stack([column for (column, _), _ in rows])
+        target = np.array([value for (_, value), _ in rows])
+        with np.errstate(divide="ignore"):
+            log_prior = np.log(prior)
+
+        def posterior(multipliers: np.ndarray) -> np.ndarray:
+            exponent = log_prior - matrix @ multipliers
+            return np.exp(exponent - logsumexp(exponent))
 
         def dual(multipliers: np.ndarray) -> tuple[float, np.ndarray]:
-            weights = prior * np.exp(-matrix @ multipliers - 1)
-            return weights.sum() + multipliers @ target, target - matrix.T @ weights
+            exponent = log_prior - matrix @ multipliers
+            return (
+                float(logsumexp(exponent) + multipliers @ target),
+                target - matrix.T @ posterior(multipliers),
+            )
 
         solution = minimize(
             dual,
             x0=np.zeros(len(target)),
             jac=True,
-            bounds=bounds,
-            method="TNC",
-            options={
-                "maxfun": 5000,
-                "ftol": 1e-11,
-                "xtol": 1e-8,
-                "gtol": 1e-8,
-                "stepmx": 1,
-            },
+            bounds=[bound for _, bound in rows],
+            method="L-BFGS-B",
+            options={"maxiter": 10000, "ftol": 1e-15, "gtol": 1e-12},
         )
-        if not solution.success:
+        # The views are met when the gradient vanishes on the equalities and is not
+        # negative on the inequalities (the fixed moments may be relaxed); the solver's
+        # own flag also fails when the line search stops at the limit of the precision.
+        residual = matrix.T @ posterior(solution.x) - target
+        equalities = len(constraints["equality"])
+        inequalities = len(constraints["inequality"])
+        if (
+            np.abs(residual[:equalities]).max(initial=0) > VIEW_TOLERANCE
+            or residual[equalities : equalities + inequalities].max(initial=0)
+            > VIEW_TOLERANCE
+        ):
             raise ValueError(
                 "The views cannot be met by reweighting the scenarios; they conflict or "
                 f"are too extreme ({solution.message})."
             )
-        posterior = np.clip(prior * np.exp(-1 - matrix @ solution.x), 0, 1)
-        return posterior / posterior.sum()
+        return posterior(solution.x)
 
     fixed_mean = np.zeros(assets, dtype=bool)
     fixed_variance = np.zeros(assets, dtype=bool)
@@ -1868,9 +1902,9 @@ def get_opinion_pooling(
 ) -> pd.Series:
     """
     The consensus of several sets of scenario probabilities, the opinions of different
-    experts (e.g. each an Entropy Pooling posterior), as skfolio's OpinionPooling combines
-    them. The weight π_k of each opinion lies between 0 and 1; when they sum to less than
-    one, the rest goes to the prior (equal probabilities).
+    experts (e.g. each an Entropy Pooling posterior). The weight π_k of each opinion lies
+    between 0 and 1; when they sum to less than one, the rest goes to the prior (equal
+    probabilities).
 
     - "linear": p = Σ π_k p_k, the arithmetic mixture (Stone, 1961), which keeps every
       scenario any opinion gives a probability.
@@ -1879,12 +1913,14 @@ def get_opinion_pooling(
       a scenario that any opinion rules out.
 
     With a divergence penalty α > 0 the weights become π̃_k ∝ π_k exp(-α KL(p_k ‖ c)), with
-    c = Σ π_k p_k the linear consensus, which weighs down the opinions far from the others.
+    c = Σ π_k p_k the linear consensus, which weighs down the opinions far from the others;
+    this robust weighting is the one skfolio's OpinionPooling (Delatte and Nicolini)
+    defines, and the function is referenced against it.
 
     See Stone, M. (1961), "The Opinion Pool", The Annals of Mathematical Statistics,
     32(4), 1339-1342; Genest, C. and Zidek, J. V. (1986), "Combining Probability
     Distributions: A Critique and an Annotated Bibliography", Statistical Science, 1(1),
-    114-135; and skfolio's OpinionPooling (https://github.com/skfolio/skfolio).
+    114-135. skfolio: https://github.com/skfolio/skfolio.
 
     Args:
         probabilities (pd.DataFrame): The probability of every scenario (rows) per opinion
@@ -1914,28 +1950,26 @@ def get_opinion_pooling(
         raise ValueError(
             "The opinion weights must lie between 0 and 1 and sum to at most one."
         )
-    if np.isclose(weights.sum(), 1):
-        weights = weights / weights.sum()
-    else:
+    # The weight the opinions leave goes to the prior, equal probabilities, as one more
+    # opinion.
+    if not np.isclose(weights.sum(), 1):
         opinions = np.vstack([opinions, np.full(periods, 1 / periods)])
         weights = np.append(weights, 1 - weights.sum())
+    weights = weights / weights.sum()
     if divergence_penalty > 0:
         consensus = weights @ opinions
-        divergence = np.array(
-            [
-                np.sum(
-                    opinion[opinion > 0]
-                    * np.log(opinion[opinion > 0] / consensus[opinion > 0])
-                )
-                for opinion in opinions
-            ]
-        )
-        weights = weights * np.exp(-divergence_penalty * divergence)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            terms = np.where(opinions > 0, opinions * np.log(opinions / consensus), 0.0)
+        weights = weights * np.exp(-divergence_penalty * terms.sum(axis=1))
         weights = weights / weights.sum()
     if method == "linear":
         pooled = weights @ opinions
     else:
+        # The geometric mixture in logarithms; only opinions with weight take part, so a
+        # scenario any of them rules out gets no probability.
+        weighted = weights > 0
         with np.errstate(divide="ignore"):
-            logarithm = weights @ np.log(opinions)
-        pooled = np.exp(logarithm - logsumexp(logarithm))
+            logarithm = weights[weighted] @ np.log(opinions[weighted])
+        pooled = np.exp(logarithm - logarithm.max())
+        pooled = pooled / pooled.sum()
     return pd.Series(pooled, index=probabilities.index)

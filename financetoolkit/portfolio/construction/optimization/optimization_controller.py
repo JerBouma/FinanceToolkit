@@ -3747,16 +3747,16 @@ class OptimizationConstruction:
           risk free rate over the period, as that implies no positive risk aversion.
         - The factor models are estimated on the periods in which the assets and the
           factors all have a return.
-        - The augmented model equals Riskfolio-Lib's augmented_black_litterman (with τ = 1
-          / T, its choice) when the loadings hold no intercept: Riskfolio-Lib adds the
+        - The augmented model matches Riskfolio-Lib's augmented_black_litterman (with τ =
+          1 / T, its choice) when the loadings hold no intercept: Riskfolio-Lib adds the
           intercepts to the posterior returns when they do, which Cheung (2009) does not.
           It does not invert the stacked covariance, which is singular when an asset is
           itself a factor (the benchmark and Mkt-RF), where Riskfolio-Lib's inverse
           loses its accuracy.
         - The Bayesian model takes the prior N(μ_f, τΣ_f); Riskfolio-Lib's
           black_litterman_bayesian takes N(μ_f, Σ_f) with views of uncertainty
-          τ p'Σ_f p, τ = 1 / T, which equals this one with tau=1 and a confidence of
-          T / (T + 1) for every view.
+          τ p'Σ_f p, τ = 1 / T, which gives the result here with tau=1 and a confidence
+          of T / (T + 1) for every view.
 
         As an example:
 

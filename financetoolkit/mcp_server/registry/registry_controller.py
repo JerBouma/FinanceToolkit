@@ -68,6 +68,8 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     is_time_index_of,
     is_yearly,
     observed_period,
+    parse_base_window,
+    rebase_result,
     select_rows,
     signal_rows,
     skipped_periods_note,
@@ -328,6 +330,18 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "both have the same sign), so the first and last rank show how far the best and the "
         "worst stand apart, e.g. a fall more than twice as large as the next one. Needs a "
         "value per period and ticker; pick one field with show_columns where there are more."
+    ),
+    "rebase_to": (
+        "Index a time series to 100 at its average over a base period: every column (a "
+        "ticker, country or series) is divided by its mean over the rows in the window "
+        "and multiplied by 100, e.g. '1340-1347' for 100 = the 1340-1347 average. A year "
+        "'2020', a month '2020-03', a day '2020-03-31', a range 'START:END' in those "
+        "forms ('2020-01:2020-06') or a range of years 'YYYY-YYYY' (a second part of four "
+        "digits is a year, of two digits a month). A period row counts when any of its "
+        "days lies in the window. Applied before limit, show_columns and rank, on all "
+        "rows from start_date to end_date: a window before start_date needs an earlier "
+        "start_date. Skipped with growth=true or standardize=true; meant for levels "
+        "(prices, wages, indices), not for returns or rates."
     ),
     "show_columns": (
         "Comma-separated names to filter the output. "
@@ -2210,6 +2224,15 @@ class ToolRegistry:
                 method_name, set()
             ) and to_boolean(kwargs.pop("rank", False))
 
+            # rebase_to is handled here too; its window is read before any data is fetched.
+            raw_rebase_to = str(kwargs.pop("rebase_to", None) or "").strip()
+            try:
+                base_window = (
+                    parse_base_window(raw_rebase_to) if raw_rebase_to else None
+                )
+            except ValueError as exc:
+                return f"Invalid `rebase_to` for `{tool_name}` (`{method_name}`): {exc}"
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -2646,6 +2669,26 @@ class ToolRegistry:
                             f"{'it is' if len(others) == 1 else 'they are'} left out. "
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
                         )
+                # After the check for missing tickers (a column the base window leaves
+                # empty is not a ticker without data) and before show_columns, limit and
+                # rank, so the base is the average over every fetched row of the window.
+                if base_window is not None:
+                    skipped_by = [
+                        f"{pname}=true"
+                        for pname in ("growth", "standardize")
+                        if method_kwargs.get(pname) is True
+                    ]
+                    if skipped_by:
+                        notes.append(
+                            f"rebase_to={raw_rebase_to!r} was not applied: "
+                            f"with {' and '.join(skipped_by)} the values are changes or "
+                            "standard scores, which have no level to index."
+                        )
+                    else:
+                        result, rebase_notes = rebase_result(
+                            result, base_window, raw_rebase_to
+                        )
+                        notes.extend(rebase_notes)
                 # After the check for missing tickers, which would otherwise count a ticker
                 # that show_columns leaves out as one without data.
                 if show_columns is not None:
@@ -3126,6 +3169,14 @@ class ToolRegistry:
                     annotation=_annotate_with_description("rank", bool),
                 )
             )
+        sig_params.append(
+            P(
+                "rebase_to",
+                POS,
+                default=None,
+                annotation=_annotate_with_description("rebase_to", str | None),
+            )
+        )
         sig_params.append(
             P(
                 "show_columns",

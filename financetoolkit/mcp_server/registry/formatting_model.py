@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import json
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -568,6 +569,214 @@ def skipped_periods_note(data: pd.DataFrame | pd.Series) -> str | None:
 def has_period_columns(dataframe: pd.DataFrame) -> bool:
     """Whether the periods are the columns (and not the rows), as with ratios."""
     return not _is_time_index(dataframe.index) and _is_time_index(dataframe.columns)
+
+
+# The pandas frequency of a base window date by its length: 'YYYY', 'YYYY-MM', 'YYYY-MM-DD'.
+BASE_DATE_FREQUENCIES = {4: "Y", 7: "M", 10: "D"}
+
+# The columns a rebase note names before it counts the rest.
+MAXIMUM_NAMED_COLUMNS = 10
+
+
+def parse_base_window(text: str) -> tuple[pd.Period, pd.Period]:
+    """
+    The first and last day of a base window: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD' for one
+    year, month or day, 'START:END' for a range in those forms, or 'YYYY-YYYY' for a range
+    of years. A second part of four digits is a year ('1340-1347'), one of two digits a
+    month ('2020-03'), so the two never mix up.
+
+    The days are daily periods rather than timestamps, which end in 1677 and cannot hold
+    the medieval years of a long history.
+
+    Args:
+        text (str): The base window.
+
+    Returns:
+        tuple[pd.Period, pd.Period]: The first and the last day of the window.
+    """
+    text = str(text).strip()
+    year_range = re.fullmatch(r"(\d{4})-(\d{4})", text)
+    if year_range:
+        parts = list(year_range.groups())
+    elif ":" in text:
+        parts = [part.strip() for part in text.split(":")]
+    else:
+        parts = [text, text]
+
+    usage = (
+        f"rebase_to={text!r} is not a date or a range: use 'YYYY', 'YYYY-MM' or "
+        "'YYYY-MM-DD', a range 'START:END' in those forms (e.g. '2020-01:2020-06'), or "
+        "'YYYY-YYYY' for a range of years (e.g. '1340-1347')."
+    )
+    if len(parts) != 2 or not all(  # noqa: PLR2004
+        re.fullmatch(r"\d{4}(-\d{2}(-\d{2})?)?", part) for part in parts
+    ):
+        raise ValueError(usage)
+    try:
+        start, end = (
+            pd.Period(part, freq=BASE_DATE_FREQUENCIES[len(part)]).asfreq("D", how=how)
+            for part, how in zip(parts, ("start", "end"), strict=True)
+        )
+    except ValueError as exc:  # a month 13 or a day 32
+        raise ValueError(usage) from exc
+    if start.ordinal > end.ordinal:  # both daily periods
+        raise ValueError(
+            f"rebase_to={text!r} ends before it starts; give the earlier date first."
+        )
+
+    return start, end
+
+
+def _row_days(index: pd.Index) -> tuple[pd.PeriodIndex, pd.PeriodIndex]:
+    """The first and last day of every row of a date or period index, as daily periods."""
+    if isinstance(index, pd.PeriodIndex):
+        return index.asfreq("D", how="start"), index.asfreq("D", how="end")
+    if index.tz is not None:
+        index = index.tz_localize(None)
+    days = index.to_period("D")
+
+    return days, days
+
+
+def _name_columns(columns: list) -> str:
+    """The column labels for a note, a tuple label joined by spaces, the rest counted."""
+    names = [
+        " ".join(map(str, column)) if isinstance(column, tuple) else str(column)
+        for column in columns
+    ]
+    if len(names) > MAXIMUM_NAMED_COLUMNS:
+        return (
+            ", ".join(names[:MAXIMUM_NAMED_COLUMNS])
+            + f" and {len(names) - MAXIMUM_NAMED_COLUMNS:,} more"
+        )
+
+    return ", ".join(names)
+
+
+def rebase_result(
+    result: Any, window: tuple[pd.Period, pd.Period], text: str
+) -> tuple[Any, list[str]]:
+    """
+    Indexes every column of a time series to 100 at its average over a base window: each
+    value divided by the column's mean over the rows of the window, times 100. A row
+    belongs to the window when its date, or any day of its period (a year, a quarter),
+    lies in it, so a yearly series rebased to '2020-03' takes the year 2020.
+
+    A table with its periods as columns (a ratio per ticker and year) is turned around, so
+    each row is indexed to its own base. A column without a value in the window, or with
+    an average of zero there, has no base and becomes empty, which a note says; text
+    columns are kept as they are. Anything without dates or periods as its rows or
+    columns (a list, several tables, a row per ticker and date) is returned unchanged
+    with a note, rather than indexed along a guessed direction.
+
+    Args:
+        result (Any): The answer of the indicator.
+        window (tuple[pd.Period, pd.Period]): The first and last day of the base window,
+            from parse_base_window.
+        text (str): The base window as given, for the notes.
+
+    Returns:
+        tuple[Any, list[str]]: The rebased result and the notes on it.
+
+    Raises:
+        ValueError: When no row falls in the window, saying how to widen the dates.
+    """
+    was_series = isinstance(result, pd.Series) and not isinstance(
+        result.index, pd.MultiIndex
+    )
+    series_name = result.name if was_series else None
+    if was_series:
+        result = result.to_frame()
+    if not isinstance(result, pd.DataFrame) or (
+        not result.empty
+        and not (
+            isinstance(result.index, pd.DatetimeIndex | pd.PeriodIndex)
+            or (
+                has_period_columns(result)
+                and isinstance(result.columns, pd.DatetimeIndex | pd.PeriodIndex)
+            )
+        )
+    ):
+        return result, [
+            f"rebase_to={text!r} was ignored: the answer has no single row (or column) of "
+            "dates or periods per value to index to."
+        ]
+    if result.empty:
+        return result, []
+
+    transposed = not isinstance(result.index, pd.DatetimeIndex | pd.PeriodIndex)
+    table = result.T.copy() if transposed else result.copy()
+    first_days, last_days = _row_days(table.index)
+    start, end = window
+    in_window = (first_days <= end) & (last_days >= start)
+    if not in_window.any():
+        first, last = table.index.min(), table.index.max()
+        if last_days.max() < start:
+            hint = f"the answer ends at {last}; set end_date on or after {start} to include it."
+        elif first_days.min() > end:
+            hint = (
+                f"the answer starts at {first}; set start_date on or before {start} to "
+                "include it (where the data goes back that far)."
+            )
+        else:
+            hint = (
+                f"the answer runs from {first} to {last} without a row in between; choose a "
+                "window that holds at least one of its periods."
+            )
+        raise ValueError(
+            f"rebase_to={text!r} ({start} to {end}) matches no row of the answer: {hint}"
+        )
+
+    numeric = [
+        position
+        for position in range(table.shape[1])
+        if pd.api.types.is_numeric_dtype(table.iloc[:, position])
+        and not pd.api.types.is_bool_dtype(table.iloc[:, position])
+    ]
+    values = table.iloc[:, numeric].astype(float)
+    base = values[in_window].mean()
+    missing = base.isna()
+    zero = base == 0
+    rebased = values / base.where(~missing & ~zero) * 100
+    for column, position in enumerate(numeric):
+        table.isetitem(position, rebased.iloc[:, column])
+
+    periods = int(in_window.sum())
+    notes = [
+        f"Every {'row' if transposed else 'column'} is indexed to 100 = its average over "
+        f"{start} to {end} ({periods} {'period' if periods == 1 else 'periods'}), "
+        "rebase_to=" + repr(text) + "."
+    ]
+    labels = list(values.columns)
+    if missing.any():
+        notes.append(
+            f"{_name_columns([labels[i] for i in range(len(labels)) if missing.iloc[i]])} "
+            f"{'has' if missing.sum() == 1 else 'have'} no value in the base window of "
+            f"rebase_to={text!r}, so {'it is' if missing.sum() == 1 else 'they are'} empty."
+        )
+    if zero.any():
+        notes.append(
+            f"{_name_columns([labels[i] for i in range(len(labels)) if zero.iloc[i]])} "
+            f"{'averages' if zero.sum() == 1 else 'average'} zero in the base window of "
+            f"rebase_to={text!r}, which cannot be indexed, so "
+            f"{'it is' if zero.sum() == 1 else 'they are'} empty."
+        )
+    if len(numeric) < table.shape[1]:
+        text_columns = [
+            table.columns[position]
+            for position in range(table.shape[1])
+            if position not in numeric
+        ]
+        notes.append(
+            f"{_name_columns(text_columns)} {'is' if len(text_columns) == 1 else 'are'} "
+            "not numeric and kept as published."
+        )
+
+    table = table.T if transposed else table
+    if was_series:
+        return table.iloc[:, 0].rename(series_name), notes
+
+    return table, notes
 
 
 def _fit_to_size(

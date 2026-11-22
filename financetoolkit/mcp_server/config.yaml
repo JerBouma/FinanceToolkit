@@ -167,8 +167,10 @@ instructions: >-
   fields, and start_date/end_date or period narrow the range; an answer that is still
   too large is cut, with a note. rank=true turns a value per period and ticker (or
   country) into a ranking per period, with each one's gap to its neighbour (e.g. the
-  worst return and how far it fell beyond the next worst). Read the _notes of an answer: they say what was left
-  out, ignored or converted. The _sources of an answer name the publishers its data
+  worst return and how far it fell beyond the next worst). rebase_to='2020' (or a
+  range such as '1340-1347' or '2020-01:2020-06') indexes a time series to 100 at its
+  average over that window, within the start_date/end_date fetched. Read the _notes of
+  an answer: they say what was left out, ignored or converted. The _sources of an answer name the publishers its data
   comes from (such as FinancialModelingPrep or the Bank for International
   Settlements); mention them when citing the figures. To find which tickers exist (by
   sector, country or exchange), use the Finance Database server.

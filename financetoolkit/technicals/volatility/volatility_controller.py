@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -2181,7 +2183,7 @@ class VolatilityTechnicals:
         close_column: str = "Adj Close",
         window: int = 14,
         std_window: int = 10,
-        method: str = "original",
+        method: Literal["original", "refined"] = "original",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,

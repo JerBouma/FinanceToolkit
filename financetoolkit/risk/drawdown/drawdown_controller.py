@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -1467,7 +1469,7 @@ class DrawdownRisk:
     def get_average_drawdown(
         self,
         period: str | None = None,
-        method: str = "episode",
+        method: Literal["episode", "observation"] = "episode",
         compounded: bool = True,
         within_period: bool = False,
         rolling: int | None = None,

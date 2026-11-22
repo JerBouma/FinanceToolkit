@@ -163,7 +163,7 @@
     },
     {
       "name": "search_metric_categories",
-      "description": "List all available metric categories with tool and indicator counts, the totals and descriptions."
+      "description": "List the metric categories with tool, indicator and metric (method= variants) counts and totals."
     },
     {
       "name": "search_by_category",
@@ -171,7 +171,7 @@
     },
     {
       "name": "search_metrics",
-      "description": "Fuzzy keyword search across all 900+ available indicators."
+      "description": "Fuzzy keyword search across the indicators of all 900+ available metrics."
     }
   ],
   "compatibility": {

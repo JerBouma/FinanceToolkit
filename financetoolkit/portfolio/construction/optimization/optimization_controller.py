@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -4983,7 +4985,7 @@ class OptimizationConstruction:
         market_weights: dict[str, float] | None = None,
         risk_aversion: float | str = 2.5,
         tau: float = 0.05,
-        method: str = "standard",
+        method: Literal["standard", "augmented", "bayesian"] = "standard",
         factor_views: dict[str, float] | None = None,
         factor_view_confidences: dict[str, float] | None = None,
         factors: pd.DataFrame | None = None,

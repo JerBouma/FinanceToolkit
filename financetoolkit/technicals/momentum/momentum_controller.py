@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
@@ -7683,7 +7685,7 @@ class MomentumTechnicals:
         window: int = 20,
         rvi_window: int = 14,
         std_window: int = 10,
-        method: str = "original",
+        method: Literal["original", "refined"] = "original",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -8235,7 +8237,7 @@ class MomentumTechnicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 12,
-        method: str = "close",
+        method: Literal["close", "open"] = "close",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,

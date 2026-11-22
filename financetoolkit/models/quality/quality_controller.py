@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -1349,7 +1351,7 @@ class QualityModels:
     @handle_errors
     def get_accrual_quality(
         self,
-        method: str = "dechow_dichev",
+        method: Literal["dechow_dichev", "mcnichols"] = "dechow_dichev",
         window: int = 8,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,

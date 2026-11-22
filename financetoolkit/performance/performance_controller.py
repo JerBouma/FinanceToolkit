@@ -4853,6 +4853,8 @@ class Performance:
     def get_upside_capture_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
+        method: str = "geometric",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -4883,9 +4885,26 @@ class Performance:
         from the daily returns within each period, while fund factsheets usually use monthly returns over three
         to five years, so the figures are not directly comparable with published ones.
 
+        For more information, see the following sources:
+
+        - Morningstar. "Upside/Downside Capture Ratio." Morningstar Investment Glossary and methodology documents.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - empyrical: up_capture and roll_up_capture (https://github.com/stefan-jansen/empyrical-reloaded).
+        - PerformanceAnalytics: UpDownRatios (https://github.com/braverock/PerformanceAnalytics).
+
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If you select
+                period = 'monthly' and set rolling to 36 you obtain the rolling three year Upside Capture
+                Ratio of the monthly returns, Morningstar's figure. Defaults to None, which uses the daily
+                returns within each period.
+            method (str, optional): How the returns are averaged. Defaults to "geometric". Choose from:
+                - "geometric": the geometric average return per observation (Morningstar).
+                - "annualized": the geometric average annualized, (1 + average)^P - 1 with P the
+                  observations in a year, the ratio of the annual returns empyrical's up_capture reports.
+                - "arithmetic": the sum of the returns, as PerformanceAnalytics' UpDownRatios reports.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -4904,6 +4923,12 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Upside Capture Ratio for each
         asset in the Toolkit instance.
+        - method="annualized" equals empyrical's up_capture (and with rolling= its roll_up_capture) on the
+        same returns. Annualizing compounds both averages over a year, which changes the value but not the
+        ranking of tickers against the same benchmark. method="arithmetic" equals PerformanceAnalytics'
+        UpDownRatios (method="Capture").
+        - See `get_capture_ratios` for the overall capture ratio, the Up/Down Capture Ratio and the Up and Down
+        Numbers and Percentages in one table.
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -4933,14 +4958,30 @@ class Performance:
         | 2025   | 1.2056 | 0.5019 | 0.4674 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = self._get_column(period, "Return", within_period=True)
+        returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
-            period, "Return", within_period=True, benchmark=True
+            period, "Return", within_period=not rolling, benchmark=True
+        )
+        periods_per_year = self._get_ratio_observations_per_year(
+            period, rolling, returns.columns
         )
 
-        upside_capture_ratio = performance_model.get_upside_capture_ratio(
-            returns, benchmark_returns
-        )
+        if rolling:
+            upside_capture_ratio = performance_model.get_rolling_capture_ratio(
+                returns,
+                benchmark_returns,
+                rolling,
+                side="up",
+                method=method,
+                periods_per_year=periods_per_year,
+            )
+        else:
+            upside_capture_ratio = performance_model.get_upside_capture_ratio(
+                returns,
+                benchmark_returns,
+                method=method,
+                periods_per_year=periods_per_year,
+            )
 
         return finalize_dataset(
             dataset=upside_capture_ratio,
@@ -4953,6 +4994,8 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # The rolling ratio starts after the first full window.
+            dropna=bool(rolling),
         )
 
     @handle_portfolio
@@ -4960,6 +5003,8 @@ class Performance:
     def get_downside_capture_ratio(
         self,
         period: str | None = None,
+        rolling: int | None = None,
+        method: str = "geometric",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -4984,9 +5029,26 @@ class Performance:
         both ratios are computed from the daily returns within each period, while fund factsheets usually
         use monthly returns over three to five years.
 
+        For more information, see the following sources:
+
+        - Morningstar. "Upside/Downside Capture Ratio." Morningstar Investment Glossary and methodology documents.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - empyrical: down_capture and roll_down_capture (https://github.com/stefan-jansen/empyrical-reloaded).
+        - PerformanceAnalytics: UpDownRatios (https://github.com/braverock/PerformanceAnalytics).
+
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If you select
+                period = 'monthly' and set rolling to 36 you obtain the rolling three year Downside Capture
+                Ratio of the monthly returns, Morningstar's figure. Defaults to None, which uses the daily
+                returns within each period.
+            method (str, optional): How the returns are averaged. Defaults to "geometric". Choose from:
+                - "geometric": the geometric average return per observation (Morningstar).
+                - "annualized": the geometric average annualized, (1 + average)^P - 1 with P the
+                  observations in a year, the ratio of the annual returns empyrical's down_capture reports.
+                - "arithmetic": the sum of the returns, as PerformanceAnalytics' UpDownRatios reports.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5005,6 +5067,13 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Downside Capture Ratio for each
         asset in the Toolkit instance.
+        - method="annualized" equals empyrical's down_capture (and with rolling= its roll_down_capture) on the
+        same returns. Annualizing compounds both averages over a year, which changes the value but not the
+        ranking of tickers against the same benchmark. method="arithmetic" equals PerformanceAnalytics'
+        UpDownRatios (method="Capture"), except that PerformanceAnalytics also counts the days the benchmark
+        did not move as down days.
+        - See `get_capture_ratios` for the overall capture ratio, the Up/Down Capture Ratio and the Up and Down
+        Numbers and Percentages in one table.
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -5034,14 +5103,30 @@ class Performance:
         | 2025   | 0.3459 | 0.3223 | 2.0919 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = self._get_column(period, "Return", within_period=True)
+        returns = self._get_column(period, "Return", within_period=not rolling)
         benchmark_returns = self._get_column(
-            period, "Return", within_period=True, benchmark=True
+            period, "Return", within_period=not rolling, benchmark=True
+        )
+        periods_per_year = self._get_ratio_observations_per_year(
+            period, rolling, returns.columns
         )
 
-        downside_capture_ratio = performance_model.get_downside_capture_ratio(
-            returns, benchmark_returns
-        )
+        if rolling:
+            downside_capture_ratio = performance_model.get_rolling_capture_ratio(
+                returns,
+                benchmark_returns,
+                rolling,
+                side="down",
+                method=method,
+                periods_per_year=periods_per_year,
+            )
+        else:
+            downside_capture_ratio = performance_model.get_downside_capture_ratio(
+                returns,
+                benchmark_returns,
+                method=method,
+                periods_per_year=periods_per_year,
+            )
 
         return finalize_dataset(
             dataset=downside_capture_ratio,
@@ -5054,6 +5139,179 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # The rolling ratio starts after the first full window.
+            dropna=bool(rolling),
+        )
+
+    @handle_errors
+    def get_capture_ratios(
+        self,
+        period: str | None = None,
+        method: str = "geometric",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the capture ratios and the up and down statistics of an investment portfolio or asset
+        against its benchmark in one table: how much of the benchmark's return it captured overall, in
+        rising and in falling markets, and how often it moved with or beat the benchmark in each.
+
+        The formulas are as follows:
+
+        - Capture Ratio = Average Return / Average Benchmark Return, over every day
+        - Upside (Downside) Capture Ratio = the same over the days the benchmark rose (fell), see
+          `get_upside_capture_ratio` and `get_downside_capture_ratio`
+        - Up/Down Capture Ratio = Upside Capture Ratio / Downside Capture Ratio
+        - Up Number = Number of Days with Return > 0 and Benchmark Return > 0 / Number of Days with
+          Benchmark Return > 0
+        - Down Number = Number of Days with Return < 0 and Benchmark Return < 0 / Number of Days with
+          Benchmark Return < 0
+        - Up Percent = Number of Days with Return > Benchmark Return and Benchmark Return > 0 / Number of
+          Days with Benchmark Return > 0
+        - Down Percent = Number of Days with Return > Benchmark Return and Benchmark Return < 0 / Number
+          of Days with Benchmark Return < 0
+
+        Where the averages are geometric by default (Morningstar), (PRODUCT(1 + Return))^(1 / n) - 1 over
+        the same n days for the asset and the benchmark, all from the daily returns within each period. An
+        Up/Down Capture Ratio above 1 means the asset kept more of the benchmark's gains than of its losses.
+        A high Up Number with a low Down Number shows an asset that rises with the market but falls less
+        often; the Up and Down Percent are the up and down market win rates (batting averages, see
+        `get_win_rate`).
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - Morningstar. "Upside/Downside Capture Ratio." Morningstar Investment Glossary and methodology documents.
+        - empyrical: capture, up_capture, down_capture and up_down_capture
+        (https://github.com/stefan-jansen/empyrical-reloaded).
+        - PerformanceAnalytics: UpDownRatios, table.UpDownRatios and table.CaptureRatios
+        (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: up/down capture, up-market and down-market capture, capture table.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            method (str, optional): How the capture ratios average the returns. Defaults to "geometric".
+                Choose from:
+                - "geometric": the geometric average return per day (Morningstar).
+                - "annualized": the geometric average annualized, (1 + average)^P - 1 with P the days in a
+                  year (252, 365 for a ticker that trades on weekends), empyrical's capture ratios.
+                - "arithmetic": the sum of the returns, PerformanceAnalytics' UpDownRatios.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Capture Ratio, Upside Capture Ratio, Downside Capture Ratio, Up/Down Capture
+            Ratio, Up Number, Down Number, Up Percent and Down Percent per period, with a Multi Index of
+            (ticker, statistic) as the columns.
+
+        Notes:
+        - With method="annualized" the Capture Ratio, Upside, Downside and Up/Down Capture Ratios equal
+        empyrical's capture, up_capture, down_capture and up_down_capture on the same daily returns. With
+        method="arithmetic" the Upside and Downside Capture Ratios equal PerformanceAnalytics' UpDownRatios,
+        which also counts the days the benchmark did not move as down days for its Down Capture; its Up and
+        Down Number and Percent equal the Toolkit's.
+        - There is no Portfolio column: a weighted average of capture ratios or counts is not the statistic
+        of the portfolio.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "USMV"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_capture_ratios().xs("USMV", level=0, axis=1).T
+        ```
+
+        Which returns:
+
+        |                        |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----------------------|-------:|-------:|-------:|-------:|-------:|
+        | Capture Ratio          | 0.7641 | 0.4938 | 0.4226 | 0.6578 | 0.4517 |
+        | Upside Capture Ratio   | 0.6966 | 0.7055 | 0.6068 | 0.5319 | 0.4679 |
+        | Downside Capture Ratio | 0.6706 | 0.6789 | 0.6784 | 0.4891 | 0.473  |
+        | Up/Down Capture Ratio  | 1.0389 | 1.0392 | 0.8944 | 1.0874 | 0.9892 |
+        | Up Number              | 0.8151 | 0.8899 | 0.8214 | 0.7365 | 0.7413 |
+        | Down Number            | 0.8    | 0.8652 | 0.8073 | 0.7308 | 0.7383 |
+        | Up Percent             | 0.3356 | 0.2018 | 0.2429 | 0.2703 | 0.2727 |
+        | Down Percent           | 0.7048 | 0.7801 | 0.6697 | 0.7115 | 0.6822 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
+        periods_per_year = self._get_ratio_observations_per_year(
+            period, None, returns.columns
+        )
+
+        upside_capture_ratio = performance_model.get_upside_capture_ratio(
+            returns, benchmark_returns, method, periods_per_year
+        )
+        downside_capture_ratio = performance_model.get_downside_capture_ratio(
+            returns, benchmark_returns, method, periods_per_year
+        )
+
+        capture_ratios = pd.concat(
+            {
+                "Capture Ratio": performance_model.get_capture_ratio(
+                    returns, benchmark_returns, method, periods_per_year
+                ),
+                "Upside Capture Ratio": upside_capture_ratio,
+                "Downside Capture Ratio": downside_capture_ratio,
+                "Up/Down Capture Ratio": upside_capture_ratio / downside_capture_ratio,
+                "Up Number": performance_model.get_up_down_number(
+                    returns, benchmark_returns, market="up"
+                ),
+                "Down Number": performance_model.get_up_down_number(
+                    returns, benchmark_returns, market="down"
+                ),
+                "Up Percent": performance_model.get_win_rate(
+                    returns, benchmark_returns, market="up"
+                ),
+                "Down Percent": performance_model.get_win_rate(
+                    returns, benchmark_returns, market="down"
+                ),
+            },
+            axis=1,
+        ).replace([np.inf, -np.inf], np.nan)
+
+        # One block of statistics per ticker, as the market timing models show them.
+        capture_ratios = capture_ratios.swaplevel(axis=1)[list(returns.columns)]
+
+        return finalize_dataset(
+            dataset=capture_ratios,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_portfolio
@@ -5061,6 +5319,7 @@ class Performance:
     def get_win_rate(
         self,
         period: str | None = None,
+        market: str = "all",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -5082,11 +5341,27 @@ class Performance:
         Days on which the asset or the benchmark has no return are left out of both counts rather than
         counted as losses.
 
+        With market="up" or "down" only the days the benchmark rose or fell are counted, the up and down
+        market batting averages: a manager who beats a rising market by taking more risk shows a high up
+        market and a low down market figure, while one who protects capital shows the reverse.
+
+        - Up Market Win Rate = (Number of Days with Asset Return > Benchmark Return and Benchmark Return > 0) /
+          (Number of Days with Benchmark Return > 0)
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - empyrical: batting_average (https://github.com/stefan-jansen/empyrical-reloaded).
+        - PerformanceAnalytics: UpDownRatios (method="Percent") (https://github.com/braverock/PerformanceAnalytics).
+
         Also known as: batting average.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            market (str, optional): The days counted: "all", "up" (the benchmark rose) or "down" (the
+                benchmark fell). Defaults to "all".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5105,6 +5380,9 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Win Rate for each asset in the
         Toolkit instance.
+        - The overall Win Rate equals empyrical's batting_average and the up and down market ones its "up market"
+        and "down market" values, except that empyrical counts a day the benchmark did not move as an up market
+        day, where the Toolkit counts it as neither (as PerformanceAnalytics' Up and Down Percent do).
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -5139,7 +5417,9 @@ class Performance:
             period, "Return", within_period=True, benchmark=True
         )
 
-        win_rate = performance_model.get_win_rate(returns, benchmark_returns)
+        win_rate = performance_model.get_win_rate(
+            returns, benchmark_returns, market=market
+        )
 
         return finalize_dataset(
             dataset=win_rate,
@@ -5152,6 +5432,1001 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+        )
+
+    @handle_errors
+    def get_outperformance_probability(
+        self,
+        period: str = "monthly",
+        windows: list[int] | None = None,
+        relative: bool = True,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the probability of outperformance of an investment portfolio or asset: the share of all
+        windows of a given number of periods (for example every 12 consecutive months) in which it returned
+        more than the benchmark. Looking at windows of different lengths shows whether an asset that often
+        lags over a month still tends to come out ahead over one or three years.
+
+        The formula is as follows:
+
+        - Window Return = PRODUCT(1 + Return over the window) - 1
+        - Probability of Outperformance = Number of Windows with Window Return > Benchmark Window Return /
+          Number of Windows in which they differ
+
+        The windows end at every period from the first full window onwards, so consecutive windows overlap and
+        a longer window has fewer of them. With relative=False the window return is compared with 0 instead of
+        the benchmark's, the share of windows with a gain: for 12 monthly returns ffn's "Win 12m %".
+
+        For more information, see the following sources:
+
+        - PerformanceAnalytics: table.ProbOutPerformance (https://github.com/braverock/PerformanceAnalytics).
+        - ffn: PerformanceStats.twelve_month_win_perc (https://github.com/pmorissette/ffn).
+
+        Also known as: rolling win rate, hit rate over rolling windows.
+
+        Args:
+            period (str, optional): The period of the returns the windows are made of. Defaults to "monthly".
+            windows (list[int] | None, optional): The window lengths in periods. Defaults to None, which uses
+                1, 3, 6, 9, 12, 18 and 36 (PerformanceAnalytics' defaults).
+            relative (bool, optional): Whether to compare with the benchmark (True) or with a return of 0
+                (False). Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The probability of outperformance per window length (rows) and ticker (columns).
+
+        Notes:
+        - Equals the probability column of PerformanceAnalytics' table.ProbOutPerformance on the same returns.
+        PerformanceAnalytics reports the counts as well; a window in which both returns are equal counts as
+        neither, there as here.
+        - With relative=False and windows=[12] it equals ffn's twelve_month_win_perc, except that ffn also counts
+        the window that starts at the first price, one window more than the monthly returns hold.
+        - Each ticker is measured over its own history, so a later listing has fewer windows.
+        - There is no Portfolio column: a weighted average of probabilities is not that of the portfolio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_outperformance_probability()
+        ```
+
+        Which returns:
+
+        |   Window |   AAPL |   MSFT |     KO |
+        |---------:|-------:|-------:|-------:|
+        |        1 | 0.5714 | 0.5882 | 0.4118 |
+        |        3 | 0.6496 | 0.641  | 0.3932 |
+        |        6 | 0.614  | 0.7105 | 0.3158 |
+        |        9 | 0.6667 | 0.7838 | 0.3153 |
+        |       12 | 0.7222 | 0.7963 | 0.3333 |
+        |       18 | 0.8137 | 0.8333 | 0.3039 |
+        |       36 | 0.8929 | 0.9286 | 0.0833 |
+        """
+        returns = self._get_column(period, "Return", within_period=False)
+        benchmark_returns = (
+            self._get_column(period, "Return", within_period=False, benchmark=True)
+            if relative
+            else None
+        )
+
+        outperformance_probability = performance_model.get_outperformance_probability(
+            returns.loc[self._start_date : self._end_date],
+            (
+                benchmark_returns.loc[self._start_date : self._end_date]
+                if benchmark_returns is not None
+                else None
+            ),
+            windows=windows,
+        )
+
+        return apply_rounding(
+            outperformance_probability,
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_bull_bear_beta(
+        self,
+        period: str | None = None,
+        market: str = "excess_return",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the bull and bear market Beta and Alpha and the Timing Ratio of an investment portfolio or
+        asset: the CAPM regression fitted separately over the days the market rose (bull) and fell (bear).
+
+        The formulas are as follows:
+
+        - Excess Return = Bull Alpha + Bull Beta x Benchmark Excess Return, over the days the market rose
+        - Excess Return = Bear Alpha + Bear Beta x Benchmark Excess Return, over the days the market fell
+        - Timing Ratio = Bull Beta / Bear Beta
+        - Annualized Alpha = (1 + Alpha per Day)^P - 1
+
+        Where the excess returns are the daily returns minus the risk free rate, the market "rose" when the
+        benchmark excess return was positive (PerformanceAnalytics) or, with market="return", when the
+        benchmark return was positive (empyrical), and P is the number of days in a year (252, 365 for a ticker
+        that trades on weekends). A Timing Ratio above 1 means the asset moved more with the market when it rose
+        than when it fell, the asymmetry a successful market timer shows; Henriksson and Merton (1981) test the
+        same asymmetry with one regression (see `get_henriksson_merton_model`).
+
+        For more information, see the following sources:
+
+        - Henriksson, R.D., & Merton, R.C. (1981). "On Market Timing and Investment Performance II: Statistical
+        Procedures for Evaluating Forecasting Skills." Journal of Business, 54(4), 513-533.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - PerformanceAnalytics: CAPM.beta.bull, CAPM.beta.bear and TimingRatio
+        (https://github.com/braverock/PerformanceAnalytics).
+        - empyrical: up_alpha_beta and down_alpha_beta (https://github.com/stefan-jansen/empyrical-reloaded).
+
+        Also known as: up-market and down-market beta, conditional beta, up and down alpha.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            market (str, optional): What splits the bull and bear days: "excess_return" for the sign of the
+                benchmark excess return (PerformanceAnalytics) or "return" for the sign of the benchmark return
+                (empyrical). Defaults to "excess_return".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Bull Alpha, Bull Beta, Bear Alpha, Bear Beta and Timing Ratio per period, with a
+            Multi Index of (ticker, statistic) as the columns.
+
+        Notes:
+        - The Bull and Bear Betas and the Timing Ratio equal PerformanceAnalytics' CAPM.beta.bull, CAPM.beta.bear
+        and TimingRatio on the daily returns within each period, and the Alphas and Betas empyrical's up_alpha_beta
+        and down_alpha_beta given the excess returns. empyrical splits the days on the sign of the benchmark return
+        it is given, which market="return" does with the benchmark's own return; given a risk free rate, empyrical
+        computes its Beta from the returns themselves and its Alpha from the excess returns, where the Toolkit uses
+        excess returns for both.
+        - Unlike `get_beta` with method="upside" or "downside", which regresses the returns themselves, these
+        regressions use excess returns, so the Alphas are the CAPM (Jensen's) Alphas of each market.
+        - Each side needs at least three days with returns in a period, otherwise its values are NaN.
+        - There is no Portfolio column, as for the market timing models.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["XLU", "XLK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_bull_bear_beta().xs("XLK", level=0, axis=1)
+        ```
+
+        Which returns:
+
+        |      |   Bull Alpha |   Bull Beta |   Bear Alpha |   Bear Beta |   Timing Ratio |
+        |:-----|-------------:|------------:|-------------:|------------:|---------------:|
+        | 2021 |      -0.1212 |      1.4017 |      -0.2456 |      1.1776 |         1.1903 |
+        | 2022 |       0.0242 |      1.3213 |      -0.3301 |      1.2077 |         1.0941 |
+        | 2023 |       0.0721 |      1.3097 |      -0.0304 |      1.1213 |         1.168  |
+        | 2024 |      -0.0049 |      1.5541 |      -0.2769 |      1.5097 |         1.0294 |
+        | 2025 |       0.3724 |      1.2526 |      -0.1605 |      1.3238 |         0.9462 |
+        """
+        if market not in ("excess_return", "return"):
+            raise ValueError("The market must be excess_return or return.")
+
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
+        benchmark_excess_return = self._get_column(
+            period, "Excess Return", within_period=True, benchmark=True
+        )
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
+        observations_per_year = self._get_ratio_observations_per_year(
+            period, None, excess_return.columns
+        )
+
+        bull_bear_beta = {
+            ticker: pd.DataFrame.from_dict(
+                {
+                    sub_period: performance_model.get_bull_bear_beta(
+                        excess_return.loc[sub_period, ticker],
+                        benchmark_excess_return.loc[sub_period],
+                        (
+                            benchmark_returns.loc[sub_period]
+                            if market == "return"
+                            else None
+                        ),
+                        observations_per_year[ticker],
+                    )
+                    for sub_period in excess_return.index.get_level_values(0).unique()
+                },
+                orient="index",
+            )
+            for ticker in excess_return.columns
+        }
+
+        return finalize_dataset(
+            dataset=pd.concat(bull_bear_beta, axis=1),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_beta_fragility(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the beta fragility heuristic of an investment portfolio or asset, the stress-testing measure
+        of Taleb, Canetti, Kinda, Loukoianova and Schmieder (2012): whether its response to the benchmark
+        bends at the extremes, so that a linear Beta understates its losses in a large market fall.
+
+        The formula is as follows:
+
+        - H = (w_low x Return_low + w_high x Return_high) - Return_middle
+        - w_low = (Benchmark_high - Benchmark_middle) / (Benchmark_high - Benchmark_low)
+        - w_high = (Benchmark_middle - Benchmark_low) / (Benchmark_high - Benchmark_low)
+
+        Where the daily returns within each period are sorted by the benchmark return, and low, middle and high
+        are the days with the lowest, the median (position n // 2) and the highest benchmark return. H compares
+        the asset's return on the median day with the straight line through its returns on the two extreme
+        days. A negative H means the returns are concave in the market's (fragile: the losses accelerate in a
+        large fall), a positive H that they are convex (antifragile).
+
+        For more information, see the following sources:
+
+        - Taleb, N.N., Canetti, E., Kinda, T., Loukoianova, E., & Schmieder, C. (2012). "A New Heuristic Measure
+        of Fragility and Tail Risks: Application to Stress Testing." IMF Working Paper WP/12/216.
+        - empyrical: beta_fragility_heuristic (https://github.com/stefan-jansen/empyrical-reloaded).
+
+        Also known as: fragility heuristic, beta fragility heuristic.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The beta fragility heuristic per period and ticker, a return.
+
+        Notes:
+        - Equals empyrical's beta_fragility_heuristic on the daily returns within each period. When several days
+        share the median benchmark return, the Toolkit takes them in date order (a stable sort), while empyrical
+        leaves their order to its sorting algorithm, so the two can pick a different middle day.
+        - The heuristic rests on three days of each period, so it is noisy; compare it across tickers or with a
+        longer period rather than reading a single value.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "KO", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_beta_fragility()
+        ```
+
+        Which returns:
+
+        | Date   |     JPM |      KO |    NVDA |
+        |:-------|--------:|--------:|--------:|
+        | 2021   | -0.0132 |  0.0046 | -0.0032 |
+        | 2022   | -0.019  |  0      |  0.0179 |
+        | 2023   | -0.0052 |  0.0082 | -0.0109 |
+        | 2024   |  0.0417 | -0.0025 | -0.0068 |
+        | 2025   | -0.0313 | -0.0263 |  0.033  |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
+
+        beta_fragility = performance_model.get_beta_fragility_heuristic(
+            returns, benchmark_returns
+        )
+
+        return finalize_dataset(
+            dataset=beta_fragility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_stability_of_returns(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the stability of the returns of an investment portfolio or asset: how closely its growth
+        follows a straight line on a logarithmic scale, a constant rate of growth.
+
+        The formula is as follows:
+
+        - Cumulative Log Return_t = SUM(LN(1 + Return)) up to day t
+        - Stability = R Squared of the regression of Cumulative Log Return_t on t
+
+        Where t counts the returns (0, 1, 2, ...). A value close to 1 means the asset grew (or fell) at a
+        steady rate; a value close to 0 means its path wandered without a trend. The measure says nothing about
+        the direction: a steady decline is as stable as a steady rise, so read it together with the return.
+
+        For more information, see the following sources:
+
+        - empyrical: stability_of_timeseries (https://github.com/stefan-jansen/empyrical-reloaded).
+        - pyfolio: timeseries.stability_of_timeseries (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+        Also known as: stability of timeseries, R-squared of the equity curve.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the stability from the daily returns within each
+                period or from the period returns of the entirety of all periods, one value per ticker.
+                Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The stability per period and ticker, or with within_period=False a Series with one
+            value per ticker.
+
+        Notes:
+        - Equals empyrical's (and pyfolio's) stability_of_timeseries on the same returns. Each ticker is
+        measured over its own returns, missing returns left out.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_stability_of_returns()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   MSFT |     KO |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.7053 | 0.9381 | 0.7069 |
+        | 2022   | 0.4067 | 0.7082 | 0.0116 |
+        | 2023   | 0.6698 | 0.8243 | 0.1864 |
+        | 2024   | 0.7797 | 0.2793 | 0.5094 |
+        | 2025   | 0.3558 | 0.6004 | 0.2276 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=within_period)
+
+        stability = performance_model.get_stability_of_returns(returns)
+
+        return finalize_dataset(
+            dataset=stability,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole period the stability is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_r_squared(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the R-squared of an investment portfolio or asset against its benchmark: the share of the
+        variance of its returns that the market explains in the CAPM regression on the benchmark.
+
+        The formula is as follows:
+
+        - R Squared = Covariance(Returns, Benchmark Returns)^2 / (Variance(Returns) x Variance(Benchmark Returns))
+
+        With one regressor this is the squared correlation with the benchmark. An R-squared close to 1 means the
+        asset moves almost entirely with the market, so its Beta and Alpha describe it well; a low R-squared
+        means most of its risk is its own (see `get_risk_decomposition`), and a Beta or Treynor ratio says little
+        about it. Funds that hug their index have an R-squared above 0.95.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons.
+        - quantstats: stats.r_squared (https://github.com/ranaroussi/quantstats).
+
+        Also known as: coefficient of determination, R2.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If you select
+                period = 'monthly' and set rolling to 36 you obtain the rolling three year R-squared of the
+                monthly returns. Defaults to None, which uses the daily returns within each period.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: R-squared values.
+
+        Notes:
+        - Equals quantstats' r_squared on the same returns. Each ticker is paired with the benchmark on the days
+        both have a return.
+        - The R Squared of `get_henriksson_merton_model` and `get_treynor_mazuy_model` includes their timing term,
+        so it is at least this one.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SPY", "QQQ", "GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_r_squared()
+        ```
+
+        Which returns:
+
+        | Date   |    QQQ |    GLD |
+        |:-------|-------:|-------:|
+        | 2021   | 0.7625 | 0.0365 |
+        | 2022   | 0.9351 | 0.0377 |
+        | 2023   | 0.8404 | 0      |
+        | 2024   | 0.8917 | 0.0707 |
+        | 2025   | 0.9449 | 0.0007 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=not rolling)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=not rolling, benchmark=True
+        )
+
+        if rolling:
+            r_squared = performance_model.get_rolling_r_squared(
+                returns, benchmark_returns, rolling
+            )
+        else:
+            r_squared = performance_model.get_r_squared(returns, benchmark_returns)
+
+        return finalize_dataset(
+            dataset=r_squared,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_risk_return_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        annualize: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the risk-return ratio of an investment portfolio or asset: its mean return per unit of
+        volatility, the Sharpe ratio without the risk free rate.
+
+        The formula is as follows:
+
+        - Risk-Return Ratio = Mean(Returns) / Standard Deviation(Returns)
+
+        Computed from the daily returns within each period (or the period returns over a rolling window), per
+        observation; set annualize=True to multiply it by the square root of the observations in a year (252
+        daily returns, 365 for a ticker that trades on weekends, or 52, 12, 4 or 1 for rolling weekly, monthly,
+        quarterly or yearly returns). Leaving out the risk free rate makes it comparable across currencies and
+        rate environments, but it overstates the reward of a low-risk asset that earns little more than cash;
+        `get_sharpe_ratio` subtracts the risk free rate.
+
+        For more information, see the following sources:
+
+        - quantstats: stats.risk_return_ratio (https://github.com/ranaroussi/quantstats).
+        - ffn: calc_risk_return_ratio (https://github.com/pmorissette/ffn).
+
+        Also known as: return to risk ratio, return over volatility, information ratio against cash.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rolling (int, optional): The rolling window size to use for the calculation. If you select
+                period = 'monthly' and set rolling to 12 you obtain the rolling 12-month ratio. Defaults to None.
+            annualize (bool, optional): Whether to annualize the ratio, multiplying it by the square root of the
+                observations in a year. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Risk-return ratio values.
+
+        Notes:
+        - Equals quantstats' risk_return_ratio (not annualized) and, with annualize=True, ffn's
+        calc_risk_return_ratio on the same returns. Returns without variation give NaN.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_risk_return_ratio(annualize=True)
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    MSFT |      KO |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  1.4198 |  2.2294 |  1.0697 |
+        | 2022   | -0.6845 | -0.7585 |  0.613  |
+        | 2023   |  2.083  |  1.9698 | -0.2722 |
+        | 2024   |  1.2937 |  0.7093 |  0.7286 |
+        | 2025   |  0.4286 |  0.7212 |  0.921  |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=not rolling)
+
+        # The Sharpe ratio of the returns themselves, without a risk free rate.
+        if rolling:
+            risk_return_ratio = performance_model.get_rolling_sharpe_ratio(
+                returns, rolling
+            )
+        else:
+            risk_return_ratio = performance_model.get_sharpe_ratio(returns)
+
+        if annualize:
+            risk_return_ratio = risk_return_ratio * np.sqrt(
+                self._get_ratio_observations_per_year(
+                    period, rolling, risk_return_ratio.columns
+                ).to_numpy()
+            )
+
+        return finalize_dataset(
+            dataset=risk_return_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_risk_decomposition(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the systematic, specific and total risk of an investment portfolio or asset: its volatility
+        split into the part that comes from the market, which diversification cannot remove, and the part that
+        is its own.
+
+        The formulas are as follows:
+
+        - Systematic Risk = Beta x Volatility of the Benchmark Excess Returns
+        - Specific Risk = Volatility of the Residuals
+        - Total Risk = SQRT(Systematic Risk^2 + Specific Risk^2)
+
+        Where Beta and the Residuals come from the CAPM regression of the daily excess returns on the
+        benchmark's within each period, Excess Return = Alpha + Beta x Benchmark Excess Return + Residual. The
+        volatilities are sample standard deviations of the daily values scaled to the period (times the square
+        root of 252 trading days for a year, 365 calendar days for a ticker that trades on weekends), so the
+        yearly figures are annualized. With the same degrees of freedom the regression splits the variance
+        exactly, so the Total Risk equals the volatility of the excess returns. A specific risk that dominates
+        the total means the asset's moves are mostly its own, as a low R-squared (see `get_r_squared`) shows.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, pp. 71-72.
+        - PerformanceAnalytics: SystematicRisk, SpecificRisk, TotalRisk and table.SpecificRisk
+        (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: market and idiosyncratic risk, diversifiable and non-diversifiable risk, residual risk.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Systematic Risk, Specific Risk and Total Risk per period, with a Multi Index of
+            (ticker, risk) as the columns.
+
+        Notes:
+        - The Systematic Risk equals PerformanceAnalytics' SystematicRisk on the daily returns of a year. Its
+        SpecificRisk divides the squared residuals by n instead of n - 1, so it is SQRT((n - 1) / n) times the
+        Toolkit's (0.2% lower for a year of daily returns), and its TotalRisk combines the two.
+        - The specific risk here is that of the CAPM regression on the benchmark; the idiosyncratic volatility
+        of the risk module uses the residuals of the Fama-French factor model instead.
+        - There is no Portfolio column: the risks of a portfolio do not add up as a weighted average.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_risk_decomposition().xs("XOM", level=0, axis=1)
+        ```
+
+        Which returns:
+
+        |      |   Systematic Risk |   Specific Risk |   Total Risk |
+        |:-----|------------------:|----------------:|-------------:|
+        | 2021 |            0.1274 |          0.2663 |       0.2952 |
+        | 2022 |            0.1293 |          0.3262 |       0.3509 |
+        | 2023 |            0.0742 |          0.2395 |       0.2508 |
+        | 2024 |            0.0233 |          0.191  |       0.1924 |
+        | 2025 |            0.1007 |          0.2113 |       0.2341 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
+        benchmark_excess_return = self._get_column(
+            period, "Excess Return", within_period=True, benchmark=True
+        )
+        # The daily returns in a period of each ticker's calendar scale the daily risks to it
+        # (a Series, as the returns are a DataFrame).
+        days_per_period = (
+            pd.Series(
+                get_days_per_period(
+                    self._get_column("daily", "Return", within_period=False), period
+                )
+            )
+            if period != "daily"
+            else pd.Series(1.0, index=excess_return.columns)
+        )
+
+        risk_decomposition = {
+            ticker: pd.DataFrame.from_dict(
+                {
+                    sub_period: performance_model.get_risk_decomposition(
+                        excess_return.loc[sub_period, ticker],
+                        benchmark_excess_return.loc[sub_period],
+                        days_per_period[ticker],
+                    )
+                    for sub_period in excess_return.index.get_level_values(0).unique()
+                },
+                orient="index",
+            )
+            for ticker in excess_return.columns
+        }
+
+        return finalize_dataset(
+            dataset=pd.concat(risk_decomposition, axis=1),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_capital_market_line(
+        self,
+        period: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Capital Market Line and Security Market Line of the benchmark and where an investment
+        portfolio or asset stands against them (Sharpe, 1964), with the regression epsilon of Bacon (2008).
+
+        The formulas are as follows:
+
+        - Capital Market Line Slope = Mean(Benchmark Excess Return) / Standard Deviation(Benchmark Return)
+        - Capital Market Line Return = Mean(Risk Free Rate) + Capital Market Line Slope x Standard Deviation(Return)
+        - Security Market Line Slope = Mean(Benchmark Excess Return)
+        - Regression Epsilon = Excess Return of the Period - Alpha - Beta x Benchmark Excess Return of the Period
+
+        The first three are per day, from the daily returns within each period. The CML slope is the
+        benchmark's Sharpe ratio, the extra return the market paid per unit of volatility; the CML return is
+        what a mix of the benchmark and the risk free asset with the asset's volatility earned per day, so an
+        asset whose mean daily return lies below it was not rewarded for its total risk. The SML slope is the
+        market risk premium per day, the extra return the CAPM gives per unit of Beta. The Regression Epsilon
+        is the part of the period's excess return the CAPM regression (Alpha and Beta per day, fitted on the
+        daily excess returns) does not predict.
+
+        For more information, see the following sources:
+
+        - Sharpe, W.F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under Conditions of
+        Risk." Journal of Finance, 19(3), 425-442.
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+        2nd edition, John Wiley & Sons, p. 71.
+        - PerformanceAnalytics: CAPM.CML.slope, CAPM.CML, CAPM.SML.slope and CAPM.epsilon
+        (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: CML, SML, capital allocation line of the market, regression epsilon.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Capital Market Line Slope, Capital Market Line Return, Security Market Line Slope
+            and Regression Epsilon per period, with a Multi Index of (ticker, statistic) as the columns. The
+            slopes belong to the benchmark and repeat for every ticker, measured over the days it has a return.
+
+        Notes:
+        - The Capital Market Line Slope equals PerformanceAnalytics' CAPM.CML.slope. PerformanceAnalytics
+        reports the reciprocal of the market risk premium as its CAPM.SML.slope (the slope with Beta on the
+        vertical axis) and its CAPM.CML multiplies the slope by the asset's mean return instead of its volatility;
+        the Toolkit follows Sharpe (1964).
+        - The Regression Epsilon equals PerformanceAnalytics' CAPM.epsilon with a risk free rate of 0, where it
+        uses the annualized returns as the period's. With a risk free rate PerformanceAnalytics adds it to the
+        asset's return instead of subtracting it; the Toolkit uses excess returns throughout.
+        - There is no Portfolio column, as for the market timing models.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_capital_market_line().xs("KO", level=0, axis=1).T
+        ```
+
+        Which returns:
+
+        |                            |    2021 |    2022 |    2023 |   2024 |   2025 |
+        |:---------------------------|--------:|--------:|--------:|-------:|-------:|
+        | Capital Market Line Slope  |  0.1274 | -0.0523 |  0.0983 | 0.0947 | 0.0457 |
+        | Capital Market Line Return |  0.0012 | -0.0005 |  0.001  | 0.0009 | 0.0007 |
+        | Security Market Line Slope |  0.001  | -0.0008 |  0.0008 | 0.0007 | 0.0006 |
+        | Regression Epsilon         | -0.0104 |  0.179  | -0.1686 | 0.0357 | 0.1063 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=True)
+        excess_return = self._get_column(period, "Excess Return", within_period=True)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=True, benchmark=True
+        )
+        benchmark_excess_return = self._get_column(
+            period, "Excess Return", within_period=True, benchmark=True
+        )
+
+        # The period excess returns compound the daily returns within each period, the same
+        # returns the regression uses, so the first period has one as well, less the risk free
+        # rate of each ticker's own dates, the benchmark measured against the same rate.
+        risk_free_rate = self._risk_free_rate_data[period]
+        period_returns = (1 + returns).groupby(level=0).prod(min_count=1) - 1
+        period_excess_return = period_returns - risk_free_rate[period_returns.columns]
+        benchmark_period_excess_return = risk_free_rate[period_returns.columns].rsub(
+            (1 + benchmark_returns).groupby(level=0).prod(min_count=1) - 1,
+            axis=0,
+        )
+
+        capital_market_line = {}
+        for ticker in returns.columns:
+            ticker_results = {}
+
+            for sub_period in returns.index.get_level_values(0).unique():
+                ticker_results[sub_period] = performance_model.get_capital_market_line(
+                    returns.loc[sub_period, ticker],
+                    benchmark_returns.loc[sub_period],
+                    returns.loc[sub_period, ticker]
+                    - excess_return.loc[sub_period, ticker],
+                )
+                ticker_results[sub_period]["Regression Epsilon"] = (
+                    performance_model.get_regression_epsilon(
+                        excess_return.loc[sub_period, ticker],
+                        benchmark_excess_return.loc[sub_period],
+                        period_excess_return[ticker].get(sub_period, np.nan),
+                        benchmark_period_excess_return[ticker].get(sub_period, np.nan),
+                    )
+                )
+
+            capital_market_line[ticker] = pd.DataFrame.from_dict(
+                ticker_results, orient="index"
+            )
+
+        return finalize_dataset(
+            dataset=pd.concat(capital_market_line, axis=1),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_portfolio
@@ -6265,13 +7540,15 @@ class Performance:
         self,
         period: str | None = None,
         within_period: bool = False,
+        confidence_level: float = 0.95,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the statistics traders report about the returns of an investment portfolio or
         asset: how often it wins, how large its wins and losses are, how long its winning and
-        losing streaks run and how its gains relate to its drawdown and tails.
+        losing streaks run, how its gains relate to its drawdown and tails, its best and worst
+        returns and outliers, and how precisely its mean return is known.
 
         Unlike the Win Rate of `get_win_rate`, which counts the periods an asset beats its
         benchmark, these statistics are absolute: a win is a positive return.
@@ -6287,6 +7564,24 @@ class Performance:
         - Max Consecutive Wins (Losses) = The longest run of positive (negative) returns
         - Recovery Factor = Cumulative Return / |Maximum Drawdown|
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
+        - Best (Worst) Return = The highest (lowest) return
+        - Exposure = Number of Non-Zero Returns / Number of Returns
+        - CPC Index = Profit Factor x Win Rate x Payoff Ratio
+        - Profit Ratio = (Average Win / Number of Positive Returns) / (|Average Loss| / Number of Negative Returns)
+        - Outlier Win Ratio = 99th Percentile of the Returns / Average Win
+        - Outlier Loss Ratio = 1st Percentile of the Returns / Average Loss
+        - Risk of Ruin = ((1 - Win Rate) / (1 + Win Rate))^n
+        - Risk-Adjusted Return = Annualized Return / Exposure
+        - Mean Return = Average of all Returns
+        - Standard Error = Standard Deviation of the Returns / SQRT(n)
+        - Lower (Upper) Confidence Limit = Mean Return -(+) t(1 - (1 - c) / 2, n - 1) x Standard Error
+
+        Where n is the number of returns, c the confidence level and t the quantile of Student's t distribution.
+        The Annualized Return compounds the returns, PRODUCT(1 + Return)^(P / n) - 1 with P the returns in a
+        year (252 daily returns, 365 for a ticker that trades on weekends such as a cryptocurrency, or 52, 12,
+        4 or 1 for weekly, monthly, quarterly or yearly returns). The confidence limits show how far the true
+        mean return can lie from the measured one: when they straddle 0, the history does not tell a positive
+        mean return from luck.
 
         The Recovery Factor compounds the returns into the cumulative return and keeps its sign,
         so a history that lost money does not appear to recover.
@@ -6294,6 +7589,11 @@ class Performance:
         For more information, see the following sources:
 
         - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
+        - quantstats: stats.avg_return, best, worst, exposure, cpc_index, profit_ratio, outlier_win_ratio,
+        outlier_loss_ratio, risk_of_ruin and rar (https://github.com/ranaroussi/quantstats).
+        - ffn: PerformanceStats best_day, worst_day, best_month, worst_month, best_year and worst_year
+        (https://github.com/pmorissette/ffn).
+        - PerformanceAnalytics: mean.stderr, mean.LCL and mean.UCL (https://github.com/braverock/PerformanceAnalytics).
 
         Args:
             period (str, optional): The period of the returns over the whole history, or with
@@ -6303,6 +7603,8 @@ class Performance:
             within_period (bool, optional): Whether to calculate the statistics from the daily returns
                 within each period (e.g. each year if period = 'yearly') instead of from the returns of
                 `period` over the whole history. Defaults to False.
+            confidence_level (float, optional): The confidence level of the Lower and Upper Confidence
+                Limits of the mean return. Defaults to 0.95.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -6317,6 +7619,16 @@ class Performance:
         Notes:
         - A zero return is neither a win nor a loss: it is left out of the Win Rate and ends a
         streak. Each ticker is measured over its own returns.
+        - The Expectancy equals quantstats' avg_return (the mean of the non-zero returns), Best and Worst
+        Return its best and worst (and ffn's best and worst day, month or year with the matching period),
+        and the CPC Index, Outlier Win and Loss Ratios, Risk of Ruin and the Standard Error and Confidence
+        Limits equal quantstats' cpc_index, outlier_win_ratio, outlier_loss_ratio and risk_of_ruin and
+        PerformanceAnalytics' mean.stderr, mean.LCL and mean.UCL. quantstats counts a zero return as a win in
+        its Profit Ratio and Outlier Win Ratio, the Toolkit as neither win nor loss, so those two differ when a
+        return is exactly 0. quantstats rounds the Exposure up to two decimals, the Toolkit does not, so its
+        Risk-Adjusted Return (quantstats' rar, the annualized return over the Exposure) differs by that rounding.
+        - The Risk of Ruin raises a ratio below 1 to the number of returns, so over a long daily history it is
+        practically 0; it is meant for a series of trades or a short history.
         - A statistic without the returns it needs, such as the Profit Factor or the Payoff Ratio
         without losses, is NaN, as for the Omega Ratio.
         - There is no Portfolio column: a weighted average of streak lengths or payoff ratios is
@@ -6341,16 +7653,29 @@ class Performance:
 
         |                        |    AAPL |    MSFT |      KO |
         |:-----------------------|--------:|--------:|--------:|
-        | Win Rate               |  0.5316 |  0.524  |  0.5326 |
-        | Average Win            |  0.0125 |  0.0121 |  0.0073 |
-        | Average Loss           | -0.0126 | -0.0116 | -0.0075 |
-        | Payoff Ratio           |  0.9963 |  1.0407 |  0.9769 |
-        | Profit Factor          |  1.1306 |  1.1458 |  1.1131 |
+        | Win Rate               |  0.5316 |  0.5243 |  0.5326 |
+        | Average Win            |  0.0125 |  0.012  |  0.0073 |
+        | Average Loss           | -0.0126 | -0.0115 | -0.0075 |
+        | Payoff Ratio           |  0.9962 |  1.0395 |  0.9771 |
+        | Profit Factor          |  1.1306 |  1.1459 |  1.1133 |
         | Expectancy             |  0.0008 |  0.0008 |  0.0004 |
         | Max Consecutive Wins   | 11      |  9      |  9      |
         | Max Consecutive Losses |  8      |  8      |  7      |
-        | Recovery Factor        |  3.4734 |  3.5343 |  3.1047 |
-        | Common Sense Ratio     |  1.0549 |  1.0935 |  1.196  |
+        | Recovery Factor        |  3.4713 |  3.5406 |  3.1268 |
+        | Common Sense Ratio     |  1.0544 |  1.0959 |  1.1902 |
+        | Best Return            |  0.1533 |  0.1013 |  0.0473 |
+        | Worst Return           | -0.0925 | -0.0772 | -0.0696 |
+        | Exposure               |  0.9976 |  0.9992 |  0.9912 |
+        | CPC Index              |  0.5987 |  0.6245 |  0.5793 |
+        | Profit Ratio           |  0.8779 |  0.943  |  0.8575 |
+        | Outlier Win Ratio      |  3.4485 |  3.4075 |  3.5048 |
+        | Outlier Loss Ratio     |  3.3735 |  3.478  |  3.4129 |
+        | Risk of Ruin           |  0      |  0      |  0      |
+        | Risk-Adjusted Return   |  0.1676 |  0.1839 |  0.0915 |
+        | Mean Return            |  0.0008 |  0.0008 |  0.0004 |
+        | Standard Error         |  0.0005 |  0.0005 |  0.0003 |
+        | Lower Confidence Limit | -0.0002 | -0.0001 | -0.0002 |
+        | Upper Confidence Limit |  0.0017 |  0.0017 |  0.0009 |
         """
         if not period:
             # Within periods the daily returns of each year (or quarter) are measured.
@@ -6362,7 +7687,17 @@ class Performance:
 
         returns = self._get_column(period, "Return", within_period=within_period)
 
-        return_statistics = performance_model.get_return_statistics_table(returns)
+        # The returns in a year: the daily returns within each period, or the returns of
+        # `period` over the whole history (the daily returns of each ticker's own calendar).
+        periods_per_year = self._get_ratio_observations_per_year(
+            period, rolling=None if within_period else 1, columns=returns.columns
+        )
+
+        return_statistics = performance_model.get_return_statistics_table(
+            returns,
+            periods_per_year=periods_per_year,
+            confidence_level=confidence_level,
+        )
 
         rounding = rounding if rounding is not None else self._rounding
 

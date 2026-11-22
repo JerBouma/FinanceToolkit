@@ -2170,3 +2170,215 @@ def test_modified_burke_ratio_divides_by_the_root_mean_square_drawdown():
         performance_model.get_burke_ratio(excess_returns, burke_drawdown_measure)
         * np.sqrt(24),
     )
+
+
+def test_return_statistics_extensions_match_quantstats_and_performance_analytics():
+    statistics = performance_model.get_return_statistics(QUANTSTATS_RETURNS)
+
+    # quantstats 0.0.86 on the same returns (no return is exactly 0, so the win
+    # conventions agree), and PerformanceAnalytics' mean.stderr, mean.LCL and mean.UCL.
+    expected = {
+        "Expectancy": 0.003,
+        "Best Return": 0.015,
+        "Worst Return": -0.013,
+        "Exposure": 1.0,
+        "CPC Index": 1.9055555555555557,
+        "Profit Ratio": 0.6765285996055227,
+        "Outlier Win Ratio": 1.8100952380952378,
+        "Outlier Loss Ratio": 1.963111111111111,
+        "Risk of Ruin": 3.4015902868396653e-14,
+        "Mean Return": 0.003,
+        "Standard Error": 0.001831019273232089,
+        "Lower Confidence Limit": -0.0008323673829599815,
+        "Upper Confidence Limit": 0.006832367382959982,
+    }
+    for statistic, value in expected.items():
+        assert statistics[statistic] == pytest.approx(value, rel=1e-12, abs=1e-15)
+
+    # The Risk-Adjusted Return is the annualized return over the exposure.
+    annualized_return = (1 + QUANTSTATS_RETURNS).prod() ** (252 / 20) - 1
+    assert statistics["Risk-Adjusted Return"] == pytest.approx(annualized_return)
+
+
+def test_return_statistics_leave_zero_returns_out_of_the_wins():
+    returns = pd.Series([0.02, 0.0, -0.01, 0.0, 0.03, -0.02])
+    statistics = performance_model.get_return_statistics(returns, periods_per_year=12)
+
+    assert statistics["Exposure"] == pytest.approx(4 / 6)
+    # Average win 0.025 over 2 wins, average loss 0.015 over 2 losses.
+    assert statistics["Profit Ratio"] == pytest.approx((0.025 / 2) / (0.015 / 2))
+    assert statistics["Outlier Win Ratio"] == pytest.approx(
+        returns.quantile(0.99) / 0.025
+    )
+    assert statistics["Risk-Adjusted Return"] == pytest.approx(
+        ((1 + returns).prod() ** (12 / 6) - 1) / (4 / 6)
+    )
+
+
+def test_capture_ratio_methods_match_empyrical_and_performance_analytics():
+    portfolio, benchmark = BACON_PORTFOLIO, BACON_BENCHMARK
+
+    # empyrical 0.7.3 on the monthly returns (period="monthly", 12 a year).
+    assert performance_model.get_upside_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.9478779356059414, rel=1e-12)
+    assert performance_model.get_downside_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.9864739725390025, rel=1e-12)
+    assert performance_model.get_capture_ratio(
+        portfolio, benchmark, method="annualized", periods_per_year=12
+    ) == pytest.approx(0.8787532646895315, rel=1e-12)
+
+    # PerformanceAnalytics' UpDownRatios; its Down Capture also counts the month the
+    # benchmark returned 0, which the Toolkit leaves out.
+    assert performance_model.get_upside_capture_ratio(
+        portfolio, benchmark, method="arithmetic"
+    ) == pytest.approx(0.9592668024439919, rel=1e-12)
+    down = benchmark < 0
+    assert performance_model.get_downside_capture_ratio(
+        portfolio, benchmark, method="arithmetic"
+    ) == pytest.approx(portfolio[down].sum() / benchmark[down].sum(), rel=1e-12)
+    assert performance_model.get_up_down_number(
+        portfolio, benchmark, market="up"
+    ) == pytest.approx(0.9333333333333333)
+    assert performance_model.get_up_down_number(
+        portfolio, benchmark, market="down"
+    ) == pytest.approx(1.0)
+
+    with pytest.raises(ValueError, match="geometric, annualized or arithmetic"):
+        performance_model.get_capture_ratio(portfolio, benchmark, method="median")
+
+
+def test_rolling_capture_ratio_uses_the_returns_of_each_window():
+    portfolio = BACON_PORTFOLIO.to_frame("Portfolio")
+    rolling = performance_model.get_rolling_capture_ratio(
+        portfolio, BACON_BENCHMARK, 12, side="up_down"
+    )
+
+    assert rolling["Portfolio"].iloc[:11].isna().all()
+    expected = performance_model.get_upside_capture_ratio(
+        BACON_PORTFOLIO.iloc[-12:], BACON_BENCHMARK.iloc[-12:]
+    ) / performance_model.get_downside_capture_ratio(
+        BACON_PORTFOLIO.iloc[-12:], BACON_BENCHMARK.iloc[-12:]
+    )
+    assert rolling["Portfolio"].iloc[-1] == pytest.approx(expected)
+
+
+def test_up_and_down_market_win_rates_match_performance_analytics():
+    portfolio, benchmark = BACON_PORTFOLIO, BACON_BENCHMARK
+
+    # PerformanceAnalytics' Up and Down Percent; empyrical's batting average counts the
+    # month the benchmark returned 0 as an up market (0.6875 there).
+    assert performance_model.get_win_rate(portfolio, benchmark) == pytest.approx(
+        0.7083333333333334
+    )
+    assert performance_model.get_win_rate(
+        portfolio, benchmark, market="up"
+    ) == pytest.approx(0.7333333333333333)
+    assert performance_model.get_win_rate(
+        portfolio, benchmark, market="down"
+    ) == pytest.approx(0.75)
+
+
+def test_outperformance_probability_matches_performance_analytics():
+    probability = performance_model.get_outperformance_probability(
+        BACON_PORTFOLIO.to_frame("Portfolio"), BACON_BENCHMARK, windows=[1, 3, 6, 12]
+    )["Portfolio"]
+
+    # PerformanceAnalytics' table.ProbOutPerformance, transcribed and checked against
+    # its recorded output on the edhec data.
+    assert probability.to_list() == pytest.approx(
+        [
+            0.7083333333333334,
+            0.6363636363636364,
+            0.6842105263157895,
+            0.46153846153846156,
+        ]
+    )
+
+    # Without a benchmark each window return is compared with 0.
+    absolute = performance_model.get_outperformance_probability(
+        BACON_PORTFOLIO.to_frame("Portfolio"), windows=[1]
+    )
+    assert absolute.loc[1, "Portfolio"] == pytest.approx(
+        (BACON_PORTFOLIO > 0).sum() / (BACON_PORTFOLIO != 0).sum()
+    )
+
+
+def test_bull_bear_beta_matches_performance_analytics_and_empyrical():
+    results = performance_model.get_bull_bear_beta(
+        BACON_PORTFOLIO, BACON_BENCHMARK, periods_per_year=12
+    )
+
+    # PerformanceAnalytics' CAPM.beta.bull and CAPM.beta.bear, and empyrical's
+    # up_alpha_beta and down_alpha_beta (period="monthly").
+    assert results["Bull Beta"] == pytest.approx(1.0743229309870772, rel=1e-12)
+    assert results["Bear Beta"] == pytest.approx(0.9813284687198197, rel=1e-12)
+    assert results["Timing Ratio"] == pytest.approx(
+        1.0743229309870772 / 0.9813284687198197
+    )
+    assert results["Bull Alpha"] == pytest.approx(-0.04426955, abs=1e-8)
+    assert results["Bear Alpha"] == pytest.approx(-0.00100136, abs=1e-8)
+
+
+def test_beta_fragility_heuristic_matches_empyrical():
+    # empyrical's beta_fragility_heuristic on Bacon's monthly returns.
+    assert performance_model.get_beta_fragility_heuristic(
+        BACON_PORTFOLIO, BACON_BENCHMARK
+    ) == pytest.approx(-0.0021866666666666666, abs=1e-15)
+    assert np.isnan(
+        performance_model.get_beta_fragility_heuristic(
+            pd.Series([0.01, 0.02]), pd.Series([0.01, 0.03])
+        )
+    )
+
+
+def test_stability_and_r_squared_match_empyrical_and_quantstats():
+    assert performance_model.get_stability_of_returns(BACON_PORTFOLIO) == pytest.approx(
+        0.5879117296650359, rel=1e-12
+    )
+    assert performance_model.get_r_squared(
+        BACON_PORTFOLIO, BACON_BENCHMARK
+    ) == pytest.approx(0.9397088580814588, rel=1e-12)
+
+    frame = pd.DataFrame({"A": BACON_PORTFOLIO, "B": BACON_PORTFOLIO * 2})
+    rolling = performance_model.get_rolling_r_squared(frame, BACON_BENCHMARK, 24)
+    assert rolling.iloc[-1].to_list() == pytest.approx([0.9397088580814588] * 2)
+
+
+def test_risk_decomposition_matches_performance_analytics():
+    n = len(BACON_PORTFOLIO)
+    risks = performance_model.get_risk_decomposition(
+        BACON_PORTFOLIO, BACON_BENCHMARK, observations=12
+    )
+
+    # PerformanceAnalytics' SystematicRisk (0.132806); its SpecificRisk (0.03293109)
+    # divides by n where the Toolkit divides by n - 1.
+    assert risks["Systematic Risk"] == pytest.approx(0.132806, abs=1e-6)
+    assert risks["Specific Risk"] == pytest.approx(
+        0.03293109 * np.sqrt(n / (n - 1)), abs=1e-7
+    )
+    assert risks["Total Risk"] == pytest.approx(BACON_PORTFOLIO.std() * np.sqrt(12))
+
+
+def test_capital_market_line_and_regression_epsilon_match_performance_analytics():
+    risk_free = pd.Series(0.0, index=BACON_BENCHMARK.index)
+    line = performance_model.get_capital_market_line(
+        BACON_PORTFOLIO, BACON_BENCHMARK, risk_free
+    )
+
+    # PerformanceAnalytics' CAPM.CML.slope, and the reciprocal of its CAPM.SML.slope.
+    assert line["Capital Market Line Slope"] == pytest.approx(0.26162488955600705)
+    assert line["Security Market Line Slope"] == pytest.approx(0.010041666666666667)
+    assert line["Capital Market Line Return"] == pytest.approx(
+        0.26162488955600705 * BACON_PORTFOLIO.std()
+    )
+
+    # PerformanceAnalytics' CAPM.epsilon (-0.01313932) uses the annualized returns.
+    epsilon = performance_model.get_regression_epsilon(
+        BACON_PORTFOLIO,
+        BACON_BENCHMARK,
+        (1 + BACON_PORTFOLIO).prod() ** (12 / 24) - 1,
+        (1 + BACON_BENCHMARK).prod() ** (12 / 24) - 1,
+    )
+    assert epsilon == pytest.approx(-0.013139323809325809, rel=1e-10)

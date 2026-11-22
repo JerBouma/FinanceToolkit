@@ -2668,31 +2668,49 @@ def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | flo
 def _get_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
-    upside: bool,
+    upside: bool | None,
+    method: str = "geometric",
+    periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Shared implementation for the Upside and Downside Capture Ratios, following
-    Morningstar's definition: the geometric average return of the asset over the
-    observations in which the benchmark rose (fell), divided by the geometric average
-    return of the benchmark over those same observations.
+    Shared implementation for the Upside, Downside and overall Capture Ratios: the average
+    return of the asset over the observations in which the benchmark rose (fell, or all of
+    them), divided by the average return of the benchmark over those same observations.
 
-        - Capture Ratio = ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
+        - geometric (Morningstar): ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return))^(1 / n) - 1)
+        - annualized (empyrical): ((PRODUCT(1 + Asset Return))^(P / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return))^(P / n) - 1)
+        - arithmetic (PerformanceAnalytics): SUM(Asset Return) / SUM(Benchmark Return)
 
     Where n is the number of observations with a positive (negative) benchmark return
-    on which the asset also has a return, so that both averages cover the same dates.
+    on which the asset also has a return, so that both averages cover the same dates, and
+    P the number of observations in a year.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
-        upside (bool): Whether to compute the Upside (True) or Downside (False) Capture Ratio.
+        upside (bool | None): Whether to compute the Upside (True), Downside (False) or the
+            overall (None) Capture Ratio.
+        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
+            "geometric".
+        periods_per_year (float | pd.Series, optional): The observations in a year of the
+            annualized method, or one value per asset. Defaults to 252.
 
     Returns:
         pd.Series | pd.DataFrame: Capture Ratio values.
     """
+    if method not in ("geometric", "annualized", "arithmetic"):
+        raise ValueError("The method must be geometric, annualized or arithmetic.")
 
     def _capture(assets: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
-        mask = benchmark > 0 if upside else benchmark < 0
+        # The overall ratio takes every date, the upside (downside) one those the
+        # benchmark rose (fell).
+        mask = (
+            benchmark.notna()
+            if upside is None
+            else benchmark > 0 if upside else benchmark < 0
+        )
         selected = assets[mask]
         # The benchmark is averaged per asset over the dates that asset has a return,
         # so a shorter asset history is compared with the matching benchmark window.
@@ -2702,9 +2720,24 @@ def _get_capture_ratio(
             columns=assets.columns,
         ).where(selected.notna())
 
-        return _geometric_mean_return(selected) / _geometric_mean_return(
-            benchmark_per_asset
-        )
+        if method == "arithmetic":
+            # The sums cover the same dates, so their ratio is that of the means.
+            return selected.mean() / benchmark_per_asset.mean()
+
+        asset_average = _geometric_mean_return(selected)
+        benchmark_average = _geometric_mean_return(benchmark_per_asset)
+
+        if method == "annualized":
+            observations = (
+                periods_per_year.reindex(assets.columns)
+                if isinstance(periods_per_year, pd.Series)
+                else periods_per_year
+            )
+            return ((1 + asset_average) ** observations - 1) / (
+                (1 + benchmark_average) ** observations - 1
+            )
+
+        return asset_average / benchmark_average
 
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -2727,7 +2760,10 @@ def _get_capture_ratio(
 
 @by_own_trading_days(compound=True)
 def get_upside_capture_ratio(
-    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "geometric",
+    periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Upside Capture Ratio, i.e. the ratio of the asset's geometric average
@@ -2737,19 +2773,32 @@ def get_upside_capture_ratio(
         - Upside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark > 0))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return | Benchmark > 0))^(1 / n) - 1)
 
+    With method="annualized" both averages are annualized, (1 + average)^P - 1, as
+    empyrical's up_capture does; with method="arithmetic" it is the ratio of the sums
+    of the returns, as PerformanceAnalytics' UpDownRatios does.
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
+        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
+            "geometric".
+        periods_per_year (float | pd.Series, optional): The observations in a year of the
+            annualized method, or one value per asset. Defaults to 252.
 
     Returns:
         pd.Series | pd.DataFrame: Upside Capture Ratio values.
     """
-    return _get_capture_ratio(asset_returns, benchmark_returns, upside=True)
+    return _get_capture_ratio(
+        asset_returns, benchmark_returns, True, method, periods_per_year
+    )
 
 
 @by_own_trading_days(compound=True)
 def get_downside_capture_ratio(
-    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "geometric",
+    periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Downside Capture Ratio, i.e. the ratio of the asset's geometric average
@@ -2759,19 +2808,185 @@ def get_downside_capture_ratio(
         - Downside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark < 0))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return | Benchmark < 0))^(1 / n) - 1)
 
+    With method="annualized" both averages are annualized, (1 + average)^P - 1, as
+    empyrical's down_capture does; with method="arithmetic" it is the ratio of the sums
+    of the returns, as PerformanceAnalytics' UpDownRatios does.
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
+        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
+            "geometric".
+        periods_per_year (float | pd.Series, optional): The observations in a year of the
+            annualized method, or one value per asset. Defaults to 252.
 
     Returns:
         pd.Series | pd.DataFrame: Downside Capture Ratio values.
     """
-    return _get_capture_ratio(asset_returns, benchmark_returns, upside=False)
+    return _get_capture_ratio(
+        asset_returns, benchmark_returns, False, method, periods_per_year
+    )
+
+
+@by_own_trading_days(compound=True)
+def get_capture_ratio(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "geometric",
+    periods_per_year: float | pd.Series = 252.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the (overall) Capture Ratio, the average return of the asset over that of the
+    benchmark on every observation both have, the measure empyrical calls capture:
+
+        - Capture Ratio = ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
+          / ((PRODUCT(1 + Benchmark Return))^(1 / n) - 1)
+
+    With method="annualized" both averages are annualized, (1 + average)^P - 1, which is
+    empyrical's capture (the ratio of the annual returns); with method="arithmetic" it is
+    the ratio of the sums of the returns.
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns.
+        benchmark_returns (pd.Series): Benchmark returns.
+        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
+            "geometric".
+        periods_per_year (float | pd.Series, optional): The observations in a year of the
+            annualized method, or one value per asset. Defaults to 252.
+
+    Returns:
+        pd.Series | pd.DataFrame: Capture Ratio values.
+    """
+    return _get_capture_ratio(
+        asset_returns, benchmark_returns, None, method, periods_per_year
+    )
+
+
+@by_own_trading_days(compound=True)
+def get_rolling_capture_ratio(
+    asset_returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
+    window_size: int,
+    side: str = "up",
+    method: str = "geometric",
+    periods_per_year: float | pd.Series = 252.0,
+) -> pd.DataFrame:
+    """
+    Calculate the Upside, Downside or overall Capture Ratio over a rolling window of
+    `window_size` observations, such as 36 monthly returns for Morningstar's three year
+    capture ratios (see `get_upside_capture_ratio`). empyrical's roll_up_capture,
+    roll_down_capture and roll_up_down_capture are the annualized method on daily returns.
+
+    Args:
+        asset_returns (pd.DataFrame): Asset returns, one column per asset.
+        benchmark_returns (pd.Series): Benchmark returns on the same dates.
+        window_size (int): The number of observations in a window.
+        side (str, optional): "up", "down", "up_down" (the upside over the downside capture)
+            or "all". Defaults to "up".
+        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
+            "geometric".
+        periods_per_year (float | pd.Series, optional): The observations in a year of the
+            annualized method, or one value per asset. Defaults to 252.
+
+    Returns:
+        pd.DataFrame: The capture ratio at the end of every window, NaN before the first full
+        window.
+    """
+    sides = {"up": [True], "down": [False], "all": [None], "up_down": [True, False]}
+
+    if side not in sides:
+        raise ValueError("The side must be up, down, up_down or all.")
+
+    def window_capture(end: int) -> pd.Series:
+        ratios = [
+            _get_capture_ratio(
+                asset_returns.iloc[end - window_size : end],
+                benchmark_returns.iloc[end - window_size : end],
+                upside,
+                method,
+                periods_per_year,
+            )
+            for upside in sides[side]
+        ]
+
+        return ratios[0] / ratios[1] if side == "up_down" else ratios[0]
+
+    capture_ratios = {
+        asset_returns.index[end - 1]: window_capture(end)
+        for end in range(window_size, len(asset_returns) + 1)
+    }
+
+    return (
+        pd.DataFrame(capture_ratios, index=asset_returns.columns)
+        .T.reindex(asset_returns.index)
+        .replace([np.inf, -np.inf], np.nan)
+    )
+
+
+@by_own_trading_days(compound=True)
+def get_up_down_number(
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    market: str = "up",
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Up Number or Down Number of Bacon (2008), the share of the periods in which
+    the benchmark rose (fell) that the asset rose (fell) as well:
+
+        - Up Number = Number of Periods with Asset Return > 0 and Benchmark Return > 0
+          / Number of Periods with Benchmark Return > 0
+        - Down Number = Number of Periods with Asset Return < 0 and Benchmark Return < 0
+          / Number of Periods with Benchmark Return < 0
+
+    Periods in which the asset has no return are left out of both counts.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons.
+    - PerformanceAnalytics: UpDownRatios (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        asset_returns (pd.Series | pd.DataFrame): Asset returns, a "within period" (period,
+            date) Multi Index gives one value per period.
+        benchmark_returns (pd.Series): Benchmark returns.
+        market (str, optional): "up" or "down". Defaults to "up".
+
+    Returns:
+        pd.Series | pd.DataFrame: The Up or Down Number.
+    """
+    if market not in ("up", "down"):
+        raise ValueError("The market must be up or down.")
+
+    def share(asset: pd.Series | pd.DataFrame, benchmark: pd.Series):
+        counted = benchmark > 0 if market == "up" else benchmark < 0
+        same_direction = (asset > 0 if market == "up" else asset < 0).astype(float)
+
+        return same_direction.where(asset.notna()).where(counted, axis=0).mean()
+
+    if isinstance(asset_returns, pd.DataFrame | pd.Series):
+        if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            frame = (
+                asset_returns.to_frame()
+                if isinstance(asset_returns, pd.Series)
+                else asset_returns
+            )
+            combination = pd.concat([frame, benchmark_returns], axis=1)
+
+            return combination.groupby(level=0).apply(
+                lambda x: share(x[frame.columns], x[benchmark_returns.name])
+            )
+
+        return share(asset_returns, benchmark_returns)
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
 @by_own_trading_days(compound=True)
 def get_win_rate(
-    asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+    asset_returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    market: str = "all",
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
@@ -2783,21 +2998,33 @@ def get_win_rate(
         - Win Rate = Number of Periods with Asset Return > Benchmark Return / Number of Periods
           with both an Asset and a Benchmark Return
 
+    With market="up" or "down" only the periods in which the benchmark rose (Benchmark
+    Return > 0) or fell (Benchmark Return < 0) are counted, the up and down market batting
+    averages of empyrical and the Up and Down Percent of PerformanceAnalytics' UpDownRatios.
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
+        market (str, optional): "all", "up" or "down", the periods counted. Defaults to "all".
 
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
     """
+    if market not in ("all", "up", "down"):
+        raise ValueError("The market must be all, up or down.")
 
     def win_share(
         asset: pd.Series | pd.DataFrame, benchmark: pd.Series
     ) -> pd.Series | float:
         # A comparison with a missing return is False, which would count a day without a quote as a loss; mask those days so the mean only covers days on which both returns exist.  # noqa: E501
         wins = asset.gt(benchmark, axis=0).astype(float)
+        counted = benchmark.notna()
 
-        return wins.where(asset.notna()).where(benchmark.notna(), axis=0).mean()
+        if market != "all":
+            # A day the benchmark did not move is neither an up nor a down market.
+            counted = benchmark > 0 if market == "up" else benchmark < 0
+
+        return wins.where(asset.notna()).where(counted, axis=0).mean()
 
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -3224,11 +3451,15 @@ def get_omega_excess_return(
     return (returns - 3 * downside_risk_charge).dropna(how="all")
 
 
-def get_return_statistics(returns: pd.Series) -> pd.Series:
+def get_return_statistics(
+    returns: pd.Series,
+    periods_per_year: float = 252.0,
+    confidence_level: float = 0.95,
+) -> pd.Series:
     """
     Calculate the statistics traders report about a series of returns: how often it wins,
-    how large its wins and losses are, how long its streaks run and how it recovers from
-    its drawdown.
+    how large its wins and losses are, how long its streaks run, how it recovers from
+    its drawdown, its extremes and outliers, and how precisely its mean return is known.
 
     The formulas are as follows:
 
@@ -3241,18 +3472,42 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
         - Maximum Consecutive Wins (Losses) = The longest run of positive (negative) returns
         - Recovery Factor = Cumulative Return / |Maximum Drawdown|
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
+        - Best (Worst) Return = The highest (lowest) return
+        - Exposure = Number of Non-Zero Returns / Number of Returns
+        - CPC Index = Profit Factor x Win Rate x Payoff Ratio
+        - Profit Ratio = (Average Win / Number of Positive Returns) / (|Average Loss| / Number of
+          Negative Returns)
+        - Outlier Win Ratio = 99th Percentile of the Returns / Average Win
+        - Outlier Loss Ratio = 1st Percentile of the Returns / Average Loss
+        - Risk of Ruin = ((1 - Win Rate) / (1 + Win Rate))^n
+        - Risk-Adjusted Return = Annualized Return / Exposure
+        - Mean Return = Average of all Returns
+        - Standard Error = Standard Deviation of the Returns / SQRT(n)
+        - Lower (Upper) Confidence Limit = Mean Return -(+) t(1 - (1 - c) / 2, n - 1) x Standard Error
 
-    A return of exactly zero is neither a win nor a loss: it is left out of the win rate
-    and ends a streak. The Recovery Factor compounds the returns into the cumulative
-    return, so that it relates the same wealth path to the drawdown measured on it.
+    Where n is the number of returns, c the confidence level and t the quantile of Student's t
+    distribution. The Annualized Return compounds the returns, PRODUCT(1 + Return)^(P / n) - 1
+    with P the returns in a year (see `get_annualized_return`).
+
+    A return of exactly zero is neither a win nor a loss: it is left out of the win rate,
+    the average win and loss and the profit ratio, and ends a streak. The Expectancy equals
+    the average of the non-zero returns. The Recovery Factor compounds the returns into the
+    cumulative return, so that it relates the same wealth path to the drawdown measured on it.
 
     For more information, see the following sources:
 
     - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
     (Expectancy and the payoff ratio as the basis of evaluating a trading system.)
+    - quantstats: stats.avg_return, best, worst, exposure, cpc_index, profit_ratio,
+    outlier_win_ratio, outlier_loss_ratio, risk_of_ruin, rar (https://github.com/ranaroussi/quantstats).
+    - PerformanceAnalytics: mean.stderr, mean.LCL, mean.UCL (https://github.com/braverock/PerformanceAnalytics).
 
     Args:
         returns (pd.Series): A Series of returns; missing returns are left out.
+        periods_per_year (float, optional): The number of returns in a year, to annualize the
+            Risk-Adjusted Return with. Defaults to 252.
+        confidence_level (float, optional): The confidence level of the confidence limits
+            of the mean return. Defaults to 0.95.
 
     Returns:
         pd.Series: The statistics, indexed by their name. A statistic without the returns
@@ -3267,6 +3522,7 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
     win_rate = len(wins) / non_zero if non_zero else np.nan
     average_win = wins.mean() if len(wins) else np.nan
     average_loss = losses.mean() if len(losses) else np.nan
+    payoff_ratio = average_win / abs(average_loss) if len(losses) else np.nan
 
     # Without losses there is nothing to divide by, as for the Omega Ratio.
     profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else np.nan
@@ -3283,14 +3539,21 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
 
     tail_ratio = get_tail_ratio(returns, 0.05) if len(returns) else np.nan
 
+    exposure = non_zero / len(returns) if len(returns) else np.nan
+    standard_error = returns.std() / np.sqrt(len(returns)) if len(returns) else np.nan
+    # The confidence limits need a standard deviation, so two returns at least.
+    t_value = (
+        stats.t.ppf(1 - (1 - confidence_level) / 2, len(returns) - 1)
+        if len(returns) > 1
+        else np.nan
+    )
+
     return pd.Series(
         {
             "Win Rate": win_rate,
             "Average Win": average_win,
             "Average Loss": average_loss,
-            "Payoff Ratio": (
-                average_win / abs(average_loss) if len(losses) else np.nan
-            ),
+            "Payoff Ratio": payoff_ratio,
             "Profit Factor": profit_factor,
             # Equal to the average of the non-zero returns.
             "Expectancy": (
@@ -3308,12 +3571,35 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
                 else np.nan
             ),
             "Common Sense Ratio": profit_factor * tail_ratio,
+            "Best Return": returns.max() if len(returns) else np.nan,
+            "Worst Return": returns.min() if len(returns) else np.nan,
+            "Exposure": exposure,
+            "CPC Index": profit_factor * win_rate * payoff_ratio,
+            "Profit Ratio": (
+                (average_win / len(wins)) / (abs(average_loss) / len(losses))
+                if len(wins) and len(losses)
+                else np.nan
+            ),
+            "Outlier Win Ratio": returns.quantile(0.99) / average_win,
+            "Outlier Loss Ratio": returns.quantile(0.01) / average_loss,
+            "Risk of Ruin": ((1 - win_rate) / (1 + win_rate)) ** len(returns),
+            "Risk-Adjusted Return": (
+                get_annualized_return(returns, periods_per_year) / exposure
+                if exposure
+                else np.nan
+            ),
+            "Mean Return": returns.mean() if len(returns) else np.nan,
+            "Standard Error": standard_error,
+            "Lower Confidence Limit": returns.mean() - t_value * standard_error,
+            "Upper Confidence Limit": returns.mean() + t_value * standard_error,
         }
     )
 
 
 def get_return_statistics_table(
     returns: pd.DataFrame,
+    periods_per_year: float | pd.Series = 252.0,
+    confidence_level: float = 0.95,
 ) -> pd.DataFrame:
     """
     Calculate the return statistics of `get_return_statistics` for every column, and for a
@@ -3322,17 +3608,38 @@ def get_return_statistics_table(
     Args:
         returns (pd.DataFrame): A DataFrame of returns, one column per asset, optionally
             with a (period, date) index.
+        periods_per_year (float | pd.Series, optional): The number of returns in a year, or
+            one value per column. Defaults to 252.
+        confidence_level (float, optional): The confidence level of the confidence limits
+            of the mean return. Defaults to 0.95.
 
     Returns:
         pd.DataFrame: Over the whole history, the statistics as the index and the assets as
         the columns. Within periods, the periods as the index and (statistic, asset) as the
         columns.
     """
+
+    def statistics_of(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                column: get_return_statistics(
+                    frame[column],
+                    (
+                        periods_per_year[column]
+                        if isinstance(periods_per_year, pd.Series)
+                        else periods_per_year
+                    ),
+                    confidence_level,
+                )
+                for column in frame.columns
+            }
+        )
+
     if returns.index.nlevels != MULTI_PERIOD_INDEX_LEVELS:
-        return returns.apply(get_return_statistics)
+        return statistics_of(returns)
 
     statistics = {
-        sub_period: returns.loc[sub_period].apply(get_return_statistics).stack()
+        sub_period: statistics_of(returns.loc[sub_period]).stack()
         for sub_period in returns.index.get_level_values(0).unique()
     }
 
@@ -5333,3 +5640,544 @@ def get_cokurtosis(
         column (DataFrame) or a single value (Series).
     """
     return get_co_moment(returns, benchmark_returns, power=3, method=method)
+
+
+@by_own_trading_days(compound=True)
+def get_r_squared(
+    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the R-squared of each asset against the benchmark, the share of the variance
+    of its returns that the single factor (CAPM) regression on the benchmark returns
+    explains. With one regressor it is the squared correlation:
+
+        - R Squared = Covariance(Asset, Benchmark)^2 / (Variance(Asset) x Variance(Benchmark))
+
+    Each asset is paired with the benchmark on the dates both have a return.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons.
+    - quantstats: stats.r_squared (https://github.com/ranaroussi/quantstats).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' (period, date) Multi Index to get one value per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The R-squared per period (Multi Index), per column
+        (DataFrame) or a single value (Series). Fewer than three shared dates, or returns
+        without variation, give NaN.
+    """
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+
+    benchmark = pd.DataFrame(
+        np.repeat(benchmark_returns.to_numpy()[:, None], frame.shape[1], axis=1),
+        index=frame.index,
+        columns=frame.columns,
+    )
+    both = frame.notna() & benchmark.notna()
+    asset, benchmark = frame.where(both), benchmark.where(both)
+
+    within_period = frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    groups = frame.index.get_level_values(0) if within_period else np.zeros(len(frame))
+
+    asset = asset - asset.groupby(groups).transform("mean")
+    benchmark = benchmark - benchmark.groupby(groups).transform("mean")
+
+    # The degrees of freedom cancel out in the ratio.
+    r_squared = (asset * benchmark).groupby(groups).sum(min_count=3) ** 2 / (
+        (asset**2).groupby(groups).sum(min_count=3)
+        * (benchmark**2).groupby(groups).sum(min_count=3)
+    )
+    r_squared = r_squared.replace([np.inf, -np.inf], np.nan)
+
+    if within_period:
+        return r_squared
+
+    r_squared = r_squared.iloc[0]
+
+    return r_squared if isinstance(returns, pd.DataFrame) else float(r_squared.iloc[0])
+
+
+@by_own_trading_days(compound=True)
+def get_rolling_r_squared(
+    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the R-squared of each asset against the benchmark (see `get_r_squared`) over a
+    rolling window of `window_size` observations.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        window_size (int): The number of observations in a window.
+
+    Returns:
+        pd.Series | pd.DataFrame: The R-squared at the end of every window.
+    """
+    return (returns.rolling(window_size).corr(benchmark_returns) ** 2).replace(
+        [np.inf, -np.inf], np.nan
+    )
+
+
+def get_outperformance_probability(
+    returns: pd.DataFrame,
+    benchmark_returns: pd.Series | None = None,
+    windows: list[int] | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate the probability of outperformance over rolling windows: the share of every
+    window of `window` consecutive periods in which the compounded return of the asset beat
+    that of the benchmark, as PerformanceAnalytics' table.ProbOutPerformance does. Without
+    a benchmark the asset's compounded return is compared with 0, ffn's
+    twelve_month_win_perc for a window of twelve monthly returns.
+
+    The formula is as follows:
+
+        - Window Return = PRODUCT(1 + Return over the window) - 1
+        - Probability of Outperformance = Number of Windows with Window Return > Benchmark Window
+          Return / Number of Windows in which they differ
+
+    The windows end at every period from the first full window onwards, so consecutive
+    windows overlap. A window in which both returns are equal counts as neither.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, each on its own
+            history.
+        benchmark_returns (pd.Series | None, optional): The benchmark returns on the same
+            index, or None to compare with a return of 0. Defaults to None.
+        windows (list[int] | None, optional): The window lengths in periods. Defaults to
+            None, PerformanceAnalytics' 1, 3, 6, 9, 12, 18 and 36.
+
+    Returns:
+        pd.DataFrame: The probability per window length (index) and asset (columns), NaN
+        for a window longer than the history.
+    """
+    windows = windows if windows is not None else [1, 3, 6, 9, 12, 18, 36]
+
+    probabilities = {}
+
+    for column in returns.columns:
+        asset = returns[column]
+        benchmark = (
+            benchmark_returns
+            if benchmark_returns is not None
+            else pd.Series(0.0, index=returns.index)
+        )
+        # The periods both have a return, each ticker on its own history.
+        shared = asset.notna() & benchmark.notna()
+        asset_growth, benchmark_growth = np.log1p(asset[shared]), np.log1p(
+            benchmark[shared]
+        )
+
+        column_probabilities = {}
+        for window in windows:
+            difference = (
+                np.expm1(asset_growth.rolling(window).sum())
+                - np.expm1(benchmark_growth.rolling(window).sum())
+            ).dropna()
+            wins, losses = (difference > 0).sum(), (difference < 0).sum()
+            column_probabilities[window] = (
+                wins / (wins + losses) if wins + losses else np.nan
+            )
+
+        probabilities[column] = column_probabilities
+
+    return pd.DataFrame(probabilities).rename_axis("Window")
+
+
+@by_own_trading_days(compound=True)
+def get_bull_bear_beta(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+    market_returns: pd.Series | None = None,
+    periods_per_year: float = 252.0,
+) -> dict:
+    """
+    Calculate the bull and bear market Betas and Alphas and the Timing Ratio: the single
+    factor (CAPM) regression of the asset's excess returns on the benchmark's excess
+    returns, fitted separately over the observations in which the market rose (bull) and
+    fell (bear).
+
+    The formulas are as follows:
+
+        - Excess Return = Bull Alpha + Bull Beta x Benchmark Excess Return, over Market > 0
+        - Excess Return = Bear Alpha + Bear Beta x Benchmark Excess Return, over Market < 0
+        - Timing Ratio = Bull Beta / Bear Beta
+        - Annualized Alpha = (1 + Alpha)^P - 1
+
+    Where the market is the benchmark excess return by default (PerformanceAnalytics'
+    CAPM.beta.bull, CAPM.beta.bear and TimingRatio, and empyrical's up_alpha_beta and
+    down_alpha_beta on excess returns) or, passed as `market_returns`, another series such
+    as the benchmark return itself, and P the observations in a year. A Timing Ratio above 1
+    means the asset moved more with the market when it rose than when it fell, the asymmetry
+    a successful market timer shows (Henriksson and Merton, 1981).
+
+    For more information, see the following sources:
+
+    - Henriksson, R.D., & Merton, R.C. (1981). "On Market Timing and Investment
+    Performance II: Statistical Procedures for Evaluating Forecasting Skills." Journal of
+    Business, 54(4), 513-533.
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons.
+    - PerformanceAnalytics: CAPM.beta.bull, CAPM.beta.bear, TimingRatio
+    (https://github.com/braverock/PerformanceAnalytics).
+    - empyrical: up_alpha_beta, down_alpha_beta (https://github.com/stefan-jansen/empyrical-reloaded).
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns on the same
+            index.
+        market_returns (pd.Series | None, optional): The returns whose sign splits the bull
+            and bear observations. Defaults to None, the benchmark excess returns.
+        periods_per_year (float, optional): The observations in a year, to annualize the
+            Alphas with. Defaults to 252.
+
+    Returns:
+        dict: The Bull Alpha, Bull Beta, Bear Alpha, Bear Beta and Timing Ratio. A side with
+        fewer than three observations, or without variation, gives NaN.
+    """
+    market = benchmark_excess_returns if market_returns is None else market_returns
+    pairs = pd.concat(
+        [excess_returns, benchmark_excess_returns, market], axis=1, keys=[0, 1, 2]
+    ).dropna()
+
+    results = {}
+    for side, observations in (("Bull", pairs[2] > 0), ("Bear", pairs[2] < 0)):
+        asset, benchmark = pairs.loc[observations, 0], pairs.loc[observations, 1]
+        variance = ((benchmark - benchmark.mean()) ** 2).sum()
+
+        if len(asset) < 3 or variance == 0:  # noqa: PLR2004
+            results[f"{side} Alpha"], results[f"{side} Beta"] = np.nan, np.nan
+            continue
+
+        beta = (
+            (benchmark - benchmark.mean()) * (asset - asset.mean())
+        ).sum() / variance
+        alpha = asset.mean() - beta * benchmark.mean()
+
+        results[f"{side} Alpha"] = (1 + alpha) ** periods_per_year - 1
+        results[f"{side} Beta"] = beta
+
+    # A bear Beta of 0 (or NaN) leaves the ratio undefined.
+    results["Timing Ratio"] = (
+        results["Bull Beta"] / results["Bear Beta"]
+        if results["Bear Beta"] != 0
+        else np.nan
+    )
+
+    return results
+
+
+@by_own_trading_days(compound=True)
+def get_beta_fragility_heuristic(
+    returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the beta fragility heuristic of Taleb, Canetti, Kinda, Loukoianova and
+    Schmieder (2012): how much the asset's response to the benchmark bends at its extremes.
+    The returns are sorted by the benchmark return, and the asset's return at the median
+    benchmark return is compared with the line through its returns at the lowest and highest
+    benchmark returns:
+
+        - H = (w_low x Return_low + w_high x Return_high) - Return_middle
+        - w_low = (Benchmark_high - Benchmark_middle) / (Benchmark_high - Benchmark_low)
+        - w_high = (Benchmark_middle - Benchmark_low) / (Benchmark_high - Benchmark_low)
+
+    Where low, middle (position n // 2) and high are the observations with the lowest,
+    median and highest benchmark return (both weights 0.5 when the benchmark does not move).
+    A negative H means the asset's returns are concave in the market's (it loses more in
+    large falls than a linear Beta suggests), a sign of fragility.
+
+    For more information, see the following sources:
+
+    - Taleb, N.N., Canetti, E., Kinda, T., Loukoianova, E., & Schmieder, C. (2012). "A New
+    Heuristic Measure of Fragility and Tail Risks: Application to Stress Testing." IMF
+    Working Paper WP/12/216.
+    - empyrical: beta_fragility_heuristic (https://github.com/stefan-jansen/empyrical-reloaded).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' (period, date) Multi Index to get one value per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The heuristic per period (Multi Index), per column
+        (DataFrame) or a single value (Series). Fewer than three shared dates give NaN.
+    """
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+
+        return pd.DataFrame(
+            {
+                period: get_beta_fragility_heuristic(
+                    frame.loc[period], benchmark_returns.loc[period]
+                )
+                for period in frame.index.get_level_values(0).unique()
+            }
+        ).T.rename_axis(frame.index.names[0])
+
+    if isinstance(returns, pd.DataFrame):
+        return pd.Series(
+            {
+                column: get_beta_fragility_heuristic(returns[column], benchmark_returns)
+                for column in returns.columns
+            },
+            dtype=float,
+        )
+
+    pairs = pd.concat([returns, benchmark_returns], axis=1, keys=[0, 1]).dropna()
+
+    if len(pairs) < 3:  # noqa: PLR2004
+        return np.nan
+
+    pairs = pairs.sort_values(1, kind="mergesort")
+    (low_return, low), (middle_return, middle), (high_return, high) = (
+        pairs.iloc[position] for position in (0, len(pairs) // 2, len(pairs) - 1)
+    )
+    benchmark_range = high - low
+    low_weight, high_weight = (
+        ((high - middle) / benchmark_range, (middle - low) / benchmark_range)
+        if benchmark_range != 0
+        else (0.5, 0.5)
+    )
+
+    return float(low_weight * low_return + high_weight * high_return - middle_return)
+
+
+def get_stability_of_returns(
+    returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the stability of returns, the R-squared of a linear fit of the cumulative log
+    returns on time. A value close to 1 means the asset grew at a steady rate; a value close
+    to 0 means its growth path was erratic.
+
+    The formula is as follows:
+
+        - Cumulative Log Return_t = SUM(LN(1 + Return)) up to t
+        - Stability = R Squared of the regression of Cumulative Log Return_t on t
+
+    Where t counts the returns of each asset (0, 1, 2, ...), missing returns left out.
+
+    For more information, see the following sources:
+
+    - empyrical: stability_of_timeseries (https://github.com/stefan-jansen/empyrical-reloaded).
+    - pyfolio: timeseries.stability_of_timeseries (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, either a flat index or a 'within
+            period' (period, date) Multi Index to get one value per period.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The stability per period (Multi Index), per column
+        (DataFrame) or a single value (Series). Fewer than two returns give NaN.
+    """
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        return returns.groupby(level=0).agg(
+            lambda values: get_stability_of_returns(values.droplevel(0))
+        )
+
+    if isinstance(returns, pd.DataFrame):
+        return returns.apply(get_stability_of_returns).astype(float)
+
+    cumulative_log_return = np.log1p(returns.dropna()).cumsum()
+
+    if len(cumulative_log_return) < 2:  # noqa: PLR2004
+        return np.nan
+
+    return float(
+        np.corrcoef(np.arange(len(cumulative_log_return)), cumulative_log_return)[0, 1]
+        ** 2
+    )
+
+
+@by_own_trading_days(compound=True)
+def get_risk_decomposition(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+    observations: float = 1.0,
+) -> dict:
+    """
+    Calculate the systematic, specific and total risk of an asset: its volatility split into
+    the part the single factor (CAPM) regression on the benchmark explains and the part it
+    leaves in the residuals.
+
+    The formulas are as follows:
+
+        - Systematic Risk = Beta x Standard Deviation(Benchmark Excess Return) x SQRT(N)
+        - Specific Risk = Standard Deviation(Residuals) x SQRT(N)
+        - Total Risk = SQRT(Systematic Risk^2 + Specific Risk^2)
+
+    Where the Residuals are those of the regression Excess Return = Alpha + Beta x Benchmark
+    Excess Return, the standard deviations are sample ones (ddof = 1) over the dates both have
+    a return, and N the number of observations to scale them to (such as 252 for a year of
+    daily returns). With the same degrees of freedom the Total Risk equals the volatility of
+    the excess returns, as the regression splits the variance exactly.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, pp. 71-72.
+    - PerformanceAnalytics: SystematicRisk, SpecificRisk, TotalRisk, table.SpecificRisk
+    (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns on the same
+            index.
+        observations (float, optional): The number of observations to scale the risks to.
+            Defaults to 1, the risk per observation.
+
+    Returns:
+        dict: The Systematic Risk, Specific Risk and Total Risk. Fewer than three shared
+        dates, or a benchmark without variation, give NaN.
+    """
+    pairs = pd.concat(
+        [excess_returns, benchmark_excess_returns], axis=1, keys=[0, 1]
+    ).dropna()
+    asset, benchmark = pairs[0], pairs[1]
+    benchmark_variance = benchmark.var()
+
+    if len(pairs) < 3 or not benchmark_variance > 0:  # noqa: PLR2004
+        return {
+            "Systematic Risk": np.nan,
+            "Specific Risk": np.nan,
+            "Total Risk": np.nan,
+        }
+
+    beta = asset.cov(benchmark) / benchmark_variance
+    residuals = asset - beta * benchmark
+    systematic_risk = beta * np.sqrt(benchmark_variance * observations)
+    specific_risk = np.sqrt(residuals.var() * observations)
+
+    return {
+        "Systematic Risk": systematic_risk,
+        "Specific Risk": specific_risk,
+        "Total Risk": np.sqrt(systematic_risk**2 + specific_risk**2),
+    }
+
+
+@by_own_trading_days(compound=True)
+def get_capital_market_line(
+    returns: pd.Series,
+    benchmark_returns: pd.Series,
+    risk_free_returns: pd.Series,
+) -> dict:
+    """
+    Calculate the Capital Market Line and the Security Market Line of the benchmark and
+    where an asset stands against them (Sharpe, 1964): the CML gives the return an efficient
+    portfolio earns for the asset's total risk, the SML the return the CAPM gives for its
+    Beta.
+
+    The formulas are as follows:
+
+        - Capital Market Line Slope = Mean(Benchmark Excess Return) / Standard Deviation(Benchmark Return)
+        - Capital Market Line Return = Mean(Risk Free Rate) + Capital Market Line Slope x
+          Standard Deviation(Asset Return)
+        - Security Market Line Slope = Mean(Benchmark Excess Return)
+
+    All per observation (such as per day), over the dates the asset and the benchmark both
+    have a return. The CML slope is the benchmark's Sharpe ratio; the SML slope is the market
+    risk premium, the return the CAPM adds per unit of Beta. An asset whose mean return lies
+    below its CML return earned less than a mix of the benchmark and the risk free asset with
+    the same volatility.
+
+    For more information, see the following sources:
+
+    - Sharpe, W.F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under
+    Conditions of Risk." Journal of Finance, 19(3), 425-442.
+    - PerformanceAnalytics: CAPM.CML.slope, CAPM.CML, CAPM.SML.slope
+    (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        returns (pd.Series): The asset's returns.
+        benchmark_returns (pd.Series): The benchmark's returns on the same index.
+        risk_free_returns (pd.Series): The risk free return per observation on the same
+            index.
+
+    Returns:
+        dict: The Capital Market Line Slope, Capital Market Line Return and Security Market
+        Line Slope. Fewer than two shared dates, or a benchmark without variation, give NaN.
+    """
+    pairs = pd.concat(
+        [returns, benchmark_returns, risk_free_returns], axis=1, keys=[0, 1, 2]
+    ).dropna()
+    benchmark_volatility = pairs[1].std()
+    market_risk_premium = (pairs[1] - pairs[2]).mean()
+
+    if len(pairs) < 2 or not benchmark_volatility > 0:  # noqa: PLR2004
+        return {
+            "Capital Market Line Slope": np.nan,
+            "Capital Market Line Return": np.nan,
+            "Security Market Line Slope": np.nan,
+        }
+
+    slope = market_risk_premium / benchmark_volatility
+
+    return {
+        "Capital Market Line Slope": slope,
+        "Capital Market Line Return": pairs[2].mean() + slope * pairs[0].std(),
+        "Security Market Line Slope": market_risk_premium,
+    }
+
+
+@by_own_trading_days(compound=True)
+def get_regression_epsilon(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+    period_excess_return: float,
+    benchmark_period_excess_return: float,
+) -> float:
+    """
+    Calculate the regression epsilon of Bacon (2008), the part of the asset's return over a
+    period that its single factor (CAPM) regression does not predict:
+
+        - Regression Epsilon = Period Excess Return - Alpha - Beta x Benchmark Period Excess Return
+
+    Where Alpha and Beta come from the regression of the asset's excess returns per
+    observation (such as per day) on those of the benchmark, and the period excess returns
+    are compounded over the period (such as the year), as PerformanceAnalytics' CAPM.epsilon
+    combines the annualized returns with the regression Alpha per observation.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 71.
+    - PerformanceAnalytics: CAPM.epsilon (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        excess_returns (pd.Series): The asset's excess returns per observation.
+        benchmark_excess_returns (pd.Series): The benchmark's excess returns per observation
+            on the same index.
+        period_excess_return (float): The asset's excess return over the period.
+        benchmark_period_excess_return (float): The benchmark's excess return over the period.
+
+    Returns:
+        float: The regression epsilon. Fewer than three shared observations, or a benchmark
+        without variation, give NaN.
+    """
+    pairs = pd.concat(
+        [excess_returns, benchmark_excess_returns], axis=1, keys=[0, 1]
+    ).dropna()
+    benchmark_variance = pairs[1].var()
+
+    if len(pairs) < 3 or not benchmark_variance > 0:  # noqa: PLR2004
+        return np.nan
+
+    beta = pairs[0].cov(pairs[1]) / benchmark_variance
+    alpha = pairs[0].mean() - beta * pairs[1].mean()
+
+    return float(period_excess_return - alpha - beta * benchmark_period_excess_return)

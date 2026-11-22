@@ -1514,3 +1514,109 @@ def test_get_omega_excess_return(recorder, performance_module):
     recorder.capture(
         performance_module.get_omega_excess_return(minimum_acceptable_return=0.001)
     )
+
+
+def test_get_return_statistics(recorder, performance_module):
+    recorder.capture(performance_module.get_return_statistics())
+    recorder.capture(performance_module.get_return_statistics(period="monthly"))
+    recorder.capture(
+        performance_module.get_return_statistics(
+            within_period=True, confidence_level=0.99
+        )
+    )
+
+
+def test_get_capture_ratio_methods(recorder, performance_module):
+    recorder.capture(performance_module.get_upside_capture_ratio(method="annualized"))
+    recorder.capture(performance_module.get_downside_capture_ratio(method="arithmetic"))
+    recorder.capture(
+        performance_module.get_upside_capture_ratio(period="monthly", rolling=12)
+    )
+    recorder.capture(
+        performance_module.get_downside_capture_ratio(
+            period="monthly", rolling=12, method="annualized"
+        )
+    )
+
+
+def test_get_capture_ratios(recorder, performance_module):
+    recorder.capture(performance_module.get_capture_ratios())
+    recorder.capture(performance_module.get_capture_ratios(method="annualized"))
+
+    # The table holds the single capture ratios and the up and down market win rates.
+    table = performance_module.get_capture_ratios()
+    pd.testing.assert_series_equal(
+        table[("AAPL", "Upside Capture Ratio")],
+        performance_module.get_upside_capture_ratio()["AAPL"].loc[table.index],
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        table[("MSFT", "Down Percent")],
+        performance_module.get_win_rate(market="down")["MSFT"].loc[table.index],
+        check_names=False,
+    )
+
+
+def test_get_win_rate_market(recorder, performance_module):
+    recorder.capture(performance_module.get_win_rate(market="up"))
+    recorder.capture(performance_module.get_win_rate(market="down"))
+
+
+def test_get_outperformance_probability(recorder, performance_module):
+    recorder.capture(performance_module.get_outperformance_probability())
+    recorder.capture(
+        performance_module.get_outperformance_probability(
+            period="quarterly", windows=[1, 4]
+        )
+    )
+    recorder.capture(
+        performance_module.get_outperformance_probability(relative=False, windows=[12])
+    )
+
+
+def test_get_bull_bear_beta(recorder, performance_module):
+    recorder.capture(performance_module.get_bull_bear_beta())
+    recorder.capture(performance_module.get_bull_bear_beta(market="return"))
+    recorder.capture(performance_module.get_bull_bear_beta(period="quarterly"))
+
+
+def test_get_beta_fragility(recorder, performance_module):
+    recorder.capture(performance_module.get_beta_fragility())
+    recorder.capture(performance_module.get_beta_fragility(period="quarterly"))
+
+
+def test_get_stability_of_returns(recorder, performance_module):
+    recorder.capture(performance_module.get_stability_of_returns())
+    recorder.capture(performance_module.get_stability_of_returns(within_period=False))
+
+
+def test_get_r_squared(recorder, performance_module):
+    recorder.capture(performance_module.get_r_squared())
+    recorder.capture(performance_module.get_r_squared(period="monthly", rolling=12))
+
+
+def test_get_risk_return_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_risk_return_ratio())
+    recorder.capture(performance_module.get_risk_return_ratio(annualize=True))
+    recorder.capture(
+        performance_module.get_risk_return_ratio(
+            period="monthly", rolling=12, annualize=True
+        )
+    )
+
+
+def test_get_risk_decomposition(recorder, performance_module):
+    risks = performance_module.get_risk_decomposition()
+    recorder.capture(risks)
+    recorder.capture(performance_module.get_risk_decomposition(period="quarterly"))
+
+    # The regression splits the variance exactly, so the total risk is the volatility.
+    total = risks.xs("Total Risk", level=1, axis=1)
+    systematic = risks.xs("Systematic Risk", level=1, axis=1)
+    specific = risks.xs("Specific Risk", level=1, axis=1)
+    np.testing.assert_allclose(total, np.sqrt(systematic**2 + specific**2), atol=2e-4)
+
+
+def test_get_capital_market_line(recorder, performance_module):
+    recorder.capture(performance_module.get_capital_market_line())
+    recorder.capture(performance_module.get_capital_market_line(period="quarterly"))

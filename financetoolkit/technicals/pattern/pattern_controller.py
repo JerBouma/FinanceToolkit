@@ -44,7 +44,7 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Recognise 41 classic candlestick patterns in every ticker's candles, with the definitions
+        Recognise 54 classic candlestick patterns in every ticker's candles, with the definitions
         of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
         period as one candle: the real body between the open and the close and the shadows up to
         the high and down to the low. Certain shapes and sequences are read as a sign that a move
@@ -112,6 +112,33 @@ class PatternTechnicals:
           candle's close (outside).
         - Morning Doji Star (bullish) and Evening Doji Star (bearish): the morning and evening star
           with a doji as the middle candle.
+        - Two Crows (bearish): a long white candle, a black candle that gaps above it and a black
+          candle that opens within the second real body and closes within the first; Upside Gap
+          Two Crows (bearish): a long white candle, a short black candle that gaps above it and a
+          black candle that engulfs the second and still closes above the first close.
+        - Three Stars in the South (bullish): three black candles that shrink: a long one with a
+          long lower shadow, a smaller one with a low within the first's range and a lower
+          shadow, and a short one with (almost) no shadows inside the second candle's range.
+        - Abandoned Baby: a long real body, a doji whose shadows gap away from it and a candle of
+          the opposite colour that gaps away from the doji the other way and closes at least 30%
+          into the first body, in the direction of the third candle.
+        - Advance Block (bearish) and Stalled Pattern (bearish): three white candles with higher
+          closes whose advance weakens: ever shorter bodies or long upper shadows (advance block),
+          or two long white candles followed by a short one riding on the second (stalled).
+        - Side-by-Side White Lines: two white candles of the same size and open beyond a gap,
+          bullish after a gap up and bearish after a gap down.
+        - Identical Three Crows (bearish): three declining black candles, each opening at the
+          previous close.
+        - Stick Sandwich (bullish): two black candles that close at the same price around a white
+          candle trading above the first close.
+        - Tasuki Gap: a gap followed by a candle in its direction and a candle of the opposite
+          colour of about the same size that closes inside the gap, in the direction of the gap.
+        - Tri-Star: three dojis, the middle one gapping away; bullish after a gap down, bearish
+          after a gap up.
+        - Unique Three River (bullish): a long black candle, a black harami with a lower low and a
+          short white candle opening above that low.
+        - Gap Three Methods (Upside or Downside): two candles of one colour with a gap between them
+          and a candle of the opposite colour that closes the gap, in the direction of the gap.
 
         Sizes are relative to the ticker's own recent candles, as in TA-Lib: a real body is long
         (short) when it is longer (shorter) than the average real body of the 10 previous candles,
@@ -127,7 +154,7 @@ class PatternTechnicals:
         - Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute of
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
-        - Referenced against TA-Lib's the CDL functions (https://ta-lib.org/functions/).
+        - Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/).
         - pandas-ta-classic: cdl_inside, for the inside bar (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks, belt
@@ -135,7 +162,11 @@ class PatternTechnicals:
         inside bar, counterattack lines, meeting lines, doji star, harami cross, homing pigeon,
         in neck, on neck, thrusting line, kicker, matching low, separating lines, three inside up,
         three inside down, three outside up, three outside down, morning doji star, evening doji
-        star.
+        star, two crows, three stars in the south, abandoned baby, advance block, deliberation,
+        stalled pattern, upside gap side-by-side white lines, downside gap side-by-side white
+        lines, identical three crows, stick sandwich, upside tasuki gap, downside tasuki gap, tri
+        star, unique three river bottom, upside gap two crows, upside gap three methods, downside
+        gap three methods.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -146,7 +177,7 @@ class PatternTechnicals:
                 uses the candles as traded (split-adjusted).
             patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
                 "Engulfing"] or "hammer, engulfing" (in any casing). Defaults to None, which returns
-                all 41.
+                all 54.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 of the returned patterns occurs for at least one ticker. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -161,9 +192,9 @@ class PatternTechnicals:
         Notes:
         - The patterns are TA-Lib's definitions (Mario Fortier, https://ta-lib.org/functions/) of the
           patterns described by Nison and Bulkowski, and match TA-Lib candle for candle, including its
-          default candle settings and penetrations (30% for the stars and doji stars, 50% for the dark
-          cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
-        - A pattern is empty until TA-Lib's lookback has passed: the 3 to 13 candles its
+          default candle settings and penetrations (30% for the stars, doji stars and abandoned baby,
+          50% for the dark cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
+        - A pattern is empty until TA-Lib's lookback has passed: the 2 to 13 candles its
           averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
           sets to 0 on the first candle), counted from the ticker's own first candle.
         - TA-Lib marks the gravestone doji, which candlestick analysis reads as bearish after a
@@ -172,9 +203,10 @@ class PatternTechnicals:
           requires for a reversal (a hammer after a decline, a hanging man after a rise), is not
           checked, as in TA-Lib; combine a pattern with a trend measure such as
           `get_moving_average` or `get_signals`. The direction is TA-Lib's: separating lines, a
-          continuation pattern in candlestick analysis, follow the second candle, and the in-neck,
+          continuation pattern in candlestick analysis, follow the second candle, the in-neck,
           on-neck and thrusting, bearish continuation patterns after a decline, are -1 whatever
-          the trend.
+          the trend, and the tasuki gap, side-by-side white lines and gap three methods follow
+          the direction of their gap.
 
         As an example:
 

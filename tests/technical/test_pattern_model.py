@@ -496,3 +496,105 @@ def test_two_and_three_candle_patterns_match_ta_lib_on_the_test_data():
             bullish,
             bearish,
         ), name
+
+
+def test_the_bearish_crows():
+    two_crows = candles_after_a_calm_market(
+        (100.0, 103.0, 0.1, 0.1), (104.0, 103.5, 0.1, 0.1), (103.6, 101.5, 0.1, 0.1)
+    )
+    # A short second body and a third body engulfing it that closes above the first close.
+    upside_gap_two_crows = candles_after_a_calm_market(
+        (100.0, 103.0, 0.1, 0.1), (104.0, 103.6, 0.1, 0.1), (104.2, 103.2, 0.1, 0.1)
+    )
+    identical_three_crows = candles_after_a_calm_market(
+        (104.0, 103.0, 0.1, 0.01), (103.0, 102.0, 0.1, 0.01), (102.0, 101.0, 0.1, 0.01)
+    )
+
+    names = ["Two Crows", "Upside Gap Two Crows"]
+    assert two_crows[names].iloc[-1].tolist() == [-1, 0]
+    assert upside_gap_two_crows[names].iloc[-1].tolist() == [0, -1]
+    assert identical_three_crows["Identical Three Crows"].iloc[-1] == -1
+
+
+def test_an_abandoned_baby_and_a_tri_star():
+    abandoned_baby = candles_after_a_calm_market(
+        (103.0, 100.0, 0.1, 0.1),  # a long black body with its low at 99.9
+        (99.5, 99.52, 0.1, 0.1),  # a doji whose high (99.62) gaps below that low
+        (
+            99.8,
+            102.0,
+            0.1,
+            0.05,
+        ),  # a white body gapping above the doji, 60% into the first
+    )
+    tri_star = candles_after_a_calm_market(
+        (101.0, 101.01, 0.5, 0.5), (102.0, 102.01, 0.5, 0.5), (101.5, 101.51, 0.5, 0.5)
+    )
+
+    assert abandoned_baby["Abandoned Baby"].iloc[-1] == 1
+    assert abandoned_baby["Morning Doji Star"].iloc[-1] == 1
+    # The middle doji gaps up and the third doesn't rise above it.
+    assert tri_star["Tri-Star"].iloc[-1] == -1
+
+
+def test_the_bullish_three_candle_bottoms():
+    stick_sandwich = candles_after_a_calm_market(
+        (102.0, 100.0, 0.1, 0.1), (100.5, 101.5, 0.1, 0.1), (101.6, 100.05, 0.1, 0.1)
+    )
+    unique_three_river = candles_after_a_calm_market(
+        (103.0, 100.0, 0.1, 0.1), (101.5, 101.0, 0.1, 1.5), (99.8, 100.2, 0.1, 0.1)
+    )
+
+    assert stick_sandwich["Stick Sandwich"].iloc[-1] == 1
+    assert unique_three_river["Unique Three River"].iloc[-1] == 1
+
+
+def test_the_gap_continuation_patterns():
+    side_by_side = candles_after_a_calm_market(
+        (100.0, 101.0, 0.1, 0.1), (101.5, 102.5, 0.1, 0.1), (101.5, 102.5, 0.1, 0.1)
+    )
+    gap_three_methods = candles_after_a_calm_market(
+        (100.0, 101.0, 0.1, 0.1), (101.5, 102.5, 0.1, 0.1), (102.0, 100.5, 0.1, 0.1)
+    )
+    tasuki_gap = candles_after_a_calm_market(
+        (100.0, 101.0, 0.1, 0.1), (101.5, 102.5, 0.1, 0.1), (102.0, 101.2, 0.1, 0.1)
+    )
+
+    names = ["Side-by-Side White Lines", "Gap Three Methods", "Tasuki Gap"]
+    assert side_by_side[names].iloc[-1].tolist() == [1, 0, 0]
+    assert gap_three_methods[names].iloc[-1].tolist() == [0, 1, 0]
+    assert tasuki_gap[names].iloc[-1].tolist() == [0, 0, 1]
+
+
+def test_three_candle_patterns_match_ta_lib_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+
+    # TA-Lib 0.8.3's CDL functions on these candles: (+100 count, -100 count) for AAPL, MSFT
+    # and the Benchmark.
+    ta_lib_counts = {
+        "Two Crows": [(0, 0), (0, 1), (0, 0)],
+        "Advance Block": [(0, 0), (0, 5), (0, 1)],
+        "Side-by-Side White Lines": [(0, 0), (3, 0), (3, 0)],
+        "Stalled Pattern": [(0, 2), (0, 2), (0, 4)],
+        "Stick Sandwich": [(0, 0), (3, 0), (2, 0)],
+        "Tasuki Gap": [(3, 1), (2, 2), (7, 1)],
+        "Unique Three River": [(0, 0), (3, 0), (1, 0)],
+        "Upside Gap Two Crows": [(0, 1), (0, 1), (0, 1)],
+        "Gap Three Methods": [(3, 2), (2, 5), (0, 2)],
+    }
+    for position, ticker in enumerate(["AAPL", "MSFT", "Benchmark"]):
+        candles = (
+            data[["Open", "High", "Low", "Close"]].xs(ticker, axis=1, level=1).dropna()
+        )
+        patterns = pattern_model.get_candlestick_patterns(
+            candles["Open"], candles["High"], candles["Low"], candles["Close"]
+        )
+        for name, counts in ta_lib_counts.items():
+            assert (
+                patterns[name].eq(1).sum(),
+                patterns[name].eq(-1).sum(),
+            ) == counts[
+                position
+            ], (ticker, name)

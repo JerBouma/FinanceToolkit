@@ -69,10 +69,23 @@ PATTERN_LOOKBACK = {
     "Three Outside": 3,
     "Morning Doji Star": 12,
     "Evening Doji Star": 12,
+    "Two Crows": 12,
+    "Three Stars in the South": 12,
+    "Abandoned Baby": 12,
+    "Advance Block": 12,
+    "Side-by-Side White Lines": 7,
+    "Identical Three Crows": 12,
+    "Stalled Pattern": 12,
+    "Stick Sandwich": 7,
+    "Tasuki Gap": 7,
+    "Tri-Star": 12,
+    "Unique Three River": 12,
+    "Upside Gap Two Crows": 12,
+    "Gap Three Methods": 2,
 }
 
-# How far the third candle of a (doji) star, and the second candle of a dark cloud cover, must reach into the
-# first candle's real body: TA-Lib's default optInPenetration.
+# How far the third candle of a (doji) star and of an abandoned baby, and the second candle of a dark cloud
+# cover, must reach into the first candle's real body: TA-Lib's default optInPenetration.
 STAR_PENETRATION = 0.3
 DARK_CLOUD_PENETRATION = 0.5
 
@@ -155,7 +168,7 @@ def get_candlestick_patterns(
     patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Recognise 41 candlestick patterns, following the definitions of TA-Lib's CDL functions.
+    Recognise 54 candlestick patterns, following the definitions of TA-Lib's CDL functions.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
     pattern and 0 otherwise, which is TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
@@ -246,19 +259,59 @@ def get_candlestick_patterns(
       the close of the engulfing candle, in the direction of the engulfing candle.
     - Morning Doji Star (bullish) and Evening Doji Star (bearish): the morning and evening
       star with a doji as the middle candle.
+    - Two Crows (bearish): a long white candle, a black real body that gaps above it and a
+      black candle that opens within the second real body and closes within the first.
+    - Upside Gap Two Crows (bearish): a long white candle, a short black real body that gaps
+      above it and a black real body that engulfs the second and still closes above the first
+      candle's close.
+    - Three Stars in the South (bullish): a long black candle with a long lower shadow, a
+      smaller black candle that opens above the first close within its range and has a low
+      inside the first candle's range and a lower shadow, and a short black candle with very
+      short shadows inside the second candle's range.
+    - Abandoned Baby: a long real body, a doji whose shadows gap away from it and a real body of
+      the opposite colour whose shadows gap away from the doji in the other direction and that
+      closes at least 30% into the first body, in the direction of the third candle.
+    - Advance Block (bearish): three white candles with higher closes, each opening within or
+      near the previous real body, the first long with a short upper shadow, and an advance
+      that weakens: the second body far shorter than the first (and the third not longer than
+      the second), the third far shorter than the second, ever shorter bodies with an upper
+      shadow that is not short on the second or third candle, or a shorter third body with a
+      long upper shadow.
+    - Side-by-Side White Lines: a real body gap followed by two white candles of nearly the same
+      size ("near") that open at the same price ("equal"), both beyond the gap; bullish after a
+      gap up and bearish after a gap down.
+    - Identical Three Crows (bearish): three declining black candles with very short lower
+      shadows, the second and third opening at the previous close ("equal").
+    - Stalled Pattern (bearish): two long white candles with higher closes, the second with a
+      very short upper shadow and opening within or near the first real body, followed by a
+      short white real body with a higher close that rides on the shoulder of the second body
+      (it opens at most "near" below the second close minus its own body).
+    - Stick Sandwich (bullish): a black candle, a white candle whose low is above the first
+      close and a black candle that closes at the first close ("equal").
+    - Tasuki Gap: a real body gap in the direction of the first candle after it, followed by a
+      candle of the opposite colour that opens within that candle's real body and closes inside
+      the gap, with the two real bodies of nearly the same size; in the direction of the gap.
+    - Tri-Star: three dojis, the second gapping away from the first and the third not beyond
+      the second: bullish when the second gaps down, bearish when it gaps up.
+    - Unique Three River (bullish): a long black candle, a black harami (a higher close and an
+      open at most the first open) with a lower low, and a short white real body that opens
+      above the second candle's low.
+    - Gap Three Methods (Upside or Downside): two candles of the same colour with a real body
+      gap between them, followed by a candle of the opposite colour that opens within the
+      second real body and closes within the first, in the direction of the gap.
 
     Reference: Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
     measurable rules and thresholds are TA-Lib's definitions of these patterns (Mario
     Fortier), which turn the descriptions of Nison and others into candle-size comparisons.
 
-    Referenced against TA-Lib's the CDL functions (https://ta-lib.org/functions/);
+    Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/);
     pandas-ta-classic: cdl_inside for the inside bar
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
         - A pattern is empty (NaN) until TA-Lib's lookback has passed: the candles its
-          averages and the pattern itself need (3 to 13 candles, 1 for the inside bar), so a
+          averages and the pattern itself need (2 to 13 candles, 1 for the inside bar), so a
           ticker is evaluated from the same candle on as TA-Lib. pandas-ta-classic's inside
           bar is 0 instead of empty on the first candle.
         - TA-Lib marks the gravestone doji, which Nison reads as bearish after a rise, as 1
@@ -269,8 +322,14 @@ def get_candlestick_patterns(
           separating lines follow the second candle, while Nison reads separating lines as a
           continuation of the trend, and the in-neck, on-neck and thrusting are bearish
           continuation patterns (Nison, Bulkowski) that TA-Lib marks -1 whatever the trend.
-        - The doji stars use the same 30% penetration as the stars (STAR_PENETRATION, TA-Lib's
-          default optInPenetration); Nison only asks for a close well into the first body.
+        - The doji stars and the abandoned baby use the same 30% penetration as the stars
+          (STAR_PENETRATION, TA-Lib's default optInPenetration); Nison only asks for a close
+          well into the first body.
+        - The tasuki gap, side-by-side white lines and gap three methods are continuation
+          patterns (Nison, Bulkowski) and follow the direction of the gap; the stick sandwich,
+          the three stars in the south and the unique three river are bullish and the two
+          crows, upside gap two crows, identical three crows, advance block and stalled pattern
+          bearish, as in TA-Lib.
 
     Args:
         prices_open (pd.Series): The open prices.
@@ -278,7 +337,7 @@ def get_candlestick_patterns(
         prices_low (pd.Series): The low prices.
         prices_close (pd.Series): The close prices.
         patterns (list[str] | None, optional): The patterns to return, names of
-            `PATTERN_LOOKBACK` in the order given. Defaults to None, which returns all 41.
+            `PATTERN_LOOKBACK` in the order given. Defaults to None, which returns all 54.
 
     Returns:
         pd.DataFrame: The patterns as columns, with 1 (bullish), -1 (bearish), 0.8 / -0.8 (the
@@ -376,6 +435,32 @@ def get_candlestick_patterns(
         & previous(marubozu).eq(True)
         & marubozu
     )
+
+    # The three-candle patterns: the candle two back, and the averages measured at the candles before.
+    h2, l2 = previous(h, 2), previous(low, 2)
+    upper1, upper2 = previous(upper), previous(upper, 2)
+    lower1, lower2 = previous(lower), previous(lower, 2)
+    long2 = body2 > previous(body_long, 2)
+    near2, far1, far2 = previous(near, 2), previous(far), previous(far, 2)
+    equal2 = previous(equal, 2)
+    shadow_very_short1 = previous(shadow_very_short)
+    shadow_very_short2 = previous(shadow_very_short, 2)
+    shadow_short1 = previous(shadow_short)
+    white_three = white2 & white1 & white
+    # Two crows and upside gap two crows: a white candle followed by a black real body that gaps above it.
+    black_gapping_up1 = white2 & black1 & gap_up1 & long2 & ~white
+    # The real body of the third candle gaps away from the first like the second does (side-by-side white lines).
+    gap_up_from2 = (o > o2) & (o > c2) & (c > o2) & (c > c2)
+    gap_down_from2 = (o < o2) & (o < c2) & (c < o2) & (c < c2)
+    # Every real body of a tri-star is a doji's body against the average before the first candle.
+    tri_star_dojis = (
+        (body2 <= previous(body_doji, 2))
+        & (body1 <= previous(body_doji, 2))
+        & (body <= previous(body_doji, 2))
+    )
+    body_top, body_bottom = c.where(white, o), o.where(white, c)
+    body_top1, body_bottom1 = previous(body_top), previous(body_bottom)
+    body_top2, body_bottom2 = previous(body_top, 2), previous(body_bottom, 2)
 
     recognised = {
         "Doji": (body <= body_doji).astype(float),
@@ -570,6 +655,178 @@ def get_candlestick_patterns(
             & (c < c2 - body2 * STAR_PENETRATION)
             & doji_star_sizes
         ).astype(float),
+        "Two Crows": -(
+            black_gapping_up1 & (o < o1) & (o > c1) & (c > o2) & (c < c2)
+        ).astype(float),
+        "Three Stars in the South": (
+            black2
+            & black1
+            & ~white
+            & long2
+            & (lower2 > previous(shadow_long, 2))
+            & (body1 < body2)
+            & (o1 > c2)
+            & (o1 <= h2)
+            & (l1 < c2)
+            & (l1 >= l2)
+            & (lower1 > shadow_very_short1)
+            & (body < body_short)
+            & (lower < shadow_very_short)
+            & (upper < shadow_very_short)
+            & (low > l1)
+            & (h < h1)
+        ).astype(float),
+        # A doji whose shadows gap away from both neighbours, in the direction of the third candle.
+        "Abandoned Baby": color
+        * (
+            long2
+            & (body1 <= previous(body_doji))
+            & (body > body_short)
+            & (
+                (
+                    white2
+                    & ~white
+                    & (l1 > h2)
+                    & (h < l1)
+                    & (c < c2 - body2 * STAR_PENETRATION)
+                )
+                | (
+                    black2
+                    & white
+                    & (h1 < l2)
+                    & (low > h1)
+                    & (c > c2 + body2 * STAR_PENETRATION)
+                )
+            )
+        ),
+        "Advance Block": -(
+            white_three
+            & (c > c1)
+            & (c1 > c2)
+            & (o1 > o2)
+            & (o1 <= c2 + near2)
+            & (o > o1)
+            & (o <= c1 + near1)
+            & long2
+            & (upper2 < previous(shadow_short, 2))
+            # The advance weakens: a far smaller second body, a far smaller third body, ever smaller
+            # bodies with an upper shadow that is not short, or a smaller third body with a long upper shadow.
+            & (
+                ((body1 < body2 - far2) & (body < body1 + near1))
+                | (body < body1 - far1)
+                | (
+                    (body < body1)
+                    & (body1 < body2)
+                    & ((upper > shadow_short) | (upper1 > shadow_short1))
+                )
+                | ((body < body1) & (upper > shadow_long))
+            )
+        ).astype(float),
+        # Bullish after a gap up, bearish after a gap down.
+        "Side-by-Side White Lines": pd.Series(
+            np.where(body_bottom1 > body_top2, 1.0, -1.0), index=candles.index
+        )
+        * (
+            white1
+            & white
+            & ((gap_up1 & gap_up_from2) | (gap_down1 & gap_down_from2))
+            & (body >= body1 - near1)
+            & (body <= body1 + near1)
+            & (o >= o1 - equal1)
+            & (o <= o1 + equal1)
+        ),
+        "Identical Three Crows": -(
+            black2
+            & black1
+            & ~white
+            & (lower2 < shadow_very_short2)
+            & (lower1 < shadow_very_short1)
+            & (lower < shadow_very_short)
+            & (c2 > c1)
+            & (c1 > c)
+            & (o1 <= c2 + equal2)
+            & (o1 >= c2 - equal2)
+            & (o <= c1 + equal1)
+            & (o >= c1 - equal1)
+        ).astype(float),
+        "Stalled Pattern": -(
+            white_three
+            & (c > c1)
+            & (c1 > c2)
+            & long2
+            & (body1 > previous(body_long))
+            & (upper1 < shadow_very_short1)
+            & (o1 > o2)
+            & (o1 <= c2 + near2)
+            & (body < body_short)
+            & (o >= c1 - body - near1)
+        ).astype(float),
+        "Stick Sandwich": (
+            black2
+            & white1
+            & ~white
+            & (l1 > c2)
+            & (c <= c2 + equal2)
+            & (c >= c2 - equal2)
+        ).astype(float),
+        # The second candle's colour, after a gap in its direction.
+        "Tasuki Gap": previous(color)
+        * (
+            (
+                (
+                    (gap_up1 & white1 & ~white & (o < c1) & (o > o1) & (c < o1))
+                    & (c > c2)
+                    & (c > o2)
+                )
+                | (
+                    (gap_down1 & black1 & white & (o < o1) & (o > c1) & (c > o1))
+                    & (c < c2)
+                    & (c < o2)
+                )
+            )
+            & ((body1 - body).abs() < near1)
+        ),
+        # Three dojis, the middle one gapping away from the first and the third not beyond the middle.
+        "Tri-Star": pd.Series(
+            np.where(
+                (body_top1 < body_bottom2) & (body_bottom > body_bottom1),
+                1.0,
+                np.where(
+                    (body_bottom1 > body_top2) & (body_top < body_top1), -1.0, 0.0
+                ),
+            ),
+            index=candles.index,
+        )
+        * tri_star_dojis,
+        "Unique Three River": (
+            black2
+            & black1
+            & white
+            & (c1 > c2)
+            & (o1 <= o2)
+            & (l1 < l2)
+            & (o > l1)
+            & long2
+            & (body < body_short)
+        ).astype(float),
+        "Upside Gap Two Crows": -(
+            black_gapping_up1
+            & (body1 <= previous(body_short))
+            & (o > o1)
+            & (c < c1)
+            & (c > c2)
+        ).astype(float),
+        # The third candle opens in the second real body and closes in the first, in the direction of the gap.
+        "Gap Three Methods": previous(color, 2)
+        * (
+            (white2 == white1)
+            & (white1 != white)
+            & ((o < c1) | (o < o1))
+            & ((o > c1) | (o > o1))
+            & ((c < c2) | (c < o2))
+            & ((c > c2) | (c > o2))
+            & ((white2 & gap_up1) | (black2 & gap_down1))
+        ),
     }
 
     position = pd.Series(np.arange(len(candles)), index=candles.index)

@@ -13,7 +13,7 @@ Norges Bank, the Reserve Bank of Australia, the New York Fed, the Treasury's HQM
 and FedInvest prices, EIOPA and ESMA's CEREP), Kenneth French's factor library, Aswath
 Damodaran's datasets, FINRA, and Yahoo Finance (prices, exchange rates, financial
 statements, statistics, option chains, the asset class proxies and the commodity futures
-curves) together with the Cboe option chains it falls back on.
+curves).
 
 Each source is asked for a small, recent piece of data. Sources that update daily,
 weekly, monthly or quarterly must return current data within a plausible range; sources
@@ -1029,13 +1029,7 @@ def test_yahoo_finance_statistics(name):
 
 
 @pytest.mark.parametrize("name", ["Yahoo Finance option chain"])
-def test_yahoo_finance_option_chain(name, monkeypatch):
-    # Without Yahoo Finance the option functions fall back on Cboe, which is checked on its
-    # own below; switching that off makes this check fail when Yahoo Finance does.
-    monkeypatch.setattr(
-        options_model.cboe_model, "get_option_chain", lambda ticker: pd.DataFrame()
-    )
-
+def test_yahoo_finance_option_chain(name):
     expiry_dates = options_model.get_option_expiry_dates(YAHOO_TICKER)
 
     assert expiry_dates, f"{name} has no expiry dates"
@@ -1046,17 +1040,6 @@ def test_yahoo_finance_option_chain(name, monkeypatch):
     assert not chain.empty, f"{name} returned no options for {expiry_dates[0]}"
     assert {"Bid", "Ask", "Implied Volatility"} <= set(chain.columns)
     assert chain.index.get_level_values("Strike Price").min() > 0
-
-
-@pytest.mark.parametrize("name", ["Cboe option chain"])
-def test_cboe_option_chain(name):
-    chain = cboe_model.get_option_chain(YAHOO_TICKER)
-
-    assert not chain.empty, f"{name} returned no options"
-    assert {"Expiration", "Put", "Strike", "Bid", "Ask"} <= set(chain.columns)
-    assert chain["Put"].any() and not chain["Put"].all()
-    assert pd.to_datetime(chain["Expiration"]).max() > pd.Timestamp(TODAY)
-    assert (chain["Strike"] > 0).all()
 
 
 @pytest.mark.parametrize("name", ["Yahoo Finance asset class proxies"])

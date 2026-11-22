@@ -307,7 +307,6 @@ POLICIES: dict[str, CachePolicy] = {
     f"{IMF_PORTWATCH}.chokepoints": CachePolicy(ttl_seconds=30 * DAY),
     # Index histories published whole, one file per index, updated after every close.
     f"{CBOE}.index": CachePolicy(ttl_seconds=DAY),
-    f"{CBOE}.option_chain": CachePolicy(ttl_seconds=900),
     f"{STOXX}.index": CachePolicy(ttl_seconds=DAY),
     f"{RESERVE_BANK_OF_AUSTRALIA}.table": CachePolicy(ttl_seconds=DAY),
     # One workbook per year of EU carbon allowance auctions; past years do not change.

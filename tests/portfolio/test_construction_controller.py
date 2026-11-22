@@ -144,15 +144,6 @@ def test_fractional_kelly_holds_the_rest_in_cash(portfolio_module):
     assert "Cash" not in full.index
 
 
-def test_get_minimum_cvar_weights(recorder, portfolio_module):
-    recorder.capture(portfolio_module.get_minimum_cvar_weights(include_benchmark=True))
-    recorder.capture(
-        portfolio_module.get_minimum_cvar_weights(
-            confidence_level=0.99, include_benchmark=True
-        )
-    )
-
-
 def test_get_hierarchical_equal_risk_contribution_weights(recorder, portfolio_module):
     table = portfolio_module.get_hierarchical_equal_risk_contribution_weights(
         include_benchmark=True
@@ -179,18 +170,9 @@ def test_get_nested_clustered_optimization_weights(recorder, portfolio_module):
     )
 
 
-def test_get_minimum_drawdown_weights(recorder, portfolio_module):
-    for measure in ("cdar", "maximum", "average"):
-        recorder.capture(
-            portfolio_module.get_minimum_drawdown_weights(
-                measure=measure, include_benchmark=True
-            )
-        )
-
-
 def test_the_minimum_drawdown_portfolio_has_the_lowest_drawdown(portfolio_module):
-    table = portfolio_module.get_minimum_drawdown_weights(
-        measure="maximum", include_benchmark=True, rounding=12
+    table = portfolio_module.get_mean_risk_weights(
+        risk_measure="maximum_drawdown", include_benchmark=True, rounding=12
     )
     returns = portfolio_module._get_returns("daily", True)
     weights = table["Weight"].drop("Portfolio")
@@ -216,20 +198,6 @@ def test_get_maximum_omega_weights(recorder, portfolio_module):
     ).empty
 
 
-def test_get_maximum_cvar_ratio_weights(recorder, portfolio_module):
-    table = portfolio_module.get_maximum_cvar_ratio_weights(include_benchmark=True)
-    recorder.capture(table)
-    assert (
-        table.loc["Portfolio", "CVaR Ratio"]
-        >= table["CVaR Ratio"].drop("Portfolio").max() - 1e-4
-    )
-    recorder.capture(
-        portfolio_module.get_maximum_cvar_ratio_weights(
-            confidence_level=0.99, include_benchmark=True
-        )
-    )
-
-
 def test_get_mean_risk_weights(recorder, portfolio_module):
     table = portfolio_module.get_mean_risk_weights(include_benchmark=True)
     recorder.capture(table)
@@ -253,6 +221,52 @@ def test_get_mean_risk_weights(recorder, portfolio_module):
             include_benchmark=True,
         )
     )
+
+    # The minimum CVaR portfolio, recorded without its ratio column.
+    for confidence_level in (0.95, 0.99):
+        recorder.capture(
+            portfolio_module.get_mean_risk_weights(
+                risk_measure="cvar",
+                confidence_level=confidence_level,
+                include_benchmark=True,
+            ).drop(columns="CVaR Ratio")
+        )
+
+    # The maximum CVaR ratio (STARR) portfolio.
+    table = portfolio_module.get_mean_risk_weights(
+        risk_measure="cvar", objective="maximum_ratio", include_benchmark=True
+    )
+    recorder.capture(table)
+    assert (
+        table.loc["Portfolio", "CVaR Ratio"]
+        >= table["CVaR Ratio"].drop("Portfolio").max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_mean_risk_weights(
+            risk_measure="cvar",
+            objective="maximum_ratio",
+            confidence_level=0.99,
+            include_benchmark=True,
+        )
+    )
+
+    # The minimum drawdown portfolios, recorded without their ratio columns.
+    for risk_measure, name in (
+        ("cdar", "CDaR"),
+        ("maximum_drawdown", "Maximum Drawdown"),
+        ("average_drawdown", "Average Drawdown"),
+    ):
+        recorder.capture(
+            portfolio_module.get_mean_risk_weights(
+                risk_measure=risk_measure, include_benchmark=True
+            ).drop(columns=f"{name} Ratio")
+        )
+
+    # Holding nothing has no drawdown, so a net exposure of 0 is refused.
+    assert portfolio_module.get_mean_risk_weights(
+        risk_measure="cdar", net_exposure=0, minimum_weight=-1, include_benchmark=True
+    ).empty
+    assert portfolio_module.get_mean_risk_weights(risk_measure="cvaR").empty
 
 
 def test_get_risk_parity_weights_risk_measure(recorder, portfolio_module):
@@ -654,25 +668,27 @@ def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_mod
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "extra"),
     [
-        "get_minimum_variance_weights",
-        "get_maximum_sharpe_weights",
-        "get_mean_variance_weights",
-        "get_minimum_cvar_weights",
-        "get_maximum_diversification_weights",
-        "get_growth_optimal_weights",
-        "get_risk_parity_weights",
-        "get_hierarchical_equal_risk_contribution_weights",
-        "get_minimum_drawdown_weights",
-        "get_maximum_omega_weights",
-        "get_maximum_cvar_ratio_weights",
-        "get_resampled_efficient_weights",
+        ("get_minimum_variance_weights", {}),
+        ("get_maximum_sharpe_weights", {}),
+        ("get_mean_variance_weights", {}),
+        ("get_mean_risk_weights", {"risk_measure": "cvar"}),
+        ("get_maximum_diversification_weights", {}),
+        ("get_growth_optimal_weights", {}),
+        ("get_risk_parity_weights", {}),
+        ("get_hierarchical_equal_risk_contribution_weights", {}),
+        ("get_mean_risk_weights", {"risk_measure": "cdar"}),
+        ("get_maximum_omega_weights", {}),
+        (
+            "get_mean_risk_weights",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
+        ("get_resampled_efficient_weights", {"resamples": 50}),
     ],
 )
-def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method):
+def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method, extra):
     construction = _offline_construction(test_toolkit)
-    extra = {"resamples": 50} if "resampled" in method else {}
     by_sector = getattr(construction, method)(
         include_benchmark=True,
         sector_bounds={"Technology": (0, 0.6)},
@@ -1018,23 +1034,29 @@ def test_the_backtest_runs_the_clustering_drawdown_and_ratio_optimizers(
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "extra"),
     [
-        "get_minimum_drawdown_weights",
-        "get_maximum_omega_weights",
-        "get_maximum_cvar_ratio_weights",
+        ("get_mean_risk_weights", {"risk_measure": "cdar"}),
+        ("get_maximum_omega_weights", {}),
+        (
+            "get_mean_risk_weights",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
     ],
 )
-def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(portfolio_module, method):
+def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(
+    portfolio_module, method, extra
+):
     current = {"AAPL": 0.2, "MSFT": 0.6, "Benchmark": 0.2}
     free = getattr(portfolio_module, method)(
-        current_weights=current, include_benchmark=True, rounding=10
+        current_weights=current, include_benchmark=True, rounding=10, **extra
     )
     capped = getattr(portfolio_module, method)(
         current_weights=current,
         maximum_turnover=0.1,
         include_benchmark=True,
         rounding=10,
+        **extra,
     )
     assert free.loc["Portfolio", "Turnover"] > 0.1  # noqa: PLR2004
     assert capped.loc["Portfolio", "Turnover"] == pytest.approx(0.1, abs=1e-7)
@@ -1042,17 +1064,24 @@ def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(portfolio_module, 
 
 
 @pytest.mark.parametrize(
-    ("method", "column"),
+    ("method", "column", "extra"),
     [
-        ("get_maximum_omega_weights", "Omega Ratio"),
-        ("get_maximum_cvar_ratio_weights", "CVaR Ratio"),
-        ("get_nested_clustered_optimization_weights", None),
+        ("get_maximum_omega_weights", "Omega Ratio", {}),
+        (
+            "get_mean_risk_weights",
+            "CVaR Ratio",
+            {"risk_measure": "cvar", "objective": "maximum_ratio"},
+        ),
+        (
+            "get_nested_clustered_optimization_weights",
+            None,
+            {"objective": "maximum_sharpe"},
+        ),
     ],
 )
 def test_the_ratio_optimizers_take_an_expected_return_estimator(
-    portfolio_module, method, column
+    portfolio_module, method, column, extra
 ):
-    extra = {"objective": "maximum_sharpe"} if column is None else {}
     mean = getattr(portfolio_module, method)(include_benchmark=True, **extra)
     shrunk = getattr(portfolio_module, method)(
         expected_returns="bayes_stein", include_benchmark=True, **extra

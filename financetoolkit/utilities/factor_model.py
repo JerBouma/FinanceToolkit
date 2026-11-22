@@ -456,7 +456,8 @@ def get_daily_factors(
 
     Each metric is called unrounded with the parameters it takes: the module's defaults
     (such as show_daily for the ratios) and the parameters given, which must be taken by at least one
-    of the metrics so that none is silently ignored. A metric that returns no data, such as
+    of the metrics so that none is silently ignored. A metric with variants is named with its method
+    after a colon, e.g. "get_alpha:jensen" for get_alpha(method="jensen"). A metric that returns no data, such as
     one missing a statement line item, is left out with a warning in the log of its own.
 
     Args:
@@ -474,18 +475,23 @@ def get_daily_factors(
         dict[str, pd.DataFrame]: The daily factor of each metric that returned data.
     """
     methods = {}
+    variants = {}
     unused = set(parameters)
     for name in names:
-        method = getattr(module, name, None)
+        method_name, _, variant = name.partition(":")
+        method = getattr(module, method_name, None)
         if (
             method is None
-            or not name.startswith("get_")
-            or name in ("get_factor_analysis", "get_indicator_summary")
+            or not method_name.startswith("get_")
+            or method_name in ("get_factor_analysis", "get_indicator_summary")
+            or (variant and "method" not in inspect.signature(method).parameters)
         ):
             raise ValueError(
                 f"{name} is not a metric of the {type(module).__name__} module."
             )
         methods[name] = method
+        if variant:
+            variants[name] = {"method": variant}
         unused -= set(inspect.signature(method).parameters)
 
     if unused:
@@ -500,8 +506,12 @@ def get_daily_factors(
     factors = {}
     for name, method in methods.items():
         accepted = inspect.signature(method).parameters
+        # The variant in the name wins over a method given for all the metrics.
         values = method(
-            **{key: value for key, value in arguments.items() if key in accepted}
+            **{
+                **{key: value for key, value in arguments.items() if key in accepted},
+                **variants.get(name, {}),
+            }
         )
         if values.empty:
             continue

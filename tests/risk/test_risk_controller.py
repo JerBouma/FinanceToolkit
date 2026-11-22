@@ -156,6 +156,10 @@ def test_get_garch(recorder, risk_module):
     recorder.capture(risk_module.get_garch(period="monthly"))
     recorder.capture(risk_module.get_garch(period="yearly", growth=True))
     recorder.capture(risk_module.get_garch(period="yearly", growth=True, lag=[1, 2, 3]))
+    recorder.capture(risk_module.get_garch(method="gjr"))
+    recorder.capture(risk_module.get_garch(method="gjr", period="monthly"))
+    recorder.capture(risk_module.get_garch(method="gjr", period="yearly", growth=True))
+    assert risk_module.get_garch(method="figarch").empty
 
 
 def test_get_garch_forecast(recorder, risk_module):
@@ -165,30 +169,23 @@ def test_get_garch_forecast(recorder, risk_module):
     recorder.capture(
         risk_module.get_garch_forecast(period="yearly", growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(risk_module.get_garch_forecast(method="gjr"))
+
+    # A GJR-GARCH fit on three years of months lands differently per platform's libraries (in
+    # the third digit), so the monthly forecast is checked rather than recorded.
+    monthly = risk_module.get_garch_forecast(method="gjr", period="monthly")
+    assert monthly.shape == (10, 3)
+    assert (monthly > 0).all().all()
 
 
 def test_get_garch_parameters(recorder, risk_module):
     recorder.capture(risk_module.get_garch_parameters())
     recorder.capture(risk_module.get_garch_parameters(period="monthly"))
+    recorder.capture(risk_module.get_garch_parameters(method="gjr"))
+    recorder.capture(risk_module.get_garch_parameters(method="gjr", period="monthly"))
 
 
-def test_get_gjr_garch(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch())
-    recorder.capture(risk_module.get_gjr_garch(period="monthly"))
-    recorder.capture(risk_module.get_gjr_garch(period="yearly", growth=True))
-
-
-def test_get_gjr_garch_forecast(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch_forecast())
-
-    # A fit on three years of months lands differently per platform's libraries (in the third
-    # digit), so the monthly forecast is checked rather than recorded.
-    monthly = risk_module.get_gjr_garch_forecast(period="monthly")
-    assert monthly.shape == (10, 3)
-    assert (monthly > 0).all().all()
-
-
-def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
+def test_get_garch_forecast_gjr_monthly_matches_the_arch_package(
     risk_module, monkeypatch
 ):
     arch = pytest.importorskip("arch")
@@ -208,7 +205,9 @@ def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
     # The memoized monthly returns are replaced for this test only.
     monkeypatch.setitem(risk_module._data_cache, ("monthly", False), returns)
 
-    forecast = risk_module.get_gjr_garch_forecast(period="monthly", rounding=12)
+    forecast = risk_module.get_garch_forecast(
+        method="gjr", period="monthly", rounding=12
+    )
 
     assert forecast.index.tolist() == list(
         pd.period_range("2025-01", periods=10, freq="M")
@@ -233,28 +232,28 @@ def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
         np.testing.assert_allclose(forecast[ticker], reference, rtol=1e-3)
 
 
-def test_get_gjr_garch_parameters(recorder, risk_module):
-    recorder.capture(risk_module.get_gjr_garch_parameters())
-    recorder.capture(risk_module.get_gjr_garch_parameters(period="monthly"))
+# The EGARCH variants have tests of their own, as only they carry the platform drift mark.
+@EGARCH_PLATFORM_DRIFT
+def test_get_garch_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="egarch"))
+    recorder.capture(risk_module.get_garch(method="egarch", period="monthly"))
+    recorder.capture(
+        risk_module.get_garch(method="egarch", period="yearly", growth=True)
+    )
 
 
 @EGARCH_PLATFORM_DRIFT
-def test_get_egarch(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch())
-    recorder.capture(risk_module.get_egarch(period="monthly"))
-    recorder.capture(risk_module.get_egarch(period="yearly", growth=True))
+def test_get_garch_forecast_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_forecast(method="egarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="egarch", period="monthly"))
 
 
 @EGARCH_PLATFORM_DRIFT
-def test_get_egarch_forecast(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch_forecast())
-    recorder.capture(risk_module.get_egarch_forecast(period="monthly"))
-
-
-@EGARCH_PLATFORM_DRIFT
-def test_get_egarch_parameters(recorder, risk_module):
-    recorder.capture(risk_module.get_egarch_parameters())
-    recorder.capture(risk_module.get_egarch_parameters(period="monthly"))
+def test_get_garch_parameters_egarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_parameters(method="egarch"))
+    recorder.capture(
+        risk_module.get_garch_parameters(method="egarch", period="monthly")
+    )
 
 
 def test_get_var_backtest(recorder, risk_module):
@@ -927,24 +926,22 @@ def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
     assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])
 
 
-def test_get_corwin_schultz_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_corwin_schultz_spread())
-    recorder.capture(risk_module.get_corwin_schultz_spread(period="quarterly"))
-    recorder.capture(
-        risk_module.get_corwin_schultz_spread(period="quarterly", rolling=2)
+def test_get_bid_ask_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_bid_ask_spread())
+    recorder.capture(risk_module.get_bid_ask_spread(period="quarterly"))
+    recorder.capture(risk_module.get_bid_ask_spread(period="quarterly", rolling=2))
+    for method in ("corwin_schultz", "abdi_ranaldo"):
+        recorder.capture(risk_module.get_bid_ask_spread(method=method))
+        recorder.capture(
+            risk_module.get_bid_ask_spread(method=method, period="quarterly")
+        )
+        recorder.capture(
+            risk_module.get_bid_ask_spread(method=method, period="quarterly", rolling=2)
+        )
+    pd.testing.assert_frame_equal(
+        risk_module.get_bid_ask_spread(), risk_module.get_bid_ask_spread(method="edge")
     )
-
-
-def test_get_abdi_ranaldo_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_abdi_ranaldo_spread())
-    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly"))
-    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly", rolling=2))
-
-
-def test_get_edge_spread(recorder, risk_module):
-    recorder.capture(risk_module.get_edge_spread())
-    recorder.capture(risk_module.get_edge_spread(period="quarterly"))
-    recorder.capture(risk_module.get_edge_spread(period="quarterly", rolling=2))
+    assert risk_module.get_bid_ask_spread(method="roll").empty
 
 
 def test_get_share_turnover(recorder, risk_module):
@@ -1193,22 +1190,23 @@ def _weekend_ohlc_risk(tickers=("BTC", "SPY")):
     )
 
 
-@pytest.mark.parametrize(
-    "method",
-    ["get_corwin_schultz_spread", "get_abdi_ranaldo_spread", "get_edge_spread"],
-)
+@pytest.mark.parametrize("method", ["corwin_schultz", "abdi_ranaldo", "edge"])
 def test_the_spread_of_a_stock_ignores_a_cryptocurrency_next_to_it(method):
     mixed = _weekend_ohlc_risk()
     alone = _weekend_ohlc_risk(tickers=("SPY",))
 
     for period, rolling in (("monthly", None), ("quarterly", 2), ("weekly", None)):
-        mixed_spread = getattr(mixed, method)(period=period, rolling=rolling)
+        mixed_spread = mixed.get_bid_ask_spread(
+            period=period, rolling=rolling, method=method
+        )
         # The rows of the cryptocurrency's own periods (a first week holding a single
         # trading day of the stock) are NaN for the stock.
         for column in ("SPY", "Benchmark"):
             pd.testing.assert_series_equal(
                 mixed_spread[column].dropna(),
-                getattr(alone, method)(period=period, rolling=rolling)[column].dropna(),
+                alone.get_bid_ask_spread(period=period, rolling=rolling, method=method)[
+                    column
+                ].dropna(),
             )
         assert mixed_spread["SPY"].notna().sum() > 0
 

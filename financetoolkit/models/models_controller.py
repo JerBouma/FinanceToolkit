@@ -122,7 +122,7 @@ class ModelsBase:
                         end_date="2025-12-31",
         quarterly=True, start_date='2022-12-31')
 
-        dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+        dupont_analysis = toolkit.models.get_dupont_analysis(method="extended")
 
         dupont_analysis.loc['AMZN']
         ```

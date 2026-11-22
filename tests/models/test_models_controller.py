@@ -43,14 +43,12 @@ def test_get_dupont_analysis(recorder, models_module):
     recorder.capture(models_module.get_dupont_analysis())
     recorder.capture(models_module.get_dupont_analysis(growth=True))
     recorder.capture(models_module.get_dupont_analysis(growth=True, lag=[1, 2, 3]))
-
-
-def test_get_extended_dupont_analysis(recorder, models_module):
-    recorder.capture(models_module.get_extended_dupont_analysis())
-    recorder.capture(models_module.get_extended_dupont_analysis(growth=True))
+    recorder.capture(models_module.get_dupont_analysis(method="extended"))
+    recorder.capture(models_module.get_dupont_analysis(method="extended", growth=True))
     recorder.capture(
-        models_module.get_extended_dupont_analysis(growth=True, lag=[1, 2, 3])
+        models_module.get_dupont_analysis(method="extended", growth=True, lag=[1, 2, 3])
     )
+    assert models_module.get_dupont_analysis(method="nissim_penman").empty
 
 
 def test_get_enterprise_value_breakdown(recorder, models_module):
@@ -1965,7 +1963,7 @@ def test_return_on_equity_excludes_minority_interests(models_module, monkeypatch
     average_assets = (assets[period] + assets[period - 1]) / 2
 
     dupont = models.get_dupont_analysis(rounding=10)
-    extended = models.get_extended_dupont_analysis(rounding=10)
+    extended = models.get_dupont_analysis(method="extended", rounding=10)
     for ticker in ["AAPL", "MSFT"]:
         for analysis in (dupont, extended):
             assert analysis.loc[(ticker, "Equity Multiplier"), period] == (
@@ -2501,7 +2499,7 @@ def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, tr
     asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
     return_on_assets = ratios.get_return_on_assets(trailing=trailing)
     dupont = models.get_dupont_analysis(trailing=trailing)
-    extended = models.get_extended_dupont_analysis(trailing=trailing)
+    extended = models.get_dupont_analysis(method="extended", trailing=trailing)
 
     for ticker in tickers:
         reported = return_on_equity.loc[ticker]

@@ -3387,7 +3387,7 @@ class Performance:
         Journal of Risk, 15(2), 3-44.
         - quantstats: stats.sortino, stats.smart_sortino, stats.adjusted_sortino,
         stats.probabilistic_sortino_ratio and stats.probabilistic_adjusted_sortino_ratio, the
-        reference implementation of the variants (https://github.com/ranaroussi/quantstats).
+        reference for the variants (https://github.com/ranaroussi/quantstats).
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
@@ -5557,6 +5557,9 @@ class Performance:
         a longer window has fewer of them. With relative=False the window return is compared with 0 instead of
         the benchmark's, the share of windows with a gain: for 12 monthly returns ffn's "Win 12m %".
 
+        The measure is defined in PerformanceAnalytics (Peterson and Carl) as table.ProbOutPerformance; the
+        Toolkit applies it to each ticker against its benchmark.
+
         For more information, see the following sources:
 
         - PerformanceAnalytics: table.ProbOutPerformance (https://github.com/braverock/PerformanceAnalytics).
@@ -5924,6 +5927,9 @@ class Performance:
         steady rate; a value close to 0 means its path wandered without a trend. The measure says nothing about
         the direction: a steady decline is as stable as a steady rise, so read it together with the return.
 
+        The measure is defined in empyrical (Quantopian) as stability_of_timeseries and reported in pyfolio's
+        tear sheets; the Toolkit applies it to the returns of each ticker and period.
+
         For more information, see the following sources:
 
         - empyrical: stability_of_timeseries (https://github.com/stefan-jansen/empyrical-reloaded).
@@ -6144,6 +6150,8 @@ class Performance:
         quarterly or yearly returns). Leaving out the risk free rate makes it comparable across currencies and
         rate environments, but it overstates the reward of a low-risk asset that earns little more than cash;
         `get_sharpe_ratio` subtracts the risk free rate.
+
+        The ratio under this name is defined in quantstats (Ran Aroussi) and ffn (Philippe Morissette).
 
         For more information, see the following sources:
 
@@ -7319,7 +7327,7 @@ class Performance:
         - The method retrieves historical data and calculates the Prospect Ratio for each asset in the Toolkit
         instance.
         - Equals PerformanceAnalytics' ProspectRatio for a MAR of 0 (the default). For another MAR the
-        PerformanceAnalytics code subtracts MAR / N instead of the MAR from the average return, unlike the
+        PerformanceAnalytics function subtracts MAR / N instead of the MAR from the average return, unlike the
         formula in its documentation and in Bacon (2008), which the Toolkit follows.
         - Without a return below the MAR the downside deviation is 0 and the ratio is undefined (NaN).
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
@@ -7683,6 +7691,11 @@ class Performance:
 
         The Recovery Factor compounds the returns into the cumulative return and keeps its sign,
         so a history that lost money does not appear to recover.
+
+        The Expectancy and the Payoff Ratio follow Tharp (2006). The Common Sense Ratio, the CPC Index, the
+        Profit Ratio, the Outlier Win and Loss Ratios, the Risk of Ruin, the Exposure and the Risk-Adjusted
+        Return are defined in quantstats (Ran Aroussi); the Toolkit applies them to the returns of each
+        ticker and period.
 
         For more information, see the following sources:
 
@@ -10065,7 +10078,7 @@ class Performance:
         - Gregoriou, G.N., & Gueyie, J.P. (2003). "Risk-Adjusted Performance of Funds of Hedge Funds Using a
         Modified Sharpe Ratio." Journal of Wealth Management, 6(3), 77-83.
         - skfolio: RatioMeasure (https://skfolio.org/generated/skfolio.measures.RatioMeasure.html).
-        - riskfolio-lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
         - PerformanceAnalytics: SharpeRatio with FUN="VaR" or "ES" (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: return over risk, risk-adjusted return ratio, generalized Sharpe ratio, conditional Sharpe
@@ -10631,6 +10644,8 @@ class Performance:
         behaves differently from its history. The cone does not assume normally distributed returns, but it
         does assume that the coming returns are drawn independently from the same distribution as the past
         ones.
+
+        The bootstrap forecast cone is the one pyfolio (Quantopian) draws in its tear sheets.
 
         For more information, see the following sources:
 

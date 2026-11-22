@@ -1262,7 +1262,7 @@ class DistributionRisk:
         The American Economic Review, 67(2), 116-126.
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
         Sons, chapter 4 (Downside Potential, Downside and Upside Frequency, Upside Potential).
-        - riskfolio-lib: RiskFunctions.LPM (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.LPM (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.first_lower_partial_moment and measures.fourth_lower_partial_moment
         (https://skfolio.org/api.html#module-skfolio.measures).
         - PerformanceAnalytics (R): DownsidePotential, DownsideFrequency, UpsideFrequency, UpsideRisk and
@@ -1314,12 +1314,12 @@ class DistributionRisk:
         - If `growth` is set to True, the method calculates the growth of the Partial Moment values using the
         specified `lag`.
         - The lower partial moment of order 1 equals PerformanceAnalytics' DownsidePotential and
-        riskfolio-lib's LPM(p=1), order 0 equals DownsideFrequency (UpsideFrequency with side="upper") and
+        Riskfolio-Lib's LPM(p=1), order 0 equals DownsideFrequency (UpsideFrequency with side="upper") and
         side="upper" with order 1 and 2 equals UpsideRisk(stat="potential") and UpsideRisk(stat="variance").
         - With minimum_acceptable_return="mean" order 1 and 4 equal skfolio's first_lower_partial_moment
-        and fourth_lower_partial_moment. riskfolio-lib's LPM(p=2) divides by n - 1 instead of n and
+        and fourth_lower_partial_moment. Riskfolio-Lib's LPM(p=2) divides by n - 1 instead of n and
         takes the root, and PerformanceAnalytics' lpm divides by the number of returns below the
-        threshold. riskfolio-lib's SemiKurtosis is the square of order 4 with root=True and
+        threshold. Riskfolio-Lib's SemiKurtosis is the square of order 4 with root=True and
         minimum_acceptable_return="mean", and EvenSemiMoment(p) the (order 2p) moment to the power 1 / p.
 
         As an example:
@@ -1406,7 +1406,7 @@ class DistributionRisk:
         even moments, https://riskfolio-lib.readthedocs.io/en/latest/risk.html).
         - skfolio: measures.third_central_moment and measures.fourth_central_moment
         (https://skfolio.org/api.html#module-skfolio.measures).
-        - riskfolio-lib: RiskFunctions.Kurtosis and RiskFunctions.EvenMoment
+        - Riskfolio-Lib: RiskFunctions.Kurtosis and RiskFunctions.EvenMoment
         (https://github.com/dcajasn/Riskfolio-Lib).
         - PerformanceAnalytics (R): centeredmoment (https://github.com/braverock/PerformanceAnalytics).
 
@@ -1448,7 +1448,7 @@ class DistributionRisk:
         - If `growth` is set to True, the method calculates the growth of the Central Moment values using the
         specified `lag`.
         - Order 3 and 4 equal skfolio's third_central_moment and fourth_central_moment and
-        PerformanceAnalytics' centeredmoment. riskfolio-lib's Kurtosis is the square root of order 4 and
+        PerformanceAnalytics' centeredmoment. Riskfolio-Lib's Kurtosis is the square root of order 4 and
         its EvenMoment(p) the (order 2p) moment to the power 1 / p.
         - The moments of daily returns are small numbers (order 4 of a stock is about 1e-7), so use the
         rounding parameter to show them.
@@ -1528,7 +1528,7 @@ class DistributionRisk:
 
         - Young, M.R. (1998). "A Minimax Portfolio Selection Rule with Linear Programming Solution."
         Management Science, 44(5), 673-683.
-        - riskfolio-lib: RiskFunctions.WR (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.WR (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.worst_realization (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: worst return, minimax risk, maximum loss.
@@ -1566,7 +1566,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Worst Realization values using the
         specified `lag`.
-        - riskfolio-lib's WR and skfolio's worst_realization report the loss as a positive number
+        - Riskfolio-Lib's WR and skfolio's worst_realization report the loss as a positive number
         (-min(Return)); the Toolkit keeps the sign of the return.
 
         As an example:
@@ -1645,7 +1645,7 @@ class DistributionRisk:
         American Economic Review, 72(1), 178-185.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - riskfolio-lib: RiskFunctions.GMD and OwaWeights.owa_gmd (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.GMD and OwaWeights.owa_gmd (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.gini_mean_difference (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: GMD, Gini's mean difference, mean absolute difference.
@@ -1683,7 +1683,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Gini Mean Difference values using the
         specified `lag`.
-        - The result equals riskfolio-lib's GMD and skfolio's gini_mean_difference.
+        - The result equals Riskfolio-Lib's GMD and skfolio's gini_mean_difference.
 
         As an example:
 
@@ -1766,7 +1766,7 @@ class DistributionRisk:
         Shortfall, Capital Allocations, and Heavy-tailed Risks." Journal of Banking & Finance, 83, 70-84.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - riskfolio-lib: RiskFunctions.TG and OwaWeights.owa_tg (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.TG and OwaWeights.owa_tg (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: TG, Gini shortfall, tail Gini risk.
 
@@ -1806,7 +1806,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Tail Gini values using the
         specified `lag`.
-        - The result equals riskfolio-lib's TG with the opposite sign: riskfolio-lib reports the loss as
+        - The result equals Riskfolio-Lib's TG with the opposite sign: Riskfolio-Lib reports the loss as
         a positive number. Its Conditional Value at Risk is the exact one of Rockafellar and Uryasev
         (2002), which can differ slightly from the average of the returns below the interpolated quantile
         that `get_conditional_value_at_risk` takes.
@@ -1900,7 +1900,7 @@ class DistributionRisk:
 
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - riskfolio-lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG, RiskFunctions.TGRG and
+        - Riskfolio-Lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG, RiskFunctions.TGRG and
         RiskFunctions.EVRG (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: return range, VaR range, CVaR range, Tail Gini range, EVaR range, tail spread.
@@ -1946,8 +1946,8 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Risk Range values using the
         specified `lag`.
-        - The Range, the Tail Gini Range and the EVaR Range equal riskfolio-lib's RG, TGRG and EVRG.
-        riskfolio-lib's VRG and CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
+        - The Range, the Tail Gini Range and the EVaR Range equal Riskfolio-Lib's RG, TGRG and EVRG.
+        Riskfolio-Lib's VRG and CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
         Conditional Value at Risk of Rockafellar and Uryasev (2002), so the VaR Range and CVaR Range differ
         slightly from them and equal the difference of the Toolkit's own historic Value at Risk and
         Conditional Value at Risk of the gains and the losses instead.
@@ -2042,7 +2042,7 @@ class DistributionRisk:
         105-124.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - riskfolio-lib: RiskFunctions.L_Moment and OwaWeights.owa_l_moment
+        - Riskfolio-Lib: RiskFunctions.L_Moment and OwaWeights.owa_l_moment
         (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: L-moments, L-scale, L-skewness, L-kurtosis, L-CV, linear moments.
@@ -2084,7 +2084,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the L-moment values using the
         specified `lag`.
-        - The L-moments equal riskfolio-lib's L_Moment and scipy's stats.lmoment(standardize=False), the
+        - The L-moments equal Riskfolio-Lib's L_Moment and scipy's stats.lmoment(standardize=False), the
         ratios scipy's stats.lmoment with standardize=True.
         - A sample needs at least `order` returns, fewer give NaN.
 
@@ -2170,12 +2170,11 @@ class DistributionRisk:
 
         For more information, see the following sources:
 
-        - Cajas, D. (2023). "Convex Risk Measures based on Generalized Lower Deviation and L-moments."
-        SSRN Electronic Journal.
+        - Cajas, D. (2023). "Higher Order Moment Portfolio Optimization with L-Moments." SSRN 4393155.
         - Hosking, J.R.M. (1990). "L-moments: Analysis and Estimation of Distributions using Linear
         Combinations of Order Statistics." Journal of the Royal Statistical Society: Series B, 52(1),
         105-124.
-        - riskfolio-lib: RiskFunctions.L_Moment_CRM and OwaWeights.owa_l_moment_crm
+        - Riskfolio-Lib: RiskFunctions.L_Moment_CRM and OwaWeights.owa_l_moment_crm
         (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: L-moment CRM, L-moment based convex risk measure.
@@ -2220,12 +2219,12 @@ class DistributionRisk:
         listed later or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the L-moment Convex Risk Measure values using
         the specified `lag`.
-        - With method="crra" the result equals riskfolio-lib's L_Moment_CRM. For "msd" and "mss" the weights
-        solve a small convex program over the order - 1 weights with scipy (SLSQP) where riskfolio-lib uses
+        - With method="crra" the result equals Riskfolio-Lib's L_Moment_CRM. For "msd" and "mss" the weights
+        solve a small convex program over the order - 1 weights with scipy (SLSQP) where Riskfolio-Lib uses
         cvxpy with the Clarabel solver; the Toolkit's weights meet the constraints exactly and match a
-        tightly solved cvxpy program, while Clarabel's default tolerances leave riskfolio-lib's weights
+        tightly solved cvxpy program, while Clarabel's default tolerances leave Riskfolio-Lib's weights
         slightly off, so the results differ in the fourth significant digit for "msd" and the second for
-        "mss". riskfolio-lib's maximum entropy method ("ME") is left out: the entropy it maximizes is
+        "mss". Riskfolio-Lib's maximum entropy method ("ME") is left out: the entropy it maximizes is
         that of a bound which is the same for every set of weights, so its result depends on the solver.
         - With order=3 and max_weight=0.5 no weights meet the constraints, which gives an error.
 

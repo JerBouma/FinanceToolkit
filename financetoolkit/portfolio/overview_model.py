@@ -1354,7 +1354,7 @@ def get_turnover(
 ) -> pd.DataFrame:
     """
     The turnover of a portfolio per day, the value traded as a share of the value held, as
-    pyfolio's get_turnover calculates it:
+    defined in pyfolio (Quantopian) by get_turnover:
 
     - Traded Value_t = Σ |volume × price| of the day's transactions
     - Gross Value_t = Σ_i |value of position i| (pyfolio's "actual gross book")
@@ -1400,7 +1400,7 @@ def get_turnover(
 def get_gross_leverage(position_values: pd.DataFrame) -> pd.DataFrame:
     """
     The gross leverage of a portfolio per day, the value of its long and short positions
-    together as a multiple of its net value, as pyfolio's gross_lev calculates it:
+    together as a multiple of its net value, as defined in pyfolio (Quantopian) by gross_lev:
 
     - Gross Leverage_t = Σ_i |value of position i| / Σ_i value of position i
 

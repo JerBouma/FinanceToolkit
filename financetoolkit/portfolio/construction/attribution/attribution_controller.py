@@ -372,7 +372,7 @@ class AttributionConstruction:
         - Brinson, G.P., Hood, L.R. and Beebower, G.L. (1986). "Determinants of Portfolio
           Performance." Financial Analysts Journal, 42(4), 39-44.
         - Cariño, D.R. (1999). "Combining Attribution Effects Over Time." The Journal of
-          Performance Measurement, 4(1), 5-14.
+          Performance Measurement, 3(4), 5-14.
         - Menchero, J. (2000). "An Optimized Approach to Linking Attribution Effects Over
           Time." The Journal of Performance Measurement, 5(1), 36-42.
         - Bacon, C. (2004). Practical Portfolio Performance Measurement and Attribution.

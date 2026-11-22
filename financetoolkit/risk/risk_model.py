@@ -78,7 +78,7 @@ def get_wealth_and_peak(
     period's first return is a real one.
 
     Without compounding the wealth is 1 plus the sum of the returns, so the difference
-    between it and its peak is the absolute (uncompounded) drawdown of riskfolio-lib and
+    between it and its peak is the absolute (uncompounded) drawdown of Riskfolio-Lib and
     skfolio.
 
     Args:
@@ -340,7 +340,7 @@ def get_ui(
         different scales. Defaults to "return".
         compounded (bool, optional): Only for method="return". Whether to compound the
         returns into the wealth path; without compounding the drawdowns are the absolute
-        declines of the summed returns from their peak (riskfolio-lib's UCI_Abs with
+        declines of the summed returns from their peak (Riskfolio-Lib's UCI_Abs with
         rolling=None). Defaults to True.
 
     Returns:
@@ -760,7 +760,7 @@ def get_conditional_drawdown_at_risk(
         or negative). Defaults to "return".
         compounded (bool, optional): Only for method="return". Whether to compound the
         returns; without compounding the drawdowns are the absolute declines of the summed
-        returns from their peak (riskfolio-lib's CDaR_Abs). Defaults to True.
+        returns from their peak (Riskfolio-Lib's CDaR_Abs). Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: CDaR values as float if returns is a pd.Series,
@@ -1449,7 +1449,7 @@ def get_downside_deviation(
     if isinstance(returns, pd.Series):
         # The second order lower partial moment: shortfalls are squared and averaged over every observation, not only the ones below the threshold, and they are measured from the minimum acceptable return rather than from their own mean -- taking the standard deviation of the shortfalls alone understates the risk materially.  # noqa: E501
         if minimum_acceptable_return == "mean":
-            # Estimating the mean from the same returns costs a degree of freedom, as in the sample variance (riskfolio-lib and skfolio divide by N - 1 as well).  # noqa: E501
+            # Estimating the mean from the same returns costs a degree of freedom, as in the sample variance (Riskfolio-Lib and skfolio divide by N - 1 as well).  # noqa: E501
             shortfalls = (returns - returns.mean()).clip(upper=0)
             observations = returns.count()
 

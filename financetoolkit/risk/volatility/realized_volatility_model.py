@@ -258,7 +258,7 @@ def get_rogers_satchell_volatility(
     For more information about the method, see the following paper:
 
     - Rogers, L.C.G., & Satchell, S.E. (1991). "Estimating Variance from High, Low and
-    Close Prices." Annals of Applied Probability, 1(4), 504-512.
+    Closing Prices." Annals of Applied Probability, 1(4), 504-512.
 
     Args:
         open_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Open prices.
@@ -349,7 +349,7 @@ def get_yang_zhang_volatility(
     For more information about the method, see the following paper:
 
     - Yang, D., & Zhang, Q. (2000). "Drift-Independent Volatility Estimation Based on
-    High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-491.
+    High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-492.
 
     Args:
         open_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Open prices.

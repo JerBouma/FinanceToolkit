@@ -2942,7 +2942,8 @@ class Portfolio:
 
         A portfolio of long positions has a gross leverage of 1; short positions raise it,
         e.g. to 1.6 for a 130/30 portfolio. Over weeks, months, quarters or years the
-        values at the end of the period are shown.
+        values at the end of the period are shown. The measure is defined in pyfolio
+        (Quantopian) as gross_lev.
 
         For more information, see the following sources:
 

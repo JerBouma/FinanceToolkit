@@ -415,7 +415,7 @@ class ValueAtRiskRisk:
         SSRN Electronic Journal.
         - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected Shortfall."
         Mathematical Finance, 14(1), 115-129.
-        - riskfolio-lib: OwaWeights.owa_wcvar (the Weighted CVaR, https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: OwaWeights.owa_wcvar (the Weighted CVaR, https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: CVaR, expected shortfall, ES, tail risk, weighted CVaR, WCVaR, spectral risk measure.
 
@@ -461,10 +461,10 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates CVaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of CVaR values using the specified `lag`.
-        - riskfolio-lib's Weighted CVaR applies the ordered weighted average weights of its CVaR, the exact
+        - Riskfolio-Lib's Weighted CVaR applies the ordered weighted average weights of its CVaR, the exact
         tail average of Rockafellar and Uryasev (2002) that counts the return at the boundary with a fraction,
         where the historic CVaR here averages the returns up to the interpolated quantile; the weighted sum is
-        the same, so the two differ by the difference of the CVaR estimators. riskfolio-lib reports the loss
+        the same, so the two differ by the difference of the CVaR estimators. Riskfolio-Lib reports the loss
         as a positive number, the Toolkit as a return.
         - The kernel CVaR equals the mean below the quantile of scipy's gaussian_kde with
         bw_method="silverman". PerformanceAnalytics' ES(method="kernel") is defined for the component
@@ -636,7 +636,7 @@ class ValueAtRiskRisk:
 
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - riskfolio-lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.evar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: EVaR, historical EVaR, entropic VaR, Chernoff bound.
@@ -674,7 +674,7 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates EVaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
-        - The historic EVaR equals riskfolio-lib's EVaR_Hist and skfolio's evar, which report the loss as a
+        - The historic EVaR equals Riskfolio-Lib's EVaR_Hist and skfolio's evar, which report the loss as a
         positive number; the Toolkit keeps the sign of a return, as for the VaR and CVaR.
 
         As an example:
@@ -764,7 +764,7 @@ class ValueAtRiskRisk:
         Stochastics, 6(4), 429-447.
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - riskfolio-lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
+        - Riskfolio-Lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: measures.entropic_risk_measure (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: ERM, entropic risk, exponential utility risk measure.
@@ -773,7 +773,7 @@ class ValueAtRiskRisk:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             risk_aversion (float, optional): The risk aversion z, larger than 0, in the units of the returns.
-                Defaults to 1, the default of riskfolio-lib and skfolio.
+                Defaults to 1, the default of Riskfolio-Lib and skfolio.
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
                 Defaults to 0.05.
             within_period (bool, optional): Whether to calculate the ERM within the specified period or for the
@@ -802,7 +802,7 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the ERM
         for each asset in the Toolkit instance, each on its own returns.
         - If `growth` is set to True, the method calculates the growth of ERM values using the specified `lag`.
-        - Equals riskfolio-lib's Entropic_RM and skfolio's entropic_risk_measure, which report the loss as a
+        - Equals Riskfolio-Lib's Entropic_RM and skfolio's entropic_risk_measure, which report the loss as a
         positive number; the Toolkit keeps the sign of a return. The exponential average is taken in log
         space (logsumexp), so a small risk aversion does not overflow.
 

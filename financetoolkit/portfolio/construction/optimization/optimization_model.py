@@ -783,7 +783,7 @@ def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.Data
     Every period counts in the average, the ones above the threshold as zero, as in
     Estrada.
 
-    See Estrada, J. (2007), "Mean-Semivariance Optimization: A Heuristic Approach",
+    See Estrada, J. (2008), "Mean-Semivariance Optimization: A Heuristic Approach",
     Journal of Applied Finance, 18(1), 57-72.
 
     Args:
@@ -878,9 +878,9 @@ def get_denoised_covariance(
     "fixed" also equals skfolio's DenoiseCovariance. Riskfolio-Lib's covar_matrix
     defaults to α = 0.1 for "shrink"; the default here is López de Prado's α = 0.
 
-    See Laloux, L., Cizeau, P., Bouchaud, J.-P. and Potters, M. (2000), "Random Matrix
-    Approach to Cross Correlations in Financial Data", Physical Review E, 63(3), 037101,
-    and López de Prado, M. (2020), "Machine Learning for Asset Managers", Cambridge
+    See Laloux, L., Cizeau, P., Potters, M. and Bouchaud, J.-P. (2000), "Random Matrix
+    Theory and Financial Correlations", International Journal of Theoretical and Applied
+    Finance, 3(3), 391-397, and López de Prado, M. (2020), "Machine Learning for Asset Managers", Cambridge
     University Press, chapter 2.
 
     Args:
@@ -2219,8 +2219,8 @@ def get_hierarchical_risk_parity_weights(
         )
         np.fill_diagonal(distance, 0)
     # The Euclidean distance between the columns of the distance matrix that the paper
-    # clusters on (its code passes the square matrix to linkage, which reads the rows as
-    # observations and does exactly this).
+    # clusters on (the paper's listing passes the square matrix to linkage, which reads the
+    # rows as observations and does exactly this).
     order = leaves_list(linkage(pdist(distance), method=linkage_method))
     # The bisection works on positions in numpy: label lookups in pandas took most of
     # the time, which counts in a backtest that runs it on every rebalancing date.

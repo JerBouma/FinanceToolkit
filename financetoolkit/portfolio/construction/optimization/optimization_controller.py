@@ -188,7 +188,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -371,7 +371,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -582,7 +582,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -783,7 +783,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -966,7 +966,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -1125,7 +1125,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -1285,7 +1285,7 @@ class OptimizationConstruction:
                 covariance that the benchmark as a single factor implies, Ledoit and
                 Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
                 the scaled identity), "semicovariance" (the co-movement below a zero
-                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -1470,7 +1470,7 @@ class OptimizationConstruction:
                 covariance that the benchmark as a single factor implies, Ledoit and
                 Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
                 the scaled identity), "semicovariance" (the co-movement below a zero
-                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics), "denoised_spectral", "denoised_shrink" (López de Prado,
                 2020), "gerber" (Gerber et al., 2022), "minimum_covariance_determinant"
                 (Rousseeuw and Van Driessen, 1999), "jlogo" (Barfuss et al., 2016), "geodesic"
@@ -1601,7 +1601,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -2384,7 +2384,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -2572,7 +2572,7 @@ class OptimizationConstruction:
                 covariance that the benchmark as a single factor implies, Ledoit and
                 Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
                 the scaled identity), "semicovariance" (the co-movement below a zero
-                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -2805,7 +2805,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -3038,7 +3038,7 @@ class OptimizationConstruction:
                 covariance that the benchmark as a single factor implies, Ledoit and
                 Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
                 the scaled identity), "semicovariance" (the co-movement below a zero
-                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
@@ -3334,7 +3334,7 @@ class OptimizationConstruction:
                 (towards the covariance that the benchmark as a single factor implies,
                 Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
                 towards the scaled identity), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                zero return, Estrada, 2008), "exponential" (recent periods weigh most,
                 RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
                 random returns could produce averaged, Laloux et al., 2000),
                 "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"

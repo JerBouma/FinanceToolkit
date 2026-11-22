@@ -23,7 +23,7 @@ def get_drawdown_samples(samples: np.ndarray, compounded: bool = True) -> np.nda
         Compounded: Drawdown_t = Wealth_t / max(1, max(Wealth_s for s <= t)) - 1, Wealth_t = Π (1 + Return_s)
         Uncompounded: Drawdown_t = Sum_t - max(0, max(Sum_s for s <= t)), Sum_t = Σ Return_s
 
-    The uncompounded drawdown is the absolute drawdown of riskfolio-lib (MDD_Abs, DaR_Abs) and
+    The uncompounded drawdown is the absolute drawdown of Riskfolio-Lib (MDD_Abs, DaR_Abs) and
     skfolio (get_drawdowns(compounded=False)): the decline of the summed returns from their peak.
 
     Args:

@@ -52,8 +52,7 @@ ___
 4. [Questions & Answers](#questions--answers)
 5. [Contributing](#contributing)
 6. [Mentions](#mentions)
-7. [Acknowledgements](#acknowledgements)
-8. [Contact](#contact)
+7. [Contact](#contact)
 
 # Installation
 
@@ -739,27 +738,6 @@ The Finance Toolkit has been mentioned in various blogposts, research papers, ne
 - [Python Hub](https://pythonhub.dev/digest/2023-08-13/)
 - [Python Weekly](https://www.pythonweekly.com/p/python-weekly-issue-611-august-3-2023)
 - [Quant Science](https://www.threads.com/@quantscience_/post/DH1FDTGI7oi/the-project-is-finance-toolkit-its-available-on-github-here-httpsgithubcomjerbou?hl=zh-hk)
-
-# Acknowledgements
-
-The Finance Toolkit stands on the work of others. Its formulas come from the literature: the papers and books of Wilder, Bollinger, Markowitz, Sharpe, Fama and French, López de Prado and many more, each cited in the documentation of the method that implements it. The code is my own, written from those published formulas so that it can be applied to actual financial statements and market data, and the credit for the measures goes to the authors who defined them. To make sure the results are right, I check them against the following open-source libraries, which serve as references and are named in the documentation of each method they cover:
-
-- [TA-Lib](https://ta-lib.org) by Mario Fortier
-- [pandas-ta-classic](https://github.com/xgboosted/pandas-ta-classic), the community-maintained continuation of pandas-ta
-- [ta](https://github.com/bukosabino/ta) by Dario Lopez Padial
-- [finta](https://github.com/peerchemist/finta) by Peerchemist
-- [Tulip Indicators](https://tulipindicators.org) by Lewis Van Winkle
-- [Riskfolio-Lib](https://github.com/dcajasn/Riskfolio-Lib) by Dany Cajas
-- [skfolio](https://github.com/skfolio/skfolio) by Hugo Delatte and contributors
-- [PyPortfolioOpt](https://github.com/PyPortfolio/PyPortfolioOpt) by Robert Andrew Martin
-- [empyrical](https://github.com/quantopian/empyrical) and [pyfolio](https://github.com/quantopian/pyfolio) by Quantopian
-- [quantstats](https://github.com/ranaroussi/quantstats) by Ran Aroussi
-- [ffn](https://github.com/pmorissette/ffn) by Philippe Morissette
-- [PerformanceAnalytics](https://cran.r-project.org/package=PerformanceAnalytics) by Brian Peterson and Peter Carl
-- [scikit-learn](https://scikit-learn.org)'s [MinCovDet](https://scikit-learn.org/stable/modules/generated/sklearn.covariance.MinCovDet.html) by the scikit-learn developers
-- [arch](https://github.com/bashtage/arch) by Kevin Sheppard
-
-The econometrics module goes one step further and runs its estimations on [statsmodels](https://www.statsmodels.org) by the statsmodels developers and [linearmodels](https://github.com/bashtage/linearmodels) by Kevin Sheppard. If you find a result that differs from one of these references without the documentation saying why, please open an issue.
 
 # Contact
 If you have any questions about the Finance Toolkit or would like to share with me what you have been working on, feel free to reach out to me via:

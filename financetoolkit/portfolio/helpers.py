@@ -1,11 +1,13 @@
 """Helpers Module"""
 
 import re
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
 import yaml
-from scipy import stats
+from scipy import sparse, stats
+from scipy.optimize import linprog
 
 from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.utilities.excel_model import read_excel as read_workbook
@@ -330,3 +332,131 @@ def get_linear_regression(target: np.ndarray, regressors: np.ndarray) -> dict:
         "adjusted_r_squared": 1
         - (observations - 1) / degrees_of_freedom * (1 - r_squared),
     }
+
+
+# HiGHS's feasibility tolerances for cutting planes: its default of 1e-7 lets a solution
+# violate its newest cut by that much, so the cut never closes the gap to its tolerance.
+CUTTING_PLANE_OPTIONS = {
+    "primal_feasibility_tolerance": 1e-10,
+    "dual_feasibility_tolerance": 1e-10,
+}
+
+# How far a solution may violate a cut and still count as meeting it, and how far the
+# cost of the best feasible point found may exceed the lower bound of the programme (per
+# unit of cost) for it to count as optimal.
+CUTTING_PLANE_TOLERANCE = 1e-10
+CUTTING_PLANE_GAP = 1e-12
+
+# Where cuts are placed between the best feasible point and the solution of the linear
+# programme: 0.2 of the way to the solution.
+CUTTING_PLANE_STEP = 0.2
+
+
+def get_cutting_plane_solution(
+    cost: np.ndarray,
+    inequality: sparse.csr_matrix,
+    upper: np.ndarray,
+    equality: sparse.csr_matrix | None,
+    target: np.ndarray | None,
+    bounds: list[tuple[float | None, float | None]],
+    cuts: Callable[[np.ndarray], list[tuple[np.ndarray, float]]],
+    feasible: Callable[[np.ndarray], np.ndarray | None] | None = None,
+    iterations: int = 2000,
+    unbounded: str = "",
+) -> np.ndarray:
+    """
+    Minimize cost'x subject to inequality x ≤ upper, equality x = target and the bounds
+    with HiGHS, where part of the feasible set is convex but not polyhedral, or polyhedral
+    with too many faces to write down. That part enters as cutting planes (Kelley, 1960):
+    the linear programme is solved, cuts(x) gives the supporting hyperplanes a'x ≤ b of
+    the convex set at a point (none at a point inside it), those that the solution
+    violates are added and the programme is solved again. No cut removes a feasible point,
+    so a solution that violates none is the exact optimum.
+
+    With feasible, which turns a solution into a feasible point of the same or a higher
+    cost (or None), the cuts are placed between the cheapest feasible point found and the
+    solution, the in-out stabilization of Ben-Ameur and Neto (2007), which keeps Kelley's
+    method from jumping between far-apart solutions. The cut at the solution itself is
+    used when those do not remove it, and the search stops when the cost of the cheapest
+    feasible point is within the tolerance of the programme's, which bounds the optimum
+    from below.
+
+    See Kelley, J. E. (1960), "The Cutting-Plane Method for Solving Convex Programs",
+    Journal of the Society for Industrial and Applied Mathematics, 8(4), 703-712, and
+    Ben-Ameur, W. and Neto, J. (2007), "Acceleration of Cutting-Plane and Column
+    Generation Algorithms: Applications to Network Design", Networks, 49(1), 3-17.
+
+    Args:
+        cost (np.ndarray): The cost of each variable.
+        inequality (sparse.csr_matrix): The fixed inequality rows.
+        upper (np.ndarray): Their right-hand side.
+        equality (sparse.csr_matrix | None): The equality rows, None without any.
+        target (np.ndarray | None): Their right-hand side.
+        bounds (list[tuple[float | None, float | None]]): The bounds of each variable.
+        cuts (Callable): The supporting rows (a, b) of the convex set at a point.
+        feasible (Callable | None, optional): A feasible point from a solution, or None
+            where there is none. Defaults to None, cuts at the solutions only.
+        iterations (int, optional): The largest number of linear programmes. Defaults
+            to 2000.
+        unbounded (str, optional): What to add to the error of an unbounded programme.
+            Defaults to "".
+
+    Returns:
+        np.ndarray: The optimal variables.
+    """
+    rows: list[np.ndarray] = []
+    limits: list[float] = []
+    best, incumbent = np.inf, None
+    for _ in range(iterations):
+        result = linprog(
+            cost,
+            A_ub=(
+                sparse.vstack([inequality, sparse.csr_matrix(np.array(rows))])
+                if rows
+                else inequality
+            ),
+            b_ub=np.concatenate([upper, limits]),
+            A_eq=equality,
+            b_eq=target,
+            bounds=bounds,
+            method="highs",
+            options=CUTTING_PLANE_OPTIONS,
+        )
+        if not result.success:
+            raise ValueError(
+                f"The optimization did not converge: {result.message} {unbounded}"
+                if result.status == 3 and unbounded  # noqa: PLR2004
+                else f"The optimization did not converge: {result.message}"
+            )
+        solution = result.x
+        point = solution
+        if feasible is not None:
+            candidate = feasible(solution)
+            if candidate is not None and cost @ candidate < best:
+                best, incumbent = cost @ candidate, candidate
+            if incumbent is not None:
+                if best - result.fun <= CUTTING_PLANE_GAP * max(1, abs(best)):
+                    return incumbent
+                point = incumbent + CUTTING_PLANE_STEP * (solution - incumbent)
+
+        def violated(at):
+            return [
+                (row, limit)
+                for row, limit in cuts(at)
+                if row @ solution > limit + CUTTING_PLANE_TOLERANCE
+            ]
+
+        found = violated(point) or (violated(solution) if point is not solution else [])
+        if not found:
+            return solution
+        if feasible is not None and point is not solution:
+            # The point between them is often cheaper than both once made feasible.
+            candidate = feasible(point)
+            if candidate is not None and cost @ candidate < best:
+                best, incumbent = cost @ candidate, candidate
+        for row, limit in found:
+            rows.append(row)
+            limits.append(limit)
+    raise ValueError(
+        f"The optimization did not converge within {iterations} cutting planes."
+    )

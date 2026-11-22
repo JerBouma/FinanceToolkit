@@ -25,7 +25,7 @@ logger = get_logger()
 @track_sources
 class OptimizationConstruction:
     """
-    Portfolio optimizers: minimum variance, maximum Sharpe, mean-variance, the efficient frontier, risk parity, hierarchical and nested clustered methods, inverse volatility, CVaR, drawdown, Omega, diversification, tracking error, growth optimal, resampled and Black-Litterman weights.
+    Portfolio optimizers: minimum variance, maximum Sharpe, mean-variance, the efficient frontier, risk parity, hierarchical and nested clustered methods, inverse volatility, CVaR, drawdown, Omega, mean-risk (MAD, semideviation, Gini and other risk measures), diversification, tracking error, growth optimal, resampled and Black-Litterman weights.
     """
 
     def _get_current_weights(
@@ -928,6 +928,8 @@ class OptimizationConstruction:
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
+        risk_measure: str = "volatility",
+        confidence_level: float = 0.95,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -941,6 +943,20 @@ class OptimizationConstruction:
         The weights solve w_i (Σw)_i / σ_p = b_i σ_p for every asset, found by minimizing the
         convex function 1/2 w'Σw - Σ b_i ln(w_i) and scaling the result to sum to one.
 
+        With another risk measure ρ of the historical returns, every asset contributes its
+        share of that measure instead, w_i ∂ρ/∂w_i = b_i ρ(w): the solution of
+        min ρ(y) subject to Σ b_i ln(y_i) ≥ 0 and y ≥ 0, scaled to w = y / Σy (Roncalli,
+        2013). The measures that are linear programmes, and the Gini mean
+        difference and Tail Gini measures, are solved exactly with cutting planes (Kelley,
+        1960): the concave Σ b_i ln(y_i) lies below each of its tangents, which are added
+        as linear constraints where the linear programme's solution needs them. The
+        semideviation and the Ulcer Index are minimized with SLSQP as ρ(y) - Σ b_i ln(y_i).
+        The measures are those of get_mean_risk_weights plus "cvar", the Conditional Value
+        at Risk (Rockafellar and Uryasev, 2000), and "cdar", the Conditional Drawdown at
+        Risk of the uncompounded cumulative return (Chekhlov, Uryasev and Zabarankin,
+        2005), without the worst realization and the range, whose contributions come from
+        a single period.
+
         For more information, see the following papers:
 
         - Maillard, S., Roncalli, T. and Teïletche, J. (2010). "The Properties of Equally
@@ -950,6 +966,18 @@ class OptimizationConstruction:
           Paper.
         - Richard, J.-C. and Roncalli, T. (2019). "Constrained Risk Budgeting Portfolios:
           Theory, Algorithms, Applications & Puzzles." arXiv:1902.05710.
+        - Roncalli, T. (2013). "Introduction to Risk Parity and Budgeting." Chapman &
+          Hall/CRC, Boca Raton.
+        - Rockafellar, R. T. and Uryasev, S. (2000). "Optimization of Conditional
+          Value-at-Risk." Journal of Risk, 2(3), 21-41.
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in
+          Portfolio Optimization." International Journal of Theoretical and Applied
+          Finance, 8(1), 13-58.
+        - Kelley, J. E. (1960). "The Cutting-Plane Method for Solving Convex Programs."
+          Journal of the Society for Industrial and Applied Mathematics, 8(4), 703-712.
+        - Riskfolio-Lib: Portfolio.rp_optimization (https://github.com/dcajasn/Riskfolio-Lib)
+          and skfolio: RiskBudgeting (https://skfolio.org), which the weights of the other
+          risk measures are referenced against.
 
         Also known as: equal risk contribution, ERC, risk budgeting.
 
@@ -1000,6 +1028,14 @@ class OptimizationConstruction:
                 and maximum total weight per country, named in full or by its two-letter
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
+            risk_measure (str, optional): The risk the assets share: "volatility" (of the
+                covariance estimator), or of the historical returns "mad",
+                "semideviation" (below a zero return), "lower_partial_moment" (below a
+                zero return), "gini_mean_difference", "tail_gini", "cvar_range",
+                "tail_gini_range", "ulcer_index", "cvar" or "cdar". Defaults to
+                "volatility".
+            confidence_level (float, optional): The confidence level of the CVaR, CDaR,
+                CVaR range and Tail Gini measures. Defaults to 0.95.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1011,7 +1047,11 @@ class OptimizationConstruction:
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution.
+            Volatility, Sharpe Ratio and Risk Contribution (of the volatility). With
+            another risk measure, also that measure (per period, positive for a loss,
+            named after it, e.g. "CVaR") of every asset on its own and of the portfolio,
+            and each asset's share of the portfolio's measure, e.g. "CVaR Contribution"
+            (w_i ∂ρ/∂w_i / ρ(w) with central finite differences).
 
         Notes:
         - Weight, sector and country bounds turn it into constrained risk budgeting
@@ -1020,6 +1060,12 @@ class OptimizationConstruction:
           binds, the risk contributions can no longer all match the budget.
         - Risk parity holds long positions only and is fully invested, so it takes no
           negative minimum weight and no net or gross exposure.
+        - The other risk measures are per period of the chosen frequency and taken of the
+          historical returns, not of the covariance estimator. The CVaR, the CDaR, the
+          Ulcer Index and the Tail Gini measures follow a few periods and have kinks: at
+          the optimum the budget holds for one of the slopes on either side of a kink,
+          while the central finite differences of the contribution column average them,
+          so that column can differ from the budget by a few percent.
 
         As an example:
 
@@ -1046,23 +1092,45 @@ class OptimizationConstruction:
         | XOM       |   0.2621 |            0.2911 |       0.2702 |         0.9524 |              0.2846 |
         | Portfolio |   1      |            0.1925 |       0.1523 |         1.0429 |              1      |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
-        weights = optimization_model.get_risk_parity_weights(
-            covariance_matrix,
-            pd.Series(risk_budget, dtype=float) if risk_budget is not None else None,
-            **self._get_constraints(
-                covariance_matrix.index.tolist(),
-                minimum_weight,
-                maximum_weight,
-                sector_bounds,
-                country_bounds,
-            ),
+        budget = (
+            pd.Series(risk_budget, dtype=float) if risk_budget is not None else None
         )
-        return self._weights_table(
+        constraints = self._get_constraints(
+            covariance_matrix.index.tolist(),
+            minimum_weight,
+            maximum_weight,
+            sector_bounds,
+            country_bounds,
+        )
+        if risk_measure == "volatility":
+            weights = optimization_model.get_risk_parity_weights(
+                covariance_matrix, budget, **constraints
+            )
+            return self._weights_table(
+                weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+            )
+
+        weights = optimization_model.get_risk_budgeting_weights(
+            returns, risk_measure, budget, confidence_level, **constraints
+        )
+        table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
+        name = optimization_model.RISK_BUDGETING_MEASURES[risk_measure]
+        table[name] = optimization_model.get_mean_risk_measure(
+            returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
+            risk_measure,
+            confidence_level,
+        )
+        contributions = optimization_model.get_mean_risk_contributions(
+            weights, returns, risk_measure, confidence_level
+        )
+        contributions[PORTFOLIO_TICKER] = contributions.sum()
+        table[f"{name} Contribution"] = contributions
+        return self._round(table, rounding)
 
     @handle_errors
     def get_hierarchical_risk_parity_weights(
@@ -2331,6 +2399,293 @@ class OptimizationConstruction:
         excess[PORTFOLIO_TICKER] = excess @ weights
         table["CVaR"] = cvar
         table["CVaR Ratio"] = excess / cvar
+        return self._round(self._add_turnover(table, weights, current), rounding)
+
+    @handle_errors
+    def get_mean_risk_weights(
+        self,
+        risk_measure: str = "mad",
+        objective: str = "minimum_risk",
+        target_return: float | None = None,
+        confidence_level: float = 0.95,
+        minimum_acceptable_return: float | str = 0.0,
+        period: str = "daily",
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of a mean-risk portfolio with a risk measure other than the
+        volatility: the portfolio with the lowest risk, the lowest risk at a target return,
+        or the highest ratio of the average excess return to the risk. The risk is measured
+        on the historical returns, so measures that only count losses (the semideviation,
+        the lower partial moment, the worst realization, the Tail Gini) leave upside swings
+        unpenalized, and the Ulcer Index penalizes deep and long drawdowns.
+
+        The risk measures ρ(w) of the portfolio's returns X_t = r_t'w over T periods, with
+        α the confidence level and τ the minimum acceptable return, are:
+
+        - "mad": the mean absolute deviation Σ |X_t - X̄| / T (Konno and Yamazaki, 1991).
+        - "semideviation": √(Σ min(X_t - τ, 0)² / T), or √(Σ min(X_t - X̄, 0)² / (T - 1))
+          below the mean (Markowitz, 1959; Estrada, 2008).
+        - "lower_partial_moment": the first lower partial moment Σ max(τ - X_t, 0) / T
+          (Bawa, 1975), or below each asset's mean.
+        - "worst_realization": the largest loss -min X_t (Young, 1998).
+        - "gini_mean_difference": the average absolute difference between the returns of
+          two periods, Σ_i Σ_j |X_i - X_j| / (T(T - 1)) (Yitzhaki, 1982).
+        - "tail_gini": the Tail Gini of the losses beyond the 1 - α quantile (Furman, Wang
+          and Zitikis, 2017; Cajas, 2021).
+        - "range": the largest gain plus the largest loss, max X_t - min X_t.
+        - "cvar_range": the CVaR of the losses plus that of the gains, the average of the
+          best 1 - α share of the returns minus the average of the worst (Cajas, 2021).
+        - "tail_gini_range": the Tail Gini of the losses plus that of the gains.
+        - "ulcer_index": √(Σ D_t² / T) with D_t the drawdowns of the uncompounded
+          cumulative return (Martin and McCann, 1989).
+
+        The objectives are:
+
+        - "minimum_risk": minimize ρ(w), at the target return μ'w = target when given.
+        - "maximum_ratio": maximize (μ - r_f)'w / ρ(w) with the Charnes-Cooper
+          transformation y = κw, κ > 0 (Charnes and Cooper, 1962): maximize (μ - r_f)'y
+          subject to ρ(y) ≤ 1 and the weight constraints, then w = y / κ.
+
+        The mean absolute deviation, the lower partial moment, the worst realization, the
+        ranges and the CVaR range are solved exactly as linear programmes with HiGHS. The
+        Gini mean difference and the Tail Gini measures are ordered weighted averages of
+        the sorted returns, convex because their weights rise with the rank (Cajas, 2021),
+        and are solved exactly with cutting planes (Kelley, 1960) stabilized as in Ben-Ameur
+        and Neto (2007): every sorted order of the returns gives a linear lower bound of
+        the measure, which is added where the linear programme's solution needs it. The
+        semideviation and the Ulcer Index have continuous gradients and are minimized with
+        SLSQP.
+
+        For more information, see the following papers:
+
+        - Konno, H. and Yamazaki, H. (1991). "Mean-Absolute Deviation Portfolio
+          Optimization Model and Its Applications to Tokyo Stock Market." Management
+          Science, 37(5), 519-531.
+        - Markowitz, H. (1959). "Portfolio Selection: Efficient Diversification of
+          Investments." John Wiley & Sons, New York.
+        - Estrada, J. (2008). "Mean-Semivariance Optimization: A Heuristic Approach."
+          Journal of Applied Finance, 18(1), 57-72.
+        - Bawa, V. S. (1975). "Optimal Rules for Ordering Uncertain Prospects." Journal of
+          Financial Economics, 2(1), 95-121.
+        - Young, M. R. (1998). "A Minimax Portfolio Selection Rule with Linear Programming
+          Solution." Management Science, 44(5), 673-683.
+        - Yitzhaki, S. (1982). "Stochastic Dominance, Mean Variance, and Gini's Mean
+          Difference." The American Economic Review, 72(1), 178-185.
+        - Furman, E., Wang, R. and Zitikis, R. (2017). "Gini-Type Measures of Risk and
+          Variability: Gini Shortfall, Capital Allocations, and Heavy-Tailed Risks."
+          Journal of Banking & Finance, 83, 70-84.
+        - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming
+          Framework." SSRN Working Paper 3988927.
+        - Martin, P. G. and McCann, B. B. (1989). "The Investor's Guide to Fidelity Funds."
+          John Wiley & Sons, New York.
+        - Charnes, A. and Cooper, W. W. (1962). "Programming with Linear Fractional
+          Functionals." Naval Research Logistics Quarterly, 9(3-4), 181-186.
+        - Kelley, J. E. (1960). "The Cutting-Plane Method for Solving Convex Programs."
+          Journal of the Society for Industrial and Applied Mathematics, 8(4), 703-712.
+        - Ben-Ameur, W. and Neto, J. (2007). "Acceleration of Cutting-Plane and Column
+          Generation Algorithms: Applications to Network Design." Networks, 49(1), 3-17.
+        - Riskfolio-Lib: Portfolio.optimization with rm="MAD", "MSV", "FLPM", "SLPM",
+          "WR", "RG", "CVRG" and "UCI", and owa_optimization for the Gini mean difference
+          and the Tail Gini measures (https://github.com/dcajasn/Riskfolio-Lib), which the
+          weights are referenced against.
+        - skfolio: MeanRisk (https://skfolio.org), referenced against for the Gini mean
+          difference, the mean absolute deviation, the lower partial moment below the
+          mean, the semideviation, the worst realization and the Ulcer Index.
+        - PyPortfolioOpt: EfficientSemivariance (https://github.com/robertmartin8/PyPortfolioOpt),
+          which shares similar logic with the semideviation below a fixed threshold.
+
+        Also known as: mean-MAD, mean-semivariance, minimax, mean-Gini, mean-Ulcer,
+        Sortino-optimal or Gini-optimal portfolio.
+
+        Args:
+            risk_measure (str, optional): The risk measure: "mad", "semideviation",
+                "lower_partial_moment", "worst_realization", "gini_mean_difference",
+                "tail_gini", "range", "cvar_range", "tail_gini_range" or "ulcer_index".
+                The CVaR and the drawdowns have their own optimizers
+                (get_minimum_cvar_weights, get_maximum_cvar_ratio_weights and
+                get_minimum_drawdown_weights). Defaults to "mad".
+            objective (str, optional): "minimum_risk" or "maximum_ratio" (the highest
+                average excess return per unit of risk). Defaults to "minimum_risk".
+            target_return (float | None, optional): The annualized expected return the
+                minimum risk portfolio must have, e.g. 0.12 for 12%. Defaults to None,
+                no target.
+            confidence_level (float, optional): The confidence level of the CVaR range
+                and the Tail Gini measures, e.g. 0.95 for the worst 5% of periods.
+                Defaults to 0.95.
+            minimum_acceptable_return (float | str, optional): The threshold of the
+                semideviation and the lower partial moment, as a return per period of the
+                chosen frequency (e.g. 0.0002 a day), or "mean" for each asset's average
+                return. Defaults to 0.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            expected_returns (str, optional): The estimator of the expected returns of
+                the ratio and the target return: "mean" (the historical average),
+                "geometric" (the compounded average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "exponential_geometric"
+                (that average compounded over a year), "capm" (the returns the Capital
+                Asset Pricing Model implies from each asset's beta to the benchmark,
+                Sharpe, 1964) "bayes_stein" (the averages shrunk towards that of the
+                minimum variance portfolio, Jorion, 1986), "james_stein" (the averages
+                shrunk towards their grand mean, James and Stein, 1961) or
+                "bodnar_okhrin_parolya" (the averages and their grand mean combined with
+                optimal weights, Bodnar, Okhrin and Parolya, 2019). Defaults to "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution (of the volatility), with the
+            risk measure (per period, positive for a loss, named after it, e.g. "MAD")
+            and its ratio (the average excess return per period over the measure, e.g.
+            "MAD Ratio") of every asset on its own and of the portfolio.
+
+        Notes:
+        - The risk measures are per period of the chosen frequency and not annualized;
+          the drawdowns of the Ulcer Index are those of the uncompounded cumulative
+          return (the sum of the returns), which scales with the weights, as in
+          Riskfolio-Lib and skfolio.
+        - Riskfolio-Lib's MAD is half of the mean absolute deviation and its lower partial
+          moments divide by T - 1, and skfolio's lower partial moment is below the mean;
+          those scale the measure but leave the weights the same. The Gini mean
+          difference here is that of the Risk module, Σ_i Σ_j |X_i - X_j| / (T(T - 1)).
+        - The risk free rate is the Toolkit's, averaged over the returns and converted to
+          a rate per period. For the maximum ratio, some portfolio within the constraints
+          needs an average return above it; otherwise the method returns an error that
+          says so.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_mean_risk_weights(
+            risk_measure="gini_mean_difference", objective="maximum_ratio"
+        )[["Weight", "Expected Return", "Gini Mean Difference", "Gini Mean Difference Ratio"]]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   Gini Mean Difference |   Gini Mean Difference Ratio |
+        |:----------|---------:|------------------:|-----------------------:|-----------------------------:|
+        | AAPL      |   0.0562 |            0.1932 |                 0.0185 |                       0.0342 |
+        | MSFT      |   0.307  |            0.2017 |                 0.0174 |                       0.0384 |
+        | JNJ       |   0.1846 |            0.0987 |                 0.0112 |                       0.0231 |
+        | XOM       |   0.4521 |            0.2911 |                 0.0187 |                       0.0545 |
+        | Portfolio |   1      |            0.2226 |                 0.0113 |                       0.0662 |
+        """
+        if risk_measure not in optimization_model.MEAN_RISK_MEASURES:
+            raise ValueError(
+                "The risk measure must be one of "
+                f"{', '.join(optimization_model.MEAN_RISK_MEASURES)}, not '{risk_measure}'."
+            )
+        returns, expected, covariance, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            expected_returns=expected_returns,
+            expected_returns_span=expected_returns_span,
+        )
+        # The ratio and the target return take the expected returns per period; the
+        # risk measures are those of the historical returns.
+        expected_per_period = expected / PERIODS_PER_YEAR[period]
+        risk_free_per_period = risk_free_rate / PERIODS_PER_YEAR[period]
+        current = self._get_current_weights(
+            current_weights, returns.columns.tolist(), maximum_turnover is not None
+        )
+        weights = optimization_model.get_mean_risk_weights(
+            returns,
+            risk_measure,
+            objective,
+            (
+                target_return / PERIODS_PER_YEAR[period]
+                if target_return is not None
+                else None
+            ),
+            risk_free_per_period,
+            confidence_level,
+            minimum_acceptable_return,
+            **self._get_constraints(
+                returns.columns.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
+            expected_returns=expected_per_period,
+        )
+        table = self._weights_table(
+            weights, expected, covariance, risk_free_rate, rounding
+        )
+
+        name = optimization_model.MEAN_RISK_MEASURES[risk_measure]
+        measure = optimization_model.get_mean_risk_measure(
+            returns.assign(**{PORTFOLIO_TICKER: returns @ weights}),
+            risk_measure,
+            confidence_level,
+            minimum_acceptable_return,
+        )
+        excess = expected_per_period - risk_free_per_period
+        excess[PORTFOLIO_TICKER] = excess @ weights
+        table[name] = measure
+        table[f"{name} Ratio"] = excess / measure
         return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors

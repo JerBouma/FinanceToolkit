@@ -15,7 +15,10 @@ from scipy.spatial.distance import pdist, squareform
 
 from financetoolkit.performance import performance_model
 from financetoolkit.portfolio.construction.optimization import estimation_model
-from financetoolkit.portfolio.helpers import get_view_vector
+from financetoolkit.portfolio.helpers import (
+    get_cutting_plane_solution,
+    get_view_vector,
+)
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.distribution import dispersion_model
 from financetoolkit.risk.drawdown import drawdown_model
@@ -3235,6 +3238,1091 @@ def get_maximum_cvar_ratio_weights(
         )
 
     return _as_series(result.x[:assets] / result.x[variables], returns.columns)
+
+
+# The risk measures of the mean-risk optimizer, with the column they are shown under. CVaR and
+# the drawdowns have optimizers of their own (get_minimum_cvar_weights,
+# get_maximum_cvar_ratio_weights and get_minimum_drawdown_weights).
+MEAN_RISK_MEASURES = {
+    "mad": "MAD",
+    "semideviation": "Semideviation",
+    "lower_partial_moment": "Lower Partial Moment",
+    "worst_realization": "Worst Realization",
+    "gini_mean_difference": "Gini Mean Difference",
+    "tail_gini": "Tail Gini",
+    "range": "Range",
+    "cvar_range": "CVaR Range",
+    "tail_gini_range": "Tail Gini Range",
+    "ulcer_index": "Ulcer Index",
+}
+MEAN_RISK_OBJECTIVES = ("minimum_risk", "maximum_ratio")
+
+# The measures that are the square root of a sum of squares, which the optimizers minimize
+# with SLSQP; the others are linear programmes.
+QUADRATIC_RISK_MEASURES = ("semideviation", "ulcer_index")
+
+# The measures of the risk budgeting portfolios besides the volatility.
+RISK_BUDGETING_MEASURES = {
+    **{
+        measure: name
+        for measure, name in MEAN_RISK_MEASURES.items()
+        if measure not in ("worst_realization", "range")
+    },
+    "cvar": "CVaR",
+    "cdar": "CDaR",
+}
+
+# How often the cap on the scale of the risk budgeting solution of an ordered weighted
+# average is raised.
+RISK_BUDGETING_CAP_RAISES = 10
+
+
+LINEAR_RISK_MEASURES = (
+    "mad",
+    "lower_partial_moment",
+    "worst_realization",
+    "range",
+    "cvar",
+    "cvar_range",
+    "cdar",
+    "gini_mean_difference",
+    "tail_gini",
+    "tail_gini_range",
+)
+
+
+# The ordered weighted averages among them, which the solvers meet with cutting planes.
+OWA_RISK_MEASURES = ("gini_mean_difference", "tail_gini", "tail_gini_range")
+
+
+class RiskProgramme(NamedTuple):
+    """
+    A risk measure of the portfolio's returns as a linear programme over the weights w and
+    auxiliary variables z: the measure is cost'z at the smallest z that meets
+    A_w w + A_z z ≤ upper and E_w w + E_z z = 0 within the bounds on z. The right-hand
+    side upper is only nonzero for a minimum acceptable return; it scales with κ in the
+    Charnes-Cooper transformation of a ratio.
+    """
+
+    weights: sparse.csr_matrix
+    auxiliary: sparse.csr_matrix
+    upper: np.ndarray
+    equality_weights: sparse.csr_matrix
+    equality_auxiliary: sparse.csr_matrix
+    cost: np.ndarray
+    bounds: list[tuple[float | None, float | None]]
+
+
+def get_risk_measure_programme(
+    data: np.ndarray,
+    risk_measure: str,
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+) -> RiskProgramme:
+    """
+    The linear programme of a risk measure of the portfolio's returns X_t = r_t'w over T
+    periods, with α the confidence level:
+
+    - "mad": the mean absolute deviation Σ |X_t - X̄| / T, as 2 Σ d_t / T with
+      d_t ≥ -(r_t - r̄)'w and d_t ≥ 0, since the deviations below and above the mean are
+      equal in total (Konno and Yamazaki, 1991).
+    - "lower_partial_moment": Σ max(τ - X_t, 0) / T with d_t ≥ τ - r_t'w and d_t ≥ 0, τ
+      the minimum acceptable return or each asset's mean (Bawa, 1975).
+    - "worst_realization": the largest loss m ≥ -r_t'w (Young, 1998).
+    - "range": the largest gain plus the largest loss, m_G ≥ r_t'w and m_L ≥ -r_t'w.
+    - "cvar": the Conditional Value at Risk ζ + Σ s_t / ((1 - α)T) with
+      s_t ≥ -r_t'w - ζ and s_t ≥ 0 (Rockafellar and Uryasev, 2000).
+    - "cvar_range": the CVaR of the losses plus that of the gains, the average of the best
+      1 - α share of the returns minus the average of the worst (Cajas, 2021).
+    - "cdar": the Conditional Drawdown at Risk of the uncompounded cumulative returns, with
+      running peaks u_t ≥ Σ_(s≤t) r_s'w, u_t ≥ u_(t-1), u_t ≥ 0 and the CVaR programme on
+      the drawdowns u_t - Σ_(s≤t) r_s'w (Chekhlov, Uryasev and Zabarankin, 2005).
+    - "gini_mean_difference", "tail_gini" and "tail_gini_range": ordered weighted averages
+      Σ c_i X_(i) of the sorted returns (see get_owa_risk). Their programme is a single
+      variable θ, the measure, with cost one and no rows: the solvers add the cuts
+      θ ≥ g'w of get_owa_risk as they go, since writing the ordered weighted average out
+      as a linear programme takes T² variables (Ogryczak and Śliwiński, 2003).
+
+    The returns are divided by their largest absolute value first, which leaves the
+    weights that minimize the measure or maximize a ratio to it unchanged and keeps the
+    programme well scaled for HiGHS: the cost of the programme is the measure of the
+    scaled returns.
+
+    See Konno, H. and Yamazaki, H. (1991), "Mean-Absolute Deviation Portfolio
+    Optimization Model and Its Applications to Tokyo Stock Market", Management Science,
+    37(5), 519-531; Young, M. R. (1998), "A Minimax Portfolio Selection Rule with Linear
+    Programming Solution", Management Science, 44(5), 673-683; Cajas, D. (2021), "OWA
+    Portfolio Optimization: A Disciplined Convex Programming Framework", SSRN 3988927;
+    and Ogryczak, W. and Śliwiński, T. (2003), "On Solving Linear Programs with the
+    Ordered Weighted Averaging Objective", European Journal of Operational Research,
+    148(1), 80-91.
+
+    Args:
+        data (np.ndarray): The T × N returns, without missing values.
+        risk_measure (str): The risk measure, see above.
+        confidence_level (float, optional): The confidence level α of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold τ of the lower
+            partial moment per period, or "mean" for each asset's mean. Defaults to 0.
+
+    Returns:
+        RiskProgramme: The rows, cost and bounds of the programme.
+    """
+    periods, assets = data.shape
+    scale = np.max(np.abs(data)) or 1.0
+    data = data / scale
+    alpha = 1 - confidence_level
+    identity = sparse.eye(periods, format="csr")
+    ones = sparse.csr_matrix(np.ones((periods, 1)))
+    returns = sparse.csr_matrix(data)
+    equality_weights = sparse.csr_matrix((0, assets))
+    equality_auxiliary = None
+    upper = np.zeros(periods)
+
+    if risk_measure == "mad":
+        weights = sparse.csr_matrix(-(data - data.mean(axis=0)))
+        auxiliary = -identity
+        cost = np.full(periods, 2 / periods)
+        bounds = [(0.0, None)] * periods
+    elif risk_measure == "lower_partial_moment":
+        if minimum_acceptable_return == "mean":
+            weights = sparse.csr_matrix(-(data - data.mean(axis=0)))
+        else:
+            weights = -returns
+            upper = np.full(periods, -float(minimum_acceptable_return) / scale)
+        auxiliary = -identity
+        cost = np.full(periods, 1 / periods)
+        bounds = [(0.0, None)] * periods
+    elif risk_measure == "worst_realization":
+        weights, auxiliary = -returns, -ones
+        cost, bounds = np.ones(1), [(None, None)]
+    elif risk_measure == "range":
+        weights = sparse.vstack([-returns, returns])
+        auxiliary = sparse.block_diag([-ones, -ones])
+        cost, bounds = np.ones(2), [(None, None)] * 2
+        upper = np.zeros(2 * periods)
+    elif risk_measure in ("cvar", "cvar_range"):
+        tail = np.concatenate([[1.0], np.full(periods, 1 / (alpha * periods))])
+        block = sparse.hstack([-ones, -identity])
+        bounds = [(None, None)] + [(0.0, None)] * periods
+        if risk_measure == "cvar":
+            weights, auxiliary, cost = -returns, block, tail
+        else:
+            # The CVaR of the gains is that of the losses of a short position.
+            weights = sparse.vstack([-returns, returns])
+            auxiliary = sparse.block_diag([block, block])
+            cost, bounds = np.tile(tail, 2), bounds * 2
+            upper = np.zeros(2 * periods)
+    elif risk_measure == "cdar":
+        # The peaks u_t, ζ and the excess drawdowns s_t: Y_t - u_t ≤ 0, u_t - u_(t+1) ≤ 0
+        # and u_t - Y_t - ζ - s_t ≤ 0 with Y_t the cumulative return.
+        cumulative = sparse.csr_matrix(np.cumsum(data, axis=0))
+        rising = sparse.eye(periods - 1, periods) - sparse.eye(
+            periods - 1, periods, k=1
+        )
+        weights = sparse.vstack(
+            [cumulative, sparse.csr_matrix((periods - 1, assets)), -cumulative]
+        )
+        auxiliary = sparse.bmat(
+            [
+                [-identity, None, None],
+                [rising, sparse.csr_matrix((periods - 1, 1)), None],
+                [identity, -ones, -identity],
+            ],
+            format="csr",
+        )
+        cost = np.concatenate(
+            [np.zeros(periods), [1.0], np.full(periods, 1 / (alpha * periods))]
+        )
+        bounds = [(0.0, None)] * periods + [(None, None)] + [(0.0, None)] * periods
+        upper = np.zeros(3 * periods - 1)
+    elif risk_measure in OWA_RISK_MEASURES:
+        weights, auxiliary = sparse.csr_matrix((0, assets)), sparse.csr_matrix((0, 1))
+        cost, bounds, upper = np.ones(1), [(None, None)], np.zeros(0)
+    else:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(LINEAR_RISK_MEASURES)}, not "
+            f"'{risk_measure}'."
+        )
+
+    if equality_auxiliary is None:
+        equality_auxiliary = sparse.csr_matrix((0, len(cost)))
+
+    return RiskProgramme(
+        sparse.csr_matrix(weights),
+        sparse.csr_matrix(auxiliary),
+        upper,
+        sparse.csr_matrix(equality_weights),
+        equality_auxiliary,
+        cost,
+        bounds,
+    )
+
+
+def get_squared_risk(
+    data: np.ndarray,
+    weights: np.ndarray,
+    risk_measure: str,
+    minimum_acceptable_return: float | str = 0.0,
+) -> tuple[float, np.ndarray]:
+    """
+    The square of a quadratic risk measure of the portfolio's returns X_t = r_t'w over T
+    periods, and its gradient in the weights:
+
+    - "semideviation": Σ min(X_t - τ, 0)² / T below a minimum acceptable return τ, or
+      Σ min(X_t - X̄, 0)² / (T - 1) below the mean, the square of the Risk module's
+      downside deviation (Markowitz, 1959; Sortino and Price, 1994). Its gradient,
+      2 Σ min(X_t - τ, 0) r_t / T, is continuous, so SLSQP minimizes it directly in the
+      weights as Estrada (2008) suggests.
+    - "ulcer_index": Σ D_t² / T with D_t = max_(s≤t) Y_s - Y_t the drawdowns of the
+      uncompounded cumulative return Y_t (from Y_0 = 0), the square of the Ulcer Index of
+      Martin and McCann (1989), with gradient 2 Σ D_t (C_s*(t) - C_t) / T for the
+      cumulative asset returns C and s*(t) the latest peak.
+
+    Args:
+        data (np.ndarray): The T × N returns, without missing values.
+        weights (np.ndarray): The weight per asset.
+        risk_measure (str): "semideviation" or "ulcer_index".
+        minimum_acceptable_return (float | str, optional): The threshold τ of the
+            semideviation per period, or "mean". Defaults to 0.
+
+    Returns:
+        tuple[float, np.ndarray]: The squared measure and its gradient.
+    """
+    periods = len(data)
+    if risk_measure == "semideviation":
+        if minimum_acceptable_return == "mean":
+            centred = data - data.mean(axis=0)
+            shortfall = np.minimum(centred @ weights, 0)
+            divisor = periods - 1
+        else:
+            centred = data
+            shortfall = np.minimum(data @ weights - float(minimum_acceptable_return), 0)
+            divisor = periods
+        return float(shortfall @ shortfall) / divisor, 2 * shortfall @ centred / divisor
+    if risk_measure == "ulcer_index":
+        cumulative = np.vstack([np.zeros(data.shape[1]), np.cumsum(data, axis=0)])
+        wealth = cumulative @ weights
+        records = np.where(
+            wealth >= np.maximum.accumulate(wealth), np.arange(len(wealth)), 0
+        )
+        slopes = cumulative[np.maximum.accumulate(records)[1:]] - cumulative[1:]
+        drawdowns = slopes @ weights
+        return float(drawdowns @ drawdowns) / periods, 2 * drawdowns @ slopes / periods
+    raise ValueError(
+        f"The risk measure must be one of {', '.join(QUADRATIC_RISK_MEASURES)}, not "
+        f"'{risk_measure}'."
+    )
+
+
+def get_owa_risk(
+    data: np.ndarray,
+    weights: np.ndarray,
+    risk_measure: str,
+    confidence_level: float = 0.95,
+) -> tuple[float, np.ndarray]:
+    """
+    An ordered weighted average Σ c_i X_(i) of the portfolio's returns X_t = r_t'w sorted
+    from low to high, and a subgradient in the weights, with the weights c_i of the Risk
+    module's dispersion measures: the Gini mean difference (Yitzhaki, 1982), minus the
+    Tail Gini of the returns (Furman, Wang and Zitikis, 2017), and the Tail Gini range,
+    minus the Tail Gini of the returns plus that of the returns sorted from high to low.
+    The weights rise with i, so by the rearrangement inequality the average is the largest
+    of Σ c_i X_π(i) over all orderings π: a maximum of functions that are linear in the
+    weights, hence convex and positively homogeneous (Cajas, 2021). The linear function
+    of the sorted order, g'w with g = Σ c_i r_(i), touches it at w and lies below it
+    everywhere else, which makes θ ≥ g'w a cut of the cutting plane solvers.
+
+    See Yitzhaki, S. (1982), "Stochastic Dominance, Mean Variance, and Gini's Mean
+    Difference", The American Economic Review, 72(1), 178-185; Furman, E., Wang, R. and
+    Zitikis, R. (2017), "Gini-Type Measures of Risk and Variability: Gini Shortfall,
+    Capital Allocations, and Heavy-Tailed Risks", Journal of Banking & Finance, 83,
+    70-84; and Cajas, D. (2021), "OWA Portfolio Optimization: A Disciplined Convex
+    Programming Framework", SSRN 3988927.
+
+    Args:
+        data (np.ndarray): The T × N returns, without missing values.
+        weights (np.ndarray): The weight per asset.
+        risk_measure (str): One of OWA_RISK_MEASURES.
+        confidence_level (float, optional): The confidence level of the Tail Gini
+            measures. Defaults to 0.95.
+
+    Returns:
+        tuple[float, np.ndarray]: The measure and its subgradient.
+    """
+    periods = len(data)
+    if risk_measure == "gini_mean_difference":
+        coefficients = dispersion_model.get_owa_gmd_weights(periods)
+    elif risk_measure in ("tail_gini", "tail_gini_range"):
+        tail = dispersion_model.get_owa_tail_gini_weights(periods, 1 - confidence_level)
+        coefficients = -tail + (tail[::-1] if risk_measure == "tail_gini_range" else 0)
+    else:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(OWA_RISK_MEASURES)}, not "
+            f"'{risk_measure}'."
+        )
+    subgradient = coefficients @ data[np.argsort(data @ weights, kind="stable")]
+    return float(subgradient @ weights), subgradient
+
+
+def get_mean_risk_measure(
+    returns: pd.DataFrame,
+    risk_measure: str,
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+) -> pd.Series:
+    """
+    A risk measure of the mean-risk and risk budgeting optimizers for every column of
+    returns (each an asset or portfolio), per period and positive for a loss, from the
+    Risk module's measures: the mean absolute deviation, the semideviation (the downside
+    deviation below τ, or below the mean with T - 1), the first lower partial moment, the
+    worst realization, the Gini mean difference, the Tail Gini, the range, the Tail Gini
+    range and the Ulcer Index of the uncompounded cumulative returns. The CVaR, the CVaR
+    range and the CDaR are the averages of the tail with a fraction of the boundary period
+    (Rockafellar and Uryasev, 2002), the values the linear programmes minimize, where the
+    Risk module's CVaR averages the returns at or below an interpolated quantile.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset or portfolio.
+        risk_measure (str): A key of MEAN_RISK_MEASURES or RISK_BUDGETING_MEASURES.
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
+
+    Returns:
+        pd.Series: The risk measure per column.
+    """
+    alpha = 1 - confidence_level
+    returns = returns.dropna(how="any")
+    if risk_measure == "mad":
+        measure = (returns - returns.mean()).abs().mean()
+    elif risk_measure == "semideviation":
+        measure = risk_model.get_downside_deviation(returns, minimum_acceptable_return)
+    elif risk_measure == "lower_partial_moment":
+        measure = risk_model.get_partial_moment(
+            returns, order=1, minimum_acceptable_return=minimum_acceptable_return
+        )
+    elif risk_measure == "worst_realization":
+        measure = -dispersion_model.get_worst_realization(returns)
+    elif risk_measure == "gini_mean_difference":
+        measure = dispersion_model.get_gini_mean_difference(returns)
+    elif risk_measure == "tail_gini":
+        measure = -dispersion_model.get_tail_gini(returns, alpha)
+    elif risk_measure == "range":
+        measure = dispersion_model.get_risk_range(returns, "range")
+    elif risk_measure == "tail_gini_range":
+        measure = dispersion_model.get_risk_range(returns, "tail_gini", alpha)
+    elif risk_measure == "cvar":
+        measure = (-returns).apply(
+            get_expected_tail_loss, confidence_level=confidence_level
+        )
+    elif risk_measure == "cvar_range":
+        measure = (-returns).apply(
+            get_expected_tail_loss, confidence_level=confidence_level
+        ) + returns.apply(get_expected_tail_loss, confidence_level=confidence_level)
+    elif risk_measure == "cdar":
+        measure = get_drawdowns(returns).apply(
+            get_expected_tail_loss, confidence_level=confidence_level
+        )
+    elif risk_measure == "ulcer_index":
+        measure = risk_model.get_ui(returns, rolling=None, compounded=False)
+    else:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, cvar or "
+            f"cdar, not '{risk_measure}'."
+        )
+    return pd.Series(measure, index=returns.columns, dtype=float)
+
+
+def get_mean_risk_contributions(
+    weights: pd.Series,
+    returns: pd.DataFrame,
+    risk_measure: str,
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+) -> pd.Series:
+    """
+    The share of a mean-risk or risk budgeting measure (see get_mean_risk_measure) that
+    each asset contributes, w_i ∂ρ/∂w_i / ρ(w) (Euler allocation, Tasche, 2000), with the
+    derivative found by central finite differences with a step of 1e-7, as in
+    get_finite_difference_risk_contributions. The shares add up to one for the measures
+    that are positively homogeneous in the weights, which are those of the risk budgeting
+    portfolios (with a minimum acceptable return of 0 or "mean").
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        risk_measure (str): A key of MEAN_RISK_MEASURES or RISK_BUDGETING_MEASURES.
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment per period, or "mean". Defaults to 0.
+
+    Returns:
+        pd.Series: The share of the measure per asset.
+    """
+    returns = returns.dropna(how="any")
+    weights = weights.reindex(returns.columns).fillna(0).to_numpy(dtype=float)
+    assets = len(weights)
+    # Every column holds the weights with one asset's weight moved up or down a step,
+    # and the last the weights themselves.
+    shifts = np.hstack([np.eye(assets), -np.eye(assets), np.zeros((assets, 1))])
+    measures = get_mean_risk_measure(
+        pd.DataFrame(
+            returns.to_numpy(dtype=float)
+            @ (weights[:, None] + shifts * FINITE_DIFFERENCE_STEP),
+            index=returns.index,
+        ),
+        risk_measure,
+        confidence_level,
+        minimum_acceptable_return,
+    ).to_numpy()
+    marginal = (measures[:assets] - measures[assets:-1]) / (2 * FINITE_DIFFERENCE_STEP)
+    return pd.Series(weights * marginal / measures[-1], index=returns.columns)
+
+
+def get_mean_risk_weights(
+    returns: pd.DataFrame,
+    risk_measure: str = "mad",
+    objective: str = "minimum_risk",
+    target_return: float | None = None,
+    risk_free_rate: float = 0.0,
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+    expected_returns: pd.Series | None = None,
+) -> pd.Series:
+    """
+    A mean-risk portfolio over the historical returns for a risk measure ρ other than the
+    variance (Markowitz, 1959; Konno and Yamazaki, 1991): with objective="minimum_risk"
+    the portfolio with the lowest ρ(w), or with a target return the lowest ρ(w) that
+    expects that return, and with objective="maximum_ratio" the portfolio with the
+    highest (r̄ - r_f)'w / ρ(w).
+
+    The linear measures (see get_risk_measure_programme) are solved as linear programmes
+    with HiGHS, the ratio with the Charnes-Cooper transformation y = κw, κ > 0: maximize
+    (r̄ - r_f)'y subject to ρ(y) ≤ 1 and the weight constraints in homogeneous form, with
+    a minimum acceptable return τ scaled to τκ, then w = y / κ. The ordered weighted
+    averages add the cuts of get_owa_risk with get_cutting_plane_solution, and for the
+    ratio κ ≤ 2 / ρ_min with ρ_min the lowest risk within the constraints, as κρ(w) ≤ 1
+    bounds κ by 1 / ρ(w) for every feasible w. The semideviation and
+    the Ulcer Index (see get_squared_risk) are minimized, or the ratio to them maximized,
+    with SLSQP directly in the weights.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        risk_measure (str, optional): A key of MEAN_RISK_MEASURES. Defaults to "mad".
+        objective (str, optional): "minimum_risk" or "maximum_ratio". Defaults to
+            "minimum_risk".
+        target_return (float | None, optional): The expected return per period the
+            minimum risk portfolio must have. Defaults to None, no target.
+        risk_free_rate (float, optional): The risk free rate per period of the ratio.
+            Defaults to 0.
+        confidence_level (float, optional): The confidence level of the CVaR range and
+            the Tail Gini measures. Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold per period of
+            the semideviation and the lower partial moment, or "mean" for each asset's
+            mean. Defaults to 0.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+        expected_returns (pd.Series | None, optional): The expected return per period of
+            every asset, for the ratio and the target return. Defaults to None, the
+            average of the returns.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if risk_measure not in MEAN_RISK_MEASURES:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, not "
+            f"'{risk_measure}'."
+        )
+    if objective not in MEAN_RISK_OBJECTIVES:
+        raise ValueError(
+            f"The objective must be one of {', '.join(MEAN_RISK_OBJECTIVES)}, not "
+            f"'{objective}'."
+        )
+    if target_return is not None and objective != "minimum_risk":
+        raise ValueError("A target return applies to the minimum risk objective only.")
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    if (
+        isinstance(minimum_acceptable_return, str)
+        and minimum_acceptable_return != "mean"
+    ):
+        raise ValueError("The minimum acceptable return must be a number or 'mean'.")
+
+    data = returns.dropna(how="any").to_numpy(dtype=float)
+    periods, assets = data.shape
+    if periods < 2:  # noqa: PLR2004
+        raise ValueError(
+            "At least two periods with a return for every asset are needed."
+        )
+    constraints = get_weight_constraints(
+        returns.columns,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+        current_weights,
+        maximum_turnover,
+    )
+    mean = (
+        data.mean(axis=0)
+        if expected_returns is None
+        else expected_returns.reindex(returns.columns).to_numpy(dtype=float)
+    )
+    if np.isnan(mean).any():
+        raise ValueError("The expected returns must cover every asset.")
+    excess = mean - risk_free_rate
+    if objective == "maximum_ratio" and _return_range(excess, constraints)[1] <= 0:
+        raise ValueError(
+            "No portfolio within the constraints has an expected return above the risk "
+            "free rate, so none has a positive return to risk ratio."
+        )
+    if target_return is not None:
+        lowest, highest, _ = _return_range(mean, constraints)
+        if not lowest - 1e-12 <= target_return <= highest + 1e-12:
+            raise ValueError(
+                f"A target return of {target_return:.6f} per period cannot be reached "
+                f"within the constraints ({lowest:.6f} to {highest:.6f})."
+            )
+
+    if risk_measure in QUADRATIC_RISK_MEASURES:
+        # The returns divided by their largest absolute value keep the squared measure of
+        # order one for SLSQP's absolute ftol; the optimal weights are the same.
+        scaled = data / (np.max(np.abs(data)) or 1.0)
+        threshold = (
+            minimum_acceptable_return
+            if minimum_acceptable_return == "mean"
+            else float(minimum_acceptable_return) / (np.max(np.abs(data)) or 1.0)
+        )
+
+        def squared(weights):
+            return get_squared_risk(scaled, weights, risk_measure, threshold)
+
+        if objective == "minimum_risk":
+            weights = _solve(
+                lambda w: squared(w)[0],
+                lambda w: squared(w)[1],
+                constraints,
+                (
+                    [_target_return(mean, target_return)]
+                    if target_return is not None
+                    else None
+                ),
+            )
+        else:
+
+            def negative_ratio(w):
+                return -(w @ excess) / np.sqrt(squared(w)[0])
+
+            def ratio_gradient(w):
+                value, slope = squared(w)
+                risk = np.sqrt(value)
+                return -(excess * risk - (w @ excess) * slope / (2 * risk)) / value
+
+            weights = _solve(
+                negative_ratio, ratio_gradient, constraints, direction=excess
+            )
+        return _as_series(weights, returns.columns)
+
+    programme = get_risk_measure_programme(
+        data, risk_measure, confidence_level, minimum_acceptable_return
+    )
+    scaled = data / (np.max(np.abs(data)) or 1.0)
+    ratio = objective == "maximum_ratio"
+    # The variables are the weights (y = κw for the ratio) with the absolute weight and
+    # trade variables of the constraints, κ for the ratio, then those of the programme.
+    variables = len(constraints.bounds)
+    measure = variables + ratio
+    width = measure + len(programme.cost)
+    equality_rows = programme.equality_weights.shape[0]
+
+    def stack(rows, block, kappa=None):
+        """Rows over the weights and their variables, κ and the programme's variables."""
+        columns = [sparse.csr_matrix(rows)]
+        if ratio:
+            columns.append(
+                sparse.csr_matrix((rows.shape[0], 1) if kappa is None else kappa)
+            )
+        return sparse.hstack([*columns, block], format="csr")
+
+    def owa_cut(weights):
+        """The cut θ ≥ g'w of an ordered weighted average at the weights."""
+        slope = get_owa_risk(scaled, weights, risk_measure, confidence_level)[1]
+        return np.concatenate([slope, np.zeros(width - assets - 1), [-1.0]])
+
+    def cuts(x):
+        if risk_measure not in OWA_RISK_MEASURES:
+            return []
+        return [(owa_cut(x[:assets]), 0.0)]
+
+    def feasible(x):
+        """
+        The solution with θ the measure itself and, for the ratio, scaled down to
+        ρ(y) ≤ 1, which the homogeneous constraints allow.
+        """
+        risk = get_owa_risk(scaled, x[:assets], risk_measure, confidence_level)[0]
+        if ratio:
+            if risk <= 0:
+                return None
+            factor = min(1.0, 1 / risk)
+            x, risk = x * factor, risk * factor
+        return np.append(x[:-1], risk)
+
+    stabilization = feasible if risk_measure in OWA_RISK_MEASURES else None
+
+    measure_block = sparse.hstack(
+        [
+            programme.weights,
+            sparse.csr_matrix((len(programme.upper), variables - assets)),
+        ]
+    )
+    starting_cuts = (
+        np.array([owa_cut(np.full(assets, 1 / assets))])
+        if risk_measure in OWA_RISK_MEASURES
+        else np.zeros((0, width))
+    )
+    programme_equality = sparse.hstack(
+        [
+            programme.equality_weights,
+            sparse.csr_matrix((equality_rows, variables - assets)),
+        ]
+    )
+
+    if not ratio:
+        inequality = sparse.vstack(
+            [
+                stack(measure_block, programme.auxiliary),
+                sparse.csr_matrix(starting_cuts),
+                stack(
+                    constraints.inequality,
+                    sparse.csr_matrix(
+                        (len(constraints.inequality), len(programme.cost))
+                    ),
+                ),
+            ],
+            format="csr",
+        )
+        equality = [
+            stack(constraints.equality, sparse.csr_matrix((1, len(programme.cost)))),
+            stack(programme_equality, programme.equality_auxiliary),
+        ]
+        targets = [constraints.target, np.zeros(equality_rows)]
+        if target_return is not None:
+            equality.append(
+                sparse.csr_matrix(
+                    np.concatenate([mean, np.zeros(width - assets)])[None]
+                )
+            )
+            targets.append(np.array([target_return]))
+        solution = get_cutting_plane_solution(
+            np.concatenate([np.zeros(variables), programme.cost]),
+            inequality,
+            np.concatenate(
+                [programme.upper, np.zeros(len(starting_cuts)), constraints.upper]
+            ),
+            sparse.vstack(equality, format="csr"),
+            np.concatenate(targets),
+            constraints.bounds + programme.bounds,
+            cuts,
+            stabilization,
+        )
+        return _as_series(solution[:assets], returns.columns)
+
+    # κ is at most 1 / ρ(w) for every feasible w, so at most one over the lowest risk. The
+    # linear programmes of the other measures are bounded without it, but the cuts of an
+    # ordered weighted average only bound the risk once enough of them are found.
+    largest_kappa = None
+    if risk_measure in OWA_RISK_MEASURES:
+        lowest = get_owa_risk(
+            scaled,
+            get_mean_risk_weights(
+                returns,
+                risk_measure,
+                confidence_level=confidence_level,
+                minimum_weight=minimum_weight,
+                maximum_weight=maximum_weight,
+                groups=groups,
+                group_bounds=group_bounds,
+                net_exposure=net_exposure,
+                gross_exposure=gross_exposure,
+                current_weights=current_weights,
+                maximum_turnover=maximum_turnover,
+            ).to_numpy(),
+            risk_measure,
+            confidence_level,
+        )[0]
+        if lowest <= 0:
+            raise ValueError(
+                "A portfolio whose risk is zero or negative has an unbounded return to "
+                "risk ratio."
+            )
+        largest_kappa = 2 / lowest
+
+    homogeneous, homogeneous_equality = _homogeneous_constraints(constraints)
+    inequality = sparse.vstack(
+        [
+            stack(
+                measure_block,
+                programme.auxiliary,
+                sparse.csr_matrix(-programme.upper[:, None]),
+            ),
+            sparse.csr_matrix(starting_cuts),
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(homogeneous),
+                    sparse.csr_matrix((len(homogeneous), len(programme.cost))),
+                ]
+            ),
+            sparse.csr_matrix(
+                np.concatenate([np.zeros(measure), programme.cost])[None]
+            ),
+        ],
+        format="csr",
+    )
+    upper = np.zeros(inequality.shape[0])
+    upper[-1] = 1.0
+    equality = sparse.vstack(
+        [
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(homogeneous_equality),
+                    sparse.csr_matrix((1, len(programme.cost))),
+                ]
+            ),
+            stack(programme_equality, programme.equality_auxiliary),
+        ],
+        format="csr",
+    )
+    solution = get_cutting_plane_solution(
+        np.concatenate([-excess, np.zeros(width - assets)]),
+        inequality,
+        upper,
+        equality,
+        np.zeros(equality.shape[0]),
+        [(None, None)] * variables + [(0, largest_kappa)] + programme.bounds,
+        cuts,
+        stabilization,
+        unbounded="A portfolio whose risk is zero or negative has an unbounded return to risk "
+        "ratio.",
+    )
+    return _as_series(solution[:assets] / solution[variables], returns.columns)
+
+
+def get_risk_budgeting_weights(
+    returns: pd.DataFrame,
+    risk_measure: str = "cvar",
+    risk_budget: pd.Series | None = None,
+    confidence_level: float = 0.95,
+    minimum_acceptable_return: float | str = 0.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+) -> pd.Series:
+    """
+    The risk budgeting portfolio for a risk measure ρ of the historical returns that is
+    positively homogeneous of degree one and convex: every asset contributes the share b_i
+    of the risk set by the budget, w_i ∂ρ/∂w_i = b_i ρ(w) (Roncalli, 2013). It is the
+    solution of min ρ(y) subject to Σ b_i ln y_i ≥ 0 and y ≥ 0, scaled to w = y / 1'y:
+    the first-order conditions y_i ∂ρ/∂y_i = λ b_i give the budget (Bruder and Roncalli,
+    2012).
+
+    For the linear measures ρ is the linear programme of get_risk_measure_programme and
+    the logarithmic constraint is met by cutting planes (Kelley, 1960): the concave
+    Σ b_i ln y_i lies below its tangent at any point p with Σ b_i ln p_i = 0, so
+    Σ (b_i / p_i) y_i ≥ 1 holds for every feasible y. The ordered weighted averages
+    (the Gini mean difference and the Tail Gini measures) enter as the cuts θ ≥ g'y of
+    get_owa_risk as well, with 1'y capped by ρ(1) / μ for μ the lowest risk of a fully
+    invested portfolio, since ρ(y) ≥ μ 1'y. See get_cutting_plane_solution: the result is
+    the exact optimum of the convex programme. The semideviation and the Ulcer Index are
+    smooth enough to minimize ρ(y) - Σ b_i ln y_i with SLSQP, as the risk parity weights
+    minimize the volatility (Spinu, 2013). Weight and group bounds are homogeneous
+    constraints on y, as in get_risk_parity_weights.
+
+    See Roncalli, T. (2013), "Introduction to Risk Parity and Budgeting", Chapman &
+    Hall/CRC; Bruder, B. and Roncalli, T. (2012), "Managing Risk Exposures Using the Risk
+    Budgeting Approach", SSRN 2009778; and Kelley, J. E. (1960), "The Cutting-Plane
+    Method for Solving Convex Programs", Journal of the Society for Industrial and
+    Applied Mathematics, 8(4), 703-712.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        risk_measure (str, optional): A key of RISK_BUDGETING_MEASURES. Defaults to
+            "cvar".
+        risk_budget (pd.Series | None, optional): The share of the risk each asset should
+            contribute; it is scaled to sum to one. Defaults to None, an equal share each.
+        confidence_level (float, optional): The confidence level of the tail measures.
+            Defaults to 0.95.
+        minimum_acceptable_return (float | str, optional): The threshold of the
+            semideviation and lower partial moment, 0 or "mean" (any other threshold
+            does not scale with the weights). Defaults to 0.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset. Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification. Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group.
+            Defaults to None.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    if risk_measure not in RISK_BUDGETING_MEASURES:
+        raise ValueError(
+            f"The risk measure must be one of volatility, "
+            f"{', '.join(RISK_BUDGETING_MEASURES)}, not '{risk_measure}'."
+        )
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    if minimum_acceptable_return not in (0, "mean"):
+        raise ValueError(
+            "Risk budgeting needs a measure that scales with the weights: the minimum "
+            "acceptable return must be 0 or 'mean'."
+        )
+    data = returns.dropna(how="any").to_numpy(dtype=float)
+    periods, assets = data.shape
+    if periods < 2:  # noqa: PLR2004
+        raise ValueError(
+            "At least two periods with a return for every asset are needed."
+        )
+    budget = (
+        np.full(assets, 1 / assets)
+        if risk_budget is None
+        else risk_budget.reindex(returns.columns).to_numpy(dtype=float)
+    )
+    if np.any(np.isnan(budget)) or np.any(budget <= 0):
+        raise ValueError("Every asset needs a positive risk budget.")
+    budget = budget / budget.sum()
+
+    constraints = get_weight_constraints(
+        returns.columns, minimum_weight, maximum_weight, groups, group_bounds
+    )
+    lower = np.array([bound[0] for bound in constraints.bounds])
+    upper = np.array([bound[1] for bound in constraints.bounds])
+    if np.any(lower < 0):
+        raise ValueError(
+            "Risk budgeting holds long positions only; the minimum weight cannot be "
+            "negative."
+        )
+    # Every constraint a'w ≤ b on the weights becomes (a - b 1)'y ≤ 0 on y, with w = y / 1'y.
+    ones = np.ones(assets)
+    homogeneous = np.vstack(
+        [
+            constraints.inequality - constraints.upper[:, None] * ones,
+            np.eye(assets) - upper[:, None] * ones,
+            lower[:, None] * ones - np.eye(assets),
+        ]
+    )
+
+    if risk_measure in QUADRATIC_RISK_MEASURES:
+        scaled = data / (np.max(np.abs(data)) or 1.0)
+
+        def objective(y):
+            return np.sqrt(
+                get_squared_risk(scaled, y, risk_measure, minimum_acceptable_return)[0]
+            ) - budget @ np.log(y)
+
+        def gradient(y):
+            value, slope = get_squared_risk(
+                scaled, y, risk_measure, minimum_acceptable_return
+            )
+            return slope / (2 * np.sqrt(value)) - budget / y
+
+        # At the optimum ρ(y) equals Σ b_i = 1, so equal weights scaled to a risk of one
+        # start close to it.
+        start = ones / np.sqrt(
+            get_squared_risk(scaled, ones, risk_measure, minimum_acceptable_return)[0]
+        )
+        positive = [(1e-12, None)] * assets
+        linear = [
+            {
+                "type": "ineq",
+                "fun": lambda y: -(homogeneous @ y),
+                "jac": lambda y: -homogeneous,
+            }
+        ]
+        result = minimize(
+            objective,
+            start,
+            jac=gradient,
+            method="SLSQP",
+            bounds=positive,
+            constraints=linear,
+            options=OPTIMIZER_OPTIONS,
+        )
+        if not result.success and not (
+            result.status == SLSQP_LINE_SEARCH_STATUS
+            and _is_feasible(result.x, positive, linear)
+        ):
+            raise ValueError(f"The optimization did not converge: {result.message}")
+        return _as_series(result.x / result.x.sum(), returns.columns)
+
+    programme = get_risk_measure_programme(
+        data, risk_measure, confidence_level, minimum_acceptable_return
+    )
+    scaled = data / (np.max(np.abs(data)) or 1.0)
+    auxiliary = len(programme.cost)
+    owa = risk_measure in OWA_RISK_MEASURES
+
+    def tangent(point):
+        """
+        The tangent Σ (b_i / p_i) y_i ≥ 1 of Σ b_i ln y_i ≥ 0 at the point scaled onto
+        the boundary Σ b_i ln p_i = 0, the tightest cut in its direction; a weight of
+        zero has no tangent, so it is taken just above zero.
+        """
+        point = np.maximum(point, ZERO_WEIGHT * point.max())
+        point = point * np.exp(-budget @ np.log(point))
+        return np.concatenate([-budget / point, np.zeros(auxiliary)]), -1.0
+
+    def owa_cut(point):
+        """The cut θ ≥ g'y of an ordered weighted average at the point."""
+        slope = get_owa_risk(scaled, point, risk_measure, confidence_level)[1]
+        return np.concatenate([slope, [-1.0]]), 0.0
+
+    def cuts(x):
+        return [tangent(x[:assets])] + ([owa_cut(x[:assets])] if owa else [])
+
+    def feasible(x):
+        """
+        The solution scaled up onto Σ b_i ln y_i ≥ 0, which keeps the programme's
+        variables feasible as its rows are homogeneous, with θ the measure itself.
+        """
+        if np.any(x[:assets] <= 0):
+            return None
+        x = x * max(1.0, np.exp(-budget @ np.log(x[:assets])))
+        if owa:
+            x[assets] = get_owa_risk(
+                scaled, x[:assets], risk_measure, confidence_level
+            )[0]
+        return x
+
+    starting = [tangent(ones)] + ([owa_cut(ones)] if owa else [])
+    rows = [
+        sparse.hstack([programme.weights, programme.auxiliary]),
+        sparse.hstack(
+            [
+                sparse.csr_matrix(homogeneous),
+                sparse.csr_matrix((len(homogeneous), auxiliary)),
+            ]
+        ),
+        sparse.csr_matrix(np.array([row for row, _ in starting])),
+    ]
+    limits = [
+        programme.upper,
+        np.zeros(len(homogeneous)),
+        np.array([limit for _, limit in starting]),
+    ]
+    equality = sparse.hstack(
+        [programme.equality_weights, programme.equality_auxiliary], format="csr"
+    )
+    unbounded = (
+        "Risk budgeting needs a risk measure that is positive for every portfolio."
+    )
+    if not owa:
+        solution = get_cutting_plane_solution(
+            np.concatenate([np.zeros(assets), programme.cost]),
+            sparse.vstack(rows, format="csr"),
+            np.concatenate(limits),
+            equality if equality.shape[0] else None,
+            np.zeros(equality.shape[0]) if equality.shape[0] else None,
+            [(0.0, None)] * assets + programme.bounds,
+            cuts,
+            feasible,
+            unbounded=unbounded,
+        )
+        return _as_series(solution[:assets] / solution[:assets].sum(), returns.columns)
+
+    # The cuts of an ordered weighted average bound the risk only once enough of them are
+    # found, so 1'y is capped: ρ(y) ≥ μ 1'y with μ the lowest risk of a fully invested
+    # long-only portfolio, which bounds 1'y at the optimum by its risk over μ. A cap that
+    # still binds at the solution is raised tenfold and the programme solved again, since
+    # an optimum that does not touch the cap is the optimum without it.
+    lowest = get_owa_risk(
+        scaled,
+        get_mean_risk_weights(
+            returns, risk_measure, confidence_level=confidence_level
+        ).to_numpy(),
+        risk_measure,
+        confidence_level,
+    )[0]
+    if lowest <= 0:
+        raise ValueError(unbounded)
+    cap = 2 * get_owa_risk(scaled, ones, risk_measure, confidence_level)[0] / lowest
+    for _ in range(RISK_BUDGETING_CAP_RAISES):
+        solution = get_cutting_plane_solution(
+            np.concatenate([np.zeros(assets), programme.cost]),
+            sparse.vstack(
+                [*rows, sparse.csr_matrix(np.append(ones, 0.0)[None])], format="csr"
+            ),
+            np.concatenate([*limits, [cap]]),
+            None,
+            None,
+            [(0.0, None)] * assets + programme.bounds,
+            cuts,
+            feasible,
+            unbounded=unbounded,
+        )
+        if solution[:assets].sum() < cap * (1 - FEASIBILITY_TOLERANCE):
+            return _as_series(
+                solution[:assets] / solution[:assets].sum(), returns.columns
+            )
+        cap *= 10
+    raise ValueError(unbounded)
+
+
+def get_random_weights(
+    assets: pd.Index, seed: int | np.random.Generator | None = None
+) -> pd.Series:
+    """
+    Random weights drawn uniformly from all fully invested long-only portfolios, a flat
+    Dirichlet distribution with every concentration parameter 1 (Rubin, 1981), the
+    baseline an optimizer should beat out of sample.
+
+    See Rubin, D. B. (1981), "The Bayesian Bootstrap", The Annals of Statistics, 9(1),
+    130-134.
+
+    Args:
+        assets (pd.Index): The assets of the portfolio.
+        seed (int | np.random.Generator | None, optional): The seed or generator of the
+            draw. Defaults to None, a different draw every time.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    weights = np.random.default_rng(seed).dirichlet(np.ones(len(assets)))
+    return _as_series(weights, assets)
 
 
 def get_diversification_ratio(weights: pd.Series, covariance: pd.DataFrame) -> float:

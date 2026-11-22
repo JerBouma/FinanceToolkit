@@ -230,6 +230,46 @@ def test_get_maximum_cvar_ratio_weights(recorder, portfolio_module):
     )
 
 
+def test_get_mean_risk_weights(recorder, portfolio_module):
+    table = portfolio_module.get_mean_risk_weights(include_benchmark=True)
+    recorder.capture(table)
+    # The minimum risk portfolio has no more risk than any asset on its own.
+    assert table.loc["Portfolio", "MAD"] <= table["MAD"].drop("Portfolio").min() + 1e-4
+    ratio = portfolio_module.get_mean_risk_weights(
+        risk_measure="gini_mean_difference",
+        objective="maximum_ratio",
+        include_benchmark=True,
+    )
+    recorder.capture(ratio)
+    assert (
+        ratio.loc["Portfolio", "Gini Mean Difference Ratio"]
+        >= ratio["Gini Mean Difference Ratio"].drop("Portfolio").max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_mean_risk_weights(
+            risk_measure="semideviation",
+            target_return=0.2,
+            minimum_acceptable_return="mean",
+            include_benchmark=True,
+        )
+    )
+
+
+def test_get_risk_parity_weights_risk_measure(recorder, portfolio_module):
+    table = portfolio_module.get_risk_parity_weights(
+        risk_measure="cvar", include_benchmark=True
+    )
+    recorder.capture(table)
+    assert np.allclose(table["CVaR Contribution"].iloc[:-1], 1 / 3, atol=1e-3)
+    recorder.capture(
+        portfolio_module.get_risk_parity_weights(
+            risk_measure="mad",
+            risk_budget={"AAPL": 0.5, "MSFT": 0.3, "Benchmark": 0.2},
+            include_benchmark=True,
+        )
+    )
+
+
 def test_get_black_litterman_weights(recorder, portfolio_module):
     market = {"AAPL": 2.0, "MSFT": 1.5}
     recorder.capture(

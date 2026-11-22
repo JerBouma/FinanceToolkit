@@ -1,0 +1,5 @@
+,Weight,Expected Return,Volatility,Sharpe Ratio,Risk Contribution,Gini Mean Difference,Gini Mean Difference Ratio
+AAPL,0.9158,0.2651,0.3691,0.6708,0.9323,0.0246,0.0399
+MSFT,0.0842,0.2088,0.3473,0.5507,0.0677,0.0227,0.0334
+Benchmark,0.0,0.1046,0.2498,0.3482,0.0,0.0158,0.0219
+Portfolio,1.0,0.2604,0.3621,0.6706,1.0,0.0241,0.04

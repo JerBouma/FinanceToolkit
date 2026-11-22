@@ -272,8 +272,58 @@ PER_SECURITY_INDICATORS = {
     "get_parabolic_sar": lambda high, low, close, opening, volume: overlap.get_parabolic_sar(
         high, low
     ),
+    "get_parabolic_sar_extended": (
+        lambda high, low, close, opening, volume: overlap.get_parabolic_sar(
+            high, low, 0.01, 0.03, 0.25, 0.015, 0.02, 0.15, 0.0, 0.01
+        )
+    ),
+    "get_price_transform": lambda high, low, close, opening, volume: overlap.get_price_transform(
+        opening, high, low, close, "average"
+    ),
+    "get_midpoint": lambda high, low, close, opening, volume: overlap.get_midpoint(
+        high, low, WINDOW
+    ),
+    "get_holt_winters_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_holt_winters_moving_average(
+            close
+        )
+    ),
+    "get_holt_winters_channel": (
+        lambda high, low, close, opening, volume: overlap.get_holt_winters_channel(
+            close
+        )
+    ),
+    "get_elastic_volume_weighted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_elastic_volume_weighted_moving_average(
+            close, volume, 20
+        )
+    ),
+    "get_volume_adjusted_moving_average": (
+        lambda high, low, close, opening, volume: overlap.get_volume_adjusted_moving_average(
+            close, volume, 8
+        )
+    ),
+    "get_gann_hilo_activator": (
+        lambda high, low, close, opening, volume: overlap.get_gann_hilo_activator(
+            high, low, close
+        )
+    ),
+    "get_zigzag": lambda high, low, close, opening, volume: overlap.get_zigzag(
+        high, low, 0.03
+    ),
+    "get_trix_signal": lambda high, low, close, opening, volume: overlap.get_trix(
+        close, WINDOW, 9
+    ),
+    "get_volume_weighted_average_price_anchored": (
+        lambda high, low, close, opening, volume: overlap.get_volume_weighted_average_price(
+            high, low, close, volume, WINDOW, "monthly"
+        )
+    ),
     "get_pivot_points": lambda high, low, close, opening, volume: overlap.get_pivot_points(
         high, low, close
+    ),
+    "get_pivot_points_demark": lambda high, low, close, opening, volume: overlap.get_pivot_points(
+        high, low, close, opening, "demark", True
     ),
     "get_support_resistance_levels": (
         lambda high, low, close, opening, volume: overlap.get_support_resistance_levels(
@@ -313,6 +363,11 @@ PER_SECURITY_INDICATORS = {
     ),
     "get_bollinger_bands": lambda high, low, close, opening, volume: volatility.get_bollinger_bands(
         close, 20, 2
+    ),
+    "get_bollinger_bands_exponential": (
+        lambda high, low, close, opening, volume: volatility.get_bollinger_bands(
+            close, 20, 2, "exponential"
+        )
     ),
     "get_bollinger_percent_b_and_bandwidth": (
         lambda high, low, close, opening, volume: volatility.get_bollinger_percent_b_and_bandwidth(

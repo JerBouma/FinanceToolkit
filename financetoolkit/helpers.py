@@ -753,12 +753,30 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
     return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
 
+def _has_own_portfolio_values(result: pd.DataFrame) -> bool:
+    """
+    Whether a result already holds values for the Portfolio, calculated from its own prices
+    and returns (the Toolkit of a Portfolio has them as the "Portfolio" ticker).
+    """
+    if "Portfolio" in result.columns and not isinstance(result.columns, pd.MultiIndex):
+        return bool(result["Portfolio"].notna().to_numpy().any())
+    if "Portfolio" in result.index and not isinstance(result.index, pd.MultiIndex):
+        return bool(result.loc[["Portfolio"]].notna().to_numpy().any())
+    return False
+
+
 def handle_portfolio(func):
     """
     A decorator that processes the result of a function to handle portfolio data.
     This decorator checks if "Portfolio" is in the `self._tickers` attribute and, if so,
     calculates the weighted average of the result DataFrame using `self._portfolio_weights`
     and appends it as a new row or column named "Portfolio".
+
+    A result that already has values for the Portfolio keeps them: a measure calculated on
+    the Portfolio's own prices and returns (a volatility, a Value at Risk, a drawdown)
+    includes how the holdings move together, which a weighted average of the holdings'
+    measures leaves out. The weighted average is for the measures that have no values
+    for the Portfolio, such as the ratios of the financial statements.
 
     Args:
         func (function): The function to be decorated.
@@ -782,6 +800,7 @@ def handle_portfolio(func):
             isinstance(result, pd.DataFrame)
             and isinstance(self._tickers, list | str)
             and "Portfolio" in self._tickers
+            and not _has_own_portfolio_values(result)
         ):
             sig = inspect.signature(func)
             bound_args = sig.bind(self, *args, **kwargs)

@@ -1231,3 +1231,124 @@ def test_the_toolkit_leaves_the_portfolio_data_untouched():
             getattr(untouched, method)(**kwargs),
             obj=method,
         )
+
+
+def test_the_portfolio_in_its_toolkit_has_its_own_return_series():
+    held = _offline_portfolio()
+    toolkit = held.toolkit
+    returns = toolkit.get_historical_data()["Return"]
+
+    # Every day each position earns its return with its weight at the previous close.
+    weights = held._positions_overview["Current Weight"].astype(float)
+    expected = (
+        (
+            weights.shift(1)
+            * held._daily_historical_data["Return"][weights.columns].fillna(0.0)
+        )
+        .sum(axis=1, min_count=1)
+        .where(weights.shift(1).fillna(0.0).sum(axis=1) > 0)
+    )
+    # The Toolkit rounds to the four decimals of the Portfolio.
+    pd.testing.assert_series_equal(
+        returns["Portfolio"], expected, check_names=False, check_freq=False, atol=5e-5
+    )
+
+    # The volatility of the Portfolio is that of its returns, not a weighted average of the holdings' volatilities.
+    volatility = toolkit.risk.get_volatility(period="yearly")
+    last_year = volatility.index[-1]
+    assert volatility.loc[last_year, "Portfolio"] == pytest.approx(
+        returns["Portfolio"].loc[str(last_year)].std() * np.sqrt(252), abs=1e-3
+    )
+    holdings = volatility.loc[last_year].drop(["Portfolio", "Benchmark"])
+    assert volatility.loc[last_year, "Portfolio"] < holdings.max()
+
+
+def test_another_benchmark_replaces_the_one_collected(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    held = _offline_portfolio()
+    held.get_portfolio_overview()
+    assert not held._portfolio_volatilities.empty
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _EmptyToolkit)
+    held.collect_benchmark_historical_data(benchmark_ticker="TLT")
+
+    # The benchmark collected before and what was calculated from it are gone.
+    assert _EmptyToolkit.tickers == ["TLT"]
+    assert held._benchmark_ticker == "TLT"
+    assert held._portfolio_volatilities.empty
+    assert held._daily_benchmark_data.empty
+    assert held._toolkit_instance is None
+
+    # Asking for the current benchmark, by name or by leaving it out, keeps what was collected.
+    _EmptyToolkit.tickers = []
+    held.collect_benchmark_historical_data()
+    held.collect_benchmark_historical_data(benchmark_ticker="TLT")
+    assert held._benchmark_ticker == "TLT"
+    assert _EmptyToolkit.tickers == []
+
+
+def test_reading_the_transactions_again_starts_over():
+    held = _offline_portfolio()
+    held.get_portfolio_overview()
+    transactions = held.read_portfolio_dataset()
+
+    assert held._daily_historical_data.empty
+    assert held._weekly_benchmark_data.empty
+    assert held._positions_overview.empty
+    assert held._toolkit is None
+    pd.testing.assert_frame_equal(
+        transactions,
+        Portfolio(
+            portfolio_dataset="tests/datasets/portfolio_test.xlsx"
+        )._portfolio_dataset,
+    )
+
+
+def test_the_money_weighted_return_does_not_take_the_rounding_of_the_portfolio():
+    rounded = _offline_portfolio()
+    rounded._rounding = 0
+    unrounded = _offline_portfolio()
+
+    pd.testing.assert_frame_equal(
+        rounded.get_money_weighted_return(rounding=6),
+        unrounded.get_money_weighted_return(rounding=6),
+    )
+
+
+def test_a_purchase_from_before_a_split_is_restated(monkeypatch):
+    from financetoolkit.portfolio import portfolio_controller  # noqa: PLC0415
+
+    held = _offline_portfolio()
+    ticker = held._tickers[0]
+    first = held._portfolio_dataset.index[
+        held._portfolio_dataset.index.get_level_values(1) == ticker
+    ][0]
+    volume = held._portfolio_dataset.loc[first, held._volume_column]
+    price = held._portfolio_dataset.loc[first, held._price_column]
+    # The purchase as confirmed before a four for one split the day after it.
+    held._portfolio_dataset.loc[first, held._volume_column] = volume / 4
+    held._portfolio_dataset.loc[first, held._price_column] = price * 4
+    split_date = first[0].to_timestamp() + pd.Timedelta(days=1)
+
+    class _SplitToolkit:
+        def __init__(self, tickers, **kwargs):  # noqa: ARG002
+            self.tickers = list(tickers)
+
+        def get_stock_splits(self):
+            assert self.tickers == [ticker]
+            return pd.DataFrame(
+                {"Numerator": [4], "Denominator": [1]},
+                index=pd.Index([split_date], name="Date"),
+            )
+
+    monkeypatch.setattr(portfolio_controller, "Toolkit", _SplitToolkit)
+    held._api_key = "KEY"
+    held._restate_split_transactions()
+
+    assert held._portfolio_dataset.loc[first, held._volume_column] == pytest.approx(
+        volume
+    )
+    assert held._portfolio_dataset.loc[first, held._price_column] == pytest.approx(
+        price
+    )

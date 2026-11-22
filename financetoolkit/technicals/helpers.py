@@ -22,9 +22,9 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # balance volume and Archer's version, price volume trend, accumulation/distribution, Chaikin oscillator, force
 # index and its running total, ease of movement, Klinger volume oscillator, market facilitation index, price-volume),
 # whose level reflects how many shares trade, the running totals in price units (Williams' accumulation/distribution),
-# the price volume rank (four categories), the volume profile (not per date), the pivot points and Fibonacci
-# levels, which only restate the latest high, low and close, and Wilder's swing index, which is scaled
-# by a limit move in price units and accumulates from the first date of the data.
+# the price volume rank (four categories), the volume profile (not per date), the pivot points, Fibonacci levels,
+# price transforms and Zig Zag, which only restate the latest high, low and close or swing, and Wilder's swing
+# index, which is scaled by a limit move in price units and accumulates from the first date of the data.
 FACTOR_COLLECTIONS = {
     "momentum": [
         "get_money_flow_index",
@@ -85,8 +85,14 @@ FACTOR_COLLECTIONS = {
         "get_mcginley_dynamic",
         "get_variable_index_dynamic_average",
         "get_fractal_adaptive_moving_average",
+        "get_holt_winters_moving_average",
+        "get_holt_winters_channel",
+        "get_elastic_volume_weighted_moving_average",
+        "get_volume_adjusted_moving_average",
+        "get_midpoint",
         "get_volume_weighted_average_price",
         "get_parabolic_sar",
+        "get_gann_hilo_activator",
     ],
     "volatility": [
         "get_bollinger_bands",
@@ -127,8 +133,16 @@ FACTOR_PRICE_LINES = (
     "get_mcginley_dynamic",
     "get_variable_index_dynamic_average",
     "get_fractal_adaptive_moving_average",
+    "get_holt_winters_moving_average",
+    "get_holt_winters_channel",
+    "get_elastic_volume_weighted_moving_average",
+    "get_volume_adjusted_moving_average",
+    "get_midpoint",
+    "get_price_transform",
     "get_volume_weighted_average_price",
     "get_parabolic_sar",
+    "get_gann_hilo_activator",
+    "get_zigzag",
     "get_ichimoku_cloud",
     "get_bollinger_bands",
     "get_supertrend",

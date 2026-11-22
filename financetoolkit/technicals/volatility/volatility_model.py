@@ -8,6 +8,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.overlap.overlap_model import (
     get_exponential_moving_average,
 )
@@ -142,6 +143,24 @@ def get_wilder_moving_average(
     return pd.Series(averages, index=values.index, dtype="float64").where(
         values.notna()
     )
+
+
+# The moving averages of get_moving_average, which the Bollinger Bands can take as their
+# middle band as TA-Lib's BBANDS takes a matype.
+MOVING_AVERAGES = {
+    "simple": overlap_model.get_moving_average,
+    "exponential": overlap_model.get_exponential_moving_average,
+    "double_exponential": overlap_model.get_double_exponential_moving_average,
+    "triangular": overlap_model.get_triangular_moving_average,
+    "weighted": overlap_model.get_weighted_moving_average,
+    "hull": overlap_model.get_hull_moving_average,
+    "triple_exponential": overlap_model.get_triple_exponential_moving_average,
+    "zero_lag": overlap_model.get_zero_lag_exponential_moving_average,
+    "wilder": get_wilder_moving_average,
+    "sine": overlap_model.get_sine_weighted_moving_average,
+    "fibonacci": overlap_model.get_fibonacci_weighted_moving_average,
+    "pascal": overlap_model.get_pascal_weighted_moving_average,
+}
 
 
 def get_average_true_range(
@@ -666,7 +685,10 @@ def get_volatility_cone(
 
 
 def get_bollinger_bands(
-    prices: pd.Series, window: int, num_std_dev: float
+    prices: pd.Series,
+    window: int,
+    num_std_dev: float,
+    moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
     Calculate the Bollinger Bands of a given price series.
@@ -680,7 +702,7 @@ def get_bollinger_bands(
 
     The formula is as follows:
 
-    - Middle Band = SMA(Close, window)
+    - Middle Band = SMA(Close, window), or another moving average of `moving_average`
     - Upper Band = Middle Band + num_std_dev * StdDev(Close, window)
     - Lower Band = Middle Band - num_std_dev * StdDev(Close, window)
 
@@ -698,16 +720,29 @@ def get_bollinger_bands(
           divides by the period) and StockCharts. For the default 20-period window the
           sample convention inflates the band half-width by a factor of sqrt(20/19), about
           2.6%.
+        - With another `moving_average` the middle band is that average while the standard
+          deviation stays the one around the simple average of the window, as in TA-Lib's
+          BBANDS with a `matype`.
 
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods for the moving average.
         num_std_dev (float): Number of standard deviations for the bands.
+        moving_average (str): The moving average of the middle band, one of
+            `MOVING_AVERAGES` (the methods of `get_moving_average`). Defaults to "simple".
 
     Returns:
         pd.DataFrame: Bollinger Bands (upper, middle, lower).
+
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
     """
-    rolling_mean = prices.rolling(window=window).mean()
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    rolling_mean = MOVING_AVERAGES[moving_average](prices, window)
     rolling_std = prices.rolling(window=window).std(ddof=0)
 
     upper_band = rolling_mean + (num_std_dev * rolling_std)

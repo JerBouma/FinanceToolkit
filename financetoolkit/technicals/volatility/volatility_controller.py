@@ -248,6 +248,7 @@ class VolatilityTechnicals:
         close_column: str = "Adj Close",
         window: int = 20,
         num_std_dev: float = 2,
+        moving_average: str = "simple",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -264,7 +265,7 @@ class VolatilityTechnicals:
 
         The formula is as follows:
 
-        - Middle Band = SMA(Close, Window)
+        - Middle Band = SMA(Close, Window), or another moving average with `moving_average`
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
 
@@ -280,7 +281,9 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
+        - Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
         - TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+        - pandas-ta-classic: bbands (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
@@ -293,6 +296,10 @@ class VolatilityTechnicals:
                 The number of periods (time intervals) over which to calculate the moving average. Defaults to 20.
             num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
+            moving_average (str, optional): The moving average of the middle band, one of the methods
+                of `get_moving_average`: "simple", "exponential", "double_exponential",
+                "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
+                "fibonacci" or "pascal". Defaults to "simple", Bollinger's own.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the bands.
@@ -314,7 +321,10 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Bollinger Bands for each asset in the Toolkit instance.
-        - The bands equal TA-Lib's BBANDS with a simple moving average (`matype=0`).
+        - The bands equal TA-Lib's BBANDS with a simple moving average (`matype=0`), and with the
+          exponential, weighted, double exponential, triple exponential and triangular averages its
+          `matype` 1 to 5. The standard deviation stays the one around the simple average of the
+          window, as in TA-Lib, whatever the middle band.
         - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
           using the specified `lag`.
 
@@ -369,6 +379,7 @@ class VolatilityTechnicals:
             volatility_model.get_bollinger_bands,
             window,
             num_std_dev,
+            moving_average,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(

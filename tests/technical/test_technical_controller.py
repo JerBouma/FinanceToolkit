@@ -1590,3 +1590,104 @@ def test_get_fractal_adaptive_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_fractal_adaptive_moving_average())
     recorder.capture(technical_module.get_fractal_adaptive_moving_average(window=10))
     recorder.capture(technical_module.get_fractal_adaptive_moving_average(growth=True))
+
+
+def test_get_price_transform(recorder, technical_module):
+    recorder.capture(technical_module.get_price_transform())
+    recorder.capture(technical_module.get_price_transform(method="average"))
+    recorder.capture(technical_module.get_price_transform(method="weighted_close"))
+
+
+def test_get_midpoint(recorder, technical_module):
+    recorder.capture(technical_module.get_midpoint())
+    recorder.capture(technical_module.get_midpoint(method="high_low", window=30))
+    recorder.capture(technical_module.get_midpoint(growth=True))
+
+
+def test_get_holt_winters_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_holt_winters_moving_average())
+    recorder.capture(
+        technical_module.get_holt_winters_moving_average(
+            level_smoothing=0.3, velocity_smoothing=0.2, acceleration_smoothing=0.05
+        )
+    )
+    recorder.capture(technical_module.get_holt_winters_moving_average(growth=True))
+
+
+def test_get_holt_winters_channel(recorder, technical_module):
+    recorder.capture(technical_module.get_holt_winters_channel())
+    recorder.capture(
+        technical_module.get_holt_winters_channel(deviation_smoothing=0.2, multiplier=2)
+    )
+    recorder.capture(technical_module.get_holt_winters_channel(growth=True))
+
+
+def test_get_elastic_volume_weighted_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_elastic_volume_weighted_moving_average())
+    recorder.capture(
+        technical_module.get_elastic_volume_weighted_moving_average(window=10)
+    )
+    recorder.capture(
+        technical_module.get_elastic_volume_weighted_moving_average(growth=True)
+    )
+
+
+def test_get_volume_adjusted_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_adjusted_moving_average())
+    recorder.capture(technical_module.get_volume_adjusted_moving_average(window=14))
+    recorder.capture(technical_module.get_volume_adjusted_moving_average(growth=True))
+
+
+def test_get_gann_hilo_activator(recorder, technical_module):
+    recorder.capture(technical_module.get_gann_hilo_activator())
+    recorder.capture(
+        technical_module.get_gann_hilo_activator(high_window=3, low_window=3)
+    )
+    recorder.capture(technical_module.get_gann_hilo_activator(growth=True))
+
+
+def test_get_zigzag(recorder, technical_module):
+    recorder.capture(technical_module.get_zigzag())
+    recorder.capture(
+        technical_module.get_zigzag(sensitivity=0.1, minimum_trend_length=3)
+    )
+
+
+def test_get_trix_signal(recorder, technical_module):
+    recorder.capture(technical_module.get_trix(window=18, signal_window=9))
+    recorder.capture(technical_module.get_trix(signal_window=9, growth=True))
+
+
+def test_get_parabolic_sar_extended(recorder, technical_module):
+    recorder.capture(
+        technical_module.get_parabolic_sar(
+            af_start_short=0.01, af_increment_short=0.01, af_max_short=0.1
+        )
+    )
+    recorder.capture(
+        technical_module.get_parabolic_sar(start_value=-100, offset_on_reverse=0.01)
+    )
+
+
+def test_get_pivot_points_methods(recorder, technical_module):
+    recorder.capture(technical_module.get_pivot_points(method="fibonacci"))
+    recorder.capture(
+        technical_module.get_pivot_points(method="camarilla", central_pivot_range=True)
+    )
+    recorder.capture(technical_module.get_pivot_points(method="woodie"))
+    recorder.capture(technical_module.get_pivot_points(method="demark"))
+
+
+def test_get_volume_weighted_average_price_anchored(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_weighted_average_price(anchor="all"))
+    recorder.capture(
+        technical_module.get_volume_weighted_average_price(anchor="monthly")
+    )
+    recorder.capture(
+        technical_module.get_volume_weighted_average_price(anchor="2022-01-03")
+    )
+
+
+def test_get_bollinger_bands_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_bollinger_bands(moving_average="exponential"))
+    recorder.capture(technical_module.get_bollinger_bands(moving_average="hull"))

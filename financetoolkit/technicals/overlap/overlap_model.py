@@ -142,7 +142,9 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     return dema
 
 
-def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
+def get_trix(
+    prices_close: pd.Series, window: int, signal_window: int | None = None
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the Trix Indicator for a given price series.
 
@@ -150,7 +152,8 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     to filter out short-term price fluctuations and insignificant cycles, then plots the
     percentage rate of change of that triple-smoothed series. Because insignificant
     fluctuations have already been smoothed away, the result oscillates around zero mainly
-    in response to genuine trend changes.
+    in response to genuine trend changes. Hutson read crossings of the TRIX and its signal
+    line, a moving average of the TRIX, as signals; the histogram is their difference.
 
     The formula is as follows:
 
@@ -158,20 +161,32 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
     - EMA2 = EMA(EMA1, window)
     - EMA3 = EMA(EMA2, window)
     - Trix = (EMA3(t) - EMA3(t-1)) / EMA3(t-1)
+    - Signal Line = EMA(Trix, signal_window)
+    - Histogram = Trix - Signal Line
 
-    Also known as: TRIX, Triple Exponential Average.
+    Also known as: TRIX, Triple Exponential Average, TRIXH, TRIX histogram.
 
     Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
     Technical Analysis of Stocks & Commodities, 1(5).
 
     TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
+    pandas-ta-classic: trixh, the signal line and histogram
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The signal line is an EMA seeded with the simple average of its first
+          `signal_window` values, as every EMA of the Toolkit. pandas-ta-classic's trixh
+          takes a simple moving average of the TRIX as its signal line.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for Trix calculation.
+        signal_window (int | None): Number of periods of the signal line. Defaults to
+            None, which returns only the Trix.
 
     Returns:
-        pd.Series: Trix Indicator values as a decimal (0.001 is 0.1%).
+        pd.Series | pd.DataFrame: Trix Indicator values as a decimal (0.001 is 0.1%), or
+        with a `signal_window` the TRIX, Signal Line and Histogram as columns.
     """
     ema_1 = get_exponential_moving_average(prices_close, window)
     ema_2 = get_exponential_moving_average(ema_1, window)
@@ -179,7 +194,16 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
 
     trix = (ema_3 - ema_3.shift(1)) / ema_3.shift(1)
 
-    return trix
+    if signal_window is None:
+        return trix
+
+    signal_line = get_exponential_moving_average(trix, signal_window)
+
+    return pd.concat(
+        [trix, signal_line, trix - signal_line],
+        keys=["TRIX", "Signal Line", "Histogram"],
+        axis=1,
+    )
 
 
 def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
@@ -966,12 +990,533 @@ def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Ser
     )
 
 
+def get_price_transform(
+    prices_open: pd.Series,
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    method: str = "typical",
+) -> pd.Series:
+    """
+    Calculate a Price Transform of a given price series: the average, median, typical or
+    weighted close price of each period.
+
+    A price transform condenses the open, high, low and close of a period into one price.
+    Indicators that should reflect the whole bar rather than only the close are built on
+    them: the Commodity Channel Index, Money Flow Index and VWAP on the typical price, the
+    Awesome Oscillator and FRAMA on the median price.
+
+    The formula is as follows, per method:
+
+    - "average": Average Price = (Open + High + Low + Close) / 4
+    - "median": Median Price = (High + Low) / 2
+    - "typical": Typical Price = (High + Low + Close) / 3
+    - "weighted_close": Weighted Close Price = (High + Low + 2 * Close) / 4
+
+    Also known as: AVGPRICE, OHLC4, MEDPRICE, HL2, TYPPRICE, HLC3, WCLPRICE, HLCC4.
+
+    Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
+    Trends." Commodities (Futures) Magazine, the typical price of the CCI.
+
+    TA-Lib: AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE, the reference implementations
+    (https://ta-lib.org/functions/).
+
+    Args:
+        prices_open (pd.Series): Series of open prices.
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        method (str): "average", "median", "typical" or "weighted_close". Defaults to
+            "typical".
+
+    Returns:
+        pd.Series: The price of each period.
+
+    Raises:
+        ValueError: If `method` is not one of the four transforms.
+    """
+    if method == "average":
+        return (prices_open + prices_high + prices_low + prices_close) / 4
+    if method == "median":
+        return (prices_high + prices_low) / 2
+    if method == "typical":
+        return (prices_high + prices_low + prices_close) / 3
+    if method == "weighted_close":
+        return (prices_high + prices_low + 2 * prices_close) / 4
+
+    raise ValueError(
+        f"method must be average, median, typical or weighted_close, not {method}."
+    )
+
+
+def get_midpoint(
+    prices_high: pd.Series, prices_low: pd.Series, window: int = 14
+) -> pd.Series:
+    """
+    Calculate the Midpoint of a given price series: the middle of the highest high and
+    the lowest low over a window.
+
+    The midpoint is the centre of the range the price covered over the window, the middle
+    line of a Donchian Channel that includes the current period. Passing the closing prices
+    as both the highs and the lows gives the midpoint of the closes (TA-Lib's MIDPOINT),
+    the highs and lows the midpoint price (TA-Lib's MIDPRICE).
+
+    The formula is as follows:
+
+    - Midpoint = (Highest High(window) + Lowest Low(window)) / 2
+
+    Also known as: MIDPOINT, MIDPRICE, midpoint price, Donchian middle line.
+
+    Reference: Donchian, R.D. (1960). "High Finance in Copper." Financial Analysts
+    Journal, 16(6), the channel of the highest high and lowest low.
+
+    TA-Lib: MIDPOINT and MIDPRICE, the reference implementations
+    (https://ta-lib.org/functions/midpoint.html, https://ta-lib.org/functions/midprice.html).
+
+    Args:
+        prices_high (pd.Series): Series of high prices (or closing prices).
+        prices_low (pd.Series): Series of low prices (or closing prices).
+        window (int): Number of periods, including the current one. Defaults to 14.
+
+    Returns:
+        pd.Series: Midpoint values.
+    """
+    return (
+        prices_high.rolling(window=window).max()
+        + prices_low.rolling(window=window).min()
+    ) / 2
+
+
+def get_holt_winters_moving_average(
+    prices: pd.Series,
+    level_smoothing: float = 0.2,
+    velocity_smoothing: float = 0.1,
+    acceleration_smoothing: float = 0.1,
+) -> pd.Series:
+    """
+    Calculate the Holt-Winters Moving Average (HWMA) of a given price series.
+
+    The HWMA applies Holt's exponential smoothing with a trend, extended with an
+    acceleration term, to the price: it smooths the level of the price, its velocity (the
+    change of the level) and its acceleration (the change of the velocity), and adds the
+    expected velocity and acceleration of one period to the level. The average therefore
+    follows a trend with little lag, at the cost of overshooting when the trend turns.
+
+    The formula is as follows:
+
+    - F(t) = (1 - level_smoothing) * (F(t-1) + V(t-1) + 0.5 * A(t-1)) + level_smoothing * Price(t)
+    - V(t) = (1 - velocity_smoothing) * (V(t-1) + A(t-1)) + velocity_smoothing * (F(t) - F(t-1))
+    - A(t) = (1 - acceleration_smoothing) * A(t-1) + acceleration_smoothing * (V(t) - V(t-1))
+    - HWMA(t) = F(t) + V(t) + 0.5 * A(t)
+
+    with F starting at the first price and V and A at 0.
+
+    Also known as: HWMA, Holt-Winters moving average.
+
+    For more information, see the following sources:
+
+    - Holt, C.C. (1957). "Forecasting Seasonals and Trends by Exponentially Weighted Moving
+      Averages." ONR Memorandum 52, Carnegie Institute of Technology (reprinted in the
+      International Journal of Forecasting, 20(1), 2004).
+    - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
+      Management Science, 6(3), 324-342.
+    - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
+
+    pandas-ta-classic: hwma, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The recursion starts on the first price, as in the MQL5 indicator and
+          pandas-ta-classic, so there is no warm-up: the first values lean on that price
+          and the weight of the start fades by a factor 1 - level_smoothing per period.
+        - A period without a price is missing, and the recursion continues from the last
+          values on the next price.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        level_smoothing (float): The smoothing factor of the level, between 0 and 1.
+            Defaults to 0.2.
+        velocity_smoothing (float): The smoothing factor of the velocity, between 0 and 1.
+            Defaults to 0.1.
+        acceleration_smoothing (float): The smoothing factor of the acceleration, between 0
+            and 1. Defaults to 0.1.
+
+    Returns:
+        pd.Series: HWMA values.
+    """
+    valid_prices = prices.dropna()
+    averages = []
+
+    # The recursion runs on plain Python floats, since writing a pandas Series one element
+    # at a time costs tens of microseconds per element.
+    price_values = valid_prices.to_numpy(dtype=float).tolist()
+    level = price_values[0] if price_values else math.nan
+    velocity = acceleration = 0.0
+    for price in price_values:
+        new_level = (1 - level_smoothing) * (
+            level + velocity + 0.5 * acceleration
+        ) + level_smoothing * price
+        new_velocity = (1 - velocity_smoothing) * (
+            velocity + acceleration
+        ) + velocity_smoothing * (new_level - level)
+        acceleration = (
+            1 - acceleration_smoothing
+        ) * acceleration + acceleration_smoothing * (new_velocity - velocity)
+        level, velocity = new_level, new_velocity
+        averages.append(level + velocity + 0.5 * acceleration)
+
+    return pd.Series(averages, index=valid_prices.index, dtype="float64").reindex(
+        prices.index
+    )
+
+
+def get_holt_winters_channel(
+    prices: pd.Series,
+    level_smoothing: float = 0.2,
+    velocity_smoothing: float = 0.1,
+    acceleration_smoothing: float = 0.1,
+    deviation_smoothing: float = 0.1,
+    multiplier: float = 1.0,
+) -> pd.DataFrame:
+    """
+    Calculate the Holt-Winters Channel of a given price series.
+
+    The channel draws bands around the Holt-Winters Moving Average at a multiple of an
+    exponentially smoothed standard deviation of the price from the average, so it widens
+    when the price strays from its trend and narrows when it follows it.
+
+    The formula is as follows:
+
+    - HWMA = Holt-Winters Moving Average (see `get_holt_winters_moving_average`)
+    - Var(t) = (1 - deviation_smoothing) * Var(t-1) + deviation_smoothing *
+      (Price(t-1) - HWMA(t-1))^2, starting at 0
+    - Upper Band = HWMA(t) + multiplier * sqrt(Var(t-1))
+    - Lower Band = HWMA(t) - multiplier * sqrt(Var(t-1))
+
+    Also known as: HWC, Holt-Winters channel.
+
+    For more information, see the following sources:
+
+    - Holt, C.C. (1957). "Forecasting Seasonals and Trends by Exponentially Weighted Moving
+      Averages." ONR Memorandum 52, Carnegie Institute of Technology.
+    - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
+      Management Science, 6(3), 324-342.
+    - MQL5 Code Base: HWC (https://www.mql5.com/en/code/20857).
+
+    pandas-ta-classic: hwc, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The band of period t uses the variance up to period t-1, which holds the
+          deviations up to period t-2, as in the MQL5 indicator and pandas-ta-classic. Since
+          the average starts on the first price, the bands open from the fourth price on.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        level_smoothing (float): The smoothing factor of the level. Defaults to 0.2.
+        velocity_smoothing (float): The smoothing factor of the velocity. Defaults to 0.1.
+        acceleration_smoothing (float): The smoothing factor of the acceleration.
+            Defaults to 0.1.
+        deviation_smoothing (float): The smoothing factor of the variance. Defaults to 0.1.
+        multiplier (float): The number of standard deviations of the bands. Defaults to 1.
+
+    Returns:
+        pd.DataFrame: The Upper Band, Middle Band (the HWMA) and Lower Band.
+    """
+    valid_prices = prices.dropna()
+    average = get_holt_winters_moving_average(
+        valid_prices, level_smoothing, velocity_smoothing, acceleration_smoothing
+    )
+
+    # The squared deviation of the period before, 0 on the first period, smoothed into
+    # the variance; the band of a period takes the variance of the period before.
+    squared_deviation = ((valid_prices - average) ** 2).shift(1, fill_value=0.0)
+    variance = squared_deviation.ewm(alpha=deviation_smoothing, adjust=False).mean()
+    deviation = np.sqrt(variance.shift(1, fill_value=0.0))
+
+    return pd.concat(
+        [
+            average + multiplier * deviation,
+            average,
+            average - multiplier * deviation,
+        ],
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+        axis=1,
+    ).reindex(prices.index)
+
+
+def get_elastic_volume_weighted_moving_average(
+    prices: pd.Series, volumes: pd.Series, window: int = 20
+) -> pd.Series:
+    """
+    Calculate the Elastic Volume Weighted Moving Average (eVWMA) of a given price series.
+
+    The eVWMA approximates the average price paid per share over the latest `window`
+    periods. Each period the shares traded replace the same number of shares at the
+    previous average, out of the shares traded over the window, so the average moves
+    towards the price by the share of the window's volume traded in that period: fast on
+    heavy volume, hardly at all on light volume.
+
+    The formula is as follows:
+
+    - Volume Sum = Sum(Volume, window)
+    - eVWMA(t) = ((Volume Sum - Volume(t)) * eVWMA(t-1) + Volume(t) * Close(t)) / Volume Sum
+    - which is eVWMA(t) = eVWMA(t-1) + Volume(t) / Volume Sum * (Close(t) - eVWMA(t-1))
+
+    Also known as: eVWMA, EVWMA, elastic volume weighted moving average.
+
+    Reference: Fries, C.P. (2001). "Elastic Volume Weighted Moving Average."
+    (https://www.christian-fries.de/evwma/), which takes the number of shares outstanding
+    (the float) as the volume sum; the sum of the volume over a window stands in for it.
+
+    finta: EVWMA, the reference implementation (https://github.com/peerchemist/finta).
+
+    Notes:
+        - The recursion is seeded with the simple average of the first `window` prices, as
+          the Toolkit seeds its exponential moving averages. finta starts the recursion
+          from 0 on the first full window, so its eVWMA climbs from 0 to the price and
+          converges by a factor 1 - Volume / Volume Sum per period.
+        - A window without any volume keeps the last average, and a period without a price
+          is missing while the recursion continues on the next price.
+
+    Args:
+        prices (pd.Series): Series of closing prices.
+        volumes (pd.Series): Series of trading volumes.
+        window (int): Number of periods of the volume sum. Defaults to 20.
+
+    Returns:
+        pd.Series: eVWMA values.
+    """
+    volume_sum = volumes.rolling(window=window).sum()
+
+    return apply_variable_smoothing(
+        prices, volumes / volume_sum.where(volume_sum != 0), window
+    )
+
+
+def get_volume_adjusted_moving_average(
+    prices: pd.Series, volumes: pd.Series, window: int = 8
+) -> pd.Series:
+    """
+    Calculate the Volume Adjusted Moving Average (VAMA) of a given price series.
+
+    The VAMA weights every price in the window by its traded value relative to the average
+    volume of the window ending on that period, so a period that trades more than usual
+    counts more than a quiet one.
+
+    The formula is as follows:
+
+    - Weight(t) = Close(t) * Volume(t) / SMA(Volume, window)(t)
+    - VAMA = Sum(Weight * Close, window) / Sum(Weight, window)
+
+    Also known as: VAMA, volume adjusted moving average.
+
+    Reference: Arms, R.W. Jr. (1994). "Volume Cycles in the Stock Market: Market Timing
+    Through Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume
+    traded; the VAMA itself has no published source.
+
+    finta: VAMA, the reference implementation (https://github.com/peerchemist/finta).
+
+    Notes:
+        - The weights follow finta, which multiplies the volume ratio by the price as well,
+          so the weight is the traded value (in currency) relative to the average volume.
+
+    Args:
+        prices (pd.Series): Series of closing prices.
+        volumes (pd.Series): Series of trading volumes.
+        window (int): Number of periods. Defaults to 8.
+
+    Returns:
+        pd.Series: VAMA values, missing for a window without volume.
+    """
+    average_volume = volumes.rolling(window=window).mean()
+    weights = prices * volumes / average_volume.where(average_volume != 0)
+    total_weight = weights.rolling(window=window).sum()
+
+    return (weights * prices).rolling(window=window).sum() / total_weight.where(
+        total_weight != 0
+    )
+
+
+def get_gann_hilo_activator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    high_window: int = 13,
+    low_window: int = 21,
+) -> pd.DataFrame:
+    """
+    Calculate the Gann HiLo Activator of a given price series.
+
+    The HiLo Activator is a trailing stop drawn from a moving average of the highs and one
+    of the lows. A close above the previous average of the highs turns the trend up, after
+    which the line follows the average of the lows beneath the price; a close below the
+    previous average of the lows turns it down, after which the line follows the average of
+    the highs above the price. A close between the two averages keeps the trend.
+
+    The formula is as follows:
+
+    - High Average = SMA(High, high_window), Low Average = SMA(Low, low_window)
+    - Trend(t) = 1 if Close(t) > High Average(t-1), -1 if Close(t) < Low Average(t-1),
+      otherwise Trend(t-1)
+    - HiLo Activator(t) = Low Average(t) when the trend is 1, High Average(t) when it is -1
+
+    Also known as: HiLo, Gann HiLo, HiLo Activator, Gann swing.
+
+    Reference: Krausz, R. (1998). "The New Gann Swing Chartist." Technical Analysis of
+    Stocks & Commodities, 16(2), with the HiLo Activator on three-period averages of the
+    highs and lows.
+
+    pandas-ta-classic: hilo (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - The line follows the average of the side of the trend every period, as in
+          Krausz's formula. pandas-ta-classic's hilo keeps the previous value of the line on
+          a close between the two averages instead, so the two are equal on every period
+          with a close beyond an average and differ on the others.
+        - The defaults are those of pandas-ta-classic and TradingView (13 and 21 periods);
+          Krausz used 3 periods for both.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        high_window (int): Number of periods of the average of the highs. Defaults to 13.
+        low_window (int): Number of periods of the average of the lows. Defaults to 21.
+
+    Returns:
+        pd.DataFrame: The Gann HiLo Activator and the Trend Direction (1 up, -1 down).
+    """
+    high_average = prices_high.rolling(window=high_window).mean()
+    low_average = prices_low.rolling(window=low_window).mean()
+
+    # A close between the averages (or before the averages exist) keeps the trend.
+    trend = pd.Series(
+        np.select(
+            [
+                prices_close > high_average.shift(1),
+                prices_close < low_average.shift(1),
+            ],
+            [1.0, -1.0],
+            np.nan,
+        ),
+        index=prices_close.index,
+    ).ffill()
+    trend = trend.where(prices_close.notna())
+
+    activator = low_average.where(trend == 1, high_average.where(trend == -1))
+
+    return pd.concat(
+        [activator, trend],
+        keys=["Gann HiLo Activator", "Trend Direction"],
+        axis=1,
+    )
+
+
+def get_zigzag(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    sensitivity: float = 0.05,
+    minimum_trend_length: int = 1,
+) -> pd.DataFrame:
+    """
+    Calculate the Zig Zag of a given price series, as it is known on every period.
+
+    The Zig Zag filters out moves smaller than `sensitivity`: it follows the highest high of
+    a rising leg until the low falls `sensitivity` below it, which confirms that high as a
+    swing high and starts a falling leg from that low, and the lowest low of a falling leg
+    until the high rises `sensitivity` above it. Drawn on a chart, the lines between the
+    confirmed swings are the zig zag.
+
+    The formula is as follows:
+
+    - In a rising leg: a new trend down when Low(t) <= Extreme * (1 - sensitivity), else
+      Extreme = High(t) when High(t) >= Extreme
+    - In a falling leg: a new trend up when High(t) >= Extreme * (1 + sensitivity), else
+      Extreme = Low(t) when Low(t) <= Extreme
+    - A leg only turns once at least `minimum_trend_length` periods have passed since its
+      extreme
+
+    Also known as: ZIGZAG, Zig Zag, swing filter, filtered waves.
+
+    Reference: Merrill, A.A. (1977). "Filtered Waves: Basic Theory." Analysis Press.
+
+    TA-Lib: ZIGZAG, the reference implementation (https://ta-lib.org/functions/zigzag.html).
+
+    Notes:
+        - Every period shows what is known at its close: the extreme of the current leg,
+          its direction and how many periods ago it was set. This is the series TA-Lib
+          returns and it never changes once a period has passed. The zig zag line drawn on
+          a chart instead connects the swings, and its last leg is redrawn as long as the
+          leg runs: a swing is only confirmed by the reversal that follows it, so a
+          backtest must read a swing from the period of its reversal, as here.
+        - The first leg starts falling from the first low, as in TA-Lib, and the first
+          `minimum_trend_length` periods are missing. A price equal to the extreme moves the
+          pivot to the later period, as in TA-Lib.
+        - `sensitivity` is a decimal (0.05 is 5%); TA-Lib takes it in percent.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        sensitivity (float): The reversal from the extreme that turns a leg, as a decimal.
+            Defaults to 0.05.
+        minimum_trend_length (int): The number of periods since the extreme of a leg
+            before it can turn. Defaults to 1.
+
+    Returns:
+        pd.DataFrame: The Zig Zag (the extreme of the current leg), the Trend Direction (1
+        rising, -1 falling) and the Periods Since Pivot (since that extreme).
+    """
+    valid = prices_high.notna() & prices_low.notna()
+    high = prices_high[valid].to_numpy(dtype=float).tolist()
+    low = prices_low[valid].to_numpy(dtype=float).tolist()
+    length = len(high)
+
+    extremes = [math.nan] * length
+    trends = [math.nan] * length
+    periods_since = [math.nan] * length
+
+    if length:
+        trend, extreme, extreme_position = -1, low[0], 0
+
+        # The legs run on plain Python lists, since reading and writing pandas Series one
+        # element at a time costs tens of microseconds per element. A reversal is checked
+        # against the extreme before a new extreme, as in TA-Lib.
+        for i in range(1, length):
+            turns = i - extreme_position >= minimum_trend_length
+            if trend == 1:
+                if turns and low[i] <= extreme * (1 - sensitivity):
+                    trend, extreme, extreme_position = -1, low[i], i
+                elif high[i] >= extreme:
+                    extreme, extreme_position = high[i], i
+            elif turns and high[i] >= extreme * (1 + sensitivity):
+                trend, extreme, extreme_position = 1, high[i], i
+            elif low[i] <= extreme:
+                extreme, extreme_position = low[i], i
+
+            if i >= minimum_trend_length:
+                extremes[i] = extreme
+                trends[i] = trend
+                periods_since[i] = i - extreme_position
+
+    return pd.DataFrame(
+        {
+            "Zig Zag": extremes,
+            "Trend Direction": trends,
+            "Periods Since Pivot": periods_since,
+        },
+        index=prices_high.index[valid.to_numpy()],
+        dtype="float64",
+    ).reindex(prices_high.index)
+
+
 def get_volume_weighted_average_price(
     prices_high: pd.Series,
     prices_low: pd.Series,
     prices_close: pd.Series,
     volumes: pd.Series,
     window: int,
+    anchor: str | None = None,
 ) -> pd.Series:
     """
     Calculate the Volume Weighted Average Price (VWAP) of a given price series.
@@ -986,32 +1531,87 @@ def get_volume_weighted_average_price(
 
     - Typical Price = (High + Low + Close) / 3
     - VWAP = Sum(Typical Price * Volume, window) / Sum(Volume, window)
+    - Anchored VWAP = Cumulative Sum(Typical Price * Volume) / Cumulative Sum(Volume), both
+      summed from the anchor on
 
-    Also known as: VWAP.
+    Also known as: VWAP, anchored VWAP, session VWAP.
 
-    Reference: Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of
-    Transactions on the NYSE." Journal of Finance, 43(1), 97-112 — the paper that introduced
-    the volume-weighted average price as a transaction-cost benchmark.
+    For more information, see the following sources:
+
+    - Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of
+      Transactions on the NYSE." Journal of Finance, 43(1), 97-112 — the paper that
+      introduced the volume-weighted average price as a transaction-cost benchmark.
+    - Shannon, B. (2023). "Maximum Trading Gains With Anchored VWAP." Alphatrends
+      Publishing.
 
     TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html), which
-    accumulates from the first period instead of over a rolling window.
+    accumulates from the first period (anchor "all"). pandas-ta-classic: vwap with an anchor
+    per calendar period (https://github.com/xgboosted/pandas-ta-classic).
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
-        window (int): Number of periods to consider for the VWAP calculation.
+        window (int): Number of periods to consider for the VWAP calculation, when there
+            is no anchor.
+        anchor (str | None): Where the sums start: "all" for the first period, "daily",
+            "weekly", "monthly", "quarterly" or "yearly" for the start of every such
+            period (a session VWAP on intraday data with "daily"), or a date such as
+            "2024-08-05" for the VWAP from that date on, missing before it. Defaults to
+            None, which takes the rolling `window`.
 
     Returns:
         pd.Series: VWAP values.
+
+    Raises:
+        ValueError: If `anchor` is not one of the options or a date.
     """
     typical_price = (prices_high + prices_low + prices_close) / 3
     price_volume = typical_price * volumes
 
-    return (
-        price_volume.rolling(window=window).sum() / volumes.rolling(window=window).sum()
+    if anchor is None:
+        return (
+            price_volume.rolling(window=window).sum()
+            / volumes.rolling(window=window).sum()
+        )
+
+    frequencies = {
+        "daily": "D",
+        "weekly": "W",
+        "monthly": "M",
+        "quarterly": "Q",
+        "yearly": "Y",
+    }
+    dates = (
+        prices_close.index.to_timestamp()
+        if isinstance(prices_close.index, pd.PeriodIndex)
+        else pd.DatetimeIndex(prices_close.index)
     )
+
+    if anchor == "all":
+        groups = np.zeros(len(dates))
+    elif anchor in frequencies:
+        groups = dates.to_period(frequencies[anchor]).asi8
+    else:
+        try:
+            start = pd.Timestamp(anchor)
+        except ValueError as error:
+            raise ValueError(
+                "anchor must be all, daily, weekly, monthly, quarterly, yearly or a "
+                f"date, not {anchor}."
+            ) from error
+        groups = np.where(dates >= start, 0.0, np.nan)
+
+    # A period without a price or volume adds nothing to the sums, and is itself missing.
+    traded = price_volume.notna() & volumes.notna()
+    cumulative_price_volume = price_volume.where(traded, 0).groupby(groups).cumsum()
+    cumulative_volume = volumes.where(traded, 0).groupby(groups).cumsum()
+
+    # The periods before a date anchor are in no group and come back as missing.
+    vwap = cumulative_price_volume / cumulative_volume.where(cumulative_volume != 0)
+
+    return vwap.reindex(prices_close.index).where(traded)
 
 
 def get_parabolic_sar(
@@ -1020,6 +1620,11 @@ def get_parabolic_sar(
     af_start: float = 0.02,
     af_increment: float = 0.02,
     af_max: float = 0.2,
+    af_start_short: float | None = None,
+    af_increment_short: float | None = None,
+    af_max_short: float | None = None,
+    start_value: float = 0.0,
+    offset_on_reverse: float = 0.0,
 ) -> pd.Series:
     """
     Calculate the Parabolic Stop and Reverse (SAR) of a given price series.
@@ -1039,14 +1644,17 @@ def get_parabolic_sar(
       one at least their highs
     - A long reverses to a short when the low reaches the SAR (Low <= SAR), a short to a
       long when the high reaches it (High >= SAR); the SAR of that bar is the extreme
-      point of the trade that ends, and AF starts again
+      point of the trade that ends, moved away from the price by `offset_on_reverse`
+      (SAR * (1 + offset) for a new short, SAR * (1 - offset) for a new long), and AF
+      starts again
 
-    Also known as: SAR, Stop and Reverse.
+    Also known as: SAR, Stop and Reverse, SAREXT, extended parabolic SAR.
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    TA-Lib: SAR, the reference implementation (https://ta-lib.org/functions/sar.html).
+    TA-Lib: SAR and SAREXT, the reference implementations
+    (https://ta-lib.org/functions/sar.html, https://ta-lib.org/functions/sarext.html).
 
     Notes:
         - The start follows TA-Lib's `ta_SAR.c`: the first bar only sets the direction
@@ -1054,6 +1662,11 @@ def get_parabolic_sar(
           short when the second bar's low fell by more than its high rose (a positive -DM),
           otherwise long, with the SAR at the first bar's low (long) or high (short) and
           the extreme point at the second bar's high (long) or low (short).
+        - A `start_value` sets the start instead: a positive value starts a long with that
+          SAR, a negative one a short with its absolute value as the SAR, as in TA-Lib's
+          SAREXT.
+        - The SAR is positive in a short trade too; TA-Lib's SAREXT returns it negated
+          there to mark the direction.
         - Bars without a high or low are left out, so a ticker that lists later starts on
           its own first bars and a missing day is NaN.
 
@@ -1064,10 +1677,26 @@ def get_parabolic_sar(
         af_increment (float): Amount by which the acceleration factor increases every
             time a new extreme point is reached. Defaults to 0.02.
         af_max (float): Maximum value the acceleration factor can reach. Defaults to 0.2.
+        af_start_short (float | None): Initial acceleration factor of a short trade.
+            Defaults to None, which takes `af_start`.
+        af_increment_short (float | None): Increment of the acceleration factor of a short
+            trade. Defaults to None, which takes `af_increment`.
+        af_max_short (float | None): Maximum acceleration factor of a short trade. Defaults
+            to None, which takes `af_max`.
+        start_value (float): The SAR of the first trade, positive for a long and negative
+            for a short. Defaults to 0, which derives the start from the first two bars.
+        offset_on_reverse (float): The share by which the SAR moves away from the price on
+            a reversal, as a decimal. Defaults to 0.
 
     Returns:
         pd.Series: Parabolic SAR values.
     """
+    af_start_short = af_start if af_start_short is None else af_start_short
+    af_increment_short = (
+        af_increment if af_increment_short is None else af_increment_short
+    )
+    af_max_short = af_max if af_max_short is None else af_max_short
+
     sar = pd.Series(index=prices_high.index, dtype="float64")
 
     # The recursion runs over the bars with both a high and a low, so a ticker that lists
@@ -1090,10 +1719,16 @@ def get_parabolic_sar(
     # SAR starts at the first bar's extreme on the other side of the trade.
     up_move = high[1] - high[0]
     down_move = low[0] - low[1]
-    uptrend = not (down_move > 0 and down_move > up_move)
-    af = af_start
+    uptrend = (
+        start_value > 0
+        if start_value != 0
+        else not (down_move > 0 and down_move > up_move)
+    )
+    af = af_start if uptrend else af_start_short
     extreme_point = high[1] if uptrend else low[1]
-    current_sar = low[0] if uptrend else high[0]
+    current_sar = (
+        abs(start_value) if start_value != 0 else (low[0] if uptrend else high[0])
+    )
 
     sar_values = [math.nan] * length
     # On the second bar the previous bar's range is taken as its own, as in TA-Lib.
@@ -1109,8 +1744,9 @@ def get_parabolic_sar(
                 # extreme point of the long, at least the highs of this and the prior bar.
                 uptrend = False
                 current_sar = max(extreme_point, previous_high, new_high)
+                current_sar += current_sar * offset_on_reverse
                 sar_values[i] = current_sar
-                af = af_start
+                af = af_start_short
                 extreme_point = new_low
                 current_sar = current_sar + af * (extreme_point - current_sar)
                 current_sar = max(current_sar, previous_high, new_high)
@@ -1126,6 +1762,7 @@ def get_parabolic_sar(
             # extreme point of the short, at most the lows of this and the prior bar.
             uptrend = True
             current_sar = min(extreme_point, previous_low, new_low)
+            current_sar -= current_sar * offset_on_reverse
             sar_values[i] = current_sar
             af = af_start
             extreme_point = new_high
@@ -1135,7 +1772,7 @@ def get_parabolic_sar(
             sar_values[i] = current_sar
             if new_low < extreme_point:
                 extreme_point = new_low
-                af = min(af + af_increment, af_max)
+                af = min(af + af_increment_short, af_max_short)
             current_sar = current_sar + af * (extreme_point - current_sar)
             current_sar = max(current_sar, previous_high, new_high)
 
@@ -1145,80 +1782,138 @@ def get_parabolic_sar(
 
 
 def get_pivot_points(
-    prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    prices_open: pd.Series | None = None,
+    method: str = "classic",
+    central_pivot_range: bool = False,
 ) -> pd.DataFrame:
     """
     Calculate the Pivot Points of a given price series.
 
     Pivot Points are calculated from the previous period's high, low and close prices
     and are used to identify potential support and resistance levels for the current
-    period. This is the "floor trader" (classic) variant.
+    period. The "classic" (floor trader) variant is the default; the Fibonacci, Camarilla,
+    Woodie and DeMark variants place the levels differently.
 
-    The formula is as follows:
+    The formula is as follows, with H, L, C and O the previous period's high, low, close
+    and open:
 
-    - Pivot Point (P) = (Previous High + Previous Low + Previous Close) / 3
-    - Resistance 1 = (2 * P) - Previous Low
-    - Support 1 = (2 * P) - Previous High
-    - Resistance 2 = P + (Previous High - Previous Low)
-    - Support 2 = P - (Previous High - Previous Low)
-    - Resistance 3 = Previous High + 2 * (P - Previous Low)
-    - Support 3 = Previous Low - 2 * (Previous High - P)
+    - "classic": P = (H + L + C) / 3, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
+      Resistance 2 = P + (H - L), Support 2 = P - (H - L), Resistance 3 = H + 2 * (P - L),
+      Support 3 = L - 2 * (H - P)
+    - "fibonacci": P = (H + L + C) / 3, Resistance n = P + Ratio * (H - L) and Support n =
+      P - Ratio * (H - L), with the ratios 0.382, 0.618 and 1.0
+    - "camarilla": P = (H + L + C) / 3, Resistance n = C + (H - L) * 1.1 / Divisor and
+      Support n = C - (H - L) * 1.1 / Divisor, with the divisors 12, 6, 4 and 2
+    - "woodie": P = (H + L + 2 * C) / 4, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
+      Resistance 2 = P + (H - L), Support 2 = P - (H - L)
+    - "demark": X = H + 2 * L + C when C < O, 2 * H + L + C when C > O and H + L + 2 * C
+      otherwise; P = X / 4, Resistance 1 = X / 2 - L, Support 1 = X / 2 - H
+    - Central Pivot Range: Bottom Central Pivot = (H + L) / 2, Top Central Pivot =
+      2 * P - Bottom Central Pivot
 
-    Also known as: floor pivots, classic pivot points, standard pivot points.
+    Also known as: floor pivots, classic pivot points, standard pivot points, Fibonacci
+    pivots, Camarilla pivots, Woodie pivots, DeMark pivots, central pivot range, CPR.
 
-    Reference: The standard textbook treatment is Person, J.L. (2004). "A Complete Guide to
-    Technical Trading Tactics." Wiley; the levels originate in floor-trading practice rather
-    than a published paper.
+    For more information, see the following sources:
+
+    - Person, J.L. (2004). "A Complete Guide to Technical Trading Tactics." Wiley, the
+      standard treatment of the floor trader pivots, which originate in floor-trading
+      practice rather than a published paper.
+    - Scott, N. (1989). The Camarilla equation, as published by Camarilla Levels.
+    - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
+    - Ochoa, F. (2010). "Secrets of a Pivot Boss." Pivot Boss, the central pivot range.
+    - pandas-ta-classic: cpr, the reference implementation of the classic, Fibonacci,
+      Camarilla and Woodie variants and the central pivot range
+      (https://github.com/xgboosted/pandas-ta-classic).
+    - finta: PIVOT and PIVOT_FIB (https://github.com/peerchemist/finta).
 
     Notes:
-        - Every level is derived exclusively from the *previous* period's high, low and
-          close, so the whole set is known at the open of the current period and carries no
-          look-ahead.
+        - Every level is derived exclusively from the *previous* period's prices, so the
+          whole set is known at the open of the current period and carries no look-ahead.
+        - The Woodie pivot weights the previous close twice, as in pandas-ta-classic; some
+          charting packages take the current open instead, which is only known at the
+          open of the period.
+        - finta's PIVOT and PIVOT_FIB add a fourth level (classic, and 1.382 times the
+          range for Fibonacci); the levels they share are equal.
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
+        prices_open (pd.Series | None): Series of open prices, needed for "demark".
+            Defaults to None.
+        method (str): "classic", "fibonacci", "camarilla", "woodie" or "demark". Defaults
+            to "classic".
+        central_pivot_range (bool): Whether to add the Top and Bottom Central Pivot.
+            Defaults to False.
 
     Returns:
-        pd.DataFrame: Pivot Points (pivot, resistance 1-3, support 1-3).
+        pd.DataFrame: The Pivot Point with the resistance and support levels of the method.
+
+    Raises:
+        ValueError: If `method` is not one of the variants, or "demark" has no open prices.
     """
     previous_high = prices_high.shift(1)
     previous_low = prices_low.shift(1)
     previous_close = prices_close.shift(1)
+    price_range = previous_high - previous_low
 
-    pivot = (previous_high + previous_low + previous_close) / 3
+    levels: dict[str, pd.Series] = {}
 
-    resistance_1 = (2 * pivot) - previous_low
-    support_1 = (2 * pivot) - previous_high
+    if method in ("classic", "fibonacci", "camarilla"):
+        pivot = (previous_high + previous_low + previous_close) / 3
+    elif method == "woodie":
+        pivot = (previous_high + previous_low + 2 * previous_close) / 4
+    elif method == "demark":
+        if prices_open is None:
+            raise ValueError("The DeMark pivot points need the open prices.")
+        previous_open = prices_open.shift(1)
+        extended_close = (
+            previous_close.where(previous_close == previous_open)
+            .add(previous_high.where(previous_close > previous_open), fill_value=0)
+            .add(previous_low.where(previous_close < previous_open), fill_value=0)
+        )
+        demark_sum = previous_high + previous_low + previous_close + extended_close
+        pivot = demark_sum / 4
+        levels["Resistance 1"] = demark_sum / 2 - previous_low
+        levels["Support 1"] = demark_sum / 2 - previous_high
+    else:
+        raise ValueError(
+            "method must be classic, fibonacci, camarilla, woodie or demark, "
+            f"not {method}."
+        )
 
-    resistance_2 = pivot + (previous_high - previous_low)
-    support_2 = pivot - (previous_high - previous_low)
+    if method in ("classic", "woodie"):
+        levels["Resistance 1"] = (2 * pivot) - previous_low
+        levels["Support 1"] = (2 * pivot) - previous_high
+        levels["Resistance 2"] = pivot + price_range
+        levels["Support 2"] = pivot - price_range
 
-    resistance_3 = previous_high + 2 * (pivot - previous_low)
-    support_3 = previous_low - 2 * (previous_high - pivot)
+    if method == "classic":
+        levels["Resistance 3"] = previous_high + 2 * (pivot - previous_low)
+        levels["Support 3"] = previous_low - 2 * (previous_high - pivot)
+    elif method == "fibonacci":
+        for number, ratio in enumerate((0.382, 0.618, 1.0), start=1):
+            levels[f"Resistance {number}"] = pivot + ratio * price_range
+            levels[f"Support {number}"] = pivot - ratio * price_range
+    elif method == "camarilla":
+        for number, divisor in enumerate((12, 6, 4, 2), start=1):
+            levels[f"Resistance {number}"] = (
+                previous_close + price_range * 1.1 / divisor
+            )
+            levels[f"Support {number}"] = previous_close - price_range * 1.1 / divisor
 
-    return pd.concat(
-        [
-            pivot,
-            resistance_1,
-            resistance_2,
-            resistance_3,
-            support_1,
-            support_2,
-            support_3,
-        ],
-        keys=[
-            "Pivot Point",
-            "Resistance 1",
-            "Resistance 2",
-            "Resistance 3",
-            "Support 1",
-            "Support 2",
-            "Support 3",
-        ],
-        axis=1,
-    )
+    if central_pivot_range:
+        bottom_central_pivot = (previous_high + previous_low) / 2
+        levels["Bottom Central Pivot"] = bottom_central_pivot
+        levels["Top Central Pivot"] = 2 * pivot - bottom_central_pivot
+
+    levels = {"Pivot Point": pivot, **dict(sorted(levels.items()))}
+
+    return pd.concat(levels.values(), keys=levels.keys(), axis=1)
 
 
 def _get_confirmed_levels(

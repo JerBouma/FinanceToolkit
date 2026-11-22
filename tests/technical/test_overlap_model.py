@@ -514,3 +514,276 @@ def test_new_moving_averages_stop_where_the_prices_stop():
     ):
         assert result.iloc[-3:].isna().all()
         assert pd.isna(result.iloc[40])
+
+
+def _sample_bars():
+    prices = sample_prices().reset_index(drop=True)
+    prices["Volume"] = prices["Volume"].astype(float)
+    return prices
+
+
+def test_price_transforms_and_midpoints_match_talib():
+    prices = _sample_bars()
+    bars = prices["Open"], prices["High"], prices["Low"], prices["Close"]
+
+    # TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE on periods 9, 30 and 59.
+    for method, expected in [
+        ("average", [103.3598375345, 106.9055796207, 120.1246590122]),
+        ("median", [102.9728897996, 106.5282750095, 120.3107218486]),
+        ("typical", [103.0700865438, 106.6268218585, 120.4127101254]),
+        ("weighted_close", [103.1186849159, 106.676095283, 120.4637042639]),
+    ]:
+        result = overlap_model.get_price_transform(*bars, method=method)
+        assert result.iloc[[9, 30, 59]].tolist() == pytest.approx(expected)
+
+    with pytest.raises(ValueError, match="method"):
+        overlap_model.get_price_transform(*bars, method="close")
+
+    # TA-Lib's MIDPOINT(10) and MIDPRICE(10).
+    midpoint = overlap_model.get_midpoint(prices["Close"], prices["Close"], 10)
+    midpoint_price = overlap_model.get_midpoint(prices["High"], prices["Low"], 10)
+    assert midpoint.iloc[:9].isna().all()
+    assert midpoint.iloc[[9, 30, 59]].tolist() == pytest.approx(
+        [102.7408159155, 108.9906742715, 116.0355483558]
+    )
+    assert midpoint_price.iloc[[9, 30, 59]].tolist() == pytest.approx(
+        [102.5405300116, 109.0959191924, 115.8813672431]
+    )
+
+
+def test_holt_winters_moving_average_and_channel_match_pandas_ta():
+    close = _sample_close()
+
+    # pandas-ta-classic's hwma and hwc with their defaults.
+    average = overlap_model.get_holt_winters_moving_average(close)
+    channel = overlap_model.get_holt_winters_channel(close)
+
+    assert average.iloc[[9, 30, 59]].tolist() == pytest.approx(
+        [105.28968738, 110.96041966, 117.16266437]
+    )
+    assert channel.loc[[9, 30, 59], "Upper Band"].tolist() == pytest.approx(
+        [106.52468191, 113.13412507, 119.60358688]
+    )
+    assert channel.loc[[9, 30, 59], "Lower Band"].tolist() == pytest.approx(
+        [104.05469284, 108.78671426, 114.72174186]
+    )
+    pd.testing.assert_series_equal(channel["Middle Band"], average, check_names=False)
+    # The average starts on the first price, so the first three bands have no deviation.
+    assert channel.loc[[0, 1, 2], "Upper Band"].tolist() == average.iloc[:3].tolist()
+    assert channel.loc[3, "Upper Band"] > average.iloc[3]
+
+    # A missing price is missing, and the recursion continues on the next price.
+    gapped = close.copy()
+    gapped.iloc[40] = float("nan")
+    result = overlap_model.get_holt_winters_moving_average(gapped)
+    assert pd.isna(result.iloc[40])
+    assert result.iloc[:40].tolist() == pytest.approx(average.iloc[:40].tolist())
+
+
+def test_elastic_volume_weighted_moving_average_follows_fries():
+    prices = _sample_bars()
+    close, volume = prices["Close"], prices["Volume"]
+    result = overlap_model.get_elastic_volume_weighted_moving_average(close, volume, 10)
+
+    # The seed is the simple average of ten closes, after which every period replaces its
+    # volume out of the window's volume at the previous average (finta's EVWMA recursion).
+    volume_sum = volume.rolling(10).sum()
+    expected = close.iloc[:10].mean()
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[9] == pytest.approx(expected)
+    for i in range(10, 60):
+        expected = (
+            (volume_sum.iloc[i] - volume.iloc[i]) * expected
+            + volume.iloc[i] * close.iloc[i]
+        ) / volume_sum.iloc[i]
+    assert result.iloc[59] == pytest.approx(expected)
+
+
+def test_volume_adjusted_moving_average_matches_finta():
+    prices = _sample_bars()
+    result = overlap_model.get_volume_adjusted_moving_average(
+        prices["Close"], prices["Volume"], 8
+    )
+
+    # finta's VAMA(8) needs two windows: the average volume and the weighted sum.
+    assert result.iloc[:14].isna().all()
+    assert result.iloc[[30, 59]].tolist() == pytest.approx([109.70278375, 115.55700028])
+
+
+def test_gann_hilo_activator_follows_the_side_of_the_trend():
+    prices = _sample_bars()
+    result = overlap_model.get_gann_hilo_activator(
+        prices["High"], prices["Low"], prices["Close"], 3, 3
+    )
+    high_average = prices["High"].rolling(3).mean()
+    low_average = prices["Low"].rolling(3).mean()
+    up = result["Trend Direction"] == 1
+
+    assert result["Trend Direction"].dropna().isin([1, -1]).all()
+    assert result.loc[up, "Gann HiLo Activator"].tolist() == pytest.approx(
+        low_average[up].tolist()
+    )
+    assert result.loc[
+        ~up & result["Trend Direction"].notna(), "Gann HiLo Activator"
+    ].tolist() == (
+        pytest.approx(high_average[result["Trend Direction"] == -1].tolist())
+    )
+
+    # pandas-ta-classic's hilo(3, 3) on the periods with a close beyond an average, where
+    # both switch to the average of the new side.
+    breaks = (prices["Close"] > high_average.shift(1)) | (
+        prices["Close"] < low_average.shift(1)
+    )
+    assert breaks.iloc[[9, 30, 47]].all()
+    assert result["Gann HiLo Activator"].iloc[[9, 30, 47]].tolist() == pytest.approx(
+        [104.86182200398115, 108.61403330847348, 115.9653273207414]
+    )
+
+
+def test_zigzag_matches_talib():
+    prices = _sample_bars()
+    result = overlap_model.get_zigzag(prices["High"], prices["Low"], 0.03, 2)
+
+    # TA-Lib's ZIGZAG(3, 2): the extreme of the current leg, its trend and its position.
+    assert result.iloc[:2].isna().all().all()
+    assert result["Zig Zag"].iloc[[2, 9, 15, 26, 34, 59]].tolist() == pytest.approx(
+        [104.34363036521302, 101.7866974667683, 98.98836463616024]
+        + [112.57935996585978, 104.64671998699143, 121.44752707370303]
+    )
+    assert result["Trend Direction"].iloc[[2, 9, 16, 27, 35, 47, 54]].tolist() == [
+        1,
+        -1,
+        1,
+        -1,
+        1,
+        -1,
+        1,
+    ]
+    # TA-Lib's pivot positions 5, 14, 24 and 43 on periods 8, 15, 26 and 46.
+    assert result["Periods Since Pivot"].iloc[[8, 15, 26, 46]].tolist() == [3, 1, 2, 3]
+
+
+def test_pivot_point_variants_match_pandas_ta():
+    prices = _sample_bars()
+    bars = prices["High"], prices["Low"], prices["Close"], prices["Open"]
+
+    classic = overlap_model.get_pivot_points(*bars[:3])
+    assert list(classic.columns) == [
+        "Pivot Point",
+        "Resistance 1",
+        "Resistance 2",
+        "Resistance 3",
+        "Support 1",
+        "Support 2",
+        "Support 3",
+    ]
+
+    # pandas-ta-classic's cpr(method="camarilla") and cpr(method="woodie") on period 30.
+    camarilla = overlap_model.get_pivot_points(
+        *bars, method="camarilla", central_pivot_range=True
+    ).iloc[30]
+    assert camarilla[
+        ["Top Central Pivot", "Pivot Point", "Bottom Central Pivot"]
+    ].tolist() == pytest.approx(
+        [107.63944015484265, 107.53702740220655, 107.43461464957045]
+    )
+    assert camarilla[["Resistance 4", "Support 4"]].tolist() == pytest.approx(
+        [108.98460664444409, 106.4990991705134]
+    )
+    woodie = overlap_model.get_pivot_points(*bars, method="woodie").iloc[30]
+    assert woodie[
+        ["Pivot Point", "Resistance 2", "Support 2"]
+    ].tolist() == pytest.approx(
+        [107.5882337785246, 109.84778602755249, 105.3286815294967]
+    )
+
+    # DeMark's X adds the low again after a falling period, the high after a rising one.
+    demark = overlap_model.get_pivot_points(*bars, method="demark")
+    high, low, close, opening = (series.iloc[29] for series in bars)
+    extreme = low if close < opening else high if close > opening else close
+    total = high + low + close + extreme
+    assert demark.iloc[30].tolist() == pytest.approx(
+        [total / 4, total / 2 - low, total / 2 - high]
+    )
+    with pytest.raises(ValueError, match="open"):
+        overlap_model.get_pivot_points(*bars[:3], method="demark")
+
+
+def test_trix_signal_line_matches_talib():
+    result = overlap_model.get_trix(_sample_close(), 5, 3)
+
+    # TA-Lib's EMA(TRIX(5) / 100, 3).
+    assert result.loc[[20, 30, 59], "Signal Line"].tolist() == pytest.approx(
+        [0.0020975598, 0.0023620344, 0.0042020924]
+    )
+    assert result["Histogram"].iloc[59] == pytest.approx(0.0058112345 - 0.0042020924)
+    pd.testing.assert_series_equal(
+        result["TRIX"], overlap_model.get_trix(_sample_close(), 5), check_names=False
+    )
+
+
+def test_parabolic_sar_matches_talib_sarext():
+    prices = _sample_bars()
+    result = overlap_model.get_parabolic_sar(
+        prices["High"], prices["Low"], 0.01, 0.03, 0.25, 0.015, 0.02, 0.15, 0.0, 0.01
+    )
+
+    # The absolute value of TA-Lib's SAREXT(0, 0.01, 0.01, 0.03, 0.25, 0.015, 0.02, 0.15).
+    assert result.iloc[[1, 20, 40, 59]].tolist() == pytest.approx(
+        [99.0, 98.88972868096964, 105.64951174172081, 111.14141839984173]
+    )
+
+    # A negative start value starts a short at its absolute value.
+    short = overlap_model.get_parabolic_sar(
+        prices["High"], prices["Low"], start_value=-110.0
+    )
+    assert short.iloc[1] == pytest.approx(110.0)
+
+
+def test_volume_weighted_average_price_anchors():
+    prices = _sample_bars()
+    prices.index = pd.period_range("2024-01-01", periods=60, freq="D")
+    bars = prices["High"], prices["Low"], prices["Close"], prices["Volume"]
+
+    # TA-Lib's VWAP accumulates from the first period.
+    cumulative = overlap_model.get_volume_weighted_average_price(*bars, 14, "all")
+    assert cumulative.iloc[[9, 30, 59]].tolist() == pytest.approx(
+        [103.8046574946, 105.1557612481, 108.8683995253]
+    )
+
+    # pandas-ta-classic's vwap(anchor="W") starts again every Monday (2024-01-08).
+    weekly = overlap_model.get_volume_weighted_average_price(*bars, 14, "weekly")
+    assert weekly.iloc[[6, 7, 30, 59]].tolist() == pytest.approx(
+        [103.76381638, 104.81575927, 107.53558314, 118.3897567]
+    )
+    typical_price = (prices["High"] + prices["Low"] + prices["Close"]) / 3
+    assert weekly.iloc[7] == pytest.approx(typical_price.iloc[7])
+
+    dated = overlap_model.get_volume_weighted_average_price(*bars, 14, "2024-02-01")
+    assert dated.iloc[:31].isna().all()
+    assert dated.iloc[31] == pytest.approx(typical_price.iloc[31])
+
+    with pytest.raises(ValueError, match="anchor"):
+        overlap_model.get_volume_weighted_average_price(*bars, 14, "session")
+
+
+def test_new_overlap_indicators_stop_where_the_prices_stop():
+    prices = _sample_bars()
+    prices.iloc[-3:] = float("nan")
+    prices.iloc[40] = float("nan")
+    high, low, close, volume = (
+        prices["High"],
+        prices["Low"],
+        prices["Close"],
+        prices["Volume"],
+    )
+
+    for result in (
+        overlap_model.get_holt_winters_moving_average(close),
+        overlap_model.get_holt_winters_channel(close),
+        overlap_model.get_elastic_volume_weighted_moving_average(close, volume, 5),
+        overlap_model.get_gann_hilo_activator(high, low, close, 3, 3),
+        overlap_model.get_zigzag(high, low),
+    ):
+        assert result.iloc[-3:].isna().all(axis=None)
+        assert result.iloc[[40]].isna().all(axis=None)

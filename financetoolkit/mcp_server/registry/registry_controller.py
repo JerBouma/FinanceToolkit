@@ -301,7 +301,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "series": (
         "Analyze the indicators of other tools instead of the tickers' prices: references "
         "separated by ';', each tool:indicator:tickers-or-countries with an optional "
-        ":column, e.g. 'valuation:get_price_to_earnings_ratio:AAPL,MSFT; "
+        ":column and :name=value arguments of the indicator (e.g. "
+        "'rates:get_outstanding_mortgage_rates:United States:Below 4%:cumulative=true'), "
+        "e.g. 'valuation:get_price_to_earnings_ratio:AAPL,MSFT; "
         "macroeconomics:get_inflation_rate:United States' or "
         "'rates:get_government_bond_yield_curve:United States,Germany:10Y'. Every ticker or "
         "country becomes a series named after it, which dependent_ticker and "
@@ -1814,6 +1816,26 @@ class ToolRegistry:
                 arguments["as_series"] = True
             if deflate_with and "deflate_with" in parameters:
                 arguments["deflate_with"] = deflate_with
+            # The reference's own arguments (cumulative=true), typed as the indicator takes them.
+            if reference.arguments:
+                signature = inspect.signature(
+                    getattr(self._module_class_map.get(module), reference.indicator)
+                ).parameters
+                if unknown := [
+                    name
+                    for name in reference.arguments
+                    if name not in signature or name in arguments
+                ]:
+                    raise ValueError(
+                        f"`{reference.indicator}` takes no argument {', '.join(unknown)} in "
+                        f"the series '{reference.text[:80]}'."
+                    )
+                arguments.update(
+                    {
+                        name: coerce_value(value, signature[name].annotation)
+                        for name, value in reference.arguments.items()
+                    }
+                )
             # The ratios of statement items have no period but show_daily, which maps every
             # period's figure onto the daily prices; a daily analysis asks for those.
             if period == "daily" and "show_daily" in parameters:

@@ -1387,6 +1387,10 @@ class Toolkit:
             )
 
         risk._capital_shortfall_function = capital_shortfall
+        # A market or system ticker of the systemic risk measures is named as it trades: the
+        # benchmark is its "Benchmark" column and another ticker is retrieved for the same dates.
+        risk._benchmark_name = self._benchmark_ticker
+        risk._other_returns_function = self._other_returns
 
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights

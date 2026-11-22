@@ -788,6 +788,17 @@ class MarketOptions:
             # A ValueError reaches the per-ticker warning, so the other tickers still answer.
             if calls.empty or puts.empty:
                 raise ValueError(f"{ticker} has no option chain for {date}.")
+            # Without bids on both sides of the forward there is no strip (the Cboe methodology selects the strikes on their bids). The last traded prices are no substitute: they are of different moments of the session, so put-call parity and the tails no longer agree.  # noqa: E501
+            strip, _ = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            if strip.empty:
+                raise ValueError(
+                    f"{ticker} has no bid quotes for its {date} options to build the strip from. "
+                    "Outside US market hours Yahoo Finance reports a bid and ask of 0, and Cboe's "
+                    "delayed quotes, which keep the last bid and ask, could not be used; try again "
+                    "during market hours."
+                )
             terms.append((date, calls, puts, time, rate))
         return terms
 
@@ -868,8 +879,10 @@ class MarketOptions:
 
         Notes:
         - Options without a bid are left out of the strip, as in the Cboe method. Outside
-          market hours, when bids are missing, an expiry has no strip and the result is
-          NaN.
+          market hours the last bid and ask of Cboe's delayed quotes are used where Yahoo
+          Finance reports 0; when neither has bids (Cboe's quotes unreachable), a ValueError
+          names the ticker and expiry. Last traded prices are not used instead: they are of
+          different moments of the session, so put-call parity and the tails no longer agree.
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry,
@@ -1275,8 +1288,16 @@ class MarketOptions:
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry.
-        - Outside market hours, when bids are missing, an expiry has no strip and the
-          result is NaN.
+        - Outside market hours (at the weekend) the strip uses the last bid and ask of Cboe's
+          delayed quotes where Yahoo Finance reports 0. When neither has bids (Cboe's quotes
+          unreachable), a ValueError names the ticker and expiry instead of a NaN index. Last
+          traded prices are not used: they are of different moments of the session, which
+          gives a forward price and tails that do not agree (for ^SPX a skewness of -12 on a
+          Sunday).
+        - The near and next term are the expiries just before and after `days` (at least 7
+          days away), whichever weekday they expire on. The Cboe VIX only uses the SPX
+          options that expire on a Friday, more than 23 and less than 37 days away, so for
+          ^SPX the terms can be daily expiries with fewer strikes than the Cboe's.
         - The time to each expiry runs from the current time to 16:00 New York time on the
           expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
           comes from the historical data, so leave end_date at today: a warning is logged

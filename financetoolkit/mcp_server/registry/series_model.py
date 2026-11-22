@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import re
 from typing import NamedTuple
 
 import pandas as pd
@@ -15,6 +16,8 @@ PARTS_WITH_COLUMN = 4
 PARTS_WITHOUT_TOOL = 2
 # Each reference collects its own indicator, so a call names a handful, not hundreds.
 MAX_REFERENCES = 20
+# An argument of the indicator within a reference, e.g. "cumulative=true".
+ARGUMENT = re.compile(r"(?P<name>[a-z_][a-z0-9_]*)\s*=(?P<value>.*)")
 
 
 class SeriesReference(NamedTuple):
@@ -23,7 +26,9 @@ class SeriesReference(NamedTuple):
     "tool:indicator:entities" with an optional ":column", e.g.
     "valuation:get_price_to_earnings_ratio:AAPL,MSFT" or
     "rates:get_government_bond_yield_curve:United States:10Y". The tool may be left out
-    ("get_inflation_rate:Germany") when only one tool has the indicator.
+    ("get_inflation_rate:Germany") when only one tool has the indicator. Arguments of the
+    indicator follow as ":name=value" parts anywhere after the indicator, e.g.
+    "rates:get_outstanding_mortgage_rates:United States:Below 4%:cumulative=true".
     """
 
     tool: str | None
@@ -31,6 +36,7 @@ class SeriesReference(NamedTuple):
     entities: list[str]
     column: str | None
     text: str
+    arguments: dict[str, str] = {}
 
 
 def parse_series_references(text: str) -> list[SeriesReference]:
@@ -53,13 +59,25 @@ def parse_series_references(text: str) -> list[SeriesReference]:
         if not reference:
             continue
         parts = [part.strip() for part in reference.split(":")]
+        # The arguments of the indicator (cumulative=true) are taken out first, so the
+        # other parts keep their places; a part that is not a parameter name and a value
+        # stays a ticker, country or column.
+        arguments = {
+            match["name"]: match["value"].strip()
+            for part in parts[1:]
+            if (match := ARGUMENT.fullmatch(part))
+        }
+        parts = [parts[0]] + [
+            part for part in parts[1:] if not ARGUMENT.fullmatch(part)
+        ]
         # A reference without a tool starts with the indicator itself.
         if parts[0].startswith("get_") or len(parts) == PARTS_WITHOUT_TOOL:
             parts = ["", *parts]
-        if len(parts) not in (PARTS, PARTS_WITH_COLUMN) or not parts[1] or not parts[2]:
+        if len(parts) not in (PARTS, PARTS_WITH_COLUMN) or not parts[1]:
             raise ValueError(
                 f"The series '{reference}' is not written as tool:indicator:entities (with an "
-                "optional :column), e.g. 'valuation:get_price_to_earnings_ratio:AAPL,MSFT' or "
+                "optional :column and :name=value arguments), e.g. "
+                "'valuation:get_price_to_earnings_ratio:AAPL,MSFT' or "
                 "'macroeconomics:get_inflation_rate:United States'."
             )
         indicator = parts[1] if parts[1].startswith("get_") else f"get_{parts[1]}"
@@ -68,7 +86,9 @@ def parse_series_references(text: str) -> list[SeriesReference]:
         if not entities:
             raise ValueError(
                 f"The series '{reference}' names no tickers or countries, e.g. "
-                "'macroeconomics:get_inflation_rate:United States'."
+                "'macroeconomics:get_inflation_rate:United States'; an indicator of one "
+                "country only takes that country, e.g. "
+                "'rates:get_outstanding_mortgage_rates:United States:Average Rate'."
             )
         references.append(
             SeriesReference(
@@ -79,6 +99,7 @@ def parse_series_references(text: str) -> list[SeriesReference]:
                     parts[3] if len(parts) == PARTS_WITH_COLUMN and parts[3] else None
                 ),
                 text=reference,
+                arguments=arguments,
             )
         )
     if not references:

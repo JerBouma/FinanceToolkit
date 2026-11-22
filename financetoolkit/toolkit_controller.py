@@ -875,8 +875,12 @@ class Toolkit:
 
             tickers = self._get_statement_tickers("Models")
 
+            # The tickers are upper case, also when the peers are given per lower case ticker.
+            given_peers = {
+                key.strip().upper(): value for key, value in (peers or {}).items()
+            }
             peer_map = {
-                ticker: list((peers or {}).get(ticker) or [])
+                ticker: list(given_peers.get(ticker) or [])
                 or get_stock_peers(ticker, self._api_key, self._fmp_plan)
                 for ticker in tickers
             }

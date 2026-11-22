@@ -89,7 +89,8 @@ def get_tail_dependence_coefficient(
     Returns:
         pd.Series: The Lower and Upper Tail Dependence Coefficients, the linear
         (Pearson) correlation used by the "gaussian" and "student-t" methods, and the
-        number of (paired, non-missing) observations used.
+        number of (paired, non-missing) observations used. The coefficients and the
+        correlation are NaN when either series is constant, as it then has no tail.
 
     Raises:
         TypeError: If `series_a` or `series_b` is not a pd.Series.
@@ -106,7 +107,12 @@ def get_tail_dependence_coefficient(
     aligned = pd.concat([series_a, series_b], axis=1, join="inner").dropna()
     n = len(aligned)
 
-    if n <= MINIMUM_TAIL_OBSERVATIONS:
+    a = aligned.iloc[:, 0].to_numpy()
+    b = aligned.iloc[:, 1].to_numpy()
+
+    # A series that does not move (a money market fund at a constant price) has no tail and
+    # no correlation, so neither has a tail dependence.  # noqa: E501
+    if n <= MINIMUM_TAIL_OBSERVATIONS or np.ptp(a) == 0 or np.ptp(b) == 0:
         return pd.Series(
             {
                 "Lower Tail Dependence": np.nan,
@@ -116,8 +122,6 @@ def get_tail_dependence_coefficient(
             }
         )
 
-    a = aligned.iloc[:, 0].to_numpy()
-    b = aligned.iloc[:, 1].to_numpy()
     correlation = np.corrcoef(a, b)[0, 1]
 
     if method == "empirical":

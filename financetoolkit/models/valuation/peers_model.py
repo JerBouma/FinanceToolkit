@@ -80,7 +80,7 @@ def get_peer_comparison(
     Args:
         metrics (pd.DataFrame): The latest value per ticker (rows) and metric (columns).
         company (str): The company to compare.
-        peers (list[str]): Its peers.
+        peers (list[str]): Its peers, in any case; a peer listed twice counts once.
         multiples (Sequence[str], optional): The metrics that are valuation multiples (a
             price divided by a fundamental). Defaults to the Price-to-Earnings, EV-to-EBITDA,
             Price-to-Book and Price-to-Sales ratios.
@@ -89,7 +89,10 @@ def get_peer_comparison(
         pd.DataFrame: Per metric the Company value, Peer Median, Peer Mean, Percentile and the
         number of Peers with a value.
     """
-    peer_values = metrics.reindex([peer for peer in peers if peer != company])
+    # Tickers are upper case in the metrics (as the Toolkit writes them), and a peer listed
+    # twice is one peer.
+    peer_tickers = dict.fromkeys(peer.strip().upper() for peer in peers)
+    peer_values = metrics.reindex([peer for peer in peer_tickers if peer != company])
     company_values = (
         metrics.loc[company]
         if company in metrics.index

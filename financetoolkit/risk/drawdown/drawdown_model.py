@@ -31,16 +31,20 @@ def get_drawdown_samples(samples: np.ndarray, compounded: bool = True) -> np.nda
         compounded (bool, optional): Whether to compound the returns. Defaults to True.
 
     Returns:
-        np.ndarray: The drawdowns, of the same shape, 0 at a peak and negative below it.
+        np.ndarray: The drawdowns, of the same shape, 0 at a peak (within 1e-12, the
+            rounding of the compounding) and negative below it.
     """
     if compounded:
         wealth = np.cumprod(1 + samples, axis=1)
+        drawdowns = wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1
+    else:
+        cumulative = np.cumsum(samples, axis=1)
+        drawdowns = cumulative - np.maximum(
+            np.maximum.accumulate(cumulative, axis=1), 0
+        )
 
-        return wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1
-
-    cumulative = np.cumsum(samples, axis=1)
-
-    return cumulative - np.maximum(np.maximum.accumulate(cumulative, axis=1), 0)
+    # A path back at its old high lands within rounding of it, see get_wealth_and_peak.
+    return np.where(drawdowns > -risk_model.PEAK_TOLERANCE, 0.0, drawdowns)
 
 
 def get_maximum_drawdown(

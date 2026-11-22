@@ -17,6 +17,9 @@ ENTITY_TIME_INDEX_LEVELS = 2
 # The 5% level for flagging whether Hausman rejects Random Effects.
 SIGNIFICANCE_LEVEL = 0.05
 
+# The variances the Hausman test compares: each model's own, or both on one disturbance variance.
+HAUSMAN_VARIANCES = ["separate", "efficient", "consistent"]
+
 # Stopping tolerances of the sparse least squares fit on the entity and time dummies:
 # near machine precision, so the fit is exact on weakly connected panels too.
 TWO_WAY_SOLVER_TOLERANCE = 1e-15
@@ -584,6 +587,7 @@ def get_random_effects(
 def get_hausman_test(
     y: pd.Series | pd.DataFrame,
     x: pd.DataFrame | pd.Series,
+    variance: str = "separate",
 ) -> pd.Series:
     """
     Calculate the Hausman specification test comparing a Fixed Effects and a
@@ -601,6 +605,17 @@ def get_hausman_test(
     estimators' coefficients differ by more than sampling variation would explain:
 
     - H = (b_FE - b_RE)' * [Var(b_FE) - Var(b_RE)]^-1 * (b_FE - b_RE)
+    - With variance="efficient": Var(b_FE) * s²_RE / s²_FE in place of Var(b_FE)
+    - With variance="consistent": Var(b_RE) * s²_FE / s²_RE in place of Var(b_RE)
+
+    Where s²_FE and s²_RE are the residual variances of the two fits. Each model's own
+    variance ("separate", the statistic of Hausman 1978) can make Var(b_FE) - Var(b_RE)
+    not positive definite in a sample, and H negative. A negative H means that the data do
+    not meet the assumptions of the test rather than that the two models agree, so its
+    p-value and preference are NaN. Basing both variances on one disturbance variance, that
+    of the efficient Random Effects fit ("efficient", Stata's `sigmamore`) or of the
+    consistent Fixed Effects fit ("consistent", Stata's `sigmaless`), keeps the difference
+    positive semi-definite in the usual case and gives a statistic where "separate" does not.
 
     Under the null hypothesis that Random Effects' exogeneity assumption holds
     (and is therefore consistent AND efficient), `H` is asymptotically
@@ -622,21 +637,27 @@ def get_hausman_test(
         entity x time (one row per entity, one column per time period).
         x (pd.DataFrame | pd.Series): The independent variable(s)/regressor(s), in
         the same `(entity, time)` shape as `y`.
+        variance (str, optional): The variances compared: "separate" (each model's own),
+        "efficient" (both based on the residual variance of Random Effects) or "consistent"
+        (both based on the residual variance of Fixed Effects). Defaults to "separate".
 
     Returns:
         pd.Series: The Hausman statistic, its degrees of freedom, its p-value, and
-        whether Fixed Effects is preferred over Random Effects at the 5% level.
+        whether Fixed Effects is preferred over Random Effects at the 5% level. The
+        p-value and the preference are NaN when the statistic is negative.
 
     Raises:
         TypeError: If `y` or `x` is not one of the accepted types/shapes.
         ValueError: If `y` and `x` share no overlapping non-missing observations,
         there are not enough observations (or entities, see `get_random_effects`) to
         fit either model, the two estimators share no common regressors to compare,
-        or `Var(b_FE) - Var(b_RE)` has rank 0.
+        `Var(b_FE) - Var(b_RE)` has rank 0, or `variance` is not one of the three options.
 
     Notes:
         Reference: Hausman, J.A. (1978). "Specification Tests in Econometrics."
-        Econometrica, 46(6), 1251-1271.
+        Econometrica, 46(6), 1251-1271. The common disturbance variance follows the
+        `sigmamore` and `sigmaless` options of Stata's `hausman` (StataCorp, Stata Base
+        Reference Manual, "hausman").
 
     As an example:
 
@@ -680,6 +701,11 @@ def get_hausman_test(
     0.4871: comfortably fails to reject, correctly preferring the more efficient
     Random Effects estimator in that case.
     """
+    if variance not in HAUSMAN_VARIANCES:
+        raise ValueError(
+            f"variance must be one of {', '.join(HAUSMAN_VARIANCES)}, not {variance}."
+        )
+
     fe_result = get_fixed_effects(y, x, entity_effects=True, time_effects=False)
     re_result = get_random_effects(y, x)
 
@@ -702,6 +728,14 @@ def get_hausman_test(
     b_re = re["coefficients"][re_index]
     var_fe = fe["covariance_matrix"][np.ix_(fe_index, fe_index)]
     var_re = re["covariance_matrix"][np.ix_(re_index, re_index)]
+
+    # Both nonrobust covariances are s² times a fixed matrix, so rescaling one by the ratio of
+    # the residual variances bases both on the same disturbance variance (Stata's sigmamore
+    # and sigmaless).  # noqa: E501
+    if variance == "efficient":
+        var_fe = var_fe * re["residual_variance"] / fe["residual_variance"]
+    elif variance == "consistent":
+        var_re = var_re * fe["residual_variance"] / re["residual_variance"]
 
     difference = b_fe - b_re
     variance_difference = var_fe - var_re
@@ -728,14 +762,22 @@ def get_hausman_test(
         inverse_variance_difference = np.linalg.inv(variance_difference)
 
     statistic = float(difference @ inverse_variance_difference @ difference)
-    statistic = max(statistic, 0.0)
-    p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
+
+    # A negative statistic says that Var(b_FE) - Var(b_RE) is not positive definite in this
+    # sample, so the test has no answer rather than a p-value of 1 (Stata reports it as failing
+    # the asymptotic assumptions of the test).  # noqa: E501
+    if statistic < 0:
+        p_value = np.nan
+        prefer_fixed_effects = np.nan
+    else:
+        p_value = float(stats.chi2.sf(statistic, degrees_of_freedom))
+        prefer_fixed_effects = bool(p_value < SIGNIFICANCE_LEVEL)
 
     return pd.Series(
         {
             "Hausman Statistic": statistic,
             "Degrees of Freedom": degrees_of_freedom,
             "P-Value": p_value,
-            "Prefer Fixed Effects (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
+            "Prefer Fixed Effects (5%)": prefer_fixed_effects,
         }
     )

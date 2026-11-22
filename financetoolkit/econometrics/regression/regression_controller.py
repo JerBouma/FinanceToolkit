@@ -1401,6 +1401,7 @@ class RegressionEconometrics:
         period: str | None = None,
         column: str = "Return",
         include_benchmark: bool = False,
+        variance: str = "separate",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
@@ -1423,9 +1424,15 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - H = (β̂_FE - β̂_RE)'·[Var(β̂_FE) - Var(β̂_RE)]⁻¹·(β̂_FE - β̂_RE), over the k slope coefficients
-          the two models share (a pseudo-inverse when the difference is singular, and H floored at 0)
+          the two models share (a pseudo-inverse when the difference is singular)
+        - With variance="efficient" Var(β̂_FE) is scaled by s²_RE / s²_FE, with variance="consistent"
+          Var(β̂_RE) by s²_FE / s²_RE, so both rest on one disturbance variance (Stata's sigmamore and
+          sigmaless)
         - H is chi-squared with k degrees of freedom; Random Effects is rejected when the p-value is
           below 0.05
+        - A negative H means that Var(β̂_FE) - Var(β̂_RE) is not positive definite in the sample: the
+          P-Value and the preference are then NaN, and the "efficient" or "consistent" variance gives
+          a statistic
         - β̂_FE comes from `get_fixed_effects` with entity effects only and β̂_RE from `get_random_effects`
 
         Args:
@@ -1444,6 +1451,9 @@ class RegressionEconometrics:
             column. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             entities. Defaults to False.
+            variance (str, optional): The variances compared: "separate" (each model's own),
+            "efficient" (both based on the residual variance of Random Effects) or "consistent"
+            (both based on the residual variance of Fixed Effects). Defaults to "separate".
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1454,7 +1464,7 @@ class RegressionEconometrics:
         Returns:
             pd.Series: The Hausman statistic, its degrees of freedom, its p-value,
             and whether Fixed Effects is preferred over Random Effects at the 5%
-            level.
+            level (NaN with the P-Value when the statistic is negative).
 
         Raises:
             ValueError: If both or neither of `independent_tickers`/
@@ -1496,7 +1506,7 @@ class RegressionEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        result = panel_data_model.get_hausman_test(y_panel, x_panel)
+        result = panel_data_model.get_hausman_test(y_panel, x_panel, variance=variance)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

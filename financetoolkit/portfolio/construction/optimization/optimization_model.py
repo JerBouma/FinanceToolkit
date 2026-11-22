@@ -13,6 +13,7 @@ from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
 from scipy.spatial.distance import pdist, squareform
 
 from financetoolkit.performance import performance_model
+from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.value_at_risk import cvar_model, var_model
 
@@ -836,7 +837,12 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
 
 
-def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+DENOISE_METHODS = ("fixed", "spectral", "shrink")
+
+
+def get_denoised_covariance(
+    returns: pd.DataFrame, method: str = "fixed", alpha: float = 0.0
+) -> tuple[pd.DataFrame, int]:
     """
     The denoised covariance matrix: the sample covariance with the eigenvalues of its
     correlation matrix that random returns could produce replaced by their average. Under
@@ -851,9 +857,22 @@ def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     eigenvalues best: the sum of squared differences with a Gaussian kernel density of
     the eigenvalues (bandwidth 0.01), at 1,000 points between the edges of the
     Marčenko-Pastur distribution, minimized for σ² between 0.00001 and 0.99999 starting
-    at 0.5. This is López de Prado's "constant residual eigenvalue" method. The
-    correlation matrix is rescaled to a unit diagonal after the replacement and turned
-    back into a covariance with the sample standard deviations (ddof=1).
+    at 0.5. The noise eigenvalues are then treated by one of the methods of López de
+    Prado (2020):
+
+    - "fixed": the noise eigenvalues are replaced by their average, the "constant
+      residual eigenvalue" method, which keeps the trace.
+    - "spectral": the noise eigenvalues are set to zero, so only the signal remains.
+    - "shrink": targeted shrinkage, the noise part of the correlation matrix shrunk
+      towards its own diagonal, C = C_signal + α C_noise + (1 - α) diag(C_noise), with
+      C_signal and C_noise the parts of the signal and noise eigenvalues; α = 0 keeps
+      only the diagonal of the noise, α = 1 the sample correlation.
+
+    The correlation matrix is rescaled to a unit diagonal after the replacement and
+    turned back into a covariance with the sample standard deviations (ddof=1). The
+    three methods equal Riskfolio-Lib's denoiseCov (kind="fixed", "spectral", "shrink");
+    "fixed" also equals skfolio's DenoiseCovariance. Riskfolio-Lib's covar_matrix
+    defaults to α = 0.1 for "shrink"; the default here is López de Prado's α = 0.
 
     See Laloux, L., Cizeau, P., Bouchaud, J.-P. and Potters, M. (2000), "Random Matrix
     Approach to Cross Correlations in Financial Data", Physical Review E, 63(3), 037101,
@@ -863,11 +882,24 @@ def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
+        method (str, optional): How the noise eigenvalues are treated: "fixed",
+            "spectral" or "shrink". Defaults to "fixed".
+        alpha (float, optional): The share α of the noise correlations kept by
+            "shrink", between 0 and 1. Defaults to 0.
 
     Returns:
         tuple[pd.DataFrame, int]: The covariance matrix per period and the number of
             eigenvalues kept as signal (those above the Marčenko-Pastur upper edge).
     """
+    if method not in DENOISE_METHODS:
+        raise ValueError(
+            f"The denoising method must be one of {', '.join(DENOISE_METHODS)}, not "
+            f"'{method}'."
+        )
+    if not 0 <= alpha <= 1:
+        raise ValueError(
+            "The share of the noise correlations kept must lie between 0 and 1."
+        )
     sample = returns.cov().to_numpy(dtype=float)
     periods, assets = returns.shape
     ratio = periods / assets
@@ -897,10 +929,27 @@ def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     upper_edge = variance * (1 + (1 / ratio) ** 0.5) ** 2
     signals = int(assets - np.searchsorted(eigenvalues[::-1], upper_edge))
 
+    if method == "spectral" and signals == 0:
+        raise ValueError(
+            "No eigenvalue lies above the Marčenko-Pastur upper edge, so the spectral "
+            "denoising leaves no correlation."
+        )
     if signals < assets:
-        eigenvalues = eigenvalues.copy()
-        eigenvalues[signals:] = eigenvalues[signals:].mean()
-        correlation = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+        if method == "shrink":
+            signal = eigenvectors[:, :signals]
+            noise = eigenvectors[:, signals:]
+            noise_correlation = noise @ np.diag(eigenvalues[signals:]) @ noise.T
+            correlation = (
+                signal @ np.diag(eigenvalues[:signals]) @ signal.T
+                + alpha * noise_correlation
+                + (1 - alpha) * np.diag(np.diag(noise_correlation))
+            )
+        else:
+            eigenvalues = eigenvalues.copy()
+            eigenvalues[signals:] = (
+                eigenvalues[signals:].mean() if method == "fixed" else 0.0
+            )
+            correlation = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
         scale = np.sqrt(np.diag(correlation))
         correlation = correlation / np.outer(scale, scale)
 
@@ -920,12 +969,109 @@ COVARIANCE_METHODS = (
     "ledoit_wolf_constant_correlation",
     "ledoit_wolf_single_factor",
     "oas",
+    "shrunk",
     "semicovariance",
     "exponential",
     "denoised",
+    "denoised_spectral",
+    "denoised_shrink",
+    "gerber",
 )
 
-EXPECTED_RETURN_METHODS = ("mean", "exponential", "capm", "james_stein")
+EXPECTED_RETURN_METHODS = (
+    "mean",
+    "geometric",
+    "exponential",
+    "exponential_geometric",
+    "capm",
+    "bayes_stein",
+    "james_stein",
+    "bodnar_okhrin_parolya",
+)
+
+
+def get_covariance_matrix(
+    returns: pd.DataFrame,
+    method: str = "sample",
+    span: int = 180,
+    benchmark_returns: pd.Series | None = None,
+    shrinkage: float = 0.1,
+    gerber_threshold: float = 0.5,
+    gerber_statistic: int = 1,
+    denoise_alpha: float = 0.0,
+) -> pd.DataFrame:
+    """
+    The covariance matrix per period of a set of returns, by one of the estimators.
+
+    - "sample": the sample covariance (ddof=1).
+    - "ledoit_wolf", "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor",
+      "oas": shrinkage with an estimated intensity towards the scaled identity, the
+      constant correlation matrix or the single factor (benchmark) covariance.
+    - "shrunk": shrinkage with a fixed intensity towards the scaled identity (see
+      estimation_model.get_shrunk_covariance).
+    - "semicovariance": the co-movement below a zero return.
+    - "exponential": exponentially weighted, recent periods weigh most.
+    - "denoised", "denoised_spectral", "denoised_shrink": the Marčenko-Pastur noise
+      eigenvalues of the correlation matrix averaged, set to zero or shrunk towards
+      the diagonal (see get_denoised_covariance).
+    - "gerber": the Gerber covariance (see estimation_model.get_gerber_covariance).
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        method (str, optional): The estimator. Defaults to "sample".
+        span (int, optional): The span in periods of the "exponential" covariance.
+            Defaults to 180.
+        benchmark_returns (pd.Series | None, optional): The returns per period of the
+            market, for "ledoit_wolf_single_factor". Defaults to None.
+        shrinkage (float, optional): The fixed shrinkage intensity of "shrunk".
+            Defaults to 0.1.
+        gerber_threshold (float, optional): The threshold in standard deviations of
+            "gerber". Defaults to 0.5.
+        gerber_statistic (int, optional): The Gerber statistic (0, 1 or 2) of "gerber".
+            Defaults to 1.
+        denoise_alpha (float, optional): The share of the noise correlations kept by
+            "denoised_shrink". Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    if method == "sample":
+        return returns.cov()
+    if method == "ledoit_wolf":
+        return get_ledoit_wolf_covariance(returns)[0]
+    if method == "ledoit_wolf_constant_correlation":
+        return get_ledoit_wolf_constant_correlation_covariance(returns)[0]
+    if method == "ledoit_wolf_single_factor":
+        if benchmark_returns is None:
+            raise ValueError(
+                "The single factor covariance needs the returns of a benchmark."
+            )
+        return get_ledoit_wolf_single_factor_covariance(returns, benchmark_returns)[0]
+    if method == "oas":
+        return get_oracle_approximating_shrinkage_covariance(returns)[0]
+    if method == "shrunk":
+        return estimation_model.get_shrunk_covariance(returns, shrinkage)
+    if method == "semicovariance":
+        return get_semicovariance(returns)
+    if method == "exponential":
+        return get_exponential_covariance(returns, span)
+    if method in ("denoised", "denoised_spectral", "denoised_shrink"):
+        return get_denoised_covariance(
+            returns,
+            {"denoised": "fixed", "denoised_spectral": "spectral"}.get(
+                method, "shrink"
+            ),
+            denoise_alpha,
+        )[0]
+    if method == "gerber":
+        return estimation_model.get_gerber_covariance(
+            returns, gerber_threshold, gerber_statistic
+        )
+    raise ValueError(
+        f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
+        f"'{method}'."
+    )
 
 
 def get_expected_returns(
@@ -935,26 +1081,44 @@ def get_expected_returns(
     span: int = 180,
     benchmark_returns: pd.Series | None = None,
     risk_free_rate: float = 0.0,
+    adjust: bool = True,
 ) -> pd.Series:
     """
     The annualized expected return of each asset, estimated from its returns per period.
 
     - "mean": the average return per period times the number of periods in a year, the
       arithmetic historical mean.
+    - "geometric": the compounded (geometric) average return, (Π (1 + r_t))^(P / T) - 1
+      for T periods with P periods in a year, PyPortfolioOpt's mean_historical_return
+      with compounding=True (its default).
     - "exponential": the exponentially weighted average return, with the weight of a
       period (1 - α)^age, α = 2 / (span + 1), normalized to sum to one, so recent
-      periods count most (pandas' ewm with adjust=True).
+      periods count most (pandas' ewm with adjust=True), times P. With adjust=False the
+      average is the recursion m_t = α r_t + (1 - α) m_(t-1) seeded with the first
+      return (Riskfolio-Lib's mean_vector "ewma2"; "ewma1" is adjust=True).
+    - "exponential_geometric": the exponentially weighted average compounded over a
+      year, (1 + m)^P - 1, PyPortfolioOpt's ema_historical_return with compounding=True.
     - "capm": the return the Capital Asset Pricing Model implies, r_f + β_i (E[r_m] -
       r_f), with β_i = Cov(r_i, r_m) / Var(r_m) of the returns per period and E[r_m]
       the annualized average return of the benchmark (Sharpe, 1964).
-    - "james_stein": the Bayes-Stein shrinkage estimator of Jorion (1986), which pulls
+    - "bayes_stein": the Bayes-Stein shrinkage estimator of Jorion (1986), which pulls
       every average return towards the average return of the minimum variance portfolio,
       μ_0 = 1'Σ⁻¹μ̂ / 1'Σ⁻¹1, by φ = (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'Σ⁻¹(μ̂ - μ_0 1)),
       with μ̂ the average of the T returns per period of the N assets and Σ = S (T - 1) /
       (T - N - 2) Jorion's estimate of the covariance matrix from the sample covariance
-      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. The average returns are the noisiest input
-      of a mean-variance optimization, and the shrinkage is strongest when they differ
-      little compared to their estimation error.
+      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. skfolio's ShrunkMu (BAYES_STEIN,
+      vol_weighted_target=True) and Riskfolio-Lib's mean_vector (method="BS",
+      target="b2") use S itself rather than Jorion's rescaled Σ.
+    - "james_stein": the James-Stein estimator, the averages pulled towards their grand
+      mean (see estimation_model.get_james_stein_expected_returns).
+    - "bodnar_okhrin_parolya": the shrinkage estimator of Bodnar, Okhrin and Parolya
+      (2019) towards the grand mean (see
+      estimation_model.get_bodnar_okhrin_parolya_expected_returns).
+
+    The average returns are the noisiest input of a mean-variance optimization; the
+    shrinkage estimators are strongest when the averages differ little compared to their
+    estimation error. Every estimator except "geometric" and "exponential_geometric" is
+    an arithmetic return per period times P, without compounding.
 
     See Sharpe, W. F. (1964), "Capital Asset Prices: A Theory of Market Equilibrium under
     Conditions of Risk", The Journal of Finance, 19(3), 425-442, and Jorion, P. (1986),
@@ -965,24 +1129,34 @@ def get_expected_returns(
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
-        method (str, optional): "mean", "exponential", "capm" or "james_stein". Defaults
-            to "mean".
-        span (int, optional): The span in periods of the "exponential" average. Defaults
+        method (str, optional): "mean", "geometric", "exponential",
+            "exponential_geometric", "capm", "bayes_stein", "james_stein" or
+            "bodnar_okhrin_parolya". Defaults to "mean".
+        span (int, optional): The span in periods of the exponential averages. Defaults
             to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
             market, for "capm". Defaults to None.
         risk_free_rate (float, optional): The annualized risk free rate, for "capm".
             Defaults to 0.
+        adjust (bool, optional): Whether the exponential averages normalize the weights
+            over the whole history (pandas' adjust=True) rather than follow the
+            recursion. Defaults to True.
 
     Returns:
         pd.Series: The annualized expected return per asset.
     """
+    if method in ("exponential", "exponential_geometric") and span < 1:
+        raise ValueError("The span of the exponential average must be at least 1.")
     if method == "mean":
         mean = returns.mean()
+    elif method == "geometric":
+        return (1 + returns).prod() ** (periods_per_year / len(returns)) - 1
     elif method == "exponential":
-        if span < 1:
-            raise ValueError("The span of the exponential average must be at least 1.")
-        mean = returns.ewm(span=span).mean().iloc[-1]
+        mean = returns.ewm(span=span, adjust=adjust).mean().iloc[-1]
+    elif method == "exponential_geometric":
+        return (1 + returns.ewm(span=span, adjust=adjust).mean().iloc[-1]) ** (
+            periods_per_year
+        ) - 1
     elif method == "capm":
         if benchmark_returns is None:
             raise ValueError("The CAPM returns need the returns of a benchmark.")
@@ -1000,11 +1174,11 @@ def get_expected_returns(
         return risk_free_rate + beta * (
             market.mean() * periods_per_year - risk_free_rate
         )
-    elif method == "james_stein":
+    elif method == "bayes_stein":
         periods, assets = returns.shape
         if periods <= assets + 2:
             raise ValueError(
-                "The James-Stein expected returns need more periods than the number of "
+                "The Bayes-Stein expected returns need more periods than the number of "
                 "assets plus two."
             )
         average = returns.mean().to_numpy()
@@ -1020,6 +1194,12 @@ def get_expected_returns(
         )
         mean = pd.Series(
             (1 - shrinkage) * average + shrinkage * target, index=returns.columns
+        )
+    elif method == "james_stein":
+        mean, _ = estimation_model.get_james_stein_expected_returns(returns)
+    elif method == "bodnar_okhrin_parolya":
+        mean, _, _ = estimation_model.get_bodnar_okhrin_parolya_expected_returns(
+            returns
         )
     else:
         raise ValueError(
@@ -1041,8 +1221,8 @@ def get_expected_returns_and_covariance(
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     The annualized expected returns (see get_expected_returns) and the annualized
-    covariance matrix (the covariance per period times the number of periods in a year)
-    of a set of returns.
+    covariance matrix (the covariance per period times the number of periods in a year,
+    see get_covariance_matrix) of a set of returns.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -1050,14 +1230,17 @@ def get_expected_returns_and_covariance(
         covariance (str, optional): The estimator of the covariance matrix: "sample"
             (ddof=1), "ledoit_wolf" (towards the scaled identity),
             "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor" (towards the
-            covariance the benchmark as a single factor implies), "oas", "semicovariance"
-            (below a zero return), "exponential" or "denoised" (Marčenko-Pastur).
+            covariance the benchmark as a single factor implies), "oas", "shrunk" (a
+            fixed intensity of 0.1 towards the scaled identity), "semicovariance" (below
+            a zero return), "exponential", "denoised", "denoised_spectral",
+            "denoised_shrink" (Marčenko-Pastur) or "gerber" (threshold 0.5, statistic 1).
             Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
         expected_returns (str, optional): The estimator of the expected returns: "mean",
-            "exponential", "capm" or "james_stein". Defaults to "mean".
-        expected_returns_span (int, optional): The span in periods of the "exponential"
+            "geometric", "exponential", "exponential_geometric", "capm", "bayes_stein",
+            "james_stein" or "bodnar_okhrin_parolya". Defaults to "mean".
+        expected_returns_span (int, optional): The span in periods of the exponential
             expected returns. Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
             market, for the "capm" expected returns and the "ledoit_wolf_single_factor"
@@ -1073,32 +1256,9 @@ def get_expected_returns_and_covariance(
     if len(returns) < 2:  # noqa: PLR2004
         raise ValueError("At least two periods of returns are needed for every asset.")
 
-    if covariance == "sample":
-        matrix = returns.cov()
-    elif covariance == "ledoit_wolf":
-        matrix, _ = get_ledoit_wolf_covariance(returns)
-    elif covariance == "ledoit_wolf_constant_correlation":
-        matrix, _ = get_ledoit_wolf_constant_correlation_covariance(returns)
-    elif covariance == "ledoit_wolf_single_factor":
-        if benchmark_returns is None:
-            raise ValueError(
-                "The single factor covariance needs the returns of a benchmark."
-            )
-        matrix, _ = get_ledoit_wolf_single_factor_covariance(returns, benchmark_returns)
-    elif covariance == "oas":
-        matrix, _ = get_oracle_approximating_shrinkage_covariance(returns)
-    elif covariance == "semicovariance":
-        matrix = get_semicovariance(returns)
-    elif covariance == "exponential":
-        matrix = get_exponential_covariance(returns, covariance_span)
-    elif covariance == "denoised":
-        matrix, _ = get_denoised_covariance(returns)
-    else:
-        raise ValueError(
-            f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
-            f"'{covariance}'."
-        )
-
+    matrix = get_covariance_matrix(
+        returns, covariance, covariance_span, benchmark_returns
+    )
     mean = get_expected_returns(
         returns,
         periods_per_year,
@@ -1738,55 +1898,183 @@ def get_risk_parity_weights(
     return _as_series(result.x / result.x.sum(), covariance.index)
 
 
-CODEPENDENCE_METHODS = ("pearson", "spearman", "kendall")
+CODEPENDENCE_METHODS = (
+    "pearson",
+    "spearman",
+    "kendall",
+    "gerber",
+    "detoned",
+    "distance",
+    "mutual_information",
+    "lower_tail",
+)
 
 
 def get_codependence(
-    returns: pd.DataFrame, covariance: pd.DataFrame, method: str = "pearson"
+    returns: pd.DataFrame,
+    covariance: pd.DataFrame,
+    method: str = "pearson",
+    gerber_threshold: float = 0.5,
+    gerber_statistic: int = 1,
+    components: int = 1,
+    bins: str | int = "freedman",
+    tail_level: float = 0.05,
 ) -> pd.DataFrame:
     """
-    The correlation matrix the hierarchical clustering of the assets works on, through
-    the correlation distance d = √((1 - ρ) / 2) (Mantegna, 1999; López de Prado, 2016).
+    The codependence matrix the hierarchical clustering of the assets works on: a
+    correlation, or another measure of how much two assets move together, that
+    get_codependence_distance turns into the distance the clusters are formed on.
 
     - "pearson": the linear correlation ρ_ij = σ_ij / (σ_i σ_j) of the covariance matrix,
-      so a shrinkage or denoised covariance estimator also shapes the clusters.
+      so a shrinkage or denoised covariance estimator also shapes the clusters (skfolio's
+      CovarianceDistance).
     - "spearman": the rank correlation of Spearman (1904), the Pearson correlation of the
       ranks of the returns, 1 - 6 Σ d_t² / (T (T² - 1)) without ties, with d_t the
       difference between the ranks of the two assets' returns in period t.
     - "kendall": the rank correlation τ_b of Kendall (1938, 1945), (n_c - n_d) /
       √((n_0 - n_1)(n_0 - n_2)), with n_c and n_d the concordant and discordant pairs of
       periods, n_0 = T (T - 1) / 2 and n_1, n_2 the pairs tied in either asset.
+    - "gerber": the Gerber statistic, which counts only moves beyond a threshold (see
+      estimation_model.get_gerber_covariance).
+    - "detoned": the correlation with the first principal components, the market,
+      removed (see estimation_model.get_detoned_covariance), so the clusters reflect
+      what assets share besides the market.
+    - "distance": the distance correlation of Székely, Rizzo and Bakirov (2007), zero
+      only for independent returns (see estimation_model.get_distance_correlation_matrix).
+    - "mutual_information": the normalized mutual information of histograms of the
+      returns (see estimation_model.get_mutual_information_matrix).
+    - "lower_tail": the lower tail dependence, how often two assets fall into their
+      lowest returns together (see estimation_model.get_lower_tail_dependence_matrix).
 
-    The rank correlations depend only on the order of the returns, so a few extreme
-    returns do not dominate them, and they capture any monotonic co-movement rather than
-    a linear one only. They are taken from the returns themselves, whatever the
-    covariance estimator.
+    The rank, Gerber, distance, information and tail measures depend on the returns
+    themselves, whatever the covariance estimator; the rank correlations capture any
+    monotonic co-movement and the distance correlation and mutual information also
+    non-monotonic co-movement. These are the codependences of Riskfolio-Lib's codep_dist
+    and of skfolio's distance estimators.
 
     See Spearman, C. (1904), "The Proof and Measurement of Association between Two
     Things", The American Journal of Psychology, 15(1), 72-101, Kendall, M. G. (1938),
-    "A New Measure of Rank Correlation", Biometrika, 30(1/2), 81-93, and Mantegna, R. N.
+    "A New Measure of Rank Correlation", Biometrika, 30(1/2), 81-93, Mantegna, R. N.
     (1999), "Hierarchical Structure in Financial Markets", The European Physical Journal
-    B, 11(1), 193-197.
+    B, 11(1), 193-197, and López de Prado, M. (2020), Machine Learning for Asset
+    Managers, Cambridge University Press, chapter 3.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
-        method (str, optional): "pearson", "spearman" or "kendall". Defaults to
-            "pearson".
+        method (str, optional): "pearson", "spearman", "kendall", "gerber", "detoned",
+            "distance", "mutual_information" or "lower_tail". Defaults to "pearson".
+        gerber_threshold (float, optional): The threshold in standard deviations of
+            "gerber". Defaults to 0.5.
+        gerber_statistic (int, optional): The Gerber statistic (0, 1 or 2). Defaults
+            to 1.
+        components (int, optional): The number of principal components "detoned"
+            removes. Defaults to 1.
+        bins (str | int, optional): The number of histogram bins of
+            "mutual_information", or "freedman" or "hacine_gharbi". Defaults to
+            "freedman".
+        tail_level (float, optional): The share of the lowest returns that forms the
+            tail of "lower_tail". Defaults to 0.05.
 
     Returns:
-        pd.DataFrame: The correlation matrix, in the order of the covariance matrix.
+        pd.DataFrame: The codependence matrix, in the order of the covariance matrix.
     """
     if method not in CODEPENDENCE_METHODS:
         raise ValueError(
             f"The codependence must be one of {', '.join(CODEPENDENCE_METHODS)}, not "
             f"'{method}'."
         )
-    if method == "pearson":
+    if method in ("pearson", "gerber", "detoned"):
+        if method == "gerber":
+            covariance = estimation_model.get_gerber_covariance(
+                returns[covariance.index], gerber_threshold, gerber_statistic
+            )
+        elif method == "detoned":
+            covariance = estimation_model.get_detoned_covariance(
+                returns[covariance.index], components
+            )
         volatility = np.sqrt(np.diag(covariance.to_numpy()))
         return covariance / np.outer(volatility, volatility)
+    if method == "distance":
+        return estimation_model.get_distance_correlation_matrix(
+            returns[covariance.index]
+        )
+    if method == "mutual_information":
+        return estimation_model.get_mutual_information_matrix(
+            returns[covariance.index], bins
+        )[0]
+    if method == "lower_tail":
+        return estimation_model.get_lower_tail_dependence_matrix(
+            returns[covariance.index], tail_level
+        )
     return returns[covariance.index].corr(method=method)
+
+
+def get_codependence_distance(
+    returns: pd.DataFrame,
+    covariance: pd.DataFrame,
+    method: str = "pearson",
+    gerber_threshold: float = 0.5,
+    gerber_statistic: int = 1,
+    components: int = 1,
+    bins: str | int = "freedman",
+    tail_level: float = 0.05,
+) -> pd.DataFrame:
+    """
+    The distance between every pair of assets that the hierarchical clustering works on,
+    from the codependence of get_codependence (with the same arguments):
+
+    - "pearson", "spearman", "kendall", "gerber", "detoned": the correlation distance
+      d = √((1 - ρ) / 2) of Mantegna (1999) and López de Prado (2016).
+    - "distance": d = √(1 - dCor), as skfolio's DistanceCorrelation and Riskfolio-Lib's
+      codep_dist.
+    - "mutual_information": the normalized variation of information, VI(X, Y) / H(X, Y),
+      as skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
+    - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as
+      Riskfolio-Lib's codep_dist ("tail").
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
+        method (str, optional): The codependence. Defaults to "pearson".
+        gerber_threshold (float, optional): The threshold of "gerber". Defaults to 0.5.
+        gerber_statistic (int, optional): The Gerber statistic. Defaults to 1.
+        components (int, optional): The components "detoned" removes. Defaults to 1.
+        bins (str | int, optional): The histogram bins of "mutual_information".
+            Defaults to "freedman".
+        tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+
+    Returns:
+        pd.DataFrame: The distance matrix, with zeros on the diagonal, in the order of
+            the covariance matrix.
+    """
+    if method == "mutual_information":
+        distance = estimation_model.get_mutual_information_matrix(
+            returns[covariance.index], bins
+        )[1].to_numpy(copy=True)
+    else:
+        codependence = get_codependence(
+            returns,
+            covariance,
+            method,
+            gerber_threshold,
+            gerber_statistic,
+            components,
+            bins,
+            tail_level,
+        ).to_numpy(dtype=float)
+        if method == "distance":
+            distance = np.sqrt(np.clip(1 - codependence, 0, None))
+        elif method == "lower_tail":
+            distance = -np.log(
+                np.clip(codependence, estimation_model.MINIMUM_TAIL_DEPENDENCE, None)
+            )
+        else:
+            distance = np.sqrt(np.clip((1 - codependence) / 2, 0, None))
+    np.fill_diagonal(distance, 0)
+    return pd.DataFrame(distance, index=covariance.index, columns=covariance.index)
 
 
 def get_hierarchical_risk_parity_weights(
@@ -1795,6 +2083,7 @@ def get_hierarchical_risk_parity_weights(
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
     correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
@@ -1826,6 +2115,9 @@ def get_hierarchical_risk_parity_weights(
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, e.g. from get_codependence_distance, in place of the
+            correlation distance of the correlation. Defaults to None.
 
     Returns:
         pd.Series: The weight per asset.
@@ -1847,21 +2139,25 @@ def get_hierarchical_risk_parity_weights(
             "Hierarchical Risk Parity holds long positions only; the minimum weight "
             "cannot be negative."
         )
-    if correlation is None:
-        volatility = np.sqrt(np.diag(covariance.to_numpy()))
-        correlation = covariance / np.outer(volatility, volatility)
-
-    # The correlation distance of López de Prado, sqrt((1 - rho) / 2), and the Euclidean
-    # distance between its columns that the paper clusters on (its code passes the square
-    # matrix to linkage, which reads the rows as observations and does exactly this).
-    distance = np.sqrt(
-        np.clip(
-            (1 - correlation.loc[covariance.index, covariance.index].to_numpy()) / 2,
-            0,
-            None,
+    if distance is not None:
+        distance = distance.loc[covariance.index, covariance.index].to_numpy()
+    else:
+        if correlation is None:
+            volatility = np.sqrt(np.diag(covariance.to_numpy()))
+            correlation = covariance / np.outer(volatility, volatility)
+        # The correlation distance of López de Prado, sqrt((1 - rho) / 2).
+        distance = np.sqrt(
+            np.clip(
+                (1 - correlation.loc[covariance.index, covariance.index].to_numpy())
+                / 2,
+                0,
+                None,
+            )
         )
-    )
-    np.fill_diagonal(distance, 0)
+        np.fill_diagonal(distance, 0)
+    # The Euclidean distance between the columns of the distance matrix that the paper
+    # clusters on (its code passes the square matrix to linkage, which reads the rows as
+    # observations and does exactly this).
     order = leaves_list(linkage(pdist(distance), method=linkage_method))
     # The bisection works on positions in numpy: label lookups in pandas took most of
     # the time, which counts in a backtest that runs it on every rebalancing date.
@@ -1912,6 +2208,7 @@ def get_hierarchical_clusters(
     linkage_method: str = "ward",
     clusters: int | None = None,
     correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Cluster the assets on their correlations: a hierarchical clustering on the
@@ -1942,6 +2239,9 @@ def get_hierarchical_clusters(
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, e.g. from get_codependence_distance, in place of the
+            correlation distance of the correlation. Defaults to None.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
@@ -1958,17 +2258,21 @@ def get_hierarchical_clusters(
     if clusters is not None and not 1 <= clusters <= count:
         raise ValueError(f"The number of clusters must lie between 1 and {count}.")
 
-    if correlation is None:
-        volatility = np.sqrt(np.diag(covariance.to_numpy()))
-        correlation = covariance / np.outer(volatility, volatility)
-    distance = np.sqrt(
-        np.clip(
-            (1 - correlation.loc[covariance.index, covariance.index].to_numpy()) / 2,
-            0,
-            None,
+    if distance is not None:
+        distance = distance.loc[covariance.index, covariance.index].to_numpy()
+    else:
+        if correlation is None:
+            volatility = np.sqrt(np.diag(covariance.to_numpy()))
+            correlation = covariance / np.outer(volatility, volatility)
+        distance = np.sqrt(
+            np.clip(
+                (1 - correlation.loc[covariance.index, covariance.index].to_numpy())
+                / 2,
+                0,
+                None,
+            )
         )
-    )
-    np.fill_diagonal(distance, 0)
+        np.fill_diagonal(distance, 0)
     matrix = linkage(squareform(distance, checks=False), method=linkage_method)
 
     if clusters is None:
@@ -1983,8 +2287,8 @@ def get_hierarchical_clusters(
                 level = levels[:, count - k]
                 # Tibshirani, Walther and Hastie's pooled dispersion: per cluster the sum
                 # of the squared distances between its assets over twice its size. The
-                # distance is Euclidean between standardized returns, so this is the
-                # within-cluster sum of squares and falls as clusters split.
+                # correlation distance is Euclidean between standardized returns, so this
+                # is the within-cluster sum of squares and falls as clusters split.
                 dispersion.append(
                     sum(
                         (distance[np.ix_(members, members)] ** 2).sum()
@@ -2009,6 +2313,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     groups: pd.DataFrame | None = None,
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
     correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Equal Risk Contribution (Raffinot, 2018): the assets are clustered on
@@ -2046,6 +2351,9 @@ def get_hierarchical_equal_risk_contribution_weights(
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, e.g. from get_codependence_distance, in place of the
+            correlation distance of the correlation. Defaults to None.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2060,7 +2368,7 @@ def get_hierarchical_equal_risk_contribution_weights(
             "weight cannot be negative."
         )
     matrix, labels = get_hierarchical_clusters(
-        covariance, linkage_method, clusters, correlation
+        covariance, linkage_method, clusters, correlation, distance
     )
     sigma = covariance.to_numpy()
 
@@ -2123,6 +2431,7 @@ def get_nested_clustered_optimization_weights(
     linkage_method: str = "ward",
     clusters: int | None = None,
     correlation: pd.DataFrame | None = None,
+    distance: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Nested Clustered Optimization (López de Prado, 2019): the assets are clustered on
@@ -2158,6 +2467,9 @@ def get_nested_clustered_optimization_weights(
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
+        distance (pd.DataFrame | None, optional): The distance matrix the assets are
+            clustered on, e.g. from get_codependence_distance, in place of the
+            correlation distance of the correlation. Defaults to None.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2184,7 +2496,7 @@ def get_nested_clustered_optimization_weights(
             "maximum Sharpe ratio portfolio."
         )
     _, labels = get_hierarchical_clusters(
-        covariance, linkage_method, clusters, correlation
+        covariance, linkage_method, clusters, correlation, distance
     )
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:

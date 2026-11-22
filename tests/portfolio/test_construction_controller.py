@@ -512,9 +512,13 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "ledoit_wolf_constant_correlation",
         "ledoit_wolf_single_factor",
         "oas",
+        "shrunk",
         "semicovariance",
         "exponential",
         "denoised",
+        "denoised_spectral",
+        "denoised_shrink",
+        "gerber",
     ],
 )
 def test_the_optimizers_take_a_covariance_estimator(
@@ -678,7 +682,7 @@ def test_get_optimization_backtest(recorder, portfolio_module):
         "Benchmark",
     ]
     weights = portfolio_module.get_optimization_backtest(
-        methods=["mean_variance"], expected_returns="james_stein", output="weights"
+        methods=["mean_variance"], expected_returns="bayes_stein", output="weights"
     )
     recorder.capture(weights)
     assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-3)
@@ -721,7 +725,7 @@ def test_expected_return_estimators_change_the_expected_returns(portfolio_module
         method: portfolio_module.get_mean_variance_weights(
             expected_returns=method, include_benchmark=True, rounding=8
         )
-        for method in ("mean", "exponential", "capm", "james_stein")
+        for method in ("mean", "exponential", "capm", "bayes_stein")
     }
     returns = portfolio_module._get_returns("daily", True)
     assert np.allclose(
@@ -731,7 +735,7 @@ def test_expected_return_estimators_change_the_expected_returns(portfolio_module
     assert tables["capm"].loc["Benchmark", "Expected Return"] == pytest.approx(
         tables["mean"].loc["Benchmark", "Expected Return"]
     )
-    for method in ("exponential", "capm", "james_stein"):
+    for method in ("exponential", "capm", "bayes_stein"):
         assert not np.allclose(
             tables[method]["Expected Return"], tables["mean"]["Expected Return"]
         )
@@ -891,7 +895,7 @@ def test_the_ratio_optimizers_take_an_expected_return_estimator(
     extra = {"objective": "maximum_sharpe"} if column is None else {}
     mean = getattr(portfolio_module, method)(include_benchmark=True, **extra)
     shrunk = getattr(portfolio_module, method)(
-        expected_returns="james_stein", include_benchmark=True, **extra
+        expected_returns="bayes_stein", include_benchmark=True, **extra
     )
     assert not np.allclose(mean["Weight"], shrunk["Weight"])
     assert not np.allclose(mean["Expected Return"], shrunk["Expected Return"])
@@ -996,7 +1000,7 @@ def test_the_clustering_optimizers_take_a_codependence(portfolio_module, method)
         )["Weight"]
         assert weights.drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
 
-    assert getattr(portfolio_module, method)(codependence="distance").empty
+    assert getattr(portfolio_module, method)(codependence="euclidean").empty
 
 
 def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
@@ -1100,4 +1104,109 @@ def test_get_brinson_attribution_keeps_a_sector_whose_fund_starts_later(
     assert later.loc["Total", "Total Effect"] == pytest.approx(
         later.loc["Total", "Portfolio Return"] - later.loc["Total", "Benchmark Return"],
         abs=1e-12,
+    )
+
+
+def test_get_expected_returns_estimate(recorder, portfolio_module):
+    table = portfolio_module.get_expected_returns_estimate(include_benchmark=True)
+    recorder.capture(table)
+    recorder.capture(
+        portfolio_module.get_expected_returns_estimate(
+            method=["exponential", "exponential_geometric"], span=60, adjust=False
+        )
+    )
+    weights = portfolio_module.get_mean_variance_weights(
+        expected_returns="james_stein", include_benchmark=True
+    )
+    assert np.allclose(
+        weights["Expected Return"].drop("Portfolio"), table["James-Stein"], atol=1e-4
+    )
+
+
+def test_get_covariance_estimate(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_covariance_estimate(include_benchmark=True))
+    for method in ("shrunk", "gerber", "denoised_shrink", "detoned"):
+        recorder.capture(
+            portfolio_module.get_covariance_estimate(
+                method=method, include_benchmark=True, rounding=6
+            )
+        )
+    correlation = portfolio_module.get_covariance_estimate(
+        method="gerber", gerber_statistic=2, correlation=True, include_benchmark=True
+    )
+    assert np.allclose(np.diag(correlation), 1)
+
+
+def test_get_codependence_matrix(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_codependence_matrix(include_benchmark=True))
+    for method in ("distance", "mutual_information", "lower_tail"):
+        recorder.capture(
+            portfolio_module.get_codependence_matrix(
+                method=method, include_benchmark=True
+            )
+        )
+    distance = portfolio_module.get_codependence_matrix(
+        method="mutual_information", distance=True, include_benchmark=True
+    )
+    recorder.capture(distance)
+    assert np.allclose(np.diag(distance), 0)
+
+
+def test_get_asset_clusters(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_asset_clusters(include_benchmark=True))
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            method="ftca", threshold=0.7, include_benchmark=True
+        )
+    )
+    assert portfolio_module.get_asset_clusters(method="k_means").empty
+
+
+def test_get_coskewness_and_cokurtosis_matrix(recorder, portfolio_module):
+    coskewness = portfolio_module.get_coskewness_matrix()
+    recorder.capture(coskewness)
+    recorder.capture(portfolio_module.get_coskewness_matrix(method="exponential"))
+    cokurtosis = portfolio_module.get_cokurtosis_matrix()
+    recorder.capture(cokurtosis)
+    recorder.capture(portfolio_module.get_cokurtosis_matrix(method="semi"))
+    # The diagonal of the standardized matrices is each asset's moment skewness and
+    # (non-excess) kurtosis.
+    returns = portfolio_module._get_returns("daily", False)
+    assert coskewness.loc["AAPL", ("AAPL", "AAPL")] == pytest.approx(
+        returns["AAPL"].skew()
+        * (len(returns) - 2)
+        / np.sqrt(len(returns) * (len(returns) - 1)),
+        abs=1e-4,
+    )
+    assert cokurtosis.shape == (2, 8)
+
+
+def test_get_estimation_uncertainty(recorder, portfolio_module):
+    table = portfolio_module.get_estimation_uncertainty(simulations=200)
+    recorder.capture(table)
+    assert (table["Lower"] < table["Expected Return"]).all()
+    assert (table["Upper"] > table["Expected Return"]).all()
+    recorder.capture(
+        portfolio_module.get_estimation_uncertainty(
+            method="normal", simulations=200, output="covariance", rounding=6
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "expected_returns",
+    ["geometric", "exponential_geometric", "james_stein", "bodnar_okhrin_parolya"],
+)
+def test_the_optimizers_take_the_shrunk_and_compounded_expected_returns(
+    portfolio_module, expected_returns
+):
+    table = portfolio_module.get_mean_variance_weights(
+        expected_returns=expected_returns, include_benchmark=True, rounding=8
+    )
+    assert table["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
+    assert np.allclose(
+        table["Expected Return"].drop("Portfolio"),
+        portfolio_module.get_expected_returns_estimate(
+            method=expected_returns, include_benchmark=True, rounding=8
+        ).iloc[:, 0],
     )

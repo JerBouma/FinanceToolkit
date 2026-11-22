@@ -9,7 +9,10 @@ from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.optimize import minimize
 from scipy.spatial.distance import pdist, squareform
 
-from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.portfolio.construction.optimization import (
+    estimation_model,
+    optimization_model,
+)
 
 # pylint: disable=missing-function-docstring
 
@@ -493,7 +496,7 @@ def test_every_covariance_estimator_is_annualized(covariance):
 def test_an_unknown_covariance_estimator_is_refused():
     with pytest.raises(ValueError, match="ledoit_wolf"):
         optimization_model.get_expected_returns_and_covariance(
-            SHRINKAGE_RETURNS, 252, "shrunk"
+            SHRINKAGE_RETURNS, 252, "graphical_lasso"
         )
 
 
@@ -1022,20 +1025,20 @@ def test_expected_returns_match_pyportfolioopt_and_riskfolio():
     deviation = average - target
     phi = (assets + 2) / (assets + 2 + periods * deviation @ inverse @ deviation)
     assert np.allclose(
-        estimate("james_stein"), ((1 - phi) * average + phi * target) * 252
+        estimate("bayes_stein"), ((1 - phi) * average + phi * target) * 252
     )
     with pytest.raises(ValueError, match="more periods"):
-        optimization_model.get_expected_returns(returns.iloc[:7], 252, "james_stein")
+        optimization_model.get_expected_returns(returns.iloc[:7], 252, "bayes_stein")
 
 
-def test_james_stein_leaves_equal_averages_and_shrinks_dispersed_ones():
+def test_bayes_stein_leaves_equal_averages_and_shrinks_dispersed_ones():
     returns, _ = _reference_returns()
     equal = returns - returns.mean() + 0.0004
     assert np.allclose(
-        optimization_model.get_expected_returns(equal, 252, "james_stein"), 0.0004 * 252
+        optimization_model.get_expected_returns(equal, 252, "bayes_stein"), 0.0004 * 252
     )
 
-    shrunk = optimization_model.get_expected_returns(returns, 252, "james_stein")
+    shrunk = optimization_model.get_expected_returns(returns, 252, "bayes_stein")
     assert shrunk.std() < (returns.mean() * 252).std()
 
 
@@ -2143,7 +2146,7 @@ def test_codependence_sets_the_correlation_that_is_clustered():
     signs = np.sign(a[:, None] - a[None, :]) * np.sign(b[:, None] - b[None, :])
     assert kendall.loc["A", "B"] == pytest.approx(signs.sum() / (len(a) * (len(a) - 1)))
     with pytest.raises(ValueError, match="codependence"):
-        optimization_model.get_codependence(returns, covariance, "distance")
+        optimization_model.get_codependence(returns, covariance, "euclidean")
 
     # The Pearson correlation of the covariance is the default of the clustering.
     assert np.allclose(
@@ -2273,3 +2276,305 @@ def test_discrete_allocation_solves_a_long_short_portfolio_in_any_currency_amoun
         assert table["Amount"].sum() == pytest.approx(value)
     table = optimization_model.get_discrete_allocation(weights, prices, 19000)
     assert table["Shares"].dropna().tolist() == [190, -24]
+
+
+def test_shrunk_expected_returns_match_skfolio_and_pyportfolioopt():
+    returns, _ = _reference_returns()
+    # skfolio 1.14.4 ShrunkMu(method=JAMES_STEIN).fit(returns).mu_
+    james_stein, shrinkage = estimation_model.get_james_stein_expected_returns(returns)
+    assert np.allclose(
+        james_stein,
+        [0.0004672095, 0.0004761905, 0.0004851714, 0.0004717, 0.000480681],
+        atol=1e-12,
+    )
+    assert 0 < shrinkage < 1
+    # skfolio 1.14.4 ShrunkMu(method=BODNAR_OKHRIN).fit(returns).mu_
+    assert np.allclose(
+        estimation_model.get_bodnar_okhrin_parolya_expected_returns(returns)[0],
+        [0.0084635314, 0.0008708127, -0.0067219059, 0.004667172, -0.0029255466],
+        atol=1e-11,
+    )
+    # PyPortfolioOpt 1.6.0 mean_historical_return and ema_historical_return (span=180),
+    # both with compounding=True.
+    assert np.allclose(
+        optimization_model.get_expected_returns(returns, 252, "geometric"),
+        [0.0775548999, 0.0915498493, 0.1105849751, 0.078348333, 0.1178475834],
+    )
+    assert np.allclose(
+        optimization_model.get_expected_returns(returns, 252, "exponential_geometric"),
+        [0.2357493687, 0.3052073832, 0.6412725694, 0.2321704521, 0.417909466],
+    )
+    # Riskfolio-Lib's "ewma2", the recursive average.
+    assert np.allclose(
+        optimization_model.get_expected_returns(
+            returns, 1, "exponential", adjust=False
+        ),
+        returns.ewm(span=180, adjust=False).mean().iloc[-1],
+    )
+
+
+def test_james_stein_does_not_shrink_two_assets_and_keeps_equal_averages():
+    returns, _ = _reference_returns()
+    _, shrinkage = estimation_model.get_james_stein_expected_returns(
+        returns[["A", "B"]]
+    )
+    assert shrinkage == 0
+    equal = returns - returns.mean() + 0.0004
+    mean, shrinkage = estimation_model.get_james_stein_expected_returns(equal)
+    assert np.allclose(mean, 0.0004) and shrinkage == 1
+    with pytest.raises(ValueError, match="more periods"):
+        estimation_model.get_bodnar_okhrin_parolya_expected_returns(returns.iloc[:5])
+
+
+def test_shrunk_and_gerber_covariances_match_the_libraries():
+    returns, _ = _reference_returns()
+    # PyPortfolioOpt 1.6.0 CovarianceShrinkage(frequency=1).shrunk_covariance(delta=0.1)
+    assert np.allclose(
+        estimation_model.get_shrunk_covariance(returns).iloc[0],
+        [
+            0.000204291923,
+            6.703121356e-05,
+            6.716798336e-05,
+            8.319697091e-05,
+            3.349463266e-05,
+        ],
+        atol=1e-15,
+    )
+    # skfolio 1.14.4 GerberCovariance (psd_variant True and False) and Riskfolio-Lib's
+    # gerber_cov_stat0, with the threshold scaled to standard deviations with ddof=1.
+    for statistic, row in (
+        (
+            1,
+            [
+                0.0002011995639,
+                3.574007167e-05,
+                4.320555061e-05,
+                4.7359949e-05,
+                1.659997325e-05,
+            ],
+        ),
+        (
+            2,
+            [
+                0.0002011995639,
+                4.907652668e-05,
+                5.808555703e-05,
+                6.528850649e-05,
+                2.315134173e-05,
+            ],
+        ),
+        (
+            0,
+            [
+                0.0002011995639,
+                7.828777604e-05,
+                8.859319974e-05,
+                0.0001050483975,
+                3.822480327e-05,
+            ],
+        ),
+    ):
+        assert np.allclose(
+            estimation_model.get_gerber_covariance(returns, 0.5, statistic).iloc[0],
+            row,
+            atol=1e-15,
+        )
+    with pytest.raises(ValueError, match="statistic"):
+        estimation_model.get_gerber_covariance(returns, 0.5, 3)
+
+
+def test_the_nearest_correlation_is_positive_definite():
+    broken = np.array([[1, 0.9, -0.9], [0.9, 1, 0.9], [-0.9, 0.9, 1]])
+    repaired = estimation_model.get_nearest_correlation(broken)
+    assert np.allclose(np.diag(repaired), 1)
+    assert np.linalg.eigvalsh(repaired).min() > 0
+
+
+def test_denoised_and_detoned_covariances_match_the_libraries():
+    returns, _ = _reference_returns()
+    # Riskfolio-Lib 7.4.1 denoiseCov(kind="spectral") and (kind="shrink", alpha=0.1)
+    assert np.allclose(
+        optimization_model.get_denoised_covariance(returns, "spectral")[0].iloc[0],
+        [
+            0.0002011995639,
+            0.0002276367642,
+            0.0002370466696,
+            0.0002351083183,
+            0.0001724777708,
+        ],
+        atol=1e-15,
+    )
+    assert np.allclose(
+        optimization_model.get_denoised_covariance(returns, "shrink", 0.1)[0].iloc[0],
+        [
+            0.0002011995639,
+            0.0001058429583,
+            0.0001141344841,
+            0.0001169234086,
+            4.887645446e-05,
+        ],
+        atol=1e-15,
+    )
+    # skfolio 1.14.4 DetoneCovariance(n_markets=1)
+    assert np.allclose(
+        estimation_model.get_detoned_covariance(returns).iloc[0],
+        [
+            0.0002011995639,
+            -6.742798973e-05,
+            -8.906452328e-05,
+            -5.652099068e-05,
+            -1.930956709e-05,
+        ],
+        atol=1e-15,
+    )
+    with pytest.raises(ValueError, match="denoising"):
+        optimization_model.get_denoised_covariance(returns, "clipped")
+
+
+def test_codependence_matrices_match_the_libraries():
+    returns, _ = _reference_returns()
+    # skfolio 1.14.4 DistanceCorrelation and MutualInformation (Freedman-Diaconis bins)
+    assert np.allclose(
+        estimation_model.get_distance_correlation_matrix(returns).iloc[0],
+        [1.0, 0.2777265578, 0.2784778991, 0.3474408113, 0.1969609606],
+    )
+    information, variation = estimation_model.get_mutual_information_matrix(returns)
+    assert np.allclose(
+        information.iloc[0], [1.0, 0.1209754278, 0.1232466104, 0.1168981788, 0.10587601]
+    )
+    assert np.allclose(
+        variation.iloc[0], [0.0, 0.936807723, 0.9354425946, 0.9380798469, 0.944779884]
+    )
+    # Riskfolio-Lib 7.4.1 mutual_info_matrix(bins_info="HGR") and ltdi_matrix(alpha=0.05)
+    assert np.allclose(
+        estimation_model.get_mutual_information_matrix(returns, "hacine_gharbi")[
+            0
+        ].iloc[0],
+        [1.0, 0.06527586, 0.04542139, 0.07519232, 0.03232228],
+        atol=1e-8,
+    )
+    assert np.allclose(
+        estimation_model.get_lower_tail_dependence_matrix(returns).iloc[0],
+        [1.0, 0.2, 0.12, 0.24, 0.08],
+    )
+
+
+def test_codependence_distances_feed_the_clustering():
+    returns, _ = _reference_returns()
+    covariance = returns.cov()
+    for method in optimization_model.CODEPENDENCE_METHODS:
+        distance = optimization_model.get_codependence_distance(
+            returns, covariance, method
+        )
+        assert np.allclose(np.diag(distance), 0)
+        assert (distance.to_numpy() >= 0).all()
+        weights = optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, distance=distance
+        )
+        assert weights.sum() == pytest.approx(1)
+    # The Pearson distance is the correlation distance the optimizers use without one.
+    pearson = optimization_model.get_codependence_distance(returns, covariance)
+    pd.testing.assert_series_equal(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, distance=pearson
+        ),
+    )
+    dcor = optimization_model.get_codependence(returns, covariance, "distance")
+    assert np.allclose(
+        optimization_model.get_codependence_distance(returns, covariance, "distance"),
+        np.sqrt(1 - dcor),
+    )
+
+
+def test_fast_threshold_clusters_match_ffn():
+    returns, _ = _reference_returns()
+    correlation = returns.corr()
+    # ffn 1.4.1 calc_ftca(returns, threshold) gives {D}, {E}, {B}, {A}, {C} at 0.5 and
+    # {D, A, B, C}, {E} at 0.2.
+    labels = estimation_model.get_fast_threshold_clusters(correlation, 0.5)
+    assert list(correlation.index[np.argsort(labels)]) == ["D", "E", "B", "A", "C"]
+    labels = estimation_model.get_fast_threshold_clusters(correlation, 0.2)
+    assert labels.tolist() == [0, 0, 0, 0, 1]
+
+
+def test_comoment_matrices_match_performance_analytics():
+    returns, _ = _reference_returns()
+    # PerformanceAnalytics M3.MM, M4.MM and M3.ewma (λ = 1 - 2 / 181, of the demeaned
+    # returns), written out as the sums of Kronecker products of the R functions.
+    assert np.allclose(
+        estimation_model.get_coskewness_matrix(returns).iloc[0, :5],
+        [
+            2.714127856e-08,
+            -2.269730157e-07,
+            8.740163754e-09,
+            -9.198416238e-08,
+            -4.919408914e-08,
+        ],
+        atol=1e-17,
+    )
+    assert np.allclose(
+        estimation_model.get_cokurtosis_matrix(returns).iloc[1, :5],
+        [
+            5.142156415e-08,
+            6.726514486e-08,
+            3.971143825e-08,
+            3.833282117e-08,
+            1.515485499e-08,
+        ],
+        atol=1e-17,
+    )
+    assert np.allclose(
+        estimation_model.get_coskewness_matrix(returns, "exponential").iloc[2, :5],
+        [
+            4.874726938e-07,
+            6.265450241e-07,
+            3.675341346e-07,
+            -3.041534362e-08,
+            5.83275354e-08,
+        ],
+        atol=1e-17,
+    )
+    assert np.allclose(
+        estimation_model.get_cokurtosis_matrix(returns, "semi").iloc[0, :5],
+        [
+            6.064906238e-08,
+            3.378784769e-08,
+            2.957372637e-08,
+            3.327197593e-08,
+            1.642869839e-08,
+        ],
+        atol=1e-17,
+    )
+    standardized = estimation_model.get_cokurtosis_matrix(returns, standardize=True)
+    centred = returns - returns.mean()
+    assert standardized.loc["A", ("A", "A", "A")] == pytest.approx(
+        (centred["A"] ** 4).mean() / (centred["A"] ** 2).mean() ** 2
+    )
+
+
+def test_bootstrap_estimates_cover_the_averages():
+    returns, _ = _reference_returns()
+    indices = estimation_model.get_bootstrap_indices(
+        500, "moving", 10, np.random.default_rng(0)
+    )
+    assert len(indices) == 500 and indices.max() < 500
+    # Moving blocks run in consecutive periods.
+    assert (np.diff(indices[:10]) == 1).all()
+    table, lower, upper = estimation_model.get_bootstrap_estimates(
+        returns, simulations=500
+    )
+    assert (table["Lower"] < table["Expected Return"]).all()
+    assert (table["Upper"] > table["Expected Return"]).all()
+    assert (lower.to_numpy() <= upper.to_numpy()).all()
+    # The standard error of an average of nearly independent returns is σ / √T; the
+    # stationary bootstrap of skfolio 1.14.4 gives the same within sampling error.
+    assert np.allclose(
+        table["Standard Error"], returns.std() / np.sqrt(len(returns)), rtol=0.15
+    )
+    normal, _, _ = estimation_model.get_bootstrap_estimates(
+        returns, "normal", simulations=500
+    )
+    assert np.allclose(
+        normal["Standard Error"], returns.std() / np.sqrt(len(returns)), rtol=0.15
+    )

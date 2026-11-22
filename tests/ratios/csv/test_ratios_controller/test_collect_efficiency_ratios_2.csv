@@ -65,6 +65,12 @@ AAPL,Net Capital Expenditure,Lag 3,,,,0.8505
 AAPL,Capex to Depreciation,Lag 1,,0.486,-0.0184,-0.0134
 AAPL,Capex to Depreciation,Lag 2,,,0.4587,-0.0315
 AAPL,Capex to Depreciation,Lag 3,,,,0.4391
+AAPL,Capex to Operating Cash Flow,Lag 1,,0.176,-0.1773,0.1309
+AAPL,Capex to Operating Cash Flow,Lag 2,,,-0.0324,-0.0695
+AAPL,Capex to Operating Cash Flow,Lag 3,,,,0.0942
+AAPL,Intangibles to Total Assets,Lag 1,,,,
+AAPL,Intangibles to Total Assets,Lag 2,,,,
+AAPL,Intangibles to Total Assets,Lag 3,,,,
 AAPL,Asset Growth,Lag 1,,,-0.9403,-1.0976
 AAPL,Asset Growth,Lag 2,,,,-1.0058
 AAPL,Asset Growth,Lag 3,,,,
@@ -137,6 +143,12 @@ MSFT,Net Capital Expenditure,Lag 3,,,,4.386
 MSFT,Capex to Depreciation,Lag 1,,0.4624,-0.0639,0.2276
 MSFT,Capex to Depreciation,Lag 2,,,0.3689,0.1491
 MSFT,Capex to Depreciation,Lag 3,,,,0.6804
+MSFT,Capex to Operating Cash Flow,Lag 1,,0.0559,-0.0017,0.1962
+MSFT,Capex to Operating Cash Flow,Lag 2,,,0.0542,0.1942
+MSFT,Capex to Operating Cash Flow,Lag 3,,,,0.2611
+MSFT,Intangibles to Total Assets,Lag 1,,0.0303,0.2539,-0.1321
+MSFT,Intangibles to Total Assets,Lag 2,,,0.2919,0.0883
+MSFT,Intangibles to Total Assets,Lag 3,,,,0.1213
 MSFT,Asset Growth,Lag 1,,,-0.1364,0.3883
 MSFT,Asset Growth,Lag 2,,,,0.199
 MSFT,Asset Growth,Lag 3,,,,

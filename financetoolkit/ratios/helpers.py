@@ -87,3 +87,71 @@ def map_period_data_to_daily_data(
     )
 
     return daily_period
+
+
+def align_employee_count(
+    employee_count: pd.DataFrame,
+    period_end_dates: pd.DataFrame,
+    quarterly: bool = False,
+) -> pd.DataFrame:
+    """
+    Places the employee counts of the annual filings on the statement periods, so that a
+    figure per employee divides each period's figures by the headcount of that period.
+
+    The employee counts are labelled with the calendar year of the fiscal year end of the
+    annual filing they come from (the period of report), which for a fiscal year ending in
+    January through May is the year after the statement label (NVIDIA's fiscal year ending
+    January 2024 is the statement column 2023). They are therefore matched on the period
+    end dates of the statements, not on the labels:
+
+    - Yearly: a period gets the count of the filing whose fiscal year ends in the same
+      calendar year as the period, the headcount the annual report of that period states.
+    - Quarterly: a quarter gets the count of the latest fiscal year that ended in a calendar
+      year before the one the quarter ends in, or in the same one for a quarter ending in
+      December (a period ending in the first days of January counts as December). A count
+      of a fiscal year ending within the calendar year of the quarter is not yet used, as
+      the quarter can end before that fiscal year does; with a fiscal year ending in
+      September, the quarters ending in March, June and September use the count of the
+      previous fiscal year.
+
+    Args:
+        employee_count (pd.DataFrame): The employee counts with the calendar years of the
+            fiscal year ends as index (a PeriodIndex or years) and the tickers as columns,
+            as `Toolkit.get_employee_count` returns them.
+        period_end_dates (pd.DataFrame): The fiscal period end date of every statement
+            column, with the tickers as index and the periods as columns.
+        quarterly (bool, optional): Whether the statement periods are quarters. Defaults
+            to False.
+
+    Returns:
+        pd.DataFrame: The employee counts with the tickers as index and the statement
+        periods as columns, NaN for a period without a count.
+    """
+    years = pd.Index(
+        [
+            year.year if isinstance(year, pd.Period) else int(year)
+            for year in employee_count.index
+        ]
+    )
+    counts = employee_count.set_axis(years).groupby(level=0).last()
+
+    end_dates = period_end_dates.apply(pd.to_datetime)
+
+    if quarterly:
+        # The calendar year the quarter ends in, minus one unless it ends in December.
+        count_years = (end_dates + pd.Timedelta(days=6)).apply(
+            lambda dates: dates.dt.year - 1
+        )
+    else:
+        count_years = end_dates.apply(lambda dates: dates.dt.year)
+
+    aligned = pd.DataFrame(
+        float("nan"), index=period_end_dates.index, columns=period_end_dates.columns
+    )
+
+    for ticker in aligned.index.intersection(counts.columns):
+        aligned.loc[ticker] = (
+            counts[ticker].reindex(count_years.loc[ticker].to_numpy()).to_numpy()
+        )
+
+    return aligned

@@ -21,6 +21,8 @@ AAPL,Working Capital Turnover Ratio,,,-6.5727,0.5588
 AAPL,Capex Intensity,,0.1381,-0.1039,0.0529
 AAPL,Net Capital Expenditure,,0.9469,-0.9899,-0.4141
 AAPL,Capex to Depreciation,,0.486,-0.0184,-0.0134
+AAPL,Capex to Operating Cash Flow,,0.176,-0.1773,0.1309
+AAPL,Intangibles to Total Assets,,,,
 AAPL,Asset Growth,,,-0.9403,-1.0976
 AAPL,Net Operating Assets,,,-0.0974,-0.0924
 MSFT,Days of Inventory Outstanding,,,0.1736,-0.0691
@@ -45,5 +47,7 @@ MSFT,Working Capital Turnover Ratio,,,0.4219,0.1769
 MSFT,Capex Intensity,,0.1363,-0.018,0.1009
 MSFT,Net Capital Expenditure,,2.3784,0.0548,0.5114
 MSFT,Capex to Depreciation,,0.4624,-0.0639,0.2276
+MSFT,Capex to Operating Cash Flow,,0.0559,-0.0017,0.1962
+MSFT,Intangibles to Total Assets,,0.0303,0.2539,-0.1321
 MSFT,Asset Growth,,,-0.1364,0.3883
 MSFT,Net Operating Assets,,,0.4414,0.166

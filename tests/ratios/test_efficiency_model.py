@@ -1,4 +1,5 @@
 """Efficiency Model Tests""" ""
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -181,3 +182,28 @@ def test_asset_growth_and_net_operating_assets():
     # Operating assets 450 minus operating liabilities 150 (500 - 20 - 100 - 230).
     assert net_operating_assets.iloc[0] == pytest.approx(300 / 400)
     assert pd.isna(net_operating_assets.iloc[1])
+
+
+def test_capex_to_operating_cash_flow_uses_the_capex_magnitude():
+    operating_cash_flow = pd.Series([89035.0, 0.0, -5.0])
+    capex = pd.Series([-23886.0, -10.0, -10.0])
+
+    result = efficiency_model.get_capex_to_operating_cash_flow_ratio(
+        capex, operating_cash_flow
+    )
+
+    # Microsoft 2022, then NaN where the operating cash flow is zero or negative.
+    assert result.iloc[0] == pytest.approx(0.268277, abs=1e-6)
+    assert result.iloc[1:].isna().all()
+
+
+def test_intangibles_to_total_assets_and_amount_per_employee():
+    assert efficiency_model.get_intangibles_to_total_assets_ratio(
+        78822.0, 364840.0
+    ) == pytest.approx(0.216045, abs=1e-6)
+
+    per_employee = efficiency_model.get_amount_per_employee(
+        pd.Series([394328e6, 1.0]), pd.Series([164000.0, 0.0])
+    )
+    assert per_employee.iloc[0] == pytest.approx(394328e6 / 164000)
+    assert np.isnan(per_employee.iloc[1])

@@ -65,6 +65,12 @@ AAPL,Net Capital Expenditure,Lag 3,,,,0.8505
 AAPL,Capex to Depreciation,Lag 1,,0.486,-0.0184,-0.0134
 AAPL,Capex to Depreciation,Lag 2,,,0.4587,-0.0315
 AAPL,Capex to Depreciation,Lag 3,,,,0.4391
+AAPL,Capex to Operating Cash Flow,Lag 1,,0.176,-0.1773,0.1309
+AAPL,Capex to Operating Cash Flow,Lag 2,,,-0.0324,-0.0695
+AAPL,Capex to Operating Cash Flow,Lag 3,,,,0.0942
+AAPL,Intangibles to Total Assets,Lag 1,,,,
+AAPL,Intangibles to Total Assets,Lag 2,,,,
+AAPL,Intangibles to Total Assets,Lag 3,,,,
 AAPL,Asset Growth,Lag 1,,,-0.9403,-1.0976
 AAPL,Asset Growth,Lag 2,,,,-1.0058
 AAPL,Asset Growth,Lag 3,,,,
@@ -104,6 +110,9 @@ AAPL,Operating Margin,Lag 3,,,,0.235
 AAPL,Net Profit Margin,Lag 1,,0.2376,-0.0221,-0.0001
 AAPL,Net Profit Margin,Lag 2,,,0.2102,-0.0222
 AAPL,Net Profit Margin,Lag 3,,,,0.21
+AAPL,Continuing Operations Profit Margin,Lag 1,,0.2376,-0.0221,-0.0001
+AAPL,Continuing Operations Profit Margin,Lag 2,,,0.2102,-0.0222
+AAPL,Continuing Operations Profit Margin,Lag 3,,,,0.21
 AAPL,EBITDA Margin,Lag 1,,0.1665,0.0072,-0.0084
 AAPL,EBITDA Margin,Lag 2,,,0.175,-0.0012
 AAPL,EBITDA Margin,Lag 3,,,,0.1651
@@ -122,6 +131,9 @@ AAPL,Effective Tax Rate,Lag 3,,,,0.0202
 AAPL,Return on Assets,Lag 1,,,0.0109,-0.0303
 AAPL,Return on Assets,Lag 2,,,,-0.0198
 AAPL,Return on Assets,Lag 3,,,,
+AAPL,Operating Return on Assets,Lag 1,,,0.0513,-0.0451
+AAPL,Operating Return on Assets,Lag 2,,,,0.0038
+AAPL,Operating Return on Assets,Lag 3,,,,
 AAPL,Cash Return on Assets,Lag 1,,,0.1259,-0.0971
 AAPL,Cash Return on Assets,Lag 2,,,,0.0167
 AAPL,Cash Return on Assets,Lag 3,,,,
@@ -227,6 +239,15 @@ AAPL,Dividend CAPEX Coverage Ratio,Lag 3,,,,0.128
 AAPL,Debt-to-Capital Ratio,Lag 1,,0.0494,0.0576,-0.1135
 AAPL,Debt-to-Capital Ratio,Lag 2,,,0.1098,-0.0624
 AAPL,Debt-to-Capital Ratio,Lag 3,,,,-0.0161
+AAPL,Long-Term Debt to Capitalization,Lag 1,,0.0532,0.0438,-0.0848
+AAPL,Long-Term Debt to Capitalization,Lag 2,,,0.0993,-0.0448
+AAPL,Long-Term Debt to Capitalization,Lag 3,,,,0.006
+AAPL,Debt-to-Market Cap,Lag 1,,-0.1329,0.37,
+AAPL,Debt-to-Market Cap,Lag 2,,,0.1879,
+AAPL,Debt-to-Market Cap,Lag 3,,,,
+AAPL,Solvency Ratio,Lag 1,,0.3898,-0.0025,0.0177
+AAPL,Solvency Ratio,Lag 2,,,0.3864,0.0152
+AAPL,Solvency Ratio,Lag 3,,,,0.4109
 AAPL,Preferred Dividend Coverage Ratio,Lag 1,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 2,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 3,,,,
@@ -284,6 +305,18 @@ AAPL,Interest Debt per Share,Lag 3,,,,0.0188
 AAPL,CAPEX per Share,Lag 1,,-0.5763,0.0021,-0.0567
 AAPL,CAPEX per Share,Lag 2,,,-0.5729,-0.0544
 AAPL,CAPEX per Share,Lag 3,,,,-0.6621
+AAPL,Operating Cash Flow per Share,Lag 1,,0.3403,0.2129,-0.0657
+AAPL,Operating Cash Flow per Share,Lag 2,,,0.6256,0.1332
+AAPL,Operating Cash Flow per Share,Lag 3,,,,0.5189
+AAPL,Free Cash Flow per Share,Lag 1,,0.3168,0.2385,-0.0774
+AAPL,Free Cash Flow per Share,Lag 2,,,0.6309,0.1426
+AAPL,Free Cash Flow per Share,Lag 3,,,,0.5047
+AAPL,Cash per Share,Lag 1,,-0.2841,-0.2034,0.3157
+AAPL,Cash per Share,Lag 2,,,-0.4297,0.0481
+AAPL,Cash per Share,Lag 3,,,,-0.2497
+AAPL,Tangible Book Value per Share,Lag 1,,0.0036,-0.1703,0.2662
+AAPL,Tangible Book Value per Share,Lag 2,,,-0.1674,0.0506
+AAPL,Tangible Book Value per Share,Lag 3,,,,0.0543
 AAPL,Earnings Yield,Lag 1,,0.2808,0.4882,
 AAPL,Earnings Yield,Lag 2,,,0.9061,
 AAPL,Earnings Yield,Lag 3,,,,
@@ -329,6 +362,9 @@ AAPL,Tangible Asset Value,Lag 3,,,,-0.0489
 AAPL,Net Current Asset Value,Lag 1,,-0.333,-0.0889,0.1188
 AAPL,Net Current Asset Value,Lag 2,,,-0.4514,0.0405
 AAPL,Net Current Asset Value,Lag 3,,,,-0.279
+AAPL,Net-Net Working Capital per Share,Lag 1,,-0.386,-0.1584,0.0962
+AAPL,Net-Net Working Capital per Share,Lag 2,,,-0.6056,-0.0469
+AAPL,Net-Net Working Capital per Share,Lag 3,,,,-0.451
 AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.0275,-0.4005,
 AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3841,
 AAPL,EV-to-Free-Cash-Flow,Lag 3,,,,
@@ -425,6 +461,12 @@ MSFT,Net Capital Expenditure,Lag 3,,,,4.386
 MSFT,Capex to Depreciation,Lag 1,,0.4624,-0.0639,0.2276
 MSFT,Capex to Depreciation,Lag 2,,,0.3689,0.1491
 MSFT,Capex to Depreciation,Lag 3,,,,0.6804
+MSFT,Capex to Operating Cash Flow,Lag 1,,0.0559,-0.0017,0.1962
+MSFT,Capex to Operating Cash Flow,Lag 2,,,0.0542,0.1942
+MSFT,Capex to Operating Cash Flow,Lag 3,,,,0.2611
+MSFT,Intangibles to Total Assets,Lag 1,,0.0303,0.2539,-0.1321
+MSFT,Intangibles to Total Assets,Lag 2,,,0.2919,0.0883
+MSFT,Intangibles to Total Assets,Lag 3,,,,0.1213
 MSFT,Asset Growth,Lag 1,,,-0.1364,0.3883
 MSFT,Asset Growth,Lag 2,,,,0.199
 MSFT,Asset Growth,Lag 3,,,,
@@ -464,6 +506,9 @@ MSFT,Operating Margin,Lag 3,,,,0.1281
 MSFT,Net Profit Margin,Lag 1,,0.1773,0.0064,-0.0692
 MSFT,Net Profit Margin,Lag 2,,,0.1849,-0.0632
 MSFT,Net Profit Margin,Lag 3,,,,0.1028
+MSFT,Continuing Operations Profit Margin,Lag 1,,0.1773,0.0064,-0.0692
+MSFT,Continuing Operations Profit Margin,Lag 2,,,0.1849,-0.0632
+MSFT,Continuing Operations Profit Margin,Lag 3,,,,0.1028
 MSFT,EBITDA Margin,Lag 1,,0.0559,0.0165,-0.021
 MSFT,EBITDA Margin,Lag 2,,,0.0733,-0.0048
 MSFT,EBITDA Margin,Lag 3,,,,0.0508
@@ -482,6 +527,9 @@ MSFT,Effective Tax Rate,Lag 3,,,,0.1497
 MSFT,Return on Assets,Lag 1,,,0.0792,-0.1053
 MSFT,Return on Assets,Lag 2,,,,-0.0345
 MSFT,Return on Assets,Lag 3,,,,
+MSFT,Operating Return on Assets,Lag 1,,,0.0842,-0.0452
+MSFT,Operating Return on Assets,Lag 2,,,,0.0351
+MSFT,Operating Return on Assets,Lag 3,,,,
 MSFT,Cash Return on Assets,Lag 1,,,0.0547,-0.1153
 MSFT,Cash Return on Assets,Lag 2,,,,-0.0669
 MSFT,Cash Return on Assets,Lag 3,,,,
@@ -587,6 +635,15 @@ MSFT,Dividend CAPEX Coverage Ratio,Lag 3,,,,-0.0787
 MSFT,Debt-to-Capital Ratio,Lag 1,,-0.1385,-0.1676,-0.1624
 MSFT,Debt-to-Capital Ratio,Lag 2,,,-0.2829,-0.3028
 MSFT,Debt-to-Capital Ratio,Lag 3,,,,-0.3994
+MSFT,Long-Term Debt to Capitalization,Lag 1,,-0.2216,-0.1554,-0.2318
+MSFT,Long-Term Debt to Capitalization,Lag 2,,,-0.3425,-0.3511
+MSFT,Long-Term Debt to Capitalization,Lag 3,,,,-0.4949
+MSFT,Debt-to-Market Cap,Lag 1,,-0.3625,0.2792,
+MSFT,Debt-to-Market Cap,Lag 2,,,-0.1845,
+MSFT,Debt-to-Market Cap,Lag 3,,,,
+MSFT,Solvency Ratio,Lag 1,,0.2197,0.156,-0.047
+MSFT,Solvency Ratio,Lag 2,,,0.4099,0.1016
+MSFT,Solvency Ratio,Lag 3,,,,0.3436
 MSFT,Preferred Dividend Coverage Ratio,Lag 1,,,,
 MSFT,Preferred Dividend Coverage Ratio,Lag 2,,,,
 MSFT,Preferred Dividend Coverage Ratio,Lag 3,,,,
@@ -644,6 +701,18 @@ MSFT,Interest Debt per Share,Lag 3,,,,-0.1346
 MSFT,CAPEX per Share,Lag 1,,-0.3487,-0.1687,-0.1874
 MSFT,CAPEX per Share,Lag 2,,,-0.5763,-0.3878
 MSFT,CAPEX per Share,Lag 3,,,,-0.8717
+MSFT,Operating Cash Flow per Share,Lag 1,,0.2772,0.1707,-0.0074
+MSFT,Operating Cash Flow per Share,Lag 2,,,0.4952,0.1621
+MSFT,Operating Cash Flow per Share,Lag 3,,,,0.4842
+MSFT,Free Cash Flow per Share,Lag 1,,0.2528,0.1714,-0.0788
+MSFT,Free Cash Flow per Share,Lag 2,,,0.4676,0.0791
+MSFT,Free Cash Flow per Share,Lag 3,,,,0.352
+MSFT,Cash per Share,Lag 1,,-0.0365,-0.1886,0.0718
+MSFT,Cash per Share,Lag 2,,,-0.2182,-0.1303
+MSFT,Cash per Share,Lag 3,,,,-0.1621
+MSFT,Tangible Book Value per Share,Lag 1,,0.2561,0.0478,0.4836
+MSFT,Tangible Book Value per Share,Lag 2,,,0.3161,0.5545
+MSFT,Tangible Book Value per Share,Lag 3,,,,0.9526
 MSFT,Earnings Yield,Lag 1,,-0.0759,0.6799,
 MSFT,Earnings Yield,Lag 2,,,0.5524,
 MSFT,Earnings Yield,Lag 3,,,,
@@ -689,6 +758,9 @@ MSFT,Tangible Asset Value,Lag 3,,,,0.899
 MSFT,Net Current Asset Value,Lag 1,,-5.7628,-2.8746,0.2488
 MSFT,Net Current Asset Value,Lag 2,,,-25.2033,-1.9108
 MSFT,Net Current Asset Value,Lag 3,,,,-18.685
+MSFT,Net-Net Working Capital per Share,Lag 1,,-0.4866,-0.8624,0.0211
+MSFT,Net-Net Working Capital per Share,Lag 2,,,-1.7686,-0.8231
+MSFT,Net-Net Working Capital per Share,Lag 3,,,,-1.7101
 MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2244,-0.391,
 MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2544,
 MSFT,EV-to-Free-Cash-Flow,Lag 3,,,,

@@ -8,6 +8,9 @@ AAPL,Operating Margin,Lag 3,,,,0.235
 AAPL,Net Profit Margin,Lag 1,,0.2376,-0.0221,-0.0001
 AAPL,Net Profit Margin,Lag 2,,,0.2102,-0.0222
 AAPL,Net Profit Margin,Lag 3,,,,0.21
+AAPL,Continuing Operations Profit Margin,Lag 1,,0.2376,-0.0221,-0.0001
+AAPL,Continuing Operations Profit Margin,Lag 2,,,0.2102,-0.0222
+AAPL,Continuing Operations Profit Margin,Lag 3,,,,0.21
 AAPL,EBITDA Margin,Lag 1,,0.1665,0.0072,-0.0084
 AAPL,EBITDA Margin,Lag 2,,,0.175,-0.0012
 AAPL,EBITDA Margin,Lag 3,,,,0.1651
@@ -26,6 +29,9 @@ AAPL,Effective Tax Rate,Lag 3,,,,0.0202
 AAPL,Return on Assets,Lag 1,,,0.0109,-0.0303
 AAPL,Return on Assets,Lag 2,,,,-0.0198
 AAPL,Return on Assets,Lag 3,,,,
+AAPL,Operating Return on Assets,Lag 1,,,0.0513,-0.0451
+AAPL,Operating Return on Assets,Lag 2,,,,0.0038
+AAPL,Operating Return on Assets,Lag 3,,,,
 AAPL,Cash Return on Assets,Lag 1,,,0.1259,-0.0971
 AAPL,Cash Return on Assets,Lag 2,,,,0.0167
 AAPL,Cash Return on Assets,Lag 3,,,,
@@ -101,6 +107,9 @@ MSFT,Operating Margin,Lag 3,,,,0.1281
 MSFT,Net Profit Margin,Lag 1,,0.1773,0.0064,-0.0692
 MSFT,Net Profit Margin,Lag 2,,,0.1849,-0.0632
 MSFT,Net Profit Margin,Lag 3,,,,0.1028
+MSFT,Continuing Operations Profit Margin,Lag 1,,0.1773,0.0064,-0.0692
+MSFT,Continuing Operations Profit Margin,Lag 2,,,0.1849,-0.0632
+MSFT,Continuing Operations Profit Margin,Lag 3,,,,0.1028
 MSFT,EBITDA Margin,Lag 1,,0.0559,0.0165,-0.021
 MSFT,EBITDA Margin,Lag 2,,,0.0733,-0.0048
 MSFT,EBITDA Margin,Lag 3,,,,0.0508
@@ -119,6 +128,9 @@ MSFT,Effective Tax Rate,Lag 3,,,,0.1497
 MSFT,Return on Assets,Lag 1,,,0.0792,-0.1053
 MSFT,Return on Assets,Lag 2,,,,-0.0345
 MSFT,Return on Assets,Lag 3,,,,
+MSFT,Operating Return on Assets,Lag 1,,,0.0842,-0.0452
+MSFT,Operating Return on Assets,Lag 2,,,,0.0351
+MSFT,Operating Return on Assets,Lag 3,,,,
 MSFT,Cash Return on Assets,Lag 1,,,0.0547,-0.1153
 MSFT,Cash Return on Assets,Lag 2,,,,-0.0669
 MSFT,Cash Return on Assets,Lag 3,,,,

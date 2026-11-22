@@ -681,3 +681,72 @@ def get_degree_of_leverage(
     )
 
     return degree_of_leverage.replace([np.inf, -np.inf], np.nan)
+
+
+def get_long_term_debt_to_capitalization_ratio(
+    long_term_debt: pd.Series | pd.DataFrame, total_equity: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the long-term debt to capitalization ratio, the share of a company's
+    permanent capital (long-term debt plus equity) that is financed with long-term debt.
+
+    The formula is as follows:
+
+        Long-Term Debt to Capitalization = Long Term Debt / (Long Term Debt + Total Equity)
+
+    Args:
+        long_term_debt (float or pd.Series): Long-term debt of the company (without the
+            current portion).
+        total_equity (float or pd.Series): Total equity of the company.
+
+    Returns:
+        float | pd.Series: The long-term debt to capitalization ratio.
+    """
+    return long_term_debt / (long_term_debt + total_equity)
+
+
+def get_debt_to_market_cap_ratio(
+    total_debt: pd.Series | pd.DataFrame, market_cap: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the debt to market capitalization ratio, the total debt against the market
+    value of the equity.
+
+    The formula is as follows:
+
+        Debt to Market Cap = Total Debt / Market Capitalization
+
+    Also known as: debt to market value of equity, market debt to equity.
+
+    Args:
+        total_debt (float or pd.Series): Total debt of the company.
+        market_cap (float or pd.Series): Market capitalization of the company.
+
+    Returns:
+        float | pd.Series: The debt to market cap ratio.
+    """
+    return total_debt / market_cap
+
+
+def get_solvency_ratio(
+    net_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    total_liabilities: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the solvency ratio, the cash earnings (net income plus the non-cash
+    depreciation and amortization) against all liabilities.
+
+    The formula is as follows:
+
+        Solvency Ratio = (Net Income + Depreciation and Amortization) / Total Liabilities
+
+    Args:
+        net_income (float or pd.Series): Net income of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and amortization.
+        total_liabilities (float or pd.Series): Total liabilities of the company.
+
+    Returns:
+        float | pd.Series: The solvency ratio.
+    """
+    return (net_income + depreciation_and_amortization) / total_liabilities

@@ -463,3 +463,35 @@ def test_cyclically_adjusted_price_to_earnings_ratio_counts_calendar_years():
     assert cape.loc["XYZ", years[1]] == pytest.approx(10 / 1.5)
     assert pd.isna(cape.loc["XYZ", years[2]])
     assert cape.loc["XYZ", years[3]] == pytest.approx(10 / 3.5)
+
+
+def test_net_net_working_capital_per_share_reference_values():
+    # Apple's fiscal 2022 balance sheet (millions) and diluted shares: (48,304 + 0.75 x 60,932 +
+    # 0.5 x 4,946 - 302,083) / 16,325.819 = -12.594, the hand calculation of FinancialModelingPrep's
+    # grahamNetNet definition (on the diluted instead of the basic shares).
+    result = valuation_model.get_net_net_working_capital_per_share(
+        48304.0, 60932.0, 4946.0, 302083.0, 16325.819
+    )
+    assert result == pytest.approx(-12.593978, abs=1e-6)
+
+    # Graham's upper ends of the liquidation ranges value the current assets higher.
+    upper = valuation_model.get_net_net_working_capital_per_share(
+        48304.0, 60932.0, 4946.0, 302083.0, 16325.819, 0.9, 0.75
+    )
+    assert upper > result
+
+
+def test_per_share_cash_flows_and_tangible_book_value():
+    assert valuation_model.get_operating_cash_flow_per_share(
+        122151.0, 16325.819
+    ) == pytest.approx(7.482075, abs=1e-6)
+    assert valuation_model.get_free_cash_flow_per_share(
+        111443.0, 16325.819
+    ) == pytest.approx(6.826181, abs=1e-6)
+    assert valuation_model.get_cash_per_share(48304.0, 16325.819) == pytest.approx(
+        2.958749, abs=1e-6
+    )
+    # Microsoft 2022: (166,542 - 0 - 78,822) / 7,540.
+    assert valuation_model.get_tangible_book_value_per_share(
+        166542.0, 0.0, 78822.0, 7540.0
+    ) == pytest.approx(11.633952, abs=1e-6)

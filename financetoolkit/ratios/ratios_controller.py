@@ -76,12 +76,14 @@ FACTOR_COLLECTIONS = {
         "get_gross_margin",
         "get_operating_margin",
         "get_net_profit_margin",
+        "get_continuing_operations_profit_margin",
         "get_ebitda_margin",
         "get_free_cash_flow_margin",
         "get_interest_coverage_ratio",
         "get_income_before_tax_profit_margin",
         "get_effective_tax_rate",
         "get_return_on_assets",
+        "get_operating_return_on_assets",
         "get_cash_return_on_assets",
         "get_return_on_equity",
         "get_return_on_invested_capital",
@@ -119,6 +121,9 @@ FACTOR_COLLECTIONS = {
         "get_capex_coverage_ratio",
         "get_capex_dividend_coverage_ratio",
         "get_debt_to_capital_ratio",
+        "get_long_term_debt_to_capitalization_ratio",
+        "get_debt_to_market_cap_ratio",
+        "get_solvency_ratio",
         "get_preferred_dividend_coverage_ratio",
         "get_interest_paid_to_expense_ratio",
         "get_ebitda_interest_coverage_ratio",
@@ -161,6 +166,8 @@ FACTOR_COLLECTIONS = {
         "get_working_capital_turnover_ratio",
         "get_capex_intensity",
         "get_capex_to_depreciation_ratio",
+        "get_capex_to_operating_cash_flow_ratio",
+        "get_intangibles_to_total_assets_ratio",
         "get_net_capital_expenditure",
         "get_asset_growth",
         "get_net_operating_assets",
@@ -203,6 +210,7 @@ class Ratios:
         currency_function: Callable[[], pd.Series] | None = None,
         gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
         consumer_price_index_function: Callable[[str], pd.Series] | None = None,
+        employee_count_function: Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -262,6 +270,11 @@ class Ratios:
                 that takes a country and returns its monthly consumer price index, with the
                 months as index, for the cyclically adjusted price earnings ratio. Defaults to
                 None, which leaves that ratio available without the inflation adjustment only.
+            employee_count_function (Callable[[], pd.DataFrame], optional): A function without
+                arguments that returns the number of employees of each ticker per statement
+                period, with the tickers as index and the periods as columns (see
+                financetoolkit.ratios.helpers.align_employee_count), for the revenue and net
+                income per employee. Defaults to None, which leaves those ratios unavailable.
 
         As an example:
 
@@ -314,6 +327,7 @@ class Ratios:
         self._currency_function = currency_function
         self._gross_domestic_product_function = gross_domestic_product_function
         self._consumer_price_index_function = consumer_price_index_function
+        self._employee_count_function = employee_count_function
         self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
@@ -622,6 +636,32 @@ class Ratios:
             )
 
         return cash_and_short_term_investments
+
+    def _get_employee_count(self) -> pd.DataFrame:
+        """
+        Returns the number of employees of every ticker per statement period, for the figures
+        per employee.
+
+        Returns:
+            pd.DataFrame: The employee counts with the tickers as index and the periods as
+            columns.
+
+        Raises:
+            ValueError: When no employee counts are available.
+        """
+        employee_count = (
+            self._employee_count_function()
+            if self._employee_count_function is not None
+            else None
+        )
+
+        if employee_count is None or employee_count.empty:
+            raise ValueError(
+                "The figures per employee need the employee counts, which are retrieved "
+                "from FinancialModelingPrep (get_employee_count) and are not available."
+            )
+
+        return employee_count
 
     def _get_nissim_penman_inputs(
         self, trailing: int | None
@@ -1299,6 +1339,12 @@ class Ratios:
             )
             efficiency_ratios_dict["Capex to Depreciation"] = (
                 self.get_capex_to_depreciation_ratio(trailing=trailing)
+            )
+            efficiency_ratios_dict["Capex to Operating Cash Flow"] = (
+                self.get_capex_to_operating_cash_flow_ratio(trailing=trailing)
+            )
+            efficiency_ratios_dict["Intangibles to Total Assets"] = (
+                self.get_intangibles_to_total_assets_ratio(trailing=trailing)
             )
             efficiency_ratios_dict["Asset Growth"] = self.get_asset_growth(
                 trailing=trailing
@@ -3890,6 +3936,445 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_capex_to_operating_cash_flow_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the capital expenditure to operating cash flow ratio, the share of the cash
+        from operations that a company reinvests in property, plant and equipment.
+
+        What is not reinvested is the free cash flow, so one minus this ratio is the free cash
+        flow to operating cash flow ratio. A ratio near or above 1 means the company spends all
+        its operating cash on investments, as capital intensive and fast growing companies do.
+
+        The formula is as follows:
+
+        - Capex to Operating Cash Flow = |Capital Expenditure| / Cash Flow from Operations
+
+        Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+        A cash flow from operations of zero or less gives NaN. It is the inverse of the capital
+        expenditure coverage ratio (get_capex_coverage_ratio).
+
+        Also known as: capex to OCF, capex to cash flow from operations, reinvestment of operating cash flow.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Capex to operating cash flow values.
+
+        Notes:
+        - FinancialModelingPrep key metrics, `capexToOperatingCashFlow`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - The capital expenditure enters as its magnitude, so the ratio is positive whichever
+        sign a source reports the capital expenditure with.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSM", "INTC", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_capex_to_operating_cash_flow_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | INTC | 0.636  | 1.6098 | 2.2448 | 2.889  | 1.5104 |
+        | MSFT | 0.2687 | 0.2683 | 0.3209 | 0.3752 | 0.4741 |
+        | TSM  | 0.7638 | 0.6765 | 0.7693 | 0.5235 | 0.5638 |
+        """
+        capex_to_operating_cash_flow = (
+            efficiency_model.get_capex_to_operating_cash_flow_ratio(
+                trailing_sum(
+                    self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+                ),
+                trailing_sum(
+                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
+                    trailing,
+                ),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=capex_to_operating_cash_flow,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_intangibles_to_total_assets_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the intangibles to total assets ratio, the share of the assets that is
+        goodwill or another intangible asset such as patents, brands and customer relationships.
+
+        A high share means the balance sheet holds mostly what was paid for acquisitions above
+        the book value of what was bought, which can be written off, so the tangible measures
+        (tangible book value, return on tangible assets, asset coverage) differ much from the
+        reported ones. Internally developed intangibles are mostly expensed and are not in it.
+
+        The formula is as follows:
+
+        - Intangibles to Total Assets = Goodwill and Intangible Assets / Total Assets
+
+        The goodwill and intangibles are the combined row where it is reported and otherwise
+        the sum of the separate rows. With trailing, both balances are averaged over the
+        trailing period ends.
+
+        Also known as: goodwill and intangibles to assets, intangible intensity.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Intangibles to total assets values.
+
+        Notes:
+        - FinancialModelingPrep key metrics, `intangiblesToTotalAssets`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["ABBV", "PFE", "MRK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_intangibles_to_total_assets_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | ABBV | 0.7393 | 0.7175 | 0.6525 | 0.703  | 0.659  |
+        | MRK  | 0.4182 | 0.3799 | 0.3675 | 0.3248 | 0.3526 |
+        | PFE  | 0.4097 | 0.4804 | 0.5858 | 0.5808 | 0.6005 |
+        """
+        intangibles_to_total_assets = (
+            efficiency_model.get_intangibles_to_total_assets_ratio(
+                trailing_mean(
+                    get_goodwill_and_intangible_assets(self._balance_sheet_statement),
+                    trailing,
+                ),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
+                ),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=intangibles_to_total_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_revenue_per_employee(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the revenue per employee, the revenue a company generates per employee, a
+        measure of the productivity of its workforce.
+
+        It is best compared within an industry: software and platform companies generate far
+        more revenue per employee than retailers or restaurants. A rising revenue per employee
+        means the company grows its sales faster than its headcount.
+
+        The formula is as follows:
+
+        - Revenue per Employee = Revenue / Employee Count
+
+        The revenue is compared with a year's headcount, so quarterly data defaults to the
+        trailing twelve months. The employee counts are retrieved with get_employee_count.
+
+        Also known as: sales per employee, revenue per head.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Revenue per employee values.
+
+        Notes:
+        - The employee counts are those of FinancialModelingPrep's historical employee count,
+        the headcount each annual filing (10-K) states, which can be a year-end or an average
+        count. Each yearly period uses the count of its own annual filing, so no headcount is
+        used before it was published together with the figures it divides. A quarter uses the
+        count of the latest fiscal year that ended in an earlier calendar year (or in its own
+        when it ends in December), so a quarter never uses a count of a fiscal year it can be
+        part of. Periods without a count are NaN.
+        - FinancialModelingPrep historical employee count and OpenBB's equity profile
+        (employees), the inputs of the reference definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["WMT", "AMZN", "COST"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_revenue_per_employee()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AMZN | 292178 | 333539 | 376908 | 409999 | 454901 |
+        | COST | 680309 | 746559 | 766741 | 764123 | 807141 |
+        | WMT  | 249023 | 291090 | 308631 | 324279 |    nan |
+        """
+        # The revenue is compared with a year's headcount, so quarterly data defaults to the
+        # trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
+        revenue_per_employee = efficiency_model.get_amount_per_employee(
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            self._get_employee_count(),
+        )
+
+        return finalize_dataset(
+            dataset=revenue_per_employee,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_income_per_employee(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net income per employee, the profit a company makes per employee, a
+        measure of the productivity of its workforce.
+
+        It combines the revenue per employee with the net profit margin (net income per
+        employee = revenue per employee x net profit margin), so it shows whether a productive
+        workforce also turns its sales into profit. It is best compared within an industry.
+
+        The formula is as follows:
+
+        - Net Income per Employee = Net Income / Employee Count
+
+        The net income is compared with a year's headcount, so quarterly data defaults to the
+        trailing twelve months. The employee counts are retrieved with get_employee_count.
+
+        Also known as: profit per employee, earnings per employee.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net income per employee values.
+
+        Notes:
+        - The employee counts are those of FinancialModelingPrep's historical employee count,
+        the headcount each annual filing (10-K) states, which can be a year-end or an average
+        count. Each yearly period uses the count of its own annual filing, so no headcount is
+        used before it was published together with the figures it divides. A quarter uses the
+        count of the latest fiscal year that ended in an earlier calendar year (or in its own
+        when it ends in December), so a quarter never uses a count of a fiscal year it can be
+        part of. Periods without a count are NaN.
+        - FinancialModelingPrep historical employee count and OpenBB's equity profile
+        (employees), the inputs of the reference definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_income_per_employee()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |             2023 |             2024 |   2025 |
+        |:-----|-------:|-------:|-----------------:|-----------------:|-------:|
+        | AAPL | 614805 | 608555 | 602453           | 571561           | 674759 |
+        | MSFT | 338514 | 329131 | 327425           | 386561           | 446632 |
+        | NVDA | 433943 | 166743 |      1.00541e+06 |      2.02444e+06 |    nan |
+        """
+        # The net income is compared with a year's headcount, so quarterly data defaults to
+        # the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
+        net_income_per_employee = efficiency_model.get_amount_per_employee(
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            self._get_employee_count(),
+        )
+
+        return finalize_dataset(
+            dataset=net_income_per_employee,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_net_capital_expenditure(
         self,
         rounding: int | None = None,
@@ -5464,6 +5949,9 @@ class Ratios:
             profitability_ratios_dict["Net Profit Margin"] = self.get_net_profit_margin(
                 trailing=trailing
             )
+            profitability_ratios_dict["Continuing Operations Profit Margin"] = (
+                self.get_continuing_operations_profit_margin(trailing=trailing)
+            )
             profitability_ratios_dict["EBITDA Margin"] = self.get_ebitda_margin(
                 trailing=trailing
             )
@@ -5481,6 +5969,9 @@ class Ratios:
             )
             profitability_ratios_dict["Return on Assets"] = self.get_return_on_assets(
                 trailing=trailing
+            )
+            profitability_ratios_dict["Operating Return on Assets"] = (
+                self.get_operating_return_on_assets(trailing=trailing)
             )
             profitability_ratios_dict["Cash Return on Assets"] = (
                 self.get_cash_return_on_assets(trailing=trailing)
@@ -5939,6 +6430,112 @@ class Ratios:
 
         return finalize_dataset(
             dataset=net_profit_margin,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_continuing_operations_profit_margin(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the continuing operations profit margin, the net income from continuing
+        operations as a share of revenue.
+
+        The net profit margin includes the result of discontinued operations, such as a
+        business that was sold or is held for sale, including the gain or loss on its sale.
+        Those results do not recur, so the continuing operations profit margin is the margin
+        of the business the company keeps. Both are equal for a company without discontinued
+        operations.
+
+        The formula is as follows:
+
+        - Continuing Operations Profit Margin = Net Income from Continuing Operations / Revenue
+
+        Also known as: continuous operations profit margin, net margin from continuing operations.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Continuing operations profit margin values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `continuousOperationsProfitMargin`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GE", "JNJ", "DHR"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_continuing_operations_profit_margin()
+        ```
+
+        Which returns:
+
+        |     |    2021 |   2022 |   2023 |   2024 |   2025 |
+        |:----|--------:|-------:|-------:|-------:|-------:|
+        | DHR |  0.2155 | 0.2375 | 0.1767 | 0.1633 | 0.1465 |
+        | GE  | -0.0875 | 0.0464 | 0.2673 | 0.172  | 0.1874 |
+        | JNJ |  0.2261 | 0.2047 | 0.1565 | 0.1584 | 0.2846 |
+        """
+        continuing_operations_profit_margin = (
+            profitability_model.get_continuing_operations_profit_margin(
+                trailing_sum(
+                    self._income_statement.loc[
+                        :, "Net Income from Continuing Operations", :
+                    ],
+                    trailing,
+                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=continuing_operations_profit_margin,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -6508,6 +7105,119 @@ class Ratios:
 
         return finalize_dataset(
             dataset=return_on_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_operating_return_on_assets(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the operating return on assets, the operating income against the average
+        total assets.
+
+        Operating income is before interest and taxes, so unlike the return on assets the
+        operating return on assets does not depend on how the company is financed or where it
+        pays its taxes: two companies with the same operations but different leverage have the
+        same operating return on assets. It is the asset-based counterpart of the return on
+        capital employed.
+
+        The formula is as follows:
+
+        - Operating Return on Assets = Operating Income / Average Total Assets
+
+        The total assets are averaged over the opening and closing balance of the period, as
+        for the return on assets.
+
+        Also known as: OROA, operating ROA, EBIT to average total assets.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Operating return on assets values.
+
+        Notes:
+        - FinancialModelingPrep key metrics, `operatingReturnOnAssets`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the total assets of the period, this method by the
+        average of the opening and closing total assets, as the return on assets does.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["HD", "LOW", "TGT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_operating_return_on_assets()
+        ```
+
+        Which returns:
+
+        |     |   2021 |   2022 |   2023 |   2024 |
+        |:----|-------:|-------:|-------:|-------:|
+        | HD  | 0.3235 | 0.3241 | 0.2836 | 0.2494 |
+        | LOW | 0.2647 | 0.23   | 0.2703 | 0.2466 |
+        | TGT | 0.1703 | 0.0718 | 0.105  | 0.0984 |
+        """
+        # The balances are averaged over the period ends that open and close the trailing
+        # periods, as the default averages the opening and closing balance of one period.
+        operating_return_on_assets = profitability_model.get_operating_return_on_assets(
+            trailing_sum(
+                self._income_statement.loc[:, "Operating Income", :], trailing
+            ),
+            trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Assets", :],
+                trailing + 1 if trailing else 2,
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=operating_return_on_assets,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -9534,6 +10244,15 @@ class Ratios:
             solvency_ratios_dict["Debt-to-Capital Ratio"] = (
                 self.get_debt_to_capital_ratio(trailing=trailing)
             )
+            solvency_ratios_dict["Long-Term Debt to Capitalization"] = (
+                self.get_long_term_debt_to_capitalization_ratio(trailing=trailing)
+            )
+            solvency_ratios_dict["Debt-to-Market Cap"] = (
+                self.get_debt_to_market_cap_ratio(diluted=diluted)
+            )
+            solvency_ratios_dict["Solvency Ratio"] = self.get_solvency_ratio(
+                trailing=trailing
+            )
             solvency_ratios_dict["Preferred Dividend Coverage Ratio"] = (
                 self.get_preferred_dividend_coverage_ratio(trailing=trailing)
             )
@@ -11257,6 +11976,339 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_long_term_debt_to_capitalization_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the long-term debt to capitalization ratio, the share of a company's
+        permanent capital (long-term debt plus equity) that is financed with long-term debt.
+
+        Unlike the debt to capital ratio, which counts all debt, it leaves out the short-term
+        debt and the current portion of the long-term debt, so it shows how the company funds
+        itself for the long run. It lies between 0 and 1 while the equity is positive.
+
+        The formula is as follows:
+
+        - Long-Term Debt to Capitalization = Long Term Debt / (Long Term Debt + Total Equity)
+
+        The equity is the total equity, including minority interest, as for the debt to
+        capital ratio. With trailing, both balances are averaged over the trailing period ends.
+
+        Also known as: long-term debt to capital, LT debt to capitalization.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Long-term debt to capitalization ratio values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `longTermDebtToCapitalRatio`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["T", "VZ", "TMUS"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_long_term_debt_to_capitalization_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | T    | 0.451  | 0.5468 | 0.5171 | 0.4963 | 0.5319 |
+        | TMUS | 0.4981 | 0.4895 | 0.5246 | 0.5458 | 0.5782 |
+        | VZ   | 0.6329 | 0.6034 | 0.5948 | 0.5469 | 0.5689 |
+        """
+        long_term_debt_to_capitalization = (
+            solvency_model.get_long_term_debt_to_capitalization_ratio(
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Long Term Debt", :], trailing
+                ),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
+                ),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=long_term_debt_to_capitalization,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_debt_to_market_cap_ratio(
+        self,
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the debt to market capitalization ratio, the total debt against the market
+        value of the equity.
+
+        The debt to equity ratio compares the debt with the book value of the equity, which
+        buybacks and write-offs can make small or negative; the market value of the equity is
+        what the shareholders' claim is worth, so this ratio is the leverage at market values
+        that capital structure and cost of capital calculations use.
+
+        The formula is as follows:
+
+        - Debt to Market Cap = Total Debt / Market Capitalization
+
+        The market capitalization is the one of get_market_cap: the close at the end of each
+        fiscal period (or of each day with show_daily) times the weighted average (diluted)
+        shares.
+
+        Also known as: debt to market value of equity, market debt to equity, D/E at market value.
+
+        Args:
+            show_daily (bool, optional): Whether to show daily values: the close of each trading day
+                against the balance sheet of the latest period that has ended on or before that
+                day (also when it ended before the start date), so no figures are used before
+                their period closes. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Debt to market capitalization ratio values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `debtToMarketCap`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "GM", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_debt_to_market_cap_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | F    | 1.6648 | 3.0091 | 3.0676 | 4.041  | 3.2099 |
+        | GM   | 1.2826 | 2.3648 | 2.4941 | 2.1731 | 1.6465 |
+        | TSLA | 0.0074 | 0.0134 | 0.0111 | 0.0096 | 0.0053 |
+        """
+        market_cap = self.get_market_cap(diluted=diluted, show_daily=show_daily)
+
+        # The debt on the date of the market value, the end of each period.
+        total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
+
+        if show_daily:
+            total_debt = map_period_data_to_daily_data(
+                period_data=total_debt,
+                daily_dates=market_cap.index,
+                quarterly=self._quarterly,
+                period_end_dates=self._period_end_dates,
+            )
+
+        debt_to_market_cap = solvency_model.get_debt_to_market_cap_ratio(
+            total_debt, market_cap
+        )
+
+        return finalize_dataset(
+            dataset=debt_to_market_cap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows" if show_daily else "columns",
+            row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_solvency_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the solvency ratio, the cash earnings (net income plus the non-cash
+        depreciation and amortization) against all liabilities.
+
+        The solvency ratio shows how much of its total obligations, short and long term, a
+        company could pay from a year of cash earnings. A higher ratio is safer; around 0.2
+        is often named as a healthy level, though it differs widely by industry.
+
+        The formula is as follows:
+
+        - Solvency Ratio = (Net Income + Depreciation and Amortization) / Total Liabilities
+
+        The depreciation and amortization come from the cash flow statement. The ratio compares
+        a year of earnings with the liabilities, so quarterly data defaults to the trailing twelve
+        months; the liabilities are those at the end of the period.
+
+        Also known as: cash flow to total liabilities (with net income plus depreciation as the cash flow).
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Solvency ratio values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `solvencyRatio`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["DUK", "SO", "NEE"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_solvency_ratio()
+        ```
+
+        Which returns:
+
+        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:----|-------:|-------:|-------:|-------:|-------:|
+        | DUK | 0.0799 | 0.0656 | 0.0696 | 0.0801 | 0.0787 |
+        | NEE | 0.0818 | 0.0816 | 0.1136 | 0.0983 | 0.0942 |
+        | SO  | 0.067  | 0.0756 | 0.0861 | 0.0891 | 0.0888 |
+        """
+        # The ratio compares a year of cash earnings with the liabilities, so quarterly data
+        # defaults to the trailing twelve months.
+        trailing = self._get_valuation_trailing(trailing)
+
+        solvency_ratio = solvency_model.get_solvency_ratio(
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+                trailing,
+            ),
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :],
+        )
+
+        return finalize_dataset(
+            dataset=solvency_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_preferred_dividend_coverage_ratio(
         self,
         rounding: int | None = None,
@@ -12538,6 +13590,22 @@ class Ratios:
             valuation_ratios_dict["CAPEX per Share"] = self.get_capex_per_share(
                 diluted=diluted, trailing=trailing
             )
+            valuation_ratios_dict["Operating Cash Flow per Share"] = (
+                self.get_operating_cash_flow_per_share(
+                    diluted=diluted, trailing=trailing
+                )
+            )
+            valuation_ratios_dict["Free Cash Flow per Share"] = (
+                self.get_free_cash_flow_per_share(diluted=diluted, trailing=trailing)
+            )
+            valuation_ratios_dict["Cash per Share"] = self.get_cash_per_share(
+                diluted=diluted, trailing=trailing
+            )
+            valuation_ratios_dict["Tangible Book Value per Share"] = (
+                self.get_tangible_book_value_per_share(
+                    diluted=diluted, trailing=trailing
+                )
+            )
             valuation_ratios_dict["Earnings Yield"] = self.get_earnings_yield(
                 include_dividends=include_dividends, diluted=diluted, trailing=trailing
             )
@@ -12592,6 +13660,11 @@ class Ratios:
             )
             valuation_ratios_dict["Net Current Asset Value"] = (
                 self.get_net_current_asset_value(trailing=trailing)
+            )
+            valuation_ratios_dict["Net-Net Working Capital per Share"] = (
+                self.get_net_net_working_capital_per_share(
+                    diluted=diluted, trailing=trailing
+                )
             )
             valuation_ratios_dict["EV-to-Free-Cash-Flow"] = (
                 self.get_ev_to_free_cash_flow_ratio(diluted=diluted, trailing=trailing)
@@ -14495,6 +15568,470 @@ class Ratios:
 
         return finalize_dataset(
             dataset=capex_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_operating_cash_flow_per_share(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the operating cash flow per share, the cash a company generates from its
+        operations per outstanding share.
+
+        Cash flow from operations is less affected by accruals and non-cash charges than net
+        income, so the operating cash flow per share is a check on the earnings per share: a
+        company whose earnings per share runs well ahead of its operating cash flow per share
+        for years books profits that do not turn into cash. It is the denominator of the
+        price to cash flow ratio.
+
+        The formula is as follows:
+
+        - Operating Cash Flow per Share = Cash Flow from Operations / Weighted Average (Diluted) Shares
+
+        Also known as: cash flow per share, CFPS, operating cash flow per share.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Operating cash flow per share values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `operatingCashFlowPerShare`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_operating_cash_flow_per_share()
+        ```
+
+        Which returns:
+
+        |       |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|
+        | AAPL  |  6.1689 |  7.4821 |  6.9908 |  7.6748 |  7.4298 |
+        | GOOGL |  6.7622 |  6.953  |  7.9976 | 10.0666 | 13.4679 |
+        | MSFT  | 10.0868 | 11.8084 | 11.7214 | 15.872  | 18.2401 |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        operating_cash_flow_per_share = (
+            valuation_model.get_operating_cash_flow_per_share(
+                trailing_sum(
+                    self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
+                    trailing,
+                ),
+                average_shares,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=operating_cash_flow_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_free_cash_flow_per_share(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the free cash flow per share, the cash a company generates after its capital
+        expenditure per outstanding share.
+
+        The free cash flow is what is left for the shareholders and lenders after the
+        investments that keep and grow the business, so the free cash flow per share is the
+        amount per share that could be paid out, used for buybacks or to pay down debt. It is
+        the denominator of the price to free cash flow ratio.
+
+        The formula is as follows:
+
+        - Free Cash Flow per Share = Free Cash Flow / Weighted Average (Diluted) Shares
+
+        Also known as: FCF per share, FCFPS.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Free cash flow per share values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `freeCashFlowPerShare`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "AMD", "AVGO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_free_cash_flow_per_share()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |     2025 |
+        |:-----|-------:|-------:|-------:|-------:|---------:|
+        | AMD  | 2.62   | 1.9828 | 0.6898 | 1.4692 |   4.1167 |
+        | AVGO | 3.1051 | 3.8563 | 4.1295 | 4.0632 |   5.5458 |
+        | NVDA | 0.3208 | 0.1519 | 1.0834 | 2.4534 | nan      |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        free_cash_flow_per_share = valuation_model.get_free_cash_flow_per_share(
+            trailing_sum(
+                self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+            ),
+            average_shares,
+        )
+
+        return finalize_dataset(
+            dataset=free_cash_flow_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_cash_per_share(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash per share, the cash and short-term investments (marketable
+        securities) a company holds per outstanding share.
+
+        Comparing the cash per share with the share price shows which part of the price is
+        backed by cash; set against the debt per share (see get_interest_debt_per_share) it
+        shows whether the cash covers the debt.
+
+        The formula is as follows:
+
+        - Cash per Share = (Cash and Cash Equivalents + Short Term Investments) / Weighted Average (Diluted) Shares
+
+        The cash and short-term investments are added from their two rows, as for the
+        enterprise value, so a missing combined row never leaves the cash out. With trailing,
+        the cash and the shares are averaged over the trailing period ends, as for the book
+        value per share.
+
+        Also known as: cash and short-term investments per share.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Cash per share values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `cashPerShare`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["META", "GOOGL", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_cash_per_share()
+        ```
+
+        Which returns:
+
+        |       |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|
+        | AMZN  |  9.3251 |  6.8727 |  8.2711 |  9.4396 | 11.3632 |
+        | GOOGL | 10.3036 |  8.6452 |  8.7184 |  7.6851 | 10.3715 |
+        | META  | 16.7884 | 15.077  | 24.8775 | 29.7686 | 31.6985 |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        cash_per_share = valuation_model.get_cash_per_share(
+            trailing_mean(self._get_cash_and_short_term_investments(), trailing),
+            trailing_mean(average_shares, trailing),
+        )
+
+        return finalize_dataset(
+            dataset=cash_per_share,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_tangible_book_value_per_share(
+        self,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the tangible book value per share, the common equity without goodwill and
+        other intangible assets per outstanding share.
+
+        Goodwill and acquired intangibles cannot be sold separately and are written off first
+        when a company gets into trouble, so the tangible book value per share is the more
+        conservative measure of what each share owns. It is the denominator of the price to
+        tangible book ratio and the usual book value measure for banks and insurers.
+
+        The formula is as follows:
+
+        - Tangible Book Value = Total Shareholder Equity - Preferred Stock - Goodwill and Intangible Assets
+        - Tangible Book Value per Share = Tangible Book Value / Weighted Average (Diluted) Shares
+
+        The tangible book value is the one of get_price_to_tangible_book_ratio. It is negative
+        when the goodwill and intangibles exceed the common equity (common after large
+        acquisitions or buybacks) and is returned as it is. With trailing, the balances and
+        the shares are averaged over the trailing period ends, as for the book value per share.
+
+        Also known as: TBVPS, tangible equity per share, tangible book per share.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Tangible book value per share values.
+
+        Notes:
+        - FinancialModelingPrep ratios, `tangibleBookValuePerShare`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - CFA Institute, "Equity Valuation: Applications and Processes," CFA Program
+        Curriculum (price to book value: adjusting book value for intangible assets).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "BAC", "WFC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_tangible_book_value_per_share()
+        ```
+
+        Which returns:
+
+        |     |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:----|--------:|--------:|--------:|--------:|--------:|
+        | BAC | 20.6039 | 21.5216 | 24.0366 | 25.929  | 27.5915 |
+        | JPM | 66.9391 | 68.7101 | 80.2192 | 90.3605 | 99.9227 |
+        | WFC | 32.7057 | 32.6104 | 35.6424 | 36.788  | 41.4046 |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        tangible_book_value_per_share = (
+            valuation_model.get_tangible_book_value_per_share(
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
+                    trailing,
+                ),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Preferred Stock", :], trailing
+                ),
+                trailing_mean(
+                    get_goodwill_and_intangible_assets(self._balance_sheet_statement),
+                    trailing,
+                ),
+                trailing_mean(average_shares, trailing),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=tangible_book_value_per_share,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -16565,6 +18102,148 @@ class Ratios:
 
         return finalize_dataset(
             dataset=net_current_asset_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_net_working_capital_per_share(
+        self,
+        receivables_weight: float = 0.75,
+        inventory_weight: float = 0.5,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Benjamin Graham's net-net working capital per share, the current assets
+        discounted to a rough liquidation value minus all liabilities, per share.
+
+        Graham and Dodd (1934) estimate what a company's assets would fetch in a liquidation:
+        cash at its full amount, receivables at about 75 to 90% and inventories at about 50 to
+        75% of their book value, while every liability has to be paid in full. Fixed assets
+        are left out. A share price below the net-net working capital per share means the
+        market values the company below what its current assets alone would return, Graham's
+        "net-net" bargain. The defaults take the lower ends of the ranges, as
+        FinancialModelingPrep's key metrics do; get_net_current_asset_value is the undiscounted
+        total.
+
+        The formula is as follows:
+
+        - Net-Net Working Capital = Cash and Short Term Investments + Receivables Weight x Net Receivables
+          + Inventory Weight x Inventory - Total Liabilities
+        - Net-Net Working Capital per Share = Net-Net Working Capital / Weighted Average (Diluted) Shares
+
+        The value is negative for most companies, whose liabilities exceed their current
+        assets. With trailing, the balances and the shares are averaged over the trailing
+        period ends, as for the book value per share.
+
+        Also known as: Graham net-net, NNWC, net-net working capital, net-net value per share.
+
+        Args:
+            receivables_weight (float, optional): The share of the net receivables counted.
+                Defaults to 0.75.
+            inventory_weight (float, optional): The share of the inventory counted. Defaults
+                to 0.5.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net-net working capital per share values.
+
+        Notes:
+        - Graham, B. and Dodd, D. (1934). "Security Analysis." McGraw-Hill, chapter 43
+        (current-asset value and liquidating value).
+        - FinancialModelingPrep key metrics, `grahamNetNet`, the reference definition, also
+        exposed through OpenBB's fmp provider
+        (https://site.financialmodelingprep.com/developer/docs).
+        - FinancialModelingPrep divides by the basic weighted average shares; diluted=False
+        gives its definition.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["INTC", "WBA", "GME"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_net_working_capital_per_share()
+        ```
+
+        Which returns:
+
+        |      |     2021 |     2022 |     2023 |     2024 |     2025 |
+        |:-----|---------:|---------:|---------:|---------:|---------:|
+        | GME  |  -0.2138 |   0.1853 |   0.6992 |  10.4258 | nan      |
+        | INTC |  -7.6482 |  -9.8878 | -11.5047 | -14.1784 |  -8.6015 |
+        | WBA  | -55.3362 | -56.9405 | -68.6223 | -66.2724 | nan      |
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        # The cash, receivables and inventory are discounted to a liquidation value, the
+        # liabilities count in full.
+        net_net_working_capital_per_share = (
+            valuation_model.get_net_net_working_capital_per_share(
+                trailing_mean(self._get_cash_and_short_term_investments(), trailing),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Net Receivables", :], trailing
+                ),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Inventory", :], trailing
+                ),
+                trailing_mean(
+                    self._balance_sheet_statement.loc[:, "Total Liabilities", :],
+                    trailing,
+                ),
+                trailing_mean(average_shares, trailing),
+                receivables_weight=receivables_weight,
+                inventory_weight=inventory_weight,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=net_net_working_capital_per_share,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

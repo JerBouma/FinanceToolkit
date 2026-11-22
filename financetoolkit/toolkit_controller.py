@@ -766,6 +766,27 @@ class Toolkit:
 
             return consumer_price_index[country]
 
+        def employee_count() -> pd.DataFrame:
+            # Imported when first used, as only the figures per employee need it.
+            from financetoolkit.ratios.helpers import (  # noqa: PLC0415
+                align_employee_count,
+            )
+
+            # The counts are matched on the fiscal period end dates, as they are labelled with
+            # the year of the fiscal year end rather than the statement period.
+            counts = self.get_employee_count()
+
+            if counts is None or counts.empty:
+                return pd.DataFrame()
+
+            return align_employee_count(
+                counts,
+                self._get_period_end_dates(
+                    self._get_module_statement("income_statement", "Ratios")
+                ),
+                quarterly=self._quarterly,
+            )
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
@@ -796,6 +817,7 @@ class Toolkit:
             currency_function=self._get_listing_currencies,
             gross_domestic_product_function=gross_domestic_product,
             consumer_price_index_function=consumer_price_index,
+            employee_count_function=employee_count,
         )
 
         if self._portfolio_weights:

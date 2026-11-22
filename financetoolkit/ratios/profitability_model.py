@@ -990,3 +990,48 @@ def get_percent_accruals(
         float | pd.Series: The percent accruals value.
     """
     return (net_income - operating_cash_flow) / net_income.abs().where(net_income != 0)
+
+
+def get_operating_return_on_assets(
+    operating_income: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the operating return on assets, the operating income (before interest and
+    taxes) against the average total assets.
+
+    The formula is as follows:
+
+        Operating Return on Assets = Operating Income / Average Total Assets
+
+    Args:
+        operating_income (float or pd.Series): Operating income of the company.
+        average_total_assets (float or pd.Series): Average total assets of the company.
+
+    Returns:
+        float | pd.Series: The operating return on assets.
+    """
+    return operating_income / average_total_assets
+
+
+def get_continuing_operations_profit_margin(
+    net_income_from_continuing_operations: pd.Series | pd.DataFrame,
+    revenue: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the continuing operations profit margin, the net income from continuing
+    operations (without the result of discontinued operations) as a share of revenue.
+
+    The formula is as follows:
+
+        Continuing Operations Profit Margin = Net Income from Continuing Operations / Revenue
+
+    Args:
+        net_income_from_continuing_operations (float or pd.Series): Net income from
+            continuing operations of the company.
+        revenue (float or pd.Series): Revenue of the company.
+
+    Returns:
+        float | pd.Series: The continuing operations profit margin.
+    """
+    return net_income_from_continuing_operations / revenue

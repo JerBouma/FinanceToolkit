@@ -2423,3 +2423,163 @@ def test_trailing_windows_of_a_half_yearly_reporter_count_calendar_quarters():
 
     # A trailing twelve months needs all four quarters, which a half-yearly reporter lacks.
     assert reported.get_price_to_earnings_ratio().isna().all().all()
+
+
+def test_get_operating_cash_flow_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share())
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share(diluted=False))
+    recorder.capture(ratios_module.get_operating_cash_flow_per_share(trailing=2))
+
+
+def test_get_free_cash_flow_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_per_share())
+    recorder.capture(ratios_module.get_free_cash_flow_per_share(growth=True))
+
+
+def test_get_cash_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_cash_per_share())
+    recorder.capture(ratios_module.get_cash_per_share(trailing=2))
+
+
+def test_get_tangible_book_value_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_tangible_book_value_per_share())
+    recorder.capture(ratios_module.get_tangible_book_value_per_share(diluted=False))
+
+
+def test_get_net_net_working_capital_per_share(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_net_working_capital_per_share())
+    recorder.capture(
+        ratios_module.get_net_net_working_capital_per_share(
+            receivables_weight=0.9, inventory_weight=0.75
+        )
+    )
+
+
+def test_get_long_term_debt_to_capitalization_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_long_term_debt_to_capitalization_ratio())
+    recorder.capture(
+        ratios_module.get_long_term_debt_to_capitalization_ratio(trailing=2)
+    )
+
+
+def test_get_debt_to_market_cap_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_debt_to_market_cap_ratio())
+    recorder.capture(ratios_module.get_debt_to_market_cap_ratio(show_daily=True))
+
+
+def test_get_solvency_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_solvency_ratio())
+    recorder.capture(ratios_module.get_solvency_ratio(trailing=2))
+
+
+def test_get_capex_to_operating_cash_flow_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_capex_to_operating_cash_flow_ratio())
+    recorder.capture(ratios_module.get_capex_to_operating_cash_flow_ratio(trailing=2))
+
+
+def test_get_intangibles_to_total_assets_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_intangibles_to_total_assets_ratio())
+    recorder.capture(ratios_module.get_intangibles_to_total_assets_ratio(trailing=2))
+
+
+def test_get_operating_return_on_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_operating_return_on_assets())
+    recorder.capture(ratios_module.get_operating_return_on_assets(trailing=2))
+
+
+def test_get_continuing_operations_profit_margin(recorder, ratios_module):
+    recorder.capture(ratios_module.get_continuing_operations_profit_margin())
+    recorder.capture(ratios_module.get_continuing_operations_profit_margin(growth=True))
+
+
+def _with_employee_counts(ratios_module):
+    # The headcounts the annual filings of the test companies state, on the statement periods.
+    ratios = copy.copy(ratios_module)
+    periods = ratios._income_statement.columns
+    employee_count = pd.DataFrame(
+        [[147000, 154000, 164000, 161000], [163000, 181000, 221000, 221000]],
+        index=["AAPL", "MSFT"],
+        columns=periods,
+    )
+    ratios._employee_count_function = lambda: employee_count
+    return ratios
+
+
+def test_get_revenue_per_employee(recorder, ratios_module):
+    ratios = _with_employee_counts(ratios_module)
+    recorder.capture(ratios.get_revenue_per_employee())
+    recorder.capture(ratios.get_revenue_per_employee(growth=True))
+
+    # Revenue / employees: Apple's 2022 revenue of 394,328 million over 164,000 employees.
+    assert ratios.get_revenue_per_employee(rounding=None).loc[
+        "AAPL", ratios._income_statement.columns[2]
+    ] == pytest.approx(394328e6 / 164000)
+
+
+def test_get_net_income_per_employee(recorder, ratios_module):
+    ratios = _with_employee_counts(ratios_module)
+    recorder.capture(ratios.get_net_income_per_employee())
+
+
+def test_figures_per_employee_are_empty_without_employee_counts(ratios_module):
+    assert ratios_module.get_revenue_per_employee().empty
+    assert ratios_module.get_net_income_per_employee().empty
+
+
+def test_align_employee_count_matches_the_fiscal_year_ends():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    # The counts are labelled with the year of the fiscal year end: NVIDIA's fiscal year
+    # ending January 2023 is labelled 2023 but is the statement column 2022.
+    counts = pd.DataFrame(
+        {"AAPL": [154000, 164000, 161000], "NVDA": [22473, 26196, 29600]},
+        index=pd.PeriodIndex(["2021", "2022", "2023"], freq="Y"),
+    )
+    yearly = pd.DataFrame(
+        {
+            pd.Period("2021", "Y"): ["2021-09-25", "2022-01-30"],
+            pd.Period("2022", "Y"): ["2022-09-24", None],
+        },
+        index=["AAPL", "NVDA"],
+    )
+    aligned = align_employee_count(counts, yearly)
+    assert aligned.loc["AAPL"].tolist() == [154000, 164000]
+    assert aligned.loc["NVDA", pd.Period("2021", "Y")] == 26196
+    assert pd.isna(aligned.loc["NVDA", pd.Period("2022", "Y")])
+
+    # A quarter uses the latest count of a fiscal year that ended in an earlier calendar
+    # year, or in its own when the quarter ends in December (or the first days of January).
+    quarterly = pd.DataFrame(
+        {
+            pd.Period("2022Q3", "Q"): ["2022-09-24", "2022-10-30"],
+            pd.Period("2022Q4", "Q"): ["2022-12-31", "2023-01-01"],
+        },
+        index=["AAPL", "NVDA"],
+    )
+    aligned = align_employee_count(counts, quarterly, quarterly=True)
+    assert aligned.loc["AAPL"].tolist() == [154000, 164000]
+    assert aligned.loc["NVDA"].tolist() == [22473, 26196]
+
+
+def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
+    test_toolkit, monkeypatch
+):
+    # The counts as get_employee_count returns them: per year of the fiscal year end.
+    counts = pd.DataFrame(
+        {
+            "AAPL": [147000, 154000, 164000, 161000],
+            "MSFT": [163000, 181000, 221000, 221000],
+        },
+        index=pd.PeriodIndex(["2020", "2021", "2022", "2023"], freq="Y", name="Period"),
+    )
+    monkeypatch.setattr(test_toolkit, "get_employee_count", lambda: counts)
+
+    revenue_per_employee = test_toolkit.ratios.get_revenue_per_employee(rounding=None)
+
+    revenue = test_toolkit.ratios._income_statement.loc[:, "Revenue", :]
+    expected = revenue / counts.T.set_axis(revenue.columns, axis=1)
+    pd.testing.assert_frame_equal(
+        revenue_per_employee,
+        expected.loc[:, revenue_per_employee.columns],
+        check_names=False,
+    )

@@ -220,11 +220,11 @@ And below a few of them are shown with their latest value and their course over 
   <img alt="Profitability Ratios" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/ratios-light.png">
 </picture>
 
-A high return on equity can come from margins, from turnover or from debt. [Models](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) combine the ratios to tell these apart: the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_extended_dupont_analysis) splits the return on equity into five components that multiply into it: interest burden, tax burden, operating margin, asset turnover and equity multiplier.
+A high return on equity can come from margins, from turnover or from debt. [Models](https://www.jeroenbouma.com/projects/financetoolkit/docs/models) combine the ratios to tell these apart: the [Extended DuPont Analysis](https://www.jeroenbouma.com/projects/financetoolkit/docs/models#get_dupont_analysis) splits the return on equity into five components that multiply into it: interest burden, tax burden, operating margin, asset turnover and equity multiplier.
 
 ```python
 # Get the Extended DuPont Analysis for all tickers
-extended_dupont_analysis = companies.models.get_extended_dupont_analysis()
+extended_dupont_analysis = companies.models.get_dupont_analysis(method="extended")
 
 # Show the results for Nvidia
 extended_dupont_analysis.loc["NVDA"]
@@ -285,7 +285,7 @@ And below both are plotted for each year, the maximum drawdown together with the
   <img alt="Sharpe Ratio and Maximum Drawdown" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/risk-light.png">
 </picture>
 
-Together the two modules cover 140+ metrics, such as [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk), [GARCH](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch), [L-moments](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_l_moment), [Jensen's Alpha](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_jensens_alpha), the [Capital Asset Pricing Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model) and the [Fama-French factors](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model). Most of them also accept `rolling=<n>` for a value that moves through time.
+Together the two modules cover 140+ metrics, such as [Value at Risk](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_value_at_risk), [GARCH](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_garch), [L-moments](https://www.jeroenbouma.com/projects/financetoolkit/docs/risk#get_l_moment), [Jensen's Alpha](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_alpha), the [Capital Asset Pricing Model](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_capital_asset_pricing_model) and the [Fama-French factors](https://www.jeroenbouma.com/projects/financetoolkit/docs/performance#get_fama_and_french_model). Most of them also accept `rolling=<n>` for a value that moves through time.
 
 ## What the Option Market Expects
 

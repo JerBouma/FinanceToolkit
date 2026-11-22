@@ -847,7 +847,7 @@ class Toolkit:
             end_date="2025-12-31",
         )
 
-        dupont_analysis = toolkit.models.get_extended_dupont_analysis()
+        dupont_analysis = toolkit.models.get_dupont_analysis(method="extended")
 
         dupont_analysis.loc['AMZN']
         ```

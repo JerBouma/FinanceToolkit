@@ -460,7 +460,7 @@ def test_limit_keeps_whole_periods_of_rows_per_date_and_item():
     assert latest.index.get_level_values(0).astype(str).unique().tolist() == ["2026"]
 
 
-def test_the_slow_egarch_fits_are_not_offered():
+def test_the_garch_methods_are_offered_as_one_indicator_with_a_method():
     import asyncio
     import importlib
     import sys
@@ -481,7 +481,10 @@ def test_the_slow_egarch_fits_are_not_offered():
     indicators = risk.inputSchema["properties"]["indicator"]["enum"]
 
     assert "get_garch" in indicators
-    assert not [name for name in indicators if "egarch" in name]
+    assert not [name for name in indicators if "egarch" in name or "gjr" in name]
+    # The method of a GARCH fit is a string like that of every other indicator, not one
+    # indicator's own choices; the slow EGARCH is refused by value (test_server_limits).
+    assert "string" in str(risk.inputSchema["properties"]["method"])
 
 
 def test_the_last_rows_of_stacked_tickers_are_selected_per_ticker():
@@ -566,3 +569,15 @@ def test_rank_true_on_a_single_ticker_says_it_was_not_applied(monkeypatch):
 
     assert "rank=true was not applied" in answer
     assert '"Rank"' not in answer
+
+
+def test_the_choices_of_one_indicator_become_the_type_of_their_values():
+    from typing import Literal
+
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _simplify_annotation,
+    )
+
+    assert _simplify_annotation(Literal["garch", "gjr"]) is str
+    assert _simplify_annotation(Literal["a"] | None) == (str | None)
+    assert _simplify_annotation(Literal["a", "b"] | str | None) == (str | None)

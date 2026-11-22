@@ -67,7 +67,7 @@ FACTOR_COLLECTIONS = {
         "get_treynor_ratio",
         "get_information_ratio",
         "get_tracking_error",
-        "get_jensens_alpha",
+        "get_alpha:jensen",
         "get_calmar_ratio",
         "get_omega_ratio",
         "get_win_rate",
@@ -638,8 +638,9 @@ class Performance:
                 lag=lag,
                 standardize=standardize,
             ),
-            "Jensen's Alpha": self.get_jensens_alpha(
+            "Jensen's Alpha": self.get_alpha(
                 period=period,
+                method="jensen",
                 rounding=rounding,
                 growth=growth,
                 lag=lag,
@@ -2445,7 +2446,7 @@ class Performance:
         period: str | None = None,
         show_full_results: bool = False,
         rolling: int | None = None,
-        method: str = "standard",
+        method: Literal["standard", "annualized", "jensen"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2472,27 +2473,42 @@ class Performance:
         the dates from the first to the last return of each ticker, so a ticker listed later is
         compared over its own history.
 
-        See definition: https://en.wikipedia.org/wiki/Alpha_(finance)
+        With method="jensen" it is Jensen's Alpha (Jensen, 1968) instead, the return of each period
+        above the return the Capital Asset Pricing Model (CAPM) expects given the asset's Beta, which
+        assesses whether an investment outperformed or underperformed for its systematic risk:
+
+            - Jensen's Alpha = Asset's Actual Return — [Risk-Free Rate + Beta * (Benchmark Return — Risk-Free Rate)]
+
+        Where Beta is estimated from the daily returns within each period (see `get_beta`).
+
+        See definition: https://en.wikipedia.org/wiki/Alpha_(finance) and
+        https://en.wikipedia.org/wiki/Jensen%27s_alpha
 
         For more information, see the following sources:
 
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
         2nd edition, John Wiley & Sons.
+        - Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period 1945-1964." The Journal
+        of Finance, 23(2), 389-416.
         - PerformanceAnalytics: ActivePremium (ActiveReturn) (https://github.com/braverock/PerformanceAnalytics).
 
-        Also known as: excess return, outperformance, active return, active premium.
+        Also known as: excess return, outperformance, active return, active premium, Jensen's alpha,
+        Jensen alpha, jensens alpha, risk-adjusted excess return.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
             show_full_results (bool, optional): Whether to show the actual and benchmark returns next to the
-                Alpha. Defaults to False.
-            rolling (int, optional): The rolling window size to use for the calculation. If set,
-            Alpha is calculated as the rolling mean excess return over this many periods across
-            the full return history instead of per `period`. Defaults to None.
-            method (str, optional): "standard" for the difference of the returns of each period, or
+                Alpha. Only used when method="standard" or "annualized". Defaults to False.
+            rolling (int, optional): The rolling window size to use for the calculation, in periods, across
+            the full return history instead of per `period`. With method="standard" Alpha is the rolling
+            mean excess return over this many periods; with method="jensen" it is the window of the Beta,
+            estimated from the period returns of the last `rolling` periods instead of from the daily
+            returns within each period. Not used with method="annualized". Defaults to None.
+            method (str, optional): "standard" for the difference of the returns of each period,
             "annualized" for the Active Premium, the difference of the annualized returns over the
-            whole date range, one value per ticker (`period` and `rolling` are then not used).
+            whole date range, one value per ticker (`period` and `rolling` are then not used), or
+            "jensen" for Jensen's Alpha, the return of each period above the CAPM expected return.
             Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -2509,13 +2525,18 @@ class Performance:
         Returns:
             pd.DataFrame: Alpha values. With method="annualized" a Series with the Active Premium per
             ticker, or with show_full_results=True a DataFrame with the annualized return of each
-            ticker and of the benchmark next to it.
+            ticker and of the benchmark next to it. With method="jensen" Jensen's Alpha values, with
+            the periods without a value left out.
 
         Notes:
         - The method retrieves historical data and calculates the Alpha for each asset in the Toolkit instance.
         - method="annualized" agrees with PerformanceAnalytics' ActivePremium on the daily returns (252 observations
         a year). PerformanceAnalytics compares on the dates both have a return; the Toolkit annualizes each on
         its own calendar within the ticker's history, so a cryptocurrency keeps its weekend returns.
+        - With method="jensen", a daily period has no Beta within it, as the standard deviation of a single day is
+        close to zero, so it gives no useful insights. The risk-free rate is the Toolkit's risk_free_rate, the
+        10-year US Treasury yield by default. Many textbook definitions (Sharpe, 1994; the Ken French factors) use a
+        short-term Treasury bill instead, which the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2543,8 +2564,45 @@ class Performance:
         | 2024   |  0.1474 |  0.4911 | -0.2715 |
         | 2025   | -0.2311 |  0.0677 | -0.4221 |
         """
-        if method not in ("standard", "annualized"):
-            raise ValueError("Method must be standard or annualized.")
+        if method not in ("standard", "annualized", "jensen"):
+            raise ValueError("Method must be standard, annualized or jensen.")
+
+        if method == "jensen":
+            period = period if period else "quarterly" if self._quarterly else "yearly"
+
+            # With a rolling window the Beta comes from the period returns of the window,
+            # otherwise from the daily returns within each period.
+            within_period = not rolling
+            returns = self._get_column(period, "Return", within_period=within_period)
+            benchmark_returns = self._get_column(
+                period, "Return", within_period=within_period, benchmark=True
+            )
+            beta = (
+                performance_model.get_rolling_beta(returns, benchmark_returns, rolling)
+                if rolling
+                else performance_model.get_beta(returns, benchmark_returns)
+            )
+
+            jensens_alpha = performance_model.get_jensens_alpha(
+                self._get_column(period, "Return", within_period=False),
+                self._risk_free_rate_data[period],
+                beta,
+                self._get_column(period, "Return", within_period=False, benchmark=True),
+            )
+
+            return finalize_dataset(
+                dataset=jensens_alpha,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                standardize=standardize,
+                axis="rows",
+                row_slice=True,
+                dropna=True,
+            )
 
         if method == "annualized":
             daily_returns, annualized_return = self._get_whole_sample_returns()
@@ -2632,132 +2690,6 @@ class Performance:
             standardize=standardize,
             axis="rows",
             row_slice=True,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_jensens_alpha(
-        self,
-        period: str | None = None,
-        rolling: int | None = None,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate Jensen's Alpha, a measure of an asset's performance relative to its expected return
-        based on the Capital Asset Pricing Model (CAPM).
-
-        Jensen's Alpha is used to assess whether an investment has outperformed or underperformed
-        its expected return given its systematic risk, as represented by the asset's Beta.
-
-        The formula is as follows:
-
-            - Jensen's Alpha = Asset's Actual Return — [Risk-Free Rate + Beta * (Benchmark Return — Risk-Free Rate)]
-
-        See definition: https://en.wikipedia.org/wiki/Jensen%27s_alpha
-
-        Also known as: Jensen alpha, risk-adjusted excess return.
-
-        Args:
-            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
-                initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling window size to use for the Beta component of the
-            calculation. If set, Beta is estimated over a rolling window of this many periods across
-            the full return history instead of per `period`. Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Jensen's Alpha values.
-
-        Notes:
-        - Daily Jensen's Alpha is not an option as the standard deviation for 1 day is close to zero. Therefore, it does
-        not give any useful insights.
-        - The method retrieves historical data and calculates the CAPM for each asset in the Toolkit instance.
-        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
-        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
-        the Toolkit uses when initialised with risk_free_rate="13w".
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["UNH", "JNJ", "PFE"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2020-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.performance.get_jensens_alpha()
-        ```
-
-        Which returns:
-
-        | Date   |     UNH |     JNJ |     PFE |
-        |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2601 | -0.0092 |  0.6494 |
-        | 2022   |  0.1608 |  0.0946 | -0.0263 |
-        | 2023   | -0.095  | -0.2012 | -0.5535 |
-        | 2024   | -0.0914 | -0.0806 | -0.1165 |
-        | 2025   | -0.4154 |  0.4249 | -0.0975 |
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-
-        if rolling:
-            returns = self._get_column(period, "Return", within_period=False)
-            benchmark_returns = self._get_column(
-                period, "Return", within_period=False, benchmark=True
-            )
-
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
-            )
-        else:
-            returns = self._get_column(period, "Return", within_period=True)
-            benchmark_returns = self._get_column(
-                period, "Return", within_period=True, benchmark=True
-            )
-
-            beta = performance_model.get_beta(returns, benchmark_returns)
-
-        period_returns = self._get_column(period, "Return", within_period=False)
-
-        risk_free_rate = self._risk_free_rate_data[period]
-        benchmark_returns = self._get_column(
-            period, "Return", within_period=False, benchmark=True
-        )
-
-        jensens_alpha = performance_model.get_jensens_alpha(
-            period_returns, risk_free_rate, beta, benchmark_returns
-        )
-
-        return finalize_dataset(
-            dataset=jensens_alpha,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
         )
 
     @handle_portfolio
@@ -8432,7 +8364,7 @@ class Performance:
         (residual, unsystematic) standard deviation left over from the CAPM regression
         that produced that Alpha.
 
-        Jensen's Alpha (see `get_jensens_alpha`) measures how much return a manager
+        Jensen's Alpha (see `get_alpha` with method="jensen") measures how much return a manager
         generated above what CAPM would predict given the asset's Beta. However, a large
         Alpha achieved with wildly noisy, unpredictable residual returns is far less
         attractive than the same Alpha achieved consistently. The Appraisal Ratio
@@ -8446,7 +8378,7 @@ class Performance:
 
         Where the residual standard deviation is the standard deviation of the pointwise
         CAPM regression residuals (Asset Excess Return − Beta * Benchmark Excess Return),
-        reusing the exact same CAPM regression formula as `get_jensens_alpha`.
+        reusing the exact same CAPM regression formula as `get_alpha` with method="jensen".
 
         Bacon (2008) scales Jensen's Alpha by two other risk measures as well, which `method`
         selects:
@@ -8501,7 +8433,7 @@ class Performance:
         zero. Therefore, it does not give any useful insights.
         - The method retrieves historical data and calculates Jensen's Alpha and the CAPM
         regression residuals for each asset in the Toolkit instance, reusing the same Beta and
-        CAPM formula as `get_jensens_alpha`.
+        CAPM formula as `get_alpha` with method="jensen".
         - PerformanceAnalytics' AppraisalRatio annualizes the returns over the whole sample and takes the
         population standard deviation of the residuals; the Toolkit uses the return, Beta and residuals of
         each period. The three methods follow the same formulas.
@@ -8668,7 +8600,7 @@ class Performance:
         selection or timing skill. Diversification is the extra return the manager left on
         the table (if positive, it is a cost) by taking on unsystematic risk that a fully
         diversified portfolio of the same total risk would not have. Selectivity plus
-        Diversification equals Jensen's Alpha (see `get_jensens_alpha`).
+        Diversification equals Jensen's Alpha (see `get_alpha` with method="jensen").
 
         Also known as: Fama's Net Selectivity, Fama performance decomposition.
 

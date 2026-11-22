@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.helpers import trailing_mean, trailing_sum
@@ -36,6 +38,7 @@ class ProfitabilityModels:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        method: Literal["standard", "extended"] = "standard",
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -43,22 +46,38 @@ class ProfitabilityModels:
 
         The Dupont analysis is a method used to dissect and understand the factors that drive a company's
         return on equity (ROE). It breaks down the ROE into three key components: Net Profit Margin, Asset
-        Turnover, and Equity Multiplier.
+        Turnover, and Equity Multiplier. The extended (five-factor) Dupont analysis, method="extended",
+        splits the Net Profit Margin further into three separate drivers — the Tax Burden, the Interest
+        Burden and the Operating Profit Margin — so that the effect of taxation, of financing costs and of
+        operating performance on the return on equity can be read separately.
 
         The formula is as follows:
+
+        With method="standard":
 
             - Net Profit Margin = Net Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
             - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
             - ROE = Net Profit Margin * Asset Turnover * Equity Multiplier
 
-        The value of the decomposition is in comparing the three factors with peers and over time: a
+        With method="extended":
+
+            - Interest Burden Ratio = Income Before Tax / Operating Income
+            - Tax Burden Ratio = Net Income / Income Before Tax
+            - Operating Profit Margin = Operating Income / Revenue
+            - Asset Turnover = Revenue / Average Total Assets
+            - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
+            - ROE = Interest Burden Ratio * Tax Burden Ratio * Operating Profit Margin *
+            Asset Turnover * Equity Multiplier
+
+        The value of the decomposition is in comparing the factors with peers and over time: a
         retailer earns its return on equity through asset turnover, a software company through its margin
         and a bank through leverage. A rising return on equity driven only by the Equity Multiplier, for
         example through share buybacks that shrink equity, is of lower quality than one driven by margin or
         turnover, and with negative equity the decomposition stops being meaningful.
 
-        Also known as: DuPont, ROE decomposition, three-factor DuPont.
+        Also known as: DuPont, ROE decomposition, three-factor DuPont, extended DuPont, five-factor DuPont,
+        ROE breakdown.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -74,6 +93,8 @@ class ProfitabilityModels:
                 of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM). The window counts calendar periods, so a period without a report makes it
                 NaN. Defaults to None.
+            method (str, optional): "standard" for the three-factor decomposition or "extended" for the
+                five-factor decomposition. Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -81,11 +102,20 @@ class ProfitabilityModels:
 
         Returns:
             pd.DataFrame: DataFrame containing Dupont analysis results, including Net Profit Margin, Asset
-                          Turnover, Equity Multiplier, and the calculated ROE values.
+                          Turnover, Equity Multiplier, and the calculated ROE values. With
+                          method="extended" the Interest Burden Ratio, Tax Burden Ratio and Operating
+                          Profit Margin take the place of the Net Profit Margin.
 
         Notes:
             - The Net Profit Margin is the ratio of Net Income to Total Revenue, indicating the percentage
             of revenue that translates into profit.
+            - The Interest Burden Ratio (Income Before Tax / Operating Income) measures how much of
+            operating profit survives the cost of debt financing. It equals 1 for a company with no
+            net interest expense and falls as interest costs rise.
+            - The Tax Burden Ratio (Net Income / Income Before Tax) measures how much of pre-tax
+            profit survives taxation, i.e. it equals (1 - Effective Tax Rate).
+            - The Operating Profit Margin measures operating performance before financing and tax
+            effects.
             - Asset Turnover measures the efficiency of a company's use of its assets to generate sales
             revenue.
             - The Equity Multiplier measures financial leverage, the use of debt to finance a company's
@@ -93,6 +123,8 @@ class ProfitabilityModels:
             - The equity is the Total Shareholder Equity, which excludes minority interests, as the
             Net Income is the income attributable to the shareholders; this is the Return on Equity
             of the Ratios module.
+            - Multiplying the Interest Burden Ratio, Tax Burden Ratio and Operating Profit Margin back
+            together reproduces the Net Profit Margin, so both decompositions resolve to the same ROE.
 
         As an example:
 
@@ -118,21 +150,41 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
+        if method not in ("standard", "extended"):
+            raise ValueError("Method must be standard or extended.")
+
         # The balances are averaged over the period ends that open and close the (trailing) periods,
         # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
         # that the components multiply to the Return on Equity that module reports.
         period_ends = (trailing or 1) + 1
-        dupont_analysis = dupont_model.get_dupont_analysis(
-            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
-            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
-            trailing_mean(
-                self._balance_sheet_statement.loc[:, "Total Assets", :], period_ends
-            ),
-            trailing_mean(
-                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
-                period_ends,
-            ),
+        income = self._income_statement
+        balance = self._balance_sheet_statement
+        net_income = trailing_sum(income.loc[:, "Net Income", :], trailing)
+        revenue = trailing_sum(income.loc[:, "Revenue", :], trailing)
+        average_total_assets = trailing_mean(
+            balance.loc[:, "Total Assets", :], period_ends
         )
+        average_total_equity = trailing_mean(
+            balance.loc[:, "Total Shareholder Equity", :], period_ends
+        )
+
+        if method == "extended":
+            dupont_analysis = dupont_model.get_extended_dupont_analysis(
+                operating_income=trailing_sum(
+                    income.loc[:, "Operating Income", :], trailing
+                ),
+                income_before_tax=trailing_sum(
+                    income.loc[:, "Income Before Tax", :], trailing
+                ),
+                net_income=net_income,
+                total_revenue=revenue,
+                average_total_assets=average_total_assets,
+                average_total_equity=average_total_equity,
+            )
+        else:
+            dupont_analysis = dupont_model.get_dupont_analysis(
+                net_income, revenue, average_total_assets, average_total_equity
+            )
 
         if growth:
             dupont_analysis = calculate_growth(
@@ -157,155 +209,6 @@ class ProfitabilityModels:
             dupont_analysis = dupont_analysis.droplevel(level=0)
 
         return dupont_analysis.loc[:, self._start_date : self._end_date]
-
-    @handle_errors
-    def get_extended_dupont_analysis(
-        self,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        trailing: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
-        while considering additional financial metrics.
-
-        The Extended Dupont analysis splits the three-factor decomposition's Net Profit Margin
-        into three separate drivers — the Tax Burden, the Interest Burden and the Operating
-        Profit Margin — so that the effect of taxation, of financing costs and of operating
-        performance on the return on equity (ROE) can be read separately.
-
-        The formula is as follows:
-
-            - Interest Burden Ratio = Income Before Tax / Operating Income
-            - Tax Burden Ratio = Net Income / Income Before Tax
-            - Operating Profit Margin = Operating Income / Revenue
-            - Asset Turnover = Revenue / Average Total Assets
-            - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
-            - ROE = Interest Burden Ratio * Tax Burden Ratio * Operating Profit Margin *
-            Asset Turnover * Equity Multiplier
-
-        Also known as: extended DuPont, five-factor DuPont, ROE breakdown.
-
-        Args:
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            trailing (int | None, optional): The number of periods to sum flows (income statement items)
-                over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
-                period ends that open and close those periods, so trailing=1 equals the default average
-                of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM). The window counts calendar periods, so a period without a report makes it
-                NaN. Defaults to None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: DataFrame containing Extended Dupont analysis results, including the Interest
-                        Burden Ratio, Tax Burden Ratio, Operating Profit Margin, Asset Turnover, Equity
-                        Multiplier, and the calculated ROE values.
-
-        Notes:
-            - The Interest Burden Ratio (Income Before Tax / Operating Income) measures how much of
-            operating profit survives the cost of debt financing. It equals 1 for a company with no
-            net interest expense and falls as interest costs rise.
-            - The Tax Burden Ratio (Net Income / Income Before Tax) measures how much of pre-tax
-            profit survives taxation, i.e. it equals (1 - Effective Tax Rate).
-            - The Operating Profit Margin measures operating performance before financing and tax
-            effects.
-            - Asset Turnover measures the efficiency of a company's use of its assets to generate
-            sales revenue.
-            - The Equity Multiplier represents the use of debt to finance a company's operations,
-            which can amplify returns as well as risks.
-            - The equity is the Total Shareholder Equity, which excludes minority interests, as the
-            Net Income is the income attributable to the shareholders; this is the Return on Equity
-            of the Ratios module.
-            - Multiplying the first three components back together reproduces the Net Profit Margin
-            of the three-factor `get_dupont_analysis`, so both decompositions resolve to the same ROE.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.models.get_extended_dupont_analysis()
-        ```
-
-        Which returns:
-
-        |                         |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:------------------------|-------:|-------:|-------:|-------:|-------:|
-        | Interest Burden Ratio   | 1.017  | 1.004  | 1.0089 | 0.985  | 0.9619 |
-        | Tax Burden Ratio        | 0.8617 | 0.8689 | 0.8102 | 0.8177 | 0.8237 |
-        | Operating Profit Margin | 0.4159 | 0.4206 | 0.4177 | 0.4464 | 0.4562 |
-        | Asset Turnover          | 0.5293 | 0.5676 | 0.5456 | 0.5305 | 0.4981 |
-        | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
-        | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
-        """
-        # The balances are averaged over the period ends that open and close the (trailing) periods,
-        # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
-        # that the components multiply to the Return on Equity that module reports.
-        period_ends = (trailing or 1) + 1
-        income = self._income_statement
-        balance = self._balance_sheet_statement
-        extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-            operating_income=trailing_sum(
-                income.loc[:, "Operating Income", :], trailing
-            ),
-            income_before_tax=trailing_sum(
-                income.loc[:, "Income Before Tax", :], trailing
-            ),
-            net_income=trailing_sum(income.loc[:, "Net Income", :], trailing),
-            total_revenue=trailing_sum(income.loc[:, "Revenue", :], trailing),
-            average_total_assets=trailing_mean(
-                balance.loc[:, "Total Assets", :], period_ends
-            ),
-            average_total_equity=trailing_mean(
-                balance.loc[:, "Total Shareholder Equity", :], period_ends
-            ),
-        )
-
-        if growth:
-            extended_dupont_analysis = calculate_growth(
-                dataset=extended_dupont_analysis,
-                lag=lag,
-                rounding=rounding if rounding is not None else self._rounding,
-                axis="columns",
-            )
-        else:
-            extended_dupont_analysis = apply_rounding(
-                extended_dupont_analysis,
-                rounding if rounding is not None else self._rounding,
-            )
-
-        if standardize:
-            extended_dupont_analysis = calculate_standardization(
-                dataset=extended_dupont_analysis.loc[
-                    :, self._start_date : self._end_date
-                ],
-                rounding=rounding if rounding is not None else self._rounding,
-                axis="columns",
-            )
-
-        if len(self._tickers) == 1:
-            extended_dupont_analysis = extended_dupont_analysis.droplevel(level=0)
-
-        return extended_dupont_analysis.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_nissim_penman_decomposition(

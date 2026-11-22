@@ -2502,322 +2502,6 @@ class OptimizationConstruction:
         )
 
     @handle_errors
-    def get_minimum_cvar_weights(
-        self,
-        confidence_level: float = 0.95,
-        period: str = "daily",
-        minimum_weight: float | dict[str, float] = 0.0,
-        maximum_weight: float | dict[str, float] = 1.0,
-        sector_bounds: dict[str, tuple[float, float]] | None = None,
-        country_bounds: dict[str, tuple[float, float]] | None = None,
-        net_exposure: float = 1.0,
-        gross_exposure: float | None = None,
-        current_weights: dict[str, float] | None = None,
-        maximum_turnover: float | None = None,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the weights of the minimum Conditional Value at Risk (CVaR) portfolio:
-        the fully invested portfolio whose average loss in the worst periods is the
-        smallest. Unlike variance, CVaR only looks at the losses in the tail, so it accounts
-        for skewed and fat-tailed returns.
-
-        The problem is solved as a linear programme over the historical returns: minimize
-        VaR + 1/((1 - α)T) Σ max(0, -r_t'w - VaR), with α the confidence level and T the
-        number of periods.
-
-        For more information, see the following paper:
-
-        - Rockafellar, R.T. and Uryasev, S. (2000). "Optimization of Conditional
-          Value-at-Risk." Journal of Risk, 2(3), 21-41.
-
-        Also known as: minimum expected shortfall portfolio, mean-CVaR, tail risk
-        optimization.
-
-        Args:
-            confidence_level (float, optional): The confidence level of the CVaR, e.g. 0.95
-                for the average of the worst 5% of periods. Defaults to 0.95.
-            period (str, optional): The frequency of the returns (daily, weekly, monthly,
-                quarterly or yearly). Defaults to "daily".
-            minimum_weight (float | dict[str, float], optional): The lowest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
-                negative value allows short positions. Defaults to 0.
-            maximum_weight (float | dict[str, float], optional): The highest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
-                Defaults to 1.
-            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
-                the sector of each asset from its company profile. Defaults to None.
-            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per country, named in full or by its two-letter
-                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
-                from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
-                portfolio, 0 for a market neutral one (which needs a negative
-                minimum_weight). At 0 the portfolio with the lowest CVaR holds nothing, so
-                all weights are 0. The rest, 1 minus the net exposure, is a Cash row at the
-                risk free rate (negative when borrowed above one), which the Portfolio's
-                Expected Return and Sharpe Ratio include. Defaults to 1.
-            gross_exposure (float | None, optional): The highest sum of the absolute
-                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
-                a 130/30 portfolio. Defaults to None, no limit.
-            current_weights (dict[str, float] | None, optional): The weights held now,
-                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
-                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
-                per asset and its sum for the portfolio. Defaults to None, which uses
-                the latest weights of the Portfolio the Toolkit came from when a maximum
-                turnover or transaction cost needs them.
-            maximum_turnover (float | None, optional): The highest turnover
-                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
-                of the portfolio each way. Defaults to None, no limit.
-            include_benchmark (bool, optional): Whether to include the benchmark as an
-                asset. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which uses the Toolkit's rounding.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution, with the CVaR of every asset
-            on its own and of the portfolio (per period, as a loss) in the CVaR column.
-
-        Notes:
-        - The CVaR column is the value the linear programme minimizes: the average of the
-          worst 1 - α share of the periods, with a fraction of the boundary period when
-          (1 - α)T is not a whole number (Rockafellar and Uryasev, 2002), as in the
-          maximum CVaR ratio weights and the expected shortfall contributions.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AAPL", "MSFT", "JNJ", "XOM"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.portfolio.get_minimum_cvar_weights()
-        ```
-
-        Which returns:
-
-        |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |   CVaR |
-        |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|-------:|
-        | AAPL      |   0      |            0.1932 |       0.2786 |         0.5725 |              0      | 0.039  |
-        | MSFT      |   0.1827 |            0.2017 |       0.2571 |         0.6534 |              0.1513 | 0.0356 |
-        | JNJ       |   0.5965 |            0.0987 |       0.1673 |         0.3884 |              0.6005 | 0.0227 |
-        | XOM       |   0.2208 |            0.2911 |       0.2702 |         0.9524 |              0.2482 | 0.0373 |
-        | Portfolio |   1      |            0.16   |       0.136  |         0.9287 |              1      | 0.0191 |
-        """
-        returns, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
-        )
-        current = self._get_current_weights(
-            current_weights,
-            returns.columns.tolist(),
-            maximum_turnover is not None,
-        )
-        weights = optimization_model.get_minimum_cvar_weights(
-            returns,
-            confidence_level,
-            **self._get_constraints(
-                returns.columns.tolist(),
-                minimum_weight,
-                maximum_weight,
-                sector_bounds,
-                country_bounds,
-            ),
-            net_exposure=net_exposure,
-            gross_exposure=gross_exposure,
-            current_weights=current,
-            maximum_turnover=maximum_turnover,
-        )
-        table = self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
-        )
-
-        # The CVaR of every asset alone and of the portfolio as a positive loss, the
-        # Rockafellar-Uryasev tail average that the linear programme minimizes.
-        table["CVaR"] = (
-            -returns.assign(**{PORTFOLIO_TICKER: returns @ weights})
-        ).apply(
-            optimization_model.get_expected_tail_loss, confidence_level=confidence_level
-        )
-        return self._round(self._add_turnover(table, weights, current), rounding)
-
-    @handle_errors
-    def get_minimum_drawdown_weights(
-        self,
-        measure: str = "cdar",
-        confidence_level: float = 0.95,
-        period: str = "daily",
-        minimum_weight: float | dict[str, float] = 0.0,
-        maximum_weight: float | dict[str, float] = 1.0,
-        sector_bounds: dict[str, tuple[float, float]] | None = None,
-        country_bounds: dict[str, tuple[float, float]] | None = None,
-        net_exposure: float = 1.0,
-        gross_exposure: float | None = None,
-        current_weights: dict[str, float] | None = None,
-        maximum_turnover: float | None = None,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the weights of the portfolio with the lowest drawdown risk over the
-        historical returns: the lowest Conditional Drawdown at Risk (CDaR, the average of
-        the worst drawdowns), the lowest maximum drawdown or the lowest average drawdown.
-        Drawdowns are what investors feel and what ends strategies, and unlike volatility
-        or CVaR they account for losses that build up over consecutive periods.
-
-        The problem is a linear programme over the uncompounded cumulative returns
-        y_t = Σ_(s≤t) r_s'w, with the running peak u_t ≥ y_t, u_t ≥ u_(t-1) from u_0 = 0
-        and the drawdown u_t - y_t. It minimizes ζ + Σ max(0, u_t - y_t - ζ) / ((1 - α)T)
-        for the CDaR with α the confidence level and T the number of periods, the largest
-        drawdown for the maximum and the average over all periods for the average.
-
-        For more information, see the following paper:
-
-        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in
-          Portfolio Optimization." International Journal of Theoretical and Applied
-          Finance, 8(1), 13-58.
-
-        Also known as: minimum CDaR, minimum maximum drawdown, minimum average drawdown,
-        drawdown optimization.
-
-        Args:
-            measure (str, optional): The drawdown measure to minimize: "cdar", "maximum" or
-                "average". Defaults to "cdar".
-            confidence_level (float, optional): The confidence level of the CDaR, e.g. 0.95
-                for the average of the worst 5% of drawdowns. Defaults to 0.95.
-            period (str, optional): The frequency of the returns (daily, weekly, monthly,
-                quarterly or yearly). Defaults to "daily".
-            minimum_weight (float | dict[str, float], optional): The lowest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
-                negative value allows short positions. Defaults to 0.
-            maximum_weight (float | dict[str, float], optional): The highest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
-                Defaults to 1.
-            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
-                the sector of each asset from its company profile. Defaults to None.
-            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per country, named in full or by its two-letter
-                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
-                from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
-                portfolio. A net exposure of 0 is refused, as holding nothing has no
-                drawdown. The rest, 1 minus the net exposure, is a Cash row at the risk free
-                rate (negative when borrowed above one), which the Portfolio's Expected
-                Return and Sharpe Ratio include. Defaults to 1.
-            gross_exposure (float | None, optional): The highest sum of the absolute
-                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
-                a 130/30 portfolio. Defaults to None, no limit.
-            current_weights (dict[str, float] | None, optional): The weights held now,
-                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
-                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
-                per asset and its sum for the portfolio. Defaults to None, which uses
-                the latest weights of the Portfolio the Toolkit came from when a maximum
-                turnover needs them.
-            maximum_turnover (float | None, optional): The highest turnover
-                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
-                of the portfolio each way. Defaults to None, no limit.
-            include_benchmark (bool, optional): Whether to include the benchmark as an
-                asset. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which uses the Toolkit's rounding.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution, with the drawdown measure that
-            was minimized (CDaR, Maximum Drawdown or Average Drawdown) of every asset on its
-            own and of the portfolio.
-
-        Notes:
-        - The drawdowns are on uncompounded returns (the cumulative sum of the returns, as
-          in the paper), which keeps the problem
-          linear: they are absolute drawdowns of a portfolio that keeps its invested amount
-          constant. The compounded drawdowns of the risk module, relative to the peak
-          value, are close for small drawdowns and smaller for large ones.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AAPL", "MSFT", "JNJ", "XOM"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.portfolio.get_minimum_drawdown_weights()
-        ```
-
-        Which returns:
-
-        |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |   CDaR |
-        |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|-------:|
-        | AAPL      |   0.152  |            0.1932 |       0.2786 |         0.5725 |              0.2007 | 0.2553 |
-        | MSFT      |   0.1761 |            0.2017 |       0.2571 |         0.6534 |              0.1887 | 0.3173 |
-        | JNJ       |   0.4312 |            0.0987 |       0.1673 |         0.3884 |              0.3284 | 0.1573 |
-        | XOM       |   0.2407 |            0.2911 |       0.2702 |         0.9524 |              0.2822 | 0.178  |
-        | Portfolio |   1      |            0.1775 |       0.1412 |         1.0185 |              1      | 0.0769 |
-        """
-        returns, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
-        )
-        current = self._get_current_weights(
-            current_weights, returns.columns.tolist(), maximum_turnover is not None
-        )
-        weights = optimization_model.get_minimum_drawdown_weights(
-            returns,
-            measure,
-            confidence_level,
-            **self._get_constraints(
-                returns.columns.tolist(),
-                minimum_weight,
-                maximum_weight,
-                sector_bounds,
-                country_bounds,
-            ),
-            net_exposure=net_exposure,
-            gross_exposure=gross_exposure,
-            current_weights=current,
-            maximum_turnover=maximum_turnover,
-        )
-        table = self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
-        )
-
-        drawdowns = optimization_model.get_drawdowns(
-            returns.assign(**{PORTFOLIO_TICKER: returns @ weights})
-        )
-        if measure == "cdar":
-            table["CDaR"] = drawdowns.apply(
-                optimization_model.get_expected_tail_loss,
-                confidence_level=confidence_level,
-            )
-        elif measure == "maximum":
-            table["Maximum Drawdown"] = drawdowns.max()
-        else:
-            table["Average Drawdown"] = drawdowns.mean()
-        return self._round(self._add_turnover(table, weights, current), rounding)
-
-    @handle_errors
     def get_maximum_omega_weights(
         self,
         minimum_acceptable_return: float = 0.0,
@@ -2997,192 +2681,24 @@ class OptimizationConstruction:
         return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
-    def get_maximum_cvar_ratio_weights(
-        self,
-        confidence_level: float = 0.95,
-        period: str = "daily",
-        expected_returns: str = "mean",
-        expected_returns_span: int = 180,
-        minimum_weight: float | dict[str, float] = 0.0,
-        maximum_weight: float | dict[str, float] = 1.0,
-        sector_bounds: dict[str, tuple[float, float]] | None = None,
-        country_bounds: dict[str, tuple[float, float]] | None = None,
-        net_exposure: float = 1.0,
-        gross_exposure: float | None = None,
-        current_weights: dict[str, float] | None = None,
-        maximum_turnover: float | None = None,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the weights of the portfolio with the highest CVaR ratio: the average
-        return above the risk free rate divided by the Conditional Value at Risk, the
-        average loss in the worst periods. It is the maximum Sharpe ratio portfolio with
-        the tail loss in place of the volatility, so upside swings are not penalized and
-        crash risk is.
-
-        The ratio (r̄ - r_f)'w / CVaR_α(w), with the CVaR of Rockafellar and Uryasev
-        (2000), is maximized exactly as a linear programme with the Charnes-Cooper
-        transformation y = κw, κ > 0: maximize (r̄ - r_f)'y subject to
-        ζ + Σ max(0, -r_t'y - ζ) / ((1 - α)T) ≤ 1 and the weight constraints, then
-        w = y / κ.
-
-        For more information, see the following papers:
-
-        - Martin, R. D., Rachev, S. T. and Siboulet, F. (2003). "Phi-Alpha Optimal
-          Portfolios and Extreme Risk Management." Wilmott Magazine, November, 70-83.
-        - Rockafellar, R. T. and Uryasev, S. (2000). "Optimization of Conditional
-          Value-at-Risk." Journal of Risk, 2(3), 21-41.
-
-        Also known as: maximum STARR, stable tail adjusted return ratio, maximum
-        return-to-CVaR, mean-CVaR tangency portfolio.
-
-        Args:
-            confidence_level (float, optional): The confidence level of the CVaR, e.g. 0.95
-                for the average of the worst 5% of periods. Defaults to 0.95.
-            period (str, optional): The frequency of the returns (daily, weekly, monthly,
-                quarterly or yearly). Defaults to "daily".
-            expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "geometric" (the compounded average),
-                "exponential" (the exponentially weighted average, recent periods weigh
-                most), "exponential_geometric" (that average compounded over a year),
-                "capm" (the returns the Capital Asset Pricing Model implies from each
-                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
-                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
-                "james_stein" (the averages shrunk towards their grand mean, James and
-                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
-                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
-                Defaults to "mean".
-            expected_returns_span (int, optional): The span in periods of the
-                "exponential" expected returns. Defaults to 180.
-            minimum_weight (float | dict[str, float], optional): The lowest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
-                negative value allows short positions. Defaults to 0.
-            maximum_weight (float | dict[str, float], optional): The highest weight of
-                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
-                Defaults to 1.
-            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
-                the sector of each asset from its company profile. Defaults to None.
-            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
-                and maximum total weight per country, named in full or by its two-letter
-                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
-                from its company profile. Defaults to None.
-            net_exposure (float, optional): The sum of the weights: 1 for a fully invested
-                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
-                is a Cash row at the risk free rate (negative when borrowed above one),
-                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
-                1.
-            gross_exposure (float | None, optional): The highest sum of the absolute
-                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
-                a 130/30 portfolio. Defaults to None, no limit.
-            current_weights (dict[str, float] | None, optional): The weights held now,
-                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
-                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
-                per asset and its sum for the portfolio. Defaults to None, which uses
-                the latest weights of the Portfolio the Toolkit came from when a maximum
-                turnover needs them.
-            maximum_turnover (float | None, optional): The highest turnover
-                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
-                of the portfolio each way. Defaults to None, no limit.
-            include_benchmark (bool, optional): Whether to include the benchmark as an
-                asset. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which uses the Toolkit's rounding.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
-            Volatility, Sharpe Ratio and Risk Contribution, with the CVaR (per period, as a
-            loss) and the CVaR Ratio (the average excess return per period over the CVaR)
-            of every asset on its own and of the portfolio.
-
-        Notes:
-        - The risk free rate is the Toolkit's, averaged over the returns and converted to
-          a rate per period. Some portfolio within the constraints needs an average return
-          above it; otherwise no CVaR ratio is positive and the method returns an error
-          that says so.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AAPL", "MSFT", "JNJ", "XOM"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.portfolio.get_maximum_cvar_ratio_weights()[
-            ["Weight", "Expected Return", "Risk Contribution", "CVaR", "CVaR Ratio"]
-        ]
-        ```
-
-        Which returns:
-
-        |           |   Weight |   Expected Return |   Risk Contribution |   CVaR |   CVaR Ratio |
-        |:----------|---------:|------------------:|--------------------:|-------:|-------------:|
-        | AAPL      |   0      |            0.1932 |              0      | 0.039  |       0.0162 |
-        | MSFT      |   0.277  |            0.2017 |              0.2061 | 0.0356 |       0.0187 |
-        | JNJ       |   0.1978 |            0.0987 |              0.064  | 0.0227 |       0.0113 |
-        | XOM       |   0.5253 |            0.2911 |              0.7299 | 0.0373 |       0.0274 |
-        | Portfolio |   1      |            0.2283 |              1      | 0.0237 |       0.0326 |
-        """
-        returns, expected, covariance, risk_free_rate = self._get_inputs(
-            period,
-            include_benchmark,
-            expected_returns=expected_returns,
-            expected_returns_span=expected_returns_span,
-        )
-        # The numerator of the ratio takes the expected returns per period; the losses
-        # in its denominator are those of the historical returns.
-        periods_per_year = self._get_periods_per_year(period, returns.index)
-        expected_per_period = expected / periods_per_year
-        current = self._get_current_weights(
-            current_weights, returns.columns.tolist(), maximum_turnover is not None
-        )
-        risk_free_per_period = risk_free_rate / periods_per_year
-        weights = optimization_model.get_maximum_cvar_ratio_weights(
-            returns,
-            confidence_level,
-            risk_free_per_period,
-            **self._get_constraints(
-                returns.columns.tolist(),
-                minimum_weight,
-                maximum_weight,
-                sector_bounds,
-                country_bounds,
-            ),
-            net_exposure=net_exposure,
-            gross_exposure=gross_exposure,
-            current_weights=current,
-            maximum_turnover=maximum_turnover,
-            expected_returns=expected_per_period,
-        )
-        table = self._weights_table(
-            weights, expected, covariance, risk_free_rate, rounding
-        )
-
-        with_portfolio = returns.assign(**{PORTFOLIO_TICKER: returns @ weights})
-        cvar = (-with_portfolio).apply(
-            optimization_model.get_expected_tail_loss, confidence_level=confidence_level
-        )
-        excess = expected_per_period - risk_free_per_period
-        excess[PORTFOLIO_TICKER] = excess @ weights
-        table["CVaR"] = cvar
-        table["CVaR Ratio"] = excess / cvar
-        return self._round(self._add_turnover(table, weights, current), rounding)
-
-    @handle_errors
     def get_mean_risk_weights(
         self,
-        risk_measure: str = "mad",
+        risk_measure: Literal[
+            "mad",
+            "semideviation",
+            "lower_partial_moment",
+            "worst_realization",
+            "gini_mean_difference",
+            "tail_gini",
+            "range",
+            "cvar_range",
+            "tail_gini_range",
+            "ulcer_index",
+            "cvar",
+            "cdar",
+            "maximum_drawdown",
+            "average_drawdown",
+        ] = "mad",
         objective: str = "minimum_risk",
         target_return: float | None = None,
         confidence_level: float = 0.95,
@@ -3207,8 +2723,13 @@ class OptimizationConstruction:
         volatility: the portfolio with the lowest risk, the lowest risk at a target return,
         or the highest ratio of the average excess return to the risk. The risk is measured
         on the historical returns, so measures that only count losses (the semideviation,
-        the lower partial moment, the worst realization, the Tail Gini) leave upside swings
-        unpenalized, and the Ulcer Index penalizes deep and long drawdowns.
+        the lower partial moment, the worst realization, the CVaR, the Tail Gini) leave
+        upside swings unpenalized, and the Ulcer Index and the drawdown measures penalize
+        deep and long drawdowns, which are what investors feel and what ends strategies.
+        The minimum CVaR portfolio (risk_measure="cvar") only looks at the losses in the
+        tail, so it accounts for skewed and fat-tailed returns; its maximum ratio portfolio
+        is the maximum STARR (CVaR ratio) portfolio of Martin, Rachev and Siboulet (2003),
+        the maximum Sharpe ratio portfolio with the tail loss in place of the volatility.
 
         The risk measures ρ(w) of the portfolio's returns X_t = r_t'w over T periods, with
         α the confidence level and τ the minimum acceptable return, are:
@@ -3229,6 +2750,17 @@ class OptimizationConstruction:
         - "tail_gini_range": the Tail Gini of the losses plus that of the gains.
         - "ulcer_index": √(Σ D_t² / T) with D_t the drawdowns of the uncompounded
           cumulative return (Martin and McCann, 1989).
+        - "cvar": the Conditional Value at Risk, the average loss in the worst 1 - α share of
+          the periods, VaR + Σ max(0, -X_t - VaR) / ((1 - α)T) at its minimum over the VaR
+          (Rockafellar and Uryasev, 2000).
+        - "cdar": the Conditional Drawdown at Risk, the average of the worst 1 - α share of
+          the drawdowns D_t, ζ + Σ max(0, D_t - ζ) / ((1 - α)T) at its minimum over ζ
+          (Chekhlov, Uryasev and Zabarankin, 2005).
+        - "maximum_drawdown": the largest drawdown max D_t.
+        - "average_drawdown": the average drawdown Σ D_t / T.
+
+        The drawdowns D_t = u_t - Y_t are those of the uncompounded cumulative return
+        Y_t = Σ_(s≤t) X_s below its running peak u_t = max(0, max_(s≤t) Y_s), from u_0 = 0.
 
         The objectives are:
 
@@ -3238,7 +2770,8 @@ class OptimizationConstruction:
           subject to ρ(y) ≤ 1 and the weight constraints, then w = y / κ.
 
         The mean absolute deviation, the lower partial moment, the worst realization, the
-        ranges and the CVaR range are solved exactly as linear programmes with HiGHS. The
+        ranges, the CVaR range, the CVaR and the drawdown measures are solved exactly as
+        linear programmes with HiGHS. The
         Gini mean difference and the Tail Gini measures are ordered weighted averages of
         the sorted returns, convex because their weights rise with the rank (Cajas, 2021),
         and are solved exactly with cutting planes (Kelley, 1960) stabilized as in Ben-Ameur
@@ -3269,6 +2802,13 @@ class OptimizationConstruction:
           Framework." SSRN Working Paper 3988927.
         - Martin, P. G. and McCann, B. B. (1989). "The Investor's Guide to Fidelity Funds."
           John Wiley & Sons, New York.
+        - Rockafellar, R. T. and Uryasev, S. (2000). "Optimization of Conditional
+          Value-at-Risk." Journal of Risk, 2(3), 21-41.
+        - Martin, R. D., Rachev, S. T. and Siboulet, F. (2003). "Phi-Alpha Optimal
+          Portfolios and Extreme Risk Management." Wilmott Magazine, November, 70-83.
+        - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in
+          Portfolio Optimization." International Journal of Theoretical and Applied
+          Finance, 8(1), 13-58.
         - Charnes, A. and Cooper, W. W. (1962). "Programming with Linear Fractional
           Functionals." Naval Research Logistics Quarterly, 9(3-4), 181-186.
         - Kelley, J. E. (1960). "The Cutting-Plane Method for Solving Convex Programs."
@@ -3286,24 +2826,26 @@ class OptimizationConstruction:
           which shares similar logic with the semideviation below a fixed threshold.
 
         Also known as: mean-MAD, mean-semivariance, minimax, mean-Gini, mean-Ulcer,
-        Sortino-optimal or Gini-optimal portfolio.
+        Sortino-optimal or Gini-optimal portfolio, minimum CVaR weights, minimum expected
+        shortfall portfolio, mean-CVaR, tail risk optimization, maximum CVaR ratio weights,
+        maximum STARR, stable tail adjusted return ratio, maximum return-to-CVaR, mean-CVaR
+        tangency portfolio, minimum drawdown weights, minimum CDaR, minimum maximum drawdown,
+        minimum average drawdown, drawdown optimization.
 
         Args:
             risk_measure (str, optional): The risk measure: "mad", "semideviation",
                 "lower_partial_moment", "worst_realization", "gini_mean_difference",
-                "tail_gini", "range", "cvar_range", "tail_gini_range" or "ulcer_index".
-                The CVaR and the drawdowns have their own optimizers
-                (get_minimum_cvar_weights, get_maximum_cvar_ratio_weights and
-                get_minimum_drawdown_weights). Defaults to "mad".
+                "tail_gini", "range", "cvar_range", "tail_gini_range", "ulcer_index",
+                "cvar", "cdar", "maximum_drawdown" or "average_drawdown". Defaults to "mad".
             objective (str, optional): "minimum_risk" or "maximum_ratio" (the highest
                 average excess return per unit of risk). Defaults to "minimum_risk".
             target_return (float | None, optional): The annualized expected return the
                 minimum risk portfolio must have, e.g. 0.12 for 12%, with the cash of a
                 net exposure other than one at the risk free rate. Defaults to None,
                 no target.
-            confidence_level (float, optional): The confidence level of the CVaR range
-                and the Tail Gini measures, e.g. 0.95 for the worst 5% of periods.
-                Defaults to 0.95.
+            confidence_level (float, optional): The confidence level of the CVaR, the CVaR
+                range, the CDaR and the Tail Gini measures, e.g. 0.95 for the worst 5% of
+                periods (or drawdowns). Defaults to 0.95.
             minimum_acceptable_return (float | str, optional): The threshold of the
                 semideviation and the lower partial moment, as a return per period of the
                 chosen frequency (e.g. 0.0002 a day), or "mean" for each asset's average
@@ -3337,10 +2879,13 @@ class OptimizationConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully invested
-                portfolio, 0 for a market neutral one. The rest, 1 minus the net exposure,
-                is a Cash row at the risk free rate (negative when borrowed above one),
-                which the Portfolio's Expected Return and Sharpe Ratio include. Defaults to
-                1.
+                portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest CVaR holds nothing, so
+                all weights are 0, and for the drawdown measures a net exposure of 0 is
+                refused, as holding nothing has no drawdown. The rest, 1 minus the net
+                exposure, is a Cash row at the risk free rate (negative when borrowed above
+                one), which the Portfolio's Expected Return and Sharpe Ratio include.
+                Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -3371,9 +2916,17 @@ class OptimizationConstruction:
 
         Notes:
         - The risk measures are per period of the chosen frequency and not annualized;
-          the drawdowns of the Ulcer Index are those of the uncompounded cumulative
-          return (the sum of the returns), which scales with the weights, as in
-          Riskfolio-Lib and skfolio.
+          the drawdowns of the Ulcer Index, the CDaR and the maximum and average drawdown
+          are those of the uncompounded cumulative return (the sum of the returns, as in
+          Chekhlov, Uryasev and Zabarankin), which scales with the weights and keeps the
+          problem linear, as in Riskfolio-Lib and skfolio: they are absolute drawdowns of
+          a portfolio that keeps its invested amount constant. The compounded drawdowns
+          of the risk module, relative to the peak value, are close for small drawdowns
+          and smaller for large ones.
+        - The CVaR and the CDaR are the values the linear programmes minimize: the average
+          of the worst 1 - α share of the periods (or drawdowns), with a fraction of the
+          boundary period when (1 - α)T is not a whole number (Rockafellar and Uryasev,
+          2002), as in the expected shortfall contributions.
         - Riskfolio-Lib's MAD is half of the mean absolute deviation and its lower partial
           moments divide by T - 1, and skfolio's lower partial moment is below the mean;
           those scale the measure but leave the weights the same. The Gini mean

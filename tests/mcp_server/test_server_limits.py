@@ -13,7 +13,10 @@ import requests
 
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.mcp_server.analytics import analytics_model
-from financetoolkit.mcp_server.registry.coercion_model import size_limit_problem
+from financetoolkit.mcp_server.registry.coercion_model import (
+    refused_value_problem,
+    size_limit_problem,
+)
 from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.utilities import requests_model
@@ -101,6 +104,37 @@ def test_the_short_volume_history_is_limited_and_never_unbounded(captured):
     # Left out (or null) it is the MCP default, rather than the whole date range.
     call("market_data", indicator="get_short_volume", tickers="AAPL", history_days=None)
     assert captured[-1][1]["history_days"] == 92  # noqa: PLR2004
+
+
+def test_the_slow_egarch_fits_are_refused_and_the_other_garch_methods_offered(captured):
+    for indicator in ("get_garch", "get_garch_forecast", "get_garch_parameters"):
+        answer = call("risk", indicator=indicator, tickers="AAPL", method="EGARCH")
+        assert "`method='EGARCH'` is not available on this server" in answer
+        assert "method='gjr'" in answer
+    assert not captured
+
+    call("risk", indicator="get_garch", tickers="AAPL", method="gjr")
+    assert captured[-1][0] == "get_garch"
+    assert captured[-1][1]["method"] == "gjr"
+
+
+def test_refused_values_only_apply_to_their_indicators_and_parameter():
+    limits = {
+        "refused_values": [
+            {
+                "methods": ["get_a"],
+                "parameter": "method",
+                "values": ["slow"],
+                "reason": "x",
+            }
+        ]
+    }
+
+    assert refused_value_problem("get_a", {"method": " Slow "}, limits)
+    assert refused_value_problem("get_a", {"method": "fast"}, limits) is None
+    assert refused_value_problem("get_b", {"method": "slow"}, limits) is None
+    assert refused_value_problem("get_a", {"variant": "slow"}, limits) is None
+    assert refused_value_problem("get_a", {"method": "slow"}, {}) is None
 
 
 def test_size_limits_check_every_value_of_a_list():

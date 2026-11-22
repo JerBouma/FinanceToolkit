@@ -216,6 +216,38 @@ def _numbers(value: Any) -> list[float]:
     ]
 
 
+def refused_value_problem(
+    method_name: str, arguments: dict[str, Any], limits: dict[str, Any]
+) -> str | None:
+    """
+    Checks the arguments of a call against the values the server refuses for an indicator
+    (config.yaml parameter_limits, refused_values), such as a variant whose fit takes
+    longer than an assistant waits for a tool.
+
+    Args:
+        method_name (str): The indicator called.
+        arguments (dict[str, Any]): The arguments the indicator receives.
+        limits (dict[str, Any]): The parameter limits, of which "refused_values" lists the
+            indicators ("methods"), the "parameter", its refused "values" and the "reason".
+
+    Returns:
+        str | None: Why the value is refused, or None when the call may go ahead.
+    """
+    for refusal in limits.get("refused_values", []):
+        value = arguments.get(refusal["parameter"])
+        if (
+            method_name in refusal["methods"]
+            and isinstance(value, str)
+            and value.strip().lower() in refusal["values"]
+        ):
+            return (
+                f"`{refusal['parameter']}='{value}'` is not available on this server: "
+                f"{refusal['reason']}"
+            )
+
+    return None
+
+
 def size_limit_problem(
     arguments: dict[str, Any], defaults: dict[str, Any], limits: dict[str, Any]
 ) -> str | None:

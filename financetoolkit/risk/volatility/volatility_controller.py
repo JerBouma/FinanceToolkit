@@ -20,6 +20,25 @@ from financetoolkit.utilities.statistics_model import (
 
 # ruff: noqa: E501
 
+# The conditional variance, forecast and parameter fit of each model of the GARCH family.
+GARCH_METHODS = {
+    "garch": (
+        garch_model.get_garch,
+        garch_model.get_garch_forecast,
+        garch_model.get_garch_weights,
+    ),
+    "gjr": (
+        garch_model.get_gjr_garch,
+        garch_model.get_gjr_garch_forecast,
+        garch_model.get_gjr_garch_weights,
+    ),
+    "egarch": (
+        garch_model.get_egarch,
+        garch_model.get_egarch_forecast,
+        garch_model.get_egarch_weights,
+    ),
+}
+
 
 @filter_shown_columns
 @track_sources
@@ -36,6 +55,7 @@ class VolatilityRisk:
         time_steps: int | None = None,
         optimization_t: int | None = None,
         within_period: bool = False,
+        method: Literal["garch", "gjr", "egarch"] = "garch",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -44,24 +64,49 @@ class VolatilityRisk:
     ):
         """
         Calculates the conditional variance (sigma_t^2) of the returns with a GARCH(1, 1) model fitted to
-        them. Take the square root for the conditional volatility, and see `get_garch_forecast` for the
-        variance forecast beyond the last observation.
+        them, or with its asymmetric GJR-GARCH(1, 1, 1) or EGARCH(1, 1) variant. Take the square root for
+        the conditional volatility, and see `get_garch_forecast` for the variance forecast beyond the last
+        observation.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
         models.
 
+        GJR-GARCH (method="gjr") extends GARCH with a leverage term that lets negative shocks (bad news)
+        raise volatility by more than positive shocks of the same size, a well documented asymmetry in
+        equity returns that symmetric GARCH cannot capture. EGARCH (method="egarch") models the log of the
+        conditional variance, which avoids having to constrain the parameters to keep the variance
+        positive and, like GJR-GARCH, lets negative and positive shocks of the same size have a different
+        impact on volatility.
+
+        For more information about the methods, see the following papers:
+
+        - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity." Journal of
+        Econometrics, 31(3), 307-327.
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
+
         The formula is as follows:
 
-        - sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2
-        - sigma_1^2 = Omega + (Alpha + Beta) * Backcast
+        - method="garch": sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2, with
+        sigma_1^2 = Omega + (Alpha + Beta) * Backcast
+        - method="gjr": sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2, with
+        sigma_1^2 = Omega + (Alpha + Gamma / 2 + Beta) * Backcast
+        - method="egarch": ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2,
+        with z_t = r_t / sigma_t and ln sigma_1^2 = Omega + Beta * ln(Backcast)
 
-        Where r_t are the returns (not demeaned) and the Backcast is an exponentially weighted average (decay
-        0.94) of the first 75 squared returns. Omega, Alpha and Beta maximize the Gaussian log-likelihood, i.e.
-        minimize Σ (ln sigma_t^2 + r_t^2 / sigma_t^2), under Omega, Alpha, Beta > 0 and Alpha + Beta < 1 (see
-        `get_garch_parameters`).
+        Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise, √(2 / π) is the
+        expected |z| of a standard normal shock and the Backcast is an exponentially weighted average (decay 0.94)
+        of the first 75 squared returns. The parameters maximize the Gaussian log-likelihood, i.e. minimize
+        Σ (ln sigma_t^2 + r_t^2 / sigma_t^2), under Omega, Alpha, Beta > 0 and Alpha + Beta < 1 for GARCH, under
+        Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0 for GJR-GARCH and with |Beta| < 1 for EGARCH, whose log
+        variance is kept within [-20, 20] (see `get_garch_parameters`).
 
-        Also known as: GARCH, volatility clustering, conditional heteroscedasticity.
+        Also known as: GARCH, volatility clustering, conditional heteroscedasticity, GJR-GARCH, gjr garch,
+        threshold GARCH, TGARCH, EGARCH, exponential GARCH, log-GARCH.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -73,6 +118,8 @@ class VolatilityRisk:
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
             period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
             entirety of all years. Defaults to False.
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
+                for EGARCH(1, 1). Defaults to "garch".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
@@ -93,6 +140,8 @@ class VolatilityRisk:
         asset in the Toolkit instance.
         - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
         does not shorten the sample of the others; dates without a return for an asset are NaN.
+        - The EGARCH fit is a deterministic multi-start search that takes far longer than the GARCH and
+        GJR-GARCH fits, about 45 seconds per ticker of daily returns.
         - If `growth` is set to True, the method calculates the growth of GARCH values using the specified `lag`.
 
         As an example:
@@ -120,6 +169,9 @@ class VolatilityRisk:
         | 2025-12-30 |   0.0004 |           0 |
         | 2025-12-31 |   0.0004 |           0 |
         """
+        if method not in GARCH_METHODS:
+            raise ValueError("Method must be garch, gjr or egarch.")
+
         period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
@@ -139,7 +191,7 @@ class VolatilityRisk:
         # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
         returns = self._get_returns(period, within_period).dropna(how="all")
 
-        garch_sigma_2 = garch_model.get_garch(
+        garch_sigma_2 = GARCH_METHODS[method][0](
             returns=returns,
             weights=None,
             time_steps=time_steps,
@@ -168,6 +220,7 @@ class VolatilityRisk:
         period: str | None = None,
         time_steps: int = 10,
         within_period: bool = False,
+        method: Literal["garch", "gjr", "egarch"] = "garch",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -175,7 +228,8 @@ class VolatilityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates sigma_2 forecasts.
+        Calculates sigma_2 forecasts with a GARCH(1, 1) model, or with its asymmetric GJR-GARCH(1, 1, 1) or
+        EGARCH(1, 1) variant.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
@@ -183,18 +237,29 @@ class VolatilityRisk:
 
         The formula is as follows:
 
-        - sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Beta)^(h - 1)
-        - sigma_L^2 = Omega / (1 - Alpha - Beta)
+        - method="garch": sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Beta)^(h - 1), with
+        sigma_L^2 = Omega / (1 - Alpha - Beta)
+        - method="gjr": sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Gamma / 2 + Beta)^(h - 1),
+        with sigma_L^2 = Omega / (1 - Alpha - Gamma / 2 - Beta)
+        - method="egarch": ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L), with L = Omega / (1 - Beta)
+        and sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
 
         Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step,
-        sigma_(n+1)^2 the one-step-ahead variance of the fitted GARCH(1, 1) recursion (see `get_garch`) and
-        sigma_L^2 the long-run variance.
+        sigma_(n+1)^2 the one-step-ahead variance of the fitted recursion (see `get_garch`) and sigma_L^2 the
+        long-run variance. The leverage term of GJR-GARCH enters at its expectation, Gamma / 2, as a negative
+        shock is as likely as a positive one; the shock terms of EGARCH drop out at their expectation of zero,
+        so its forecast is the exponential of the expected log variance.
 
-        For more information about the method, see the following book:
+        For more information about the methods, see the following sources:
 
         - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
 
-        Also known as: volatility forecast, predicted volatility.
+        Also known as: volatility forecast, predicted volatility, GJR-GARCH forecast, EGARCH forecast.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -203,6 +268,8 @@ class VolatilityRisk:
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
             look at the entirety of all years. Defaults to False.
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
+                for EGARCH(1, 1). Defaults to "garch".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to
             False.
@@ -223,6 +290,8 @@ class VolatilityRisk:
         forecast for each asset in the Toolkit instance.
         - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
         does not shorten the sample of the others.
+        - The EGARCH fit is a deterministic multi-start search that takes far longer than the GARCH and
+        GJR-GARCH fits, about 45 seconds per ticker of daily returns.
         - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
@@ -256,6 +325,9 @@ class VolatilityRisk:
         | 2026-01-13 |  0.0001 |      0.0001 |
         | 2026-01-14 |  0.0001 |      0.0001 |
         """
+        if method not in GARCH_METHODS:
+            raise ValueError("Method must be garch, gjr or egarch.")
+
         period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
@@ -275,7 +347,7 @@ class VolatilityRisk:
         # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
         returns = self._get_returns(period, within_period).dropna(how="all")
 
-        sigma_2_forecast = garch_model.get_garch_forecast(returns, None, time_steps)
+        sigma_2_forecast = GARCH_METHODS[method][1](returns, None, time_steps)
 
         # The forecast steps continue the period of the returns (business days for daily).
         period_symbol = {
@@ -315,53 +387,71 @@ class VolatilityRisk:
         self,
         period: str | None = None,
         optimization_t: int | None = None,
+        method: Literal["garch", "gjr", "egarch"] = "garch",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fits a GARCH(1, 1) model to the historical returns and returns the estimated
-        Omega, Alpha and Beta parameters for each asset.
+        Fits a GARCH(1, 1) model, or its asymmetric GJR-GARCH(1, 1, 1) or EGARCH(1, 1) variant, to the
+        historical returns and returns the estimated Omega, Alpha and Beta parameters for each asset, with
+        the Gamma of the leverage effect for GJR-GARCH and EGARCH.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is a stochastic model
-        for time series, used to model volatility clustering.
+        for time series, used to model volatility clustering. A positive Gamma of GJR-GARCH, or a negative
+        Gamma of EGARCH, indicates the presence of a leverage effect (negative shocks raise volatility by
+        more than positive ones of the same size), which symmetric GARCH cannot represent.
 
         The formula is as follows:
 
-        - sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - method="garch": sigma_t^2 = Omega + Alpha * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - method="gjr": sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
+        - method="egarch": ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
         - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
 
-        Where r_t are the returns (not demeaned), with the constraints Omega, Alpha, Beta > 0 and
-        Alpha + Beta < 1. The parameters are estimated by maximizing the Gaussian log-likelihood with
-        L-BFGS-B, started from a
-        domain-informed initial guess and from 32 points of a Sobol sequence, and the best fit is
-        finished with Nelder-Mead. The search runs on the parameters scaled to their bounds, as
-        Omega (of the order of a daily variance) and Alpha and Beta differ by orders of magnitude.
+        Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise and
+        z_t = r_t / sigma_t. The constraints are Omega, Alpha, Beta > 0 and Alpha + Beta < 1 for GARCH,
+        Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0 for GJR-GARCH, and Omega in [-15, 5], Alpha and
+        Gamma in [-1, 1] and |Beta| < 1 for EGARCH. The GARCH parameters are estimated by maximizing the
+        Gaussian log-likelihood with L-BFGS-B, started from a domain-informed initial guess and from 32 points
+        of a Sobol sequence, and the best fit is finished with Nelder-Mead. The search runs on the parameters
+        scaled to their bounds, as Omega (of the order of a daily variance) and Alpha and Beta differ by orders
+        of magnitude.
 
         The variance recursion starts from a backcast, an exponentially weighted average
         (decay 0.94) of the first 75 squared returns, which stands in for both the squared
-        return and the variance before the first observation, and every observation enters the
-        likelihood. This is the start the arch package uses, so the estimates agree with it.
+        return and the variance before the first observation (with the leverage term of GJR-GARCH at its
+        expectation, Gamma / 2, and ln sigma_1^2 = Omega + Beta * ln(Backcast) for EGARCH), and every
+        observation enters the likelihood. This is the start the arch package uses, so the estimates agree
+        with it.
 
         Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) conditional variance
         path, this method returns the fitted parameters themselves. This is useful when the parameters
         are needed directly, for example to seed a separate volatility simulation.
 
-        For daily equity returns, Alpha is typically between 0.05 and 0.15 and Alpha + Beta (the
+        For daily equity returns, the GARCH Alpha is typically between 0.05 and 0.15 and Alpha + Beta (the
         persistence) between 0.95 and 0.99, meaning a volatility shock fades over weeks rather than
         days. The long-run variance the model reverts to is Omega / (1 - Alpha - Beta). A fit far
         outside these ranges is a reason to check the data and the window before using the parameters.
 
-        For more information about the method, see the following book:
+        For more information about the methods, see the following sources:
 
         - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
+        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
+        between the Expected Value and the Volatility of the Nominal Excess Return on
+        Stocks." The Journal of Finance, 48(5), 1779-1801.
+        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
+        Approach." Econometrica, 59(2), 347-370.
 
-        Also known as: GARCH weights, GARCH coefficients, conditional variance parameters.
+        Also known as: GARCH weights, GARCH coefficients, conditional variance parameters, GJR-GARCH
+        parameters, EGARCH parameters, leverage parameters.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
+                for EGARCH(1, 1). Defaults to "garch".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -369,13 +459,20 @@ class VolatilityRisk:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Omega, Alpha and Beta values per asset.
+            pd.DataFrame: Omega, Alpha and Beta values per asset, with Gamma between Alpha and Beta for
+            method="gjr" and method="egarch".
 
         Notes:
-        - The method retrieves historical return data based on the specified `period` and fits a
-        GARCH(1, 1) model for each asset in the Toolkit instance.
+        - The method retrieves historical return data based on the specified `period` and fits the model
+        for each asset in the Toolkit instance.
         - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
         does not shorten the sample of the others.
+        - GJR-GARCH nests GARCH (gamma = 0), so its fit never ends at a lower log-likelihood than the
+        GARCH(1, 1) fit: if the search does, the GARCH weights with a Gamma of 0 are returned.
+        - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
+        prone to unstable, boundary-hugging fits on short return histories, which include quarterly
+        data over a few years. Prefer daily or weekly returns. Its fit is a deterministic multi-start search
+        that takes far longer than the others, about 45 seconds per ticker of daily returns.
 
         As an example:
 
@@ -400,6 +497,9 @@ class VolatilityRisk:
         | Alpha | 0.035763 | 0.057692 | 0.048602 |    0.154079 |
         | Beta  | 0.875036 | 0.715864 | 0.940197 |    0.811018 |
         """
+        if method not in GARCH_METHODS:
+            raise ValueError("Method must be garch, gjr or egarch.")
+
         period = period if period else "daily"
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
@@ -412,814 +512,16 @@ class VolatilityRisk:
         parameters = pd.DataFrame(
             {
                 # Each ticker is fitted on its own non-missing returns, see get_garch.
-                ticker: garch_model.get_garch_weights(
+                ticker: GARCH_METHODS[method][2](
                     returns[ticker].dropna().to_numpy(), t=optimization_t
                 )
                 for ticker in returns.columns
             },
-            index=["Omega", "Alpha", "Beta"],
-        )
-
-        return apply_rounding(
-            parameters, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_gjr_garch(
-        self,
-        period: str | None = None,
-        time_steps: int | None = None,
-        optimization_t: int | None = None,
-        within_period: bool = False,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculates the conditional variance (sigma_t^2) of the returns with a GJR-GARCH(1, 1, 1) model
-        fitted to them. Take the square root for the conditional volatility, and see
-        `get_gjr_garch_forecast` for the variance forecast.
-
-        GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad
-        news) raise volatility by more than positive shocks of the same size, a well
-        documented asymmetry in equity returns that symmetric GARCH cannot capture.
-
-        For more information about the method, see the following paper:
-
-        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
-        between the Expected Value and the Volatility of the Nominal Excess Return on
-        Stocks." The Journal of Finance, 48(5), 1779-1801.
-
-        The formula is as follows:
-
-        - sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
-        - sigma_1^2 = Omega + (Alpha + Gamma / 2 + Beta) * Backcast
-
-        Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise, and the Backcast
-        is the same as in `get_garch`. The parameters maximize the Gaussian log-likelihood under
-        Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0 (see `get_gjr_garch_parameters`).
-
-        Also known as: GJR-GARCH, threshold GARCH, TGARCH.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GJR-GARCH for. Defaults to None, which uses the length of
-                the returns.
-            optimization_t (int, optional): Time steps to optimize GJR-GARCH for. It is only used if no
-            weights are given. Defaults to None, which uses the length of the returns.
-            within_period (bool, optional): Whether to calculate GJR-GARCH within the specified period or
-            for the entire period. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the GJR-GARCH values over time.
-            Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame | pd.Series: GJR-GARCH values
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates
-        GJR-GARCH for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others; dates without a return for an asset are NaN.
-        - If `growth` is set to True, the method calculates the growth of GJR-GARCH values using the
-        specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["NVDA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_gjr_garch().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   NVDA |   Benchmark |
-        |:-----------|-------:|------------:|
-        | 2025-12-24 | 0.0005 |      0.0001 |
-        | 2025-12-26 | 0.0005 |      0.0001 |
-        | 2025-12-29 | 0.0005 |      0      |
-        | 2025-12-30 | 0.0005 |      0      |
-        | 2025-12-31 | 0.0005 |      0      |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-
-        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
-        returns = self._get_returns(period, within_period).dropna(how="all")
-
-        gjr_garch_sigma_2 = garch_model.get_gjr_garch(
-            returns=returns,
-            weights=None,
-            time_steps=time_steps,
-            optimization_t=optimization_t,
-        )
-
-        gjr_garch_sigma_2 = gjr_garch_sigma_2.loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=gjr_garch_sigma_2,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_gjr_garch_forecast(
-        self,
-        period: str | None = None,
-        time_steps: int = 10,
-        within_period: bool = False,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculates sigma_2 forecasts based on the GJR-GARCH model.
-
-        The formula is as follows:
-
-        - sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Gamma / 2 + Beta)^(h - 1)
-        - sigma_L^2 = Omega / (1 - Alpha - Gamma / 2 - Beta)
-
-        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step and
-        sigma_(n+1)^2 the one-step-ahead variance of the fitted GJR-GARCH(1, 1, 1) recursion (see
-        `get_gjr_garch`). The leverage term enters at its expectation, Gamma / 2, as a negative shock is as
-        likely as a positive one.
-
-        For more information about the method, see the following paper:
-
-        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
-        between the Expected Value and the Volatility of the Nominal Excess Return on
-        Stocks." The Journal of Finance, 48(5), 1779-1801.
-
-        Also known as: volatility forecast, predicted volatility.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GJR-GARCH and to forecast sigma_2 values for. Defaults to
-                10.
-            within_period (bool, optional): Whether to calculate GJR-GARCH within each specified period or
-            all at once. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            growth (bool, optional): Whether to calculate the growth of the GJR-GARCH values over time.
-            Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame | pd.Series: sigma_2 forecast values
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates the
-        sigma_2 forecast for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others.
-        - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
-        the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["CLUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_gjr_garch_forecast()
-        ```
-
-        Which returns:
-
-        |            |   CLUSD |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2026-01-01 |  0.0003 |      0      |
-        | 2026-01-02 |  0.0003 |      0      |
-        | 2026-01-05 |  0.0003 |      0.0001 |
-        | 2026-01-06 |  0.0003 |      0.0001 |
-        | 2026-01-07 |  0.0003 |      0.0001 |
-        | 2026-01-08 |  0.0003 |      0.0001 |
-        | 2026-01-09 |  0.0003 |      0.0001 |
-        | 2026-01-12 |  0.0003 |      0.0001 |
-        | 2026-01-13 |  0.0003 |      0.0001 |
-        | 2026-01-14 |  0.0004 |      0.0001 |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-
-        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
-        returns = self._get_returns(period, within_period).dropna(how="all")
-
-        sigma_2_forecast = garch_model.get_gjr_garch_forecast(returns, None, time_steps)
-
-        # The forecast steps continue the period of the returns (business days for daily).
-        period_symbol = {
-            "daily": "B",
-            "weekly": "W",
-            "monthly": "ME",
-            "quarterly": "QE",
-        }.get(period, "YE")
-        # Business days are kept as daily periods, as business-day periods are deprecated.
-        period_index = pd.PeriodIndex(
-            pd.date_range(
-                start=returns.index[-1].to_timestamp(),
-                periods=time_steps + 1,
-                freq=period_symbol,
+            index=(
+                ["Omega", "Alpha", "Beta"]
+                if method == "garch"
+                else ["Omega", "Alpha", "Gamma", "Beta"]
             ),
-            freq="D" if period_symbol == "B" else None,
-        )
-
-        sigma_2_forecast.index = period_index[1:]
-
-        return finalize_dataset(
-            dataset=sigma_2_forecast,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_gjr_garch_parameters(
-        self,
-        period: str | None = None,
-        optimization_t: int | None = None,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Fits a GJR-GARCH(1, 1, 1) model to the historical returns and returns the
-        estimated Omega, Alpha, Gamma and Beta parameters for each asset.
-
-        A positive Gamma indicates the presence of a leverage effect (negative shocks
-        raise volatility by more than positive ones of the same size), which symmetric
-        GARCH cannot represent.
-
-        The formula is as follows:
-
-        - sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
-        - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
-
-        Where r_t are the returns (not demeaned) and I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise. The
-        log-likelihood is maximized under Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0.
-
-        The variance recursion starts from a backcast, an exponentially weighted average
-        (decay 0.94) of the first 75 squared returns, with the leverage term at its expectation
-        (Gamma / 2) for the period before the first observation, and every observation enters
-        the likelihood. This is the start the arch package uses, so the estimates agree with it.
-
-        For more information about the method, see the following paper:
-
-        - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
-        between the Expected Value and the Volatility of the Nominal Excess Return on
-        Stocks." The Journal of Finance, 48(5), 1779-1801.
-
-        Also known as: GJR-GARCH weights, GJR-GARCH coefficients, leverage parameters.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            optimization_t (int, optional): Time steps of the returns series to use for the optimization.
-            Defaults to the full length of the returns series.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and fits a
-        GJR-GARCH(1, 1, 1) model for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others.
-        - GJR-GARCH nests GARCH (gamma = 0), so the fit never ends at a lower log-likelihood than the
-        GARCH(1, 1) fit of `get_garch_parameters`: if the search does, the GARCH weights with a Gamma of 0
-        are returned.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["^GSPC", "^STOXX50E"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_gjr_garch_parameters(rounding=6)
-        ```
-
-        Which returns:
-
-        |       |    ^GSPC |   ^STOXX50E |   Benchmark |
-        |:------|---------:|------------:|------------:|
-        | Omega | 3e-06    |    1e-05    |    3e-06    |
-        | Alpha | 0        |    0        |    0        |
-        | Gamma | 0.210531 |    0.308907 |    0.221968 |
-        | Beta  | 0.870765 |    0.764269 |    0.865708 |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-
-        returns = self._historical_data[period]["Return"]
-
-        parameters = pd.DataFrame(
-            {
-                # Each ticker is fitted on its own non-missing returns, see get_garch.
-                ticker: garch_model.get_gjr_garch_weights(
-                    returns[ticker].dropna().to_numpy(), t=optimization_t
-                )
-                for ticker in returns.columns
-            },
-            index=["Omega", "Alpha", "Gamma", "Beta"],
-        )
-
-        return apply_rounding(
-            parameters, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_egarch(
-        self,
-        period: str | None = None,
-        time_steps: int | None = None,
-        optimization_t: int | None = None,
-        within_period: bool = False,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculates the conditional variance (sigma_t^2) of the returns with an EGARCH(1, 1) model fitted
-        to them. Take the square root for the conditional volatility, and see `get_egarch_forecast` for
-        the variance forecast.
-
-        EGARCH models the log of the conditional variance, which avoids having to
-        constrain the parameters to keep the variance positive and, like GJR-GARCH,
-        lets negative and positive shocks of the same size have a different impact on
-        volatility (the leverage effect).
-
-        For more information about the method, see the following paper:
-
-        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
-        Approach." Econometrica, 59(2), 347-370.
-
-        The formula is as follows:
-
-        - ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
-        - z_t = r_t / sigma_t
-        - ln sigma_1^2 = Omega + Beta * ln(Backcast)
-
-        Where r_t are the returns (not demeaned), √(2 / π) is the expected |z| of a standard normal shock, the
-        log variance is kept within [-20, 20] and the Backcast is the same as in `get_garch`. The parameters
-        maximize the Gaussian log-likelihood with |Beta| < 1 (see `get_egarch_parameters`).
-
-        Also known as: exponential GARCH, log-GARCH.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate EGARCH for. Defaults to None, which uses the length of the
-                returns.
-            optimization_t (int, optional): Time steps to optimize EGARCH for. It is only used if no
-            weights are given. Defaults to None, which uses the length of the returns.
-            within_period (bool, optional): Whether to calculate EGARCH within the specified period or
-            for the entire period. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the EGARCH values over time.
-            Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame | pd.Series: EGARCH values
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates
-        EGARCH for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others; dates without a return for an asset are NaN.
-        - If `growth` is set to True, the method calculates the growth of EGARCH values using the
-        specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AMZN", "TSLA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_egarch(period="quarterly")
-        ```
-
-        Which returns:
-
-        | Date   |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2021Q2 | 0.0229 | 0.0923 |      0.0077 |
-        | 2021Q3 | 0.0158 | 0.1671 |      0.0049 |
-        | 2021Q4 | 0.0244 | 0.1704 |      0.0131 |
-        | 2022Q1 | 0.0411 | 0.0597 |      0.0062 |
-        | 2022Q2 | 0.0737 | 0.1035 |      0.0116 |
-        | 2022Q3 | 0.0642 | 0.2104 |      0.009  |
-        | 2022Q4 | 0.0868 | 0.1936 |      0.0145 |
-        | 2023Q1 | 0.0975 | 0.3935 |      0.0105 |
-        | 2023Q2 | 0.0675 | 0.0902 |      0.0078 |
-        | 2023Q3 | 0.0321 | 0.0321 |      0.0048 |
-        | 2023Q4 | 0.0565 | 0.0654 |      0.0108 |
-        | 2024Q1 | 0.0348 | 0.133  |      0.0046 |
-        | 2024Q2 | 0.0167 | 0.2705 |      0.0017 |
-        | 2024Q3 | 0.0149 | 0.3389 |      0.002  |
-        | 2024Q4 | 0.0239 | 0.2276 |      0.0015 |
-        | 2025Q1 | 0.0094 | 0.0473 |      0.0033 |
-        | 2025Q2 | 0.0077 | 0.0964 |      0.0076 |
-        | 2025Q3 | 0.0013 | 0.0458 |      0.0033 |
-        | 2025Q4 | 0.0025 | 0.0022 |      0.0017 |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-
-        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
-        returns = self._get_returns(period, within_period).dropna(how="all")
-
-        egarch_sigma_2 = garch_model.get_egarch(
-            returns=returns,
-            weights=None,
-            time_steps=time_steps,
-            optimization_t=optimization_t,
-        )
-
-        egarch_sigma_2 = egarch_sigma_2.loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=egarch_sigma_2,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_egarch_forecast(
-        self,
-        period: str | None = None,
-        time_steps: int = 10,
-        within_period: bool = False,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculates sigma_2 forecasts based on the EGARCH model.
-
-        The formula is as follows:
-
-        - ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L)
-        - L = Omega / (1 - Beta)
-        - sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
-
-        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step and
-        sigma_(n+1)^2 the one-step-ahead variance of the fitted EGARCH(1, 1) recursion (see `get_egarch`). The
-        shock terms drop out at their expectation of zero, so the forecast is the exponential of the expected
-        log variance.
-
-        For more information about the method, see the following paper:
-
-        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
-        Approach." Econometrica, 59(2), 347-370.
-
-        Also known as: volatility forecast, predicted volatility.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate EGARCH and to forecast sigma_2 values for. Defaults to 10.
-            within_period (bool, optional): Whether to calculate EGARCH within each specified period or
-            all at once. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            growth (bool, optional): Whether to calculate the growth of the EGARCH values over time.
-            Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame | pd.Series: sigma_2 forecast values
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and calculates the
-        sigma_2 forecast for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others.
-        - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
-        the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AMZN", "TSLA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_egarch_forecast(period="quarterly")
-        ```
-
-        Which returns:
-
-        |        |   AMZN |   TSLA |   Benchmark |
-        |:-------|-------:|-------:|------------:|
-        | 2026Q1 | 0.0012 | 0.0028 |      0.0034 |
-        | 2026Q2 | 0.001  | 0.0026 |      0.0055 |
-        | 2026Q3 | 0.0009 | 0.0024 |      0.007  |
-        | 2026Q4 | 0.0008 | 0.0022 |      0.0079 |
-        | 2027Q1 | 0.0007 | 0.002  |      0.0084 |
-        | 2027Q2 | 0.0006 | 0.0018 |      0.0086 |
-        | 2027Q3 | 0.0005 | 0.0017 |      0.0087 |
-        | 2027Q4 | 0.0004 | 0.0016 |      0.0088 |
-        | 2028Q1 | 0.0004 | 0.0014 |      0.0089 |
-        | 2028Q2 | 0.0003 | 0.0013 |      0.0089 |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if (
-            period == "daily"
-            and within_period
-            and self._historical_data["intraday"].empty
-        ):
-            raise ValueError(
-                "Intraday data is required for within-period daily calculations. Either set "
-                "within_period=False or initialise the Toolkit with an intraday_period."
-            )
-
-        # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
-        returns = self._get_returns(period, within_period).dropna(how="all")
-
-        sigma_2_forecast = garch_model.get_egarch_forecast(returns, None, time_steps)
-
-        # The forecast steps continue the period of the returns (business days for daily).
-        period_symbol = {
-            "daily": "B",
-            "weekly": "W",
-            "monthly": "ME",
-            "quarterly": "QE",
-        }.get(period, "YE")
-        # Business days are kept as daily periods, as business-day periods are deprecated.
-        period_index = pd.PeriodIndex(
-            pd.date_range(
-                start=returns.index[-1].to_timestamp(),
-                periods=time_steps + 1,
-                freq=period_symbol,
-            ),
-            freq="D" if period_symbol == "B" else None,
-        )
-
-        sigma_2_forecast.index = period_index[1:]
-
-        return finalize_dataset(
-            dataset=sigma_2_forecast,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_egarch_parameters(
-        self,
-        period: str | None = None,
-        optimization_t: int | None = None,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Fits an EGARCH(1, 1) model to the historical returns and returns the estimated
-        Omega, Alpha, Gamma and Beta parameters for each asset.
-
-        A negative Gamma indicates the presence of a leverage effect (negative shocks
-        raise volatility by more than positive ones of the same size).
-
-        The formula is as follows:
-
-        - ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
-        - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
-
-        Where r_t are the returns (not demeaned) and z_t = r_t / sigma_t. The log-likelihood is maximized with
-        Omega in [-15, 5], Alpha and Gamma in [-1, 1] and |Beta| < 1, starting the recursion from
-        ln sigma_1^2 = Omega + Beta * ln(Backcast), with the Backcast of `get_garch_parameters`.
-
-        For more information about the method, see the following paper:
-
-        - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
-        Approach." Econometrica, 59(2), 347-370.
-
-        Also known as: EGARCH weights, EGARCH coefficients, leverage parameters.
-
-        Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            optimization_t (int, optional): Time steps of the returns series to use for the optimization.
-            Defaults to the full length of the returns series.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
-
-        Notes:
-        - The method retrieves historical return data based on the specified `period` and fits an
-        EGARCH(1, 1) model for each asset in the Toolkit instance.
-        - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
-        does not shorten the sample of the others.
-        - EGARCH's log-variance parameterization is less constrained than plain GARCH, which makes it
-        prone to unstable, boundary-hugging fits on short return histories, which include quarterly
-        data over a few years. Prefer daily or weekly returns.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["AMZN", "TSLA"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.risk.get_egarch_parameters(period="daily", rounding=6)
-        ```
-
-        Which returns:
-
-        |       |      AMZN |      TSLA |   Benchmark |
-        |:------|----------:|----------:|------------:|
-        | Omega | -0.382664 | -0.225452 |   -0.309737 |
-        | Alpha |  0.193573 |  0.081906 |    0.059855 |
-        | Gamma | -0.080739 | -0.03535  |   -0.181222 |
-        | Beta  |  0.949074 |  0.964858 |    0.96578  |
-        """
-        period = period if period else "daily"
-
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-
-        returns = self._historical_data[period]["Return"]
-
-        parameters = pd.DataFrame(
-            {
-                # Each ticker is fitted on its own non-missing returns, see get_garch.
-                ticker: garch_model.get_egarch_weights(
-                    returns[ticker].dropna().to_numpy(), t=optimization_t
-                )
-                for ticker in returns.columns
-            },
-            index=["Omega", "Alpha", "Gamma", "Beta"],
         )
 
         return apply_rounding(

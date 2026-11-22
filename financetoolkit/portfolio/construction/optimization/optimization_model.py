@@ -3852,9 +3852,7 @@ def get_maximum_cvar_ratio_weights(
     return _as_series(result.x[:assets] / result.x[variables], returns.columns)
 
 
-# The risk measures of the mean-risk optimizer, with the column they are shown under. CVaR and
-# the drawdowns have optimizers of their own (get_minimum_cvar_weights,
-# get_maximum_cvar_ratio_weights and get_minimum_drawdown_weights).
+# The risk measures of the mean-risk optimizer, with the column they are shown under.
 MEAN_RISK_MEASURES = {
     "mad": "MAD",
     "semideviation": "Semideviation",
@@ -3866,6 +3864,10 @@ MEAN_RISK_MEASURES = {
     "cvar_range": "CVaR Range",
     "tail_gini_range": "Tail Gini Range",
     "ulcer_index": "Ulcer Index",
+    "cvar": "CVaR",
+    "cdar": "CDaR",
+    "maximum_drawdown": "Maximum Drawdown",
+    "average_drawdown": "Average Drawdown",
 }
 MEAN_RISK_OBJECTIVES = ("minimum_risk", "maximum_ratio")
 
@@ -3875,13 +3877,10 @@ QUADRATIC_RISK_MEASURES = ("semideviation", "ulcer_index")
 
 # The measures of the risk budgeting portfolios besides the volatility.
 RISK_BUDGETING_MEASURES = {
-    **{
-        measure: name
-        for measure, name in MEAN_RISK_MEASURES.items()
-        if measure not in ("worst_realization", "range")
-    },
-    "cvar": "CVaR",
-    "cdar": "CDaR",
+    measure: name
+    for measure, name in MEAN_RISK_MEASURES.items()
+    if measure
+    not in ("worst_realization", "range", "maximum_drawdown", "average_drawdown")
 }
 
 # How often the cap on the scale of the risk budgeting solution of an ordered weighted
@@ -3897,6 +3896,8 @@ LINEAR_RISK_MEASURES = (
     "cvar",
     "cvar_range",
     "cdar",
+    "maximum_drawdown",
+    "average_drawdown",
     "gini_mean_difference",
     "tail_gini",
     "tail_gini_range",
@@ -3949,6 +3950,10 @@ def get_risk_measure_programme(
     - "cdar": the Conditional Drawdown at Risk of the uncompounded cumulative returns, with
       running peaks u_t ≥ Σ_(s≤t) r_s'w, u_t ≥ u_(t-1), u_t ≥ 0 and the CVaR programme on
       the drawdowns u_t - Σ_(s≤t) r_s'w (Chekhlov, Uryasev and Zabarankin, 2005).
+    - "maximum_drawdown": the largest drawdown m ≥ u_t - Σ_(s≤t) r_s'w, with the same
+      running peaks.
+    - "average_drawdown": the average drawdown a ≥ Σ (u_t - Σ_(s≤t) r_s'w) / T, with the
+      same running peaks.
     - "gini_mean_difference", "tail_gini" and "tail_gini_range": ordered weighted averages
       Σ c_i X_(i) of the sorted returns (see get_owa_risk). Their programme is a single
       variable θ, the measure, with cost one and no rows: the solvers add the cuts
@@ -4048,6 +4053,35 @@ def get_risk_measure_programme(
         )
         bounds = [(0.0, None)] * periods + [(None, None)] + [(0.0, None)] * periods
         upper = np.zeros(3 * periods - 1)
+    elif risk_measure in ("maximum_drawdown", "average_drawdown"):
+        # The peaks u_t and the measure m: Y_t - u_t ≤ 0, u_t - u_(t+1) ≤ 0 and then
+        # u_t - Y_t - m ≤ 0 for the maximum, or Σ (u_t - Y_t) / T - m ≤ 0 for the average.
+        cumulative = sparse.csr_matrix(np.cumsum(data, axis=0))
+        rising = sparse.eye(periods - 1, periods) - sparse.eye(
+            periods - 1, periods, k=1
+        )
+        if risk_measure == "maximum_drawdown":
+            drawdown_weights, drawdown_auxiliary = -cumulative, [identity, -ones]
+        else:
+            drawdown_weights = sparse.csr_matrix(-cumulative.sum(axis=0) / periods)
+            drawdown_auxiliary = [
+                sparse.csr_matrix(np.full((1, periods), 1 / periods)),
+                sparse.csr_matrix(-np.ones((1, 1))),
+            ]
+        weights = sparse.vstack(
+            [cumulative, sparse.csr_matrix((periods - 1, assets)), drawdown_weights]
+        )
+        auxiliary = sparse.bmat(
+            [
+                [-identity, sparse.csr_matrix((periods, 1))],
+                [rising, sparse.csr_matrix((periods - 1, 1))],
+                drawdown_auxiliary,
+            ],
+            format="csr",
+        )
+        cost = np.concatenate([np.zeros(periods), [1.0]])
+        bounds = [(0.0, None)] * periods + [(0.0, None)]
+        upper = np.zeros(weights.shape[0])
     elif risk_measure in OWA_RISK_MEASURES:
         weights, auxiliary = sparse.csr_matrix((0, assets)), sparse.csr_matrix((0, 1))
         cost, bounds, upper = np.ones(1), [(None, None)], np.zeros(0)
@@ -4189,14 +4223,15 @@ def get_mean_risk_measure(
     Risk module's measures: the mean absolute deviation, the semideviation (the downside
     deviation below τ, or below the mean with T - 1), the first lower partial moment, the
     worst realization, the Gini mean difference, the Tail Gini, the range, the Tail Gini
-    range and the Ulcer Index of the uncompounded cumulative returns. The CVaR, the CVaR
-    range and the CDaR are the averages of the tail with a fraction of the boundary period
-    (Rockafellar and Uryasev, 2002), the values the linear programmes minimize, where the
-    Risk module's CVaR averages the returns at or below an interpolated quantile.
+    range and the Ulcer Index and the maximum and average drawdown of the uncompounded
+    cumulative returns. The CVaR, the CVaR range and the CDaR are the averages of the tail
+    with a fraction of the boundary period (Rockafellar and Uryasev, 2002), the values the
+    linear programmes minimize, where the Risk module's CVaR averages the returns at or
+    below an interpolated quantile.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset or portfolio.
-        risk_measure (str): A key of MEAN_RISK_MEASURES or RISK_BUDGETING_MEASURES.
+        risk_measure (str): A key of MEAN_RISK_MEASURES.
         confidence_level (float, optional): The confidence level of the tail measures.
             Defaults to 0.95.
         minimum_acceptable_return (float | str, optional): The threshold of the
@@ -4237,12 +4272,16 @@ def get_mean_risk_measure(
         measure = get_drawdowns(returns).apply(
             get_expected_tail_loss, confidence_level=confidence_level
         )
+    elif risk_measure == "maximum_drawdown":
+        measure = get_drawdowns(returns).max()
+    elif risk_measure == "average_drawdown":
+        measure = get_drawdowns(returns).mean()
     elif risk_measure == "ulcer_index":
         measure = risk_model.get_ui(returns, rolling=None, compounded=False)
     else:
         raise ValueError(
-            f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, cvar or "
-            f"cdar, not '{risk_measure}'."
+            f"The risk measure must be one of {', '.join(MEAN_RISK_MEASURES)}, not "
+            f"'{risk_measure}'."
         )
     return pd.Series(measure, index=returns.columns, dtype=float)
 
@@ -4329,6 +4368,11 @@ def get_mean_risk_weights(
     the Ulcer Index (see get_squared_risk) are minimized, or the ratio to them maximized,
     with SLSQP directly in the weights.
 
+    With "cvar" the minimum risk portfolio is that of get_minimum_cvar_weights and the
+    maximum ratio portfolio that of get_maximum_cvar_ratio_weights; with "cdar",
+    "maximum_drawdown" and "average_drawdown" the minimum risk portfolio is that of
+    get_minimum_drawdown_weights with the measure "cdar", "maximum" or "average".
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
         risk_measure (str, optional): A key of MEAN_RISK_MEASURES. Defaults to "mad".
@@ -4338,8 +4382,8 @@ def get_mean_risk_weights(
             minimum risk portfolio must have. Defaults to None, no target.
         risk_free_rate (float, optional): The risk free rate per period of the ratio.
             Defaults to 0.
-        confidence_level (float, optional): The confidence level of the CVaR range and
-            the Tail Gini measures. Defaults to 0.95.
+        confidence_level (float, optional): The confidence level of the CVaR, the CVaR
+            range, the CDaR and the Tail Gini measures. Defaults to 0.95.
         minimum_acceptable_return (float | str, optional): The threshold per period of
             the semideviation and the lower partial moment, or "mean" for each asset's
             mean. Defaults to 0.
@@ -4355,7 +4399,8 @@ def get_mean_risk_weights(
             classification in groups, the minimum and maximum total weight per group,
             e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
         net_exposure (float, optional): The sum of the weights, 1 for a fully invested
-            portfolio. Defaults to 1.
+            portfolio. Holding nothing has no drawdown, so a net exposure of 0 is refused
+            for the drawdown measures. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
         current_weights (pd.Series | None, optional): The weights held now, which the
@@ -4568,6 +4613,15 @@ def get_mean_risk_weights(
             cuts,
             stabilization,
         )
+        if risk_measure in (
+            "cdar",
+            "maximum_drawdown",
+            "average_drawdown",
+        ) and np.allclose(solution[:assets], 0, atol=ZERO_WEIGHT):
+            raise ValueError(
+                "Holding nothing has no drawdown, so the minimum is the empty portfolio. This "
+                "happens with a net exposure of 0; use a net exposure other than 0."
+            )
         return _as_series(solution[:assets], returns.columns)
 
     # κ is at most 1 / ρ(w) for every feasible w, so at most one over the lowest risk. The
@@ -4942,9 +4996,11 @@ def get_random_weights(
 HIERARCHICAL_RISK_MEASURES = {
     "variance": "Variance",
     "volatility": "Volatility",
-    **MEAN_RISK_MEASURES,
-    "cvar": "CVaR",
-    "cdar": "CDaR",
+    **{
+        measure: name
+        for measure, name in MEAN_RISK_MEASURES.items()
+        if measure not in ("maximum_drawdown", "average_drawdown")
+    },
 }
 
 # How the number of clusters is chosen when it is not given.

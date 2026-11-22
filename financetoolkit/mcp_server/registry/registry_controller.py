@@ -48,6 +48,7 @@ from financetoolkit.mcp_server.registry import series_model
 from financetoolkit.mcp_server.registry.coercion_model import (
     accepts_text_only,
     coerce_value,
+    refused_value_problem,
     size_limit_problem,
     text_from_parsed_json,
     to_boolean,
@@ -1664,8 +1665,9 @@ class ToolRegistry:
                 Defaults to None.
             parameter_limits (dict[str, Any] | None): The most a size parameter may be
                 ("maximums") and the most parameters computed together may multiply to
-                ("products"), see coercion_model.size_limit_problem. Defaults to None (no
-                limits).
+                ("products"), see coercion_model.size_limit_problem, and the values refused
+                per indicator ("refused_values"), see coercion_model.refused_value_problem.
+                Defaults to None (no limits).
         """
         self._mcp = mcp
         self._provider = provider
@@ -2491,6 +2493,10 @@ class ToolRegistry:
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"
                 )
+            if refused := refused_value_problem(
+                method_name, method_kwargs, self._parameter_limits
+            ):
+                return f"`{tool_name}` (`{method_name}`): {refused}"
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.

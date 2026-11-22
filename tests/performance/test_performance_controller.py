@@ -142,14 +142,16 @@ def test_get_alpha(recorder, performance_module):
     recorder.capture(performance_module.get_alpha(growth=True, lag=[1, 2, 3]))
     recorder.capture(performance_module.get_alpha(show_full_results=True))
     recorder.capture(performance_module.get_alpha(period="monthly", rolling=6))
-
-
-def test_get_jensens_alpha(recorder, performance_module):
-    recorder.capture(performance_module.get_jensens_alpha())
-    recorder.capture(performance_module.get_jensens_alpha(period="quarterly"))
-    recorder.capture(performance_module.get_jensens_alpha(growth=True))
-    recorder.capture(performance_module.get_jensens_alpha(growth=True, lag=[1, 2, 3]))
-    recorder.capture(performance_module.get_jensens_alpha(period="monthly", rolling=6))
+    recorder.capture(performance_module.get_alpha(method="jensen"))
+    recorder.capture(performance_module.get_alpha(method="jensen", period="quarterly"))
+    recorder.capture(performance_module.get_alpha(method="jensen", growth=True))
+    recorder.capture(
+        performance_module.get_alpha(method="jensen", growth=True, lag=[1, 2, 3])
+    )
+    recorder.capture(
+        performance_module.get_alpha(method="jensen", period="monthly", rolling=6)
+    )
+    assert performance_module.get_alpha(method="capm").empty
 
 
 def test_get_treynor_ratio(recorder, performance_module):
@@ -349,7 +351,7 @@ def test_get_fama_decomposition(recorder, performance_module):
 
     # Selectivity + Diversification must reconstruct Jensen's Alpha for every ticker.
     fama_decomposition = performance_module.get_fama_decomposition()
-    jensens_alpha = performance_module.get_jensens_alpha()
+    jensens_alpha = performance_module.get_alpha(method="jensen")
     reconstructed = (
         fama_decomposition.xs("Selectivity", level=1, axis=1)
         + fama_decomposition.xs("Diversification", level=1, axis=1)
@@ -1159,10 +1161,14 @@ def test_the_rolling_measures_of_a_stock_ignore_a_cryptocurrency_next_to_it(
             spy(mixed.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
             spy(alone.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
         )
+    pd.testing.assert_series_equal(
+        spy(mixed.get_alpha(period=period, rolling=rolling, method="jensen")),
+        spy(alone.get_alpha(period=period, rolling=rolling, method="jensen")),
+        rtol=1e-9,
+    )
     for name in (
         "get_sortino_ratio",
         "get_treynor_ratio",
-        "get_jensens_alpha",
         "get_capital_asset_pricing_model",
         "get_m2_ratio",
         "get_appraisal_ratio",
@@ -1244,8 +1250,8 @@ def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module)
     x = window["Benchmark"] - risk_free["Benchmark"].reindex(window.index)
     slope, intercept = np.polyfit(x, y, 1)
     residual_standard_deviation = np.sqrt(((y - slope * x - intercept) ** 2).sum() / 11)
-    alpha = performance_module.get_jensens_alpha(
-        period="monthly", rolling=12, rounding=10
+    alpha = performance_module.get_alpha(
+        method="jensen", period="monthly", rolling=12, rounding=10
     )
     assert ratio.loc[end, "AAPL"] == pytest.approx(
         alpha.loc[end, "AAPL"] / residual_standard_deviation, abs=1e-8

@@ -896,3 +896,188 @@ def test_simple_percentage_volume_oscillator_matches_talib():
         momentum_model.get_percentage_volume_oscillator(
             volumes, 5, 10, 9, moving_average="hull"
         )
+
+
+def test_fisher_transform_matches_talib():
+    """TA-Lib's FISHER(10): the transform starts on period 9 and the trigger one later."""
+    bars = random_bars()
+    result = momentum_model.get_fisher_transform(bars["High"], bars["Low"], 10)
+
+    assert result["Fisher Transform"].first_valid_index() == 9
+    assert result["Trigger"].first_valid_index() == 10
+    assert result["Fisher Transform"].iloc[-3:].tolist() == pytest.approx(
+        [-0.813607, -1.305017, -1.777609], abs=1e-6
+    )
+    assert result["Trigger"].iloc[-3:].tolist() == pytest.approx(
+        [-0.316505, -0.813607, -1.305017], abs=1e-6
+    )
+
+
+def test_fisher_transform_of_a_flat_range_decays_to_zero():
+    flat = pd.Series(100.0, index=range(40))
+    result = momentum_model.get_fisher_transform(flat, flat, 10)
+
+    assert result["Fisher Transform"].iloc[9:].eq(0).all()
+
+
+def test_inverse_fisher_transform_rsi_is_the_tanh_of_the_smoothed_rsi():
+    """tanh(WMA(0.1 * (TA-Lib RSI(5) - 50), 9)), Ehlers' formula."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_inverse_fisher_transform_rsi(closes, 5, 9)
+
+    assert result.first_valid_index() == 5 + 9 - 1
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.626315, -0.811348, -0.905228], abs=1e-6
+    )
+    assert result.abs().max() < 1
+
+
+def test_kdj_indicator_matches_talib():
+    """TA-Lib's KDJ(9, 3, RMA, 3, RMA), also pandas-ta-classic's kdj(9, 3)."""
+    bars = random_bars()
+    result = momentum_model.get_kdj_indicator(
+        bars["High"], bars["Low"], bars["Close"], 9, 3, 3
+    )
+
+    assert result["K"].first_valid_index() == 10
+    assert result["D"].first_valid_index() == 12
+    for column, expected in {
+        "K": [34.680925, 26.885087, 22.097447],
+        "D": [45.269642, 39.141457, 33.46012],
+        "J": [13.503491, 2.372346, -0.627899],
+    }.items():
+        assert result[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+
+def test_premier_stochastic_oscillator_matches_talib():
+    bars = random_bars()
+    result = momentum_model.get_premier_stochastic_oscillator(
+        bars["High"], bars["Low"], bars["Close"], 8, 5
+    )
+
+    assert result.first_valid_index() == 8 + 2 * 5 - 3
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.2865, -0.525715, -0.694269], abs=1e-6
+    )
+
+
+def test_stochastic_momentum_index_matches_talib():
+    """TA-Lib's SMI(13, 2, 25, 9), which starts both outputs on the first signal value."""
+    bars = random_bars()
+    result = momentum_model.get_stochastic_momentum_index(
+        bars["High"], bars["Low"], bars["Close"], 13, 25, 2, 9
+    )
+
+    assert result["Stochastic Momentum Index"].first_valid_index() == 13 + 25 + 2 - 3
+    assert result["Signal Line"].first_valid_index() == 13 + 25 + 2 - 3 + 8
+    assert result["Stochastic Momentum Index"].iloc[-3:].tolist() == pytest.approx(
+        [13.879485, 7.355389, 0.523929], abs=1e-6
+    )
+    assert result["Signal Line"].iloc[-3:].tolist() == pytest.approx(
+        [22.502469, 19.473053, 15.683228], abs=1e-6
+    )
+
+
+def test_smi_ergodic_indicator_matches_pandas_ta_classic():
+    """pandas-ta-classic's smi(5, 20, 5) times 100; the indicator is TA-Lib's TSI(20, 5)."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_smi_ergodic_indicator(closes, 20, 5, 5)
+
+    for column, expected in {
+        "SMI Ergodic Indicator": [-7.767662, -13.35796, -18.163198],
+        "Signal Line": [0.847174, -3.887871, -8.646313],
+        "Histogram": [-8.614836, -9.470089, -9.516885],
+    }.items():
+        assert result[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+
+def test_schaff_trend_cycle_matches_talib_once_the_seeds_decayed():
+    """TA-Lib's STC(23, 50, 10), which seeds its short EMA later, after 300 bars."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_schaff_trend_cycle(closes, 23, 50, 10)
+
+    # The MACD starts on period 49 and each stochastic needs a full window with a range.
+    assert result.first_valid_index() >= 49 + 2 * 9
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [2.783986, 1.391993, 0.695996], abs=1e-5
+    )
+    assert result.dropna().between(0, 100).all()
+
+
+def test_wavetrend_oscillator_matches_talib():
+    bars = random_bars()
+    result = momentum_model.get_wavetrend_oscillator(
+        bars["High"], bars["Low"], bars["Close"], 10, 21, 4
+    )
+
+    assert result["WaveTrend"].first_valid_index() == 2 * 10 + 21 - 3
+    assert result["WaveTrend"].iloc[-3:].tolist() == pytest.approx(
+        [-3.599824, -15.647894, -24.506883], abs=1e-6
+    )
+    assert result["Signal Line"].iloc[-3:].tolist() == pytest.approx(
+        [11.108466, 1.491716, -8.5128], abs=1e-6
+    )
+
+
+def test_derivative_oscillator_matches_talib():
+    closes = random_bars()["Close"]
+    result = momentum_model.get_derivative_oscillator(closes, 14, 5, 3, 9)
+
+    assert result.first_valid_index() == 14 + 5 + 3 + 9 - 3
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-4.839607, -5.94887, -6.796227], abs=1e-6
+    )
+
+
+def test_swing_index_matches_talib():
+    """TA-Lib's SI and ASI with a limit move of 3; the ASI is the running sum of the SI."""
+    bars = random_bars()
+    result = momentum_model.get_swing_index(
+        bars["Open"], bars["High"], bars["Low"], bars["Close"], 3.0
+    )
+
+    assert result["Swing Index"].first_valid_index() == 1
+    assert result["Swing Index"].iloc[-3:].tolist() == pytest.approx(
+        [-29.299229, -3.897017, -5.982416], abs=1e-6
+    )
+    assert result["Accumulative Swing Index"].iloc[-3:].tolist() == pytest.approx(
+        [95.945772, 92.048754, 86.066338], abs=1e-6
+    )
+
+
+def test_quantitative_qualitative_estimation_matches_pandas_ta_classic():
+    closes = random_bars()["Close"]
+    result = momentum_model.get_quantitative_qualitative_estimation(
+        closes, 14, 5, 4.236
+    )
+
+    assert result["RSI Moving Average"].first_valid_index() == 14 + 5 - 1
+    assert result["QQE"].first_valid_index() == 14 + 5 + 2 * 27 - 2
+    assert result["QQE"].iloc[-3:].tolist() == pytest.approx(
+        [54.682067, 52.31387, 50.218422], abs=1e-6
+    )
+    assert result["RSI Moving Average"].iloc[-3:].tolist() == pytest.approx(
+        [48.86828, 46.494955, 44.379044], abs=1e-6
+    )
+
+
+def test_dynamic_momentum_index_sums_the_changes_of_its_own_period():
+    """The summed RSI over Int(14 / volatility index) changes, bounded to 5 and 30."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_dynamic_momentum_index(closes, 14, 5, 10, 5, 30)
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [28.121299, 29.245696, 27.358302], abs=1e-6
+    )
+    assert result.dropna().between(0, 100).all()
+
+
+def test_price_zone_oscillator_matches_ema_of_the_signed_closes():
+    """100 * EMA(sign(change) * close, 14) / EMA(close, 14) with TA-Lib's EMA."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_price_zone_oscillator(closes, 14)
+
+    assert result.first_valid_index() == 14
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-11.746324, -23.335871, -33.393339], abs=1e-6
+    )

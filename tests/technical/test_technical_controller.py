@@ -576,6 +576,124 @@ def test_get_coppock_curve(recorder, technical_module):
     recorder.capture(technical_module.get_coppock_curve(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_fisher_transform(recorder, technical_module):
+    recorder.capture(technical_module.get_fisher_transform())
+    recorder.capture(technical_module.get_fisher_transform(window=9))
+    recorder.capture(technical_module.get_fisher_transform(period="weekly"))
+
+
+def test_get_inverse_fisher_transform_rsi(recorder, technical_module):
+    recorder.capture(technical_module.get_inverse_fisher_transform_rsi())
+    recorder.capture(
+        technical_module.get_inverse_fisher_transform_rsi(rsi_window=14, wma_window=5)
+    )
+    recorder.capture(
+        technical_module.get_inverse_fisher_transform_rsi(growth=True, lag=[1, 2])
+    )
+
+
+def test_get_kdj_indicator(recorder, technical_module):
+    recorder.capture(technical_module.get_kdj_indicator())
+    recorder.capture(technical_module.get_kdj_indicator(window=14, k_window=5))
+    recorder.capture(technical_module.get_kdj_indicator(period="weekly"))
+
+
+def test_get_premier_stochastic_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_premier_stochastic_oscillator())
+    recorder.capture(
+        technical_module.get_premier_stochastic_oscillator(window=14, smooth_window=3)
+    )
+    recorder.capture(
+        technical_module.get_premier_stochastic_oscillator(close_column="Close")
+    )
+
+
+def test_get_stochastic_momentum_index(recorder, technical_module):
+    recorder.capture(technical_module.get_stochastic_momentum_index())
+    recorder.capture(
+        technical_module.get_stochastic_momentum_index(
+            window=5, long_window=20, short_window=5, signal_window=5
+        )
+    )
+    recorder.capture(technical_module.get_stochastic_momentum_index(period="weekly"))
+
+
+def test_get_smi_ergodic_indicator(recorder, technical_module):
+    recorder.capture(technical_module.get_smi_ergodic_indicator())
+    recorder.capture(
+        technical_module.get_smi_ergodic_indicator(
+            long_window=25, short_window=13, signal_window=7
+        )
+    )
+    recorder.capture(technical_module.get_smi_ergodic_indicator(period="weekly"))
+
+
+def test_get_schaff_trend_cycle(recorder, technical_module):
+    recorder.capture(technical_module.get_schaff_trend_cycle())
+    recorder.capture(
+        technical_module.get_schaff_trend_cycle(
+            short_window=12, long_window=26, cycle_window=10, factor=0.25
+        )
+    )
+    recorder.capture(technical_module.get_schaff_trend_cycle(growth=True, lag=[1, 2]))
+
+
+def test_get_wavetrend_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_wavetrend_oscillator())
+    recorder.capture(
+        technical_module.get_wavetrend_oscillator(
+            channel_window=9, average_window=12, signal_window=3
+        )
+    )
+    recorder.capture(technical_module.get_wavetrend_oscillator(period="weekly"))
+
+
+def test_get_derivative_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_derivative_oscillator())
+    recorder.capture(
+        technical_module.get_derivative_oscillator(
+            window=9, first_window=3, second_window=2, signal_window=5
+        )
+    )
+    recorder.capture(technical_module.get_derivative_oscillator(period="weekly"))
+
+
+def test_get_swing_index(recorder, technical_module):
+    recorder.capture(technical_module.get_swing_index())
+    recorder.capture(technical_module.get_swing_index(limit_move=10.0))
+    recorder.capture(technical_module.get_swing_index(close_column="Close"))
+
+
+def test_get_quantitative_qualitative_estimation(recorder, technical_module):
+    recorder.capture(technical_module.get_quantitative_qualitative_estimation())
+    recorder.capture(
+        technical_module.get_quantitative_qualitative_estimation(
+            window=10, smooth_window=3, factor=3.0
+        )
+    )
+    recorder.capture(
+        technical_module.get_quantitative_qualitative_estimation(period="weekly")
+    )
+
+
+def test_get_dynamic_momentum_index(recorder, technical_module):
+    recorder.capture(technical_module.get_dynamic_momentum_index())
+    recorder.capture(
+        technical_module.get_dynamic_momentum_index(
+            window=20, minimum_window=3, maximum_window=40
+        )
+    )
+    recorder.capture(technical_module.get_dynamic_momentum_index(period="weekly"))
+
+
+def test_get_price_zone_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_price_zone_oscillator())
+    recorder.capture(technical_module.get_price_zone_oscillator(window=28))
+    recorder.capture(
+        technical_module.get_price_zone_oscillator(growth=True, lag=[1, 2])
+    )
+
+
 def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))

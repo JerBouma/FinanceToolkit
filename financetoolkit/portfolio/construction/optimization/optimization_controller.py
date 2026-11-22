@@ -1318,8 +1318,10 @@ class OptimizationConstruction:
 
         Args:
             linkage_method (str, optional): The linkage of the hierarchical clustering:
-                "single", "complete", "average" or "ward". Defaults to "single", as in the
-                paper.
+                "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+                Hierarchical Tree of Song, Di Matteo and Aste, 2012, on the TMFG planar
+                graph of the codependence, ordered by the distance itself). Defaults to
+                "single", as in the paper.
             codependence (str, optional): The codependence the assets are clustered on:
                 "pearson" (the linear correlation of the covariance matrix), "spearman"
                 (the rank correlation of the returns, Spearman, 1904), "kendall" (the
@@ -1451,6 +1453,13 @@ class OptimizationConstruction:
             risk_measure=risk_measure,
             confidence_level=confidence_level,
             minimum_acceptable_return=minimum_acceptable_return,
+            similarity=(
+                optimization_model.get_codependence_similarity(
+                    returns, covariance_matrix, codependence
+                )
+                if linkage_method == "dbht"
+                else None
+            ),
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -1520,8 +1529,9 @@ class OptimizationConstruction:
                 cluster the splits use, between 0 (Hierarchical Risk Parity) and 1.
                 Defaults to 0.5.
             linkage_method (str, optional): The linkage of the hierarchical clustering:
-                "single", "complete", "average" or "ward". Defaults to "single", as in
-                Hierarchical Risk Parity.
+                "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+                Hierarchical Tree, Song, Di Matteo and Aste, 2012). Defaults to "single",
+                as in Hierarchical Risk Parity.
             codependence (str, optional): The codependence the assets are clustered on
                 (see get_hierarchical_risk_parity_weights). Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
@@ -1599,6 +1609,13 @@ class OptimizationConstruction:
             maximum_weight,
             distance=optimization_model.get_codependence_distance(
                 returns, covariance_matrix, codependence
+            ),
+            similarity=(
+                optimization_model.get_codependence_similarity(
+                    returns, covariance_matrix, codependence
+                )
+                if linkage_method == "dbht"
+                else None
             ),
         )
         return self._weights_table(
@@ -1894,8 +1911,10 @@ class OptimizationConstruction:
 
         Args:
             linkage_method (str, optional): The linkage of the hierarchical clustering:
-                "single", "complete", "average" or "ward". Defaults to "ward", as in the
-                paper.
+                "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+                Hierarchical Tree of Song, Di Matteo and Aste, 2012, whose own clusters,
+                the converging bubbles of the TMFG planar graph of the codependence, are
+                used without a number of clusters). Defaults to "ward", as in the paper.
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
             cluster_criterion (str, optional): How the number of clusters is chosen when
@@ -2037,6 +2056,13 @@ class OptimizationConstruction:
         distance = optimization_model.get_codependence_distance(
             returns, covariance_matrix, codependence
         )
+        similarity = (
+            optimization_model.get_codependence_similarity(
+                returns, covariance_matrix, codependence
+            )
+            if linkage_method == "dbht"
+            else None
+        )
         weights = optimization_model.get_hierarchical_equal_risk_contribution_weights(
             covariance_matrix,
             linkage_method,
@@ -2055,6 +2081,7 @@ class OptimizationConstruction:
             minimum_acceptable_return=minimum_acceptable_return,
             within_clusters=within_clusters,
             cluster_criterion=cluster_criterion,
+            similarity=similarity,
         )
         table = self._add_hierarchical_risk(
             self._weights_table(
@@ -2073,6 +2100,7 @@ class OptimizationConstruction:
             clusters,
             distance=distance,
             cluster_criterion=cluster_criterion,
+            similarity=similarity,
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -2134,7 +2162,10 @@ class OptimizationConstruction:
                 "maximum_sharpe" or "risk_parity" (equal risk contribution). Defaults to
                 "minimum_variance".
             linkage_method (str, optional): The linkage of the hierarchical clustering:
-                "single", "complete", "average" or "ward". Defaults to "ward".
+                "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+                Hierarchical Tree of Song, Di Matteo and Aste, 2012, whose own clusters,
+                the converging bubbles of the TMFG planar graph of the codependence, are
+                used without a number of clusters). Defaults to "ward".
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
             cluster_criterion (str, optional): How the number of clusters is chosen when
@@ -2268,6 +2299,13 @@ class OptimizationConstruction:
         distance = optimization_model.get_codependence_distance(
             returns, covariance_matrix, codependence
         )
+        similarity = (
+            optimization_model.get_codependence_similarity(
+                returns, covariance_matrix, codependence
+            )
+            if linkage_method == "dbht"
+            else None
+        )
         weights = optimization_model.get_nested_clustered_optimization_weights(
             expected,
             covariance_matrix,
@@ -2281,6 +2319,7 @@ class OptimizationConstruction:
             confidence_level=confidence_level,
             minimum_acceptable_return=minimum_acceptable_return,
             cluster_criterion=cluster_criterion,
+            similarity=similarity,
         )
         table = self._add_hierarchical_risk(
             self._weights_table(
@@ -2299,6 +2338,7 @@ class OptimizationConstruction:
             clusters,
             distance=distance,
             cluster_criterion=cluster_criterion,
+            similarity=similarity,
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table

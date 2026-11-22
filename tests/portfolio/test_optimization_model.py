@@ -3992,3 +3992,180 @@ def test_stacking_matches_skfolio():
         optimization_model.get_stacking_weights(
             returns, methods, inverse_volatility, folds=1
         )
+
+
+def _dbht_returns() -> pd.DataFrame:
+    """
+    Fifteen assets in three blocks with their own factors, which the DBHT finds as its
+    clusters. The reference values below come from Riskfolio-Lib 7.4.1 run on these
+    same returns.
+    """
+    rng = np.random.default_rng(0)
+    block = np.arange(15) % 3
+    factors = rng.normal(0, 0.01, size=(500, 3))
+    data = factors[:, block] * rng.uniform(0.6, 1.4, 15) + rng.normal(
+        0, 0.008, size=(500, 15)
+    )
+    return pd.DataFrame(data, columns=[f"D{i:02d}" for i in range(15)])
+
+
+def test_the_dbht_matches_riskfolio():
+    returns = _dbht_returns()
+    covariance = returns.cov()
+    distance = optimization_model.get_codependence_distance(returns, covariance)
+    similarity = optimization_model.get_codependence_similarity(returns, covariance)
+    assert np.allclose(similarity, (1 + returns.corr()) / 2)
+
+    # Riskfolio-Lib's DBHTs(D, S) with its default optimal leaf ordering: the same
+    # merges, heights and order.
+    matrix = optimization_model.get_dbht_linkage(distance, similarity)
+    assert np.allclose(
+        matrix,
+        [
+            [10, 1, 0.25, 2],
+            [4, 13, 1 / 3, 2],
+            [16, 15, 0.5, 4],
+            [17, 7, 1.0, 5],
+            [8, 2, 0.25, 2],
+            [11, 19, 1 / 3, 3],
+            [20, 5, 0.5, 4],
+            [14, 21, 1.0, 5],
+            [3, 6, 0.25, 2],
+            [23, 9, 1 / 3, 3],
+            [0, 12, 0.5, 2],
+            [25, 24, 1.0, 5],
+            [22, 18, 2.0, 10],
+            [26, 27, 3.0, 15],
+        ],
+        atol=1e-12,
+    )
+    # Without a number of clusters, the DBHT's own: the three blocks.
+    _, labels = optimization_model.get_hierarchical_clusters(
+        covariance, "dbht", distance=distance, similarity=similarity
+    )
+    assert labels.tolist() == [0, 2, 1] * 5
+    # The defaults derive the same distance and similarity from the covariance.
+    assert (
+        optimization_model.get_hierarchical_clusters(covariance, "dbht")[1].tolist()
+        == labels.tolist()
+    )
+
+    # Riskfolio-Lib's HCPortfolio(linkage="DBHT", rm="MV", k=3) with model="HRP",
+    # "HERC", "HERC2" and "NCO" (obj="MinRisk", solved to about 1e-5 by its solver).
+    options = {"distance": distance, "similarity": similarity}
+    references = {
+        "HRP": optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, "dbht", **options
+        ),
+        "HERC": optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance, "dbht", **options
+        ),
+        "HERC2": optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance, "dbht", within_clusters="equal", **options
+        ),
+        "NCO": optimization_model.get_nested_clustered_optimization_weights(
+            returns.mean(), covariance, linkage_method="dbht", **options
+        ),
+    }
+    expected = {
+        "HRP": [
+            0.0941047028,
+            0.0405907212,
+            0.0672417116,
+            0.053457103,
+            0.0973872823,
+            0.0990891829,
+            0.0542886766,
+            0.0609920351,
+            0.0329178319,
+            0.0843162113,
+            0.0303144049,
+            0.0959843797,
+            0.0585235509,
+            0.0268380624,
+            0.1039541434,
+        ],
+        "HERC": [
+            0.1613824692,
+            0.0236745208,
+            0.0381735516,
+            0.1384618199,
+            0.0309904582,
+            0.0355037149,
+            0.0960519566,
+            0.0355735783,
+            0.0186876646,
+            0.1491791212,
+            0.019705124,
+            0.0401270554,
+            0.1515846708,
+            0.0174454141,
+            0.0434588804,
+        ],
+        "HERC2": [0.1393320075, 0.0254778191, 0.0351901734] * 5,
+        "NCO": [
+            0.1170371688,
+            0.0237126176,
+            0.0850734153,
+            0.0515686364,
+            0.1128046965,
+            0.0680497402,
+            0.0,
+            0.1545980627,
+            0.0,
+            0.0812008486,
+            0.0,
+            0.0922174547,
+            0.0860588972,
+            0.0,
+            0.127678411,
+        ],
+    }
+    for model, weights in references.items():
+        tolerance = 2e-5 if model == "NCO" else 1e-9
+        assert np.allclose(weights, expected[model], atol=tolerance), model
+
+
+def test_the_dbht_breaks_ties_and_handles_few_assets():
+    # Three blocks of exactly equal correlations: every choice is a tie. Riskfolio-Lib's
+    # DBHTs gives this tree once its FindDisjoint leaves out all three vertices of the
+    # triangle; as published it never separates on the triangle of assets 0, 1 and 2 and
+    # finds two clusters.
+    correlation = np.full((15, 15), 0.1)
+    for start in (0, 5, 10):
+        correlation[start : start + 5, start : start + 5] = 0.6
+    np.fill_diagonal(correlation, 1.0)
+    distance = np.sqrt((1 - correlation) / 2)
+    matrix = optimization_model.get_dbht_linkage(distance)
+    assert np.allclose(
+        matrix,
+        [
+            [14, 13, 0.25, 2],
+            [12, 10, 1 / 3, 2],
+            [11, 15, 0.5, 3],
+            [17, 16, 1.0, 5],
+            [1, 0, 0.25, 2],
+            [2, 19, 1 / 3, 3],
+            [4, 3, 0.5, 2],
+            [20, 21, 1.0, 5],
+            [6, 5, 0.25, 2],
+            [7, 23, 1 / 3, 3],
+            [9, 8, 0.5, 2],
+            [24, 25, 1.0, 5],
+            [22, 18, 2.0, 10],
+            [26, 27, 3.0, 15],
+        ],
+    )
+    names = [f"A{i}" for i in range(15)]
+    _, labels = optimization_model.get_hierarchical_clusters(
+        pd.DataFrame(correlation, index=names, columns=names), "dbht"
+    )
+    assert labels.tolist() == [1] * 5 + [0] * 5 + [2] * 5
+
+    # Up to four assets form one bubble and one cluster.
+    for assets in (2, 3, 4):
+        small = optimization_model.get_dbht_linkage(distance[:assets, :assets])
+        assert len(small) == assets - 1 and (small[:, 2] <= 1).all()
+        assert small[-1, 3] == assets
+    with pytest.raises(ValueError, match="At least two assets"):
+        optimization_model.get_dbht_linkage(np.zeros((1, 1)))

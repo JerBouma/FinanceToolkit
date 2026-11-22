@@ -5,7 +5,9 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.technicals import momentum_model, overlap_model, volatility_model
+from financetoolkit.technicals.momentum import momentum_model
+from financetoolkit.technicals.overlap import overlap_model
+from financetoolkit.technicals.volatility import volatility_model
 
 # TA-Lib's default candle settings (ta_global.c): what a candle part is measured against, over how many
 # previous candles it is averaged and the factor applied. "Shadows" averages are halved, as in TA-Lib.

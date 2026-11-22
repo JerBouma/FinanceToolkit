@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import pattern_model
+from financetoolkit.technicals.pattern import pattern_model
 
 
 def candles_after_a_calm_market(*pattern_candles):

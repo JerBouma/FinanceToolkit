@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import pattern_model
+from financetoolkit.technicals.pattern import pattern_model
 
 
 def test_collect_all_indicators(recorder, technical_module):
@@ -850,8 +850,8 @@ def test_a_cryptocurrency_counts_a_year_in_calendar_days():
     its relative strength score in 91 days; a stock keeps 252 and 63."""
     import numpy as np  # noqa: PLC0415
 
-    from financetoolkit.technicals import (  # noqa: PLC0415
-        helpers,
+    from financetoolkit.technicals import helpers  # noqa: PLC0415
+    from financetoolkit.technicals.seasonality import (  # noqa: PLC0415
         seasonality_model,
     )
     from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415

@@ -8,7 +8,9 @@ import math
 import numpy as np
 import pandas as pd
 
-from financetoolkit.technicals.overlap_model import get_exponential_moving_average
+from financetoolkit.technicals.overlap.overlap_model import (
+    get_exponential_moving_average,
+)
 
 # Number of trading days used to annualize realized volatility.
 TRADING_DAYS_PER_YEAR = 252

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import volatility_model
+from financetoolkit.technicals.volatility import volatility_model
 from tests.technical.sample_prices import sample_prices
 
 
@@ -121,7 +121,7 @@ def test_recursive_averages_stop_where_the_prices_stop():
 
 
 def test_mass_index_sums_the_ratio_of_the_single_and_double_ema():
-    from financetoolkit.technicals.overlap_model import (  # noqa: PLC0415
+    from financetoolkit.technicals.overlap.overlap_model import (  # noqa: PLC0415
         get_exponential_moving_average,
     )
 

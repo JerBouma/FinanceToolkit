@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import momentum_model
+from financetoolkit.technicals.momentum import momentum_model
 from tests.technical.sample_prices import sample_prices
 
 

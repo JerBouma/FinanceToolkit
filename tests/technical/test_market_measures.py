@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import breadth_model, seasonality_model
+from financetoolkit.technicals.breadth import breadth_model
+from financetoolkit.technicals.seasonality import seasonality_model
 
 
 @pytest.fixture(name="prices")

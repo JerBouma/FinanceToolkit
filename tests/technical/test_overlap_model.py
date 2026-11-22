@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import overlap_model
+from financetoolkit.technicals.overlap import overlap_model
 from tests.technical.sample_prices import sample_prices
 
 

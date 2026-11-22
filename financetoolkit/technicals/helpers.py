@@ -13,6 +13,96 @@ from financetoolkit.helpers import get_non_trading_days
 TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365
 
+PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
+
+# The indicators per collection that get_factor_analysis compares across tickers. Left out are
+# the market-wide breadth measures (one value for all tickers), the volume-scaled ones (on
+# balance volume, price volume trend, accumulation/distribution, Chaikin oscillator, force
+# index, ease of movement), whose level reflects how many shares trade, and the pivot points and Fibonacci
+# levels, which only restate the latest high, low and close.
+FACTOR_COLLECTIONS = {
+    "momentum": [
+        "get_money_flow_index",
+        "get_williams_percent_r",
+        "get_aroon_indicator",
+        "get_commodity_channel_index",
+        "get_relative_vigor_index",
+        "get_ultimate_oscillator",
+        "get_percentage_price_oscillator",
+        "get_percentage_volume_oscillator",
+        "get_detrended_price_oscillator",
+        "get_average_directional_index",
+        "get_chande_momentum_oscillator",
+        "get_ichimoku_cloud",
+        "get_stochastic_oscillator",
+        "get_moving_average_convergence_divergence",
+        "get_relative_strength_index",
+        "get_stochastic_relative_strength_index",
+        "get_true_strength_index",
+        "get_balance_of_power",
+        "get_awesome_oscillator",
+        "get_vortex_indicator",
+        "get_elder_ray_index",
+        "get_rate_of_change",
+        "get_choppiness_index",
+        "get_know_sure_thing",
+        "get_coppock_curve",
+    ],
+    "overlap": [
+        "get_moving_average",
+        "get_trix",
+        "get_kaufman_adaptive_moving_average",
+        "get_volume_weighted_average_price",
+        "get_parabolic_sar",
+    ],
+    "volatility": [
+        "get_bollinger_bands",
+        "get_bollinger_percent_b_and_bandwidth",
+        "get_true_range",
+        "get_average_true_range",
+        "get_mass_index",
+        "get_supertrend",
+        "get_chandelier_exit",
+        "get_keltner_channels",
+        "get_donchian_channels",
+    ],
+    "breadth": [
+        "get_chaikin_money_flow",
+        "get_negative_volume_index",
+        "get_positive_volume_index",
+    ],
+}
+FACTOR_COLLECTIONS["all"] = [
+    metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
+]
+
+# Indicators in price units, which get_factor_analysis makes comparable across tickers: a
+# price line (an average, band or stop) as the distance of the close from it, close / line - 1,
+# and a price difference (a range or an oscillator of two averages) as a share of the close.
+FACTOR_PRICE_LINES = (
+    "get_moving_average",
+    "get_kaufman_adaptive_moving_average",
+    "get_volume_weighted_average_price",
+    "get_parabolic_sar",
+    "get_ichimoku_cloud",
+    "get_bollinger_bands",
+    "get_supertrend",
+    "get_chandelier_exit",
+    "get_keltner_channels",
+    "get_donchian_channels",
+    "get_pivot_points",
+    "get_fibonacci_retracement_levels",
+)
+FACTOR_PRICE_DIFFERENCES = (
+    "get_true_range",
+    "get_average_true_range",
+    "get_moving_average_convergence_divergence",
+    "get_awesome_oscillator",
+    "get_elder_ray_index",
+    "get_detrended_price_oscillator",
+    "get_force_index",
+)
+
 
 def calculate_per_ticker(
     historical_data: pd.DataFrame,

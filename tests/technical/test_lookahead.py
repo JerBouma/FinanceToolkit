@@ -17,12 +17,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.technicals import (
-    breadth_model as breadth,
-    momentum_model as momentum,
-    overlap_model as overlap,
-    volatility_model as volatility,
-)
+from financetoolkit.technicals.breadth import breadth_model as breadth
+from financetoolkit.technicals.momentum import momentum_model as momentum
+from financetoolkit.technicals.overlap import overlap_model as overlap
+from financetoolkit.technicals.volatility import volatility_model as volatility
 
 WINDOW = 14
 

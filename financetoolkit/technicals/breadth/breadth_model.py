@@ -7,7 +7,9 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.technicals.helpers import apply_on_own_closes
-from financetoolkit.technicals.overlap_model import get_exponential_moving_average
+from financetoolkit.technicals.overlap.overlap_model import (
+    get_exponential_moving_average,
+)
 
 
 def get_mcclellan_oscillator(

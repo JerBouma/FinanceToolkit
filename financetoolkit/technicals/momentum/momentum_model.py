@@ -6,13 +6,13 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.technicals.overlap_model import (
+from financetoolkit.technicals.overlap.overlap_model import (
     apply_to_rolling_windows,
     get_exponential_moving_average,
     get_moving_average,
     get_weighted_moving_average,
 )
-from financetoolkit.technicals.volatility_model import (
+from financetoolkit.technicals.volatility.volatility_model import (
     get_true_range,
     get_wilder_moving_average,
 )

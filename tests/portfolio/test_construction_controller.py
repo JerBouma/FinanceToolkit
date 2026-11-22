@@ -270,6 +270,61 @@ def test_get_risk_parity_weights_risk_measure(recorder, portfolio_module):
     )
 
 
+def test_get_hierarchical_weights_with_other_risk_measures(recorder, portfolio_module):
+    table = portfolio_module.get_hierarchical_risk_parity_weights(
+        risk_measure="cvar", include_benchmark=True
+    )
+    recorder.capture(table)
+    assert "CVaR" in table.columns
+    recorder.capture(
+        portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+            risk_measure="cdar",
+            within_clusters="equal",
+            clusters=2,
+            include_benchmark=True,
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            risk_measure="mad",
+            objective="risk_parity",
+            clusters=2,
+            include_benchmark=True,
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+            cluster_criterion="standardized_silhouette", include_benchmark=True
+        )
+    )
+
+
+def test_get_schur_complementary_weights(recorder, portfolio_module):
+    table = portfolio_module.get_schur_complementary_weights(include_benchmark=True)
+    recorder.capture(table)
+    # With three assets one half of the first split is a single asset, which leaves
+    # nothing to augment, so the weights are those of Hierarchical Risk Parity.
+    pd.testing.assert_frame_equal(
+        table,
+        portfolio_module.get_hierarchical_risk_parity_weights(include_benchmark=True),
+    )
+
+
+def test_get_stacking_weights(recorder, portfolio_module):
+    table = portfolio_module.get_stacking_weights(include_benchmark=True)
+    recorder.capture(table)
+    assert table.loc["Portfolio", "Weight"] == pytest.approx(1, abs=1e-4)
+    recorder.capture(
+        portfolio_module.get_stacking_weights(
+            methods="minimum_variance,risk_parity,equal_weight",
+            final_method="inverse_volatility",
+            folds=None,
+            include_benchmark=True,
+        )
+    )
+    assert portfolio_module.get_stacking_weights(methods=["random"]).empty
+
+
 def test_get_black_litterman_weights(recorder, portfolio_module):
     market = {"AAPL": 2.0, "MSFT": 1.5}
     recorder.capture(
@@ -1262,6 +1317,11 @@ def test_get_asset_clusters(recorder, portfolio_module):
     recorder.capture(
         portfolio_module.get_asset_clusters(
             method="ftca", threshold=0.7, include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            cluster_criterion="standardized_silhouette", include_benchmark=True
         )
     )
     assert portfolio_module.get_asset_clusters(method="k_means").empty

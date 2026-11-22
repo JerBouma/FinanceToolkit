@@ -1601,6 +1601,7 @@ class AnalysisConstruction:
         covariance: str = "sample",
         linkage_method: str = "ward",
         clusters: int | None = None,
+        cluster_criterion: str = "two_difference_gap",
         threshold: float = 0.5,
         include_benchmark: bool = False,
         show_columns: str | list[str] | None = None,
@@ -1612,7 +1613,8 @@ class AnalysisConstruction:
         - "hierarchical": a hierarchical clustering on the distance of the codependence
           (see get_codependence_matrix), cut into `clusters` clusters or, without a
           number, at the sharpest bend of the within-cluster dispersion (the two-order
-          difference of the gap statistic, Yue, Wang and Wei, 2008), as HERC and NCO do.
+          difference of the gap statistic, Yue, Wang and Wei, 2008), as HERC and NCO do,
+          or at the highest standardized silhouette (López de Prado, 2020).
         - "ftca": the Fast Threshold Clustering Algorithm of Varadi (2013). Among the
           assets not yet clustered, take the one with the highest average codependence
           (H) and the lowest (L). If H and L are codependent above the threshold, they form
@@ -1628,6 +1630,8 @@ class AnalysisConstruction:
           Analytics.
         - Yue, S., Wang, X. and Wei, M. (2008). "Application of Two-Order Difference to
           Gap Statistic." Transactions of Tianjin University, 14(3), 217-221.
+        - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
+          University Press.
         - ffn: calc_ftca (https://github.com/pmorissette/ffn).
 
         Also known as: asset clustering, FTCA, correlation clusters.
@@ -1644,6 +1648,10 @@ class AnalysisConstruction:
                 "complete", "average" or "ward". Defaults to "ward".
             clusters (int | None, optional): The number of clusters of "hierarchical".
                 Defaults to None, chosen by the two-order difference of the gap statistic.
+            cluster_criterion (str, optional): How "hierarchical" chooses the number of
+                clusters when it is not given: "two_difference_gap" or
+                "standardized_silhouette" (the highest mean over standard deviation of
+                the silhouette coefficients). Defaults to "two_difference_gap".
             threshold (float, optional): The codependence above which "ftca" puts assets
                 in one cluster. Defaults to 0.5.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -1709,6 +1717,7 @@ class AnalysisConstruction:
                 distance=optimization_model.get_codependence_distance(
                     returns, covariance_matrix, codependence
                 ),
+                cluster_criterion=cluster_criterion,
             )
         return pd.DataFrame({"Cluster": labels + 1}, index=covariance_matrix.index)
 

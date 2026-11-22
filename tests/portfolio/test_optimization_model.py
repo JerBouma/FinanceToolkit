@@ -5,7 +5,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.cluster.hierarchy import cut_tree, leaves_list, linkage
 from scipy.optimize import minimize
 from scipy.spatial.distance import pdist, squareform
 
@@ -3710,3 +3710,285 @@ def test_worst_case_cvar_grows_with_the_radius_up_to_a_total_loss():
     )
     with pytest.raises(ValueError, match="radius"):
         optimization_model.get_distributionally_robust_cvar_weights(returns, 0.95, -0.1)
+
+
+def test_hierarchical_risk_parity_with_other_risk_measures_matches_riskfolio():
+    returns = _block_returns()
+    covariance = returns.cov() * 252
+
+    # Riskfolio-Lib 7.4.1's HCPortfolio(model="HRP", rm=...) with its clustering replaced by
+    # the paper's (single linkage on the distance between the columns of the correlation
+    # distance, no optimal leaf order); skfolio 1.14.4's HierarchicalRiskParity agrees to
+    # 1e-15 on the measures it has (with the lower partial moment below the mean).
+    for measure, threshold, reference in (
+        (
+            "cvar",
+            0.0,
+            [0.1161672636, 0.1012285676, 0.0940929137, 0.0800697728, 0.0589711385]
+            + [0.0771216812, 0.1274498611, 0.1547867123, 0.1422451844, 0.0478669049],
+        ),
+        (
+            "cdar",
+            0.0,
+            [0.0531439788, 0.0795147121, 0.067648696, 0.0525658726, 0.0555266023]
+            + [0.1325611325, 0.1357556776, 0.2477535403, 0.1448670112, 0.0306627766],
+        ),
+        (
+            "semideviation",
+            "mean",
+            [0.1146711497, 0.1028620888, 0.0962579363, 0.0799957216, 0.0642459939]
+            + [0.0796885237, 0.1249699125, 0.1503596939, 0.1378157114, 0.0491332682],
+        ),
+        (
+            "mad",
+            0.0,
+            [0.1125908443, 0.104902673, 0.0958432631, 0.0799940541, 0.0671899363]
+            + [0.0818589711, 0.1215005635, 0.1496912421, 0.137189869, 0.0492385835],
+        ),
+    ):
+        weights = optimization_model.get_hierarchical_risk_parity_weights(
+            covariance,
+            returns=returns,
+            risk_measure=measure,
+            minimum_acceptable_return=threshold,
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-9)
+
+    # The default is the variance, which needs no returns.
+    pd.testing.assert_series_equal(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, returns=returns, risk_measure="variance"
+        ),
+    )
+    with pytest.raises(ValueError, match="needs the returns"):
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, risk_measure="cvar"
+        )
+    with pytest.raises(ValueError, match="risk measure must be one of"):
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, returns=returns, risk_measure="evar"
+        )
+
+
+def test_hierarchical_equal_risk_contribution_with_other_risk_measures_and_herc2():
+    returns = _block_returns()
+    covariance = returns.cov() * 252
+
+    # Riskfolio-Lib 7.4.1's HCPortfolio(model="HERC" and "HERC2", rm="TGRG", "UCI",
+    # "CVaR", linkage="ward", k=3).
+    for measure, within, reference in (
+        (
+            "tail_gini_range",
+            "inverse_risk",
+            [0.1815740159, 0.1654591656, 0.1539332793, 0.1804151798, 0.0445363039]
+            + [0.0573186006, 0.052637495, 0.0667957452, 0.0616573699, 0.0356728448],
+        ),
+        (
+            "ulcer_index",
+            "inverse_risk",
+            [0.1128946573, 0.1410532182, 0.1315905827, 0.1269351136, 0.0425877443]
+            + [0.0974349796, 0.0767734283, 0.1539009066, 0.0868242067, 0.0300051628],
+        ),
+        (
+            "cvar",
+            "equal",
+            [0.1710084832] * 4 + [0.0509455136] * 3 + [0.0543765089] * 3,
+        ),
+    ):
+        weights = optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance,
+            clusters=3,
+            returns=returns,
+            risk_measure=measure,
+            within_clusters=within,
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-9)
+
+    with pytest.raises(ValueError, match="within the clusters"):
+        optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance, within_clusters="minimum_variance"
+        )
+
+
+def test_schur_complementary_allocation_runs_from_hrp_and_matches_skfolio():
+    covariance = _block_returns().cov() * 252
+
+    # skfolio 1.14.4's SchurComplementary(gamma=0.5 and 1, keep_monotonic=False) on the
+    # same asset order as Hierarchical Risk Parity (single linkage on the distance between
+    # the columns of the correlation distance, no optimal leaf order).
+    np.testing.assert_allclose(
+        optimization_model.get_schur_complementary_weights(covariance, 0.5),
+        [0.0911093606, 0.0968271732, 0.072868089, 0.0730544678, 0.073638219]
+        + [0.0994546955, 0.1155508147, 0.185364875, 0.1603300792, 0.0318022258],
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_schur_complementary_weights(covariance, 1),
+        [0.0680562228, 0.144592316, 0.0905720389, 0.0398501771, 0.0778828908]
+        + [0.0856543794, 0.1056420165, 0.1975842061, 0.1707637921, 0.0194019602],
+        atol=1e-9,
+    )
+    pd.testing.assert_series_equal(
+        optimization_model.get_schur_complementary_weights(covariance, 0),
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+    )
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        optimization_model.get_schur_complementary_weights(covariance, 1.5)
+
+    # One factor drives these four assets; past a gamma of about 0.65 the augmented block
+    # of a half is no longer positive definite.
+    factor = pd.DataFrame(
+        [
+            [0.6991, 0.4507, 0.3956, 0.8257],
+            [0.4507, 0.4822, 0.2698, 0.6075],
+            [0.3956, 0.2698, 0.3163, 0.5151],
+            [0.8257, 0.6075, 0.5151, 1.3291],
+        ],
+        index=ASSETS,
+        columns=ASSETS,
+    )
+    path = [
+        optimization_model.get_schur_complementary_weights(factor, gamma)
+        for gamma in (0, 0.3, 0.6)
+    ]
+    variances = [weights @ factor @ weights for weights in path]
+    assert variances[0] > variances[1] > variances[2]
+    with pytest.raises(ValueError, match="not positive definite"):
+        optimization_model.get_schur_complementary_weights(factor, 0.9)
+
+    # skfolio's SchurComplementary(gamma=0.5, min_weights=0.05, max_weights=0.15).
+    np.testing.assert_allclose(
+        optimization_model.get_schur_complementary_weights(
+            covariance, 0.5, minimum_weight=0.05, maximum_weight=0.15
+        ),
+        [0.0911093606, 0.0968271732, 0.072868089, 0.0548566937, 0.0852958257]
+        + [0.1151992875, 0.1338435703, 0.15, 0.15, 0.05],
+        atol=1e-9,
+    )
+
+
+def test_standardized_silhouette_matches_scikit_learn_and_finds_the_blocks():
+    returns = _block_returns()
+    covariance = returns.cov()
+    distance = np.sqrt(np.clip((1 - returns.corr().to_numpy()) / 2, 0, 1))
+    np.fill_diagonal(distance, 0)
+    levels = cut_tree(linkage(squareform(distance, checks=False), "ward"))
+
+    # scikit-learn's silhouette_samples on the rows of the distance matrix, mean over
+    # standard deviation, as in López de Prado (2020) and Riskfolio-Lib's
+    # std_silhouette_score.
+    for clusters, reference in (
+        (2, 1.9123244657),
+        (3, 4.9654630069),
+        (4, 2.5600878606),
+    ):
+        assert optimization_model.get_standardized_silhouette(
+            distance, levels[:, 10 - clusters]
+        ) == pytest.approx(reference, abs=1e-9)
+    _, labels = optimization_model.get_hierarchical_clusters(
+        covariance, cluster_criterion="standardized_silhouette"
+    )
+    assert labels.tolist() == [0, 0, 0, 0, 1, 1, 1, 2, 2, 2]
+    with pytest.raises(ValueError, match="cluster criterion"):
+        optimization_model.get_hierarchical_clusters(
+            covariance, cluster_criterion="elbow"
+        )
+
+
+def test_nested_clustered_optimization_with_other_risk_measures_matches_riskfolio():
+    returns = _block_returns()
+    expected_returns, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # Riskfolio-Lib 7.4.1's HCPortfolio(model="NCO", linkage="ward", k=3) with
+    # obj="MinRisk" and rm="MAD" and "CVaR", and obj="ERC" and rm="CDaR" (CLARABEL).
+    for measure, objective, reference in (
+        (
+            "mad",
+            "minimum_variance",
+            [0.09444029, 0.09168186, 0.06958896, 0.09217494, 0.07243633]
+            + [0.13847335, 0.10206972, 0.21611476, 0.11053042, 0.01248937],
+        ),
+        (
+            "cvar",
+            "minimum_variance",
+            [0.13700428, 0.10232395, 0.03583351, 0.06301302, 0.05068709]
+            + [0.09974235, 0.12601089, 0.23831106, 0.13874519, 0.00832865],
+        ),
+        (
+            "cdar",
+            "risk_parity",
+            [0.04393936, 0.06516633, 0.08036446, 0.06888044, 0.06769165]
+            + [0.09088553, 0.14653803, 0.23043557, 0.12071156, 0.08538707],
+        ),
+    ):
+        weights = optimization_model.get_nested_clustered_optimization_weights(
+            expected_returns,
+            covariance,
+            objective,
+            clusters=3,
+            returns=returns,
+            risk_measure=measure,
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-5)
+
+    with pytest.raises(ValueError, match="variance only"):
+        optimization_model.get_nested_clustered_optimization_weights(
+            expected_returns,
+            covariance,
+            "maximum_sharpe",
+            returns=returns,
+            risk_measure="mad",
+        )
+
+
+def test_stacking_matches_skfolio():
+    returns = _block_returns()
+
+    def inverse_volatility(window: pd.DataFrame) -> pd.Series:
+        return optimization_model.get_inverse_volatility_weights(window.cov())
+
+    methods = {
+        "Inverse Volatility": inverse_volatility,
+        "Hierarchical Risk Parity": lambda window: (
+            optimization_model.get_hierarchical_risk_parity_weights(window.cov())
+        ),
+        "Equal Weight": lambda window: pd.Series(
+            1 / window.shape[1], index=window.columns
+        ),
+    }
+
+    # skfolio 1.14.4's StackingOptimization of InverseVolatility, HierarchicalRiskParity
+    # (on the same asset order) and EqualWeighted with an InverseVolatility final
+    # estimator, cv=KFold(5) and cv="ignore".
+    for folds, reference in (
+        (
+            5,
+            [0.1007349654, 0.095329073, 0.0882301414, 0.100167522, 0.0827999411]
+            + [0.1016128522, 0.1035304866, 0.1365747254, 0.1239793324, 0.0670409605],
+        ),
+        (
+            None,
+            [0.1007148391, 0.0952946832, 0.0881786924, 0.1001456146, 0.0827563179]
+            + [0.1016214873, 0.1035703051, 0.1367047698, 0.1240668883, 0.0669464023],
+        ),
+    ):
+        weights, method_weights, final = optimization_model.get_stacking_weights(
+            returns, methods, inverse_volatility, folds
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-10)
+        assert final.sum() == pytest.approx(1)
+        pd.testing.assert_series_equal(
+            method_weights["Equal Weight"],
+            pd.Series(0.1, index=returns.columns),
+            check_names=False,
+        )
+
+    with pytest.raises(ValueError, match="at least two methods"):
+        optimization_model.get_stacking_weights(
+            returns, {"Equal Weight": methods["Equal Weight"]}, inverse_volatility
+        )
+    with pytest.raises(ValueError, match="folds"):
+        optimization_model.get_stacking_weights(
+            returns, methods, inverse_volatility, folds=1
+        )

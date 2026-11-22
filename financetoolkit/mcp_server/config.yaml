@@ -156,7 +156,7 @@ hosted_limits:
 # indicator and how to read and narrow the answers before its first call.
 # ──────────────────────────────────────────────────────────────────────────────
 instructions: >-
-  The Finance Toolkit calculates financial data with about 900 indicators: prices and
+  The Finance Toolkit calculates financial data with 900+ indicators: prices and
   financial statements, ratios, valuation and risk models, performance, technical
   indicators, options and bonds, econometrics and macroeconomic data by country. Each tool groups indicators of
   one kind; pass the indicator by name (e.g. valuation with

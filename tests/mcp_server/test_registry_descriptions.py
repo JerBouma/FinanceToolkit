@@ -72,6 +72,42 @@ def test_the_categories_count_the_indicators_of_every_tool():
     assert sum(per_category.values()) == total
 
 
+def test_every_stated_number_of_metrics_is_the_same():
+    """The README, the package and the server state one total, rounded down to the hundred."""
+    import re
+
+    result = asyncio.run(mcp_controller.mcp.call_tool("search_metric_categories", {}))
+    text = result[0][0].text if isinstance(result, tuple) else result.content[0].text
+    total = int(text.split("**Total: ")[1].split(" indicators")[0])
+    expected = f"{total // 100 * 100}+"
+
+    files = [
+        "README.md",
+        "server.json",
+        "financetoolkit/mcp_server/__init__.py",
+        "financetoolkit/mcp_server/auth/auth_model.py",
+        "financetoolkit/mcp_server/config.yaml",
+        "financetoolkit/mcp_server/mcpb/manifest.json",
+        "financetoolkit/mcp_server/registry/registry_controller.py",
+        "financetoolkit/portfolio/portfolio_controller.py",
+        "financetoolkit/toolkit_controller.py",
+    ]
+    # A total is a number of at least 300 followed by "+" and, within a few words, what it
+    # counts; the counts of single modules (140+ ratios, 150+ indicators) are smaller.
+    pattern = re.compile(
+        r"(?<![\d.,])(\d{3,})\+(?=[^\n]{0,60}?\b(?:methods?|indicators?|metrics?)\b)"
+    )
+    stated = {}
+    for path in files:
+        with open(path, encoding="utf-8") as file:
+            for number in pattern.findall(file.read()):
+                if int(number) >= 300:
+                    stated.setdefault(f"{number}+", []).append(path)
+
+    assert expected in stated
+    assert set(stated) == {expected}, f"Every total should be {expected}: {stated}"
+
+
 def test_a_category_of_one_tool_is_named_after_it():
     """An agent can go from a category straight to its tool."""
     from collections import defaultdict

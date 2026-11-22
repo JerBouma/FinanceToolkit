@@ -26,7 +26,7 @@ Complementing this is the [Finance Database 🌎](https://github.com/JerBouma/Fi
 ___
 **🔌 The Finance Toolkit is also available as an [MCP Server](https://www.jeroenbouma.com/projects/financetoolkit/mcp)**
 
-Query 500+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
+Query 900+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
 
 - **Hosted:** connect to `https://financetoolkit.jeroenbouma.com/mcp` — OAuth handles the rest on first use.
 - **Local:** `uvx --from "financetoolkit[mcp]" financetoolkit-mcp-setup` — sets up your client config and API key automatically. See [MCP Server Documentation](https://www.jeroenbouma.com/projects/financetoolkit/mcp#local-clients) for manual setup.
@@ -532,7 +532,7 @@ With `portfolio.toolkit` the portfolio, the time-weighted sum of all positions, 
 
 # MCP Server
 
-The Finance Toolkit MCP Server exposes 500+ financial methods directly to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). Ask questions in plain English — the AI fetches live financial data on your behalf, backed by the transparent, open-source calculation methods of the Finance Toolkit.
+The Finance Toolkit MCP Server exposes 900+ financial methods directly to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). Ask questions in plain English — the AI fetches live financial data on your behalf, backed by the transparent, open-source calculation methods of the Finance Toolkit.
 
 See an example of the Finance Toolkit MCP server in action in Claude Desktop below:
 

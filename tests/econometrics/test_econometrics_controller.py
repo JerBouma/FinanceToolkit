@@ -1387,3 +1387,80 @@ def test_get_model_confidence_set(recorder, econometrics_module):
 
 def test_get_model_confidence_set_needs_two_models(econometrics_module):
     assert econometrics_module.get_model_confidence_set(models=["ewma"]).empty
+
+
+def test_get_arch_lm_test_weighted(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_arch_lm_test(weighted=True))
+    recorder.capture(
+        econometrics_module.get_arch_lm_test(period="weekly", lags=10, weighted=True)
+    )
+
+
+def test_get_ljung_box_test_weighted(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_ljung_box_test(weighted=True))
+    recorder.capture(
+        econometrics_module.get_ljung_box_test(period="weekly", lags=5, weighted=True)
+    )
+
+
+def test_get_cusum_test_methods(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_cusum_test(method="recursive"))
+    recorder.capture(econometrics_module.get_cusum_test(method="chu_stinchcombe_white"))
+    recorder.capture(
+        econometrics_module.get_cusum_test(
+            period="weekly", method="chu_stinchcombe_white", time_series=True
+        ).astype(float)
+    )
+
+
+def test_get_cusum_test_time_series_needs_chu_stinchcombe_white(econometrics_module):
+    # @handle_errors returns an empty Series rather than propagating the ValueError.
+    assert econometrics_module.get_cusum_test(time_series=True).empty
+
+
+def test_get_sign_bias_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_sign_bias_test())
+    recorder.capture(econometrics_module.get_sign_bias_test(method="gjr"))
+
+
+def test_get_pearson_goodness_of_fit_test(recorder, econometrics_module):
+    normal = econometrics_module.get_pearson_goodness_of_fit_test()
+    student = econometrics_module.get_pearson_goodness_of_fit_test(distribution="t")
+    # Daily returns have fatter tails than normal innovations allow.
+    assert (student.loc["Pearson Statistic"] < normal.loc["Pearson Statistic"]).all()
+    recorder.capture(normal)
+    recorder.capture(student)
+    recorder.capture(econometrics_module.get_pearson_goodness_of_fit_test(bins=10))
+
+
+def test_get_change_points(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_change_points())
+    recorder.capture(
+        econometrics_module.get_change_points(period="weekly", cost="variance")
+    )
+    recorder.capture(
+        econometrics_module.get_change_points(
+            column="Adj Close", period="monthly", cost="mean"
+        )
+    )
+
+
+def test_get_optimal_trading_rule(recorder, econometrics_module):
+    # Monte Carlo results are recorded to two decimals: a path that lands on a threshold
+    # after a last-bit difference on another platform moves a mean by at most
+    # (profit-taking + stop-loss) / paths, and the simulation error is larger still.
+    recorder.capture(
+        econometrics_module.get_optimal_trading_rule(
+            grid_size=5, paths=2000, rounding=2
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_optimal_trading_rule(
+            period="weekly",
+            grid_size=3,
+            maximum_holding_period=20,
+            paths=1000,
+            grid=True,
+            rounding=2,
+        )
+    )

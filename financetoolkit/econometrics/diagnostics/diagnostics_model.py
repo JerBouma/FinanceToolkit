@@ -12,6 +12,7 @@ from financetoolkit.econometrics.least_squares_model import (
     get_kolmogorov_survival,
     get_lagged_values,
 )
+from financetoolkit.risk.volatility import garch_model
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -30,6 +31,17 @@ MINIMUM_CUSUM_OBSERVATIONS = 10
 # Ploberger and Krämer (1992) tabulate them.
 CUSUM_CRITICAL_VALUES = {1: 1.63, 5: 1.36, 10: 1.22}
 
+# The 1%, 5% and 10% values of a for which a Brownian motion crosses the lines
+# ±a(√(n - k) + 2(t - k) / √(n - k)) with that probability (Brown, Durbin and Evans, 1975).
+RECURSIVE_CUSUM_CRITICAL_VALUES = {1: 1.143, 5: 0.948, 10: 0.850}
+
+CUSUM_METHODS = ("ols", "recursive", "chu_stinchcombe_white")
+
+# b_0.05 of the Chu-Stinchcombe-White boundary √(b + ln(t - n)), from the simulations of
+# Homm and Breitung (2012) as López de Prado (2018) quotes it.
+CHU_STINCHCOMBE_WHITE_B = 4.6
+
+
 # A variance below the floating-point resolution of the mean squared counts as zero, so
 # a constant series has an undefined skewness rather than one made of rounding noise.
 FLOAT_RESOLUTION = 1e-15
@@ -40,12 +52,19 @@ ROUNDING_PER_OBSERVATION = 1e-14
 # The conventional 5% significance level used for the "Reject" boolean flags.
 SIGNIFICANCE_LEVEL = 0.05
 
+# The sign bias regression has four coefficients and needs residual degrees of freedom.
+MINIMUM_SIGN_BIAS_OBSERVATIONS = 10
+
 
 def get_arch_lm_test(
-    returns: pd.Series | pd.DataFrame, lags: int = 5
+    returns: pd.Series | pd.DataFrame,
+    lags: int = 5,
+    weighted: bool = False,
+    model_df: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects.
+    Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects, or the weighted
+    portmanteau ARCH test of Fisher and Gallagher (2012).
 
     The test regresses squared, mean-demeaned returns on a constant and `lags` of
     themselves and tests whether the resulting R-squared is significantly different from
@@ -61,21 +80,49 @@ def get_arch_lm_test(
     A significant result (low p-value) indicates that the return series exhibits
     volatility clustering, and a GARCH-family model is an appropriate choice for it.
 
-    For more information about the method, see the following paper:
+    With `weighted=True` the statistic is the weighted portmanteau test of Fisher and
+    Gallagher (2012) on the autocorrelations of the squared series (the Li-Mak test with
+    weights that fall linearly with the lag), which keeps its size better for many lags:
+
+    - x_t = e_t^2, rho_k the autocorrelation of x at lag k
+    - Q_W = n * SUM_{k=m+1}^{q}((q - k + m + 1) / q * rho_k^2), with m = `model_df`
+    - P-Value = P(G > Q_W) for G ~ Gamma(shape, scale), with
+      shape = 3/4 * (q + m + 1)^2 * (q - m) / D, scale = 2/3 * D / (q * (q + m + 1)) and
+      D = 2q^2 + 3q + 2qm + 2m^2 + 3m + 1
+
+    For more information about the method, see the following papers:
 
     - Engle, R.F. (1982). "Autoregressive Conditional Heteroscedasticity with Estimates
     of the Variance of United Kingdom Inflation." Econometrica, 50(4), 987-1008.
+    - Fisher, T.J. and Gallagher, C.M. (2012). "New Weighted Portmanteau Statistics for
+    Time Series Goodness of Fit Testing." Journal of the American Statistical Association,
+    107(498), 777-787.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, or of the
+            standardized residuals of a GARCH model.
         lags (int): The number of lags to test for ARCH effects. Defaults to 5.
+        weighted (bool, optional): Whether to calculate the weighted portmanteau test of
+            Fisher and Gallagher (2012) instead of Engle's regression. Defaults to False.
+        model_df (int, optional): The number of lagged variance parameters (p + q) of the
+            GARCH model whose standardized residuals are tested; the weighted test leaves out
+            the first `model_df` autocorrelations. Defaults to 0, for returns.
 
     Returns:
-        pd.Series | pd.DataFrame: The ARCH-LM statistic and its p-value.
+        pd.Series | pd.DataFrame: The ARCH-LM (or weighted ARCH-LM) statistic and its
+        p-value.
 
     Notes:
-        Referenced against statsmodels' `het_arch`.
+        Referenced against statsmodels' `het_arch` and, for the weighted test, the weighted
+        ARCH-LM test of R's rugarch (`Weighted.LM.test`,
+        https://cran.r-project.org/package=rugarch), which reproduces the published values
+        of the rugarch vignette.
     """
+    if weighted and not 0 <= model_df < lags:
+        raise ValueError(
+            f"model_df ({model_df}) must be at least 0 and smaller than lags ({lags})."
+        )
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -83,7 +130,12 @@ def get_arch_lm_test(
             valid_periods = []
 
             for sub_period in periods:
-                period_data = get_arch_lm_test(returns.loc[sub_period], lags=lags)
+                period_data = get_arch_lm_test(
+                    returns.loc[sub_period],
+                    lags=lags,
+                    weighted=weighted,
+                    model_df=model_df,
+                )
 
                 if not period_data.empty:
                     period_data_list.append(period_data)
@@ -93,12 +145,17 @@ def get_arch_lm_test(
 
         return pd.DataFrame(
             {
-                column: get_arch_lm_test(returns[column], lags=lags)
+                column: get_arch_lm_test(
+                    returns[column], lags=lags, weighted=weighted, model_df=model_df
+                )
                 for column in returns.columns
             }
         )
     if isinstance(returns, pd.Series):
         residuals = (returns - returns.mean()).dropna().to_numpy()
+
+        if weighted:
+            return _get_weighted_arch_test(residuals**2, lags, model_df)
 
         if len(residuals) <= lags + 1:
             return pd.Series({"ARCH-LM Statistic": np.nan, "P-Value": np.nan})
@@ -119,6 +176,40 @@ def get_arch_lm_test(
         return pd.Series({"ARCH-LM Statistic": lm_statistic, "P-Value": p_value})
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def _get_weighted_arch_test(squared: np.ndarray, lags: int, model_df: int) -> pd.Series:
+    """
+    The weighted portmanteau ARCH test of Fisher and Gallagher (2012) on a squared series,
+    with its Gamma approximation, see `get_arch_lm_test`.
+    """
+    n = len(squared)
+
+    if n <= lags + 1 or np.ptp(squared) == 0:
+        return pd.Series({"Weighted ARCH-LM Statistic": np.nan, "P-Value": np.nan})
+
+    lag_numbers = np.arange(model_df + 1, lags + 1)
+    autocorrelations = get_autocorrelations(squared, lags)[model_df:]
+    weights = (lags - lag_numbers + model_df + 1) / lags
+    statistic = n * np.sum(weights * autocorrelations**2)
+
+    denominator = (
+        2 * lags**2
+        + 3 * lags
+        + 2 * lags * model_df
+        + 2 * model_df**2
+        + 3 * model_df
+        + 1
+    )
+    shape = 0.75 * (lags + model_df + 1) ** 2 * (lags - model_df) / denominator
+    scale = 2 / 3 * denominator / (lags * (lags + model_df + 1))
+
+    return pd.Series(
+        {
+            "Weighted ARCH-LM Statistic": float(statistic),
+            "P-Value": float(stats.gamma.sf(statistic, shape, scale=scale)),
+        }
+    )
 
 
 def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
@@ -201,10 +292,14 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
 
 
 def get_ljung_box_test(
-    returns: pd.Series | pd.DataFrame, lags: int = 10, model_df: int = 0
+    returns: pd.Series | pd.DataFrame,
+    lags: int = 10,
+    model_df: int = 0,
+    weighted: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Ljung-Box test for autocorrelation.
+    Calculate the Ljung-Box test for autocorrelation, or the weighted Ljung-Box test of
+    Fisher and Gallagher (2012).
 
     The test aggregates the squared Autocorrelation Function up to lag `h` into a
     single statistic that is asymptotically chi-squared distributed with `h - model_df`
@@ -218,6 +313,16 @@ def get_ljung_box_test(
     Where `rho_k` is the Autocorrelation at lag `k` (every autocovariance divided by `n`)
     and `n` is the number of observations.
 
+    With `weighted=True` every squared autocorrelation is weighted by (h - k + 1) / h, so the
+    first lags count most and a large `h` does not dilute them, and the p-value follows from
+    the Gamma distribution with the mean and variance of the weighted statistic (Fisher and
+    Gallagher, 2012):
+
+    - Q_W = n * (n + 2) * SUM_{k=1}^{h} ((h - k + 1) / h * rho_k^2 / (n - k))
+    - P-Value = P(G > Q_W) for G ~ Gamma(shape, scale), with
+      shape = 3/4 * (h + 1)^2 * h / (2h^2 + 3h + 1 - 6hm) and
+      scale = 2/3 * (2h^2 + 3h + 1 - 6hm) / (h * (h + 1)), m = `model_df`
+
     A significant result (low p-value) indicates that the series is autocorrelated, which is
     relevant both as a standalone diagnostic (e.g. to check whether a return series follows a
     random walk) and as a residual diagnostic after fitting a model (e.g. checking that GARCH
@@ -227,8 +332,11 @@ def get_ljung_box_test(
 
     - Ljung, G.M., & Box, G.E.P. (1978). "On a Measure of Lack of Fit in Time Series Models."
     Biometrika, 65(2), 297-303.
+    - Fisher, T.J. and Gallagher, C.M. (2012). "New Weighted Portmanteau Statistics for
+    Time Series Goodness of Fit Testing." Journal of the American Statistical Association,
+    107(498), 777-787.
 
-    Also known as: Ljung-Box Q test, portmanteau test.
+    Also known as: Ljung-Box Q test, portmanteau test, weighted Ljung-Box test.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -241,6 +349,8 @@ def get_ljung_box_test(
         inflates the degrees of freedom and makes the test conservative (it under-rejects,
         reporting a larger p-value than it should). Pass `p + q` when testing ARIMA/GARCH
         residuals -- see Box, Pierce (1970) and Ljung, Box (1978).
+        weighted (bool, optional): Whether to calculate the weighted Ljung-Box test of Fisher
+        and Gallagher (2012). Defaults to False.
 
     Returns:
         pd.Series | pd.DataFrame: The Ljung-Box statistic and its p-value.
@@ -251,7 +361,10 @@ def get_ljung_box_test(
         (`model_df >= lags`).
 
     Notes:
-        Referenced against statsmodels' `acorr_ljungbox`.
+        Referenced against statsmodels' `acorr_ljungbox` and, for the weighted test, the
+        weighted Ljung-Box test of R's rugarch (`Weighted.Box.test`,
+        https://cran.r-project.org/package=rugarch), which reproduces the published values
+        of the rugarch vignette.
     """
     if model_df < 0:
         raise ValueError(f"model_df must be non-negative, received {model_df}.")
@@ -269,7 +382,10 @@ def get_ljung_box_test(
 
             for sub_period in periods:
                 period_data = get_ljung_box_test(
-                    returns.loc[sub_period], lags=lags, model_df=model_df
+                    returns.loc[sub_period],
+                    lags=lags,
+                    model_df=model_df,
+                    weighted=weighted,
                 )
 
                 if not period_data.empty:
@@ -281,7 +397,7 @@ def get_ljung_box_test(
         return pd.DataFrame(
             {
                 column: get_ljung_box_test(
-                    returns[column], lags=lags, model_df=model_df
+                    returns[column], lags=lags, model_df=model_df, weighted=weighted
                 )
                 for column in returns.columns
             }
@@ -290,10 +406,41 @@ def get_ljung_box_test(
         values = returns.dropna()
         n = len(values)
 
+        name = "Weighted Ljung-Box Statistic" if weighted else "Ljung-Box Statistic"
+
         if n <= lags + 1:
-            return pd.Series({"Ljung-Box Statistic": np.nan, "P-Value": np.nan})
+            return pd.Series({name: np.nan, "P-Value": np.nan})
 
         autocorrelations = get_autocorrelations(values.to_numpy(dtype=float), lags)
+
+        if weighted:
+            lag_numbers = np.arange(1, lags + 1)
+            statistic = (
+                n
+                * (n + 2)
+                * np.sum(
+                    (lags - lag_numbers + 1)
+                    / lags
+                    * autocorrelations**2
+                    / (n - lag_numbers)
+                )
+            )
+            denominator = 2 * lags**2 + 3 * lags + 1 - 6 * lags * model_df
+            if denominator <= 0:
+                raise ValueError(
+                    f"The weighted test needs lags ({lags}) of at least about three times "
+                    f"model_df ({model_df})."
+                )
+            shape = 0.75 * (lags + 1) ** 2 * lags / denominator
+            scale = 2 / 3 * denominator / (lags * (lags + 1))
+
+            return pd.Series(
+                {
+                    name: float(statistic),
+                    "P-Value": float(stats.gamma.sf(statistic, shape, scale=scale)),
+                }
+            )
+
         ljung_box_statistic = (
             n * (n + 2) * np.sum(autocorrelations**2 / (n - np.arange(1, lags + 1)))
         )
@@ -449,17 +596,23 @@ def get_variance_ratio_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+def get_cusum_test(
+    returns: pd.Series | pd.DataFrame,
+    method: str = "ols",
+    time_series: bool = False,
+) -> pd.Series | pd.DataFrame:
     """
-    Calculate the CUSUM test for the stability of the mean of returns over time.
+    Calculate a CUSUM test for the stability of the returns over time: the CUSUM of the OLS
+    residuals (Ploberger and Krämer, 1992), the CUSUM of the recursive residuals (Brown, Durbin
+    and Evans, 1975) or the CUSUM of the log price level (Chu, Stinchcombe and White, 1996, as
+    López de Prado, 2018, section 17.3.2 defines it).
 
-    The test fits a constant-mean model (`returns_t = mu + e_t`) by OLS and cumulates
+    method="ols" fits a constant-mean model (`returns_t = mu + e_t`) by OLS and cumulates
     the (scaled) OLS residuals into a path that, under the null hypothesis of a stable
     mean, behaves asymptotically like a Brownian Bridge. A shift in the mean partway
     through the series (a structural break) drags the path away from zero; the test
     statistic is the maximum absolute value of that path, compared against the
-    asymptotic distribution of the supremum of a Brownian Bridge (Ploberger & Kramer,
-    1992) for its p-value:
+    asymptotic distribution of the supremum of a Brownian Bridge for its p-value:
 
     - e_t = r_t - mean(r)
     - sigma^2 = SUM(e_t^2) / (n - 1)
@@ -470,9 +623,36 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
     The variance uses the `n - 1` degrees of freedom of the one estimated mean, and the
     critical values are the 1.63, 1.36 and 1.22 Ploberger and Kramer (1992) tabulate.
 
-    A significant result (low p-value) indicates that the mean of the return series
-    is not stable over the sample period, e.g. due to a regime change or structural
-    break partway through.
+    method="recursive" cumulates the one-step-ahead forecast errors of the mean of the
+    returns before each date (the recursive residuals), which are independent with a
+    constant variance under the null hypothesis, so their path is a Brownian motion and
+    stability is rejected when it crosses one of two lines that widen with time:
+
+    - w_t = (r_t - mean(r_1, ..., r_(t-1))) / sqrt(1 + 1 / (t - 1)), for t = 2, ..., n (k = 1)
+    - sigma^2 = SUM(w_t^2) / (n - 1), the residual variance of the full-sample fit
+    - W_j = SUM_{t=2}^{j}(w_t) / sigma
+    - CUSUM = max_j |W_j| / (sqrt(n - 1) + 2 * (j - 1) / sqrt(n - 1)), the largest multiple a of
+      the boundary a * (sqrt(n - 1) + 2 * (j - 1) / sqrt(n - 1)) the path reaches
+    - P-Value = 2 * (1 - Phi(3a) + exp(-4a^2) * Phi(a)), the probability that a Brownian motion
+      crosses the boundary, with the critical values 1.143, 0.948 and 0.850
+
+    method="chu_stinchcombe_white" works on the log price y_t = SUM ln(1 + r_t) (the log of
+    the price up to a constant) and asks whether it has risen by more since an earlier date
+    than a random walk with the volatility up to that date allows. It is one-sided, a test
+    for a rise, as López de Prado (2018) defines it:
+
+    - S_(n,t) = (y_t - y_n) / (sigma_t * sqrt(t - n)), with sigma_t^2 = SUM_{i=1}^{t}((y_i -
+      y_(i-1))^2) / t the mean squared change up to t
+    - S_t = max over n < t of S_(n,t), at the reference date n*
+    - c_t = sqrt(4.6 + ln(t - n*)), the 5% critical value of Homm and Breitung (2012)
+    - Stability is rejected at t when S_t > c_t; the test is at the last date
+
+    Every statistic of a date only uses the returns up to that date, so with
+    `time_series=True` the statistic, its critical value and the verdict per date have no
+    look-ahead; they start at the 10th return. The 5% holds for every date on its own (on
+    random walks the last date rejects about 5.5% of the time), so over many dates some
+    cross the critical value by chance. The other two methods scale with the whole sample and
+    only give the test.
 
     For more information about the method, see the following papers:
 
@@ -481,20 +661,52 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
     - Brown, R.L., Durbin, J., & Evans, J.M. (1975). "Techniques for Testing the
     Constancy of Regression Relationships over Time." Journal of the Royal
     Statistical Society, Series B, 37(2), 149-192.
+    - Chu, C.-S.J., Stinchcombe, M. and White, H. (1996). "Monitoring Structural Change."
+    Econometrica, 64(5), 1045-1065.
+    - Homm, U. and Breitung, J. (2012). "Testing for Speculative Bubbles in Stock Markets: A
+    Comparison of Alternative Methods." Journal of Financial Econometrics, 10(1), 198-231.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    17.3.
 
-    Also known as: CUSUM test, CUSUM of OLS residuals test.
+    Also known as: CUSUM test, CUSUM of OLS residuals test, recursive CUSUM test,
+    Brown-Durbin-Evans test, Chu-Stinchcombe-White test.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        method (str, optional): "ols", "recursive" or "chu_stinchcombe_white". Defaults to
+            "ols".
+        time_series (bool, optional): Whether to return the statistic, its critical value
+            and the verdict per date (method="chu_stinchcombe_white" only). Defaults to False.
 
     Returns:
         pd.Series | pd.DataFrame: The CUSUM statistic, its p-value, the number of
-        observations used, the 1%/5%/10% critical boundary values, and whether
-        stability is rejected at the 5% level.
+        observations used, the 1%/5%/10% critical values, and whether stability is rejected
+        at the 5% level; for method="chu_stinchcombe_white" the statistic, the 5% critical
+        value, the observations and the verdict at the last date, or with time_series=True
+        per date.
 
     Notes:
-        Referenced against statsmodels' `breaks_cusumolsresid` with `ddof=1`.
+        method="ols" is referenced against statsmodels' `breaks_cusumolsresid` with `ddof=1`
+        and method="recursive" against statsmodels' `recursive_olsresiduals`, which scales
+        the path with the standard deviation of the recursive residuals around their mean
+        rather than with the residual variance of Brown, Durbin and Evans (1975).
+        method="chu_stinchcombe_white" is referenced against mlfinlab's
+        `get_chu_stinchcombe_white_statistics` (https://github.com/quantopian/mlfinlab),
+        which divides by the variance sigma_t^2 rather than by sigma_t and averages the
+        squared changes over one fewer observation; the reference date and the critical value
+        are the same.
     """
+    if method not in CUSUM_METHODS:
+        raise ValueError(
+            f"The method must be one of {', '.join(CUSUM_METHODS)}, not {method!r}."
+        )
+    if time_series and method != "chu_stinchcombe_white":
+        raise ValueError(
+            "time_series=True needs method='chu_stinchcombe_white': the OLS and recursive "
+            "CUSUM paths are scaled with the variance of the whole sample, so a date's value "
+            "would use returns after it."
+        )
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -502,7 +714,9 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
             valid_periods = []
 
             for sub_period in periods:
-                period_data = get_cusum_test(returns.loc[sub_period])
+                period_data = get_cusum_test(
+                    returns.loc[sub_period], method=method, time_series=time_series
+                )
 
                 if not period_data.empty:
                     period_data_list.append(period_data)
@@ -510,10 +724,24 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
 
             return pd.concat(period_data_list, keys=valid_periods, axis=0)
 
-        return pd.DataFrame(
-            {column: get_cusum_test(returns[column]) for column in returns.columns}
+        result = pd.concat(
+            {
+                column: get_cusum_test(
+                    returns[column], method=method, time_series=time_series
+                )
+                for column in returns.columns
+            },
+            axis=1,
         )
+
+        if time_series:
+            return result.swaplevel(0, 1, axis=1).sort_index(axis=1)
+
+        return result
     if isinstance(returns, pd.Series):
+        if method == "chu_stinchcombe_white":
+            return _get_chu_stinchcombe_white_test(returns, time_series)
+
         values = returns.dropna().to_numpy()
         n = len(values)
 
@@ -540,30 +768,315 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         ):
             return nan_result
 
-        residuals = fit_least_squares(values, np.ones((n, 1)))["residuals"]
-        scaled_sum_of_squares = np.sum(residuals**2) / (n - 1) * n
+        if method == "ols":
+            residuals = fit_least_squares(values, np.ones((n, 1)))["residuals"]
+            scaled_sum_of_squares = np.sum(residuals**2) / (n - 1) * n
 
-        # A series without variation has no scale, so its statistic and p-value are NaN.
-        with np.errstate(divide="ignore", invalid="ignore"):
             cusum_statistic = float(
                 np.max(np.abs(np.cumsum(residuals) / np.sqrt(scaled_sum_of_squares)))
             )
-        p_value = get_kolmogorov_survival(cusum_statistic)
-        critical_value_by_alpha = CUSUM_CRITICAL_VALUES
+            p_value = get_kolmogorov_survival(cusum_statistic)
+            critical_values = CUSUM_CRITICAL_VALUES
+        else:
+            # The forecast of every return from the mean of the returns before it, scaled by
+            # the standard error of that forecast, sqrt(1 + 1 / (t - 1)) with t - 1 returns.
+            earlier = np.arange(1, n)
+            earlier_means = np.cumsum(values)[:-1] / earlier
+            recursive_residuals = (values[1:] - earlier_means) / np.sqrt(
+                1 + 1 / earlier
+            )
+            # The sum of squared recursive residuals equals that of the OLS residuals, so this
+            # is the residual variance of the full-sample fit (Brown, Durbin and Evans, 1975).
+            sigma = np.sqrt(np.sum(recursive_residuals**2) / (n - 1))
+            path = np.cumsum(recursive_residuals) / sigma
+            boundary = np.sqrt(n - 1) + 2 * np.arange(1, n) / np.sqrt(n - 1)
+
+            cusum_statistic = float(np.max(np.abs(path) / boundary))
+            p_value = float(
+                min(
+                    2
+                    * (
+                        stats.norm.sf(3 * cusum_statistic)
+                        + np.exp(-4 * cusum_statistic**2)
+                        * stats.norm.cdf(cusum_statistic)
+                    ),
+                    1.0,
+                )
+            )
+            critical_values = RECURSIVE_CUSUM_CRITICAL_VALUES
 
         return pd.Series(
             {
                 "CUSUM Statistic": cusum_statistic,
                 "P-Value": p_value,
                 "Observations": n,
-                "Critical Value 1%": critical_value_by_alpha[1],
-                "Critical Value 5%": critical_value_by_alpha[5],
-                "Critical Value 10%": critical_value_by_alpha[10],
+                "Critical Value 1%": critical_values[1],
+                "Critical Value 5%": critical_values[5],
+                "Critical Value 10%": critical_values[10],
                 "Reject Stability (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
             }
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def _get_chu_stinchcombe_white_test(
+    returns: pd.Series, time_series: bool
+) -> pd.Series | pd.DataFrame:
+    """
+    The Chu-Stinchcombe-White CUSUM on the log price of `returns` at its last date, or per
+    date with `time_series=True`, see `get_cusum_test`.
+    """
+    returns = returns.dropna()
+    n = len(returns)
+    columns = ["CUSUM Statistic", "Critical Value 5%", "Reject Stability (5%)"]
+
+    if n < MINIMUM_CUSUM_OBSERVATIONS or (returns <= -1).any():
+        if time_series:
+            return pd.DataFrame(np.nan, index=returns.index, columns=columns)
+        return pd.Series(
+            {
+                "CUSUM Statistic": np.nan,
+                "Critical Value 5%": np.nan,
+                "Observations": n,
+                "Reject Stability (5%)": False,
+            }
+        )
+
+    changes = np.log1p(returns.to_numpy(dtype=float))
+    # The log price with the price before the first return as 0, so y_0 = 0 and y_t is
+    # the change in the log price over the first t returns.
+    levels = np.concatenate([[0.0], np.cumsum(changes)])
+    mean_squared_changes = np.cumsum(changes**2) / np.arange(1, n + 1)
+
+    def statistic_at(t: int) -> tuple[float, float]:
+        """S_t and c_t at the level after the t-th return."""
+        distances = t - np.arange(t)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            statistics = (levels[t] - levels[:t]) / (
+                np.sqrt(mean_squared_changes[t - 1]) * np.sqrt(distances)
+            )
+        if not np.isfinite(statistics).any():
+            return np.nan, np.nan
+        reference = int(np.nanargmax(statistics))
+        return float(statistics[reference]), float(
+            np.sqrt(CHU_STINCHCOMBE_WHITE_B + np.log(distances[reference]))
+        )
+
+    if not time_series:
+        statistic, critical_value = statistic_at(n)
+        return pd.Series(
+            {
+                "CUSUM Statistic": statistic,
+                "Critical Value 5%": critical_value,
+                "Observations": n,
+                "Reject Stability (5%)": bool(statistic > critical_value),
+            }
+        )
+
+    # The volatility of the first few changes is too noisy for a verdict, so the dates
+    # start once there are as many returns as the test needs (mlfinlab starts after two).
+    path = np.full((n, 2), np.nan)
+    for t in range(MINIMUM_CUSUM_OBSERVATIONS, n + 1):
+        path[t - 1] = statistic_at(t)
+
+    result = pd.DataFrame(path, index=returns.index, columns=columns[:2])
+    result["Reject Stability (5%)"] = (
+        result["CUSUM Statistic"] > result["Critical Value 5%"]
+    ).where(result["CUSUM Statistic"].notna())
+
+    return result
+
+
+def get_sign_bias_test(
+    residuals: pd.Series | pd.DataFrame,
+    standardized_residuals: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the sign bias test of Engle and Ng (1993): whether the squared standardized
+    residuals of a volatility model still depend on the sign and the size of the shock
+    before them. A symmetric GARCH model lets a fall and a rise of the same size raise the
+    volatility equally; when falls raise it by more (the leverage effect), the squared
+    standardized residuals after a fall stay larger than the model expects and the test
+    rejects, which points to an asymmetric model such as GJR-GARCH or APARCH.
+
+    The formula is as follows:
+
+    - z_t^2 = c_0 + c_1 * S_(t-1)^- + c_2 * S_(t-1)^- * e_(t-1) + c_3 * S_(t-1)^+ * e_(t-1) + u_t, by OLS
+    - S_(t-1)^- = 1 when e_(t-1) < 0 and 0 otherwise, S_(t-1)^+ = 1 - S_(t-1)^-
+    - Sign Bias, Negative Size Bias and Positive Size Bias: the t-statistics of c_1, c_2 and
+      c_3, with two-sided p-values from the t-distribution with n - 4 degrees of freedom
+    - Joint Statistic = n * R^2 of the regression, chi-squared with 3 degrees of freedom
+
+    Where e_t are the residuals of the mean model, z_t = e_t / sigma_t the standardized
+    residuals and n the number of observations of the regression.
+
+    For more information about the method, see the following paper:
+
+    - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
+    Volatility." The Journal of Finance, 48(5), 1749-1778.
+
+    Also known as: sign bias test, Engle-Ng test, size bias test, leverage effect test.
+
+    Args:
+        residuals (pd.Series | pd.DataFrame): The residuals e_t of the mean model.
+        standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals
+            z_t = e_t / sigma_t, with the same index (and columns).
+
+    Returns:
+        pd.Series | pd.DataFrame: The t-statistic and p-value of the sign bias, negative
+        size bias and positive size bias, the joint statistic and its p-value, and the
+        observations of the regression.
+
+    Notes:
+        Referenced against `signbias` of R's rugarch
+        (https://cran.r-project.org/package=rugarch), which reproduces the t-statistics of
+        the rugarch vignette. rugarch reports the absolute t-statistics and a Wald statistic
+        with the OLS covariance as the joint test; this reports the signed t-statistics and
+        the n * R^2 Lagrange multiplier statistic of Engle and Ng (1993).
+    """
+    if isinstance(residuals, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_sign_bias_test(
+                    residuals[column], standardized_residuals[column]
+                )
+                for column in residuals.columns
+            }
+        )
+
+    names = ["Sign Bias", "Negative Size Bias", "Positive Size Bias"]
+    data = pd.concat([residuals, standardized_residuals], axis=1).dropna()
+    n = len(data) - 1
+
+    result = {}
+    for name in names:
+        result[f"{name} t-Statistic"] = np.nan
+        result[f"{name} P-Value"] = np.nan
+    result.update({"Joint Statistic": np.nan, "Joint P-Value": np.nan})
+    result["Observations"] = max(n, 0)
+
+    if n < MINIMUM_SIGN_BIAS_OBSERVATIONS:
+        return pd.Series(result)
+
+    shocks = data.iloc[:-1, 0].to_numpy(dtype=float)
+    squared = data.iloc[1:, 1].to_numpy(dtype=float) ** 2
+    negative = (shocks < 0).astype(float)
+    design = np.column_stack(
+        [np.ones(n), negative, negative * shocks, (1 - negative) * shocks]
+    )
+
+    fit = fit_least_squares(squared, design)
+    if fit["rank"] < design.shape[1]:
+        return pd.Series(result)
+
+    for index, name in enumerate(names, start=1):
+        result[f"{name} t-Statistic"] = float(fit["t_statistics"][index])
+        result[f"{name} P-Value"] = float(fit["p_values"][index])
+
+    joint_statistic = n * fit["r_squared"]
+    result["Joint Statistic"] = float(joint_statistic)
+    result["Joint P-Value"] = float(stats.chi2.sf(joint_statistic, 3))
+
+    return pd.Series(result)
+
+
+def get_pearson_goodness_of_fit_test(
+    standardized_residuals: pd.Series | pd.DataFrame,
+    bins: int = 20,
+    distribution: str = "normal",
+    parameters: tuple[float, ...] = (),
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the adjusted Pearson goodness of fit test of Palm (1996) and Vlaar and Palm
+    (1993): whether the standardized residuals of a volatility model follow the innovation
+    distribution the model assumes. Each residual is turned into the probability of a value
+    at most as large under that distribution, which is uniform on (0, 1) when the
+    distribution fits; the probabilities are counted in equally wide bins and compared with
+    the equal count every bin should have.
+
+    The formula is as follows:
+
+    - u_t = F(z_t), with F the distribution function of the standardized innovation
+      distribution (normal by default) and z_t the standardized residuals
+    - n_i = the number of u_t in [(i - 1) / g, i / g), the last bin including 1, for i = 1, ..., g
+      with g = `bins` (20 by default)
+    - Pearson Statistic = SUM_{i=1}^{g}((n_i - n / g)^2 / (n / g)), chi-squared with g - 1
+      degrees of freedom
+
+    Classifying the residuals by their probability rather than by their value makes the
+    test independent of the scale and keeps every bin's expected count the same, which
+    Palm (1996) recommends for the dependent residuals of volatility models.
+
+    For more information about the method, see the following papers:
+
+    - Palm, F.C. (1996). "GARCH Models of Volatility." In Handbook of Statistics, Vol. 14,
+    Elsevier, 209-240.
+    - Vlaar, P.J.G. and Palm, F.C. (1993). "The Message in Weekly Exchange Rates in the
+    European Monetary System: Mean Reversion, Conditional Heteroscedasticity, and Jumps."
+    Journal of Business & Economic Statistics, 11(3), 351-360.
+
+    Also known as: adjusted Pearson goodness of fit test, chi-squared goodness of fit test,
+    probability integral transform test, GARCH distribution test.
+
+    Args:
+        standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals.
+        bins (int, optional): The number of bins g. Defaults to 20.
+        distribution (str, optional): The standardized distribution, see
+            `garch_model.get_standardized_log_density`. Defaults to "normal".
+        parameters (tuple[float, ...], optional): The Shape (and Skew) of the distribution.
+            Defaults to (), for the normal distribution.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Pearson statistic, its p-value, the bins and the
+        observations.
+
+    Notes:
+        Referenced against `gof` of R's rugarch (https://cran.r-project.org/package=rugarch).
+        rugarch leaves the empty bins above the last occupied one out of the sum (its
+        `tabulate` stops at the highest bin with a value); every empty bin counts here.
+    """
+    if bins < 2:  # noqa: PLR2004
+        raise ValueError(f"The test needs at least 2 bins, not {bins}.")
+
+    if isinstance(standardized_residuals, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_pearson_goodness_of_fit_test(
+                    standardized_residuals[column], bins, distribution, parameters
+                )
+                for column in standardized_residuals.columns
+            }
+        )
+
+    values = standardized_residuals.dropna().to_numpy(dtype=float)
+    n = len(values)
+
+    if n < bins:
+        return pd.Series(
+            {
+                "Pearson Statistic": np.nan,
+                "P-Value": np.nan,
+                "Bins": bins,
+                "Observations": n,
+            }
+        )
+
+    probabilities = garch_model.get_standardized_cdf(values, distribution, parameters)
+    counts = np.bincount(
+        np.minimum((probabilities * bins).astype(int), bins - 1), minlength=bins
+    )
+    expected = n / bins
+    statistic = float(np.sum((counts - expected) ** 2) / expected)
+
+    return pd.Series(
+        {
+            "Pearson Statistic": statistic,
+            "P-Value": float(stats.chi2.sf(statistic, bins - 1)),
+            "Bins": bins,
+            "Observations": n,
+        }
+    )
 
 
 def get_level_significance(

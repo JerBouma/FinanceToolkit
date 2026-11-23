@@ -2,11 +2,14 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
 from financetoolkit.options import helpers, options_model
 from financetoolkit.options.pricing import (
+    american_model,
     binomial_trees_model,
     black_scholes_model,
     exotics_model,
@@ -29,7 +32,7 @@ logger = logger_model.get_logger()
 @track_sources
 class PricingOptions:
     """
-    Option pricing: Black-Scholes, binomial trees, Monte Carlo, Garman-Kohlhagen, Bjerksund-Stensland, binary, barrier and Asian options, put-call parity and strategy payoffs.
+    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier and Asian options, put-call parity and strategy payoffs.
     """
 
     @handle_errors
@@ -42,6 +45,7 @@ class PricingOptions:
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
+        dividends: Literal["yield", "escrowed", "haug_haug_lewis"] = "yield",
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
@@ -91,7 +95,24 @@ class PricingOptions:
         Deep out-of-the-money options are most sensitive to that choice, since the model's flat volatility ignores
         the skew.
 
-        Also known as: BSM, Black-Scholes-Merton, option pricing model.
+        Dividends are paid in cash on their ex-dividend dates, which the dividend yield q spreads evenly over the
+        year. For short options that difference matters: an option that expires just after an ex-date loses the
+        whole dividend, one that expires just before it none of it. With dividends="escrowed" or
+        dividends="haug_haug_lewis" the dividend yield is replaced by the projected cash dividends: the latest
+        dividend per share before the pricing date, repeated at the median interval between its last ex-dates
+        (see options_model.get_projected_dividends), so a past pricing date only uses what was known on that date.
+
+        - Escrowed (Hull, 2022, chapter 17): the Black-Scholes formula with q = 0 on S* = S — Σ D_i * e^(—r * t_i),
+          the stock price net of the present value of the dividends up to expiration.
+        - Haug-Haug-Lewis (Haug, Haug and Lewis, 2003): the stock price drops by D_i at t_i and the option value
+          is integrated over the lognormal stock price at each ex-date, from the Black-Scholes value after the
+          last dividend backwards: V_i(x) = e^(—r * (t_(i+1) — t_i)) * E[V_(i+1)(S_(t_(i+1)) — D_(i+1))].
+
+        Where D_i is the cash dividend with ex-date t_i years after the pricing date. The escrowed model is the
+        market convention; it applies the volatility to S* instead of S, which the Haug-Haug-Lewis method does not,
+        so the latter gives slightly higher prices when the dividends are large.
+
+        Also known as: BSM, Black-Scholes-Merton, option pricing model, escrowed dividend model, discrete dividends.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -113,7 +134,11 @@ class PricingOptions:
             quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
-            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield. Only used with
+            dividends="yield".
+            dividends (str, optional): How the dividends enter the price: "yield" (a continuous dividend yield),
+            "escrowed" (the projected cash dividends, escrowed model) or "haug_haug_lewis" (the projected cash
+            dividends, stock price dropping on each ex-date). Defaults to "yield".
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -163,6 +188,15 @@ class PricingOptions:
         |            205 |       4.3748 |       8.5321 |      11.9824 |
         |            210 |       3.3136 |       7.1649 |      10.4811 |
         """
+        if dividends not in ("yield", "escrowed", "haug_haug_lewis"):
+            raise ValueError(
+                f'dividends must be "yield", "escrowed" or "haug_haug_lewis", received {dividends!r}.'
+            )
+        if dividends != "yield" and dividend_yield is not None:
+            raise ValueError(
+                'A dividend_yield is only used with dividends="yield"; the other methods use the cash dividends.'
+            )
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -188,8 +222,33 @@ class PricingOptions:
         black_scholes: dict[str, dict[float, dict[float, float]]] = {}
         dividend_yield_value: dict[str, float] = {}
 
+        cash_dividends: dict[str, pd.Series] = {}
+
         for ticker, strike_prices in strike_prices_per_ticker.items():
             black_scholes[ticker] = {}
+
+            if dividends != "yield":
+                cash_dividends[ticker] = self._projected_dividends(
+                    ticker, start_date, expiration_time_range
+                )
+                dividend_yield_value[ticker] = 0.0
+                black_scholes[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration: black_scholes_model.get_black_scholes_cash_dividends(
+                        stock_price=stock_price.loc[ticker],
+                        strike_price=strike_price,
+                        risk_free_rate=risk_free_rate,
+                        volatility=volatility.loc[ticker],
+                        time_to_expiration=time_to_expiration,
+                        dividend_times=cash_dividends[ticker].index.to_numpy() / 365,
+                        dividend_amounts=cash_dividends[ticker].to_numpy(),
+                        put_option=put_option,
+                        method=dividends,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
@@ -236,6 +295,14 @@ class PricingOptions:
                 risk_free_rate=risk_free_rate,
                 dividend_yield=dividend_yield_value,
             )
+            for ticker, projected in cash_dividends.items():
+                logger.info(
+                    "Cash dividends of %s (days after %s: dividend): %s",
+                    ticker,
+                    start_date,
+                    ", ".join(f"{days}: {amount}" for days, amount in projected.items())
+                    or "none",
+                )
 
         return black_scholes_df
 
@@ -1234,6 +1301,7 @@ class PricingOptions:
         self,
         start_date: str | None = None,
         put_option: bool = False,
+        method: Literal["2002", "1993"] = "2002",
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
         expiration_time_range: int = 30,
@@ -1246,7 +1314,7 @@ class PricingOptions:
     ):
         """
         Calculate American option prices using the Bjerksund-Stensland (2002)
-        closed-form analytical approximation.
+        closed-form analytical approximation, or the original 1993 version with method="1993".
 
         Unlike European options, American options can be exercised at any time up to
         and including expiration, which normally requires a numerical approach such as
@@ -1269,6 +1337,14 @@ class PricingOptions:
           normal terms, see ``black_scholes_model.get_bjerksund_stensland``
         - Put (S, K, T, r, b, σ) = Call (K, S, T, r - b, -b, σ), the put-call transformation
 
+        The 1993 version (method="1993") keeps one flat trigger price over the option's whole life, which is
+        faster and slightly further below the exact American value:
+
+        - h(T) = -(b * T + 2σ√T) * B0 / (B∞ - B0)
+        - I = B0 + (B∞ - B0) * (1 - e^h(T)), α = (I - K) * I^(-β)
+        - Call = α * S^β - α * φ(S, T, β, I, I) + φ(S, T, 1, I, I) - φ(S, T, 1, K, I) - K * φ(S, T, 0, I, I) +
+          K * φ(S, T, 0, K, I), with φ the univariate knock-out claim of ``black_scholes_model._phi``
+
         Where S is the stock price (the traded close on the pricing date), K is the strike
         price, r is the continuously compounded risk-free rate, q is the continuous dividend
         yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
@@ -1281,8 +1357,12 @@ class PricingOptions:
         expiration the value is the exercise value.
 
         See: Bjerksund, P., & Stensland, G. (2002), "Closed Form Valuation of American
-        Options", Working paper, NHH, as presented in Haug, E. G. (2007), "The Complete
-        Guide to Option Pricing Formulas" (2nd ed.), section 3.1.4.
+        Options", Working paper, NHH, and Bjerksund, P., & Stensland, G. (1993), "Closed-Form
+        Approximation of American Options", Scandinavian Journal of Management, 9, S87-S99, as
+        presented in Haug, E. G. (2007), "The Complete Guide to Option Pricing Formulas" (2nd ed.),
+        sections 3.1.4 and 3.1.3. The 1993 version is referenced against QuantLib's
+        BjerksundStenslandApproximationEngine (https://www.quantlib.org). For the Barone-Adesi-Whaley,
+        Ju-Zhong and QD+ approximations, see ``get_american_option``.
 
         Also known as: BS2002, Bjerksund-Stensland approximation, American option
         approximation.
@@ -1294,6 +1374,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
+            method (str, optional): The version of the approximation: "2002" (two flat trigger prices) or "1993"
+            (one flat trigger price). Defaults to "2002".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1358,6 +1440,9 @@ class PricingOptions:
         |             44 |       0.1146 |       0.3318 |       0.537  |
         |             45 |       0.0498 |       0.2004 |       0.3664 |
         """
+        if method not in ("2002", "1993"):
+            raise ValueError(f'method must be "2002" or "1993", received {method!r}.')
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -1403,6 +1488,7 @@ class PricingOptions:
                             time_to_expiration=time_to_expiration,
                             dividend_yield=dividend_yield_value[ticker],
                             put_option=put_option,
+                            method=method,
                         )
                     )
 
@@ -1433,6 +1519,231 @@ class PricingOptions:
             )
 
         return bjerksund_stensland_df
+
+    @handle_errors
+    def get_american_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        method: Literal["qd_plus", "barone_adesi_whaley", "ju_zhong"] = "qd_plus",
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate American option prices with the QD+ method of Li (2010) and Andersen, Lake and Offengenden
+        (2016), or the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999).
+
+        Listed options on single stocks are American: they can be exercised at any time up to expiration, which
+        makes an in-the-money put, or a call on a stock with a high dividend yield, worth more than the European
+        option the Black-Scholes model prices. These methods value that early exercise right without a tree:
+
+        - Barone-Adesi-Whaley (method="barone_adesi_whaley"): the early exercise premium is a power of S, fitted
+          to the exercise value at the critical stock price S*, found numerically. Fast, and within about 1% of the
+          exact value for most options, but several percent off for maturities of a year or more.
+        - Ju-Zhong (method="ju_zhong"): Barone-Adesi-Whaley with a correction for the term it drops, which
+          divides the premium by 1 - χ(S), a quadratic in ln(S / S*). As fast and within about 0.3% for most
+          options.
+        - QD+ (method="qd_plus"): the European price plus the early exercise premium integrated over the exercise
+          boundary, with the boundary at each time to expiration from the QD+ equation of Li (2010). The most
+          accurate of the three, within 0.3% of the exact value across typical inputs, and slower.
+
+        The formulas are as follows, with φ = 1 for a call and -1 for a put:
+
+        - α = 2r / σ², β = 2(r - q) / σ², h = 1 - e^(-rT)
+        - λ = [-(β - 1) + φ * √((β - 1)² + 4α / h)] / 2
+        - S* solves φ * (S* - K) = V_E(S*) + φ * (1 - e^(-qT) * N(φ * d1(S*))) * S* / λ
+        - Barone-Adesi-Whaley = V_E(S) + φ * (1 - e^(-qT) * N(φ * d1(S*))) * S* / λ * (S / S*)^λ
+        - Ju-Zhong = V_E(S) + (φ * (S* - K) - V_E(S*)) * (S / S*)^λ / (1 - b * ln(S / S*)² - c * ln(S / S*))
+        - QD+ Put = p(S) + ∫_0^T [r * K * e^(-rt) * N(-d2(t, S / B(T - t))) - q * S * e^(-qt) * N(-d1(t, S / B(T - t)))] dt
+        - QD+ Call (S, K, r, q) = QD+ Put (K, S, q, r), the put-call symmetry of McDonald and Schroder (1998)
+
+        Where each formula holds on the side of S* (or of the boundary B(T)) where holding the option is optimal,
+        and the option is worth its exercise value φ * (S - K) beyond it. S is the stock price (the traded close on
+        the pricing date), K is the strike price, r is the continuously compounded risk-free rate, q is the
+        continuous dividend yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
+        of the daily returns over the trailing 252 trading days times √252), T is the time to expiration in years
+        (days / 365), V_E and p are the European Black-Scholes prices, d1 and d2 are those of the Black-Scholes
+        model, b and c are the Ju-Zhong coefficients (see ``american_model.get_ju_zhong``) and B(τ) is the QD+
+        exercise boundary of a put with τ years to expiration (see ``american_model.get_qd_plus``).
+
+        A call on a stock without dividends is never exercised early and a put at a non-positive rate neither;
+        these are worth the Black-Scholes price, floored at the exercise value. At zero days to expiration the
+        value is the exercise value. For the Bjerksund-Stensland approximations, see ``get_bjerksund_stensland``.
+
+        See: Barone-Adesi, G., & Whaley, R. E. (1987), "Efficient Analytic Approximation of American Option
+        Values", The Journal of Finance, 42(2), 301-320; Ju, N., & Zhong, R. (1999), "An Approximate Formula for
+        Pricing American Options", The Journal of Derivatives, 7(2), 31-40; Li, M. (2010), "Analytical
+        Approximations for the Critical Stock Prices of American Options: A Performance Comparison", Review of
+        Derivatives Research, 13(1), 75-99; Andersen, L., Lake, M., & Offengenden, D. (2016), "High-Performance
+        American Option Pricing", Journal of Computational Finance, 20(1), 39-87. Referenced against QuantLib's
+        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine and QdPlusAmericanEngine
+        (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value
+        (https://github.com/domokane/FinancePy).
+
+        Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            method (str, optional): The approximation: "qd_plus", "barone_adesi_whaley" or "ju_zhong". Defaults to
+            "qd_plus".
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: American option values containing the tickers and strike prices as the index and the time
+            to expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        american_put = toolkit.options.get_american_option(
+            put_option=True, strike_price_range=0.15, strike_step_size=1, expiration_time_range=91
+        )
+
+        american_put.loc["VZ", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |             34 |       0.001  |       0.0226 |       0.0764 |
+        |             35 |       0.005  |       0.0551 |       0.1464 |
+        |             36 |       0.0193 |       0.1202 |       0.2605 |
+        |             37 |       0.0606 |       0.2369 |       0.4335 |
+        |             38 |       0.1584 |       0.4268 |       0.6798 |
+        |             39 |       0.3523 |       0.71   |       1.0107 |
+        |             40 |       0.6807 |       1.1012 |       1.4332 |
+        |             41 |       1.1664 |       1.6063 |       1.9493 |
+        |             42 |       1.8081 |       2.2221 |       2.5554 |
+        |             43 |       2.5816 |       2.9372 |       3.2441 |
+        |             44 |       3.4518 |       3.735  |       4.0046 |
+        |             45 |       4.3838 |       4.5974 |       4.8251 |
+        |             46 |       5.3505 |       5.507  |       5.6935 |
+        |             47 |       6.3345 |       6.449  |       6.5986 |
+        """
+        if method not in ("qd_plus", "barone_adesi_whaley", "ju_zhong"):
+            raise ValueError(
+                f'method must be "qd_plus", "barone_adesi_whaley" or "ju_zhong", received {method!r}.'
+            )
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        american_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+
+            american_option[ticker] = {
+                strike_price: {
+                    time_to_expiration: american_model.get_american_option(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=float(strike_price),
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                        method=method,
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+                for strike_price in strike_prices
+            }
+
+        american_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=american_option,
+            start_date=start_date,
+        )
+
+        american_option_df = american_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            american_option_df = calculate_standardization(
+                dataset=american_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return american_option_df
 
     @handle_errors
     def get_monte_carlo_option_price(

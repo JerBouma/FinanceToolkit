@@ -554,3 +554,71 @@ def get_monte_carlo_option_prices(
         )
 
     return option_prices, standard_errors
+
+
+def get_projected_dividends(
+    dividends: pd.Series,
+    pricing_date: pd.Timestamp,
+    horizon_days: int,
+    history: int = 4,
+) -> pd.Series:
+    """
+    Projects the cash dividends of a stock after a pricing date from the dividends it paid
+    up to that date: the latest dividend is repeated at the usual interval between its
+    ex-dividend dates, so a past pricing date only uses what was known on that date.
+
+    - Interval = the median number of days between the last `history` + 1 ex-dividend dates
+      (365 days with a single dividend)
+    - Next ex-date = last ex-date + Interval, moved on by the Interval until it lies after
+      the pricing date, and every Interval after it up to the horizon
+    - Amount = the latest dividend per share
+
+    A stock whose latest dividend lies more than twice the interval before the pricing date
+    has stopped paying and projects no dividends, as does a stock without dividends.
+
+    Args:
+        dividends (pd.Series): The dividends per share of one stock on their ex-dividend
+            dates (0 or NaN on the other dates), with a DatetimeIndex or a daily PeriodIndex.
+        pricing_date (pd.Timestamp): The date the dividends are projected from.
+        horizon_days (int): The number of calendar days after the pricing date to project.
+        history (int, optional): The number of intervals between ex-dates the usual
+            interval is the median of. Defaults to 4, a year of quarterly dividends.
+
+    Returns:
+        pd.Series: The projected dividend per share, indexed by the number of calendar days
+        after the pricing date of each ex-dividend date. Empty without projected dividends.
+    """
+    index = dividends.index
+    dates = index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
+    paid = pd.Series(dividends.to_numpy(dtype=float), index=dates)
+    pricing_date = pd.Timestamp(pricing_date)
+    paid = paid[(paid > 0) & (paid.index <= pricing_date)]
+
+    if paid.empty:
+        return pd.Series(dtype=float, name="Dividend")
+
+    ex_dates = paid.index[-(history + 1) :]
+    interval = (
+        int(np.median(np.diff(ex_dates).astype("timedelta64[D]").astype(int)))
+        if len(ex_dates) > 1
+        else 365
+    )
+    last_date = paid.index[-1]
+
+    if interval <= 0 or (pricing_date - last_date).days > 2 * interval:
+        return pd.Series(dtype=float, name="Dividend")
+
+    next_date = last_date + pd.Timedelta(days=interval)
+    while next_date <= pricing_date:
+        next_date += pd.Timedelta(days=interval)
+
+    days = []
+    while (next_date - pricing_date).days <= horizon_days:
+        days.append((next_date - pricing_date).days)
+        next_date += pd.Timedelta(days=interval)
+
+    return pd.Series(
+        float(paid.iloc[-1]),
+        index=pd.Index(days, name="Days", dtype=int),
+        name="Dividend",
+    )

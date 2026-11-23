@@ -1474,3 +1474,90 @@ def test_the_percent_change_of_an_option_is_a_decimal(options_module, chains):
     # Yahoo Finance quotes the change in percent (1.5 for 1.5%).
     nearest = options_module.get_option_chains()
     assert nearest["Percent Change"].tolist() == [0.015, -0.0336, 0.015, -0.0336]
+
+
+def test_get_american_option(recorder, options_module):
+    recorder.capture(options_module.get_american_option())
+    recorder.capture(
+        options_module.get_american_option(put_option=True, strike_price_range=0.10)
+    )
+    recorder.capture(
+        options_module.get_american_option(
+            method="barone_adesi_whaley",
+            put_option=True,
+            strike_price_range=0.10,
+            strike_step_size=2,
+            expiration_time_range=5,
+            risk_free_rate=0.03,
+            dividend_yield=0.02,
+            rounding=2,
+        )
+    )
+    recorder.capture(
+        options_module.get_american_option(
+            method="ju_zhong", dividend_yield=0.06, expiration_time_range=10
+        )
+    )
+
+
+def test_get_bjerksund_stensland_1993(recorder, options_module):
+    recorder.capture(options_module.get_bjerksund_stensland(method="1993"))
+    recorder.capture(
+        options_module.get_bjerksund_stensland(method="1993", put_option=True)
+    )
+
+
+def test_get_black_scholes_model_cash_dividends(recorder, options_module):
+    recorder.capture(
+        options_module.get_black_scholes_model(
+            dividends="escrowed", expiration_time_range=60
+        )
+    )
+    recorder.capture(
+        options_module.get_black_scholes_model(
+            dividends="haug_haug_lewis",
+            put_option=True,
+            strike_price_range=0.05,
+            expiration_time_range=60,
+        )
+    )
+
+
+def test_the_american_option_is_worth_at_least_the_european_option(options_module):
+    american = options_module.get_american_option(
+        put_option=True, method="ju_zhong", expiration_time_range=60
+    )
+    european = options_module.get_black_scholes_model(
+        put_option=True, expiration_time_range=60
+    )
+    assert (american >= european - 1e-4).all().all()
+
+
+def test_cash_dividends_replace_the_dividend_yield(options_module, caplog):
+    # MSFT's next dividend of 0.68 is projected 47 days after the last date of 2022-12-30
+    # (2022-11-16 plus the 91 days between its ex-dates); options expiring before it are
+    # priced as without dividends, those on or after it lower.
+    escrowed = options_module.get_black_scholes_model(
+        dividends="escrowed", expiration_time_range=90
+    ).loc["MSFT"]
+    without = options_module.get_black_scholes_model(
+        dividend_yield=0.0, expiration_time_range=90
+    ).loc["MSFT"]
+    assert (escrowed.iloc[:, :46] - without.iloc[:, :46]).abs().max().max() == 0
+    assert (escrowed.iloc[:, -5:] < without.iloc[:, -5:]).all().all()
+
+    assert options_module.get_black_scholes_model(
+        dividends="escrowed", dividend_yield=0.01
+    ).empty
+    assert "only used with" in caplog.text
+
+
+def test_get_implied_volatility_american(recorder, option_market):
+    module, labels = option_market
+    european = module.get_implied_volatility(put_option=True)
+    american = module.get_implied_volatility(put_option=True, american=True)
+    recorder.capture(american.to_frame("American"))
+    # The early exercise right is part of the American price, so the volatility that
+    # reprices a put is lower when that right is counted, most for the deep in-the-money.
+    common = american.index.intersection(european.index)
+    assert (american.loc[common] <= european.loc[common] + 1e-4).all()

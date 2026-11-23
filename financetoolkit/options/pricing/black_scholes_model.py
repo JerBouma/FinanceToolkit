@@ -5,6 +5,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy.interpolate import CubicSpline
 from scipy.optimize import brentq
 from scipy.special import log_ndtr, ndtr
 from scipy.stats import norm
@@ -1058,6 +1059,120 @@ def _bjerksund_stensland_call(
     return float(max(value, european_value, exercise_value))
 
 
+def _bjerksund_stensland_1993_call(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    cost_of_carry: float,
+    volatility: float,
+    time_to_expiration: float,
+) -> float:
+    """
+    Prices an American call option using the Bjerksund-Stensland (1993) closed-form
+    approximation with one flat early-exercise boundary over the option's life. Puts are
+    priced through the put-call transformation applied by get_bjerksund_stensland. The
+    value is floored at the European price and the exercise value, and a binomial tree takes
+    over where the boundary falls to or below the strike, as in the 2002 version.
+
+    Args:
+        stock_price (float): The current stock price.
+        strike_price (float): The option's strike price.
+        risk_free_rate (float): The risk-free interest rate.
+        cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
+            dividend_yield.
+        volatility (float): The volatility of the stock.
+        time_to_expiration (float): The time to expiration of the option.
+
+    Returns:
+        float: The value of the American call option.
+    """
+    if time_to_expiration <= 0:
+        return max(stock_price - strike_price, 0.0)
+
+    exercise_value = max(stock_price - strike_price, 0.0)
+    european_value = float(
+        get_black_scholes(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            dividend_yield=risk_free_rate - cost_of_carry,
+        )
+    )
+
+    if cost_of_carry >= risk_free_rate:
+        # Early exercise is not optimal, see _bjerksund_stensland_call.
+        return max(european_value, exercise_value)
+
+    beta = (0.5 - cost_of_carry / volatility**2) + np.sqrt(
+        (cost_of_carry / volatility**2 - 0.5) ** 2 + 2 * risk_free_rate / volatility**2
+    )
+    b_infinity = beta / (beta - 1) * strike_price
+    b_zero = max(
+        strike_price, risk_free_rate / (risk_free_rate - cost_of_carry) * strike_price
+    )
+    # The single flat boundary I = B0 + (B∞ — B0) * (1 — e^h(T)), with the 1993 h(T).
+    h_time = (
+        -(
+            cost_of_carry * time_to_expiration
+            + 2 * volatility * np.sqrt(time_to_expiration)
+        )
+        * b_zero
+        / (b_infinity - b_zero)
+    )
+    boundary = b_zero + (b_infinity - b_zero) * (1 - np.exp(h_time))
+
+    if not np.isfinite(boundary) or boundary <= strike_price:
+        # The approximation would exercise options that are out of the money, see
+        # _bjerksund_stensland_call.
+        return max(
+            _american_call_binomial_value(
+                stock_price=stock_price,
+                strike_price=strike_price,
+                risk_free_rate=risk_free_rate,
+                cost_of_carry=cost_of_carry,
+                volatility=volatility,
+                time_to_expiration=time_to_expiration,
+            ),
+            european_value,
+            exercise_value,
+        )
+
+    if stock_price >= boundary:
+        return max(exercise_value, european_value)
+
+    def phi(gamma: float, trigger_price: float, scale_price: float = 1.0) -> float:
+        return _phi(
+            stock_price=stock_price,
+            time_to_expiration=time_to_expiration,
+            gamma=gamma,
+            trigger_price=trigger_price,
+            boundary_price=boundary,
+            risk_free_rate=risk_free_rate,
+            cost_of_carry=cost_of_carry,
+            volatility=volatility,
+            scale_price=scale_price,
+        )
+
+    # α * S^β and α * φ(β) written as (I — K) * (S / I)^β and (I — K) * φ(β) / I^β, which
+    # stay finite at low volatility, see _bjerksund_stensland_call.
+    premium = boundary - strike_price
+    value = (
+        premium * (stock_price / boundary) ** beta
+        - premium * phi(beta, boundary, scale_price=boundary)
+        + phi(1, boundary)
+        - phi(1, strike_price)
+        - strike_price * phi(0, boundary)
+        + strike_price * phi(0, strike_price)
+    )
+
+    if not np.isfinite(value):
+        value = european_value
+
+    return float(max(value, european_value, exercise_value))
+
+
 @np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
 def get_bjerksund_stensland(
     stock_price: float,
@@ -1067,10 +1182,12 @@ def get_bjerksund_stensland(
     time_to_expiration: float,
     dividend_yield: float = 0.0,
     put_option: bool = False,
+    method: str = "2002",
 ) -> float:
     """
     Calculate the price of an American option using the Bjerksund-Stensland (2002)
-    closed-form analytical approximation.
+    closed-form analytical approximation, or with method="1993" the original version with
+    one flat boundary.
 
     Also known as: BS2002, Bjerksund-Stensland approximation, American option approximation.
 
@@ -1105,6 +1222,13 @@ def get_bjerksund_stensland(
     Where φ is a knock-out claim over one period (a univariate normal expression) and ψ
     its two-period counterpart (a bivariate normal expression), see ``_phi`` and ``_psi``.
 
+    The 1993 version keeps one flat boundary over the whole life of the option:
+
+    - h(T) = —(b * T + 2σ√T) * B0 / (B∞ — B0)
+    - I = B0 + (B∞ — B0) * (1 — e^h(T)),  α = (I — K) * I^(—β)
+    - C = α * S^β — α * φ(S, T, β, I, I) + φ(S, T, 1, I, I) — φ(S, T, 1, K, I) —
+      K * φ(S, T, 0, I, I) + K * φ(S, T, 0, K, I)
+
     When b ≥ r it is never optimal to exercise an American call early, so the value
     collapses to the standard European Black-Scholes price. American puts are priced
     through the put-call transformation:
@@ -1127,16 +1251,27 @@ def get_bjerksund_stensland(
             At zero the option is worth its exercise value.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
+        method (str): The version of the approximation, "2002" (two flat boundaries) or
+            "1993" (one flat boundary). Defaults to "2002".
 
     Returns:
-        float: The Bjerksund-Stensland (2002) approximation of the American option value.
+        float: The Bjerksund-Stensland approximation of the American option value.
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if volatility is not positive.
+        ValueError: if volatility is not positive or method is not "2002" or "1993".
 
     Notes:
-        Reference: Bjerksund, P., & Stensland, G. (2002). "Closed Form Valuation of
+        Reference for the 1993 version: Bjerksund, P., & Stensland, G. (1993). "Closed-Form
+        Approximation of American Options." Scandinavian Journal of Management, 9, S87-S99,
+        as presented in Haug (2007), section 3.1.3. It is referenced against QuantLib's
+        BjerksundStenslandApproximationEngine, which also searches the boundary that
+        maximizes the price where the cost of carry is negative and the 1993 boundary falls
+        short, where this version uses the binomial tree instead. For S = K = 100, r = 5%,
+        q = 3%, σ = 25% and T = 1 the 1993 put is 8.8152, against 8.8439 for the 2002
+        version.
+
+        Reference for the 2002 version: Bjerksund, P., & Stensland, G. (2002). "Closed Form Valuation of
         American Options." Working paper, Norwegian School of Economics and Business
         Administration (NHH). As presented in Haug, E. G. (2007). "The Complete Guide to
         Option Pricing Formulas" (2nd ed.), section 3.1.4. Compared with a finite-difference
@@ -1159,11 +1294,19 @@ def get_bjerksund_stensland(
     if volatility <= 0:
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
+    if method not in ("2002", "1993"):
+        raise ValueError(f'method must be "2002" or "1993", received {method!r}.')
+
+    call = (
+        _bjerksund_stensland_call
+        if method == "2002"
+        else _bjerksund_stensland_1993_call
+    )
     cost_of_carry = risk_free_rate - dividend_yield
 
     if put_option:
         # American put via P(S, K, T, r, b, v) = C(K, S, T, r - b, -b, v).
-        return _bjerksund_stensland_call(
+        return call(
             stock_price=strike_price,
             strike_price=stock_price,
             risk_free_rate=risk_free_rate - cost_of_carry,
@@ -1172,11 +1315,276 @@ def get_bjerksund_stensland(
             time_to_expiration=time_to_expiration,
         )
 
-    return _bjerksund_stensland_call(
+    return call(
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
         cost_of_carry=cost_of_carry,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
+    )
+
+
+# The points of the log price grid and of the Gauss-Hermite rule with which the Haug, Haug
+# and Lewis method carries the option value back from one dividend date to the one before.
+_DIVIDEND_GRID_POINTS = 401
+_DIVIDEND_GRID_WIDTH = 10.0
+_HERMITE_NODES, _HERMITE_WEIGHTS = np.polynomial.hermite_e.hermegauss(96)
+_HERMITE_WEIGHTS = _HERMITE_WEIGHTS / np.sqrt(2 * np.pi)
+
+
+def _dividends_before_expiration(
+    dividend_times: list[float] | np.ndarray,
+    dividend_amounts: list[float] | np.ndarray,
+    time_to_expiration: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Helper function with the cash dividends that go ex-dividend after today and no later
+    than the expiration, in date order.
+    """
+    times = np.asarray(dividend_times, dtype=float)
+    amounts = np.asarray(dividend_amounts, dtype=float)
+    if times.shape != amounts.shape:
+        raise ValueError(
+            "dividend_times and dividend_amounts must have the same length, received "
+            f"{times.size} and {amounts.size}."
+        )
+    keep = (times > 0) & (times <= time_to_expiration) & (amounts != 0)
+    order = np.argsort(times[keep])
+    return times[keep][order], amounts[keep][order]
+
+
+def _haug_haug_lewis(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_times: np.ndarray,
+    dividend_amounts: np.ndarray,
+    put_option: bool,
+) -> float:
+    """
+    Helper function with the European option price when the stock drops by each cash
+    dividend on its ex-date, found by integrating the value after each dividend over the
+    lognormal distribution of the stock price before it (Haug, Haug and Lewis, 2003).
+
+    After the last dividend the option is a Black-Scholes option on the stock net of that
+    dividend. Before it, the value at each earlier dividend date is the discounted
+    expectation of the value at the next one, taken with a Gauss-Hermite rule and kept on a
+    grid of log prices (interpolated with a cubic spline), so the work grows linearly with
+    the number of dividends. A dividend larger than the stock price leaves a stock worth 0.
+    """
+
+    def after_dividend(price: np.ndarray, index: int, table) -> np.ndarray:
+        """The value just after dividend index, at the stock price net of the dividend."""
+        if index == len(dividend_times) - 1:
+            return np.asarray(
+                get_black_scholes(
+                    stock_price=np.maximum(price, 0.0),
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility,
+                    time_to_expiration=time_to_expiration - dividend_times[index],
+                    put_option=put_option,
+                ),
+                dtype=float,
+            )
+        return table(price)
+
+    def tabulate(index: int, table):
+        """The value just after dividend index as a function of the stock price."""
+        if index == len(dividend_times) - 1:
+            return None
+        remaining = time_to_expiration - dividend_times[index]
+        spread = volatility * np.sqrt(remaining)
+        log_prices = np.log(stock_price) + np.linspace(
+            -_DIVIDEND_GRID_WIDTH * spread - 1.0,
+            _DIVIDEND_GRID_WIDTH * spread + 1.0,
+            _DIVIDEND_GRID_POINTS,
+        )
+        grid = np.exp(log_prices)
+        step = dividend_times[index + 1] - dividend_times[index]
+        future = grid[:, None] * np.exp(
+            (risk_free_rate - 0.5 * volatility**2) * step
+            + volatility * np.sqrt(step) * _HERMITE_NODES[None, :]
+        )
+        values = np.exp(-risk_free_rate * step) * (
+            after_dividend(future - dividend_amounts[index + 1], index + 1, table)
+            @ _HERMITE_WEIGHTS
+        )
+        spline = CubicSpline(log_prices, values)
+        # The value of a worthless stock: a call is worth 0, a put the discounted strike.
+        floor_value = (
+            strike_price * np.exp(-risk_free_rate * remaining) if put_option else 0.0
+        )
+        slope = (values[-1] - values[-2]) / (grid[-1] - grid[-2])
+
+        def table_function(price: np.ndarray) -> np.ndarray:
+            price = np.asarray(price, dtype=float)
+            inside = np.clip(price, grid[0], grid[-1])
+            result = spline(np.log(inside))
+            # Below the grid, linear towards the value of a worthless stock; above it,
+            # linear along the last slope, as the option value is linear far from the strike.
+            below = price < grid[0]
+            result = np.where(
+                below,
+                floor_value
+                + (values[0] - floor_value) * np.maximum(price, 0.0) / grid[0],
+                result,
+            )
+            return np.where(
+                price > grid[-1], values[-1] + slope * (price - grid[-1]), result
+            )
+
+        return table_function
+
+    # Backwards from the last dividend: tables[i] is the value just after dividend i.
+    tables: list = [None] * len(dividend_times)
+    for index in range(len(dividend_times) - 2, -1, -1):
+        tables[index] = tabulate(index, tables[index + 1])
+
+    first = dividend_times[0]
+    future = stock_price * np.exp(
+        (risk_free_rate - 0.5 * volatility**2) * first
+        + volatility * np.sqrt(first) * _HERMITE_NODES
+    )
+    return float(
+        np.exp(-risk_free_rate * first)
+        * (
+            after_dividend(future - dividend_amounts[0], 0, tables[0])
+            @ _HERMITE_WEIGHTS
+        )
+    )
+
+
+@np.errstate(divide="ignore", invalid="ignore")
+def get_black_scholes_cash_dividends(
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float | np.ndarray,
+    dividend_times: list[float] | np.ndarray,
+    dividend_amounts: list[float] | np.ndarray,
+    put_option: bool = False,
+    method: str = "escrowed",
+):
+    """
+    Calculate the price of a European option on a stock that pays known cash dividends
+    before expiration, instead of a continuous dividend yield.
+
+    A cash dividend lowers the stock price by its amount on the ex-dividend date, which a
+    dividend yield only spreads over the year. Two methods are available:
+
+    - "escrowed" (Hull, 2022, chapter 17): the stock price net of the present value of
+      the dividends up to expiration follows the lognormal process, so the Black-Scholes
+      formula applies to S* = S — Σ D_i * e^(—r * t_i) with no dividend yield. It is the
+      market convention and exact for that process, but the volatility then applies to
+      S* rather than S, which lowers the volatility of the stock itself.
+    - "haug_haug_lewis" (Haug, Haug and Lewis, 2003): the stock price itself follows the
+      lognormal process and drops by D_i at t_i (to 0 when the dividend exceeds it). After
+      the last dividend the option is a Black-Scholes option; before it, its value at each
+      dividend date is the discounted expectation of the value just after the next one:
+
+      - V_i(x) = e^(—r * (t_(i+1) — t_i)) * E[V_(i+1)(S_(t_(i+1)) — D_(i+1)) | S_(t_i) = x]
+      - V = e^(—r * t_1) * E[V_1(S_(t_1) — D_1)]
+
+      The expectations are one-dimensional integrals over the lognormal distribution, taken
+      with a 96 point Gauss-Hermite rule, with the value between dividends kept on a grid of
+      401 log prices.
+
+    Where S is the stock price, K the strike price, r the continuously compounded risk-free
+    rate, σ the volatility, D_i the cash dividend with ex-date t_i years from now and T the
+    time to expiration. Dividends after T or not after today are left out.
+
+    Args:
+        stock_price (float | np.ndarray): The current stock price.
+        strike_price (float | np.ndarray): The option's strike price.
+        risk_free_rate (float): The continuously compounded risk-free interest rate.
+        volatility (float): The volatility of the stock.
+        time_to_expiration (float | np.ndarray): The time to expiration of the option, in
+            years.
+        dividend_times (list[float] | np.ndarray): The times of the ex-dividend dates, in
+            years from now.
+        dividend_amounts (list[float] | np.ndarray): The cash dividend per share of each
+            ex-dividend date.
+        put_option (bool): Whether the option is a put option or not. Defaults to False.
+        method (str): "escrowed" or "haug_haug_lewis". Defaults to "escrowed". The
+            Haug-Haug-Lewis method takes a single stock price, strike price and time to
+            expiration; the escrowed method also takes arrays of them.
+
+    Returns:
+        float | np.ndarray: The value of the European option.
+
+    Raises:
+        ValueError: if method is not "escrowed" or "haug_haug_lewis", the dividend times
+            and amounts differ in length or the volatility is not positive.
+
+    Notes:
+        References: Hull, J. C. (2022). "Options, Futures, and Other Derivatives" (11th
+        ed.), chapter 17; Haug, E. G., Haug, J., & Lewis, A. (2003). "Back to Basics: a New
+        Approach to the Discrete Dividend Problem." Wilmott Magazine, September, 37-47.
+        Referenced against QuantLib's AnalyticDividendEuropeanEngine (escrowed) and
+        CashDividendEuropeanEngine with the Spot model (Haug-Haug-Lewis),
+        https://www.quantlib.org. For S = K = 100, r = 5%, σ = 30%, T = 1 and a dividend of
+        2 after 30 days, the escrowed call is 13.0133 and the Haug-Haug-Lewis call 13.0325.
+    """
+    if method not in ("escrowed", "haug_haug_lewis"):
+        raise ValueError(
+            f'method must be "escrowed" or "haug_haug_lewis", received {method!r}.'
+        )
+    if volatility <= 0:
+        raise ValueError(f"volatility must be positive, received {volatility!r}.")
+
+    if method == "escrowed":
+        times = np.asarray(dividend_times, dtype=float)
+        amounts = np.asarray(dividend_amounts, dtype=float)
+        if times.shape != amounts.shape:
+            raise ValueError(
+                "dividend_times and dividend_amounts must have the same length, received "
+                f"{times.size} and {amounts.size}."
+            )
+        expirations = np.asarray(time_to_expiration, dtype=float)
+        # The present value of the dividends up to each expiration.
+        present_value = (
+            (amounts * np.exp(-risk_free_rate * times))[None, :]
+            * ((times > 0)[None, :] & (times[None, :] <= expirations.reshape(-1, 1)))
+        ).sum(axis=1)
+        present_value = (
+            float(present_value[0])
+            if expirations.ndim == 0
+            else present_value.reshape(expirations.shape)
+        )
+        return get_black_scholes(
+            stock_price=np.maximum(stock_price - present_value, 0.0),
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            put_option=put_option,
+        )
+
+    times, amounts = _dividends_before_expiration(
+        dividend_times, dividend_amounts, float(time_to_expiration)
+    )
+    if times.size == 0 or time_to_expiration <= 0:
+        return get_black_scholes(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            put_option=put_option,
+        )
+
+    return _haug_haug_lewis(
+        stock_price=float(stock_price),
+        strike_price=float(strike_price),
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=float(time_to_expiration),
+        dividend_times=times,
+        dividend_amounts=amounts,
+        put_option=put_option,
     )

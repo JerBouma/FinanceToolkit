@@ -7,6 +7,7 @@ from datetime import (
     datetime,
     timedelta,
 )
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -21,9 +22,11 @@ from financetoolkit import (
 from financetoolkit.economics.sources import bls_model
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
+from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.markets import (
     bond_data_model,
     bond_futures_model,
+    fitted_curve_model,
     frn_model,
     inflation_bond_model,
 )
@@ -855,6 +858,245 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         return apply_rounding(
             prices, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_fitted_bond_curve(
+        self,
+        method: Literal[
+            "svensson", "nelson_siegel", "exponential_spline", "cubic_spline"
+        ] = "svensson",
+        maturities: float | str | list | None = None,
+        date: str | None = None,
+        residuals: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Fits the US Treasury zero-coupon curve to the prices of every Treasury note and bond on
+        a day, from the Treasury's FedInvest prices. Where `get_zero_coupon_curve`
+        bootstraps the dozen constant maturity par yields of the Treasury's own curve, this
+        takes the roughly 330 notes and bonds themselves, so the curve reflects what trades
+        and each bond's residual shows whether it is rich (priced above the curve) or cheap
+        (below it), the relative value view of a bond desk.
+
+        The curve minimizes the weighted squared differences between the bonds' prices and
+        their prices on the curve, with weights inversely proportional to duration so that
+        the errors count about equally in yield, as Gürkaynak, Sack and Wright (2007) fit the
+        Federal Reserve's Treasury curve:
+
+        The formula is as follows:
+
+        - min Σ_i w_i (P_i^model - P_i)², with P_i^model = Σ_k CF_ik d(t_ik) and w_i = 1 / D_i
+
+        where P_i is the clean price plus accrued interest of bond i, CF_ik its coupons and
+        principal at times t_ik (actual days / 365 from the price date, on its actual coupon
+        dates), D_i its modified duration and d(t) the discount function of the method:
+
+        - "svensson": d(t) = e^(-y(t) t), with y(t) the Svensson (1994) zero rate
+          β0 + β1 (1 - e^(-t/τ1)) / (t/τ1) + β2 [(1 - e^(-t/τ1)) / (t/τ1) - e^(-t/τ1)]
+          + β3 [(1 - e^(-t/τ2)) / (t/τ2) - e^(-t/τ2)], the model of the Federal Reserve's
+          curve (Gürkaynak, Sack and Wright, 2007)
+        - "nelson_siegel": the same without β3 (Nelson and Siegel, 1987)
+        - "exponential_spline": d(t) = Σ_{k=1}^{9} a_k e^(-k κ t) with Σ a_k = 1, the
+          exponential basis of Vasicek and Fong (1982)
+        - "cubic_spline": d(t) a cubic spline with d(0) = 1 and about √n basis functions for
+          n bonds, with knots at quantiles of the maturities so that as many bonds mature
+          between every two knots (McCulloch, 1975)
+
+        The Nelson-Siegel and Svensson fits are a bounded nonlinear least squares from fixed
+        starts (the model fitted to the bonds' yields at their durations, and its betas with
+        first decays of 0.5, 1, 2 and 5 years), with the bounds of
+        `get_nelson_siegel_svensson`; a fit whose parameters are not identified (a flat ridge
+        of equally good fits) raises an error rather than return an arbitrary point on it. The
+        splines are linear in their coefficients and fitted exactly. As Gürkaynak, Sack and
+        Wright do, bills, TIPS, floating rate notes and notes and bonds within three months of
+        maturity are left out. Each day uses its own prices only. For prices of your own, use
+        `fitted_curve_model.fit_bond_curve`.
+
+        The fitted zero rates are annually compounded, like those of `get_zero_coupon_curve`,
+        while the models are fitted on continuously compounded rates, so the betas compare
+        with the Federal Reserve's; the instantaneous forward rate is continuously compounded.
+        Yields of the bonds are bond-equivalent (compounded twice a year), as the Treasury
+        quotes them.
+
+        For more information, see the following papers:
+
+        - McCulloch, J.H. (1975). "The Tax-Adjusted Yield Curve." The Journal of Finance,
+          30(3), 811-830.
+        - Vasicek, O.A. and Fong, H.G. (1982). "Term Structure Modeling Using Exponential
+          Splines." The Journal of Finance, 37(2), 339-348.
+        - Nelson, C.R. and Siegel, A.F. (1987). "Parsimonious Modeling of Yield Curves." The
+          Journal of Business, 60(4), 473-489.
+        - Svensson, L.E.O. (1994). "Estimating and Interpreting Forward Interest Rates: Sweden
+          1992-1994." NBER Working Paper 4871.
+        - Gürkaynak, R.S., Sack, B. and Wright, J.H. (2007). "The U.S. Treasury Yield Curve:
+          1961 to the Present." Journal of Monetary Economics, 54(8), 2291-2304.
+
+        Referenced against QuantLib's FittedBondDiscountCurve with NelsonSiegelFitting,
+        SvenssonFitting, ExponentialSplinesFitting and CubicBSplinesFitting
+        (https://www.quantlib.org).
+
+        Also known as: fitted yield curve, Treasury curve fitting, rich cheap analysis,
+        bond relative value, Svensson curve on bond prices, spline curve.
+
+        Args:
+            method (str, optional): "svensson", "nelson_siegel", "exponential_spline" or
+                "cubic_spline". Defaults to "svensson".
+            maturities (float | str | list | None, optional): The maturities to return the
+                curve at, in years or as labels such as '6M' (a list or a comma-separated
+                string). Defaults to None, 6 months and 1, 2, 3, 5, 7, 10, 20 and 30 years.
+            date (str | None, optional): The day of the prices (YYYY-MM-DD); a weekend or
+                holiday uses the business day before it. Defaults to None, the latest day
+                with prices.
+            residuals (bool, optional): Whether to return every bond with its price and yield
+                on the curve and its residuals instead of the curve. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Zero Rate (annually compounded), the Discount Factor and the
+            Instantaneous Forward Rate (continuously compounded) by maturity in years; or,
+            with residuals=True, per bond (by CUSIP) its Security Type, Coupon, Maturity,
+            Price, Fitted Price (clean, on the curve), Price Residual (Price minus Fitted
+            Price, positive for a bond that is rich), Yield to Maturity, Fitted Yield and Yield
+            Residual (Yield to Maturity minus Fitted Yield, positive for a bond that is cheap).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_fitted_bond_curve(date="2026-11-05")
+        ```
+
+        Which returns:
+
+        |   Maturity |   Zero Rate |   Discount Factor |   Instantaneous Forward Rate |
+        |-----------:|------------:|------------------:|-----------------------------:|
+        |        0.5 |      0.0428 |            0.9792 |                       0.0435 |
+        |        1   |      0.0441 |            0.9577 |                       0.0451 |
+        |        2   |      0.0455 |            0.9149 |                       0.046  |
+        |        3   |      0.046  |            0.8738 |                       0.046  |
+        |        5   |      0.0466 |            0.7964 |                       0.0472 |
+        |        7   |      0.0475 |            0.7225 |                       0.0504 |
+        |       10   |      0.0496 |            0.6162 |                       0.0555 |
+        |       20   |      0.0549 |            0.3432 |                       0.0578 |
+        |       30   |      0.0546 |            0.2032 |                       0.0461 |
+        """
+        if method not in fitted_curve_model.METHODS:
+            raise ValueError(
+                f"The method {method!r} does not exist. Choose from "
+                f"{', '.join(fitted_curve_model.METHODS)}."
+            )
+        prices, price_date = self._treasury_prices(date, "Note,Bond", None)
+        prices = prices[
+            prices["Maturity"].dt.date > price_date + relativedelta(months=3)
+        ].reset_index(drop=True)
+
+        schedules = []
+        for coupon, maturity in zip(prices["Coupon"], prices["Maturity"], strict=True):
+            _, coupon_dates = bond_data_model.get_coupon_dates(
+                price_date, maturity.date()
+            )
+            times = np.array([(day - price_date).days / 365 for day in coupon_dates])
+            flows = np.full(len(times), 100 * coupon / 2)
+            flows[-1] += 100
+            schedules.append((times, flows))
+        width = max(len(times) for times, _ in schedules)
+        cash_flow_times = np.zeros((len(schedules), width))
+        cash_flows = np.zeros((len(schedules), width))
+        for row, (times, flows) in enumerate(schedules):
+            cash_flow_times[row, : len(times)] = times
+            cash_flows[row, : len(flows)] = flows
+
+        accrued = np.array(
+            [
+                bond_data_model.get_accrued_interest(
+                    coupon, price_date, maturity.date()
+                )
+                for coupon, maturity in zip(
+                    prices["Coupon"], prices["Maturity"], strict=True
+                )
+            ]
+        )
+        analytics = [
+            bond_data_model.get_bond_analytics(
+                coupon,
+                bond_data_model.get_years_to_maturity(price_date, maturity.date()),
+                price,
+            )
+            for coupon, maturity, price in zip(
+                prices["Coupon"], prices["Maturity"], prices["Price"], strict=True
+            )
+        ]
+        market_yields = np.array([value[0] for value in analytics])
+        durations = np.array([value[1] for value in analytics])
+        usable = np.isfinite(durations) & (durations > 0)
+
+        parameters = fitted_curve_model.fit_bond_curve(
+            cash_flow_times[usable],
+            cash_flows[usable],
+            (prices["Price"].to_numpy(dtype=float) + accrued)[usable],
+            1 / durations[usable],
+            method,
+        )
+
+        if not residuals:
+            years = np.array(
+                parse_maturities(maturities, [0.5, 1, 2, 3, 5, 7, 10, 20, 30]),
+                dtype=float,
+            )
+            curve = fitted_curve_model.get_fitted_curve(parameters, years, method)
+            curve.index = pd.Index(
+                [maturity_key(value) for value in years], name="Maturity"
+            )
+            return apply_rounding(
+                curve, rounding if rounding is not None else self._rounding
+            )
+
+        fitted_prices = (
+            fitted_curve_model.get_fitted_bond_prices(
+                parameters, cash_flow_times, cash_flows, method
+            )
+            - accrued
+        )
+        fitted_yields = np.array(
+            [
+                bond_data_model.get_bond_analytics(
+                    coupon,
+                    bond_data_model.get_years_to_maturity(price_date, maturity.date()),
+                    price,
+                )[0]
+                for coupon, maturity, price in zip(
+                    prices["Coupon"], prices["Maturity"], fitted_prices, strict=True
+                )
+            ]
+        )
+        bonds = pd.DataFrame(
+            {
+                "Security Type": prices["Security Type"].to_numpy(),
+                "Coupon": prices["Coupon"].to_numpy(dtype=float),
+                "Maturity": prices["Maturity"].dt.strftime("%Y-%m-%d").to_numpy(),
+                "Price": prices["Price"].to_numpy(dtype=float),
+                "Fitted Price": fitted_prices,
+                "Price Residual": prices["Price"].to_numpy(dtype=float) - fitted_prices,
+                "Yield to Maturity": market_yields,
+                "Fitted Yield": fitted_yields,
+                "Yield Residual": market_yields - fitted_yields,
+            },
+            index=pd.Index(prices["CUSIP"].to_numpy(), name="CUSIP"),
+        )
+        bonds = bonds[usable].sort_values(["Maturity", "Security Type"], kind="stable")
+
+        return apply_rounding(
+            bonds, rounding if rounding is not None else self._rounding
         )
 
     def _treasury_prices(

@@ -745,6 +745,56 @@ def get_volatility(
     return returns.groupby(dates).std() * np.sqrt(days_per_period)
 
 
+def get_compounded_volatility(
+    returns: pd.Series | pd.DataFrame, period: str
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the compounded Volatility of returns for a given period (weekly, monthly,
+    quarterly or yearly) from the daily returns within it: the standard deviation of the
+    return over the period when the daily returns compound, rather than the daily standard
+    deviation scaled with the square root of time.
+
+    The formula is as follows:
+
+    - Volatility = SQRT((Var(r) + (1 + g)²)^P - (1 + g)^(2P))
+    - g = PRODUCT(1 + r)^(1 / n) - 1, the geometric mean of the n daily returns r
+
+    Where Var is the sample variance (ddof=1) and P the number of daily returns in the period
+    (see `helpers.get_days_per_period`). It is the exact standard deviation of the product of P
+    independent returns with a mean of g and a variance of Var(r), and exceeds the square-root of
+    time scaling when the returns are large.
+
+    For more information, see the following source:
+
+    - Referenced against backtesting.py's "Volatility (Ann.) [%]" (Zach Lûster,
+      https://github.com/kernc/backtesting.py), which applies it to a year of daily returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        period (str): The period to calculate the Volatility for. Can be weekly, monthly,
+        quarterly or yearly.
+
+    Returns:
+        pd.Series | pd.DataFrame: Volatility values with time as the index.
+    """
+    validate_period(period)
+
+    if not isinstance(returns, pd.Series | pd.DataFrame):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    days_per_period = get_days_per_period(returns, period)
+    groups = to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
+    grouped = returns.groupby(groups)
+
+    variance = grouped.var()
+    # The geometric mean through the average log return; a period without returns stays NaN.
+    growth = np.exp(np.log1p(returns).groupby(groups).mean())
+
+    return np.sqrt(
+        (variance + growth**2) ** days_per_period - growth ** (2 * days_per_period)
+    )
+
+
 @by_own_trading_days
 def get_conditional_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame,

@@ -10984,3 +10984,382 @@ class Performance:
         return apply_rounding(
             smoothing_index, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_variability_weighted_return(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        tau: float = 2.0,
+        maximum_deviation: float = 0.2,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Variability-Weighted Return (VWR) of an investment portfolio or asset: the
+        annualized return reduced by how far the value strays from a steady exponential path with
+        the same overall growth. Two assets with the same return score alike only when they got
+        there alike; the one that swung more keeps less of its return, and none of it once the
+        standard deviation of its deviations from the steady path reaches `maximum_deviation`.
+        Unlike the Sharpe ratio it stays a return, and it judges the path of the value rather
+        than the spread of the single returns.
+
+        The formula is as follows:
+
+        - r̄ = Average of ln(1 + Return), the average log return
+        - Annualized Return = exp(r̄ x P) - 1
+        - Deviation_i = V_i / (V_0 x exp(r̄ x i)) - 1, for i = 1..N, with V the growth of 1
+        - VWR = Annualized Return x (1 - (Std(Deviation) / maximum_deviation) ^ tau)
+
+        Where P is the number of returns in a year (252 daily returns, 365 for a ticker that
+        trades on weekends such as a cryptocurrency, or 52, 12, 4 or 1 for weekly, monthly,
+        quarterly or yearly returns), N the number of returns and Std the sample standard
+        deviation (ddof=1). The Annualized Return compounds continuously from the average log
+        return, which equals the compounded annual growth over the returns.
+
+        For more information, see the following sources:
+
+        - backtrader's VWR analyzer (Daniel Rodriguez, https://www.backtrader.com/docu/analyzers-reference/),
+        after the "Sharpe Ratio: Better with Log Returns" article of crystalbull.com, where the
+        measure is defined. Referenced against backtrader's VWR.
+
+        Also known as: Variability-Weighted Return, VWR, log return Sharpe alternative.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the VWR from the daily returns within each
+                period (e.g. each year if period = 'yearly') or from the returns of the periods themselves over
+                the whole history. Defaults to True.
+            tau (float, optional): The exponent of the penalty for variability: higher values spare small
+                deviations and punish large ones. Defaults to 2.0.
+            maximum_deviation (float, optional): The standard deviation of the deviations from the steady path
+                at which the return is reduced to zero, as a decimal. Defaults to 0.2.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame | pd.Series: The VWR per period and ticker as a decimal, or over the whole history
+            one value per ticker.
+
+        Notes:
+        - backtrader documents tau = 2 and a maximum deviation of 0.20 (as the crystalbull.com article), but its
+        parameters set tau = 0.20 and sdev_max = 2.0, which makes the penalty (s / 2)^0.2 and leaves far less of
+        the return than the documented definition. The defaults here are the documented ones; passing tau=0.2
+        and maximum_deviation=2.0 gives backtrader's default output, which backtrader reports in percent.
+        - With a maximum deviation that the deviations exceed, the VWR changes sign: a gain turns into a
+        negative value, so compare it only between assets of similar variability or raise `maximum_deviation`.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series, as a weighted
+        average of the holdings' VWR is not the VWR of the portfolio.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_variability_weighted_return()
+        ```
+
+        Which returns:
+
+        |      |    AAPL |    MSFT |      KO |
+        |:-----|--------:|--------:|--------:|
+        | 2021 |  0.3558 |  0.5444 |  0.1549 |
+        | 2022 | -0.2281 | -0.2632 |  0.1007 |
+        | 2023 |  0.4289 |  0.5329 | -0.0434 |
+        | 2024 |  0.2772 |  0.1237 |  0.0816 |
+        | 2025 |  0.0731 |  0.1284 |  0.1487 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+        periods_per_year = self._get_ratio_observations_per_year(
+            period, rolling=None if within_period else 1, columns=returns.columns
+        )
+
+        variability_weighted_return = performance_model.get_variability_weighted_return(
+            (
+                returns
+                if within_period
+                else returns.loc[self._start_date : self._end_date]
+            ),
+            periods_per_year,
+            tau,
+            maximum_deviation,
+        )
+
+        return finalize_dataset(
+            dataset=variability_weighted_return,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole period the VWR is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
+        )
+
+    @handle_errors
+    def get_return_concentration(
+        self,
+        period: str | None = None,
+        within_period: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the concentration of the returns of an investment portfolio or asset, as López de Prado
+        measures a strategy's bets: how much of the gains come from a few returns, how much of the losses
+        do, and how much the returns cluster in a few months. Each is a normalized Herfindahl-Hirschman Index
+        between 0, where every return contributes the same, and 1, where one return holds everything. A
+        strategy whose gains rest on a handful of days is more fragile than one that earns them steadily,
+        even with the same total.
+
+        The formula is as follows:
+
+        - h = (SUM w_j² - 1 / N) / (1 - 1 / N), with w_j = x_j / SUM x over N values
+        - Positive Concentration = h of the returns of 0 or more
+        - Negative Concentration = h of the returns below 0
+        - Time Concentration = h of the number of returns in each calendar month
+
+        For more information, see the following sources:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.4
+        (Snippet 14.3).
+        - Herfindahl, O.C. (1950). "Concentration in the Steel Industry." Columbia University.
+        - Referenced against mlfinlab's `all_bets_concentration` (Hudson & Thames,
+        https://github.com/hudson-and-thames/mlfinlab).
+
+        Also known as: bets concentration, HHI of returns, Herfindahl-Hirschman Index of returns.
+
+        Args:
+            period (str, optional): The period of the returns over the whole history, or with
+                within_period=True the period the daily returns are grouped by. Defaults to "daily",
+                or with within_period=True to "quarterly" if the Toolkit is initialised with
+                quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the concentration from the daily returns
+                within each period (e.g. each year if period = 'yearly') instead of from the returns of
+                `period` over the whole history. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Over the whole history, the concentrations as the index and the tickers as the
+            columns. Within periods, the periods as the index and (concentration, ticker) as the columns.
+
+        Notes:
+        - A return of exactly 0 counts with the positive returns, as in López de Prado's Snippet 14.3.
+        - Every return is a bet, so the Time Concentration of an asset held every day is close to 0 (the
+        months differ only in their number of trading days); it tells more about a strategy's returns, where
+        the days out of the market are left out of the returns. With weekly or longer returns over the whole
+        history, few months hold more than one return.
+        - A concentration needs at least three values and is NaN otherwise.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_return_concentration()
+        ```
+
+        Which returns:
+
+        |                        |   AAPL |   MSFT |     KO |
+        |:-----------------------|-------:|-------:|-------:|
+        | Positive Concentration | 0.0015 | 0.0014 | 0.0012 |
+        | Negative Concentration | 0.0015 | 0.0015 | 0.0015 |
+        | Time Concentration     | 0.0001 | 0.0001 | 0.0001 |
+        """
+        if not period:
+            period = (
+                ("quarterly" if self._quarterly else "yearly")
+                if within_period
+                else "daily"
+            )
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+        if not within_period:
+            returns = returns.loc[self._start_date : self._end_date]
+
+        concentration = performance_model.get_backtest_statistics_table(
+            returns, performance_model.get_return_concentration
+        )
+
+        return apply_rounding(
+            concentration, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_strategy_risk(
+        self,
+        period: str | None = None,
+        within_period: bool = False,
+        target_sharpe_ratio: float = 2.0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the strategy risk of López de Prado for an investment portfolio or asset: its returns read as
+        bets that either win the average gain or lose the average loss, the Sharpe ratio such a strategy has,
+        the precision (share of winning bets) and the number of bets a year it needs to reach a target Sharpe
+        ratio, and the probability that its true precision falls short of the one needed, the probability of
+        failure. Unlike the volatility, which measures the risk of the asset, this measures the risk that the
+        strategy does not deliver its target: a small drop of the precision can take a strategy with a high
+        target from success to failure.
+
+        The formula is as follows:
+
+        - Precision p = Number of Returns above 0 / Number of Returns
+        - Average Gain π+ = Average of the Returns above 0, Average Loss π- = Average of the Returns of 0 or below
+        - Binomial Sharpe Ratio = ((π+ - π-) x p + π-) / ((π+ - π-) x SQRT(p x (1 - p))) x SQRT(n)
+        - Implied Precision p* = (-b + SQRT(b² - 4ac)) / (2a), with a = (n + θ²) x (π+ - π-)²,
+          b = (2 x n x π- - θ² x (π+ - π-)) x (π+ - π-) and c = n x π-²
+        - Implied Frequency n* = θ² x (π+ - π-)² x p x (1 - p) / ((π+ - π-) x p + π-)²
+        - Probability of Failure = N((p* - p) / SQRT(p x (1 - p) / N))
+
+        Where n is the number of bets a year (252 daily returns, 365 for a ticker that trades on weekends such as
+        a cryptocurrency, or 52, 12, 4 or 1 for weekly, monthly, quarterly or yearly returns), θ the target Sharpe
+        ratio, N the number of returns and N(.) the standard normal distribution function. The Implied Precision
+        is the precision that reaches θ at the measured gains, losses and frequency, the Implied Frequency the
+        number of bets a year that reaches θ at the measured precision, gains and losses.
+
+        For more information, see the following sources:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 15 (Snippets 15.1
+        to 15.5).
+        - Bailey, D.H. and López de Prado, M. (2014). "The Sharpe Ratio Efficient Frontier." Journal of Risk,
+        15(2), 3-44.
+        - Referenced against RiskLabAI's `implied_precision`, `bin_frequency`, `binomial_sharpe_ratio` and
+        `failure_probability` (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Also known as: implied precision, implied betting frequency, binomial Sharpe ratio, probability of
+        strategy failure.
+
+        Args:
+            period (str, optional): The period of the returns over the whole history, or with
+                within_period=True the period the daily returns are grouped by. Defaults to "daily",
+                or with within_period=True to "quarterly" if the Toolkit is initialised with
+                quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the strategy risk from the daily returns
+                within each period (e.g. each year if period = 'yearly') instead of from the returns of
+                `period` over the whole history. Defaults to False.
+            target_sharpe_ratio (float, optional): The annualized Sharpe ratio the strategy should reach.
+                Defaults to 2.0, as López de Prado.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Over the whole history, the Precision, Average Gain, Average Loss, Bets per Year,
+            Binomial Sharpe Ratio, Implied Precision, Implied Frequency and Probability of Failure as the index
+            and the tickers as the columns. Within periods, the periods as the index and (measure, ticker) as the
+            columns.
+
+        Notes:
+        - A return of exactly 0 counts as a losing bet, as in López de Prado's Snippet 15.5, so every bet either
+        wins or loses.
+        - The probability of failure compares the implied precision with the distribution of the measured
+        precision over the N bets, whose standard error is SQRT(p x (1 - p) / N), the spread of its bootstrap
+        distribution. López de Prado's Snippet 15.5 approximates it with a normal distribution with a standard
+        deviation of p x (1 - p), which does not shrink with the number of bets; RiskLabAI uses the standard error
+        but returns N((p - p*) / SE), the probability of success, and solves the implied precision with the loss
+        as a positive number.
+        - The Implied Precision is NaN when no precision reaches the target with these gains and losses, the
+        Implied Frequency when the average bet loses money (or makes money for a negative target).
+        - The Binomial Sharpe Ratio has no risk free rate, as López de Prado's.
+        - The Portfolio of a Portfolio's Toolkit is measured on its own daily return series.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_strategy_risk()
+        ```
+
+        Which returns:
+
+        |                        |      AAPL |     MSFT |        KO |
+        |:-----------------------|----------:|---------:|----------:|
+        | Precision              |    0.5303 |   0.5239 |    0.5279 |
+        | Average Gain           |    0.0125 |   0.012  |    0.0073 |
+        | Average Loss           |   -0.0125 |  -0.0115 |   -0.0074 |
+        | Bets per Year          |  252      | 252      |  252      |
+        | Binomial Sharpe Ratio  |    0.9746 |   1.0813 |    0.8521 |
+        | Implied Precision      |    0.5622 |   0.5525 |    0.5636 |
+        | Implied Frequency      | 1061.26   | 862.048  | 1388.41   |
+        | Probability of Failure |    0.9881 |   0.9788 |    0.9943 |
+        """
+        if not period:
+            period = (
+                ("quarterly" if self._quarterly else "yearly")
+                if within_period
+                else "daily"
+            )
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+        if not within_period:
+            returns = returns.loc[self._start_date : self._end_date]
+
+        # The bets in a year: the daily returns within each period, or the returns of `period`
+        # over the whole history (the daily returns of each ticker's own calendar).
+        bets_per_year = self._get_ratio_observations_per_year(
+            period, rolling=None if within_period else 1, columns=returns.columns
+        )
+
+        strategy_risk = performance_model.get_backtest_statistics_table(
+            returns,
+            performance_model.get_strategy_risk,
+            frequency=bets_per_year,
+            target_sharpe_ratio=target_sharpe_ratio,
+        )
+
+        return apply_rounding(
+            strategy_risk, rounding if rounding is not None else self._rounding
+        )

@@ -1731,3 +1731,9 @@ def test_get_vpin(recorder, risk_module):
     )
 
     assert result.stack().dropna().between(0, 1).all()
+
+
+def test_get_volatility_compounded(recorder, risk_module):
+    compounded = risk_module.get_volatility(method="compounded")
+    recorder.capture(compounded)
+    recorder.capture(risk_module.get_volatility(method="compounded", period="monthly"))

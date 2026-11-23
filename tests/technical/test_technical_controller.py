@@ -2252,3 +2252,20 @@ def test_labeling_invalid_parameters(technical_module):
     assert technical_module.get_matrix_flag_labels(template="unknown").empty
     assert technical_module.get_sample_weights(method="time_decay", decay=-1).empty
     assert technical_module.get_triple_barrier_labels(side="unknown").empty
+
+
+def test_get_bet_sizes(recorder, technical_module):
+    budget = technical_module.get_bet_sizes()
+    recorder.capture(budget)
+    # The EF3M fit reaches one exact solution of the moment equations from every seed, so
+    # the recorded sizes do not depend on the random starting points.
+    reserve = technical_module.get_bet_sizes(method="reserve")
+    recorder.capture(reserve)
+    pd.testing.assert_frame_equal(
+        reserve, technical_module.get_bet_sizes(method="reserve", seed=7)
+    )
+    recorder.capture(technical_module.get_bet_sizes(method="probability"))
+    recorder.capture(technical_module.get_bet_sizes(step_size=0.5))
+    assert budget["Bet Size"].abs().max().max() <= 1
+    assert technical_module.get_bet_sizes(method="unknown").empty
+    assert technical_module.get_bet_sizes(step_size=2).empty

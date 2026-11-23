@@ -109,6 +109,8 @@ PERIOD_BLOCK_EXEMPT = frozenset(
         "get_style_analysis",
         "get_beta_implied_return",
         "get_return_statistics",
+        "get_return_concentration",
+        "get_strategy_risk",
         "get_outperformance_probability",
         "get_returns",
     }

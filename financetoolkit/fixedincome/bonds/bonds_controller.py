@@ -244,20 +244,25 @@ class BondsFixedIncome(MarketsFixedIncome):
             selections.append(universe.assign(**{"Security Type": "Corporate"}))
 
         if treasury_ids or not use_universe:
+            # Floating rate notes reset their coupon every week and are left out, so their
+            # terms and index rates are not retrieved.
             treasuries = self.get_treasury_securities(
-                date=date, bonds=treasury_ids or None, rounding=10
+                date=date,
+                security_type=["Bill", "Note", "Bond", "TIPS"],
+                bonds=treasury_ids or None,
+                rounding=10,
             )
             if not isinstance(treasuries, pd.DataFrame) or treasuries.empty:
                 raise ValueError(
                     "No Treasury prices are available for the bonds and date given."
                 )
-            floating = treasuries.index[treasuries["Security Type"] == "FRN"]
-            if treasury_ids and not floating.empty:
+            missing = [cusip for cusip in treasury_ids if cusip not in treasuries.index]
+            if missing:
                 logger.info(
-                    "Left out %s: floating rate notes reset their coupon every week.",
-                    ", ".join(floating),
+                    "Left out %s: no fixed-rate Treasury is priced under that CUSIP "
+                    "(floating rate notes reset their coupon every week).",
+                    ", ".join(missing),
                 )
-            treasuries = treasuries.drop(floating)
             maturities = pd.to_datetime(treasuries["Maturity"])
             if maturity_start is not None:
                 treasuries = treasuries[maturities >= pd.Timestamp(maturity_start)]

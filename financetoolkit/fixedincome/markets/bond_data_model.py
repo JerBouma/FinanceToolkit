@@ -177,6 +177,44 @@ def get_years_to_maturity(
     if maturity <= settlement:
         return np.nan
 
+    previous_coupon, coupons = get_coupon_dates(settlement, maturity, frequency)
+    periods = len(coupons)
+    next_coupon = coupons[0]
+    if day_count == "30/360":
+        # Counted from the previous coupon date, so the accrued interest is the 30/360
+        # accrued interest also where a period does not count 180 days (31 August to 28
+        # February counts 178).
+        remaining = 1 - _days_30_360(previous_coupon, settlement) / (360 / frequency)
+    else:
+        remaining = (next_coupon - settlement).days / (
+            next_coupon - previous_coupon
+        ).days
+
+    return (periods - 1 + remaining) / frequency
+
+
+def get_coupon_dates(
+    settlement: date, maturity: date, frequency: int = FREQUENCY
+) -> tuple[date, list[date]]:
+    """
+    The coupon date on or before the settlement date and the coupon dates after it, up to
+    and including maturity.
+
+    The coupon dates run back from maturity in steps of 12 / frequency months. A bond that
+    matures on the last day of a month pays every coupon on the last day of its month (the
+    end-of-month rule): a note maturing on 30 April pays on 31 October, a floating rate note
+    maturing on 31 July pays on 31 October, 31 January and 30 April. A settlement on a coupon
+    date has that date as its previous coupon date, as the coupon is paid to the seller.
+
+    Args:
+        settlement (date): The settlement date, before maturity.
+        maturity (date): The maturity date.
+        frequency (int): The number of coupons per year. Defaults to 2.
+
+    Returns:
+        tuple[date, list[date]]: The previous coupon date and the remaining coupon dates in
+        order, the last one being the maturity date.
+    """
     months = 12 // frequency
     end_of_month = maturity == maturity + relativedelta(day=31)
 
@@ -190,19 +228,31 @@ def get_years_to_maturity(
     while coupon_date(periods) > settlement:
         periods += 1
 
-    previous_coupon = coupon_date(periods)
-    next_coupon = coupon_date(periods - 1)
-    if day_count == "30/360":
-        # Counted from the previous coupon date, so the accrued interest is the 30/360
-        # accrued interest also where a period does not count 180 days (31 August to 28
-        # February counts 178).
-        remaining = 1 - _days_30_360(previous_coupon, settlement) / (360 / frequency)
-    else:
-        remaining = (next_coupon - settlement).days / (
-            next_coupon - previous_coupon
-        ).days
+    return coupon_date(periods), [
+        coupon_date(remaining) for remaining in range(periods - 1, -1, -1)
+    ]
 
-    return (periods - 1 + remaining) / frequency
+
+def get_accrued_interest(coupon: float, settlement: date, maturity: date) -> float:
+    """
+    The interest accrued per 100 of par on a semi-annual Treasury note or bond on its actual
+    coupon dates, actual/actual: the half coupon times the elapsed share of the days of the
+    current coupon period (31 CFR 356, Appendix B, I.D). It is `bond_model.get_accrued_interest`
+    on the years to maturity of get_years_to_maturity.
+
+    Args:
+        coupon (float): The annual coupon rate (decimal).
+        settlement (date): The settlement date.
+        maturity (date): The maturity date.
+
+    Returns:
+        float: The accrued interest per 100 of par, 0 on a coupon date and NaN once matured.
+    """
+    years = get_years_to_maturity(settlement, maturity)
+    if not np.isfinite(years):
+        return np.nan
+
+    return bond_model.get_accrued_interest(100, coupon, years, FREQUENCY)
 
 
 def get_bond_analytics(

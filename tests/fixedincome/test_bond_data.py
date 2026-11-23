@@ -368,6 +368,33 @@ def test_get_treasury_prices_without_any_prices(monkeypatch):
         treasurydirect_model.get_treasury_prices("2026-11-05")
 
 
+def frn_auctions(security_type, security_term=None):
+    """The terms of the floating rate note of PRICE_PAGE and the 13-week bills before it."""
+    if security_type == "FRN":
+        return pd.DataFrame(
+            {
+                "CUSIP": ["91282CMH1"],
+                "Reopening": [False],
+                "Spread": [0.00205],
+                "Dated Date": [date(2025, 1, 31)],
+            }
+        )
+    auctions = [
+        (date(2026, 10, 13), 0.04085),
+        (date(2026, 10, 19), 0.04095),
+        (date(2026, 10, 26), 0.04050),
+        (date(2026, 11, 2), 0.04040),
+    ]
+    return pd.DataFrame(
+        {
+            "Auction Date": [day for day, _ in auctions],
+            "High Rate": [rate for _, rate in auctions],
+            "Days to Maturity": [91.0] * len(auctions),
+            "Cash Management Bill": [False] * len(auctions),
+        }
+    )
+
+
 def test_get_treasury_securities(monkeypatch):
     monkeypatch.setattr(
         treasurydirect_model,
@@ -378,6 +405,11 @@ def test_get_treasury_securities(monkeypatch):
             .drop(columns=["Buy", "Sell", "End of Day"]),
             date(2026, 11, 5),
         ),
+    )
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_auctioned_securities",
+        frn_auctions,
     )
     fixedincome = fixedincome_controller.FixedIncome(rounding=None)
 
@@ -399,8 +431,22 @@ def test_get_treasury_securities(monkeypatch):
     assert securities.loc["912797VW4", "Yield to Maturity"] == pytest.approx(
         bond_data_model.get_bill_analytics(5, 99.957556)[0]
     )
-    # A floating rate note has no yield to maturity from its price alone.
+    # A floating rate note yields its index rate plus its discount margin, and its duration
+    # is that to the index rate, close to zero (see test_treasury_markets_controller).
+    assert securities.loc["91282CMH1", "Yield to Maturity"] == pytest.approx(
+        0.0412, abs=0.0005
+    )
+    assert 0 <= securities.loc["91282CMH1", "Modified Duration"] < 0.01
+
+    # Without the terms of the notes they keep a price but no yield or duration.
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_auctioned_securities",
+        lambda security_type, security_term=None: pd.DataFrame(),
+    )
+    securities = fixedincome.get_treasury_securities(date="2026-11-05")
     assert np.isnan(securities.loc["91282CMH1", "Yield to Maturity"])
+    assert securities.loc["91282CMH1", "Price"] == pytest.approx(100.03125)
 
     notes = fixedincome.get_treasury_securities(security_type="note,Bond")
     assert notes["Security Type"].tolist() == ["Bond", "Note"]

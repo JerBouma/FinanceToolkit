@@ -310,6 +310,36 @@ class OptionsBase:
         # stock by the same amount over a year, as the risk-free rate conversion does.  # noqa: E501
         return float(np.log1p(self._dividend_yield[ticker].iloc[-1]))
 
+    def _projected_dividends(
+        self, ticker: str, date: pd.Period, horizon_days: int
+    ) -> pd.Series:
+        """
+        The cash dividends a ticker is expected to pay in the horizon_days after a pricing
+        date, projected from the dividends it paid up to that date (see
+        options_model.get_projected_dividends). A price history without dividends projects
+        none.
+
+        Args:
+            ticker (str): The ticker.
+            date (pd.Period): The pricing date.
+            horizon_days (int): The number of calendar days to project.
+
+        Returns:
+            pd.Series: The dividend per share by the number of days after the pricing date.
+        """
+        if "Dividends" not in self._daily_historical.columns.get_level_values(0):
+            logger.warning(
+                "The historical data has no dividends, so %s is priced without them.",
+                ticker,
+            )
+            return pd.Series(dtype=float, name="Dividend")
+
+        return options_model.get_projected_dividends(
+            dividends=self._daily_historical["Dividends"][ticker],
+            pricing_date=date.to_timestamp() if isinstance(date, pd.Period) else date,
+            horizon_days=horizon_days,
+        )
+
     def _expiration_dates(self) -> dict[str, list[str]]:
         """The expiration dates Yahoo Finance lists for each ticker, as each has its own."""
         return {

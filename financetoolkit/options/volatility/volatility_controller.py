@@ -11,7 +11,7 @@ from financetoolkit.options.helpers import (
     get_time_to_expiration,
 )
 from financetoolkit.options.market import market_metrics_model
-from financetoolkit.options.pricing import black_scholes_model
+from financetoolkit.options.pricing import american_model, black_scholes_model
 from financetoolkit.options.volatility import risk_neutral_density_model, svi_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -83,6 +83,7 @@ class VolatilityOptions:
         put_option: bool = False,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
+        american: bool = False,
         show_expiration_dates: bool = False,
         show_input_info: bool = False,
         rounding: int | None = None,
@@ -124,6 +125,15 @@ class VolatilityOptions:
         the root of the difference between the theoretical and actual option price, found with Brent's method on the
         interval [1e-6, 5]. Prices outside the no-arbitrage bounds have no root and return NaN.
 
+        Listed options on single stocks are American and can be exercised before expiration, which the Black Scholes
+        price leaves out. With american=True the implied volatility is the σ at which the American price of the QD+
+        method (Li, 2010; Andersen, Lake and Offengenden, 2016, see ``get_american_option``) equals the mid price,
+        found with Brent's method on [0.001, 5]. The European volatility attributes the value of exercising early to
+        a higher volatility, so in-the-money puts and calls on stocks with a high dividend yield show a lower American
+        implied volatility; for out-of-the-money options the two hardly differ. Index options such as those on the
+        S&P 500 (^SPX) are European. Referenced against QuantLib's QdPlusAmericanEngine (https://www.quantlib.org),
+        whose prices it inverts to the volatility they were priced at.
+
         Mid prices and the underlying price quoted with the chain describe the same moment, unlike last traded
         prices, which can be hours or days old for illiquid strikes. Deep in-the-money and far out-of-the-money
         strikes still have wide quotes and can show extreme values (above 100%) that say more about the spread than
@@ -152,6 +162,8 @@ class VolatilityOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            american (bool, optional): Whether to solve the volatility of the American price (QD+) instead of the
+                European Black Scholes price. Defaults to False.
             show_expiration_dates (bool, optional): Whether to show the expiration dates: a list for a single ticker
                 and a list per ticker (a dictionary) for several. Defaults to False.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
@@ -220,7 +232,7 @@ class VolatilityOptions:
 
         implied_volatility_df, stock_price, risk_free_rate, dividend_yield_value, _ = (
             self._solve_implied_volatility(
-                expiration_date, put_option, risk_free_rate, dividend_yield
+                expiration_date, put_option, risk_free_rate, dividend_yield, american
             )
         )
 
@@ -255,6 +267,7 @@ class VolatilityOptions:
         put_option: bool,
         risk_free_rate: float | None,
         dividend_yield: float | None,
+        american: bool = False,
     ) -> tuple[pd.Series, pd.Series, float, dict[str, float], float]:
         """
         The implied volatility of every strike of one expiry, unrounded, from the mid prices
@@ -269,6 +282,8 @@ class VolatilityOptions:
                 for the rate on the last historical date.
             dividend_yield (float | None): The continuous dividend yield, None for the
                 yield of each ticker on the last historical date.
+            american (bool, optional): Whether to solve the volatility of the American (QD+)
+                price instead of the Black Scholes price. Defaults to False.
 
         Returns:
             tuple: The implied volatility indexed by ticker and strike price, the stock price
@@ -322,13 +337,17 @@ class VolatilityOptions:
 
             for strike_price, option_price in option_prices.items():
                 # Numerically finds the volatility matching the market option price.
-                implied_volatility_value = black_scholes_model.get_implied_volatility(
-                    market_price=option_price,
-                    stock_price=stock_price[ticker],
-                    strike_price=strike_price,
-                    risk_free_rate=risk_free_rate,
+                implied_volatility_value = (
+                    american_model.get_american_implied_volatility
+                    if american
+                    else black_scholes_model.get_implied_volatility
+                )(
+                    market_price=float(option_price),
+                    stock_price=float(stock_price[ticker]),
+                    strike_price=float(strike_price),
+                    risk_free_rate=float(risk_free_rate),
                     time_to_expiration=time_to_expiration,
-                    dividend_yield=dividend_yield_value[ticker],
+                    dividend_yield=float(dividend_yield_value[ticker]),
                     put_option=put_option,
                 )
 

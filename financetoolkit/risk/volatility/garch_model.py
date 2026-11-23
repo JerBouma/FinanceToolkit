@@ -21,6 +21,9 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 # Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to the domain-informed initial guess.  # noqa: E501
 N_MULTI_START_POINTS = 32
+# The distance to a bound, as a fraction of the bounds' width, within which a weight of a
+# warm-started fit counts as on that bound.
+BOUND_DISTANCE = 1e-6
 
 # The GARCH and GJR-GARCH recursions start from a backcast: an exponentially weighted average of the first squared returns, with the same window and decay as the arch package (Kevin Sheppard), so the fitted parameters agree with it.  # noqa: E501
 BACKCAST_OBSERVATIONS = 75
@@ -2133,10 +2136,12 @@ def get_garch_family_weights(
     deterministic multi-start search as GARCH(1, 1) (see `_fit_multi_start`).
 
     With `starting_weights` (the weights of an earlier fit, such as the previous window of
-    a rolling forecast) the search is a single local search from them instead: the
-    likelihood of a window that shares most of its returns with the previous one peaks
-    close to the previous weights, and one search takes a fraction of the 33 of the
-    multi-start search.
+    a rolling forecast) the search is a local search from them: the likelihood of a window
+    that shares most of its returns with the previous one peaks close to the previous
+    weights, and one search takes a fraction of the 33 of the multi-start search. A local
+    search can stay on a bound the previous optimum sat on, or stop short along it, so a fit
+    that starts or ends on a bound also runs the multi-start search of a fit without
+    starting weights and keeps the higher likelihood.
 
     GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean are fitted by
     `get_garch_weights`, `get_gjr_garch_weights` and `get_egarch_weights`. Every other
@@ -2161,7 +2166,7 @@ def get_garch_family_weights(
         mean (str, optional): The mean model. Defaults to "zero".
         t (int | None, optional): The number of returns, from the first, to fit on.
             Defaults to None, which uses every return.
-        starting_weights (np.ndarray | None, optional): The weights to start a single local
+        starting_weights (np.ndarray | None, optional): The weights to start a local
             search from, on the scale of the returns. Defaults to None, which runs the
             multi-start search.
 
@@ -2245,13 +2250,35 @@ def get_garch_family_weights(
         )
         return -log_likelihood if np.isfinite(log_likelihood) else np.inf
 
-    weights = _fit_multi_start(
-        objective,
-        bounds,
-        initial_guess,
-        f"{method} ({distribution}, {mean} mean)",
-        number_of_points=0 if warm_start else N_MULTI_START_POINTS,
-    )
+    model_name = f"{method} ({distribution}, {mean} mean)"
+
+    if warm_start:
+        # A local search from weights on a bound (Alpha or Beta = 0 when the previous window had little volatility clustering) can stay in that corner, or stop short along the bound, while the new window peaks elsewhere. A fit that starts or ends on a bound therefore also runs the multi-start search of a fit without starting weights (the warm weights as a start of their own can displace the one that polishes to the highest likelihood) and keeps the higher likelihood.  # noqa: E501
+        lower = np.array([bound[0] for bound in bounds])
+        span = np.array([bound[1] for bound in bounds]) - lower
+        weights = _fit_multi_start(
+            objective, bounds, initial_guess, model_name, number_of_points=0
+        )
+        value = objective(weights) if np.all(np.isfinite(weights)) else np.inf
+        on_bound = [
+            np.any(np.minimum(unit, 1 - unit) < BOUND_DISTANCE)
+            for unit in (
+                (np.asarray(initial_guess) - lower) / span,
+                (weights - lower) / span,
+            )
+        ]
+        if not np.isfinite(value) or any(on_bound):
+            multi_start = _fit_multi_start(
+                objective,
+                bounds,
+                variance_guess + mean_guess + distribution_guess,
+                model_name,
+            )
+            if np.all(np.isfinite(multi_start)) and objective(multi_start) < value:
+                weights = multi_start
+    else:
+        weights = _fit_multi_start(objective, bounds, initial_guess, model_name)
+
     weights = _rescale_weights(weights, method, mean, scale)
 
     with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
@@ -3194,9 +3221,9 @@ def get_garch_family_rolling_forecast(
       the last refit on or before t, run over the returns from the start of that fit's window
 
     The first fit is the multi-start search of `get_garch_family_weights`; every later fit
-    starts a single local search from the previous weights, and falls back on the multi-start
-    search when that does not converge. The recursion of a refit starts from the backcast of
-    its own window, as in the fit.
+    starts a local search from the previous weights, and a fit that starts or ends on a bound
+    also runs the multi-start search (see `get_garch_family_weights`). The recursion of a
+    refit starts from the backcast of its own window, as in the fit.
 
     Without `window_size`, the model is fitted once on every return and the result is the
     forecast for the period after the last return.
@@ -3266,8 +3293,6 @@ def get_garch_family_rolling_forecast(
         weights = get_garch_family_weights(
             fit_returns, method, distribution, mean, starting_weights=previous_weights
         )
-        if previous_weights is not None and not np.all(np.isfinite(weights)):
-            weights = get_garch_family_weights(fit_returns, method, distribution, mean)
 
         # The forecasts of this fit run up to the next refit, the last one past the final return.  # noqa: E501
         block_end = min(fit_end + refit_every - 1, n)

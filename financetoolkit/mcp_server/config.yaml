@@ -202,25 +202,27 @@ parameter_limits:
         GARCH-in-mean fits take 10 seconds or more per ticker, longer than an assistant
         waits for a tool. Please use mean='constant' or mean='arma'.
     # The GARCH VaR, backtests and forecast tests take the variance models of get_garch whose
-    # rolling refits stay within seconds: GARCH, GJR-GARCH, IGARCH and the component model. The
-    # power and family models (APARCH, TGARCH, NGARCH, NAGARCH, AVGARCH) and EGARCH can take
-    # minutes per ticker over years of daily returns.
+    # rolling refits stay within seconds: GARCH, GJR-GARCH and IGARCH. The power and family
+    # models (APARCH, TGARCH, NGARCH, NAGARCH, AVGARCH) and EGARCH can take minutes per ticker
+    # over years of daily returns, and the component model, whose optimum often sits on a bound
+    # (Phi = 0) so that most refits also run the multi-start search, about a minute.
     - methods: ["get_value_at_risk", "get_conditional_value_at_risk", "get_var_backtest", "get_acerbi_szekely_test", "get_berkowitz_test"]
       parameter: "garch_method"
-      values: ["egarch", "avgarch", "aparch", "tgarch", "ngarch", "nagarch"]
+      values: ["egarch", "avgarch", "aparch", "tgarch", "ngarch", "nagarch", "component"]
       reason: >-
-        Rolling fits of this model take minutes per ticker, longer than an assistant waits
-        for a tool. Please use garch_method='garch', 'gjr', 'igarch' or 'component'.
+        Rolling fits of this model take a minute or more per ticker, longer than an assistant
+        waits for a tool. Please use garch_method='garch', 'gjr' or 'igarch'.
     - methods: ["get_model_confidence_set"]
       parameter: "models"
-      values: ["egarch", "avgarch", "aparch", "tgarch", "ngarch", "nagarch"]
+      values: ["egarch", "avgarch", "aparch", "tgarch", "ngarch", "nagarch", "component"]
       reason: >-
-        Rolling fits of this model take minutes per ticker, longer than an assistant waits
-        for a tool. Please compare 'ewma', 'rolling', 'garch', 'gjr', 'igarch' or 'component'.
+        Rolling fits of this model take a minute or more per ticker, longer than an assistant
+        waits for a tool. Please compare 'ewma', 'rolling', 'garch', 'gjr' or 'igarch'.
   # The rolling GARCH VaR, backtests and forecast tests refit their model every refit_every
-  # returns: seven years of daily returns take about 11 seconds per ticker with a refit every
-  # 21 returns (GARCH(1, 1), normal), 21 to 26 seconds with Student-t, skewed-t or Johnson SU
-  # innovations, 49 seconds every 5 returns and 175 seconds every return.
+  # returns: seven years of daily returns take about 5 to 15 seconds per ticker with a refit every
+  # 21 returns (GARCH(1, 1), GJR-GARCH and IGARCH; normal, Student-t or Johnson SU innovations),
+  # up to about a minute with skewed-t innovations on some series, 41 seconds every 5 returns
+  # (GARCH(1, 1), normal) and about three minutes every return.
   minimums:
     refit_every: 21
   products:

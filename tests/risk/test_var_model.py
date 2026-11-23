@@ -632,7 +632,9 @@ def test_get_var_garch_rolling_path_and_frames(recorder):
     # Each column is rolled over its own returns: B starts 150 returns later.
     assert path["A"].first_valid_index() == frame.index[199]
     assert path["B"].first_valid_index() == frame.index[349]
-    recorder.capture(path.dropna(how="all").iloc[::25].round(6))
+    # Four decimals: the fit at the 300th return of A peaks on the Alpha = 0 bound, where Omega and Beta trade
+    # off along a flat ridge, so its VaR moves by about 2e-5 under 1e-12 relative noise in the returns.
+    recorder.capture(path.dropna(how="all").iloc[::25].round(4))
 
     with pytest.raises(ValueError, match="at least 100"):
         var_model.get_var_garch(returns, 0.05, window_size=50)

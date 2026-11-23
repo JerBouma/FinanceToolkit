@@ -814,3 +814,38 @@ def test_warm_started_fit_reaches_the_multi_start_maximum():
         ),
         abs=1e-4,
     )
+
+
+def test_every_rolling_refit_reaches_the_multi_start_maximum():
+    # A series whose first window peaks at Beta = 0: a local search from those weights stays
+    # in that corner while the later windows peak inside the bounds.
+    rng = np.random.default_rng(2)
+    returns = np.empty(400)
+    variance = 1e-4
+    for step in range(400):
+        returns[step] = 0.0003 + np.sqrt(variance) * rng.standard_t(6) * np.sqrt(4 / 6)
+        variance = 2e-6 + 0.08 * (returns[step] - 0.0003) ** 2 + 0.9 * variance
+
+    def log_likelihood(window, weights):
+        backcast = garch_model.get_backcast(
+            garch_model._starting_residuals(window, "constant")
+        )
+        return garch_model.get_garch_family_log_likelihood(
+            window, weights, "garch", "normal", "constant", backcast
+        )
+
+    previous = garch_model.get_garch_family_weights(
+        returns[:200], "garch", "normal", "constant"
+    )
+    for end in range(250, 401, 50):
+        window = returns[end - 200 : end]
+        warm = garch_model.get_garch_family_weights(
+            window, "garch", "normal", "constant", starting_weights=previous
+        )
+        multi_start = garch_model.get_garch_family_weights(
+            window, "garch", "normal", "constant"
+        )
+        assert log_likelihood(window, warm) == pytest.approx(
+            log_likelihood(window, multi_start), abs=1e-6
+        )
+        previous = warm

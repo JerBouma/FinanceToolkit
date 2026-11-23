@@ -33,6 +33,9 @@ CUSUM_CRITICAL_VALUES = {1: 1.63, 5: 1.36, 10: 1.22}
 # A variance below the floating-point resolution of the mean squared counts as zero, so
 # a constant series has an undefined skewness rather than one made of rounding noise.
 FLOAT_RESOLUTION = 1e-15
+# A series whose spread is at most this share of its level is constant up to rounding (the
+# returns of a geometric price path, a cumulated constant).
+CONSTANT_SERIES_TOLERANCE = 1e-12
 
 # The conventional 5% significance level used for the "Reject" boolean flags.
 SIGNIFICANCE_LEVEL = 0.05
@@ -529,9 +532,9 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         if n < MINIMUM_CUSUM_OBSERVATIONS:
             return nan_result
 
-        # A constant series leaves residuals of rounding noise rather than zeros, which would
-        # otherwise give a statistic of noise over noise.
-        if np.ptp(values) == 0:
+        # A series that is constant (up to rounding) leaves residuals of rounding noise
+        # rather than zeros, which would otherwise give a statistic of noise over noise.
+        if np.ptp(values) <= CONSTANT_SERIES_TOLERANCE * np.abs(values).max():
             return nan_result
 
         residuals = fit_least_squares(values, np.ones((n, 1)))["residuals"]

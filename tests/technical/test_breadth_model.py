@@ -493,3 +493,9 @@ def test_volume_profile_of_a_constant_close_puts_the_volume_in_the_first_bin():
     assert result["Total Volume"].tolist() == [600.0, 0.0, 0.0, 0.0]
     assert result["Up Volume"].sum() == result["Down Volume"].sum() == 0
     assert (result[["Low Price", "High Price"]] == 10.0).all().all()
+
+
+def test_volume_profile_of_a_close_constant_up_to_rounding_fills_the_first_bin():
+    close = pd.Series([1.0, 1.0000000000000002] * 2)
+    profile = breadth_model.get_volume_profile(close, pd.Series([1.0] * 4), 10)
+    assert profile["Total Volume"].tolist() == [4.0] + [0.0] * 9

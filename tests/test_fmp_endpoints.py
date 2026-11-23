@@ -86,6 +86,32 @@ def test_employee_count_keeps_the_latest_filing_per_period(responses):
     assert "limit=5" in requested[0]
 
 
+def test_employee_count_of_a_year_ending_in_early_january_is_the_year_before(responses):
+    canned, _ = responses
+    # A 52/53-week year: fiscal 2021 ends on 1 January 2022, fiscal 2022 on 31 December.
+    canned["historical-employee-count"] = [
+        {
+            "periodOfReport": "2022-01-01",
+            "filingDate": "2022-02-20",
+            "employeeCount": 300,
+        },
+        {
+            "periodOfReport": "2022-12-31",
+            "filingDate": "2023-02-20",
+            "employeeCount": 400,
+        },
+    ]
+
+    employees, _ = fmp_model.get_employee_count(
+        ["K"], "key", start_date="2020-01-01", user_subscription="Free"
+    )
+
+    assert employees["K"].to_dict() == {
+        pd.Period("2021", "Y"): 300,
+        pd.Period("2022", "Y"): 400,
+    }
+
+
 def test_shares_float_and_etf_weights_are_decimals(responses):
     canned, _ = responses
     canned["shares-float"] = [

@@ -1326,3 +1326,24 @@ def test_dynamic_momentum_index_of_a_late_start_equals_its_own_history():
 
     pd.testing.assert_series_equal(result.iloc[40:], own_history)
     assert result.iloc[:40].isna().all()
+
+
+def test_dynamic_momentum_index_needs_a_full_window_of_changes_after_a_gap():
+    """A window that spans missing prices holds fewer real changes than its Period."""
+    closes = random_bars()["Close"]
+    gapped = closes.copy()
+    gapped.iloc[100:103] = np.nan
+
+    result = momentum_model.get_dynamic_momentum_index(gapped, 14, 5, 10, 5, 30)
+    changes = gapped.diff().notna().cumsum().to_numpy()
+    standard_deviation = gapped.rolling(window=5).std()
+    volatility_index = standard_deviation / standard_deviation.rolling(10).mean()
+    periods = np.floor(14 / volatility_index).clip(5, 30)
+
+    for position in range(103, 140):
+        period = periods.iloc[position]
+        if np.isnan(period) or position < period:
+            continue
+        real_changes = changes[position] - changes[position - int(period)]
+        if real_changes < period:
+            assert np.isnan(result.iloc[position])

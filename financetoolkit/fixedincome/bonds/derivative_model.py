@@ -1,16 +1,26 @@
 """Derivative Models
 
-Prices European swaptions (options to enter an interest rate swap) with Black-76 and the
-Bachelier (normal) model. Caps, floors and bond options are not implemented.
+Interest rate options on a forward rate: European swaptions (physically and cash settled),
+caps, floors and collars, year-on-year inflation caps and floors, their Greeks and implied
+volatilities, with Black-76 (lognormal), shifted Black (displaced lognormal) and the Bachelier
+(normal) model. Bond options are in the short-rate models.
+
+Times are year fractions from today. Rates are simple rates on their accrual periods (the
+forward rate of a caplet) or the par rate of a swap paid `payment_frequency` times a year;
+discounting is continuous at a flat risk-free rate or on the annually compounded zero rates of
+a curve (see `financetoolkit.fixedincome.helpers.discount_factors`).
 """
 
 import math
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import brentq
 from scipy.special import ndtr
 
+from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.fixedincome.inflation import inflation_swap_model
 
 # The standard normal distribution, computed as scipy.stats.norm computes it, without
 # importing scipy.stats, which takes around a second and is only needed elsewhere.
@@ -43,7 +53,158 @@ def _normal_pdf(value):
     return np.exp(-(value**2) / 2.0) / NORMAL_DENSITY_SCALE
 
 
+def _black_formula(
+    forward_rate,
+    strike_rate,
+    volatility,
+    years_to_expiry,
+    is_call,
+    shift: float = 0.0,
+):
+    """
+    The undiscounted Black-76 value of a call or put on a forward rate, displaced by a shift
+    (Black, 1976; Rubinstein, 1983).
+
+    - Call = F N(d_1) - K N(d_2), Put = K N(-d_2) - F N(-d_1)
+    - d_1 = (ln(F / K) + σ² t / 2) / (σ √t), d_2 = d_1 - σ √t
+
+    with F and K the forward and strike rate plus the shift. Without volatility or time
+    left the value is the intrinsic value. Works element-wise on arrays.
+
+    Args:
+        forward_rate (float | np.ndarray): The forward rate(s).
+        strike_rate (float | np.ndarray): The strike rate(s).
+        volatility (float | np.ndarray): The lognormal volatility (of the shifted rate).
+        years_to_expiry (float | np.ndarray): The years until the rate is fixed.
+        is_call (bool | np.ndarray): Whether the option pays F - K (a caplet or payer
+            swaption) rather than K - F.
+        shift (float): The displacement added to the forward and strike rate. Defaults to 0.
+
+    Returns:
+        float | np.ndarray: The value per unit of annuity (discount factor times accrual).
+    """
+    forward = np.asarray(forward_rate, dtype=float) + shift
+    strike = np.asarray(strike_rate, dtype=float) + shift
+    deviation = np.asarray(volatility, dtype=float) * np.sqrt(
+        np.maximum(np.asarray(years_to_expiry, dtype=float), 0.0)
+    )
+    sign = np.where(is_call, 1.0, -1.0)
+    intrinsic = np.maximum(sign * (forward - strike), 0.0)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d1 = (np.log(forward / strike) + 0.5 * deviation**2) / deviation
+        d2 = d1 - deviation
+        value = sign * (
+            forward * _normal_cdf(sign * d1) - strike * _normal_cdf(sign * d2)
+        )
+
+    value = np.where(deviation > 0, value, intrinsic)
+    return float(value) if value.ndim == 0 else value
+
+
+def _bachelier_formula(forward_rate, strike_rate, volatility, years_to_expiry, is_call):
+    """
+    The undiscounted Bachelier (normal) value of a call or put on a forward rate
+    (Bachelier, 1900).
+
+    - Call = (F - K) N(d) + σ √t φ(d), Put = (K - F) N(-d) + σ √t φ(d)
+    - d = (F - K) / (σ √t)
+
+    Without volatility or time left the value is the intrinsic value. Works element-wise on
+    arrays.
+
+    Args:
+        forward_rate (float | np.ndarray): The forward rate(s).
+        strike_rate (float | np.ndarray): The strike rate(s).
+        volatility (float | np.ndarray): The normal (absolute) volatility.
+        years_to_expiry (float | np.ndarray): The years until the rate is fixed.
+        is_call (bool | np.ndarray): Whether the option pays F - K rather than K - F.
+
+    Returns:
+        float | np.ndarray: The value per unit of annuity (discount factor times accrual).
+    """
+    deviation = np.asarray(volatility, dtype=float) * np.sqrt(
+        np.maximum(np.asarray(years_to_expiry, dtype=float), 0.0)
+    )
+    gap = np.where(is_call, 1.0, -1.0) * (
+        np.asarray(forward_rate, dtype=float) - np.asarray(strike_rate, dtype=float)
+    )
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d = gap / deviation
+        value = gap * _normal_cdf(d) + deviation * _normal_pdf(d)
+
+    value = np.where(deviation > 0, value, np.maximum(gap, 0.0))
+    return float(value) if value.ndim == 0 else value
+
+
+MODELS = ("black", "bachelier")
+
+
+def _option_value(
+    method: str,
+    forward_rate,
+    strike_rate,
+    volatility,
+    years_to_expiry,
+    is_call,
+    shift: float = 0.0,
+):
+    """
+    The undiscounted value of an option on a forward rate in the Black (shifted when the
+    shift is not 0) or the Bachelier model, see _black_formula and _bachelier_formula.
+
+    Args:
+        method (str): "black" or "bachelier".
+        forward_rate (float | np.ndarray): The forward rate(s).
+        strike_rate (float | np.ndarray): The strike rate(s).
+        volatility (float | np.ndarray): The volatility, lognormal or normal.
+        years_to_expiry (float | np.ndarray): The years until the rate is fixed.
+        is_call (bool | np.ndarray): Whether the option pays F - K rather than K - F.
+        shift (float): The displacement of the Black model. Defaults to 0.
+
+    Returns:
+        float | np.ndarray: The value per unit of annuity.
+    """
+    if method == "black":
+        return _black_formula(
+            forward_rate, strike_rate, volatility, years_to_expiry, is_call, shift
+        )
+    return _bachelier_formula(
+        forward_rate, strike_rate, volatility, years_to_expiry, is_call
+    )
+
+
+def _check_method(method: str, forward_rate, strike_rate, shift: float) -> None:
+    """
+    Raise a clear error for an unknown model, or for Black's model on a shifted forward or
+    strike rate that is not positive, where its logarithm is undefined.
+
+    Args:
+        method (str): "black" or "bachelier".
+        forward_rate (float | np.ndarray): The forward rate(s).
+        strike_rate (float | np.ndarray): The strike rate(s).
+        shift (float): The displacement of the Black model.
+    """
+    if method not in MODELS:
+        raise ValueError(
+            f"The method must be one of {', '.join(MODELS)}, not {method!r}."
+        )
+    if method == "black" and (
+        np.any(np.asarray(forward_rate, dtype=float) + shift <= 0)
+        or np.any(np.asarray(strike_rate, dtype=float) + shift <= 0)
+    ):
+        raise ValueError(
+            "Black's model assumes a lognormally distributed (shifted) rate and is "
+            "undefined when the forward or strike rate plus the shift "
+            f"({shift}) is not positive. Raise the shift or use the Bachelier model, "
+            "which admits zero and negative rates."
+        )
+
+
 VOLATILITY_TYPES = ("lognormal", "normal")
+
+SETTLEMENTS = ("physical", "cash")
 
 
 def _convert_volatility(
@@ -124,6 +285,8 @@ def _get_annuity_factor(
     tenor: float,
     payment_frequency: int,
     discount_curve: pd.Series | None = None,
+    settlement: str = "physical",
+    forward_rate: float | None = None,
 ) -> float:
     """
     Calculate the annuity factor (present value of a basis point, PVBP) of the swap
@@ -149,6 +312,18 @@ def _get_annuity_factor(
     the fixed leg); without one they are continuously compounded on a flat curve,
     DiscountFactor(t) = exp(-risk_free_rate * t).
 
+    A cash-settled swaption pays the value of the swap at expiry computed with the cash
+    annuity: its payments discounted at the swap rate itself, the par yield, rather than on
+    the curve (the ISDA par yield curve method of EUR swaptions). The cash annuity is
+    discounted to today from the expiry:
+
+        Cash Annuity = DiscountFactor(years_to_maturity)
+                       * SUM_(k=1)^(n) [ accrual_k / PRODUCT_(j=1)^(k) (1 + accrual_j * S) ]
+
+    with S the forward swap rate (Mercurio, 2008). Treating it as the annuity of a
+    physically settled swaption is the market's annuity mapping, which is not arbitrage
+    free but is how cash-settled swaptions are quoted.
+
     Args:
         risk_free_rate (float | None): The risk-free interest rate used to discount each
         payment date, continuously compounded and assumed flat across the curve. Not used
@@ -161,13 +336,22 @@ def _get_annuity_factor(
         discount_curve (pd.Series | None): The annually compounded zero-coupon rates by
         maturity in years to discount with, such as a curve of `get_zero_coupon_curve` or
         `get_eiopa_risk_free_rate`. Defaults to None, which discounts at the flat risk-free rate.
+        settlement (str): "physical" for the annuity on the curve or "cash" for the cash
+        annuity at the forward swap rate. Defaults to "physical".
+        forward_rate (float | None): The forward swap rate the cash annuity discounts at.
+        Defaults to None, which is only allowed for a physically settled swaption.
 
     Returns:
         float: The annuity factor (PVBP) of the underlying swap.
 
     Raises:
-        ValueError: If neither a risk-free rate nor a discount curve is given.
+        ValueError: If neither a risk-free rate nor a discount curve is given, or the
+            settlement is unknown.
     """
+    if settlement not in SETTLEMENTS:
+        raise ValueError(
+            f"The settlement must be one of {', '.join(SETTLEMENTS)}, not {settlement!r}."
+        )
     # A whole number of periods in floating point noise (2.9999999999999996) is not a short period.  # noqa: E501
     periods = tenor * payment_frequency
     number_of_payments = max(
@@ -181,24 +365,83 @@ def _get_annuity_factor(
     accruals[-1] = tenor - (number_of_payments - 1) * accrual
     payment_times = years_to_maturity + np.cumsum(accruals)
 
-    if discount_curve is not None:
-        return float(np.sum(accruals * discount_factors(discount_curve, payment_times)))
-    if risk_free_rate is None:
+    if discount_curve is None and risk_free_rate is None:
         raise ValueError(
             "A swaption's annuity is discounted with a risk-free rate or a discount curve; "
             "give either one."
         )
 
-    return float(np.sum(accruals * np.exp(-risk_free_rate * payment_times)))
+    flat_rate = 0.0 if risk_free_rate is None else risk_free_rate
+
+    def discount(times: np.ndarray) -> np.ndarray:
+        if discount_curve is not None:
+            return discount_factors(discount_curve, times)
+        return np.exp(-flat_rate * times)
+
+    if settlement == "cash":
+        if forward_rate is None:
+            raise ValueError("The cash annuity needs the forward swap rate.")
+        growth = np.cumprod(1 + accruals * forward_rate)
+        return float(
+            discount(np.array([years_to_maturity]))[0] * np.sum(accruals / growth)
+        )
+
+    return float(np.sum(accruals * discount(payment_times)))
 
 
-def _intrinsic_payoff(
-    forward_rate: float, strike_rate: float, is_receiver: bool
-) -> float:
-    """The payoff of a swaption on a known forward rate: the rate gap in its favour, or 0."""
-    return max(
-        strike_rate - forward_rate if is_receiver else forward_rate - strike_rate, 0.0
+def _swaption_terms(
+    method: str,
+    forward_rate: float,
+    strike_rate: float,
+    volatility: float,
+    years_to_maturity: float,
+    risk_free_rate: float | None,
+    tenor: float | None,
+    payment_frequency: int,
+    volatility_type: str,
+    discount_curve: pd.Series | None,
+    shift: float = 0.0,
+    settlement: str = "physical",
+) -> tuple[float, float]:
+    """
+    The volatility on the basis of the model and the annuity of a swaption, after checking
+    that the model is defined for its rates.
+
+    Args:
+        method (str): "black" or "bachelier".
+        forward_rate (float): The forward swap rate.
+        strike_rate (float): The strike rate.
+        volatility (float): The volatility as quoted.
+        years_to_maturity (float): The years until the swaption expires.
+        risk_free_rate (float | None): The flat, continuously compounded risk-free rate.
+        tenor (float | None): The tenor of the swap, None for the years to maturity.
+        payment_frequency (int): The fixed payments per year.
+        volatility_type (str): "lognormal" or "normal", the basis of the quote.
+        discount_curve (pd.Series | None): The annually compounded zero-coupon rates.
+        shift (float): The displacement of the Black model. Defaults to 0.
+        settlement (str): "physical" or "cash". Defaults to "physical".
+
+    Returns:
+        tuple[float, float]: The volatility on the model's basis and the annuity.
+    """
+    _check_method(method, forward_rate, strike_rate, shift)
+    volatility = _convert_volatility(
+        volatility=volatility,
+        volatility_type=volatility_type,
+        target_type="lognormal" if method == "black" else "normal",
+        forward_rate=forward_rate + shift if method == "black" else forward_rate,
     )
+    annuity = _get_annuity_factor(
+        risk_free_rate=risk_free_rate,
+        years_to_maturity=years_to_maturity,
+        tenor=years_to_maturity if tenor is None else tenor,
+        payment_frequency=payment_frequency,
+        discount_curve=discount_curve,
+        settlement=settlement,
+        forward_rate=forward_rate,
+    )
+
+    return volatility, annuity
 
 
 def get_black_price(
@@ -213,6 +456,8 @@ def get_black_price(
     is_receiver: bool = True,
     volatility_type: str = "lognormal",
     discount_curve: pd.Series | None = None,
+    shift: float = 0.0,
+    settlement: str = "physical",
 ) -> tuple[float, float]:
     """
     Black's Model for pricing financial derivatives.
@@ -241,9 +486,36 @@ def get_black_price(
     Because the lognormal assumption takes the logarithm of the forward rate, the model is
     undefined for a zero or negative forward or strike rate. Euro area rates spent years
     below zero, so this is a real rather than theoretical restriction; use
-    `get_bachelier_price`, whose normal distribution admits negative rates, in that case.
+    `get_bachelier_price`, whose normal distribution admits negative rates, or a shift.
 
-    For more information, see: https://en.wikipedia.org/wiki/Black_model
+    The shifted (displaced) Black model applies Black's formula to the forward and strike
+    rate plus a fixed shift s, so that rates down to -s are allowed (Rubinstein, 1983). The
+    volatility is then the lognormal volatility of F + s, as EUR and CHF swaption
+    volatilities are quoted (with shifts of 1% to 3%).
+
+    The formula is as follows:
+
+    - Payer = Notional * Annuity * [(F + s) N(d_1) - (K + s) N(d_2)]
+    - Receiver = Notional * Annuity * [(K + s) N(-d_2) - (F + s) N(-d_1)]
+    - d_1 = (ln((F + s) / (K + s)) + σ² T / 2) / (σ √T), d_2 = d_1 - σ √T
+
+    where F is the forward swap rate, K the strike rate, s the shift (0 for Black's model),
+    T the years to expiry and the annuity that of `_get_annuity_factor`: on the curve for a
+    physically settled swaption, or the cash annuity at the forward swap rate for a
+    cash-settled one.
+
+    For more information, see the following sources:
+
+    - Black, F. (1976). "The Pricing of Commodity Contracts." Journal of Financial
+      Economics, 3(1-2), 167-179.
+    - Rubinstein, M. (1983). "Displaced Diffusion Option Pricing." Journal of Finance,
+      38(1), 213-217.
+    - Mercurio, F. (2008). "Cash-Settled Swaptions and No-Arbitrage." Risk, 21(2), 96-98.
+    - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
+      ch. 29.
+
+    Referenced against QuantLib's BlackSwaptionEngine (with a displacement, and with cash
+    settlement on the par yield curve method).
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. Must be positive.
@@ -269,55 +541,61 @@ def get_black_price(
         risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
         annuity on such a curve follow from `swap_model.get_swap_rate` with a forward start.
         Defaults to None, which discounts at the risk-free rate.
+        shift (float, optional): The shift s added to the forward and strike rate, which
+        makes it the shifted Black model. Defaults to 0, Black's model.
+        settlement (str, optional): "physical" for a swaption that enters the swap, or
+        "cash" for one that pays the swap's value at expiry with the cash annuity.
+        Defaults to "physical".
 
     Returns:
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
 
     Raises:
-        ValueError: If volatility_type is not 'lognormal' or 'normal', or if the forward
-            rate or strike rate is not positive.
+        ValueError: If volatility_type is not 'lognormal' or 'normal', if the forward
+            rate or strike rate plus the shift is not positive, or the settlement is unknown.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    derivative_model.get_black_price(
+        forward_rate=0.005, strike_rate=-0.002, volatility=0.25, years_to_maturity=2,
+        risk_free_rate=0.01, tenor=5, payment_frequency=1, is_receiver=False, shift=0.02,
+        settlement="cash",
+    )
+    ```
+
+    Which returns:
+
+    ```
+    (372117.340059703, 0.007706961246807125)
+    ```
     """
-    if forward_rate <= 0 or strike_rate <= 0:
-        raise ValueError(
-            "Black's model assumes a lognormally distributed forward rate and is therefore "
-            f"undefined for the given forward rate ({forward_rate}) and strike rate "
-            f"({strike_rate}), both of which must be positive. Use the Bachelier model "
-            "instead, which admits zero and negative rates."
-        )
-
-    volatility = _convert_volatility(
-        volatility=volatility,
-        volatility_type=volatility_type,
-        target_type="lognormal",
-        forward_rate=forward_rate,
+    volatility, annuity = _swaption_terms(
+        "black",
+        forward_rate,
+        strike_rate,
+        volatility,
+        years_to_maturity,
+        risk_free_rate,
+        tenor,
+        payment_frequency,
+        volatility_type,
+        discount_curve,
+        shift,
+        settlement,
+    )
+    payoff = _black_formula(
+        forward_rate,
+        strike_rate,
+        volatility,
+        years_to_maturity,
+        not is_receiver,
+        shift,
     )
 
-    tenor = years_to_maturity if tenor is None else tenor
-
-    if volatility * np.sqrt(years_to_maturity) == 0:
-        # Without volatility or time left the forward rate is the rate the swaption pays on.
-        payoff = _intrinsic_payoff(forward_rate, strike_rate, is_receiver)
-    else:
-        d1 = (
-            np.log(forward_rate / strike_rate) + 0.5 * volatility**2 * years_to_maturity
-        ) / (volatility * np.sqrt(years_to_maturity))
-        d2 = d1 - volatility * np.sqrt(years_to_maturity)
-
-        if is_receiver:
-            payoff = -forward_rate * _normal_cdf(-d1) + strike_rate * _normal_cdf(-d2)
-        else:
-            payoff = forward_rate * _normal_cdf(d1) - strike_rate * _normal_cdf(d2)
-
-    annuity = _get_annuity_factor(
-        risk_free_rate=risk_free_rate,
-        years_to_maturity=years_to_maturity,
-        tenor=tenor,
-        payment_frequency=payment_frequency,
-        discount_curve=discount_curve,
-    )
-    swaption_price = notional * annuity * payoff
-
-    return swaption_price, payoff
+    return notional * annuity * payoff, payoff
 
 
 def get_bachelier_price(
@@ -332,6 +610,7 @@ def get_bachelier_price(
     is_receiver: bool = True,
     volatility_type: str = "normal",
     discount_curve: pd.Series | None = None,
+    settlement: str = "physical",
 ) -> tuple[float, float]:
     """
     Bachelier Model for pricing swaptions.
@@ -361,7 +640,25 @@ def get_bachelier_price(
     At the money the price collapses to the closed form
     Annuity * Notional * volatility * SQRT(years_to_maturity / (2 * pi)).
 
-    For more information, see: https://en.wikipedia.org/wiki/Bachelier_model
+    The formula is as follows:
+
+    - Payer = Notional * Annuity * [(F - K) N(d) + σ √T φ(d)]
+    - Receiver = Notional * Annuity * [(K - F) N(-d) + σ √T φ(d)]
+    - d = (F - K) / (σ √T)
+
+    where F is the forward swap rate, K the strike rate, σ the normal volatility, T the years
+    to expiry and the annuity that of `_get_annuity_factor`: on the curve for a physically
+    settled swaption, or the cash annuity at the forward swap rate for a cash-settled one.
+
+    For more information, see the following sources:
+
+    - Bachelier, L. (1900). "Théorie de la spéculation." Annales scientifiques de l'ENS, 17,
+      21-86.
+    - Mercurio, F. (2008). "Cash-Settled Swaptions and No-Arbitrage." Risk, 21(2), 96-98.
+    - https://en.wikipedia.org/wiki/Bachelier_model
+
+    Referenced against QuantLib's BachelierSwaptionEngine (with cash settlement on the par
+    yield curve method).
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. May be zero or negative.
@@ -387,45 +684,863 @@ def get_bachelier_price(
         risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
         annuity on such a curve follow from `swap_model.get_swap_rate` with a forward start.
         Defaults to None, which discounts at the risk-free rate.
+        settlement (str, optional): "physical" for a swaption that enters the swap, or
+        "cash" for one that pays the swap's value at expiry with the cash annuity.
+        Defaults to "physical".
 
     Returns:
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
 
     Raises:
-        ValueError: If volatility_type is not 'lognormal' or 'normal', or if a lognormal
-            volatility is supplied around a forward rate of zero.
+        ValueError: If volatility_type is not 'lognormal' or 'normal', if a lognormal
+            volatility is supplied around a forward rate of zero, or the settlement is
+            unknown.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    derivative_model.get_bachelier_price(
+        forward_rate=0.035, strike_rate=0.03, volatility=0.009, years_to_maturity=1,
+        risk_free_rate=0.03, tenor=5, payment_frequency=2,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    (72929.06171049128, 0.0016307438437253015)
+    ```
     """
-    volatility = _convert_volatility(
-        volatility=volatility,
-        volatility_type=volatility_type,
-        target_type="normal",
-        forward_rate=forward_rate,
+    volatility, annuity = _swaption_terms(
+        "bachelier",
+        forward_rate,
+        strike_rate,
+        volatility,
+        years_to_maturity,
+        risk_free_rate,
+        tenor,
+        payment_frequency,
+        volatility_type,
+        discount_curve,
+        settlement=settlement,
+    )
+    payoff = _bachelier_formula(
+        forward_rate, strike_rate, volatility, years_to_maturity, not is_receiver
     )
 
-    tenor = years_to_maturity if tenor is None else tenor
+    return notional * annuity * payoff, payoff
 
-    if volatility * np.sqrt(years_to_maturity) == 0:
-        # Without volatility or time left the forward rate is the rate the swaption pays on.
-        payoff = _intrinsic_payoff(forward_rate, strike_rate, is_receiver)
-    else:
-        d = (forward_rate - strike_rate) / (volatility * np.sqrt(years_to_maturity))
 
-        if is_receiver:
-            payoff = (strike_rate - forward_rate) * _normal_cdf(
-                -d
-            ) + volatility * np.sqrt(years_to_maturity) * _normal_pdf(-d)
+def get_swaption_greeks(
+    forward_rate: float,
+    strike_rate: float,
+    volatility: float,
+    years_to_maturity: float,
+    risk_free_rate: float | None = None,
+    notional: float = 10_000_000,
+    tenor: float | None = None,
+    payment_frequency: int = 2,
+    is_receiver: bool = True,
+    method: str = "black",
+    shift: float = 0.0,
+    discount_curve: pd.Series | None = None,
+    settlement: str = "physical",
+) -> dict[str, float]:
+    """
+    Calculate the price, delta and vega of a European swaption in the Black, shifted Black or
+    Bachelier model.
+
+    The delta is the change in value per unit change of the forward swap rate and the vega
+    the change per unit change of the volatility, both with the annuity held fixed, as the
+    market quotes them: a forward rate or volatility one basis point (0.0001) higher changes
+    the value by about 0.0001 times either. The volatility is on the model's own basis:
+    lognormal (of the shifted rate) for Black, normal for Bachelier.
+
+    The formula is as follows:
+
+    - Black: Delta = N A N(d_1) (payer), -N A N(-d_1) (receiver); Vega = N A (F + s) φ(d_1) √T
+    - d_1 = (ln((F + s) / (K + s)) + σ² T / 2) / (σ √T)
+    - Bachelier: Delta = N A N(d) (payer), -N A N(-d) (receiver); Vega = N A φ(d) √T
+    - d = (F - K) / (σ √T)
+
+    where N is the notional, A the annuity of `_get_annuity_factor` (the cash annuity for a
+    cash-settled swaption), F the forward swap rate, K the strike rate, s the shift and T the
+    years to expiry. The vega is the same for a payer and a receiver swaption.
+
+    For more information, see the following sources:
+
+    - Black, F. (1976). "The Pricing of Commodity Contracts." Journal of Financial
+      Economics, 3(1-2), 167-179.
+    - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
+      ch. 19 and 29.
+
+    Referenced against the "delta" and "vega" results of QuantLib's BlackSwaptionEngine and
+    BachelierSwaptionEngine.
+
+    Args:
+        forward_rate (float): The forward swap rate.
+        strike_rate (float): The strike rate of the swaption.
+        volatility (float): The volatility: lognormal for "black" (of the forward rate plus
+            the shift), normal (absolute) for "bachelier".
+        years_to_maturity (float): The years until the swaption expires.
+        risk_free_rate (float | None, optional): The risk-free interest rate, continuously
+            compounded and assumed flat over the swap's payment dates, which it discounts.
+            Defaults to None, which requires a discount curve.
+        notional (float, optional): The notional of the swap. Defaults to 10,000,000.
+        tenor (float | None, optional): The tenor of the underlying swap. Defaults to None,
+            which uses the years to maturity.
+        payment_frequency (int, optional): The fixed payments per year of the swap.
+            Defaults to 2 (semi-annual).
+        is_receiver (bool, optional): Whether the swaption receives the fixed rate.
+            Defaults to True.
+        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        shift (float, optional): The shift of the Black model. Defaults to 0.
+        discount_curve (pd.Series | None, optional): The annually compounded zero-coupon
+            rates by maturity in years that discount the swap's payment dates. Defaults to
+            None, which discounts at the risk-free rate.
+        settlement (str, optional): "physical" or "cash". Defaults to "physical".
+
+    Returns:
+        dict[str, float]: The Price, the Delta (per unit of the forward rate) and the Vega
+        (per unit of volatility), in the currency of the notional, and the Annuity.
+
+    Raises:
+        ValueError: If the method or settlement is unknown, or the Black model gets a
+            forward or strike rate plus shift that is not positive.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    derivative_model.get_swaption_greeks(
+        forward_rate=0.035, strike_rate=0.03, volatility=0.2, years_to_maturity=1,
+        risk_free_rate=0.03, tenor=5, payment_frequency=2, is_receiver=False,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    {'Price': 260171.37136987157, 'Delta': 36137334.751143426, 'Vega': 427414.7024167665, 'Annuity': 4.472134724966416}
+    ```
+    """
+    volatility, annuity = _swaption_terms(
+        method,
+        forward_rate,
+        strike_rate,
+        volatility,
+        years_to_maturity,
+        risk_free_rate,
+        tenor,
+        payment_frequency,
+        "lognormal" if method == "black" else "normal",
+        discount_curve,
+        shift if method == "black" else 0.0,
+        settlement,
+    )
+    is_call = not is_receiver
+    sign = 1.0 if is_call else -1.0
+    root_time = np.sqrt(years_to_maturity)
+    deviation = volatility * root_time
+
+    if method == "black":
+        price = _black_formula(
+            forward_rate, strike_rate, volatility, years_to_maturity, is_call, shift
+        )
+        forward, strike = forward_rate + shift, strike_rate + shift
+        if deviation > 0:
+            d1 = (np.log(forward / strike) + 0.5 * deviation**2) / deviation
+            delta = sign * _normal_cdf(sign * d1)
+            vega = forward * _normal_pdf(d1) * root_time
         else:
-            payoff = (forward_rate - strike_rate) * _normal_cdf(
-                d
-            ) + volatility * np.sqrt(years_to_maturity) * _normal_pdf(d)
+            delta, vega = float(sign * (forward - strike) > 0) * sign, 0.0
+    else:
+        price = _bachelier_formula(
+            forward_rate, strike_rate, volatility, years_to_maturity, is_call
+        )
+        if deviation > 0:
+            d = (forward_rate - strike_rate) / deviation
+            delta = sign * _normal_cdf(sign * d)
+            vega = _normal_pdf(d) * root_time
+        else:
+            delta, vega = float(sign * (forward_rate - strike_rate) > 0) * sign, 0.0
 
-    annuity = _get_annuity_factor(
-        risk_free_rate=risk_free_rate,
-        years_to_maturity=years_to_maturity,
-        tenor=tenor,
-        payment_frequency=payment_frequency,
-        discount_curve=discount_curve,
+    scale = notional * annuity
+
+    return {
+        "Price": scale * price,
+        "Delta": float(scale * delta),
+        "Vega": float(scale * vega),
+        "Annuity": annuity,
+    }
+
+
+OPTION_TYPES = ("call", "put")
+
+# The widest bracket the implied volatility solvers search, in total standard deviation σ √T
+# (Black, Bachelier) or volatility (caps): far beyond any traded option.
+MAXIMUM_DEVIATION = 1e3
+
+
+def get_implied_volatility(
+    price: float,
+    forward_rate: float,
+    strike_rate: float,
+    years_to_expiry: float,
+    annuity: float = 1.0,
+    option_type: str = "call",
+    method: str = "black",
+    shift: float = 0.0,
+) -> float:
+    """
+    Calculate the Black (lognormal, optionally shifted) or Bachelier (normal) implied
+    volatility of an option on a forward rate, such as a caplet, floorlet or swaption, from
+    its price.
+
+    The price is divided by the annuity, the factor the model's formula is multiplied by:
+    the notional times the swap annuity for a swaption, or the notional times the accrual
+    and the discount factor of the payment date for a caplet. What is left is solved for the
+    volatility with Brent's method on a bracket that is widened until it contains the root
+    (Brent, 1973), as both formulas increase strictly with the volatility. An in-the-money
+    option is first turned into the out-of-the-money option of the same strike by put-call
+    parity, Call - Put = F - K, where the volatility is far better determined (Jäckel, 2015).
+
+    The no-arbitrage bounds of the undiscounted price V are:
+
+    - Black: max(F - K, 0) ≤ V < F + s for a call and max(K - F, 0) ≤ V < K + s for a put,
+      with F + s and K + s positive
+    - Bachelier: V ≥ max(F - K, 0) for a call and V ≥ max(K - F, 0) for a put
+
+    A price on the lower bound has a volatility of 0; a price outside the bounds has no
+    implied volatility and returns NaN.
+
+    For more information, see the following sources:
+
+    - Jäckel, P. (2015). "Let's Be Rational." Wilmott, 2015(75), 40-53.
+    - Jäckel, P. (2017). "Implied Normal Volatility." Wilmott, 2017(90), 54-57.
+    - Choi, J., Kim, K. and Kwak, M. (2009). "Numerical Approximation of the Implied
+      Volatility Under Arithmetic Brownian Motion." Applied Mathematical Finance, 16(3),
+      261-268.
+    - Brent, R.P. (1973). "Algorithms for Minimization Without Derivatives." Prentice-Hall,
+      ch. 4.
+
+    Referenced against QuantLib's blackFormulaImpliedStdDev and
+    bachelierBlackFormulaImpliedVol.
+
+    Args:
+        price (float): The price of the option.
+        forward_rate (float): The forward rate (or forward swap rate).
+        strike_rate (float): The strike rate.
+        years_to_expiry (float): The years until the rate is fixed (the swaption expires).
+        annuity (float, optional): The factor the formula is multiplied by, so that the
+            price over the annuity is the undiscounted value. Defaults to 1, an undiscounted
+            price per unit of notional.
+        option_type (str, optional): "call" for an option on a rising rate (a caplet or
+            payer swaption) or "put" for one on a falling rate (a floorlet or receiver
+            swaption). Defaults to "call".
+        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        shift (float, optional): The shift of the Black model. Defaults to 0.
+
+    Returns:
+        float: The implied volatility per year: lognormal (of the rate plus the shift) for
+        "black", normal (absolute, in rate units) for "bachelier". NaN when the price lies
+        outside the no-arbitrage bounds.
+
+    Raises:
+        ValueError: If the method or option type is unknown, the years to expiry or the
+            annuity are not positive, or the Black model gets a forward or strike rate plus
+            shift that is not positive.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    price, _ = derivative_model.get_bachelier_price(
+        forward_rate=0.035, strike_rate=0.03, volatility=0.009, years_to_maturity=2,
+        risk_free_rate=0.03, tenor=5, payment_frequency=2, is_receiver=False,
     )
-    swaption_price = notional * annuity * payoff
+    annuity = derivative_model.get_swaption_greeks(
+        forward_rate=0.035, strike_rate=0.03, volatility=0.009, years_to_maturity=2,
+        risk_free_rate=0.03, tenor=5, payment_frequency=2, method="bachelier",
+    )["Annuity"]
 
-    return swaption_price, payoff
+    derivative_model.get_implied_volatility(
+        price, forward_rate=0.035, strike_rate=0.03, years_to_expiry=2,
+        annuity=10_000_000 * annuity, method="bachelier",
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.009
+    ```
+    """
+    if option_type not in OPTION_TYPES:
+        raise ValueError(
+            f"The option type must be one of {', '.join(OPTION_TYPES)}, not {option_type!r}."
+        )
+    _check_method(method, forward_rate, strike_rate, shift)
+    if years_to_expiry <= 0 or annuity <= 0:
+        raise ValueError("The years to expiry and the annuity must be positive.")
+
+    is_call = option_type == "call"
+    value = price / annuity
+    gap = forward_rate - strike_rate
+    intrinsic = max(gap if is_call else -gap, 0.0)
+    # The out-of-the-money option of the same strike, by put-call parity.
+    out_of_the_money = value - intrinsic
+    otm_is_call = gap < 0 if intrinsic > 0 else is_call
+    upper = (
+        (forward_rate if otm_is_call else strike_rate) + shift
+        if method == "black"
+        else np.inf
+    )
+    tolerance = 1e-14 * max(1.0, abs(forward_rate) + abs(shift))
+
+    if (
+        not np.isfinite(value)
+        or out_of_the_money < -tolerance
+        or out_of_the_money >= upper
+    ):
+        return np.nan
+    if out_of_the_money <= tolerance:
+        return 0.0
+
+    def error(deviation: float) -> float:
+        return (
+            _option_value(
+                method, forward_rate, strike_rate, deviation, 1.0, otm_is_call, shift
+            )
+            - out_of_the_money
+        )
+
+    # The root is the total standard deviation σ √T; double the bracket until it holds it.
+    high = max(abs(gap), out_of_the_money, 0.01 if method == "black" else 1e-4)
+    while error(high) < 0:
+        high *= 2
+        if high > MAXIMUM_DEVIATION:
+            return np.nan
+
+    deviation = brentq(error, 0.0, high, xtol=1e-16, rtol=1e-14, maxiter=500)
+
+    return float(deviation / np.sqrt(years_to_expiry))
+
+
+CAP_FLOOR_TYPES = ("cap", "floor", "collar")
+
+
+def _cap_floor_table(
+    forward_rates: np.ndarray,
+    starts: np.ndarray,
+    ends: np.ndarray,
+    expiries: np.ndarray,
+    discounts: np.ndarray,
+    strike_rate: float,
+    volatility: float | np.ndarray,
+    notional: float,
+    option_type: str,
+    floor_strike_rate: float | None,
+    method: str,
+    shift: float,
+) -> pd.DataFrame:
+    """
+    The caplets or floorlets of a cap, floor or collar on given forward rates, see
+    get_cap_floor.
+
+    Args:
+        forward_rates (np.ndarray): The forward rate of each period.
+        starts (np.ndarray): The start of each period in years.
+        ends (np.ndarray): The end (payment) of each period in years.
+        expiries (np.ndarray): The years until each rate is fixed.
+        discounts (np.ndarray): The discount factor of each payment.
+        strike_rate (float): The strike rate (of the cap for a collar).
+        volatility (float | np.ndarray): One volatility or one per period.
+        notional (float): The notional.
+        option_type (str): "cap", "floor" or "collar".
+        floor_strike_rate (float | None): The strike rate of the floor of a collar.
+        method (str): "black" or "bachelier".
+        shift (float): The shift of the Black model.
+
+    Returns:
+        pd.DataFrame: One row per period with its terms and price.
+    """
+    if option_type not in CAP_FLOOR_TYPES:
+        raise ValueError(
+            f"The option type must be one of {', '.join(CAP_FLOOR_TYPES)}, not {option_type!r}."
+        )
+    if option_type == "collar" and floor_strike_rate is None:
+        raise ValueError("A collar needs the strike rate of its floor.")
+    volatilities = np.broadcast_to(
+        np.asarray(volatility, dtype=float), forward_rates.shape
+    )
+    strikes = [strike_rate] + ([floor_strike_rate] if option_type == "collar" else [])
+    for strike in strikes:
+        _check_method(method, forward_rates, strike, shift)
+
+    accruals = ends - starts
+    scale = notional * accruals * discounts
+    value = _option_value(
+        method,
+        forward_rates,
+        strike_rate,
+        volatilities,
+        expiries,
+        option_type != "floor",
+        shift,
+    )
+    if option_type == "collar":
+        # A long cap and a short floor: the rate paid is kept between the two strikes.
+        value = value - _option_value(
+            method,
+            forward_rates,
+            floor_strike_rate,
+            volatilities,
+            expiries,
+            False,
+            shift,
+        )
+
+    return pd.DataFrame(
+        {
+            "Start": starts,
+            "End": ends,
+            "Forward Rate": forward_rates,
+            "Discount Factor": discounts,
+            "Volatility": volatilities,
+            "Price": scale * value,
+        }
+    )
+
+
+def _cap_periods(
+    zero_curve: pd.Series, maturity: float, frequency: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    The periods of a cap that fix after today, with their simple forward rates and the
+    discount factors of their payments.
+
+    Args:
+        zero_curve (pd.Series): The annually compounded zero-coupon rates by maturity.
+        maturity (float): The years until the last payment.
+        frequency (int): The periods per year.
+
+    Returns:
+        tuple: The starts, ends, forward rates and discount factors.
+    """
+    if maturity <= 0:
+        raise ValueError(f"The maturity of a cap must be positive, not {maturity}.")
+    ends = bond_model.get_cash_flow_periods(maturity, frequency) / frequency
+    starts = np.maximum(ends - 1 / frequency, 0.0)
+    # The first rate is fixed today, so its period is known and not an option.
+    later = ~np.isclose(starts, 0.0, rtol=0.0, atol=1e-12)
+    starts, ends = starts[later], ends[later]
+    if len(ends) == 0:
+        raise ValueError(
+            "The cap has no period that fixes after today: lengthen the maturity."
+        )
+    start_discounts = discount_factors(zero_curve, starts)
+    discounts = discount_factors(zero_curve, ends)
+    forward_rates = (start_discounts / discounts - 1) / (ends - starts)
+
+    return starts, ends, forward_rates, discounts
+
+
+def get_cap_floor(
+    zero_curve: pd.Series,
+    strike_rate: float,
+    volatility: float | np.ndarray | list,
+    maturity: float,
+    frequency: int = 4,
+    notional: float = 10_000_000,
+    option_type: str = "cap",
+    floor_strike_rate: float | None = None,
+    method: str = "black",
+    shift: float = 0.0,
+) -> tuple[float, pd.DataFrame]:
+    """
+    Calculate the price of an interest rate cap, floor or collar, and of each of its caplets
+    or floorlets, in the Black, shifted Black or Bachelier model.
+
+    A cap pays, at the end of every period, the amount by which the floating rate fixed at
+    its start exceeds the strike rate, on the period's accrual. Each payment is a caplet: a
+    call on the forward rate of its period, priced with the model's formula and discounted
+    from its payment date (Black, 1976; Hull, 2022, ch. 29). A floor is a series of puts
+    (floorlets) and a collar is a long cap and a short floor, which keeps the rate paid
+    between the floor and the cap strike.
+
+    The formula is as follows:
+
+    - F_i = (P(t_(i-1)) / P(t_i) - 1) / τ_i, the simple forward rate of period i
+    - Caplet_i = N τ_i P(t_i) * Black(F_i, K, σ_i, t_(i-1)) or Bachelier(F_i, K, σ_i, t_(i-1))
+    - Black call = (F + s) N(d_1) - (K + s) N(d_2), d_1 = (ln((F + s) / (K + s)) + σ² t / 2) / (σ √t)
+    - Bachelier call = (F - K) N(d) + σ √t φ(d), d = (F - K) / (σ √t)
+    - Cap = SUM(Caplet_i), Floor = SUM(Floorlet_i), Collar = Cap(K) - Floor(K_floor)
+
+    where P(t) = (1 + r(t))^(-t) is the discount factor of the annually compounded zero rate
+    r(t), τ_i = t_i - t_(i-1) the accrual of the period in years, t_(i-1) its fixing time and
+    s the shift (0 for Black). The forward rates are simple on that accrual, from a single
+    curve that both projects and discounts. The periods are counted back from the maturity
+    in steps of 1 / frequency years; the first period, whose rate is fixed today, is left
+    out, as the market does.
+
+    For more information, see the following sources:
+
+    - Black, F. (1976). "The Pricing of Commodity Contracts." Journal of Financial
+      Economics, 3(1-2), 167-179.
+    - Bachelier, L. (1900). "Théorie de la spéculation." Annales scientifiques de l'ENS, 17,
+      21-86.
+    - Rubinstein, M. (1983). "Displaced Diffusion Option Pricing." Journal of Finance,
+      38(1), 213-217.
+    - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
+      ch. 29.
+
+    Referenced against QuantLib's Cap, Floor and Collar with the BlackCapFloorEngine (with a
+    displacement) and the BachelierCapFloorEngine.
+
+    Args:
+        zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
+            indexed by maturity in years.
+        strike_rate (float): The strike rate (of the cap, for a collar).
+        volatility (float | np.ndarray | list): One (flat) volatility for every caplet or one
+            per caplet: lognormal for "black" (of the rate plus the shift), normal (absolute)
+            for "bachelier".
+        maturity (float): The years until the last payment.
+        frequency (int, optional): The periods per year. Defaults to 4 (quarterly).
+        notional (float, optional): The notional. Defaults to 10,000,000.
+        option_type (str, optional): "cap", "floor" or "collar". Defaults to "cap".
+        floor_strike_rate (float | None, optional): The strike rate of the floor of a collar.
+            Defaults to None.
+        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        shift (float, optional): The shift of the Black model. Defaults to 0.
+
+    Returns:
+        tuple[float, pd.DataFrame]: The price and, per caplet, its Start and End (years),
+        Forward Rate, Discount Factor, Volatility and Price, in the currency of the notional.
+
+    Raises:
+        ValueError: If the option type or method is unknown, a collar has no floor strike,
+            the cap has no period that fixes after today, or the Black model gets a forward
+            or strike rate plus shift that is not positive.
+
+    As an example:
+
+    ```python
+    import pandas as pd
+
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    zero_curve = pd.Series([0.035, 0.037, 0.040], index=[1, 2, 5])
+
+    price, caplets = derivative_model.get_cap_floor(
+        zero_curve, strike_rate=0.04, volatility=0.2, maturity=2, frequency=2
+    )
+
+    caplets.round(4)
+    ```
+
+    Which returns:
+
+    ```
+       Start  End  Forward Rate  Discount Factor  Volatility       Price
+    0    0.5  1.0        0.0347           0.9662         0.2   2096.0107
+    1    1.0  1.5        0.0376           0.9483         0.2   9754.2696
+    2    1.5  2.0        0.0396           0.9299         0.2  17156.9434
+    ```
+    """
+    starts, ends, forward_rates, discounts = _cap_periods(
+        zero_curve, maturity, frequency
+    )
+    caplets = _cap_floor_table(
+        forward_rates,
+        starts,
+        ends,
+        starts,
+        discounts,
+        strike_rate,
+        volatility,
+        notional,
+        option_type,
+        floor_strike_rate,
+        method,
+        shift,
+    )
+
+    return float(caplets["Price"].sum()), caplets
+
+
+def get_cap_floor_implied_volatility(
+    price: float,
+    zero_curve: pd.Series,
+    strike_rate: float,
+    maturity: float,
+    frequency: int = 4,
+    notional: float = 10_000_000,
+    option_type: str = "cap",
+    method: str = "black",
+    shift: float = 0.0,
+) -> float:
+    """
+    Calculate the flat implied volatility of a cap or floor: the one volatility that, used
+    for every caplet, returns the price (Hull, 2022, ch. 29).
+
+    Cap volatilities are quoted flat per maturity, so this is the inverse of `get_cap_floor`
+    with a single volatility. The price increases strictly with the volatility, so it is
+    solved with Brent's method on a bracket that is widened until it holds the root.
+
+    The formula is as follows:
+
+    - Solve σ: SUM(Caplet_i(σ)) = Price
+
+    where Caplet_i is the caplet (or floorlet) of `get_cap_floor`. The price lies between the
+    value at zero volatility, the sum of the discounted intrinsic values, and, in the Black
+    model, the value at infinite volatility, SUM(N τ_i P(t_i) (F_i + s)) for a cap and
+    SUM(N τ_i P(t_i) (K + s)) for a floor. A price outside these bounds has no implied
+    volatility and returns NaN.
+
+    For more information, see the following sources:
+
+    - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
+      ch. 29.
+    - Brent, R.P. (1973). "Algorithms for Minimization Without Derivatives." Prentice-Hall,
+      ch. 4.
+
+    Referenced against QuantLib's CapFloor.impliedVolatility (with the Black and normal
+    volatility types).
+
+    Args:
+        price (float): The price of the cap or floor.
+        zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
+            indexed by maturity in years.
+        strike_rate (float): The strike rate.
+        maturity (float): The years until the last payment.
+        frequency (int, optional): The periods per year. Defaults to 4 (quarterly).
+        notional (float, optional): The notional. Defaults to 10,000,000.
+        option_type (str, optional): "cap" or "floor". Defaults to "cap".
+        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        shift (float, optional): The shift of the Black model. Defaults to 0.
+
+    Returns:
+        float: The flat implied volatility per year: lognormal (of the rate plus the shift)
+        for "black", normal (absolute) for "bachelier". NaN when the price lies outside the
+        no-arbitrage bounds.
+
+    Raises:
+        ValueError: If the option type is not "cap" or "floor", or see `get_cap_floor`.
+
+    As an example:
+
+    ```python
+    import pandas as pd
+
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    zero_curve = pd.Series([0.035, 0.037, 0.040], index=[1, 2, 5])
+
+    price, _ = derivative_model.get_cap_floor(
+        zero_curve, strike_rate=0.04, volatility=0.22, maturity=5, frequency=2
+    )
+
+    derivative_model.get_cap_floor_implied_volatility(
+        price, zero_curve, strike_rate=0.04, maturity=5, frequency=2
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.21999999999999997
+    ```
+    """
+    if option_type not in ("cap", "floor"):
+        raise ValueError(
+            f"The option type must be 'cap' or 'floor', not {option_type!r}."
+        )
+    starts, ends, forward_rates, discounts = _cap_periods(
+        zero_curve, maturity, frequency
+    )
+
+    def cap_price(volatility: float) -> float:
+        return float(
+            _cap_floor_table(
+                forward_rates,
+                starts,
+                ends,
+                starts,
+                discounts,
+                strike_rate,
+                volatility,
+                notional,
+                option_type,
+                None,
+                method,
+                shift,
+            )["Price"].sum()
+        )
+
+    scale = notional * (ends - starts) * discounts
+    lower = cap_price(0.0)
+    if method == "black":
+        cap_bound = (
+            forward_rates + shift if option_type == "cap" else strike_rate + shift
+        )
+        upper = float(np.sum(scale * cap_bound))
+    else:
+        upper = np.inf
+    tolerance = 1e-12 * max(abs(price), notional * 1e-8)
+
+    if not np.isfinite(price) or price < lower - tolerance or price >= upper:
+        return np.nan
+    if price <= lower + tolerance:
+        return 0.0
+
+    high = 0.5 if method == "black" else 0.01
+    while cap_price(high) < price:
+        high *= 2
+        if high > MAXIMUM_DEVIATION:
+            return np.nan
+
+    return float(
+        brentq(lambda vol: cap_price(vol) - price, 0.0, high, xtol=1e-14, maxiter=500)
+    )
+
+
+def get_year_on_year_inflation_cap_floor(
+    zero_curve: pd.Series,
+    zero_inflation_curve: pd.Series,
+    strike_rate: float,
+    volatility: float | np.ndarray | list,
+    maturity: int,
+    notional: float = 10_000_000,
+    option_type: str = "cap",
+    floor_strike_rate: float | None = None,
+    method: str = "black",
+    shift: float = 0.0,
+) -> tuple[float, pd.DataFrame]:
+    """
+    Calculate the price of a year-on-year inflation cap, floor or collar, and of each of its
+    caplets or floorlets, in the Black, shifted Black (with a shift of 1, the unit-displaced
+    Black model of the inflation market) or Bachelier model.
+
+    A year-on-year inflation caplet pays, at the end of year i, the amount by which that
+    year's inflation I(i) / I(i - 1) - 1 exceeds the strike rate. It is a call on the
+    forward year-on-year rate, fixed when the index of the end of the year is known
+    (Kerkhof, 2005; Mercurio, 2005). Every year, the first included, is an option, as the
+    index at its end is not known today. A floor is a series of puts on the same rates and a
+    collar a long cap and a short floor.
+
+    The formula is as follows:
+
+    - f_i = (1 + z(i))^i / (1 + z(i - 1))^(i - 1) - 1, the forward year-on-year rate
+    - Caplet_i = N P(i) * Black(f_i, K, σ_i, i) or Bachelier(f_i, K, σ_i, i)
+    - Black call = (f + s) N(d_1) - (K + s) N(d_2), d_1 = (ln((f + s) / (K + s)) + σ² t / 2) / (σ √t)
+    - Bachelier call = (f - K) N(d) + σ √t φ(d), d = (f - K) / (σ √t)
+    - Cap = SUM(Caplet_i), Collar = Cap(K) - Floor(K_floor)
+
+    where P(i) = (1 + r(i))^(-i) is the discount factor of the annually compounded nominal
+    zero rate, z(i) the annually compounded zero-coupon inflation swap rate and s the shift.
+    Every period accrues a full year. The forward rates are the ratios of the forward
+    indices, without the convexity adjustment of a rate fixed and paid at the end of its
+    year (see `inflation_swap_model.get_forward_year_on_year_inflation_rates`); with a
+    year-on-year curve of your own, the convexity is in the curve. The time to expiry is the
+    end of the year: the observation lag of the index is part of the times of the curves.
+
+    For more information, see the following sources:
+
+    - Kerkhof, J. (2005). "Inflation Derivatives Explained." Lehman Brothers Fixed Income
+      Quantitative Research.
+    - Mercurio, F. (2005). "Pricing Inflation-Indexed Derivatives." Quantitative Finance,
+      5(3), 289-302.
+    - Black, F. (1976). "The Pricing of Commodity Contracts." Journal of Financial
+      Economics, 3(1-2), 167-179.
+
+    Referenced against QuantLib's YoYInflationCap, YoYInflationFloor and YoYInflationCollar
+    with the YoYInflationBlackCapFloorEngine, YoYInflationUnitDisplacedBlackCapFloorEngine and
+    YoYInflationBachelierCapFloorEngine.
+
+    Args:
+        zero_curve (pd.Series): The annually compounded nominal zero-coupon rates
+            (decimals), indexed by maturity in years.
+        zero_inflation_curve (pd.Series): The annually compounded zero-coupon inflation swap
+            rates (decimals), indexed by maturity in years.
+        strike_rate (float): The strike rate (of the cap, for a collar).
+        volatility (float | np.ndarray | list): One volatility for every caplet or one per
+            caplet: lognormal for "black" (of the rate plus the shift), normal (absolute)
+            for "bachelier".
+        maturity (int): The years until the last payment, a whole number.
+        notional (float, optional): The notional. Defaults to 10,000,000.
+        option_type (str, optional): "cap", "floor" or "collar". Defaults to "cap".
+        floor_strike_rate (float | None, optional): The strike rate of the floor of a collar.
+            Defaults to None.
+        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        shift (float, optional): The shift of the Black model, 1 for the unit-displaced
+            model. Defaults to 0.
+
+    Returns:
+        tuple[float, pd.DataFrame]: The price and, per caplet, its Start and End (years),
+        Forward Rate, Discount Factor, Volatility and Price, in the currency of the notional.
+
+    Raises:
+        ValueError: If the maturity is not a positive whole number of years, the option type
+            or method is unknown, a collar has no floor strike, or the Black model gets a
+            forward or strike rate plus shift that is not positive.
+
+    As an example:
+
+    ```python
+    import pandas as pd
+
+    from financetoolkit.fixedincome.bonds import derivative_model
+
+    nominal = pd.Series([0.040, 0.042, 0.045], index=[1, 5, 10])
+    zero_inflation = pd.Series([0.030, 0.026, 0.024], index=[1, 3, 5])
+
+    price, caplets = derivative_model.get_year_on_year_inflation_cap_floor(
+        nominal, zero_inflation, strike_rate=0.03, volatility=0.01, maturity=5,
+        method="bachelier",
+    )
+
+    caplets.round(5)
+    ```
+
+    Which returns:
+
+    ```
+       Start  End  Forward Rate  Discount Factor  Volatility        Price
+    0    0.0  1.0       0.03000          0.96154        0.01  38359.83465
+    1    1.0  2.0       0.02600          0.92367        0.01  35723.67306
+    2    2.0  3.0       0.02201          0.88644        0.01  32247.39426
+    3    3.0  4.0       0.02201          0.84989        0.01  39186.66668
+    4    4.0  5.0       0.02001          0.81407        0.01  39085.89943
+    ```
+    """
+    if maturity < 1 or float(maturity) != int(maturity):
+        raise ValueError(
+            "A year-on-year inflation cap pays once a year: its maturity must be a "
+            "positive whole number of years."
+        )
+    forward_rates = inflation_swap_model.get_forward_year_on_year_inflation_rates(
+        zero_inflation_curve, int(maturity)
+    ).to_numpy()
+    ends = np.arange(1, int(maturity) + 1, dtype=float)
+
+    caplets = _cap_floor_table(
+        forward_rates,
+        ends - 1,
+        ends,
+        ends,
+        discount_factors(zero_curve, ends),
+        strike_rate,
+        volatility,
+        notional,
+        option_type,
+        floor_strike_rate,
+        method,
+        shift,
+    )
+
+    return float(caplets["Price"].sum()), caplets

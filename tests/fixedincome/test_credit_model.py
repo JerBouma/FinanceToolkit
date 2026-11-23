@@ -9,8 +9,10 @@ exact. The closed forms are those of a flat hazard rate on a flat curve.
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.integrate import quad
 
 from financetoolkit.fixedincome.credit import cds_model, credit_curve_model
+from financetoolkit.fixedincome.helpers import discount_factors
 
 CURVE = pd.Series(
     [0.038, 0.04, 0.041, 0.043, 0.044, 0.045, 0.047], index=[1, 2, 3, 5, 7, 10, 30.0]
@@ -238,3 +240,104 @@ def test_bootstraps_reject_bad_quotes():
         cds_model.get_cds_implied_hazard_rates([5], [-0.01], CURVE)
     with pytest.raises(ValueError):
         cds_model.get_credit_default_swap(5, CURVE, [0.01], [5], recovery_rate=1)
+
+
+OPTION_CURVE = pd.Series([0.035, 0.037, 0.040], index=[1, 2, 5])
+
+
+@pytest.mark.parametrize(
+    "hazard_rate, expiry, maturity, strike, volatility, knockout, option_type, value",
+    [
+        (0.02, 1, 6, 0.012, 0.4, True, "payer", 79205.91099899824),
+        (0.02, 1, 6, 0.012, 0.4, True, "receiver", 76097.99399322078),
+        (0.02, 1, 6, 0.012, 0.4, False, "payer", 193996.2106699823),
+        (0.035, 2, 7, 0.015, 0.6, True, "payer", 339035.78524256084),
+        (0.035, 2, 7, 0.015, 0.6, True, "receiver", 118946.78793425323),
+        (0.035, 2, 7, 0.025, 0.6, False, "payer", 584827.7650711037),
+    ],
+)
+def test_cds_option_matches_quantlib(
+    hazard_rate, expiry, maturity, strike, volatility, knockout, option_type, value
+):
+    # QuantLib's BlackCdsOptionEngine on a forward CDS priced with the IntegralCdsEngine
+    # (daily steps), annual premiums on dates today + 365 t: the forward legs differ by its
+    # daily integration (rel 3e-5 on the annuity, 1e-6 on the spread), the value by up to 4e-4.
+    option = cds_model.get_cds_option(
+        expiry,
+        maturity,
+        OPTION_CURVE,
+        [hazard_rate],
+        [50.0],
+        strike,
+        volatility,
+        notional=10_000_000,
+        frequency=1,
+        option_type=option_type,
+        knockout=knockout,
+    )
+
+    assert option["Value"] == pytest.approx(value, rel=4e-4)
+
+
+def test_cds_option_forward_legs_by_quadrature():
+    # The forward legs integrated numerically, with the forward rate constant between the
+    # curve nodes and the premium dates as the model's exact integrals assume.
+    hazard_rate, expiry, maturity, frequency = 0.05, 0.5, 5.25, 4
+    ends = expiry + np.arange(1, 20) / frequency
+    starts = np.maximum(ends - 1 / frequency, expiry)
+    grid = np.unique(np.r_[0.0, OPTION_CURVE.index, expiry, ends, 50.0])
+    log_discount = np.log(discount_factors(OPTION_CURVE, grid))
+
+    def density(t):
+        return (
+            np.exp(np.interp(t, grid, log_discount))
+            * hazard_rate
+            * np.exp(-hazard_rate * t)
+        )
+
+    protection = 0.6 * sum(
+        quad(density, a, b, epsrel=1e-13)[0] for a, b in zip(starts, ends)
+    )
+    rpv01 = sum(
+        (end - start) * 365 / 360 * density(end) / hazard_rate
+        + 365
+        / 360
+        * quad(lambda t, s=start: (t - s) * density(t), start, end, epsrel=1e-13)[0]
+        for start, end in zip(starts, ends)
+    )
+    option = cds_model.get_cds_option(
+        expiry, maturity, OPTION_CURVE, [hazard_rate], [50.0], 0.012, 0.4, frequency=4
+    )
+
+    assert option["Forward RPV01"] == pytest.approx(rpv01, rel=1e-12)
+    assert option["Forward Spread"] == pytest.approx(protection / rpv01, rel=1e-12)
+
+
+def test_cds_option_parity_and_front_end_protection():
+    terms = {
+        "option_expiry": 1,
+        "maturity": 6,
+        "zero_curve": OPTION_CURVE,
+        "hazard_rates": [0.02],
+        "hazard_times": [50.0],
+        "strike_spread": 0.011,
+        "volatility": 0.5,
+    }
+    payer = cds_model.get_cds_option(**terms)
+    receiver = cds_model.get_cds_option(**terms, option_type="receiver")
+    no_knockout = cds_model.get_cds_option(**terms, knockout=False)
+
+    # Payer - Receiver = a forward CDS paying the strike, on the forward annuity.
+    assert payer["Value"] - receiver["Value"] == pytest.approx(
+        payer["Forward RPV01"] * (payer["Forward Spread"] - 0.011), rel=1e-12
+    )
+    assert no_knockout["Front-End Protection"] == pytest.approx(
+        0.6 * (1 - np.exp(-0.02)) / 1.035, rel=1e-12
+    )
+    assert no_knockout["Value"] == pytest.approx(
+        payer["Value"] + no_knockout["Front-End Protection"], rel=1e-12
+    )
+    with pytest.raises(ValueError, match="option type"):
+        cds_model.get_cds_option(**terms, option_type="straddle")
+    with pytest.raises(ValueError, match="before the maturity"):
+        cds_model.get_cds_option(**{**terms, "option_expiry": 7})

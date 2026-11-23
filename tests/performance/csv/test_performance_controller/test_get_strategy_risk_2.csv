@@ -1,0 +1,6 @@
+,Precision,Precision,Average Gain,Average Gain,Average Loss,Average Loss,Bets per Year,Bets per Year,Binomial Sharpe Ratio,Binomial Sharpe Ratio,Implied Precision,Implied Precision,Implied Frequency,Implied Frequency,Probability of Failure,Probability of Failure
+,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT,AAPL,MSFT
+2019,,,,,,,,,,,,,,,,
+2020,0.5415,0.5613,0.0215,0.0182,-0.0193,-0.0192,252.0,252.0,2.1938,1.5234,0.5355,0.5759,209.4412,434.3644,0.4237,0.6806
+2021,0.5317,0.5238,0.0127,0.0114,-0.0116,-0.0088,252.0,252.0,1.7096,2.7759,0.5408,0.4995,344.8846,130.8099,0.6132,0.2196
+2022,0.4701,0.4622,0.0174,0.0174,-0.0173,-0.017,252.0,252.0,-0.8871,-0.9867,0.5605,0.5557,,,0.9979,0.9985

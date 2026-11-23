@@ -6,6 +6,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.performance import performance_model
 from financetoolkit.risk.helpers import (
@@ -2665,3 +2666,82 @@ def test_rolling_factor_regression_matches_pyfolio():
         (excess_returns.iloc[window] - excess_returns.iloc[window].mean()) ** 2
     ).sum()
     assert regression.iloc[10]["R Squared"] == pytest.approx(1 - residuals[0] / total)
+
+
+def test_get_variability_weighted_return_by_hand():
+    # Constant returns follow the exponential path exactly, so the VWR is the annualized return.
+    constant = pd.Series([0.001] * 50)
+    assert performance_model.get_variability_weighted_return(
+        constant, 252
+    ) == pytest.approx(1.001**252 - 1)
+
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02])
+    values = np.cumprod(1 + returns.to_numpy())
+    average = np.log(values[-1]) / 4
+    deviations = values / np.exp(average * np.arange(1, 5)) - 1
+    expected = (np.exp(average * 12) - 1) * (1 - (deviations.std(ddof=1) / 0.2) ** 2)
+    assert performance_model.get_variability_weighted_return(
+        returns, 12
+    ) == pytest.approx(expected)
+
+    frame = pd.DataFrame({"A": returns, "B": [0.01, np.nan, 0.01, 0.01]})
+    result = performance_model.get_variability_weighted_return(
+        frame, pd.Series({"A": 12.0, "B": 12.0})
+    )
+    assert result["A"] == pytest.approx(expected)
+    assert result["B"] == pytest.approx(1.01**12 - 1)
+    assert np.isnan(performance_model.get_variability_weighted_return(pd.Series([0.1])))
+
+
+def test_get_return_concentration_by_hand():
+    dates = pd.period_range("2024-01-30", periods=6, freq="D")
+    returns = pd.Series([0.01, 0.03, 0.0, -0.01, -0.01, -0.02], index=dates)
+    concentration = performance_model.get_return_concentration(returns)
+
+    def hhi(values):
+        weights = np.array(values) / np.sum(values)
+        count = len(values)
+        return ((weights**2).sum() - 1 / count) / (1 - 1 / count)
+
+    assert concentration["Positive Concentration"] == pytest.approx(
+        hhi([0.01, 0.03, 0.0])
+    )
+    assert concentration["Negative Concentration"] == pytest.approx(
+        hhi([0.01, 0.01, 0.02])
+    )
+    # Two returns in January and four in February: too few months for a concentration.
+    assert np.isnan(concentration["Time Concentration"])
+    # Equal returns are not concentrated at all.
+    assert performance_model.get_return_concentration(
+        pd.Series([0.01] * 3, index=dates[:3])
+    )["Positive Concentration"] == pytest.approx(0)
+
+
+def test_get_strategy_risk_by_hand():
+    # Symmetric bets: SR = (2p - 1) / (2 x SQRT(p (1 - p))) x SQRT(n).
+    sharpe_ratio = performance_model.get_binomial_sharpe_ratio(0.01, -0.01, 0.55, 252)
+    assert sharpe_ratio == pytest.approx(0.1 / (2 * np.sqrt(0.2475)) * np.sqrt(252))
+
+    # The implied precision and frequency give back the target Sharpe ratio.
+    precision = performance_model.get_implied_precision(0.02, -0.01, 52, 2.0)
+    assert performance_model.get_binomial_sharpe_ratio(
+        0.02, -0.01, precision, 52
+    ) == pytest.approx(2.0)
+    frequency = performance_model.get_implied_frequency(0.02, -0.01, 0.4, 2.0)
+    assert performance_model.get_binomial_sharpe_ratio(
+        0.02, -0.01, 0.4, frequency
+    ) == pytest.approx(2.0)
+    # A losing bet on average reaches no positive target.
+    assert np.isnan(performance_model.get_implied_frequency(0.01, -0.02, 0.5, 2.0))
+
+    returns = pd.Series([0.02, -0.01, 0.03, 0.0, -0.02, 0.01, 0.015, -0.005])
+    risk = performance_model.get_strategy_risk(returns, frequency=52)
+    assert risk["Precision"] == pytest.approx(4 / 8)
+    assert risk["Average Gain"] == pytest.approx(0.075 / 4)
+    assert risk["Average Loss"] == pytest.approx(-0.035 / 4)
+    implied = performance_model.get_implied_precision(0.075 / 4, -0.035 / 4, 52, 2.0)
+    assert risk["Implied Precision"] == pytest.approx(implied)
+    assert risk["Probability of Failure"] == pytest.approx(
+        stats.norm.cdf((implied - 0.5) / np.sqrt(0.25 / 8))
+    )
+    assert performance_model.get_strategy_risk(pd.Series([0.01, 0.02])).isna().all()

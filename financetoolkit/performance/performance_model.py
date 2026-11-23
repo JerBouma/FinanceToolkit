@@ -5,6 +5,7 @@ import itertools
 import time
 import warnings
 import zipfile
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -7271,3 +7272,404 @@ def get_rolling_factor_regression(
         index=data.index[window_size - 1 :],
         columns=columns,
     )
+
+
+def get_variability_weighted_return(
+    returns: pd.Series | pd.DataFrame,
+    periods_per_year: float | pd.Series = 252.0,
+    tau: float = 2.0,
+    maximum_deviation: float = 0.2,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Variability-Weighted Return (VWR): the annualized return reduced by how far the
+    value strays from a steady exponential path with the same overall growth. A return earned
+    along a smooth path keeps most of its value; one earned with large swings loses part of it,
+    and all of it once the deviations reach `maximum_deviation`.
+
+    The formula is as follows:
+
+    - r̄ = Average of ln(1 + Return), the average log return per period
+    - Annualized Return = exp(r̄ x P) - 1
+    - Deviation_i = V_i / (V_0 x exp(r̄ x i)) - 1, for i = 1..N, with V the value (growth of 1)
+    - VWR = Annualized Return x (1 - (Std(Deviation) / maximum_deviation) ^ tau)
+
+    Where P is the number of returns in a year, N the number of returns and Std the sample
+    standard deviation (ddof=1).
+
+    For more information, see the following sources:
+
+    - backtrader's VWR analyzer (Daniel Rodriguez, https://www.backtrader.com/docu/analyzers-reference/),
+      after the "Sharpe Ratio: Better with Log Returns" article of crystalbull.com.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, one column per asset, optionally with a
+            (period, date) index; each column on its own returns, missing returns left out.
+        periods_per_year (float | pd.Series, optional): The number of returns in a year, or one
+            value per column. Defaults to 252.
+        tau (float, optional): The exponent of the penalty for variability. Defaults to 2.0.
+        maximum_deviation (float, optional): The standard deviation of the deviations at which
+            the return is reduced to zero. Defaults to 0.2.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The Variability-Weighted Return as a decimal, a float
+        for a Series, per column for a DataFrame and per period and column for a within period
+        index. NaN with fewer than two returns.
+    """
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return pd.DataFrame(
+                {
+                    sub_period: get_variability_weighted_return(
+                        returns.loc[sub_period],
+                        periods_per_year,
+                        tau,
+                        maximum_deviation,
+                    )
+                    for sub_period in returns.index.get_level_values(0).unique()
+                }
+            ).T
+
+        return pd.Series(
+            {
+                column: get_variability_weighted_return(
+                    returns[column],
+                    (
+                        periods_per_year[column]
+                        if isinstance(periods_per_year, pd.Series)
+                        else periods_per_year
+                    ),
+                    tau,
+                    maximum_deviation,
+                )
+                for column in returns.columns
+            },
+            dtype=float,
+        )
+
+    values = returns.dropna().to_numpy(dtype=float)
+    if values.size < 2:  # noqa: PLR2004
+        return np.nan
+
+    log_returns = np.log1p(values)
+    average = log_returns.mean()
+    steps = np.arange(1, values.size + 1)
+    deviations = np.exp(np.cumsum(log_returns) - average * steps) - 1
+
+    return float(
+        np.expm1(average * periods_per_year)
+        * (1 - (deviations.std(ddof=1) / maximum_deviation) ** tau)
+    )
+
+
+def _get_herfindahl_hirschman_index(values: np.ndarray) -> float:
+    """
+    The normalized Herfindahl-Hirschman Index of the shares of values in their sum: 0 when they
+    are equal, 1 when one holds everything. NaN with fewer than three values (López de Prado).
+
+    Args:
+        values (np.ndarray): The values, all of one sign.
+
+    Returns:
+        float: The concentration.
+    """
+    if values.size <= 2 or values.sum() == 0:  # noqa: PLR2004
+        return np.nan
+
+    weights = values / values.sum()
+    count = values.size
+
+    return float(((weights**2).sum() - 1 / count) / (1 - 1 / count))
+
+
+def get_return_concentration(returns: pd.Series) -> pd.Series:
+    """
+    Calculate the concentration of the returns of López de Prado: how much of the gains (and of
+    the losses) comes from a few returns, and how much the bets cluster in a few months, each as a
+    normalized Herfindahl-Hirschman Index between 0 (spread evenly) and 1 (all in one).
+
+    The formula is as follows:
+
+    - h(w) = (SUM w_j² - 1 / N) / (1 - 1 / N), w_j = x_j / SUM x, over N values
+    - Positive Concentration = h of the returns of 0 or more
+    - Negative Concentration = h of the returns below 0
+    - Time Concentration = h of the number of returns in each calendar month
+
+    For more information, see the following book:
+
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.4
+      (Snippet 14.3).
+    - Referenced against mlfinlab's `all_bets_concentration` (Hudson & Thames,
+      https://github.com/hudson-and-thames/mlfinlab).
+
+    Args:
+        returns (pd.Series): The returns of one asset with a date (or period) index, missing
+            returns left out.
+
+    Returns:
+        pd.Series: The Positive, Negative and Time Concentration, each NaN with fewer than three
+        values.
+    """
+    returns = returns.dropna()
+    months = (
+        returns.index.to_period("M")
+        if isinstance(returns.index, pd.DatetimeIndex)
+        else to_period_index(returns.index).asfreq("M")
+    )
+    values = returns.to_numpy(dtype=float)
+
+    return pd.Series(
+        {
+            "Positive Concentration": _get_herfindahl_hirschman_index(
+                values[values >= 0]
+            ),
+            "Negative Concentration": _get_herfindahl_hirschman_index(
+                values[values < 0]
+            ),
+            "Time Concentration": _get_herfindahl_hirschman_index(
+                returns.groupby(months).count().to_numpy(dtype=float)
+            ),
+        }
+    )
+
+
+def get_binomial_sharpe_ratio(
+    profit_taking: float, stop_loss: float, precision: float, frequency: float
+) -> float:
+    """
+    Calculate the annualized Sharpe ratio of a strategy whose bets either gain `profit_taking`
+    or lose `stop_loss`, with a probability `precision` of a gain and `frequency` bets a year.
+
+    The formula is as follows:
+
+    - SR = ((π+ - π-) x p + π-) / ((π+ - π-) x SQRT(p x (1 - p))) x SQRT(n)
+
+    Where π+ is the gain, π- the loss (a negative number), p the precision and n the frequency.
+
+    For more information, see the following book:
+
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.3
+      (Snippets 15.1 to 15.4).
+
+    Args:
+        profit_taking (float): The return of a winning bet π+.
+        stop_loss (float): The return of a losing bet π-, negative.
+        precision (float): The probability of a winning bet p.
+        frequency (float): The number of bets a year n.
+
+    Returns:
+        float: The annualized Sharpe ratio.
+    """
+    spread = profit_taking - stop_loss
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (
+            (spread * precision + stop_loss)
+            / (spread * np.sqrt(precision * (1 - precision)))
+            * np.sqrt(frequency)
+        )
+
+
+def get_implied_precision(
+    profit_taking: float, stop_loss: float, frequency: float, target_sharpe_ratio: float
+) -> float:
+    """
+    Calculate the implied precision: the probability of a winning bet a strategy needs to reach
+    a target Sharpe ratio with its gains, losses and number of bets a year.
+
+    The formula is as follows:
+
+    - a = (n + θ²) x (π+ - π-)²
+    - b = (2 x n x π- - θ² x (π+ - π-)) x (π+ - π-)
+    - c = n x π-²
+    - p* = (-b + SQRT(b² - 4ac)) / (2a)
+
+    Where θ is the target Sharpe ratio, n the bets a year, π+ the gain and π- the loss.
+
+    For more information, see the following book:
+
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.4
+      (Snippet 15.3).
+
+    Args:
+        profit_taking (float): The return of a winning bet π+.
+        stop_loss (float): The return of a losing bet π-, negative.
+        frequency (float): The number of bets a year n.
+        target_sharpe_ratio (float): The annualized Sharpe ratio to reach θ.
+
+    Returns:
+        float: The implied precision, NaN when no precision between 0 and 1 reaches the target.
+    """
+    spread = profit_taking - stop_loss
+    a = (frequency + target_sharpe_ratio**2) * spread**2
+    b = (2 * frequency * stop_loss - target_sharpe_ratio**2 * spread) * spread
+    c = frequency * stop_loss**2
+    discriminant = b**2 - 4 * a * c
+    if not discriminant >= 0 or a == 0:
+        return np.nan
+
+    precision = (-b + np.sqrt(discriminant)) / (2 * a)
+
+    return float(precision) if 0 <= precision <= 1 else np.nan
+
+
+def get_implied_frequency(
+    profit_taking: float, stop_loss: float, precision: float, target_sharpe_ratio: float
+) -> float:
+    """
+    Calculate the implied frequency: the number of bets a year a strategy needs to reach a target
+    Sharpe ratio with its gains, losses and precision.
+
+    The formula is as follows:
+
+    - n* = θ² x (π+ - π-)² x p x (1 - p) / ((π+ - π-) x p + π-)²
+
+    Where θ is the target Sharpe ratio, p the precision, π+ the gain and π- the loss. The squared
+    equation also solves a negative target, so a frequency is only implied when the expected
+    return of a bet has the sign of the target.
+
+    For more information, see the following book:
+
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.4
+      (Snippet 15.4).
+
+    Args:
+        profit_taking (float): The return of a winning bet π+.
+        stop_loss (float): The return of a losing bet π-, negative.
+        precision (float): The probability of a winning bet p.
+        target_sharpe_ratio (float): The annualized Sharpe ratio to reach θ.
+
+    Returns:
+        float: The implied number of bets a year, NaN when no frequency reaches the target.
+    """
+    spread = profit_taking - stop_loss
+    expected = spread * precision + stop_loss
+    if expected == 0 or np.sign(expected) != np.sign(target_sharpe_ratio):
+        return np.nan
+
+    return float(
+        target_sharpe_ratio**2 * spread**2 * precision * (1 - precision) / expected**2
+    )
+
+
+def get_strategy_risk(
+    returns: pd.Series, frequency: float = 252.0, target_sharpe_ratio: float = 2.0
+) -> pd.Series:
+    """
+    Calculate the strategy risk of López de Prado: the returns read as bets that either win
+    the average gain or lose the average loss, the Sharpe ratio such a strategy has, the
+    precision and the number of bets a year it needs to reach a target Sharpe ratio, and the
+    probability that its true precision is below the one needed (the probability of failure).
+
+    The formula is as follows:
+
+    - p = Number of Returns above 0 / Number of Returns, the precision
+    - π+ = Average of the Returns above 0, π- = Average of the Returns of 0 or below
+    - Binomial Sharpe Ratio = ((π+ - π-) x p + π-) / ((π+ - π-) x SQRT(p x (1 - p))) x SQRT(n)
+    - Implied Precision p* and Implied Frequency n* that give the target Sharpe ratio θ
+    - Probability of Failure = N((p* - p) / SQRT(p x (1 - p) / N))
+
+    Where n is the number of bets a year, N the number of returns and N(.) the standard normal
+    distribution function: the precision measured over N bets has a standard error of
+    SQRT(p x (1 - p) / N), the spread of its bootstrap distribution.
+
+    For more information, see the following book and paper:
+
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 15
+      (Snippets 15.1 to 15.5).
+    - Bailey, D.H. and López de Prado, M. (2014). "The Sharpe Ratio Efficient Frontier." Journal
+      of Risk, 15(2), 3-44.
+    - Referenced against RiskLabAI's `implied_precision`, `bin_frequency`,
+      `binomial_sharpe_ratio` and `failure_probability` (https://github.com/RiskLabAI/RiskLabAI.py).
+
+    Args:
+        returns (pd.Series): The returns of the bets, missing returns left out.
+        frequency (float, optional): The number of bets a year. Defaults to 252.
+        target_sharpe_ratio (float, optional): The annualized Sharpe ratio to reach. Defaults
+            to 2.0.
+
+    Returns:
+        pd.Series: The Precision, Average Gain, Average Loss, Bets per Year, Binomial Sharpe
+        Ratio, Implied Precision, Implied Frequency and Probability of Failure.
+    """
+    values = returns.dropna().to_numpy(dtype=float)
+    gains, losses = values[values > 0], values[values <= 0]
+    names = [
+        "Precision",
+        "Average Gain",
+        "Average Loss",
+        "Bets per Year",
+        "Binomial Sharpe Ratio",
+        "Implied Precision",
+        "Implied Frequency",
+        "Probability of Failure",
+    ]
+    if gains.size == 0 or losses.size == 0:
+        return pd.Series(np.nan, index=names)
+
+    precision = gains.size / values.size
+    profit_taking, stop_loss = gains.mean(), losses.mean()
+    implied_precision = get_implied_precision(
+        profit_taking, stop_loss, frequency, target_sharpe_ratio
+    )
+    standard_error = np.sqrt(precision * (1 - precision) / values.size)
+
+    return pd.Series(
+        [
+            precision,
+            profit_taking,
+            stop_loss,
+            frequency,
+            get_binomial_sharpe_ratio(profit_taking, stop_loss, precision, frequency),
+            implied_precision,
+            get_implied_frequency(
+                profit_taking, stop_loss, precision, target_sharpe_ratio
+            ),
+            stats.norm.cdf((implied_precision - precision) / standard_error),
+        ],
+        index=names,
+    )
+
+
+def get_backtest_statistics_table(
+    returns: pd.DataFrame,
+    statistic: Callable[..., pd.Series],
+    **kwargs: float | pd.Series,
+) -> pd.DataFrame:
+    """
+    Calculate a statistic that returns several values (a Series) for every column, and for a
+    within period index for every period, with keyword arguments given per column as a Series.
+
+    Args:
+        returns (pd.DataFrame): A DataFrame of returns, one column per asset, optionally with a
+            (period, date) index.
+        statistic (Callable[..., pd.Series]): The statistic of one column of returns.
+        **kwargs (float | pd.Series): The other arguments of the statistic, a Series holding
+            one value per column.
+
+    Returns:
+        pd.DataFrame: Over the whole history, the statistics as the index and the assets as the
+        columns. Within periods, the periods as the index and (statistic, asset) as the columns.
+    """
+
+    def statistics_of(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                column: statistic(
+                    frame[column],
+                    **{
+                        name: value[column] if isinstance(value, pd.Series) else value
+                        for name, value in kwargs.items()
+                    },
+                )
+                for column in frame.columns
+            }
+        )
+
+    if returns.index.nlevels != MULTI_PERIOD_INDEX_LEVELS:
+        return statistics_of(returns)
+
+    return pd.DataFrame(
+        {
+            sub_period: statistics_of(returns.loc[sub_period]).stack()
+            for sub_period in returns.index.get_level_values(0).unique()
+        }
+    ).T

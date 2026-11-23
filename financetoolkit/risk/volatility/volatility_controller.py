@@ -1046,6 +1046,7 @@ class VolatilityRisk:
             "rogers_satchell",
             "yang_zhang",
             "garman_klass_yang_zhang",
+            "compounded",
         ] = "close_to_close",
         rounding: int | None = None,
         growth: bool = False,
@@ -1084,6 +1085,12 @@ class VolatilityRisk:
         return of Yang and Zhang added, so it accounts for overnight jumps while keeping the
         Garman-Klass term for the session (still assuming no drift).
 
+        `"compounded"` keeps the close-to-close returns but scales them differently: rather than
+        the square root of time, it gives the standard deviation of the period's return when the
+        daily returns compound, the exact value for independent daily returns with the measured
+        mean and variance. It exceeds the close-to-close Volatility when the returns are large
+        (a cryptocurrency's yearly Volatility) and barely differs for small ones.
+
         The formula is as follows (with the default method="close_to_close"):
 
         - Volatility = Std(Daily Returns within the period) * √(Trading Days per Period)
@@ -1094,7 +1101,7 @@ class VolatilityRisk:
         (365 / 52 weekly), so its Volatility is not understated against the stocks. The range-based estimators
         take the square root of a daily variance and scale it the same way, with H, L, O and C the daily
         High, Low, Open and Close, C_(-1) the previous Close, Mean the average and Var the sample variance
-        (ddof=1) over the days in the period:
+        (ddof=1) over the days in the period, and the compounded Volatility uses the daily returns directly:
 
         - Parkinson Variance = Mean(ln(H / L)^2) / (4 * ln 2)
         - Garman-Klass Variance = Mean(0.5 * ln(H / L)^2 - (2 * ln 2 - 1) * ln(C / O)^2)
@@ -1102,6 +1109,8 @@ class VolatilityRisk:
         - Yang-Zhang Variance = Var(ln(O / C_(-1))) + k * Var(ln(C / O)) + (1 - k) * Rogers-Satchell Variance
         - k = 0.34 / (1.34 + (n + 1) / (n - 1)), with n the number of days in the period
         - Garman-Klass Yang-Zhang Variance = Mean(ln(O / C_(-1))^2 + 0.5 * ln(H / L)^2 - (2 * ln 2 - 1) * ln(C / O)^2)
+        - Compounded Volatility = SQRT((Var(r) + (1 + g)^2)^P - (1 + g)^(2P)), with r the daily returns, g their
+          geometric mean (PRODUCT(1 + r)^(1 / n) - 1 over the n days) and P the trading days per period
 
         With `rolling`, the result is the sample standard deviation of the last `rolling` returns of the
         chosen period itself, without scaling.
@@ -1121,6 +1130,9 @@ class VolatilityRisk:
         Closing Prices." Annals of Applied Probability, 1(4), 504-512.
         - Yang, D., & Zhang, Q. (2000). "Drift-Independent Volatility Estimation Based on
         High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-492.
+        - Referenced against backtesting.py's "Volatility (Ann.) [%]" (Zach Lûster,
+        https://github.com/kernc/backtesting.py) for the compounded Volatility, which it
+        applies to the daily returns of a whole backtest with 252 (or 365) days.
 
         Args:
             period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
@@ -1130,8 +1142,8 @@ class VolatilityRisk:
             and rolling=6 gives the rolling 6-month Volatility) instead of one value per `period`.
             Only available for method="close_to_close". Defaults to None.
             method (str, optional): Which Volatility estimator to use, one of "close_to_close",
-            "parkinson", "garman_klass", "rogers_satchell", "yang_zhang" or "garman_klass_yang_zhang", as
-            described above.
+            "parkinson", "garman_klass", "rogers_satchell", "yang_zhang", "garman_klass_yang_zhang" or
+            "compounded", as described above.
             Defaults to "close_to_close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -1194,10 +1206,11 @@ class VolatilityRisk:
             "rogers_satchell",
             "yang_zhang",
             "garman_klass_yang_zhang",
+            "compounded",
         ):
             raise ValueError(
                 "Method must be close_to_close, parkinson, garman_klass, "
-                "rogers_satchell, yang_zhang or garman_klass_yang_zhang."
+                "rogers_satchell, yang_zhang, garman_klass_yang_zhang or compounded."
             )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -1219,6 +1232,10 @@ class VolatilityRisk:
             else:
                 returns = self._historical_data["daily"]["Return"]
                 volatility = risk_model.get_volatility(returns, period)
+        elif method == "compounded":
+            volatility = risk_model.get_compounded_volatility(
+                self._historical_data["daily"]["Return"], period
+            )
         elif method == "parkinson":
             volatility = realized_volatility_model.get_parkinson_volatility(
                 self._get_prices("High"),

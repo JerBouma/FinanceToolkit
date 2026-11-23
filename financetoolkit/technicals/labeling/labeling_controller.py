@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.technicals.helpers import apply_on_own_closes
-from financetoolkit.technicals.labeling import labeling_model
+from financetoolkit.technicals.labeling import bet_sizing_model, labeling_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -1151,4 +1151,223 @@ class LabelingTechnicals:
 
         return apply_rounding(
             weights, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_bet_sizes(
+        self,
+        method: Literal["budget", "reserve", "probability"] = "budget",
+        labels: pd.DataFrame | None = None,
+        step_size: float | None = None,
+        minimum_labels: int = 20,
+        runs: int = 100,
+        seed: int = 0,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the bet size of López de Prado for the bets of meta-labels: how much of the
+        budget to put on each date, between -1 (fully short) and 1 (fully long), from the sides of
+        the bets a primary model takes and, for "probability", how often its bets have paid off.
+        A model that only says which side to take does not say how much to bet; sizing the bets
+        keeps a strategy from betting the same on a weak signal as on a strong one.
+
+        - "budget": the open long bets as a share of the most long bets ever open, minus the same
+          share of the short bets, a size that spreads the budget over the bets the strategy
+          usually has open.
+        - "reserve": the net number of open bets (long minus short) against how many the
+          strategy usually has open, through a mixture of two normal distributions fitted to it
+          with the EF3M algorithm (López de Prado and Foreman, 2014). An unusually large net
+          count gives a bet close to 1 and a usual one a small bet, keeping a reserve for stronger
+          signals.
+        - "probability": every bet sized by the probability that it pays off, taken as the hit
+          rate of the bets closed before it was placed (the share whose meta-label is 1), and the
+          sizes averaged over the bets still open. A hit rate of 50% or less gives no bet.
+
+        The formula is as follows, per method:
+
+        - Long Bets_t and Short Bets_t, the bets open on t: placed on or before t and closing
+          after t, `Holding Period` periods after they were placed
+        - "budget": m_t = Long Bets_t / max(Long Bets) - Short Bets_t / max(Short Bets)
+        - "reserve": c_t = Long Bets_t - Short Bets_t, F the mixture of two normal distributions
+          that matches the first five moments of c_t on the dates bets are placed, and
+          m_t = (F(c_t) - F(0)) / (1 - F(0)) when c_t >= 0, (F(c_t) - F(0)) / F(0) otherwise
+        - "probability": p = the hit rate known when bet i is placed, z_i = (p - 0.5) /
+          SQRT(p x (1 - p)) and m_i = side_i x (2 x N(z_i) - 1) when p > 0.5, else 0; m_t = the
+          average of m_i over the bets open on t (0 without an open bet)
+        - with a `step_size`: m*_t = round(m_t / step_size) x step_size, capped at -1 and 1
+
+        Where N is the standard normal distribution function. The bets come from the meta-labels:
+        the Side is the side of a bet, the Holding Period the periods until it closes at a
+        barrier and the Label (1 or 0) whether it made money.
+
+        For more information, see the following book and paper:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 10
+          (Snippets 10.1 to 10.3).
+        - López de Prado, M. and Foreman, M. (2014). "A mixture of two Gaussians approach to
+          mathematical portfolio oversight: the EF3M algorithm." Quantitative Finance, 14(5),
+          913-930.
+        - Referenced against mlfinlab's `bet_size_budget`, `bet_size_reserve` and
+          `bet_size_probability` (Hudson & Thames, https://github.com/hudson-and-thames/mlfinlab)
+          and RiskLabAI's `probability_bet_size` and `avg_active_signals`
+          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Also known as: bet sizing, position sizing from meta-labels, budget bet size, reserve bet
+        size, EF3M, bet size from predicted probabilities.
+
+        Args:
+            method (str, optional): "budget", "reserve" or "probability". Defaults to "budget".
+            labels (pd.DataFrame | None, optional): Meta-labels with a Side, Holding Period and
+                Label per date and ticker, such as the result of `get_triple_barrier_labels` with a
+                side. Defaults to None, which uses the triple-barrier meta-labels of the CUSUM
+                filter's events with the direction of each event as the side (a trend-following
+                primary model) and the other defaults.
+            step_size (float | None, optional): The step the bet sizes are rounded to, between 0
+                and 1, so small changes of the size do not trade. Defaults to None, which keeps
+                them unrounded.
+            minimum_labels (int, optional): The number of closed bets the hit rate of
+                "probability" needs before it sizes a bet; earlier bets are left out. Defaults
+                to 20.
+            runs (int, optional): The number of random starting points of the EF3M fit of
+                "reserve". Defaults to 100.
+            seed (int, optional): The seed of the starting points of the EF3M fit. Defaults to 0.
+            period (str, optional): The time period of the labels. Can be "intraday", "daily",
+                "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Long Bets, Short Bets and Bet Size per date, with the Hit Rate for
+            "probability", a column per measure and ticker.
+
+        Notes:
+        - The bets are those whose barrier was reached; a bet still open at the end of the data
+          has no Holding Period yet and is left out.
+        - A bet counts from the date it is placed up to, but not including, the date it closes,
+          as in mlfinlab. The "budget" maximum and the "reserve" fit cover each ticker's whole
+          sample, as in López de Prado, so like the labels themselves they describe the bets of
+          the sample rather than a size known on the date. The hit rate of "probability" uses
+          only the bets closed by the date.
+        - The "reserve" fit solves the five moment equations of EF3M with Powell's hybrid method
+          from EF3M's random starting points rather than with EF3M's fixed-point iteration, whose
+          solution is often a repelling point it cannot reach; mlfinlab returns the closest
+          iterate, which differs per seed. Here every seed reaches the same exact solution, so
+          `seed` only matters when the moments allow several.
+        - "probability" sizes the bets with the hit rate of the past bets as the predicted
+          probability, a simple secondary model; mlfinlab's `bet_size_probability` (in
+          `bet_sizing_model.get_probability_bet_size`) takes the probabilities of a classifier of
+          your own.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-01-01",
+            end_date="2025-12-31",
+        )
+
+        bet_sizes = toolkit.technicals.get_bet_sizes(method="reserve")
+
+        bet_sizes.xs("AAPL", level=1, axis="columns").tail()
+        ```
+
+        Which returns:
+
+        | Date       |   Long Bets |   Short Bets |   Bet Size |
+        |:-----------|------------:|-------------:|-----------:|
+        | 2025-12-24 |           0 |            1 |     -0.534 |
+        | 2025-12-26 |           0 |            1 |     -0.534 |
+        | 2025-12-29 |           0 |            1 |     -0.534 |
+        | 2025-12-30 |           0 |            0 |      0     |
+        | 2025-12-31 |           0 |            0 |      0     |
+        """
+        if method not in ("budget", "reserve", "probability"):
+            raise ValueError(
+                f"Method must be 'budget', 'reserve' or 'probability', not {method!r}."
+            )
+        if step_size is not None and not 0 < step_size <= 1:
+            raise ValueError(f"step_size must lie in (0, 1], not {step_size}.")
+
+        closes = self._close_prices(period, close_column, traded_only=True)
+        if labels is None:
+            events = self.get_event_filter(
+                method="cusum", period=period, close_column=close_column
+            )
+            labels = self.get_triple_barrier_labels(
+                period=period,
+                close_column=close_column,
+                events=events,
+                side=events,
+                rounding=15,
+            )
+        measures = labels.columns.get_level_values(0)
+        needed = ["Side", "Holding Period"] + (
+            ["Label"] if method == "probability" else []
+        )
+        if any(measure not in measures for measure in needed):
+            raise ValueError(
+                f"The labels need {', '.join(needed)} columns per ticker, such as the result of "
+                "get_triple_barrier_labels with a side (meta-labels)."
+            )
+
+        def get_sizes(prices: pd.Series) -> pd.DataFrame:
+            ticker = prices.name
+            holding_periods = (
+                labels["Holding Period"]
+                .get(ticker, pd.Series(dtype=float))
+                .reindex(prices.index)
+            )
+            sides = (
+                labels["Side"].get(ticker, pd.Series(dtype=float)).reindex(prices.index)
+            )
+            if method == "budget":
+                sizes = bet_sizing_model.get_budget_bet_size(holding_periods, sides)
+            elif method == "reserve":
+                sizes = bet_sizing_model.get_reserve_bet_size(
+                    holding_periods, sides, runs=runs, seed=seed
+                )
+            else:
+                outcomes = labels["Label"].get(ticker, pd.Series(dtype=float))
+                hit_rate = bet_sizing_model.get_hit_rate(
+                    outcomes.reindex(prices.index), holding_periods, minimum_labels
+                )
+                # The bets placed while the hit rate is unknown are left out of the average.
+                placed = sides.notna() & holding_periods.notna() & hit_rate.notna()
+                bet_sizes = bet_sizing_model.get_probability_bet_size(
+                    hit_rate.where(hit_rate > 0.5, 1 - hit_rate),  # noqa: PLR2004
+                    predictions=(hit_rate > 0.5).astype(float),  # noqa: PLR2004
+                    sides=sides,
+                ).where(placed)
+                sizes = bet_sizing_model.get_concurrent_sides(
+                    holding_periods.where(placed), sides
+                )
+                sizes["Hit Rate"] = hit_rate
+                sizes["Bet Size"] = bet_sizing_model.get_average_active_bet_size(
+                    bet_sizes, holding_periods.where(placed)
+                )
+            if step_size is not None:
+                sizes["Bet Size"] = bet_sizing_model.get_discrete_bet_size(
+                    sizes["Bet Size"], step_size
+                )
+            return sizes
+
+        bet_sizes = _per_ticker(closes, get_sizes).loc[
+            self._start_date : self._end_date
+        ]
+
+        return apply_rounding(
+            bet_sizes, rounding if rounding is not None else self._rounding
         )

@@ -1173,3 +1173,20 @@ def test_get_autocorrelation_is_missing_at_lags_without_pairs():
 
     np.testing.assert_allclose(result.loc[1:3], [0.25, -0.3, -0.45])
     assert result.loc[4:].isna().all()
+
+
+def test_get_compounded_volatility_by_hand():
+    dates = pd.PeriodIndex(
+        ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"], freq="D"
+    )
+    returns = pd.Series([0.01, -0.02, 0.03, 0.005], index=dates)
+    days = 252 / 12
+    growth = np.prod(1 + returns.to_numpy()) ** (1 / 4)
+    expected = np.sqrt((returns.var(ddof=1) + growth**2) ** days - growth ** (2 * days))
+    volatility = risk_model.get_compounded_volatility(returns, "monthly")
+    assert volatility.iloc[0] == pytest.approx(expected)
+    # Small returns compound to about the square root of time scaling.
+    small = returns / 100
+    assert risk_model.get_compounded_volatility(small, "monthly").iloc[
+        0
+    ] == pytest.approx(small.std() * np.sqrt(days), rel=0.01)

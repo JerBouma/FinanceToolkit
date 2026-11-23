@@ -1,7 +1,7 @@
 """
 Dynamic tool registration for the Finance Toolkit MCP Server — Router Pattern.
 
-Consolidates the indicators (1000+ metrics with their method= variants) into categorical
+Consolidates the indicators (1100+ metrics with their method= variants) into categorical
 master tools, each accepting an indicator parameter (Literal enum) that routes to the
 correct underlying method.
 """
@@ -109,6 +109,8 @@ PERIOD_BLOCK_EXEMPT = frozenset(
         "get_style_analysis",
         "get_beta_implied_return",
         "get_return_statistics",
+        "get_return_concentration",
+        "get_strategy_risk",
         "get_outperformance_probability",
         "get_returns",
     }

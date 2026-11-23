@@ -1,0 +1,9 @@
+,AAPL,MSFT
+Precision,0.5139,0.5152
+Average Gain,0.0172,0.0157
+Average Loss,-0.016,-0.0149
+Bets per Year,252.0,252.0
+Binomial Sharpe Ratio,1.0043,0.8607
+Implied Precision,0.545,0.5508
+Implied Frequency,999.3138,1360.5977
+Probability of Failure,0.9566,0.9749

@@ -1898,3 +1898,25 @@ def test_a_portfolio_without_returns_gets_the_weighted_average():
     assert sharpe_ratio.loc["2022", "Portfolio"] == pytest.approx(
         sharpe_ratio.loc["2022", ["SPY", "SH"]].mean()
     )
+
+
+def test_get_variability_weighted_return(recorder, performance_module):
+    recorder.capture(performance_module.get_variability_weighted_return())
+    recorder.capture(
+        performance_module.get_variability_weighted_return(
+            period="monthly", within_period=False, tau=0.2, maximum_deviation=2.0
+        )
+    )
+
+
+def test_get_return_concentration(recorder, performance_module):
+    recorder.capture(performance_module.get_return_concentration())
+    recorder.capture(performance_module.get_return_concentration(within_period=True))
+
+
+def test_get_strategy_risk(recorder, performance_module):
+    recorder.capture(performance_module.get_strategy_risk())
+    recorder.capture(
+        performance_module.get_strategy_risk(period="monthly", target_sharpe_ratio=1.0)
+    )
+    recorder.capture(performance_module.get_strategy_risk(within_period=True))

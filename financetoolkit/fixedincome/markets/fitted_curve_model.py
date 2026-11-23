@@ -5,7 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 from scipy.interpolate import BSpline
-from scipy.optimize import least_squares, minimize_scalar
+from scipy.optimize import brentq, least_squares
 
 from financetoolkit.fixedincome.curves import curve_model
 
@@ -13,7 +13,8 @@ METHODS = ("nelson_siegel", "svensson", "exponential_spline", "cubic_spline")
 
 # The exponential spline has nine exponentials e^(-k κ t), k = 1 to 9, as QuantLib's
 # ExponentialSplinesFitting by default. Given κ the fit is linear, so κ is searched on a
-# logarithmic grid and refined between the grid points around the best one.
+# logarithmic grid and refined between the grid points around the best one, where the
+# derivative of the cost to κ is zero.
 EXPONENTIALS = 9
 KAPPA_GRID = np.geomspace(0.01, 2.0, 120)
 
@@ -376,8 +377,10 @@ def fit_bond_curve(
     above the lower of zero and the yield of the longest bond. A fit whose Jacobian is
     (nearly) rank deficient raises a ValueError, as its parameters are not identified. The
     exponential and cubic splines are linear in their coefficients, so given κ their fit
-    is an exact weighted least squares; κ is searched on a grid and refined. The zero rates
-    of the curve are continuously compounded, as the models define them.
+    is an exact weighted least squares; κ is searched on a grid and refined to where the
+    derivative of the cost to κ is zero (Brent's method on the analytic derivative, as the
+    cost is flat in κ and its minimum alone would pin κ down only to about 1e-8). The zero
+    rates of the curve are continuously compounded, as the models define them.
 
     For more information, see the following papers:
 
@@ -455,21 +458,33 @@ def fit_bond_curve(
                 values[:, -1], values[:, :-1] - values[:, -1:], prices, weights
             )
 
+        def slope(kappa: float) -> float:
+            # The derivative of the fit's cost to κ with the coefficients held at their
+            # optimum (the envelope theorem): 2 Σ w_i e_i dP_i/dκ, with
+            # dP_i/dκ = Σ_k CF_ik Σ_j a_j (-j t_ik) e^(-j κ t_ik). Its root locates κ to
+            # near machine precision, where the minimum of the cost itself, which is flat
+            # in κ, is only found to about the square root of it.
+            coefficients, _ = fit(kappa)
+            weights_k = np.array([*coefficients, 1 - coefficients.sum()]) * -powers
+            terms = cash_flow_times[..., None] * np.exp(
+                -kappa * cash_flow_times[..., None] * powers
+            )
+            derivatives = np.einsum("bk,bkn,n->b", cash_flows, terms, weights_k)
+            values = np.einsum(
+                "bk,bkn,n->b",
+                cash_flows,
+                np.exp(-kappa * cash_flow_times[..., None] * powers),
+                np.array([*coefficients, 1 - coefficients.sum()]),
+            )
+            return float(2 * np.sum(weights * (values - prices) * derivatives))
+
         costs = np.array([fit(kappa)[1] for kappa in KAPPA_GRID])
         index = int(np.argmin(costs))
-        low = KAPPA_GRID[max(index - 1, 0)]
-        high = KAPPA_GRID[min(index + 1, len(KAPPA_GRID) - 1)]
-        refined = minimize_scalar(
-            lambda log_kappa: fit(np.exp(log_kappa))[1],
-            bounds=(np.log(low), np.log(high)),
-            method="bounded",
-            options={"xatol": 1e-10},
-        )
-        kappa = (
-            float(np.exp(refined.x))
-            if refined.fun <= costs[index]
-            else KAPPA_GRID[index]
-        )
+        kappa = float(KAPPA_GRID[index])
+        low = float(KAPPA_GRID[max(index - 1, 0)])
+        high = float(KAPPA_GRID[min(index + 1, len(KAPPA_GRID) - 1)])
+        if slope(low) < 0 < slope(high):
+            kappa = brentq(slope, low, high, xtol=1e-15, rtol=4 * np.finfo(float).eps)
         coefficients, _ = fit(kappa)
         values = [kappa, *coefficients, 1 - coefficients.sum()]
         return pd.Series(

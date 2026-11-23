@@ -5438,6 +5438,163 @@ def get_sharpe_ratio_standard_error(
     return float(np.sqrt(gradient @ covariance @ gradient / n))
 
 
+SHARPE_RATIO_DIFFERENCE_METHODS = ("memmel", "ledoit_wolf")
+
+
+def get_sharpe_ratio_difference(
+    excess_returns: pd.Series,
+    benchmark_excess_returns: pd.Series,
+    method: str = "memmel",
+    lags: int | None = None,
+) -> pd.Series:
+    """
+    Test whether two Sharpe ratios differ, H0: SR_a = SR_b, on the dates both have an excess
+    return, with a two-sided p-value from the standard normal distribution.
+
+    The formulas are as follows, with n the number of paired observations:
+
+        - "memmel": z = (SR_a − SR_b) / SQRT( (2 − 2ρ + (SR_a² + SR_b² − 2·SR_a·SR_b·ρ²) / 2) / n ),
+          the Jobson and Korkie (1981) test as corrected by Memmel (2003), for independent and
+          jointly normal returns, with SR = mean / standard deviation (ddof=1) and ρ the
+          correlation of the two excess returns.
+        - "ledoit_wolf": z = Δ / SQRT( ∇f' Ψ ∇f / n ), the HAC test of Ledoit and Wolf (2008,
+          section 3.1), robust to fat tails and serial correlation. With v = (μ_a, μ_b, γ_a, γ_b)
+          the means and the mean squares (γ = mean(r²)), Δ = f(v) = μ_a / SQRT(γ_a − μ_a²) −
+          μ_b / SQRT(γ_b − μ_b²), ∇f = (γ_a / c_a, −γ_b / c_b, −μ_a / (2·c_a), μ_b / (2·c_b))
+          with c = (γ − μ²)^(3/2), and Ψ = n / (n − 4) · (Γ_0 + Σ_{j=1..L} (1 − j / (L + 1))·(Γ_j +
+          Γ_j')), the Bartlett (Newey and West 1987) kernel estimate of the long-run covariance
+          of y_t = (r_a − μ_a, r_b − μ_b, r_a² − γ_a, r_b² − γ_b), with Γ_j = Σ_t y_t·y_{t−j}' / n.
+
+    Args:
+        excess_returns (pd.Series): The excess returns of the first asset.
+        benchmark_excess_returns (pd.Series): The excess returns of the second asset.
+        method (str, optional): "memmel" or "ledoit_wolf". Defaults to "memmel".
+        lags (int | None, optional): The number of lags L of the Ledoit-Wolf covariance.
+            Defaults to None, the Newey and West (1994) rule floor(4 * (n / 100)^(2/9)).
+
+    Returns:
+        pd.Series: The Sharpe Difference (SR_a − SR_b, of one period), its Standard Error, the
+            Z-Statistic and the P-Value, NaN with fewer than five paired observations.
+    """
+    if method not in SHARPE_RATIO_DIFFERENCE_METHODS:
+        raise ValueError("Method must be memmel or ledoit_wolf.")
+
+    paired = pd.concat([excess_returns, benchmark_excess_returns], axis=1).dropna()
+    values = paired.to_numpy(dtype=float)
+    n = len(values)
+    result = pd.Series(
+        np.nan, index=["Sharpe Difference", "Standard Error", "Z-Statistic", "P-Value"]
+    )
+
+    # The Ledoit-Wolf covariance scales by n / (n - 4), the number of moments estimated.
+    if n < 5:  # noqa: PLR2004
+        return result
+
+    if method == "memmel":
+        sharpe_ratios = values.mean(axis=0) / values.std(axis=0, ddof=1)
+        correlation = np.corrcoef(values, rowvar=False)[0, 1]
+        difference = sharpe_ratios[0] - sharpe_ratios[1]
+        variance = (
+            2
+            - 2 * correlation
+            + (
+                sharpe_ratios[0] ** 2
+                + sharpe_ratios[1] ** 2
+                - 2 * sharpe_ratios[0] * sharpe_ratios[1] * correlation**2
+            )
+            / 2
+        ) / n
+    else:
+        means = values.mean(axis=0)
+        mean_squares = (values**2).mean(axis=0)
+        variances = mean_squares - means**2
+        difference = means[0] / np.sqrt(variances[0]) - means[1] / np.sqrt(variances[1])
+        cubed = variances**1.5
+        gradient = np.array(
+            [
+                mean_squares[0] / cubed[0],
+                -mean_squares[1] / cubed[1],
+                -means[0] / (2 * cubed[0]),
+                means[1] / (2 * cubed[1]),
+            ]
+        )
+        moments = np.column_stack([values - means, values**2 - mean_squares])
+
+        lags = get_newey_west_lags(n) if lags is None else lags
+        lags = max(0, min(lags, n - 1))
+
+        covariance = moments.T @ moments / n
+        for lag in range(1, lags + 1):
+            autocovariance = moments[lag:].T @ moments[:-lag] / n
+            covariance += (1 - lag / (lags + 1)) * (autocovariance + autocovariance.T)
+
+        variance = gradient @ (n / (n - 4) * covariance) @ gradient / n
+
+    standard_error = np.sqrt(variance)
+    z_statistic = difference / standard_error
+
+    result[:] = [
+        difference,
+        standard_error,
+        z_statistic,
+        2 * stats.norm.sf(abs(z_statistic)),
+    ]
+
+    return result
+
+
+def get_sharpe_ratio_difference_test(
+    excess_returns: pd.DataFrame,
+    benchmark_excess_returns: pd.Series,
+    method: str = "memmel",
+    lags: int | None = None,
+) -> pd.DataFrame:
+    """
+    Test the Sharpe ratio of every column against that of the benchmark with
+    `get_sharpe_ratio_difference`, over the whole sample or, with a "within period"
+    (period, date) Multi Index, per period.
+
+    Args:
+        excess_returns (pd.DataFrame): The excess returns, one column per asset.
+        benchmark_excess_returns (pd.Series): The excess returns of the benchmark, on the
+            same index.
+        method (str, optional): "memmel" or "ledoit_wolf". Defaults to "memmel".
+        lags (int | None, optional): The number of lags of the Ledoit-Wolf covariance.
+            Defaults to None, the Newey and West (1994) rule.
+
+    Returns:
+        pd.DataFrame: The Sharpe Difference, Standard Error, Z-Statistic and P-Value per
+            asset (columns), per period (rows) with a within period index and as a single
+            row otherwise.
+    """
+    if method not in SHARPE_RATIO_DIFFERENCE_METHODS:
+        raise ValueError("Method must be memmel or ledoit_wolf.")
+
+    def test(returns: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
+        return pd.concat(
+            {
+                column: get_sharpe_ratio_difference(
+                    returns[column], benchmark, method, lags
+                )
+                for column in returns.columns
+            }
+        )
+
+    if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        return pd.DataFrame(
+            {
+                period: test(
+                    period_returns, benchmark_excess_returns.loc[period_returns.index]
+                )
+                for period, period_returns in excess_returns.groupby(
+                    level=0, sort=False
+                )
+            }
+        ).T
+
+    return test(excess_returns, benchmark_excess_returns).to_frame().T
+
+
 def get_minimum_track_record_length(
     sharpe_ratio: pd.Series | pd.DataFrame | float,
     benchmark_sharpe_ratio: float,

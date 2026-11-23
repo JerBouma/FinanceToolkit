@@ -1920,3 +1920,18 @@ def test_get_strategy_risk(recorder, performance_module):
         performance_module.get_strategy_risk(period="monthly", target_sharpe_ratio=1.0)
     )
     recorder.capture(performance_module.get_strategy_risk(within_period=True))
+
+
+def test_get_sharpe_ratio_difference_test(recorder, performance_module):
+    recorder.capture(performance_module.get_sharpe_ratio_difference_test())
+    recorder.capture(
+        performance_module.get_sharpe_ratio_difference_test(
+            period="quarterly", method="ledoit_wolf"
+        )
+    )
+    recorder.capture(
+        performance_module.get_sharpe_ratio_difference_test(
+            method="ledoit_wolf", lags=0
+        )
+    )
+    assert performance_module.get_sharpe_ratio_difference_test(method="other").empty

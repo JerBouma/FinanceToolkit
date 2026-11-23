@@ -2745,3 +2745,126 @@ def test_get_strategy_risk_by_hand():
         stats.norm.cdf((implied - 0.5) / np.sqrt(0.25 / 8))
     )
     assert performance_model.get_strategy_risk(pd.Series([0.01, 0.02])).isna().all()
+
+
+def sharpe_difference_returns() -> tuple[pd.Series, pd.Series]:
+    """Two correlated, fat-tailed and serially correlated excess return series."""
+    shocks = np.random.default_rng(3).standard_t(5, (751, 2)) * 0.01
+    first = 0.0005 + shocks[1:, 0] + 0.3 * shocks[:-1, 0]
+    second = 0.0002 + 0.6 * shocks[1:, 0] + 0.8 * shocks[1:, 1]
+
+    return pd.Series(first), pd.Series(second)
+
+
+@pytest.mark.parametrize("lags", [0, 3, 8])
+def test_ledoit_wolf_sharpe_difference_matches_a_hac_delta_method(lags):
+    # Ledoit and Wolf (2008, section 3.1): the long-run covariance of the moments from
+    # statsmodels' Bartlett estimate (a sum, so divided by n) times n / (n - 4), and the
+    # gradient of the Sharpe difference taken numerically.
+    sandwich = pytest.importorskip("statsmodels.stats.sandwich_covariance")
+    first, second = sharpe_difference_returns()
+    a, b = first.to_numpy(), second.to_numpy()
+    n = len(a)
+    moments = np.array([a.mean(), b.mean(), (a**2).mean(), (b**2).mean()])
+    deviations = np.column_stack(
+        [a - moments[0], b - moments[1], a**2 - moments[2], b**2 - moments[3]]
+    )
+    covariance = sandwich.S_hac_simple(deviations, nlags=lags) / (n - 4)
+
+    def difference(v):
+        return v[0] / np.sqrt(v[2] - v[0] ** 2) - v[1] / np.sqrt(v[3] - v[1] ** 2)
+
+    step = np.eye(4) * 1e-7
+    gradient = np.array(
+        [(difference(moments + s) - difference(moments - s)) / 2e-7 for s in step]
+    )
+    standard_error = np.sqrt(gradient @ covariance @ gradient / n)
+
+    result = performance_model.get_sharpe_ratio_difference(
+        first, second, "ledoit_wolf", lags=lags
+    )
+
+    assert result["Sharpe Difference"] == pytest.approx(difference(moments), abs=1e-14)
+    assert result["Standard Error"] == pytest.approx(standard_error, rel=1e-7)
+    assert result["P-Value"] == pytest.approx(
+        2 * stats.norm.sf(abs(difference(moments) / standard_error)), rel=1e-6
+    )
+
+
+def test_memmel_sharpe_difference_is_the_normal_delta_method():
+    # Jobson and Korkie (1981) with Memmel (2003): Var(SR_i) = (1 + SR_i^2 / 2) / n and
+    # Cov(SR_a, SR_b) = (ρ + SR_a·SR_b·ρ^2 / 2) / n under joint normality.
+    first, second = sharpe_difference_returns()
+    n = len(first)
+    sharpe_a = first.mean() / first.std(ddof=1)
+    sharpe_b = second.mean() / second.std(ddof=1)
+    correlation = first.corr(second)
+    covariance = (
+        np.array(
+            [
+                [
+                    1 + sharpe_a**2 / 2,
+                    correlation + sharpe_a * sharpe_b * correlation**2 / 2,
+                ],
+                [
+                    correlation + sharpe_a * sharpe_b * correlation**2 / 2,
+                    1 + sharpe_b**2 / 2,
+                ],
+            ]
+        )
+        / n
+    )
+    standard_error = np.sqrt(np.array([1, -1]) @ covariance @ np.array([1, -1]))
+
+    result = performance_model.get_sharpe_ratio_difference(first, second)
+
+    assert result["Sharpe Difference"] == pytest.approx(sharpe_a - sharpe_b, abs=1e-14)
+    assert result["Standard Error"] == pytest.approx(standard_error, rel=1e-12)
+
+
+def test_sharpe_difference_tests_hold_their_size_on_equal_sharpe_ratios():
+    # Jointly normal returns with the same Sharpe ratio: both tests reject at 5% about 5% of
+    # the time (400 draws, so within 2.5% to 8%).
+    rng = np.random.default_rng(7)
+    rejections = {"memmel": 0, "ledoit_wolf": 0}
+
+    for _ in range(400):
+        draws = rng.multivariate_normal([0.05, 0.05], [[1, 0.5], [0.5, 1]], size=250)
+        for method in rejections:
+            result = performance_model.get_sharpe_ratio_difference(
+                pd.Series(draws[:, 0]), pd.Series(draws[:, 1]), method
+            )
+            rejections[method] += result["P-Value"] < 0.05  # noqa: PLR2004
+
+    assert all(0.025 <= count / 400 <= 0.08 for count in rejections.values())
+
+
+def test_sharpe_difference_test_per_period():
+    first, second = sharpe_difference_returns()
+    index = pd.MultiIndex.from_arrays(
+        [
+            pd.period_range("2020-01-01", periods=750, freq="D").asfreq("Y"),
+            pd.period_range("2020-01-01", periods=750, freq="D"),
+        ]
+    )
+    returns = pd.DataFrame({"A": first.to_numpy()}, index=index)
+    benchmark = pd.Series(second.to_numpy(), index=index)
+
+    result = performance_model.get_sharpe_ratio_difference_test(returns, benchmark)
+
+    assert list(result.index.astype(str)) == ["2020", "2021", "2022"]
+    assert result.loc[pd.Period("2021", "Y"), ("A", "Z-Statistic")] == pytest.approx(
+        performance_model.get_sharpe_ratio_difference(
+            returns.loc[pd.Period("2021", "Y"), "A"],
+            benchmark.loc[pd.Period("2021", "Y")],
+        )["Z-Statistic"]
+    )
+    # Fewer than five shared dates give no test.
+    assert (
+        performance_model.get_sharpe_ratio_difference(first[:4], second[:4])
+        .isna()
+        .all()
+    )
+
+    with pytest.raises(ValueError, match="memmel or ledoit_wolf"):
+        performance_model.get_sharpe_ratio_difference_test(returns, benchmark, "jk")

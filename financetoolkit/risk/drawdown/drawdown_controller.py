@@ -21,7 +21,7 @@ from financetoolkit.utilities.statistics_model import finalize_dataset
 @track_sources
 class DrawdownRisk:
     """
-    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series, table and statistics, the average drawdown, the drawdown at risk and its conditional and entropic versions, the ulcer index and the pain index.
+    Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series, table and statistics, the average drawdown, the drawdown at risk and its conditional and entropic versions, the conditional expected drawdown, the ulcer index and the pain index.
     """
 
     @handle_portfolio
@@ -185,6 +185,145 @@ class DrawdownRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_conditional_expected_drawdown(
+        self,
+        period: str | None = None,
+        window: int = 21,
+        alpha: float = 0.05,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        compounded: bool = True,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Conditional Expected Drawdown (CED) of an investment portfolio or asset's returns: the
+        average of the worst Maximum Drawdowns over paths of a fixed length.
+
+        The Maximum Drawdown of the whole history is a single number that depends on how long the history is.
+        Goldberg and Mahmoud (2017) fix the length instead: the Maximum Drawdown of every path of `window`
+        returns forms a distribution, and the CED is the tail average of it, as the CVaR is of the returns.
+        With window=21 on daily returns it reads as how deep the decline within a bad month gets, on average
+        over the worst 5% of months. Where the Conditional Drawdown at Risk averages the drawdown of single
+        days, the CED averages the worst decline of whole paths, and unlike the Maximum Drawdown it is a tail
+        average, so a single crash moves it less and it does not grow with the length of the data.
+
+        The formula is as follows (with the default window=21 and alpha=0.05):
+
+        - Wealth(t) = Π (1 + Return(s)) for s <= t, starting at 1 before the first return of each path
+        - Maximum Drawdown(s) = min over t in [s, s + window) of Wealth(t) / max(1, max(Wealth(u) for u <= t)) - 1
+        - CED = (Σ_{i <= k} MDD(i) + (m · alpha − k) · MDD(k + 1)) / (m · alpha)
+
+        Where MDD(1) <= MDD(2) <= ... are the m Maximum Drawdowns in ascending order and k = floor(m · alpha).
+        The paths overlap, one starting at every return, so n returns give m = n - window + 1 paths. The tail
+        average is the exact one of Rockafellar and Uryasev (2002), the average of the deepest m · alpha paths
+        with the one at the boundary counted with its fraction. Overlapping paths often share their Maximum
+        Drawdown, so a cut at an interpolated quantile, as the Toolkit's CDaR and historic CVaR make, would take
+        or leave such ties on the last digit of the rounding. With compounded=False the drawdowns are measured on the summed returns instead, as an absolute
+        decline from their peak.
+
+        For more information, see the following sources:
+
+        - Goldberg, L.R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and Back Again." Mathematics
+        and Financial Economics, 11(3), 275-297.
+        - RiskLabAI: backtest.conditional_expected_drawdown (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Also known as: CED, conditional expected drawdown, expected maximum drawdown in the tail.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            window (int, optional): The length of each path in returns of `period`. Defaults to 21, a month of
+                trading days.
+            alpha (float, optional): The tail probability for the CED calculation (e.g., 0.05 for the worst 5% of
+            paths). Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate the CED within the specified period or for the
+            entire period. Thus whether to look at the CED within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the CED is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`; it needs to be at least `window`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the CED values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            measured on, or to sum them (absolute drawdowns). Defaults to True.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: CED values, negative (0 without a decline), per ticker, or per period (or
+                date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the CED
+        for each asset in the Toolkit instance, each on its own returns. A period with fewer than `window`
+        returns has no path and gives NaN.
+        - RiskLabAI's conditional_expected_drawdown takes alpha as the confidence level (0.90 for the worst 10%)
+        and reports the drawdown as a positive number; the Toolkit takes the tail probability, as for the
+        CDaR, and keeps the sign of a return.
+        - With fewer than 1 / alpha paths the tail holds less than one path and the CED is the deepest
+        Maximum Drawdown of any path.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["^STOXX50E", "^N225", "^GSPC"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_conditional_expected_drawdown(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |   ^STOXX50E |   ^N225 |   ^GSPC |   Benchmark |
+        |:-----|------------:|--------:|--------:|------------:|
+        | 2021 |     -0.0769 | -0.1009 | -0.0464 |     -0.0454 |
+        | 2022 |     -0.1575 | -0.1059 | -0.1269 |     -0.1263 |
+        | 2023 |     -0.0646 | -0.0886 | -0.066  |     -0.0651 |
+        | 2024 |     -0.0844 | -0.242  | -0.0799 |     -0.0792 |
+        | 2025 |     -0.1587 | -0.1812 | -0.1374 |     -0.1372 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        conditional_expected_drawdown = (
+            drawdown_model.get_conditional_expected_drawdown(
+                returns,
+                window=window,
+                alpha=alpha,
+                compounded=compounded,
+                window_size=rolling,
+            )
+        )
+
+        return self._finalize_measure(
+            conditional_expected_drawdown,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )
 
     @handle_portfolio
@@ -1001,6 +1140,8 @@ class DrawdownRisk:
         - To Recovery = t(recovery) - t(trough)
         - Length = t(recovery) - t(peak)
         - Recovery Needed = -Drawdown / (1 + Drawdown)
+        - Recovery Ratio = To Recovery / To Trough
+        - Recovery Return = Wealth(recovery) / Wealth(trough) - 1
         - To Trough (Days) = date(trough) - date(peak), likewise To Recovery (Days) and Length (Days)
         - Length (Years) = Length (Days) / 365.25
 
@@ -1009,14 +1150,18 @@ class DrawdownRisk:
         Drawdown in between. To Trough, To Recovery and Length count periods (trading days for daily data),
         the columns marked (Days) count calendar days between the same dates (the last day of each period for
         weekly or longer periods), and Length (Years) is Length (Days) in years of 365.25 days. Calendar time
-        compares assets on exchanges with other holidays, and reads as the time an investor waited.
+        compares assets on exchanges with other holidays, and reads as the time an investor waited. The
+        Recovery Ratio compares the way back with the way down: above 1 the recovery took longer than the
+        decline. The Recovery Return is the gain from the trough to the close of the recovery, which can be
+        more than the Recovery Needed when that close lies above the old peak.
 
         Each drawdown is dated by its peak, valley and recovery, so it starts on the peak rather than on
         the first period below it. The deepest
         drawdown matches `get_maximum_drawdown`, `get_maximum_drawdown_duration` (To Trough) and
         `get_maximum_drawdown_recovery_time` (To Recovery).
 
-        Also known as: worst drawdowns, drawdown details, drawdown periods, gain needed to recover.
+        Also known as: worst drawdowns, drawdown details, drawdown periods, gain needed to recover, recovery
+        duration ratio, recovery return.
 
         Args:
             top (int, optional): The number of drawdowns per asset, deepest first. Defaults to 5.
@@ -1034,12 +1179,13 @@ class DrawdownRisk:
                 and Recovery, the Drawdown as a negative decimal, the gain needed from the trough back to the peak
                 (Recovery Needed) as a positive decimal, in periods the time from peak to trough
                 (To Trough), from trough to recovery (To Recovery) and from peak to recovery (Length), the
-                same in calendar days (To Trough (Days), To Recovery (Days), Length (Days)) and Length
-                (Years).
+                Recovery Ratio and the Recovery Return, the same in calendar days (To Trough (Days), To Recovery
+                (Days), Length (Days)) and Length (Years).
 
         Notes:
-        - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery or
-        Length, in periods or calendar time (NaN). Its Recovery Needed is the gain from its trough; the gain
+        - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery, Length,
+        Recovery Ratio or Recovery Return, in periods or calendar time (NaN); `get_drawdown_statistics` gives
+        the state of that open drawdown. Its Recovery Needed is the gain from its trough; the gain
         still needed from the latest value is the last row of `get_drawdown_series(recovery=True)`.
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
         - The table depends on the window: a drawdown that started before the start date is measured from
@@ -1062,17 +1208,17 @@ class DrawdownRisk:
 
         Which returns:
 
-        |                  | Peak       | Trough     | Recovery   |   Drawdown |   Recovery Needed |   To Trough |   To Recovery |   Length |   To Trough (Days) |   To Recovery (Days) |   Length (Days) |   Length (Years) |
-        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------------:|------------:|--------------:|---------:|-------------------:|---------------------:|----------------:|-----------------:|
-        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |            3.2955 |         293 |           302 |      595 |                422 |                  442 |             864 |           2.3655 |
-        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |            0.5189 |          44 |            48 |       92 |                 66 |                   70 |             136 |           0.3723 |
-        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |            0.34   |          71 |           nan |      nan |                100 |                  nan |             nan |         nan      |
-        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |            3.1548 |         120 |           571 |      691 |                175 |                  832 |            1007 |           2.757  |
-        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |            0.4443 |         114 |           nan |      nan |                163 |                  nan |             nan |         nan      |
-        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |            0.237  |          34 |            13 |       47 |                 49 |                   20 |              69 |           0.1889 |
-        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |            0.3245 |         195 |           294 |      489 |                282 |                  427 |             709 |           1.9411 |
-        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |            0.2311 |          34 |            54 |       88 |                 48 |                   79 |             127 |           0.3477 |
-        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |            0.0918 |          14 |            32 |       46 |                 20 |                   45 |              65 |           0.178  |
+        |                  | Peak       | Trough     | Recovery   |   Drawdown |   Recovery Needed |   To Trough |   To Recovery |   Length |   Recovery Ratio |   Recovery Return |   To Trough (Days) |   To Recovery (Days) |   Length (Days) |   Length (Years) |
+        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------------:|------------:|--------------:|---------:|-----------------:|------------------:|-------------------:|---------------------:|----------------:|-----------------:|
+        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7674 |            3.2985 |         293 |           302 |      595 |           1.0307 |            3.3128 |                422 |                  442 |             864 |           2.3655 |
+        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3415 |            0.5186 |          44 |            48 |       92 |           1.0909 |            0.5241 |                 66 |                   70 |             136 |           0.3723 |
+        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |            0.34   |          71 |           nan |      nan |         nan      |          nan      |                100 |                  nan |             nan |         nan      |
+        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7594 |            3.1569 |         120 |           571 |      691 |           4.7583 |            3.1977 |                175 |                  832 |            1007 |           2.757  |
+        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3077 |            0.4444 |         114 |           nan |      nan |         nan      |          nan      |                163 |                  nan |             nan |         nan      |
+        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1915 |            0.2368 |          34 |            13 |       47 |           0.3824 |            0.2816 |                 49 |                   20 |              69 |           0.1889 |
+        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |            0.3244 |         195 |           294 |      489 |           1.5077 |            0.3403 |                282 |                  427 |             709 |           1.9411 |
+        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1876 |            0.2308 |          34 |            54 |       88 |           1.5882 |            0.2361 |                 48 |                   79 |             127 |           0.3477 |
+        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |            0.0918 |          14 |            32 |       46 |           2.2857 |            0.1036 |                 20 |                   45 |              65 |           0.178  |
         """
         period = period if period else "daily"
 
@@ -1090,7 +1236,13 @@ class DrawdownRisk:
         decimals = rounding if rounding is not None else self._rounding
 
         if decimals is not None:
-            rounded = ["Drawdown", "Recovery Needed", "Length (Years)"]
+            rounded = [
+                "Drawdown",
+                "Recovery Needed",
+                "Recovery Ratio",
+                "Recovery Return",
+                "Length (Years)",
+            ]
             drawdown_table[rounded] = drawdown_table[rounded].round(decimals)
 
         return drawdown_table
@@ -1104,12 +1256,15 @@ class DrawdownRisk:
     ):
         """
         Summarize the drawdowns of each asset: how many there were, how deep they were on average, how much
-        their depth varied and how long they took to reach the bottom and to recover.
+        their depth varied, how long they took to reach the bottom and to recover, how much of the time the
+        asset spent below its high and where the drawdown that is still open stands.
 
         Where the drawdown table (`get_drawdown_table`) lists the largest drawdowns one by one, the statistics
         average over all of them, which is what Bacon (2008) uses to describe the drawdown risk of a fund: a
         manager with many shallow drawdowns that recover quickly and one with a few deep, long ones can have the
-        same Maximum Drawdown.
+        same Maximum Drawdown. The Coverage is the share of the periods spent below the running high, and the
+        Active measures describe the drawdown the asset is in at the end of the window: how deep it is, how long
+        ago the high was and the bottom was, and how much of the decline has been made good.
 
         The formula is as follows:
 
@@ -1119,11 +1274,21 @@ class DrawdownRisk:
         - Average To Trough = Σ (t(trough, j) - t(peak, j)) / d
         - Average To Recovery = Σ (t(recovery, j) - t(trough, j)) / d_recovered
         - Average Length = Σ (t(recovery, j) - t(peak, j)) / d_recovered
+        - Average Recovery Ratio = Σ (t(recovery, j) - t(trough, j)) / (t(trough, j) - t(peak, j)) / d_recovered
+        - Average Recovery Return = Σ (Wealth(recovery, j) / Wealth(trough, j) - 1) / d_recovered
+        - Coverage = the number of periods with Drawdown(t) < 0 / n
+        - Active Drawdown = Drawdown(T)
+        - Active Duration = T - t(peak), Active Recovery Duration = T - t(trough)
+        - Active Recovery Return = (1 + Drawdown(T)) / (1 + Drawdown(trough)) - 1
+        - Active Recovery = 1 - Drawdown(T) / Drawdown(trough)
 
         Where Drawdown(j) is the depth (the lowest Drawdown) of the j-th of the d drawdowns of
-        `get_drawdown_table`, n the number of returns and d_recovered the number of drawdowns that recovered
-        before the end of the window. The lengths count periods (trading days for daily data) and Average Length
-        (Days) the calendar days from peak to recovery. Average Drawdown is negative, Drawdown Deviation positive.
+        `get_drawdown_table`, n the number of returns, d_recovered the number of drawdowns that recovered
+        before the end of the window, T the last period and, for the Active measures, peak the last period at
+        the high and trough the lowest Drawdown since. The lengths count periods (trading days for daily data)
+        and Average Length (Days) the calendar days from peak to recovery. Average Drawdown is negative, Drawdown
+        Deviation positive. The Active Recovery is the share of the decline from the peak to the trough that has
+        been made good (0 at the trough, 1 back at the peak).
 
         For more information, see the following sources:
 
@@ -1132,9 +1297,12 @@ class DrawdownRisk:
         - PerformanceAnalytics (R): AverageDrawdown, DrawdownDeviation, AverageLength and AverageRecovery
         (https://github.com/braverock/PerformanceAnalytics).
         - ffn: PerformanceStats.avg_drawdown and avg_drawdown_days (https://github.com/pmorissette/ffn).
+        - vectorbt: Drawdowns coverage, active_drawdown, active_duration, active_recovery, active_recovery_return,
+        active_recovery_duration, recovery_duration_ratio and recovery_return (https://github.com/polakowo/vectorbt).
 
         Also known as: drawdown summary, average drawdown, drawdown deviation, average drawdown length, average
-        recovery time, average drawdown days.
+        recovery time, average drawdown days, time under water, current drawdown, open drawdown, recovery
+        duration ratio.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -1148,17 +1316,23 @@ class DrawdownRisk:
 
         Returns:
             pd.DataFrame: One row per ticker with the number of Drawdowns, the Average Drawdown, the Drawdown
-                Deviation, the Average To Trough, Average To Recovery and Average Length in periods and the
-                Average Length (Days) in calendar days.
+                Deviation, the Average To Trough, Average To Recovery and Average Length in periods, the
+                Average Length (Days) in calendar days, the Average Recovery Ratio and Average Recovery Return,
+                the Coverage and the Active Drawdown, Active Duration, Active Recovery Duration (in periods),
+                Active Recovery Return and Active Recovery.
 
         Notes:
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
         - The Average Drawdown and Drawdown Deviation agree with PerformanceAnalytics' AverageDrawdown and
         DrawdownDeviation (which report the average as a positive number), and the Average Drawdown equals
         ffn's avg_drawdown. A drawdown that has not recovered by the end of the window has no recovery, so it
-        is left out of the Average To Recovery and Average Length; PerformanceAnalytics' AverageRecovery and
-        AverageLength count it as recovered one period after the end. ffn's avg_drawdown_days counts calendar
-        days from the first day below the peak, Average Length (Days) from the peak itself.
+        is left out of the Average To Recovery, Average Length and the recovery averages; PerformanceAnalytics'
+        AverageRecovery and AverageLength count it as recovered one period after the end. ffn's avg_drawdown_days
+        counts calendar days from the first day below the peak, Average Length (Days) from the peak itself.
+        - The Coverage, the Active measures and the recovery averages equal vectorbt's Drawdowns measures of the
+        same names on the wealth path (the recovery averages over its recovered drawdowns).
+        - At a high there is no open drawdown: the Active Drawdown and Active Duration are 0 and the other
+        Active measures NaN.
 
         As an example:
 
@@ -1177,15 +1351,23 @@ class DrawdownRisk:
 
         Which returns:
 
-        |                       |    META |    NFLX |   Benchmark |
-        |:----------------------|--------:|--------:|------------:|
-        | Drawdowns             | 39      | 30      |     87      |
-        | Average Drawdown      | -0.072  | -0.0735 |     -0.0174 |
-        | Drawdown Deviation    |  0.0267 |  0.0249 |      0.0101 |
-        | Average To Trough     | 15.5641 | 15      |      5.977  |
-        | Average To Recovery   | 15.3684 | 25.931  |      7.3372 |
-        | Average Length        | 29.4737 | 37.5172 |     13.3372 |
-        | Average Length (Days) | 42.7895 | 54.7241 |     19.3605 |
+        |                          |    META |     NFLX |   Benchmark |
+        |:-------------------------|--------:|---------:|------------:|
+        | Drawdowns                | 39      |  30      |     87      |
+        | Average Drawdown         | -0.072  |  -0.0735 |     -0.0174 |
+        | Drawdown Deviation       |  0.0267 |   0.0249 |      0.0101 |
+        | Average To Trough        | 15.5641 |  15      |      5.977  |
+        | Average To Recovery      | 15.3684 |  25.931  |      7.3372 |
+        | Average Length           | 29.4737 |  37.5172 |     13.3372 |
+        | Average Length (Days)    | 42.7895 |  54.7241 |     19.3605 |
+        | Average Recovery Ratio   |  1.4327 |   1.3625 |      1.1949 |
+        | Average Recovery Return  |  0.1628 |   0.1717 |      0.0225 |
+        | Coverage                 |  0.941  |   0.9466 |      0.8493 |
+        | Active Drawdown          | -0.1632 |  -0.2998 |     -0.0123 |
+        | Active Duration          | 98      | 128      |      4      |
+        | Active Recovery Duration | 27      |  14      |      0      |
+        | Active Recovery Return   |  0.1213 |   0.0113 |      0      |
+        | Active Recovery          |  0.3568 |   0.0255 |      0      |
         """
         period = period if period else "daily"
 

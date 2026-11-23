@@ -235,13 +235,16 @@ def refused_value_problem(
     """
     for refusal in limits.get("refused_values", []):
         value = arguments.get(refusal["parameter"])
-        if (
-            method_name in refusal["methods"]
-            and isinstance(value, str)
-            and value.strip().lower() in refusal["values"]
-        ):
+        # A list (such as the models of a comparison) is refused when one of its values is.
+        values = value if isinstance(value, list | tuple) else [value]
+        refused = [
+            item
+            for item in values
+            if isinstance(item, str) and item.strip().lower() in refusal["values"]
+        ]
+        if method_name in refusal["methods"] and refused:
             return (
-                f"`{refusal['parameter']}='{value}'` is not available on this server: "
+                f"`{refusal['parameter']}='{refused[0]}'` is not available on this server: "
                 f"{refusal['reason']}"
             )
 
@@ -263,8 +266,8 @@ def size_limit_problem(
         defaults (dict[str, Any]): The indicator's own default per parameter, used in a
             product for a parameter the caller left out.
         limits (dict[str, Any]): The "maximums" (per parameter, or per parameter of one
-            indicator as "indicator.parameter") and "products" (a list of parameters and the
-            maximum of their product).
+            indicator as "indicator.parameter"), the "minimums" (per parameter) and "products"
+            (a list of parameters and the maximum of their product).
         method_name (str | None, optional): The indicator called, for the maximums of one
             indicator. Defaults to None, which checks only the maximums of every indicator.
 
@@ -279,6 +282,13 @@ def size_limit_problem(
             return (
                 f"`{parameter}` may be at most {maximum:,} on this server, which keeps every call "
                 "to a size it can compute next to the others. Please use a smaller value."
+            )
+
+    for name, minimum in limits.get("minimums", {}).items():
+        if any(number < minimum for number in _numbers(arguments.get(name))):
+            return (
+                f"`{name}` must be at least {minimum:,} on this server, which keeps every call "
+                "to a size it can compute next to the others. Please use a larger value."
             )
 
     for product in limits.get("products", []):

@@ -1692,6 +1692,53 @@ def test_fractal_measures_use_log_returns_per_ticker(risk_module):
         )
 
 
+def test_get_var_backtest_all_tests(recorder, risk_module):
+    result = risk_module.get_var_backtest(window_size=100, test="all")
+    assert "Kupiec P-Value" in result.index
+    assert "Tick Loss" in result.index
+    recorder.capture(result)
+    recorder.capture(
+        risk_module.get_var_backtest(
+            window_size=100, test=["duration", "mcneil_frey"], distribution="gaussian"
+        )
+    )
+
+
+def test_get_var_backtest_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_var_backtest(
+            distribution="garch", test="all", refit_every=63, window_size=504
+        )
+    )
+
+
+def test_get_var_backtest_invalid_test(risk_module):
+    assert risk_module.get_var_backtest(test="bad").empty
+
+
+def test_get_value_at_risk_garch(recorder, risk_module):
+    recorder.capture(risk_module.get_value_at_risk(distribution="garch"))
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            distribution="garch", garch_distribution="t", rolling=504, refit_every=63
+        ).iloc[::21]
+    )
+
+
+def test_get_conditional_value_at_risk_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            distribution="garch", garch_method="gjr"
+        )
+    )
+
+
+def test_get_acerbi_szekely_test_garch(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_acerbi_szekely_test(distribution="garch", refit_every=63)
+    )
+
+
 def test_get_price_impact(recorder, risk_module):
     recorder.capture(risk_module.get_price_impact())
     for method in ("amihud", "hasbrouck", "roll"):

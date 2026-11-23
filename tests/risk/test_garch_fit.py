@@ -690,3 +690,164 @@ def test_garch_family_refuses_unknown_options():
         garch_model.get_garch_family(
             np.ones(10), [1, 0.1, 0.8], output="long_run_variance"
         )
+
+
+STANDARDIZED_CASES = [
+    ("normal", ()),
+    ("t", (5.0,)),
+    ("skewt", (6.0, -0.3)),
+    ("skewt_fernandez_steel", (5.0, 0.8)),
+    ("ged", (1.3,)),
+    ("johnson_su", (1.5, 0.5)),
+]
+
+
+@pytest.mark.parametrize(("distribution", "parameters"), STANDARDIZED_CASES)
+def test_standardized_cdf_quantile_and_expected_shortfall_integrate_the_density(
+    distribution, parameters
+):
+    from scipy import integrate  # noqa: PLC0415
+
+    def density(z):
+        return float(
+            np.exp(
+                garch_model.get_standardized_log_density(
+                    np.array([z]), distribution, parameters
+                )[0]
+            )
+        )
+
+    for z in (-2.5, -0.4, 0.0, 1.1):
+        assert garch_model.get_standardized_cdf(
+            np.array([z]), distribution, parameters
+        )[0] == pytest.approx(integrate.quad(density, -np.inf, z)[0], abs=1e-8)
+
+    for probability in (0.01, 0.05, 0.5, 0.9):
+        quantile = garch_model.get_standardized_quantile(
+            probability, distribution, parameters
+        )
+        assert garch_model.get_standardized_cdf(
+            np.array([quantile]), distribution, parameters
+        )[0] == pytest.approx(probability, abs=1e-12)
+
+    quantile = float(
+        garch_model.get_standardized_quantile(0.05, distribution, parameters)
+    )
+    tail_mean = integrate.quad(lambda z: z * density(z), -np.inf, quantile)[0] / 0.05
+    assert garch_model.get_standardized_expected_shortfall(
+        0.05, distribution, parameters
+    ) == pytest.approx(tail_mean, rel=1e-7)
+
+
+@pytest.mark.parametrize(
+    ("distribution", "parameters", "arch_distribution"),
+    [
+        ("normal", (), "Normal"),
+        ("t", (5.0,), "StudentsT"),
+        ("skewt", (6.0, -0.3), "SkewStudent"),
+        ("ged", (1.3,), "GeneralizedError"),
+    ],
+)
+def test_standardized_quantile_matches_the_arch_package(
+    distribution, parameters, arch_distribution
+):
+    univariate = pytest.importorskip("arch.univariate")
+    reference = getattr(univariate, arch_distribution)()
+
+    for probability in (0.01, 0.05, 0.3, 0.7):
+        expected = reference.ppf(probability, list(parameters) or None)
+        assert garch_model.get_standardized_quantile(
+            probability, distribution, parameters
+        ) == pytest.approx(float(np.asarray(expected)), rel=1e-9)
+
+
+def test_rolling_forecast_refits_on_the_returns_before_each_forecast():
+    returns = pd.Series(
+        simulate_garch_family_returns(n=400) / 100,
+        index=pd.bdate_range("2020-01-01", periods=400),
+    )
+    forecast = garch_model.get_garch_family_rolling_forecast(
+        returns, window_size=300, refit_every=40, method="garch", mean="constant"
+    )
+
+    # One forecast per return from the end of the first window, the last past the final return.
+    assert len(forecast) == 101
+    assert forecast.index[0] == returns.index[299]
+    assert forecast.index[-1] == returns.index[-1]
+
+    # The forecast made on the last day of a window is the one-step variance of the model
+    # fitted on that window, so it does not use any later return.
+    first_fit = garch_model.get_garch_family_weights(
+        returns.to_numpy()[:300], "garch", "normal", "constant"
+    )
+    expected = garch_model.get_garch_family_forecast(
+        returns.to_numpy()[:300], first_fit, "garch", "normal", "constant", 1
+    )[0]
+    assert forecast["Volatility"].iloc[0] ** 2 == pytest.approx(expected, rel=1e-9)
+    assert forecast["Mean"].iloc[0] == pytest.approx(first_fit[3])
+
+    changed = returns.copy()
+    changed.iloc[350:] *= 3
+    altered = garch_model.get_garch_family_rolling_forecast(
+        changed, window_size=300, refit_every=40, method="garch", mean="constant"
+    )
+    pd.testing.assert_series_equal(
+        forecast["Volatility"].iloc[:51], altered["Volatility"].iloc[:51]
+    )
+
+
+def test_warm_started_fit_reaches_the_multi_start_maximum():
+    returns = simulate_garch_family_returns(n=800)
+    full = garch_model.get_garch_family_weights(returns[:760], "gjr", "t", "constant")
+    warm = garch_model.get_garch_family_weights(
+        returns[40:], "gjr", "t", "constant", starting_weights=full
+    )
+    multi_start = garch_model.get_garch_family_weights(
+        returns[40:], "gjr", "t", "constant"
+    )
+
+    assert garch_model.get_garch_family_log_likelihood(
+        returns[40:], warm, "gjr", "t", "constant"
+    ) == pytest.approx(
+        garch_model.get_garch_family_log_likelihood(
+            returns[40:], multi_start, "gjr", "t", "constant"
+        ),
+        abs=1e-4,
+    )
+
+
+def test_every_rolling_refit_reaches_the_multi_start_maximum():
+    # A series whose first window peaks at Beta = 0: a local search from those weights stays
+    # in that corner while the later windows peak inside the bounds.
+    rng = np.random.default_rng(2)
+    returns = np.empty(400)
+    variance = 1e-4
+    for step in range(400):
+        returns[step] = 0.0003 + np.sqrt(variance) * rng.standard_t(6) * np.sqrt(4 / 6)
+        variance = 2e-6 + 0.08 * (returns[step] - 0.0003) ** 2 + 0.9 * variance
+
+    def log_likelihood(window, weights):
+        backcast = garch_model.get_backcast(
+            garch_model._starting_residuals(window, "constant")
+        )
+        return garch_model.get_garch_family_log_likelihood(
+            window, weights, "garch", "normal", "constant", backcast
+        )
+
+    previous = garch_model.get_garch_family_weights(
+        returns[:200], "garch", "normal", "constant"
+    )
+    for end in range(250, 401, 50):
+        window = returns[end - 200 : end]
+        warm = garch_model.get_garch_family_weights(
+            window, "garch", "normal", "constant", starting_weights=previous
+        )
+        multi_start = garch_model.get_garch_family_weights(
+            window, "garch", "normal", "constant"
+        )
+        # At least as high as the multi-start: on some platforms the multi-start's own polish
+        # stops a little short (by about 2e-3) and the warm refit is the higher of the two.
+        assert (
+            log_likelihood(window, warm) >= log_likelihood(window, multi_start) - 1e-6
+        )
+        previous = warm

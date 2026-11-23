@@ -557,3 +557,86 @@ def test_get_var_kernel_frame(recorder):
     recorder.capture(result.round(10))
     # A sample without spread is its own quantile.
     assert var_model.get_var_kernel(pd.Series([0.01, 0.01, 0.01]), 0.05) == 0.01
+
+
+def _garch_returns(n=800, seed=2):
+    rng = np.random.default_rng(seed)
+    returns = np.empty(n)
+    variance = 1e-4
+    for step in range(n):
+        shock = rng.standard_t(6) * np.sqrt(4 / 6)
+        returns[step] = 0.0003 + np.sqrt(variance) * shock
+        variance = 2e-6 + 0.08 * (returns[step] - 0.0003) ** 2 + 0.9 * variance
+    return pd.Series(returns, index=pd.bdate_range("2020-01-01", periods=n))
+
+
+@pytest.mark.parametrize("distribution", ["normal", "t", "skewt", "ged"])
+def test_get_var_garch_matches_the_arch_package(distribution):
+    arch = pytest.importorskip("arch")
+    from financetoolkit.risk.volatility import garch_model  # noqa: PLC0415
+
+    returns = _garch_returns()
+    weights = garch_model.get_garch_family_weights(
+        returns.to_numpy(), "garch", distribution, "constant"
+    )
+
+    # arch's order is Mu, Omega, Alpha, Beta and the distribution, on returns in percent.
+    model = arch.arch_model(
+        returns.to_numpy() * 100, mean="Constant", vol="GARCH", dist=distribution
+    )
+    fixed = model.fix(
+        np.r_[weights[3] * 100, weights[0] * 1e4, weights[1:3], weights[4:]]
+    )
+    forecast = fixed.forecast(horizon=1, reindex=False)
+    quantile = np.asarray(
+        model.distribution.ppf(0.05, list(weights[4:]) or None)
+    ).item()
+    expected = (
+        forecast.mean.iloc[-1, 0] + np.sqrt(forecast.variance.iloc[-1, 0]) * quantile
+    ) / 100
+
+    assert var_model.get_var_garch(
+        returns, 0.05, distribution=distribution
+    ) == pytest.approx(expected, rel=1e-6)
+
+
+def test_get_cvar_garch_is_the_mean_below_the_garch_var():
+    from financetoolkit.risk.value_at_risk import cvar_model  # noqa: PLC0415
+    from financetoolkit.risk.volatility import garch_model  # noqa: PLC0415
+
+    returns = _garch_returns()
+    forecast = garch_model.get_garch_family_rolling_forecast(
+        returns, None, 21, "garch", "t", "constant"
+    ).iloc[-1]
+
+    # The mean of draws from the next period's distribution below their 5% quantile.
+    draws = forecast["Mean"] + forecast[
+        "Volatility"
+    ] * garch_model.get_standardized_draws(
+        "t", (forecast["Shape"],), 2_000_000, np.random.default_rng(0)
+    )
+    var = var_model.get_var_garch(returns, 0.05, distribution="t")
+    cvar = cvar_model.get_cvar_garch(returns, 0.05, distribution="t")
+
+    assert np.mean(draws < var) == pytest.approx(0.05, abs=1e-3)
+    assert cvar == pytest.approx(draws[draws < var].mean(), rel=5e-3)
+
+
+def test_get_var_garch_rolling_path_and_frames(recorder):
+    returns = _garch_returns(n=400)
+    frame = pd.DataFrame({"A": returns, "B": returns.iloc[::-1].to_numpy()})
+    frame.iloc[:150, 1] = np.nan
+
+    path = var_model.get_var_garch(frame, 0.05, window_size=200, refit_every=50)
+
+    # Each column is rolled over its own returns: B starts 150 returns later.
+    assert path["A"].first_valid_index() == frame.index[199]
+    assert path["B"].first_valid_index() == frame.index[349]
+    # Four decimals: the fit at the 300th return of A peaks on the Alpha = 0 bound, where Omega and Beta trade
+    # off along a flat ridge, so its VaR moves by about 2e-5 under 1e-12 relative noise in the returns.
+    recorder.capture(path.dropna(how="all").iloc[::25].round(4))
+
+    with pytest.raises(ValueError, match="at least 100"):
+        var_model.get_var_garch(returns, 0.05, window_size=50)
+    # Too few returns for a single fit give NaN rather than a fit on a handful of returns.
+    assert np.isnan(var_model.get_var_garch(returns.iloc[:50], 0.05))

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics.forecasting import forecast_evaluation_model
 
@@ -369,3 +370,215 @@ def test_get_diebold_mariano_test_falls_back_to_bartlett_weights():
     assert np.isclose(
         result["Diebold-Mariano Statistic"], d.mean() / np.sqrt(bartlett / n)
     )
+
+
+def _gaussian_ar1(n, mean, deviation, autocorrelation, seed):
+    rng = np.random.default_rng(seed)
+    z = np.empty(n)
+    z[0] = mean + rng.standard_normal() * deviation / np.sqrt(1 - autocorrelation**2)
+    for t in range(1, n):
+        z[t] = (
+            mean
+            + autocorrelation * (z[t - 1] - mean)
+            + deviation * rng.standard_normal()
+        )
+    return z
+
+
+@pytest.mark.parametrize(
+    ("mean", "deviation", "autocorrelation"), [(0.0, 1.0, 0.0), (0.1, 1.2, 0.2)]
+)
+def test_get_berkowitz_test_is_the_exact_ar1_likelihood_ratio(
+    mean, deviation, autocorrelation
+):
+    arima = pytest.importorskip("statsmodels.tsa.arima.model")
+    from scipy import special, stats  # noqa: PLC0415
+
+    z = _gaussian_ar1(800, mean, deviation, autocorrelation, seed=11)
+    result = forecast_evaluation_model.get_berkowitz_test(pd.Series(special.ndtr(z)))
+
+    # The exact Gaussian AR(1) maximum likelihood of statsmodels' state space ARIMA.
+    reference = arima.ARIMA(z, order=(1, 0, 0), trend="c").fit()
+    statistic = 2 * (reference.llf - np.sum(stats.norm.logpdf(z)))
+
+    assert result["Berkowitz Statistic"] == pytest.approx(statistic, rel=1e-5)
+    assert result["Mean"] == pytest.approx(reference.params[0], abs=1e-4)
+    assert result["Autocorrelation"] == pytest.approx(reference.params[1], abs=1e-4)
+    assert result["Standard Deviation"] == pytest.approx(
+        np.sqrt(reference.params[2]), rel=1e-4
+    )
+    assert result["P-Value"] == pytest.approx(stats.chi2.sf(statistic, 3), rel=1e-4)
+
+
+def test_get_berkowitz_test_tail_is_a_censored_normal_fit(recorder):
+    from scipy import optimize, special, stats  # noqa: PLC0415
+
+    z = _gaussian_ar1(800, 0.1, 1.2, 0.0, seed=4)
+    result = forecast_evaluation_model.get_berkowitz_test(
+        pd.Series(special.ndtr(z)), alpha=0.05
+    )
+
+    cutoff = special.ndtri(0.05)
+    tail, censored = z[z < cutoff], np.sum(z >= cutoff)
+
+    def negative_log_likelihood(parameters):
+        return -(
+            np.sum(stats.norm.logpdf(tail, parameters[0], parameters[1]))
+            + censored * stats.norm.logsf(cutoff, parameters[0], parameters[1])
+        )
+
+    fit = optimize.minimize(
+        negative_log_likelihood,
+        [0, 1],
+        method="L-BFGS-B",
+        bounds=[(-10, 10), (0.01, 3)],
+    )
+    statistic = 2 * (negative_log_likelihood([0, 1]) - fit.fun)
+
+    assert result["Berkowitz Statistic"] == pytest.approx(statistic, rel=1e-6)
+    assert result["Tail Observations"] == len(tail)
+    assert result["P-Value"] < SIGNIFICANCE_LEVEL
+    recorder.capture(result.round(4))
+
+
+def test_get_probability_integral_transform_is_uniform_for_the_true_model():
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame({"A": rng.standard_normal(1500) * 0.01})
+
+    pit = forecast_evaluation_model.get_probability_integral_transform(
+        returns, model="gaussian", window_size=250
+    )["A"].dropna()
+
+    assert len(pit) == 1250
+    assert (
+        forecast_evaluation_model.get_berkowitz_test(pit)["P-Value"]
+        > SIGNIFICANCE_LEVEL
+    )
+
+    garch_pit = forecast_evaluation_model.get_probability_integral_transform(
+        returns["A"].iloc[:400], model="garch", window_size=300, refit_every=100
+    ).dropna()
+    assert len(garch_pit) == 100
+    assert garch_pit.between(0, 1).all()
+
+
+def test_get_directional_accuracy_test_by_hand():
+    from scipy import stats  # noqa: PLC0415
+
+    actual = pd.Series([0.02, -0.01, 0.03, 0.01, -0.02, -0.04, 0.05, 0.01, -0.01, 0.02])
+    forecast = pd.Series(
+        [0.01, 0.01, 0.02, -0.01, -0.01, -0.02, 0.01, 0.02, 0.01, 0.01]
+    )
+
+    # Pesaran-Timmermann: 7 of 10 signs right, 6 positive returns and 7 positive forecasts.
+    p, p_y, p_x, n = 0.7, 0.6, 0.7, 10
+    p_star = p_y * p_x + (1 - p_y) * (1 - p_x)
+    variance = p_star * (1 - p_star) / n - (
+        (2 * p_y - 1) ** 2 * p_x * (1 - p_x) / n
+        + (2 * p_x - 1) ** 2 * p_y * (1 - p_y) / n
+        + 4 * p_y * p_x * (1 - p_y) * (1 - p_x) / n**2
+    )
+    pesaran = forecast_evaluation_model.get_directional_accuracy_test(actual, forecast)
+    assert pesaran["Pesaran-Timmermann Statistic"] == pytest.approx(
+        (p - p_star) / np.sqrt(variance)
+    )
+    assert pesaran["Directional Accuracy"] == pytest.approx(0.7)
+    assert pesaran["P-Value"] == pytest.approx(
+        stats.norm.sf(pesaran["Pesaran-Timmermann Statistic"])
+    )
+
+    # Anatolyev-Gerko: the long-short return over that of random positions.
+    signs = np.sign(forecast.to_numpy())
+    y = actual.to_numpy()
+    share_long = (1 + signs.mean()) / 2
+    expected = (np.mean(signs * y) - signs.mean() * y.mean()) / np.sqrt(
+        4 * share_long * (1 - share_long) * np.sum((y - y.mean()) ** 2) / n**2
+    )
+    anatolyev = forecast_evaluation_model.get_directional_accuracy_test(
+        actual, forecast, method="anatolyev_gerko"
+    )
+    assert anatolyev["Anatolyev-Gerko Statistic"] == pytest.approx(expected)
+
+
+def test_get_directional_accuracy_test_detects_a_useful_forecast(recorder):
+    rng = np.random.default_rng(8)
+    signal = rng.standard_normal(1000)
+    actual = pd.DataFrame({"A": 0.3 * signal + rng.standard_normal(1000)})
+    forecast = pd.DataFrame({"A": signal})
+    noise = pd.DataFrame({"A": rng.standard_normal(1000)})
+
+    useful = forecast_evaluation_model.get_directional_accuracy_test(actual, forecast)
+    useless = forecast_evaluation_model.get_directional_accuracy_test(actual, noise)
+    assert useful.loc["P-Value", "A"] < SIGNIFICANCE_LEVEL
+    assert useless.loc["P-Value", "A"] > SIGNIFICANCE_LEVEL
+    recorder.capture(pd.concat([useful, useless], axis=1).round(4))
+
+
+def test_get_return_forecast_uses_the_returns_before_each_period():
+    returns = pd.Series(np.arange(1.0, 11.0))
+    momentum = forecast_evaluation_model.get_return_forecast(returns, "momentum", 3)
+    assert momentum.iloc[3] == pytest.approx(2.0)
+
+    # On an exact AR(1) the rolling fit recovers it and forecasts the next value.
+    autoregressive_series = pd.Series(0.5 ** np.arange(20) + 1.0)
+    forecast = forecast_evaluation_model.get_return_forecast(
+        autoregressive_series, "autoregressive", 5
+    )
+    assert forecast.iloc[10] == pytest.approx(autoregressive_series.iloc[10])
+
+
+def _mcs_losses():
+    rng = np.random.default_rng(7)
+    common = rng.standard_normal((500, 1))
+    return pd.DataFrame(
+        np.abs(common + rng.standard_normal((500, 6)) * 0.8) + np.linspace(0, 0.25, 6),
+        columns=[f"M{i}" for i in range(6)],
+    )
+
+
+@pytest.mark.parametrize(("statistic", "arch_method"), [("max", "max"), ("range", "R")])
+def test_get_model_confidence_set_matches_the_arch_package(
+    monkeypatch, statistic, arch_method
+):
+    bootstrap = pytest.importorskip("arch.bootstrap")
+    from financetoolkit.portfolio.construction.optimization import (  # noqa: PLC0415
+        estimation_model,
+    )
+
+    losses = _mcs_losses()
+    reference = bootstrap.MCS(
+        losses, size=0.1, reps=500, block_size=8, method=arch_method, seed=1
+    )
+    reference._testing = True  # arch keeps the resampled periods for testing
+    reference.compute()
+
+    # The same resampled periods as arch, so the p-values must agree exactly.
+    indices = iter(reference._bootstrap_indices)
+    monkeypatch.setattr(
+        estimation_model, "get_bootstrap_indices", lambda *args, **kwargs: next(indices)
+    )
+    result = forecast_evaluation_model.get_model_confidence_set(
+        losses, alpha=0.1, statistic=statistic, n_bootstrap=500, block_size=8
+    )
+
+    np.testing.assert_allclose(
+        result["MCS P-Value"],
+        reference.pvalues["Pvalue"].reindex(result.index),
+        atol=1e-12,
+    )
+    assert set(result.index[result["In Confidence Set"]]) == set(reference.included)
+
+
+def test_get_model_confidence_set_keeps_the_best_models(recorder):
+    result = forecast_evaluation_model.get_model_confidence_set(_mcs_losses())
+
+    assert result.index[0] == "M0"
+    assert result["Rank"].tolist() == list(range(1, 7))
+    assert result["MCS P-Value"].is_monotonic_decreasing
+    assert not result.loc["M5", "In Confidence Set"]
+    recorder.capture(result.round(4))
+
+    with pytest.raises(ValueError, match="max or range"):
+        forecast_evaluation_model.get_model_confidence_set(
+            _mcs_losses(), statistic="sum"
+        )

@@ -95,6 +95,8 @@ def test_the_american_approximations_match_quantlib(case):
     ) == pytest.approx(bjerksund_stensland, abs=1e-6)
     # QD+ is the closest of the approximations to the exact American value.
     assert american_model.get_qd_plus(**inputs) == pytest.approx(exact, rel=3e-3)
+    # The QD fixed point is the exact value, up to the six decimals recorded here.
+    assert american_model.get_qd_fixed_point(**inputs) == pytest.approx(exact, abs=1e-6)
 
 
 def test_the_dispatcher_selects_the_approximation_and_refuses_others():
@@ -113,7 +115,7 @@ def test_the_dispatcher_selects_the_approximation_and_refuses_others():
 
 
 @pytest.mark.parametrize(
-    "method", ["qd_plus", "barone_adesi_whaley", "ju_zhong"], ids=str
+    "method", ["qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point"], ids=str
 )
 def test_without_early_exercise_the_american_option_is_european(method):
     # A call without dividends and a put at a zero rate are never exercised early.
@@ -130,7 +132,7 @@ def test_without_early_exercise_the_american_option_is_european(method):
 
 
 @pytest.mark.parametrize(
-    "method", ["qd_plus", "barone_adesi_whaley", "ju_zhong"], ids=str
+    "method", ["qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point"], ids=str
 )
 def test_the_american_option_is_worth_at_least_the_european_and_the_exercise_value(
     method,
@@ -150,6 +152,45 @@ def test_the_american_option_is_worth_at_least_the_european_and_the_exercise_val
                     exercise = max((strike - 100) if put else (100 - strike), 0.0)
                     assert np.isfinite(american)
                     assert american >= max(european, exercise) - 1e-9
+
+
+def test_the_qd_fixed_point_matches_a_finite_difference_grid():
+    # A Crank-Nicolson grid of QuantLib's FdBlackScholesVanillaEngine with 2,000, 4,000 and
+    # 8,000 steps in time and price converges at first order here (the error halves with the
+    # step), so it is extrapolated as 2 * V(8000) - V(4000): 8.882702, 18.410675, 5.457208,
+    # each within 1e-6 of the QD fixed point.
+    cases = [
+        ((100.0, 100.0, 0.05, 0.25, 1.0, 0.03), 8.8827020),
+        ((100.0, 110.0, 0.05, 0.30, 2.0, 0.00), 18.4106751),
+        ((100.0, 90.0, 0.08, 0.40, 182 / 365, 0.02), 5.4572081),
+    ]
+    for inputs, extrapolated in cases:
+        assert american_model.get_qd_fixed_point(
+            *inputs, put_option=True
+        ) == pytest.approx(extrapolated, abs=1e-6)
+
+
+def test_the_qd_fixed_point_falls_back_to_fp_b_where_fp_a_diverges():
+    # At a volatility of 0.5% with a negative dividend yield FP-A oscillates and diverges;
+    # FP-B converges, close to the QD+ value 0.0065691.
+    value = american_model.get_qd_fixed_point(
+        100.0, 100.0, 0.05, 0.005, 1.0, -0.02, True
+    )
+    assert value == pytest.approx(0.0065691, abs=1e-6)
+    # Thirty years at 20% with a negative yield: QD+ gives 3.22355.
+    value = american_model.get_qd_fixed_point(100.0, 100.0, 0.2, 0.2, 30.0, -0.02, True)
+    assert value == pytest.approx(3.2235, abs=1e-4)
+
+
+def test_the_qd_fixed_point_is_stable_under_tiny_input_changes():
+    # The iteration stops at a tolerance, so a change in the last bits of an input must not
+    # move the price beyond the bits that tolerance leaves.
+    base = american_model.get_qd_fixed_point(100.0, 100.0, 0.05, 0.25, 1.0, 0.03, True)
+    for bump in (1e-12, -1e-12):
+        bumped = american_model.get_qd_fixed_point(
+            100.0 * (1 + bump), 100.0, 0.05, 0.25, 1.0, 0.03, True
+        )
+        assert bumped == pytest.approx(base, abs=1e-10)
 
 
 def test_a_deep_in_the_money_put_is_exercised_right_away():

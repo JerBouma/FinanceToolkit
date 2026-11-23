@@ -29,6 +29,26 @@ _BOUNDARY_BISECTIONS = 12
 _BOUNDARY_ITERATIONS = 50
 _BOUNDARY_TOLERANCE = 1e-13
 
+# The QD fixed point boundary is held at 25 Chebyshev-Lobatto nodes in √τ and the iteration
+# stops once the boundary changes less than 1e-12 relative (about 15 iterations, at most 100).
+# Its integrals use the tanh-sinh rule of Takahasi and Mori (1974) with a step of 1/12 (77
+# points): near expiration the boundary moves like √(τ * ln τ), which Gauss-Legendre points
+# converge on slowly (64 of them are 3e-6 off) and the tanh-sinh points, crowded at both ends,
+# within about 1e-9.
+_QD_FIXED_POINT_NODES = 24
+_TANH_SINH_STEP = 1 / 12
+_TANH_SINH_GRID = _TANH_SINH_STEP * np.arange(-38, 39)
+_QD_FIXED_POINT_ROOTS = np.tanh(0.5 * np.pi * np.sinh(_TANH_SINH_GRID))
+_QD_FIXED_POINT_WEIGHTS = (
+    _TANH_SINH_STEP
+    * 0.5
+    * np.pi
+    * np.cosh(_TANH_SINH_GRID)
+    / np.cosh(0.5 * np.pi * np.sinh(_TANH_SINH_GRID)) ** 2
+)
+_QD_FIXED_POINT_ITERATIONS = 100
+_QD_FIXED_POINT_TOLERANCE = 1e-12
+
 
 def _european_and_derivatives(
     stock_price,
@@ -794,6 +814,318 @@ def get_qd_plus(
     )
 
 
+def _qd_fixed_point_interpolate(
+    nodes: np.ndarray, values: np.ndarray, points: np.ndarray
+) -> np.ndarray:
+    """
+    Helper function with the polynomial through values at the Chebyshev-Lobatto nodes
+    z_j = —cos(jπ / n), evaluated at points in [—1, 1] with the barycentric formula of the
+    second kind (weights (—1)^j, halved at both ends), which is stable at every degree.
+    """
+    weights = (-1.0) ** np.arange(nodes.size)
+    weights[[0, -1]] *= 0.5
+    difference = points[..., None] - nodes
+    on_node = difference == 0
+    terms = weights / np.where(on_node, 1.0, difference)
+    interpolated = (terms * values).sum(-1) / terms.sum(-1)
+    # A point on a node takes that node's value, where the formula divides by zero.
+    return np.where(on_node.any(-1), (on_node * values).sum(-1), interpolated)
+
+
+@np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
+def _qd_fixed_point_put(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float,
+) -> float:
+    """
+    Helper function with the American put of a positive risk-free rate from the exercise
+    boundary that solves the integral equation of Kim (1990) as a fixed point, the method
+    of Andersen, Lake and Offengenden (2016).
+
+    The boundary is held at the Chebyshev-Lobatto nodes of z = 2√(τ / T) — 1 as
+    H = ln(B / X)², with X = K * min(1, r / q) its limit at expiration, and interpolated in
+    between. Starting from the QD+ boundary, each iteration sets at every node:
+
+    - B(τ) = K * e^(—(r — q)τ) * N(τ, B) / D(τ, B)
+    - N = n(d—(τ, B / K)) / (σ√τ) + r * ∫_0^τ e^(ru) * n(d—(τ — u, B(τ) / B(u))) / (σ√(τ — u)) du
+    - D = n(d+(τ, B / K)) / (σ√τ) + N(d+(τ, B / K)) + q * ∫_0^τ e^(qu) *
+      [n(d+(τ — u, B(τ) / B(u))) / (σ√(τ — u)) + N(d+(τ — u, B(τ) / B(u)))] du
+
+    With d±(t, x) = [ln(x) + (r — q ± σ² / 2) * t] / (σ√t), the equation the paper calls
+    FP-A. When FP-A does not converge (it oscillates at a low volatility or a negative
+    dividend yield), the iteration starts again from the QD+ boundary with FP-B, the same
+    fixed point written with the normal distribution:
+
+    - N = N(d—(τ, B / K)) + r * ∫_0^τ e^(ru) * N(d—(τ — u, B(τ) / B(u))) du
+    - D = N(d+(τ, B / K)) + q * ∫_0^τ e^(qu) * N(d+(τ — u, B(τ) / B(u))) du
+
+    The integrals are taken over s = √(τ — u), which removes the 1 / √(τ — u), with the
+    tanh-sinh rule, and the iteration stops once the boundary changes less than 1e-12
+    relative between two iterations (at most 100 iterations per equation). A boundary that
+    converges with neither returns NaN.
+    """
+    limit = strike_price * (
+        min(1.0, risk_free_rate / dividend_yield) if dividend_yield > 0 else 1.0
+    )
+    nodes = -np.cos(
+        np.pi * np.arange(_QD_FIXED_POINT_NODES + 1) / _QD_FIXED_POINT_NODES
+    )
+    times = time_to_expiration * (1 + nodes[1:]) ** 2 / 4
+
+    def boundary_at(log_distance: np.ndarray, time: np.ndarray) -> np.ndarray:
+        # A time next to zero can round to just below it, where the square root has no value.
+        squared = _qd_fixed_point_interpolate(
+            nodes,
+            log_distance,
+            2 * np.sqrt(np.maximum(time, 0) / time_to_expiration) - 1,
+        )
+        return limit * np.exp(-np.sqrt(np.maximum(squared, 0)))
+
+    def d_plus(time, ratio):
+        return (
+            np.log(ratio)
+            + (risk_free_rate - dividend_yield + 0.5 * volatility**2) * time
+        ) / (volatility * np.sqrt(time))
+
+    def density(x):
+        return np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
+
+    starting_boundary = np.minimum(
+        _qd_plus_put_boundary(
+            strike_price, risk_free_rate, dividend_yield, volatility, times
+        ),
+        limit,
+    )
+
+    # u = τ — s², so du = 2s ds and the 1 / (σ√(τ — u)) = 1 / (σs) of FP-A cancels against it.
+    roots = 0.5 * np.sqrt(times)[:, None] * (_QD_FIXED_POINT_ROOTS + 1)
+    weights = 0.5 * np.sqrt(times)[:, None] * _QD_FIXED_POINT_WEIGHTS
+    earlier_times = times[:, None] - roots**2
+    root_times = np.sqrt(times)
+
+    def iterate(equation: str) -> tuple[np.ndarray, bool]:
+        boundary = starting_boundary
+        for _ in range(_QD_FIXED_POINT_ITERATIONS):
+            log_distance = np.append(0.0, np.log(boundary / limit) ** 2)
+            earlier_boundary = boundary_at(log_distance, earlier_times)
+
+            plus = d_plus(roots**2, boundary[:, None] / earlier_boundary)
+            minus = plus - volatility * roots
+            plus_today = d_plus(times, boundary / strike_price)
+            minus_today = plus_today - volatility * root_times
+            rate_weights = weights * np.exp(risk_free_rate * earlier_times)
+            yield_weights = weights * np.exp(dividend_yield * earlier_times)
+
+            if equation == "FP-A":
+                numerator = density(minus_today) / (
+                    volatility * root_times
+                ) + risk_free_rate * np.sum(
+                    rate_weights * 2 * density(minus) / volatility, axis=1
+                )
+                denominator = (
+                    density(plus_today) / (volatility * root_times)
+                    + ndtr(plus_today)
+                    + dividend_yield
+                    * np.sum(
+                        yield_weights
+                        * (2 * density(plus) / volatility + 2 * roots * ndtr(plus)),
+                        axis=1,
+                    )
+                )
+            else:
+                numerator = ndtr(minus_today) + risk_free_rate * np.sum(
+                    rate_weights * 2 * roots * ndtr(minus), axis=1
+                )
+                denominator = ndtr(plus_today) + dividend_yield * np.sum(
+                    yield_weights * 2 * roots * ndtr(plus), axis=1
+                )
+
+            updated = np.minimum(
+                strike_price
+                * np.exp(-(risk_free_rate - dividend_yield) * times)
+                * numerator
+                / denominator,
+                limit,
+            )
+            change = np.max(np.abs(updated / boundary - 1))
+            boundary = updated
+
+            if not np.all(np.isfinite(boundary) & (boundary > 0)):
+                return boundary, False
+            if change < _QD_FIXED_POINT_TOLERANCE:
+                return boundary, True
+
+        return boundary, False
+
+    boundary, converged = iterate("FP-A")
+    if not converged:
+        # FP-A converges fastest, but it oscillates and diverges in some regimes (a low
+        # volatility, a negative dividend yield). FP-B, the same fixed point, then converges.
+        boundary, converged = iterate("FP-B")
+    if not converged:
+        return np.nan
+
+    if stock_price <= boundary[-1]:
+        return strike_price - stock_price
+
+    log_distance = np.append(0.0, np.log(boundary / limit) ** 2)
+    roots = 0.5 * np.sqrt(time_to_expiration) * (_QD_FIXED_POINT_ROOTS + 1)
+    weights = 0.5 * np.sqrt(time_to_expiration) * _QD_FIXED_POINT_WEIGHTS
+    times_from_now = roots**2
+    plus = d_plus(
+        times_from_now,
+        stock_price / boundary_at(log_distance, time_to_expiration - times_from_now),
+    )
+    minus = plus - volatility * roots
+    integrand = risk_free_rate * strike_price * np.exp(
+        -risk_free_rate * times_from_now
+    ) * ndtr(-minus) - dividend_yield * stock_price * np.exp(
+        -dividend_yield * times_from_now
+    ) * ndtr(
+        -plus
+    )
+    # dt = 2u du, with the integral taken over u = √t.
+    premium = float(np.sum(weights * integrand * 2 * roots))
+
+    european_value = float(
+        get_black_scholes(
+            stock_price=stock_price,
+            strike_price=strike_price,
+            risk_free_rate=risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            dividend_yield=dividend_yield,
+            put_option=True,
+        )
+    )
+
+    return max(european_value + premium, strike_price - stock_price)
+
+
+def get_qd_fixed_point(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float = 0.0,
+    put_option: bool = False,
+) -> float:
+    """
+    Calculate the price of an American option by solving the early exercise boundary as the
+    fixed point of its integral equation, the method of Andersen, Lake and Offengenden
+    (2016). Unlike the approximations (QD+, Barone-Adesi-Whaley, Ju-Zhong), this converges
+    to the exact American value, within about 1e-6 of it and 1e-8 for most inputs.
+
+    The American put is its European value plus the value of exercising early, an integral
+    over the early exercise boundary B (Kim, 1990; Jacka, 1991; Carr, Jarrow and Myneni,
+    1992). At the boundary the put is worth its exercise value K — B, which gives an
+    integral equation in B that Andersen, Lake and Offengenden rewrite as a fixed point
+    (their FP-A equation):
+
+    - B(τ) = K * e^(—(r — q)τ) * N(τ, B) / D(τ, B)
+    - N(τ, B) = n(d—(τ, B(τ) / K)) / (σ√τ) + r * ∫_0^τ e^(ru) * n(d—(τ — u, B(τ) / B(u))) /
+      (σ√(τ — u)) du
+    - D(τ, B) = n(d+(τ, B(τ) / K)) / (σ√τ) + N(d+(τ, B(τ) / K)) + q * ∫_0^τ e^(qu) *
+      [n(d+(τ — u, B(τ) / B(u))) / (σ√(τ — u)) + N(d+(τ — u, B(τ) / B(u)))] du
+    - P = p(S) + ∫_0^T [r * K * e^(—rt) * N(—d—(t, S / B(T — t))) —
+      q * S * e^(—qt) * N(—d+(t, S / B(T — t)))] dt when S > B(T), otherwise K — S
+    - C(S, K, r, q) = P(K, S, q, r), the put-call symmetry of McDonald and Schroder (1998)
+
+    Where d±(t, x) = [ln(x) + (r — q ± σ² / 2) * t] / (σ√t), n and N are the standard
+    normal density and distribution and p is the European put. The boundary is held at 25
+    Chebyshev-Lobatto nodes in √τ, as ln(B / X)² with X = K * min(1, r / q) its value at
+    expiration, starts from the QD+ boundary and is iterated until it changes less than
+    1e-12; the integrals use the 77 point tanh-sinh rule (Takahasi and Mori, 1974) over the
+    square root of the time, whose points crowd at the ends where the boundary near
+    expiration changes fastest.
+
+    A put at a non-positive rate is never exercised early and a call without dividends
+    neither; these are worth their European price, floored at the exercise value.
+
+    Args:
+        stock_price (float): The current stock price.
+        strike_price (float): The option's strike price.
+        risk_free_rate (float): The continuously compounded risk-free interest rate.
+        volatility (float): The volatility of the stock.
+        time_to_expiration (float): The time to expiration of the option, in years.
+            At zero the option is worth its exercise value.
+        dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
+        put_option (bool): Whether the option is a put option or not. Defaults to False.
+
+    Returns:
+        float: The value of the American option.
+
+    Raises:
+        TypeError: if any of the numeric inputs is not a float or int.
+        ValueError: if volatility is not positive.
+
+    Notes:
+        References: Andersen, L., Lake, M., & Offengenden, D. (2016). "High-Performance
+        American Option Pricing." Journal of Computational Finance, 20(1), 39-87; Kim, I. J.
+        (1990). "The Analytic Valuation of American Options." The Review of Financial
+        Studies, 3(4), 547-572; Li, M. (2010) for the QD+ starting boundary. Referenced
+        against QuantLib's QdFpAmericanEngine with its high precision scheme
+        (https://www.quantlib.org) and a Crank-Nicolson finite difference grid extrapolated
+        to zero step size. For S = K = 100, r = 5%, q = 3%, σ = 25% and T = 1 the put is
+        8.8827, where QD+ gives 8.8886.
+    """
+    _validate(
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
+    )
+
+    exercise_value = max(
+        (strike_price - stock_price) if put_option else (stock_price - strike_price),
+        0.0,
+    )
+    if time_to_expiration <= 0:
+        return exercise_value
+
+    if not put_option:
+        # A call is the put with S and K and r and q swapped (McDonald and Schroder, 1998).
+        return get_qd_fixed_point(
+            stock_price=strike_price,
+            strike_price=stock_price,
+            risk_free_rate=dividend_yield,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            dividend_yield=risk_free_rate,
+            put_option=True,
+        )
+
+    if risk_free_rate <= 0:
+        european_value = float(
+            get_black_scholes(
+                stock_price=stock_price,
+                strike_price=strike_price,
+                risk_free_rate=risk_free_rate,
+                volatility=volatility,
+                time_to_expiration=time_to_expiration,
+                dividend_yield=dividend_yield,
+                put_option=True,
+            )
+        )
+        return max(european_value, exercise_value)
+
+    return _qd_fixed_point_put(
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
+    )
+
+
 def get_american_option(
     stock_price: float,
     strike_price: float,
@@ -807,7 +1139,8 @@ def get_american_option(
     """
     Calculate the price of an American option with one of the approximations: QD+
     ("qd_plus", see get_qd_plus), Barone-Adesi-Whaley ("barone_adesi_whaley", see
-    get_barone_adesi_whaley) or Ju-Zhong ("ju_zhong", see get_ju_zhong).
+    get_barone_adesi_whaley) or Ju-Zhong ("ju_zhong", see get_ju_zhong), or with the
+    exercise boundary solved as a fixed point ("qd_fixed_point", see get_qd_fixed_point).
 
     Args:
         stock_price (float): The current stock price.
@@ -817,8 +1150,8 @@ def get_american_option(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): The approximation, "qd_plus", "barone_adesi_whaley" or "ju_zhong".
-            Defaults to "qd_plus".
+        method (str): The method, "qd_plus", "barone_adesi_whaley", "ju_zhong" or
+            "qd_fixed_point". Defaults to "qd_plus".
 
     Returns:
         float: The value of the American option.
@@ -831,6 +1164,7 @@ def get_american_option(
         "qd_plus": get_qd_plus,
         "barone_adesi_whaley": get_barone_adesi_whaley,
         "ju_zhong": get_ju_zhong,
+        "qd_fixed_point": get_qd_fixed_point,
     }
     if method not in functions:
         raise ValueError(
@@ -875,8 +1209,8 @@ def get_american_implied_volatility(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): The American approximation, "qd_plus", "barone_adesi_whaley" or
-            "ju_zhong". Defaults to "qd_plus".
+        method (str): The American method, "qd_plus", "barone_adesi_whaley", "ju_zhong"
+            or "qd_fixed_point". Defaults to "qd_plus".
 
     Returns:
         float: The implied volatility, or NaN when the observed price admits no solution.

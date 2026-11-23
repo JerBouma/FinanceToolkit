@@ -1500,6 +1500,63 @@ def test_get_american_option(recorder, options_module):
     )
 
 
+def test_get_american_option_qd_fixed_point(recorder, options_module):
+    recorder.capture(
+        options_module.get_american_option(
+            method="qd_fixed_point",
+            put_option=True,
+            strike_price_range=0.05,
+            expiration_time_range=5,
+        )
+    )
+
+
+def test_get_binomial_model_variants(recorder, options_module):
+    for method in (
+        "jarrow_rudd",
+        "tian",
+        "trigeorgis",
+        "leisen_reimer",
+        "exact_inversion",
+    ):
+        recorder.capture(options_module.get_binomial_model(method=method, timesteps=5))
+    recorder.capture(
+        options_module.get_binomial_model(
+            method="leisen_reimer", put_option=True, american_option=True
+        )
+    )
+
+
+def test_the_strike_centred_trees_use_an_odd_number_of_steps(options_module):
+    tree = options_module.get_binomial_model(method="exact_inversion", timesteps=4)
+    # Four steps become five: six dates from the start date to expiration.
+    assert len(tree.columns) == 6
+
+
+def test_get_cev_model(recorder, options_module):
+    recorder.capture(options_module.get_cev_model())
+    recorder.capture(
+        options_module.get_cev_model(
+            put_option=True, beta=0.3, strike_price_range=0.10, rounding=2
+        )
+    )
+
+
+def test_the_cev_model_with_an_elasticity_of_one_is_black_scholes(options_module):
+    cev = options_module.get_cev_model(beta=1.0, expiration_time_range=10)
+    black_scholes = options_module.get_black_scholes_model(expiration_time_range=10)
+    pd.testing.assert_frame_equal(cev, black_scholes)
+
+
+def test_get_black_76_model(recorder, options_module):
+    recorder.capture(options_module.get_black_76_model())
+    recorder.capture(
+        options_module.get_black_76_model(
+            put_option=True, risk_free_rate=0.03, expiration_time_range=10
+        )
+    )
+
+
 def test_get_bjerksund_stensland_1993(recorder, options_module):
     recorder.capture(options_module.get_bjerksund_stensland(method="1993"))
     recorder.capture(

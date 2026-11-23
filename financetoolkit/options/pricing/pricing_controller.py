@@ -12,6 +12,7 @@ from financetoolkit.options.pricing import (
     american_model,
     binomial_trees_model,
     black_scholes_model,
+    cev_model,
     compound_model,
     exotics_model,
     path_dependent_model,
@@ -34,7 +35,7 @@ logger = logger_model.get_logger()
 @track_sources
 class PricingOptions:
     """
-    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier (single, double, partial-time, soft and discretely watched), Asian (geometric and arithmetic), lookback and touch options, chooser, forward-start and cliquet options, put-call parity and strategy payoffs.
+    Option pricing: Black-Scholes (also with cash dividends), binomial trees (Cox-Ross-Rubinstein, Jarrow-Rudd, Tian, Trigeorgis, Leisen-Reimer, exact inversion), Monte Carlo, Garman-Kohlhagen, Black-76 on futures, the CEV model, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+) and the QD fixed point, binary, barrier (single, double, partial-time, soft and discretely watched), Asian (geometric and arithmetic), lookback and touch options, chooser, forward-start and cliquet options, put-call parity and strategy payoffs.
     """
 
     @handle_errors
@@ -324,11 +325,37 @@ class PricingOptions:
         rounding: int | None = None,
         standardize: bool = False,
         show_columns: str | list[str] | None = None,
+        method: Literal[
+            "cox_ross_rubinstein",
+            "jarrow_rudd",
+            "tian",
+            "trigeorgis",
+            "leisen_reimer",
+            "exact_inversion",
+        ] = "cox_ross_rubinstein",
     ):
         """
         Calculate the Binomial Option Pricing Model, a mathematical model used to estimate the price of European and
         American style options. It does so by creating a binomial tree of price paths for the underlying asset, and
         then working backwards through the tree to determine the price of the option at each node.
+
+        The tree of Cox, Ross and Rubinstein (1979) is the default. The variants choose the up and down movements and
+        the probability differently, which changes how fast and how smoothly the price converges as the number of
+        time steps grows:
+
+        - Jarrow-Rudd (method="jarrow_rudd"): equal probabilities of 1/2, with the moves centred on the drift.
+        - Tian (method="tian"): matches the first three moments of the lognormal distribution in each step.
+        - Trigeorgis (method="trigeorgis"): equal steps in the logarithm of the price with the drift in the
+          probability, a tree that keeps its probability between 0 and 1 longer than Cox-Ross-Rubinstein.
+        - Leisen-Reimer (method="leisen_reimer"): centred on the strike so the price converges smoothly at a rate of
+          1 / n² instead of oscillating at 1 / n, with the probabilities from the Peizer-Pratt inversion of the
+          normal distribution.
+        - Exact inversion (method="exact_inversion"): the Leisen-Reimer tree with the exact inverse of the binomial distribution, of which
+          Joshi (2010) takes a fourth order expansion. It prices a European option at its Black-Scholes value at
+          every number of steps and converges fastest for American options.
+
+        The Leisen-Reimer and exact inversion trees need an odd number of time steps; an even number is raised by one (the
+        default of 10 becomes 11).
 
         By default the stock price (the traded close), risk free rate, dividend yield and volatility of the most recent
         date are used; changing the start date prices the option as of that date instead. The volatility is the
@@ -343,6 +370,14 @@ class PricingOptions:
         - up movement (u) = e^(σ * sqrt(Δt))
         - down movement (d) = 1 / u
         - risk neutral probability (p) = (e^((r — q) * Δt) — d) / (u — d)
+        - Jarrow-Rudd: u = e^(νΔt + σ√Δt), d = e^(νΔt — σ√Δt), p = 1/2
+        - Tian: v = e^(σ²Δt), u = e^((r — q)Δt) * v / 2 * (v + 1 + √(v² + 2v — 3)), d = e^((r — q)Δt) * v / 2 *
+          (v + 1 — √(v² + 2v — 3)), p = (e^((r — q)Δt) — d) / (u — d)
+        - Trigeorgis: Δx = √(σ²Δt + ν²Δt²), u = e^(Δx), d = 1 / u, p = 1/2 + νΔt / (2Δx)
+        - Leisen-Reimer and exact inversion: p = h(d2), u = e^((r — q)Δt) * h(d1) / h(d2), d = (e^((r — q)Δt) — p * u) / (1 — p)
+        - Peizer-Pratt (Leisen-Reimer): h(z) = 1/2 + sign(z) / 2 * √(1 — e^(—(z / (n + 1/3 + 0.1 / (n + 1)))² *
+          (n + 1/6)))
+        - exact inversion: h(z) is the p at which I_p((n + 1) / 2, (n + 1) / 2) = N(z)
         - stock price at each node = S * u^j * d^(n — j)
         - call option price at expiration date = max(S — K, 0)
         - put option price at expiration date = max(K — S, 0)
@@ -359,7 +394,8 @@ class PricingOptions:
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, T is the time to expiration, Δt is the length of one time step, j is the number of up movements,
-        n is the number of time steps, C_u is the call option price at the up
+        ν = r — q — σ² / 2, d1 = (ln(S / K) + (r — q + σ² / 2) * T) / (σ√T), d2 = d1 — σ√T, I_p is the regularized
+        incomplete beta function, n is the number of time steps, C_u is the call option price at the up
         movement, C_d is the call option price at the down movement, P_u is the put option price at the up movement and
         P_d is the put option price at the down movement.
 
@@ -369,7 +405,20 @@ class PricingOptions:
         table for each strike price from each company will contain the actual binomial tree as also depicted
         in the image found here: https://en.wikipedia.org/wiki/Binomial_options_pricing_model#Method
 
-        Also known as: binomial tree, lattice model, option pricing.
+        See: Cox, J. C., Ross, S. A., & Rubinstein, M. (1979), "Option Pricing: A Simplified Approach", Journal of
+        Financial Economics, 7(3), 229-263; Jarrow, R., & Rudd, A. (1983), "Option Pricing", Irwin; Trigeorgis, L.
+        (1991), "A Log-Transformed Binomial Numerical Analysis Method for Valuing Complex Multi-Option Investments",
+        Journal of Financial and Quantitative Analysis, 26(3), 309-326; Tian, Y. (1993), "A Modified Lattice Approach
+        to Option Pricing", Journal of Futures Markets, 13(5), 563-577; Leisen, D. P. J., & Reimer, M. (1996),
+        "Binomial Models for Option Valuation - Examining and Improving Convergence", Applied Mathematical Finance,
+        3(4), 319-346; Joshi, M. S. (2010), "Achieving Higher Order Convergence for the Prices of European Options in
+        Binomial Trees", Mathematical Finance, 20(1), 89-103. Referenced against QuantLib's BinomialJRVanillaEngine,
+        BinomialTianVanillaEngine, BinomialTrigeorgisVanillaEngine, BinomialLRVanillaEngine and
+        BinomialJ4VanillaEngine (https://www.quantlib.org): the first four agree within 1e-9 and the J4 tree, Joshi's
+        expansion, lies within 1e-6 of the exact inverse at 101 steps. An equal probabilities tree that matches the
+        mean and variance of the log price is the Jarrow-Rudd tree.
+
+        Also known as: binomial tree, lattice model, option pricing, CRR, Leisen-Reimer, Jarrow-Rudd, Tian tree.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -404,6 +453,8 @@ class PricingOptions:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+            method (str, optional): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian", "trigeorgis",
+                "leisen_reimer" or "exact_inversion". Defaults to "cox_ross_rubinstein".
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
@@ -439,6 +490,21 @@ class PricingOptions:
         | (70, 'DDDDU') |     nan      |     nan      |     nan      |     nan      |       0      |       0      |
         | (70, 'DDDDD') |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
         """
+        if method not in binomial_trees_model.BINOMIAL_TREE_METHODS:
+            raise ValueError(
+                f"method must be one of {', '.join(binomial_trees_model.BINOMIAL_TREE_METHODS)}, received {method!r}."
+            )
+
+        if method in ("leisen_reimer", "exact_inversion") and timesteps % 2 == 0:
+            # Both trees put the strike between the two middle nodes at expiration, which needs an odd count.
+            logger.info(
+                "The %s tree needs an odd number of time steps, so %s steps are used instead of %s.",
+                method,
+                timesteps + 1,
+                timesteps,
+            )
+            timesteps += 1
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -493,6 +559,7 @@ class PricingOptions:
                         put_option=put_option,
                         american_option=american_option,
                         show_input_info=show_input_info,
+                        method=method,
                     )
 
                 binomial_trees[ticker][strike_price] = (
@@ -506,6 +573,7 @@ class PricingOptions:
                         dividend_yield=dividend_yield_value[ticker],
                         put_option=put_option,
                         american_option=american_option,
+                        method=method,
                     )
                 )
 
@@ -1527,7 +1595,9 @@ class PricingOptions:
         self,
         start_date: str | None = None,
         put_option: bool = False,
-        method: Literal["qd_plus", "barone_adesi_whaley", "ju_zhong"] = "qd_plus",
+        method: Literal[
+            "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point"
+        ] = "qd_plus",
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
         expiration_time_range: int = 30,
@@ -1540,7 +1610,8 @@ class PricingOptions:
     ):
         """
         Calculate American option prices with the QD+ method of Li (2010) and Andersen, Lake and Offengenden
-        (2016), or the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999).
+        (2016), the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999), or the
+        exact value from the exercise boundary solved as a fixed point (Andersen, Lake and Offengenden, 2016).
 
         Listed options on single stocks are American: they can be exercised at any time up to expiration, which
         makes an in-the-money put, or a call on a stock with a high dividend yield, worth more than the European
@@ -1555,6 +1626,10 @@ class PricingOptions:
         - QD+ (method="qd_plus"): the European price plus the early exercise premium integrated over the exercise
           boundary, with the boundary at each time to expiration from the QD+ equation of Li (2010). The most
           accurate of the three, within 0.3% of the exact value across typical inputs, and slower.
+        - QD fixed point (method="qd_fixed_point"): the same integral with the boundary that solves the integral
+          equation of Kim (1990), iterated as a fixed point from the QD+ boundary until it changes less than 1e-12.
+          It converges to the exact American value, within about 1e-6 (1e-8 for most options), at about 30 to 150
+          ms per price, so it is the slowest and best suited to a few strikes and expirations.
 
         The formulas are as follows, with φ = 1 for a call and -1 for a put:
 
@@ -1564,6 +1639,9 @@ class PricingOptions:
         - Barone-Adesi-Whaley = V_E(S) + φ * (1 - e^(-qT) * N(φ * d1(S*))) * S* / λ * (S / S*)^λ
         - Ju-Zhong = V_E(S) + (φ * (S* - K) - V_E(S*)) * (S / S*)^λ / (1 - b * ln(S / S*)² - c * ln(S / S*))
         - QD+ Put = p(S) + ∫_0^T [r * K * e^(-rt) * N(-d2(t, S / B(T - t))) - q * S * e^(-qt) * N(-d1(t, S / B(T - t)))] dt
+        - QD fixed point: B(τ) = K * e^(-(r - q)τ) * N(τ, B) / D(τ, B), iterated at 25 Chebyshev nodes in √τ, with N
+          and D the integrals of the FP-A equation of Andersen, Lake and Offengenden (2016), and the put priced with
+          the integral of QD+
         - QD+ Call (S, K, r, q) = QD+ Put (K, S, q, r), the put-call symmetry of McDonald and Schroder (1998)
 
         Where each formula holds on the side of S* (or of the boundary B(T)) where holding the option is optimal,
@@ -1584,12 +1662,13 @@ class PricingOptions:
         Pricing American Options", The Journal of Derivatives, 7(2), 31-40; Li, M. (2010), "Analytical
         Approximations for the Critical Stock Prices of American Options: A Performance Comparison", Review of
         Derivatives Research, 13(1), 75-99; Andersen, L., Lake, M., & Offengenden, D. (2016), "High-Performance
-        American Option Pricing", Journal of Computational Finance, 20(1), 39-87. Referenced against QuantLib's
-        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine and QdPlusAmericanEngine
-        (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value
+        American Option Pricing", Journal of Computational Finance, 20(1), 39-87; Kim, I. J. (1990), "The Analytic
+        Valuation of American Options", The Review of Financial Studies, 3(4), 547-572. Referenced against QuantLib's
+        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine and
+        QdFpAmericanEngine (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value
         (https://github.com/domokane/FinancePy).
 
-        Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+.
+        Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+, QdFp.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -1598,8 +1677,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            method (str, optional): The approximation: "qd_plus", "barone_adesi_whaley" or "ju_zhong". Defaults to
-            "qd_plus".
+            method (str, optional): The method: "qd_plus", "barone_adesi_whaley", "ju_zhong" or "qd_fixed_point".
+            Defaults to "qd_plus".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1666,9 +1745,14 @@ class PricingOptions:
         |             46 |       5.3505 |       5.507  |       5.6935 |
         |             47 |       6.3345 |       6.449  |       6.5986 |
         """
-        if method not in ("qd_plus", "barone_adesi_whaley", "ju_zhong"):
+        if method not in (
+            "qd_plus",
+            "barone_adesi_whaley",
+            "ju_zhong",
+            "qd_fixed_point",
+        ):
             raise ValueError(
-                f'method must be "qd_plus", "barone_adesi_whaley" or "ju_zhong", received {method!r}.'
+                f'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong" or "qd_fixed_point", received {method!r}.'
             )
 
         start_date = self._pricing_date(start_date)
@@ -1746,6 +1830,388 @@ class PricingOptions:
             )
 
         return american_option_df
+
+    @handle_errors
+    def get_cev_model(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        beta: float = 0.5,
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate European option prices in the constant elasticity of variance (CEV) model of Cox (1975), with the
+        non-central chi-squared formula of Schroder (1989).
+
+        In the CEV model the stock's volatility depends on its price, σ(S) = δ * S^(β - 1). With an elasticity β below
+        1 the volatility rises as the price falls (the leverage effect), so out-of-the-money puts are worth more and
+        out-of-the-money calls less than in the Black-Scholes model (β = 1): the downward sloping skew of equity
+        options. β = 0.5 is the square-root process and β = 0 an absolute (normal) volatility. The stock is absorbed
+        at zero.
+
+        The historical volatility is taken as the local volatility at today's price, δ = σ * S^(1 - β), so the
+        at-the-money options are priced close to Black-Scholes and β only adds the skew. β is a model choice rather
+        than data: fitted to an option chain it is typically between 0 and 1 for stocks and indices.
+
+        The formulas are as follows:
+
+        - δ = σ * S^(1 - β), F = S * e^((r - q)T), ν = 1 / (1 - β)
+        - v = δ² * (e^(2(r - q)(1 - β)T) - 1) / (2(r - q)(1 - β)), or δ² * T when r = q
+        - x = F^(2(1 - β)) / ((1 - β)² * v), y = K^(2(1 - β)) / ((1 - β)² * v)
+        - Call = e^(-rT) * [F * (1 - χ²(y; ν + 2, x)) - K * χ²(x; ν, y)]
+        - Put = e^(-rT) * [K * (1 - χ²(x; ν, y)) - F * χ²(y; ν + 2, x)]
+
+        Where S is the stock price (the traded close on the pricing date), K is the strike price, r is the
+        continuously compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)), σ is the
+        annualized volatility (the standard deviation of the daily returns over the trailing 252 trading days times
+        √252), β is the elasticity, T is the time to expiration in years (days / 365), F is the futures price of the
+        expiration and χ²(z; k, λ) is the distribution function of the non-central chi-squared distribution with k
+        degrees of freedom and non-centrality λ. With β = 1 the values are those of the Black-Scholes model. At zero
+        days to expiration the value is the exercise value.
+
+        See: Cox, J. C. (1975), "Notes on Option Pricing I: Constant Elasticity of Variance Diffusions", working paper,
+        Stanford University (reprinted in The Journal of Portfolio Management, 23(2), 1996); Schroder, M. (1989),
+        "Computing the Constant Elasticity of Variance Option Pricing Formula", The Journal of Finance, 44(1),
+        211-219. Referenced against QuantLib's AnalyticCEVEngine (https://www.quantlib.org).
+
+        Also known as: CEV model, constant elasticity of variance, CEV option price, leverage effect skew.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            beta (float, optional): The elasticity β, between 0 and 1, where 1 is the Black-Scholes model. Defaults to
+            0.5, the square-root process.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: CEV option values containing the tickers and strike prices as the index and the time to
+            expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        cev_put = toolkit.options.get_cev_model(
+            put_option=True, beta=0.5, strike_price_range=0.15, strike_step_size=10, expiration_time_range=91
+        )
+
+        cev_put.loc["AAPL", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            230 |       0.3865 |       1.6792 |       3.1579 |
+        |            240 |       1.0437 |       3.082  |       5.0247 |
+        |            250 |       2.4176 |       5.2461 |       7.6031 |
+        |            260 |       4.8871 |       8.3465 |      10.9942 |
+        |            270 |       8.7686 |      12.5031 |      15.2615 |
+        |            280 |      14.1992 |      17.7584 |      20.424  |
+        |            290 |      21.0882 |      24.072  |      26.4555 |
+        |            300 |      29.1649 |      31.3332 |      33.2904 |
+        |            310 |      38.084  |      39.386  |      40.8347 |
+        |            320 |      47.5269 |      48.0578 |      48.9786 |
+        """
+        if not 0 <= beta <= 1:
+            raise ValueError(f"beta must be between 0 and 1, received {beta!r}.")
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        cev_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+
+            cev_option[ticker] = {
+                strike_price: {
+                    time_to_expiration: cev_model.get_cev(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=float(strike_price),
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        time_to_expiration=time_to_expiration,
+                        beta=float(beta),
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+                for strike_price in strike_prices
+            }
+
+        cev_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=cev_option,
+            start_date=start_date,
+        )
+
+        cev_option_df = cev_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            cev_option_df = calculate_standardization(
+                dataset=cev_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return cev_option_df
+
+    @handle_errors
+    def get_black_76_model(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Black (1976) model, the Black-Scholes model for European options on futures and forwards, with
+        each ticker's price taken as the futures price.
+
+        A futures price already contains the cost of carry of the underlying (interest, storage, dividends or the
+        convenience yield of a commodity), so it grows at no rate under the risk-neutral measure and the option only
+        discounts its payoff. Use it for tickers that quote futures prices, such as commodities (GCUSD for gold,
+        CLUSD for crude oil) and index futures. It assumes the option expires with the futures contract, so the
+        futures price of each expiration is the one quoted today; for an option that expires before its futures
+        contract the price is the same with the time to the option's expiration.
+
+        The formulas are as follows:
+
+        - d1 = (ln(F / K) + (σ^2 / 2) * t) / (σ * sqrt(t))
+        - d2 = d1 - σ * sqrt(t)
+        - Call Option Price = e^(-r * t) * (F * N(d1) - K * N(d2))
+        - Put Option Price = e^(-r * t) * (K * N(-d2) - F * N(-d1))
+
+        Where F is the futures price (the traded close on the pricing date), K is the strike price, r is the
+        continuously compounded risk-free rate, σ is the annualized volatility of the futures price (the standard
+        deviation of the daily returns over the trailing 252 trading days times √252), t is the time to expiration in
+        years (days / 365) and N is the standard normal distribution. At zero days to expiration the value is the
+        exercise value. The implied volatility of a quoted option on a futures contract is
+        ``black_scholes_model.get_black_76_implied_volatility``.
+
+        See: Black, F. (1976), "The Pricing of Commodity Contracts", Journal of Financial Economics, 3(1-2), 167-179.
+        Referenced against QuantLib's blackFormula (https://www.quantlib.org) and FinancePy's Black model
+        (https://github.com/domokane/FinancePy).
+
+        Also known as: Black-76, Black's model, options on futures, options on forwards, commodity options.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current futures price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current futures price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Black-76 values containing the tickers and strike prices as the index and the time to
+            expiration as the columns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        black_76 = toolkit.options.get_black_76_model(
+            strike_price_range=0.1, strike_step_size=100, expiration_time_range=91
+        )
+
+        black_76.loc["GCUSD", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |           3900 |     442.905  |     454.105  |     468.105  |
+        |           4000 |     349.15   |     368.535  |     388.087  |
+        |           4100 |     262.153  |     290.585  |     315.343  |
+        |           4200 |     185.691  |     222.011  |     250.855  |
+        |           4300 |     123.028  |     163.997  |     195.201  |
+        |           4400 |      75.7173 |     116.939  |     148.498  |
+        |           4500 |      43.0764 |      80.4062 |     110.409  |
+        |           4600 |      22.5863 |      53.2835 |      80.2235 |
+        |           4700 |      10.9008 |      34.0278 |      56.973  |
+        |           4800 |       4.843  |      20.9478 |      39.5581 |
+        """
+        start_date = self._pricing_date(start_date)
+        futures_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=futures_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        black_76: dict[str, dict[float, dict[float, float]]] = {
+            ticker: {
+                strike_price: {
+                    time_to_expiration: float(
+                        black_scholes_model.get_black_76(
+                            forward_price=float(futures_price.loc[ticker]),
+                            strike_price=float(strike_price),
+                            risk_free_rate=float(risk_free_rate),
+                            volatility=float(volatility.loc[ticker]),
+                            time_to_expiration=time_to_expiration,
+                            put_option=put_option,
+                        )
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+                for strike_price in strike_prices
+            }
+            for ticker, strike_prices in strike_prices_per_ticker.items()
+        }
+
+        black_76_df = helpers.create_greek_dataframe(
+            greek_dictionary=black_76,
+            start_date=start_date,
+        )
+
+        black_76_df = black_76_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            black_76_df = calculate_standardization(
+                dataset=black_76_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=futures_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+            )
+
+        return black_76_df
 
     @handle_errors
     def get_monte_carlo_option_price(

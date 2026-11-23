@@ -2000,67 +2000,6 @@ def get_hill_estimator(
 
 
 @by_own_trading_days
-def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
-    """
-    Calculate the Hurst Exponent of a series, a measure of long-term memory that
-    indicates whether a series is mean-reverting, trending, or a random walk.
-
-    The Hurst Exponent (H) is interpreted as follows:
-
-    - H < 0.5: the series is mean-reverting (anti-persistent).
-    - H = 0.5: the series is a random walk (no memory).
-    - H > 0.5: the series is trending (persistent).
-
-    It is estimated here via the generalized Hurst exponent (structure function)
-    method: for a self-affine process (e.g. fractional Brownian motion), the standard
-    deviation of the lagged differences scales as a power law of the lag,
-    Std(X_(t+lag) - X_t) ~ lag^H, so H is recovered directly as the slope of a linear
-    regression of the log of that standard deviation against the log of the lag --
-    no further rescaling of the slope is needed, since the square root in the standard
-    deviation already converts the lag^(2H) scaling of the underlying Variance into
-    lag^H.
-
-    Di Matteo et al. (2005) apply it to the logarithm of the price, X_t = ln(P_t), so the
-    lagged differences are log returns over the lag and their dispersion does not depend
-    on the price level; pass log prices for that estimate.
-
-    Also known as: generalized Hurst exponent, structure-function Hurst estimator.
-
-    For more information about the method, see the following paper:
-
-    - Di Matteo, T., Aste, T., & Dacorogna, M.M. (2005). "Long-Term Memories of
-    Developed and Emerging Markets: Using the Scaling Analysis to Characterize Their
-    Stage of Development." Journal of Banking & Finance, 29(4), 827-851.
-
-    Args:
-        data (pd.Series): A Series of levels (e.g. log prices) to calculate the Hurst
-        Exponent for.
-        max_lag (int, optional): The maximum lag, included, to use when estimating the
-        exponent; the regression runs over the lags 2 up to and including `max_lag`.
-        Capped so that each lag has at least two differences. Defaults to 20.
-
-    Returns:
-        float: The estimated Hurst Exponent, or NaN when fewer than two lags
-        have a positive, finite dispersion.
-    """
-    if not isinstance(data, pd.Series):
-        raise TypeError("Expects pd.Series, no other value.")
-
-    values = data.dropna().to_numpy()
-    # Each lag needs at least two differences to estimate their dispersion.
-    lags = np.arange(2, min(max_lag, len(values) - 2) + 1)
-    standard_deviations = np.array(
-        [np.std(np.subtract(values[lag:], values[:-lag])) for lag in lags]
-    )
-    usable = np.isfinite(standard_deviations) & (standard_deviations > 0)
-    if usable.sum() < 2:  # noqa: PLR2004
-        return np.nan
-
-    poly = np.polyfit(np.log(lags[usable]), np.log(standard_deviations[usable]), 1)
-
-    return poly[0]
-
-
 @by_own_trading_days
 def get_move_significance(
     returns: pd.Series, window: int = 252, alpha: float = 0.05

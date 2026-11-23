@@ -249,7 +249,10 @@ def refused_value_problem(
 
 
 def size_limit_problem(
-    arguments: dict[str, Any], defaults: dict[str, Any], limits: dict[str, Any]
+    arguments: dict[str, Any],
+    defaults: dict[str, Any],
+    limits: dict[str, Any],
+    method_name: str | None = None,
 ) -> str | None:
     """
     Checks the size parameters of a call against the limits of the server (config.yaml
@@ -259,16 +262,22 @@ def size_limit_problem(
         arguments (dict[str, Any]): The arguments the indicator receives.
         defaults (dict[str, Any]): The indicator's own default per parameter, used in a
             product for a parameter the caller left out.
-        limits (dict[str, Any]): The "maximums" (per parameter) and "products" (a list of
-            parameters and the maximum of their product).
+        limits (dict[str, Any]): The "maximums" (per parameter, or per parameter of one
+            indicator as "indicator.parameter") and "products" (a list of parameters and the
+            maximum of their product).
+        method_name (str | None, optional): The indicator called, for the maximums of one
+            indicator. Defaults to None, which checks only the maximums of every indicator.
 
     Returns:
         str | None: What is over a limit, or None when the call is within them.
     """
     for name, maximum in limits.get("maximums", {}).items():
-        if any(number > maximum for number in _numbers(arguments.get(name))):
+        indicator, _, parameter = name.rpartition(".")
+        if indicator and indicator != method_name:
+            continue
+        if any(number > maximum for number in _numbers(arguments.get(parameter))):
             return (
-                f"`{name}` may be at most {maximum:,} on this server, which keeps every call "
+                f"`{parameter}` may be at most {maximum:,} on this server, which keeps every call "
                 "to a size it can compute next to the others. Please use a smaller value."
             )
 

@@ -7,9 +7,9 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.distribution import dispersion_model
+from financetoolkit.risk.distribution import dispersion_model, fractal_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -26,7 +26,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class DistributionRisk:
     """
-    The shape of the return distribution: variance, skewness, kurtosis, central and partial moments, L-moments, the Gini mean difference, the tail Gini, range measures, the worst realization, the Hill estimator, the tail ratio, the mean absolute deviation, the coefficient of variation, autocorrelation, the Hurst exponent and the significance of a move.
+    The shape of the return distribution: variance, skewness, kurtosis, central and partial moments, L-moments, the Gini mean difference, the tail Gini, range measures, the worst realization, the Hill estimator, the tail ratio, the mean absolute deviation, the coefficient of variation, autocorrelation, the significance of a move, and memory, fractal and chaos measures: the Hurst exponent (generalized, rescaled range, detrended fluctuation), the fractal dimension (Higuchi, Katz, Petrosian), the correlation dimension and the Lyapunov exponent.
     """
 
     @handle_portfolio
@@ -1134,13 +1134,21 @@ class DistributionRisk:
     def get_hurst_exponent(
         self,
         max_lag: int = 20,
+        method: Literal[
+            "generalized", "rescaled_range", "detrended_fluctuation"
+        ] = "generalized",
+        period: str | None = None,
+        rolling: int | None = None,
+        q: float | list[float] = 2.0,
+        window_sizes: list[int] | None = None,
+        corrected: bool = True,
+        order: int = 1,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Hurst Exponent of each asset's daily (adjusted close) log price series, a
-        measure of long-term memory that indicates whether the price is mean-reverting,
-        trending, or a random walk.
+        Calculate the Hurst Exponent of each asset, a measure of long-term memory that
+        indicates whether the price is mean-reverting, trending, or a random walk.
 
         The Hurst Exponent (H) is interpreted as follows:
 
@@ -1150,19 +1158,70 @@ class DistributionRisk:
 
         For liquid stocks the estimate is usually close to 0.5, and with lags of at most
         `max_lag` days it describes short-term behaviour only; a value of 0.45 or 0.55 over a
-        few years is within estimation noise rather than evidence of a tradable pattern.
+        few years is within estimation noise rather than evidence of a tradable pattern, so the
+        exponent is mostly of use to compare assets or periods (with `rolling`) with each other.
 
-        The formula is as follows (with the default max_lag=20):
+        The methods are as follows (with the defaults):
 
-        - sigma(tau) = Std(ln P_(t+tau) - ln P_t)
-        - ln sigma(tau) = c + H * ln tau, fitted by least squares over tau = 2, ..., 20
+        - Generalized (Di Matteo, Aste and Dacorogna, 2005), on the log prices X = ln P:
+          K_q(tau) = Mean(abs(d - Mean(d))^q) of the differences d = X_(t+tau) - X_t, and
+          ln K_q(tau) = c + q * H(q) * ln tau, fitted by least squares over tau = 2, ..., 20.
+          With q = 2 this is the slope of the log standard deviation (ddof=0) of the lagged
+          differences on the log lag. A list of q gives H(q) per q: for fat-tailed returns H(1)
+          above H(2) points to multifractality.
+        - Rescaled range (Hurst, 1951; Anis and Lloyd, 1976; Peters, 1994), on the log returns
+          x: within windows of n returns, R/S = (Max(Y) - Min(Y)) / Std(x) with Y the cumulative
+          deviations from the window mean and Std the population standard deviation; (R/S)(n)
+          its average over the floor(N / n) windows, and H = 0.5 + slope of
+          ln (R/S)(n) - ln E[R/S](n) on ln n, with E[R/S](n) = ((n - 0.5) / n) *
+          Gamma((n - 1) / 2) / (Sqrt(pi) * Gamma(n / 2)) * Sum(Sqrt((n - i) / i), i = 1, ..., n - 1)
+          the expected rescaled range of independent returns. With corrected=False, H is the
+          slope of ln (R/S)(n) on ln n.
+        - Detrended fluctuation (Peng et al., 1994), on the log returns x: the profile
+          Y_k = Sum(x_i - Mean(x)) is cut into windows of n, a straight line (a polynomial of
+          degree `order`) is fitted and removed in every window, F(n) = Sqrt(Mean(residual^2))
+          and H (alpha) = slope of ln F(n) on ln n.
 
-        Where P is the daily adjusted close, Std the population standard deviation (ddof=0) of the lagged log
-        price differences and H, the slope, the Hurst Exponent.
+        The window sizes n of the rescaled range and the detrended fluctuation grow by 20% from
+        10 up to a tenth of the observations, so every size has at least ten windows.
+
+        For more information, see the following sources:
+
+        - Di Matteo, T., Aste, T., & Dacorogna, M.M. (2005). "Long-Term Memories of Developed and
+          Emerging Markets: Using the Scaling Analysis to Characterize Their Stage of
+          Development." Journal of Banking & Finance, 29(4), 827-851.
+        - Di Matteo, T. (2007). "Multi-scaling in finance." Quantitative Finance, 7(1), 21-36.
+        - Hurst, H.E. (1951). "Long-term storage capacity of reservoirs." Transactions of the
+          American Society of Civil Engineers, 116, 770-799.
+        - Anis, A.A. & Lloyd, E.H. (1976). "The expected value of the adjusted rescaled Hurst
+          range of independent normal summands." Biometrika, 63(1), 111-116.
+        - Peters, E.E. (1994). "Fractal Market Analysis." Wiley.
+        - Peng, C.-K., Buldyrev, S.V., Havlin, S., Simons, M., Stanley, H.E. & Goldberger, A.L.
+          (1994). "Mosaic organization of DNA nucleotides." Physical Review E, 49(2), 1685-1689.
+        - Referenced against nolds' mfhurst_dm, hurst_rs and dfa (https://github.com/CSchoel/nolds)
+          and antropy's detrended_fluctuation (https://github.com/raphaelvallat/antropy).
+
+        Also known as: generalized Hurst exponent, GHE, R/S analysis, rescaled range, DFA,
+        detrended fluctuation analysis, multifractal Hurst exponent.
 
         Args:
-            max_lag (int, optional): The maximum lag, included, to use when estimating the exponent:
-                the regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
+            max_lag (int, optional): The maximum lag of the generalized method, included: the
+                regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
+            method (str, optional): "generalized", "rescaled_range" or "detrended_fluctuation".
+                Defaults to "generalized".
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
+                or yearly). Defaults to None, which uses "daily".
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
+            q (float | list[float], optional): The order of the moment of the generalized method,
+                or a list of orders for a column per order. Defaults to 2.0.
+            window_sizes (list[int] | None, optional): The window sizes of the rescaled range and
+                the detrended fluctuation. Defaults to None, which uses 10 up to a tenth of the
+                observations, growing by 20%.
+            corrected (bool, optional): Whether to apply the Anis-Lloyd-Peters correction to the
+                rescaled range. Defaults to True.
+            order (int, optional): The degree of the polynomial removed from every window of the
+                detrended fluctuation. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1171,13 +1230,17 @@ class DistributionRisk:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series: The estimated Hurst Exponent for each asset.
+            pd.Series | pd.DataFrame: The Hurst Exponent per asset, with `rolling` per date (a
+            column per asset), and with a list of q a column "H(q)" per order.
 
         Notes:
-        - The exponent is estimated with the generalized Hurst (structure function) method of
-        Di Matteo, Aste & Dacorogna (2005) on the logarithm of the adjusted close, as in that paper,
-        see `risk_model.get_hurst_exponent`. The lagged differences of log prices are log returns,
-        so the estimate does not depend on the price level.
+        - The generalized method works on the log prices: their lagged differences are log returns
+          over the lag, whose dispersion does not depend on the price level. The rescaled range
+          and the detrended fluctuation work on the log returns, the differences of the log prices.
+        - The rescaled range equals nolds' hurst_rs with unbiased=False and fit="poly" and the
+          detrended fluctuation nolds' dfa with overlap=False and fit_exp="poly", for the same
+          window sizes. nolds' mfhurst_dm samples the differences without overlap, detrends the
+          series and averages over the largest lags 5 to 19, so it differs by about 0.01 to 0.03.
 
         As an example:
 
@@ -1198,21 +1261,426 @@ class DistributionRisk:
 
         |           |   Value |
         |:----------|--------:|
-        | EURUSD    |  0.4229 |
-        | GCUSD     |  0.4886 |
+        | EURUSD    |  0.4718 |
+        | GCUSD     |  0.4617 |
         | BTCUSD    |  0.5057 |
-        | Benchmark |  0.4621 |
+        | Benchmark |  0.4396 |
         """
-        # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
-        # Log prices, as in Di Matteo et al. (2005): their lagged differences are log returns over the lag, whose dispersion does not depend on the price level, whereas price differences grow with the price and tilt the slope on a series that trends over the sample.  # noqa: E501
-        log_prices = np.log(self._get_prices("Adj Close"))
+        # The generalized estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series: on log prices, as in Di Matteo et al. (2005), whose lagged differences are log returns over the lag. The rescaled range and the detrended fluctuation sum the changes themselves, so they take the log returns.  # noqa: E501
+        log_prices = self._get_log_prices(period)
 
-        hurst_exponent = log_prices.apply(
-            lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)
-        )
+        if method == "generalized":
+            orders = q if isinstance(q, list) else [q]
+            hurst_exponents = {
+                f"H({order_q:g})": calculate_per_window(
+                    log_prices,
+                    fractal_model.get_generalized_hurst_exponent,
+                    rolling,
+                    max_lag=max_lag,
+                    q=order_q,
+                )
+                for order_q in orders
+            }
+            if not isinstance(q, list):
+                hurst_exponent = next(iter(hurst_exponents.values()))
+            elif rolling:
+                hurst_exponent = pd.concat(hurst_exponents, axis=1)
+            else:
+                hurst_exponent = pd.DataFrame(hurst_exponents)
+        elif method in ["rescaled_range", "detrended_fluctuation"]:
+            hurst_exponent = calculate_per_window(
+                self._get_log_prices(period, returns=True),
+                (
+                    fractal_model.get_rescaled_range_hurst_exponent
+                    if method == "rescaled_range"
+                    else fractal_model.get_detrended_fluctuation
+                ),
+                rolling,
+                window_sizes=window_sizes,
+                **(
+                    {"corrected": corrected}
+                    if method == "rescaled_range"
+                    else {"order": order}
+                ),
+            )
+        else:
+            raise ValueError(
+                "Method should be 'generalized', 'rescaled_range' or 'detrended_fluctuation'."
+            )
 
         return apply_rounding(
             hurst_exponent, rounding if rounding is not None else self._rounding
+        )
+
+    def _get_log_prices(
+        self, period: str | None, returns: bool = False
+    ) -> pd.DataFrame:
+        """
+        The log of the adjusted close of `period` on the dates each ticker traded, or with
+        `returns` their differences, the log returns, each ticker over its own trading days.
+        """
+        period = period if period else "daily"
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        log_prices = np.log(self._get_prices("Adj Close", period))
+        if not returns:
+            return log_prices
+
+        # A day another ticker traded on is NaN here, so each ticker is differenced over its own trading days rather than losing the return around the gap.  # noqa: E501
+        return log_prices.apply(lambda prices: prices.dropna().diff())
+
+    @handle_errors
+    def get_fractal_dimension(
+        self,
+        method: Literal["higuchi", "katz", "petrosian"] = "higuchi",
+        period: str | None = None,
+        rolling: int | None = None,
+        kmax: int = 10,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Fractal Dimension of each asset's log price path: how rough the path is,
+        between 1 for a straight line and 2 for a path that fills the plane.
+
+        A random walk has a Higuchi dimension of 1.5, which is 2 - H for a self-affine path
+        with Hurst exponent H: a trending path has a lower and a mean-reverting path a higher
+        dimension. The Katz and Petrosian dimensions are quick measures of the same roughness
+        on their own scales: Katz from how far the path gets for the distance it travels and
+        Petrosian from how often it turns. Price paths are close to random walks, so the
+        dimensions are mostly of use to compare assets or periods (with `rolling`).
+
+        The methods are as follows (on the log prices x of N periods):
+
+        - Higuchi (1988): L_m(k) = Sum(abs(x_(m + i*k) - x_(m + (i - 1)*k))) * (N - 1) /
+          (floor((N - m) / k) * k) / k, L(k) = Mean(L_m(k)) over m = 1, ..., k, and
+          FD = -slope of ln L(k) on ln k over k = 1, ..., kmax.
+        - Katz (1988): FD = log10(n) / (log10(n) + log10(d / L)), with L = Sum(abs(x_(i+1) - x_i))
+          the length of the path, d = Max(abs(x_i - x_1)) its largest distance from the start
+          and n = N - 1 the number of steps.
+        - Petrosian (1995): FD = log10(N) / (log10(N) + log10(N / (N + 0.4 * N_delta))), with
+          N_delta the number of sign changes of the returns (a return of 0 interrupts one).
+
+        For more information, see the following sources:
+
+        - Higuchi, T. (1988). "Approach to an irregular time series on the basis of the fractal
+          theory." Physica D, 31(2), 277-283.
+        - Katz, M.J. (1988). "Fractals and the analysis of waveforms." Computers in Biology and
+          Medicine, 18(3), 145-156.
+        - Petrosian, A. (1995). "Kolmogorov complexity of finite sequences and recognition of
+          different preictal EEG patterns." Proceedings of the Eighth IEEE Symposium on
+          Computer-Based Medical Systems, 212-217.
+        - Referenced against antropy's higuchi_fd, katz_fd and petrosian_fd
+          (https://github.com/raphaelvallat/antropy).
+
+        Also known as: HFD, KFD, PFD, Higuchi fractal dimension, fractal roughness.
+
+        Args:
+            method (str, optional): "higuchi", "katz" or "petrosian". Defaults to "higuchi".
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
+                or yearly). Defaults to None, which uses "daily".
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
+            kmax (int, optional): The largest step k of the Higuchi dimension. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: The fractal dimension per asset, or with `rolling` per date
+            (a column per asset).
+
+        Notes:
+        - The dimensions equal antropy's higuchi_fd, katz_fd and petrosian_fd of the log prices.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["EURUSD", "GCUSD", "BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_fractal_dimension()
+        ```
+
+        Which returns:
+
+        |           |   Value |
+        |:----------|--------:|
+        | EURUSD    |  1.515  |
+        | GCUSD     |  1.4903 |
+        | BTCUSD    |  1.4827 |
+        | Benchmark |  1.5085 |
+        """
+        functions = {
+            "higuchi": fractal_model.get_higuchi_fractal_dimension,
+            "katz": fractal_model.get_katz_fractal_dimension,
+            "petrosian": fractal_model.get_petrosian_fractal_dimension,
+        }
+        if method not in functions:
+            raise ValueError("Method should be 'higuchi', 'katz' or 'petrosian'.")
+
+        fractal_dimension = calculate_per_window(
+            self._get_log_prices(period),
+            functions[method],
+            rolling,
+            **({"kmax": kmax} if method == "higuchi" else {}),
+        )
+
+        return apply_rounding(
+            fractal_dimension, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_correlation_dimension(
+        self,
+        period: str | None = None,
+        embedding: int = 10,
+        delay: int = 1,
+        radii: list[float] | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Correlation Dimension of each asset's log returns by the
+        Grassberger-Procaccia algorithm: the dimension of the set that stretches of
+        `embedding` consecutive returns fill.
+
+        A deterministic, chaotic process fills a set of a low dimension however many returns a
+        stretch holds; for noise the dimension grows with the embedding dimension (close to it
+        for independent returns). Daily returns behave mostly like noise, so a value well below
+        the embedding dimension is the exception, and comparing several embedding dimensions
+        shows whether the dimension levels off.
+
+        The formula is as follows:
+
+        - X_i = [x_i, x_(i + tau), ..., x_(i + (m - 1) * tau)], the delay embedding of the log returns
+        - C(r) = 2 / (M * (M - 1)) * Sum(1[||X_i - X_j|| < r], i < j), the share of the M * (M - 1) / 2
+          pairs of vectors closer than r
+        - D2 = slope of ln C(r) on ln r
+
+        with ||.|| the Euclidean norm and, by default, the radii (3% apart) at which C(r) lies
+        between 0.0001 and 0.01.
+
+        For more information, see the following sources:
+
+        - Grassberger, P. & Procaccia, I. (1983). "Characterization of strange attractors."
+          Physical Review Letters, 50(5), 346-349.
+        - Referenced against nolds' corr_dim (https://github.com/CSchoel/nolds).
+
+        Also known as: D2, Grassberger-Procaccia dimension, correlation integral.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
+                or yearly). Defaults to None, which uses "daily".
+            embedding (int, optional): The embedding dimension m. Defaults to 10.
+            delay (int, optional): The number of periods between the returns of a vector.
+                Defaults to 1.
+            radii (list[float] | None, optional): The radii as multiples of the standard deviation
+                (ddof=1) of the returns. Defaults to None, which uses the radii at which C(r) lies
+                between 0.0001 and 0.01.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series: The correlation dimension per asset.
+
+        Notes:
+        - Every pair of vectors is compared, so the time grows with the square of the number of
+          returns: about 0.6 seconds for ten years of daily returns.
+        - With radii=, it equals a direct count of the pairs closer than every radius. nolds'
+          corr_dim also counts every vector as a pair with itself, which pulls its slope towards
+          0 where few pairs are close (0 for ten daily returns at its default radii of 0.1 to 0.5
+          standard deviations, at which there are hardly any pairs).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["EURUSD", "GCUSD", "BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_correlation_dimension(embedding=4)
+        ```
+
+        Which returns:
+
+        |           |   Value |
+        |:----------|--------:|
+        | EURUSD    |  4.0576 |
+        | GCUSD     |  3.6576 |
+        | BTCUSD    |  3.8436 |
+        | Benchmark |  3.8736 |
+        """
+        correlation_dimension = calculate_per_window(
+            self._get_log_prices(period, returns=True),
+            fractal_model.get_correlation_dimension,
+            embedding=embedding,
+            delay=delay,
+            radii=radii,
+        )
+
+        return apply_rounding(
+            correlation_dimension, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_lyapunov_exponent(
+        self,
+        method: Literal["rosenstein", "eckmann"] = "rosenstein",
+        period: str | None = None,
+        embedding: int = 10,
+        delay: int = 1,
+        min_separation: int | None = None,
+        trajectory_length: int = 20,
+        matrix_dimension: int = 4,
+        min_neighbors: int | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Lyapunov Exponent of each asset's log returns: the rate, per period, at
+        which nearby paths of the reconstructed dynamics move apart.
+
+        A positive largest exponent points to chaos, a sensitive dependence on the starting
+        point that makes the series unpredictable beyond a few periods even if it were
+        deterministic; a value around 0 or below to a regular process. For noise, such as
+        daily returns, the estimate is not 0 but depends on the embedding, so the exponent is
+        mostly of use to compare assets or periods with each other.
+
+        The methods are as follows (X_i the delay embedding of the log returns x):
+
+        - Rosenstein, Collins and De Luca (1993): every vector X_i is paired with its nearest
+          neighbour X_j (Euclidean) at least `min_separation` periods away, y(k) = Mean(ln
+          ||X_(i+k) - X_(j+k)||) for k = 0, ..., trajectory_length - 1, and lambda_1 = slope of
+          y(k) on k, the largest exponent.
+        - Eckmann, Kamphorst, Ruelle and Ciliberto (1986): with m = (embedding - 1) /
+          (matrix_dimension - 1), a linear map T_i from X_i = [x_i, x_(i + m), ...] to X_(i+m)
+          is fitted by least squares on the min_neighbors nearest neighbours (Chebyshev); the
+          maps are multiplied along the path with a QR decomposition T_i Q_(i-m) = Q_i R_i and
+          lambda_k = Mean(ln abs(R_i,kk)) / m, the `matrix_dimension` largest exponents.
+
+        For more information, see the following sources:
+
+        - Rosenstein, M.T., Collins, J.J. & De Luca, C.J. (1993). "A practical method for
+          calculating largest Lyapunov exponents from small data sets." Physica D, 65(1-2),
+          117-134.
+        - Eckmann, J.-P., Kamphorst, S.O., Ruelle, D. & Ciliberto, S. (1986). "Liapunov exponents
+          from time series." Physical Review A, 34(6), 4971-4979.
+        - Referenced against nolds' lyap_r and lyap_e (https://github.com/CSchoel/nolds).
+
+        Also known as: largest Lyapunov exponent, LLE, Lyapunov spectrum, chaos exponent.
+
+        Args:
+            method (str, optional): "rosenstein" for the largest exponent or "eckmann" for the
+                spectrum. Defaults to "rosenstein".
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
+                or yearly). Defaults to None, which uses "daily".
+            embedding (int, optional): The embedding dimension; for "eckmann", embedding - 1 must be
+                a multiple of matrix_dimension - 1. Defaults to 10.
+            delay (int, optional): The number of periods between the returns of a vector of the
+                Rosenstein method. Defaults to 1.
+            min_separation (int | None, optional): The smallest number of periods between a vector
+                and its neighbour. Defaults to None, which uses the mean period of the returns
+                (one over the power-weighted mean frequency of the periodogram, rounded up) for
+                "rosenstein" and 0 for "eckmann".
+            trajectory_length (int, optional): The number of periods the pairs of the Rosenstein
+                method are followed. Defaults to 20.
+            matrix_dimension (int, optional): The number of exponents of the Eckmann method.
+                Defaults to 4.
+            min_neighbors (int | None, optional): The number of neighbours of every vector of the
+                Eckmann method. Defaults to None, which uses min(2 * matrix_dimension,
+                matrix_dimension + 4).
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: The largest exponent per asset, or for "eckmann" the
+            exponents "Exponent 1" to "Exponent d" per asset (a row per asset), per period.
+
+        Notes:
+        - Every vector is compared with every other one, so the time grows with the square of the
+          number of returns: about 1 second for the Rosenstein and 2 seconds for the Eckmann
+          method on ten years of daily returns.
+        - The Rosenstein method equals nolds' lyap_r with the same lag, min_tsep and fit="poly".
+          The Eckmann method multiplies the maps along each path i, i + m, i + 2m, ..., where
+          nolds' lyap_e multiplies the maps of consecutive vectors; with m = 1 both are equal, and
+          on the Hénon map (largest exponent 0.42) the paths here give 0.42 for m = 2 and 3, where
+          nolds gives 0.45 and 0.47.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["EURUSD", "GCUSD", "BTCUSD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_lyapunov_exponent()
+        ```
+
+        Which returns:
+
+        |           |   Value |
+        |:----------|--------:|
+        | EURUSD    |  0.0388 |
+        | GCUSD     |  0.0398 |
+        | BTCUSD    |  0.0395 |
+        | Benchmark |  0.0409 |
+        """
+        log_returns = self._get_log_prices(period, returns=True)
+
+        if method == "rosenstein":
+            lyapunov_exponent = calculate_per_window(
+                log_returns,
+                fractal_model.get_largest_lyapunov_exponent,
+                embedding=embedding,
+                delay=delay,
+                min_separation=min_separation,
+                trajectory_length=trajectory_length,
+            )
+        elif method == "eckmann":
+            lyapunov_exponent = calculate_per_window(
+                log_returns,
+                fractal_model.get_lyapunov_spectrum,
+                embedding=embedding,
+                matrix_dimension=matrix_dimension,
+                min_neighbors=min_neighbors,
+                min_separation=min_separation if min_separation is not None else 0,
+            )
+        else:
+            raise ValueError("Method should be 'rosenstein' or 'eckmann'.")
+
+        return apply_rounding(
+            lyapunov_exponent, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio

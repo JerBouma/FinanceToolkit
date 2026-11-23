@@ -1296,3 +1296,92 @@ def get_non_trading_days(historical_data: pd.DataFrame, column: str) -> pd.DataF
     up_to_last_return = has_return[::-1].cummax()[::-1]
 
     return ~has_return & after_first_price & up_to_last_return
+
+
+def delay_embedding(values: np.ndarray, dimension: int, delay: int = 1) -> np.ndarray:
+    """
+    The delay embedding of a series (Takens, 1981): every row holds `dimension` values of
+    the series, `delay` observations apart, X_i = [x_i, x_(i + delay), ...,
+    x_(i + (dimension - 1) * delay)], for every i the series is long enough for.
+
+    Args:
+        values (np.ndarray): The series.
+        dimension (int): The number of values per row, the embedding dimension.
+        delay (int, optional): The number of observations between the values of a row.
+            Defaults to 1.
+
+    Returns:
+        np.ndarray: The embedded vectors, a row per vector, empty when the series is too short.
+    """
+    span = (dimension - 1) * delay + 1
+    if dimension < 1 or delay < 1:
+        raise ValueError("The dimension and the delay should be at least 1.")
+    if len(values) < span:
+        return np.empty((0, dimension))
+
+    return np.lib.stride_tricks.sliding_window_view(values, span)[:, ::delay]
+
+
+def calculate_per_window(
+    data: pd.DataFrame,
+    function: Callable[..., Any],
+    window: int | None = None,
+    **kwargs,
+) -> pd.Series | pd.DataFrame:
+    """
+    Applies a measure of a whole series, such as an entropy or a Hurst exponent, to every
+    series of `data` over the dates the series has a value: once over its full history, or
+    over every trailing window of `window` observations.
+
+    Args:
+        data (pd.DataFrame): The series, a column per series.
+        function (Callable[..., Any]): The measure, which takes the values of a series as a
+            numpy array followed by `kwargs` and returns a number or a Series of numbers.
+        window (int | None, optional): The number of observations per window. Defaults to
+            None, which measures the full history of every series once.
+        **kwargs: The further keyword arguments of the measure.
+
+    Returns:
+        pd.Series | pd.DataFrame: Without a window, the value per series (a row per series
+        with a column per output when the measure returns a Series). With a window, the value
+        on the last date of every window, a column per series (or (output, series) columns),
+        NaN before the first full window and on the dates a series has no value.
+    """
+    if window is not None and window < 2:  # noqa: PLR2004
+        raise ValueError("The window should hold at least 2 observations.")
+
+    results = {}
+    for series in data.columns:
+        column = data[series].dropna()
+        values = column.to_numpy(dtype=float)
+
+        if window is None:
+            results[series] = function(values, **kwargs)
+            continue
+
+        measures = [
+            function(values[end - window : end], **kwargs)
+            for end in range(window, len(values) + 1)
+        ]
+        dates = column.index[window - 1 :]
+        results[series] = (
+            pd.DataFrame(measures, index=dates)
+            if measures and isinstance(measures[0], pd.Series)
+            else pd.Series(measures, index=dates, dtype=float)
+        ).reindex(data.index)
+
+    if window is None:
+        if any(isinstance(result, pd.Series) for result in results.values()):
+            return pd.DataFrame(results).T
+
+        return pd.Series(results, dtype=float)
+
+    if all(isinstance(result, pd.Series) for result in results.values()):
+        return pd.DataFrame(results, index=data.index)
+
+    combined = pd.concat(results, axis=1).swaplevel(1, 0, axis=1)
+    outputs = list(dict.fromkeys(combined.columns.get_level_values(0)))
+
+    return combined.reindex(
+        columns=pd.MultiIndex.from_product([outputs, list(results)])
+    )

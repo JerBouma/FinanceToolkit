@@ -361,17 +361,6 @@ def test_get_ui_short_period_uses_the_high_so_far():
     )
 
 
-def test_get_hurst_exponent_includes_max_lag():
-    data = pd.Series(np.cumsum(np.random.default_rng(0).normal(0, 1, 2000)))
-    values = data.to_numpy()
-    lags = np.arange(2, 11)
-    standard_deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
-    expected = np.polyfit(np.log(lags), np.log(standard_deviations), 1)[0]
-
-    assert np.isclose(risk_model.get_hurst_exponent(data, max_lag=10), expected)
-    assert abs(risk_model.get_hurst_exponent(data) - 0.5) < 0.1  # noqa: PLR2004
-
-
 def test_get_ui_invalid_method():
     with pytest.raises(ValueError, match="method"):
         risk_model.get_ui(pd.Series([0.01, -0.02]), method="bad")
@@ -387,23 +376,6 @@ def test_get_hill_estimator_without_data_uses_no_order_statistics():
     # With data, a fraction that rounds down to zero still uses one order statistic.
     result = risk_model.get_hill_estimator(pd.Series([-0.01, -0.02, -0.03]), k=0.1)
     assert result["Observations Used (k)"] == 1
-
-
-@pytest.mark.filterwarnings("error::RuntimeWarning")
-def test_hurst_exponent_bounds_lags_to_available_differences():
-    data = pd.Series([0.0, 1.0, 0.5, 2.0, 1.0, 3.0, 2.5, 4.0])
-    values = data.to_numpy()
-    lags = np.arange(2, len(values) - 1)
-    deviations = [np.std(values[lag:] - values[:-lag]) for lag in lags]
-    expected = np.polyfit(np.log(lags), np.log(deviations), 1)[0]
-
-    assert risk_model.get_hurst_exponent(data) == pytest.approx(expected)
-
-
-@pytest.mark.filterwarnings("error::RuntimeWarning")
-@pytest.mark.parametrize("values", [[], [1.0], [1.0, 2.0, 3.0, 4.0], [2.0] * 30])
-def test_hurst_exponent_without_two_usable_lags(values):
-    assert np.isnan(risk_model.get_hurst_exponent(pd.Series(values, dtype=float)))
 
 
 def _rolling_cdar_per_window(returns, alpha, window_size, method):

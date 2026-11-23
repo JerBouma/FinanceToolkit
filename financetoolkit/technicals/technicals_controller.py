@@ -18,6 +18,7 @@ from financetoolkit.technicals.helpers import (
     PERIODS,
     is_factor_listed,
 )
+from financetoolkit.technicals.labeling.labeling_controller import LabelingTechnicals
 from financetoolkit.technicals.momentum.momentum_controller import MomentumTechnicals
 from financetoolkit.technicals.overlap.overlap_controller import OverlapTechnicals
 from financetoolkit.technicals.pattern.pattern_controller import PatternTechnicals
@@ -647,12 +648,14 @@ class Technicals(
     PatternTechnicals,
     SeasonalityTechnicals,
     CycleTechnicals,
+    LabelingTechnicals,
     TechnicalsBase,
 ):
     """
     The Technicals Module contains the technical indicators of the Toolkit, grouped by topic
     (breadth, momentum, overlap, volatility, patterns, cycles and more) and calculated from the
-    historical data of the Toolkit.
+    historical data of the Toolkit, with the labels and sample weights of financial machine
+    learning (López de Prado).
 
     The indicators are those of the technical analysis literature, such as Wilder, Appel, Lane,
     Bollinger, Chande, Ehlers and Nison, whose work each method cites. Their calculation is

@@ -2306,11 +2306,11 @@ def get_codependence_distance(
       as in skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
     - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as in
       Riskfolio-Lib's codep_dist ("tail").
-    - "absolute_angular": d = √(1 - |ρ|), "squared_angular": d = √(1 - ρ²) (López de
-      Prado, 2020, chapter 3), so strongly negatively correlated assets, which hedge each
-      other, end up close. mlfinlab's absolute_angular_distance and
-      squared_angular_distance take half of 1 - |ρ| and 1 - ρ², a distance √2 times smaller
-      that gives the same clusters.
+    - "absolute_angular": d = √(1 - |ρ|) (López de Prado, 2020, chapter 3), and
+      "squared_angular": d = √(1 - ρ²), the same construction on ρ², so strongly
+      negatively correlated assets, which hedge each other, end up close. Taking half
+      of 1 - |ρ| and 1 - ρ², as the correlation distance takes of 1 - ρ, gives a
+      distance √2 times smaller with the same clusters.
     - "gnpr": the GNPR distance d_θ itself (see estimation_model.get_gnpr_distance_matrix).
 
     Args:

@@ -111,8 +111,8 @@ def test_encode_series_rejects_an_unknown_encoding():
         entropy_model.encode_series(np.array([0.1, -0.1]), "unknown")
 
 
-# mlfinlab's get_shannon_entropy, get_lempel_ziv_entropy and get_konto_entropy on the same
-# message give the same values (mlfinlab's plug-in entropy leaves out the last word).
+# The plug-in entropy of a balanced binary message is one bit per symbol (every word counted,
+# the last one included) and its Lempel-Ziv entropy the number of phrases per symbol.
 def test_entropies_of_an_encoded_message():
     symbols = np.array([0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1])
     shares = np.array([8, 8]) / 16

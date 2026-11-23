@@ -3904,8 +3904,8 @@ class Portfolio:
 
         For more information, see the following source:
 
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter
-          14.2 (Snippets 14.1 and 14.2).
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+          14.3 (Snippets 14.1 and 14.2).
 
         Also known as: bet frequency, holding period, flattening and flips.
 

@@ -2101,11 +2101,11 @@ def get_optimal_number_of_clusters(
     drawn from numpy's default generator with the seed, so the same distances give the same
     clusters, and the clusters are numbered in the order of their first asset.
 
-    Referenced against mlfinlab's get_onc_clusters and RiskLabAI's cluster_k_means_top
-    (https://github.com/hudson-and-thames/mlfinlab, https://github.com/RiskLabAI/RiskLabAI.py),
-    which cluster with scikit-learn's KMeans. mlfinlab re-clusters only when more than two
-    clusters are below the average and keeps the new clusters when their quality is below
-    that of the clusters replaced, the reverse of the book's comparison.
+    Referenced against RiskLabAI's cluster_k_means_top
+    (https://github.com/RiskLabAI/RiskLabAI.py), which clusters with scikit-learn's KMeans.
+    As in the book's snippet 4.2, the clusters are clustered again when at least two are
+    below the average quality, and the new clusters are kept when their quality is above
+    that of the clusters replaced.
 
     See López de Prado, M. and Lewis, M. J. (2019), "Detection of False Investment
     Strategies Using Unsupervised Learning Methods", Quantitative Finance, 19(9), 1555-1565,
@@ -2250,10 +2250,9 @@ def get_gnpr_distance_matrix(
     that move together but have different volatilities or fat tails stay apart. With θ
     between 0 and 1 the distance lies between 0 and 1 and is a metric.
 
-    Referenced against mlfinlab's gnpr_distance
-    (https://github.com/hudson-and-thames/mlfinlab), whose histograms it matches;
-    mlfinlab applies its first term to the values it is given, so it matches d_1 when it is
-    given the ranks, where Marti et al. define it on the ranks (the empirical copula).
+    d_1 is taken on the ranks (the empirical copula), as Marti et al. define it. Marti et al.
+    compare the densities of the returns in d_0; here they are estimated with histograms of
+    a fixed bin width, `bandwidth`, laid from the lowest to the highest return of the pair.
 
     See Marti, G., Andler, S., Nielsen, F. and Donnat, P. (2016), "Clustering Financial Time
     Series: How Long Is Enough?", Proceedings of the Twenty-Fifth International Joint
@@ -2424,7 +2423,9 @@ def get_ccc_garch_covariance(
 
     See Bollerslev, T. (1990), "Modelling the Coherence in Short-Run Nominal Exchange Rates:
     A Multivariate Generalized ARCH Model", The Review of Economics and Statistics, 72(3),
-    498-505.
+    498-505, and, for the scenarios rescaled to the next-period volatilities, Boudt, K.,
+    Carl, P. and Peterson, B. (2013), "Asset Allocation with Conditional Value-at-Risk
+    Budgets", Journal of Risk, 15(3), 39-68.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without

@@ -938,10 +938,9 @@ class StationarityEconometrics:
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 5
         (Snippets 5.1 to 5.3).
         - Hosking, J.R.M. (1981). "Fractional Differencing." Biometrika, 68(1), 165-176.
-        - Referenced against mlfinlab's frac_diff and frac_diff_ffd (Hudson & Thames, open version
-        archived at https://github.com/quantopian/mlfinlab) and RiskLabAI's fractional_difference_std
-        and fractional_difference_fixed (https://github.com/RiskLabAI/RiskLabAI.py); the weights,
-        the skipped values and the series agree to 1e-14.
+        - Referenced against RiskLabAI's fractional_difference_std and fractional_difference_fixed
+        (https://github.com/RiskLabAI/RiskLabAI.py); the weights, the skipped values and the series
+        agree to 1e-14.
 
         Also known as: fractional differentiation, fractionally differenced prices, FFD, fixed-width
         window fracdiff, memory-preserving stationarity transform.
@@ -1057,9 +1056,9 @@ class StationarityEconometrics:
         - Dickey, D.A. and Fuller, W.A. (1979). "Distribution of the Estimators for Autoregressive
         Time Series with a Unit Root." Journal of the American Statistical Association, 74(366a),
         427-431.
-        - Referenced against mlfinlab's plot_min_ffd (https://github.com/quantopian/mlfinlab) and
-        RiskLabAI's find_optimal_ffd_simple (https://github.com/RiskLabAI/RiskLabAI.py). Both run
-        the ADF test with a single lag and a weight threshold of 0.01, the defaults here.
+        - Referenced against RiskLabAI's find_optimal_ffd_simple
+        (https://github.com/RiskLabAI/RiskLabAI.py). It and López de Prado's Snippet 5.4 run the
+        ADF test with a single lag and a weight threshold of 0.01, the defaults here.
 
         Also known as: minimum d, optimal fractional differentiation, minimum FFD, memory-preserving
         stationarity.
@@ -1222,9 +1221,9 @@ class StationarityEconometrics:
         1043-1078.
         - Phillips, P.C.B., Wu, Y. and Yu, J. (2011). "Explosive Behavior in the 1990s Nasdaq: When
         Did Exuberance Escalate Asset Values?" International Economic Review, 52(1), 201-226.
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 17.4.
-        - Referenced against mlfinlab's get_sadf (https://github.com/quantopian/mlfinlab) and
-        RiskLabAI's get_gsadf_statistic and simulate_psy_critical_values
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+        17.4.2 (Snippets 17.1 to 17.4).
+        - Referenced against RiskLabAI's get_gsadf_statistic and simulate_psy_critical_values
         (https://github.com/RiskLabAI/RiskLabAI.py). Every window statistic agrees with
         statsmodels' adfuller to 1e-10, and the simulated critical values with those of PSY (2015,
         Table 1).
@@ -1528,10 +1527,10 @@ class StationarityEconometrics:
         Comparison of Alternative Methods." Journal of Financial Econometrics, 10(1), 198-231.
         - Andrews, D.W.K. (1993). "Tests for Parameter Instability and Structural Change With
         Unknown Change Point." Econometrica, 61(4), 821-856.
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 17.3.3.
-        - Referenced against mlfinlab's get_chow_type_stat (https://github.com/quantopian/mlfinlab),
-        which agrees to 1e-14 on the series minus its first value; mlfinlab regresses the levels as
-        they are, so its statistic changes with the price level.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 17.4.1.
+
+        The book writes the regression on the log prices as they are; here their first value is
+        subtracted, so the statistic does not change with the price level.
 
         Also known as: DFC, SDFC, Chow-type Dickey-Fuller, sup DFC, Homm-Breitung test, explosive
         break test.

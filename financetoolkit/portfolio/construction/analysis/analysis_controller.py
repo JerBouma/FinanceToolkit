@@ -1786,8 +1786,9 @@ class AnalysisConstruction:
           (H(X) + H(Y) - 2 I(X, Y)) / H(X, Y) (Meilă, 2007).
         - "lower_tail": the lower tail dependence, P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) with
           α = tail_level; distance -ln λ (λ at least 1e-8).
-        - "absolute_angular": |ρ| of the "pearson" correlation, distance √(1 - |ρ|), and
-          "squared_angular": ρ², distance √(1 - ρ²) (López de Prado, 2020), which put
+        - "absolute_angular": |ρ| of the "pearson" correlation, distance √(1 - |ρ|)
+          (López de Prado, 2020, chapter 3), and "squared_angular": ρ², distance
+          √(1 - ρ²), the same construction on the squared correlation, which put
           assets that move strongly against each other close together, as hedges of one
           another.
         - "gnpr": the Generic Non-Parametric Representation distance of Marti et al.
@@ -1819,8 +1820,6 @@ class AnalysisConstruction:
           (https://github.com/skfolio/skfolio).
         - Riskfolio-Lib: dcorr_matrix, mutual_info_matrix, var_info_matrix, ltdi_matrix,
           codep_dist (https://github.com/dcajasn/Riskfolio-Lib).
-        - mlfinlab: absolute_angular_distance, squared_angular_distance, gnpr_distance
-          (https://github.com/hudson-and-thames/mlfinlab).
 
         Also known as: codependence, distance correlation, mutual information, variation
         of information, tail dependence matrix, correlation distance, angular distance,
@@ -1870,9 +1869,9 @@ class AnalysisConstruction:
           takes longer on many daily periods.
         - Riskfolio-Lib's mutual information defaults to Knuth's bins, skfolio's to
           Freedman-Diaconis; with the same bins, both equal this one.
-        - mlfinlab's absolute and squared angular distances take half of 1 - |ρ| and
-          1 - ρ², √2 times smaller with the same clusters. Its gnpr_distance applies d_1 to
-          the values it is given, which matches this one when it is given the ranks.
+        - The absolute and squared angular distances take the whole of 1 - |ρ| and 1 - ρ²;
+          half of them, as the correlation distance takes of 1 - ρ, gives a distance √2 times
+          smaller with the same clusters.
 
         As an example:
 
@@ -1980,7 +1979,6 @@ class AnalysisConstruction:
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
           University Press.
         - ffn: calc_ftca (https://github.com/pmorissette/ffn).
-        - mlfinlab: get_onc_clusters (https://github.com/hudson-and-thames/mlfinlab).
         - RiskLabAI: cluster_k_means_top (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: asset clustering, FTCA, correlation clusters, ONC, optimal number of
@@ -2024,12 +2022,12 @@ class AnalysisConstruction:
             order the clusters are formed, for "onc" in the order of their first asset).
 
         Notes:
-        - "onc" follows the book's comparisons, referenced against mlfinlab's
-          get_onc_clusters, which clusters again only when more than two clusters are below
-          the average quality and keeps the new clusters when their quality is the lower
-          one. A cluster whose silhouettes are all equal (one asset alone) has no quality
-          and is left as it is. Across seeds the clusters of well-separated groups agree;
-          where groups overlap, a k-means start can settle elsewhere, which the seed fixes.
+        - "onc" follows the comparisons of López de Prado (2020, snippet 4.2): it clusters
+          again when at least two clusters are below the average quality and keeps the new
+          clusters when their quality is the higher one. A cluster whose silhouettes are
+          all equal (one asset alone) has no quality and is left as it is. Across seeds the
+          clusters of well-separated groups agree; where groups overlap, a k-means start can
+          settle elsewhere, which the seed fixes.
 
         As an example:
 

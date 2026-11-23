@@ -271,8 +271,6 @@ def get_budget_bet_size(holding_periods: pd.Series, sides: pd.Series) -> pd.Data
     For more information, see the following book:
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.2.
-    - Referenced against mlfinlab's `bet_size_budget` (Hudson & Thames,
-      https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         holding_periods (pd.Series): The holding period of the bet placed at each date in
@@ -397,8 +395,6 @@ def get_mixture_of_two_gaussians(
       mathematical portfolio oversight: the EF3M algorithm." Quantitative Finance, 14(5),
       913-930.
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.2.
-    - Referenced against mlfinlab's `M2N` and `most_likely_parameters` (Hudson & Thames,
-      https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         values (pd.Series | np.ndarray): The values to fit.
@@ -526,8 +522,6 @@ def get_reserve_bet_size(
     - López de Prado, M. and Foreman, M. (2014). "A mixture of two Gaussians approach to
       mathematical portfolio oversight: the EF3M algorithm." Quantitative Finance, 14(5),
       913-930.
-    - Referenced against mlfinlab's `bet_size_reserve` (Hudson & Thames,
-      https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         holding_periods (pd.Series): The holding period of the bet placed at each date in
@@ -770,9 +764,8 @@ def get_target_bet_sizes(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.6
       (Snippet 10.4).
-    - Referenced against mlfinlab's `bet_size_dynamic` (Hudson & Thames,
-      https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's `bet_size_sigmoid`,
-      `target_position` and `limit_price` (https://github.com/RiskLabAI/RiskLabAI.py).
+    - Referenced against RiskLabAI's `bet_size_sigmoid`, `target_position` and `limit_price`
+      (https://github.com/RiskLabAI/RiskLabAI.py).
 
     Args:
         market_price (pd.Series | float): The market price p.

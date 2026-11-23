@@ -690,11 +690,9 @@ def get_cusum_test(
         and method="recursive" against statsmodels' `recursive_olsresiduals`, which scales
         the path with the standard deviation of the recursive residuals around their mean
         rather than with the residual variance of Brown, Durbin and Evans (1975).
-        method="chu_stinchcombe_white" is referenced against mlfinlab's
-        `get_chu_stinchcombe_white_statistics` (https://github.com/quantopian/mlfinlab),
-        which divides by the variance sigma_t^2 rather than by sigma_t and averages the
-        squared changes over one fewer observation; the reference date and the critical value
-        are the same.
+        method="chu_stinchcombe_white" follows López de Prado (2018, "Advances in Financial
+        Machine Learning", Wiley, section 17.3.2): it divides by sigma_t, with sigma_t^2 the
+        mean of the t - 1 squared changes, and compares with sqrt(4.6 + ln(t - n)) at 5%.
     """
     if method not in CUSUM_METHODS:
         raise ValueError(
@@ -875,7 +873,7 @@ def _get_chu_stinchcombe_white_test(
         )
 
     # The volatility of the first few changes is too noisy for a verdict, so the dates
-    # start once there are as many returns as the test needs (mlfinlab starts after two).
+    # start once there are as many returns as the test needs rather than after two.
     path = np.full((n, 2), np.nan)
     for t in range(MINIMUM_CUSUM_OBSERVATIONS, n + 1):
         path[t - 1] = statistic_at(t)

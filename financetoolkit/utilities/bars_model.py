@@ -45,12 +45,8 @@ def get_bars(
 
     For more information about the method, see the following source:
 
-    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
-    2.3.1.
-
-    Referenced against mlfinlab's `get_volume_bars` and `get_dollar_bars`
-    (https://github.com/hudson-and-thames/mlfinlab): with each day's Close and Volume as a
-    tick, the bars close on the same days with the same Close, Volume and Dollar Volume.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections
+    2.3.1.3 and 2.3.1.4.
 
     Args:
         prices (pd.DataFrame): The daily prices of one asset with the columns Open, High,

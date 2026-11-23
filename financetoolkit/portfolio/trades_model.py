@@ -292,13 +292,16 @@ def _trade_statistics(trades: pd.DataFrame, trading_dates: pd.Index) -> pd.Serie
         longest_losses = max(longest_losses, -current_streak)
 
     # A trade holds its position from the close it enters at up to the close it exits at, so it covers the periods from its entry up to its exit; an open trade covers the last period too.  # noqa: E501
-    held = np.zeros(len(trading_dates), dtype=int)
+    # Counted with a difference array: +1 on the entry date and -1 on the first date the trade no longer covers.  # noqa: E501
     entries = trading_dates.get_indexer(trades["Entry Date"], method="backfill")
     exits = trading_dates.get_indexer(trades["Exit Date"], method="backfill")
     entries[entries == -1] = len(trading_dates) - 1
     exits[exits == -1] = len(trading_dates) - 1
-    for entry, exit_, status in zip(entries, exits, trades["Status"], strict=True):
-        held[entry : exit_ + (status == "Open")] += 1
+    ends = exits + (trades["Status"].to_numpy() == "Open")
+    changes = np.zeros(len(trading_dates) + 1, dtype=int)
+    np.add.at(changes, entries, 1)
+    np.add.at(changes, ends, -1)
+    held = np.cumsum(changes[:-1])
     covered = (held > 0).sum()
 
     return pd.Series(
@@ -350,8 +353,8 @@ def _trade_statistics(trades: pd.DataFrame, trading_dates: pd.Index) -> pd.Serie
             "Longest Winning Streak": longest_wins,
             "Longest Losing Streak": longest_losses,
             "Current Streak": current_streak,
-            "Coverage": covered / len(trading_dates),
-            "Overlap Coverage": (held > 1).sum() / covered if covered else np.nan,
+            "Coverage": np.mean(held > 0),
+            "Overlap Coverage": np.mean(held[held > 0] > 1) if covered else np.nan,
         },
         dtype=float,
     )
@@ -379,7 +382,8 @@ def get_trade_statistics(
     - SQN = √n × mean(PnL) / std(PnL), with n closed trades and ddof=1
     - Kelly Criterion = W − (1 − W) / R
     - Coverage = share of trading dates with at least one trade held, Overlap Coverage =
-      share of those dates with more than one
+      share of those dates with more than one, as vectorbt defines them for its ranges
+      (Ranges.coverage)
 
     Tharp defines the expectancy and the System Quality Number on R-multiples, the PnL of
     every trade divided by the risk taken on it (the distance to its initial stop). A trade
@@ -450,8 +454,8 @@ def get_flattening_and_flips(positions: pd.Series) -> pd.Series:
 
     For more information, see the following source:
 
-    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter
-      14.2 (Snippet 14.1).
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+      14.3 (Snippet 14.1).
 
     Args:
         positions (pd.Series): The position per date, in units or as a signal.
@@ -496,8 +500,8 @@ def get_average_holding_period(positions: pd.Series) -> float:
 
     For more information, see the following source:
 
-    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter
-      14.2 (Snippet 14.2).
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+      14.3 (Snippet 14.2).
 
     Args:
         positions (pd.Series): The position per date, in units or as a signal, on a

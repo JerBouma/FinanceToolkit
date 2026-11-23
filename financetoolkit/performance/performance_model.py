@@ -7396,10 +7396,8 @@ def get_return_concentration(returns: pd.Series) -> pd.Series:
 
     For more information, see the following book:
 
-    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.4
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.5.1
       (Snippet 14.3).
-    - Referenced against mlfinlab's `all_bets_concentration` (Hudson & Thames,
-      https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         returns (pd.Series): The returns of one asset with a date (or period) index, missing

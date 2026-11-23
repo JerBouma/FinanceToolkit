@@ -155,10 +155,13 @@ def test_refused_and_estimation_choices_are_no_formula_variants():
 
     tools = {tool.name: tool for tool in asyncio.run(mcp_controller.mcp.list_tools())}
     description = tools["risk"].inputSchema["properties"]["method"]["description"]
-    assert "get_garch, get_garch_forecast, get_garch_parameters: 'garch', 'gjr';" in (
-        description
-    )
+    assert (
+        "get_garch, get_garch_forecast, get_garch_parameters, get_garch_simulation, "
+        "get_news_impact_curve: 'garch', 'gjr', 'igarch', 'aparch', 'tgarch', 'ngarch', "
+        "'nagarch', 'component';"
+    ) in description
     assert "egarch" not in description
+    assert "avgarch" not in description
 
     # A method that is free text lists every value it accepts, however long the list.
     from financetoolkit.portfolio.construction.optimization.optimization_model import (

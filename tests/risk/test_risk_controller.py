@@ -1593,3 +1593,55 @@ def test_get_srisk_with_a_window_longer_than_the_data_is_empty(risk_module):
     # error is logged), not an AttributeError on an index without periods.
     assert risk_module.get_srisk(period="quarterly", rolling=20).empty
     assert not risk_module.get_srisk(period="yearly", rolling=2).empty
+
+
+def test_get_garch_family_variants(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="aparch", distribution="t"))
+    recorder.capture(risk_module.get_garch(method="component", period="weekly"))
+    recorder.capture(
+        risk_module.get_garch(
+            method="component", period="weekly", output="long_run_variance"
+        )
+    )
+    recorder.capture(
+        risk_module.get_garch(mean="arma", output="standardized_residuals")
+    )
+    assert risk_module.get_garch(distribution="cauchy").empty
+    assert risk_module.get_garch(method="gjr", output="long_run_variance").empty
+
+
+def test_get_garch_forecast_family_variants(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_forecast(method="igarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="gjr", distribution="skewt"))
+
+
+def test_get_garch_parameters_family_variants(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_garch_parameters(method="tgarch", distribution="ged")
+    )
+    recorder.capture(risk_module.get_garch_parameters(method="igarch"))
+    recorder.capture(
+        risk_module.get_garch_parameters(
+            distribution="johnson_su", mean="constant", diagnostics=True
+        )
+    )
+
+
+def test_get_news_impact_curve(recorder, risk_module):
+    recorder.capture(risk_module.get_news_impact_curve())
+    recorder.capture(risk_module.get_news_impact_curve(method="gjr"))
+
+
+def test_get_garch_simulation(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_simulation(paths=1000))
+    recorder.capture(
+        risk_module.get_garch_simulation(
+            paths=1000, output="cumulative_returns", distribution="t"
+        )
+    )
+
+
+def test_get_volatility_garman_klass_yang_zhang(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_volatility(method="garman_klass_yang_zhang", period="monthly")
+    )

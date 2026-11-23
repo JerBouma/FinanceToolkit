@@ -932,7 +932,7 @@ class Portfolio:
         Converts the Portfolio to a Finance Toolkit object.
 
         This method converts the Portfolio object to a Finance Toolkit object, enabling the
-        use of the Toolkit's 900+ financial methods for the portfolio's assets. If the
+        use of the Toolkit's 1000+ financial methods for the portfolio's assets. If the
         historical data of the assets or the benchmark cannot be collected, an empty
         DataFrame is returned instead.
 

@@ -20,31 +20,37 @@ from financetoolkit.utilities.statistics_model import (
 
 # ruff: noqa: E501
 
-# The conditional variance, forecast and parameter fit of each model of the GARCH family.
-GARCH_METHODS = {
-    "garch": (
-        garch_model.get_garch,
-        garch_model.get_garch_forecast,
-        garch_model.get_garch_weights,
-    ),
-    "gjr": (
-        garch_model.get_gjr_garch,
-        garch_model.get_gjr_garch_forecast,
-        garch_model.get_gjr_garch_weights,
-    ),
-    "egarch": (
-        garch_model.get_egarch,
-        garch_model.get_egarch_forecast,
-        garch_model.get_egarch_weights,
-    ),
-}
+
+def _forecast_index(
+    index: pd.PeriodIndex, period: str, time_steps: int
+) -> pd.PeriodIndex:
+    """The periods after the last return, continuing its period (business days for daily)."""
+    period_symbol = {
+        "daily": "B",
+        "weekly": "W",
+        "monthly": "ME",
+        "quarterly": "QE",
+    }.get(period, "YE")
+    # Business days are kept as daily periods, as business-day periods are deprecated.
+    period_index = pd.PeriodIndex(
+        pd.date_range(
+            start=index[-1].to_timestamp(),
+            periods=time_steps + 1,
+            freq=period_symbol,
+        ),
+        freq="D" if period_symbol == "B" else None,
+    )
+
+    return period_index[1:]
 
 
 @filter_shown_columns
 @track_sources
 class VolatilityRisk:
     """
-    Volatility: GARCH, GJR-GARCH and EGARCH fits and forecasts, realized and EWMA volatility, the HAR-RV forecast, excess volatility, the downside and upside deviation and the volatility skewness.
+    Volatility: GARCH-family fits (GARCH, GJR-GARCH, EGARCH, IGARCH, APARCH, the family GARCH sub-models and component GARCH, with
+    Student-t, skewed-t, GED and Johnson SU innovations and constant, ARMA and in-mean mean models), their forecasts,
+    diagnostics, news impact curve and simulation, realized and EWMA volatility, the HAR-RV forecast, excess volatility, the downside and upside deviation and the volatility skewness.
     """
 
     @handle_portfolio
@@ -55,7 +61,21 @@ class VolatilityRisk:
         time_steps: int | None = None,
         optimization_t: int | None = None,
         within_period: bool = False,
-        method: Literal["garch", "gjr", "egarch"] = "garch",
+        method: Literal[
+            "garch",
+            "gjr",
+            "egarch",
+            "igarch",
+            "aparch",
+            "tgarch",
+            "ngarch",
+            "avgarch",
+            "nagarch",
+            "component",
+        ] = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        output: str = "variance",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -64,9 +84,13 @@ class VolatilityRisk:
     ):
         """
         Calculates the conditional variance (sigma_t^2) of the returns with a GARCH(1, 1) model fitted to
-        them, or with its asymmetric GJR-GARCH(1, 1, 1) or EGARCH(1, 1) variant. Take the square root for
-        the conditional volatility, and see `get_garch_forecast` for the variance forecast beyond the last
-        observation.
+        them, or with one of its variants: the asymmetric GJR-GARCH(1, 1, 1) and EGARCH(1, 1), the integrated
+        IGARCH(1, 1), the asymmetric power APARCH(1, 1) of Ding, Granger and Engle, the TGARCH, NGARCH, AVGARCH and
+        NAGARCH sub-models of Hentschel's family GARCH, and the component GARCH of Engle and Lee. The innovations
+        can follow a normal, Student-t, skewed Student-t, GED or Johnson SU distribution, and the returns can have a
+        zero, constant, ARMA(1, 1) or GARCH-in-mean mean. Take the square root for the conditional volatility, see
+        `get_garch_forecast` for the variance forecast beyond the last observation and `get_garch_parameters` for
+        the fitted parameters and the fit diagnostics.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
@@ -79,10 +103,40 @@ class VolatilityRisk:
         positive and, like GJR-GARCH, lets negative and positive shocks of the same size have a different
         impact on volatility.
 
+        IGARCH (method="igarch") restricts Alpha + Beta to 1, so a shock never fades and the variance has no
+        long-run level, as in the RiskMetrics EWMA (which also sets Omega to 0). APARCH (method="aparch") models a
+        power Delta of the volatility, estimated from the data, with a leverage rotation Gamma; it nests GARCH
+        (Delta = 2, Gamma = 0), TGARCH (Delta = 1) and NGARCH (Gamma = 0). Hentschel's family GARCH measures the
+        shock in units of the volatility, z_t = e_t / sigma_t, and allows it to be shifted as well as rotated:
+        AVGARCH (method="avgarch") is the absolute value model with both, and NAGARCH (method="nagarch") the
+        variance model with a shift only. The component GARCH (method="component") splits the variance into a
+        long-run component q_t that fades slowly (with Rho) and a short-run component that fades quickly (with
+        Alpha + Beta).
+
         For more information about the methods, see the following papers:
 
         - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity." Journal of
         Econometrics, 31(3), 307-327.
+        - Engle, R.F. and Bollerslev, T. (1986). "Modelling the Persistence of Conditional Variances."
+        Econometric Reviews, 5(1), 1-50.
+        - Ding, Z., Granger, C.W.J. and Engle, R.F. (1993). "A Long Memory Property of Stock Market Returns and
+        a New Model." Journal of Empirical Finance, 1(1), 83-106.
+        - Hentschel, L. (1995). "All in the Family: Nesting Symmetric and Asymmetric GARCH Models." Journal of
+        Financial Economics, 39(1), 71-104.
+        - Zakoian, J.M. (1994). "Threshold Heteroskedastic Models." Journal of Economic Dynamics and Control,
+        18(5), 931-955.
+        - Higgins, M.L. and Bera, A.K. (1992). "A Class of Nonlinear ARCH Models." International Economic
+        Review, 33(1), 137-158.
+        - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on Volatility." The
+        Journal of Finance, 48(5), 1749-1778.
+        - Engle, R.F. and Lee, G.G.J. (1999). "A Long-Run and Short-Run Component Model of Stock Return
+        Volatility." In Cointegration, Causality and Forecasting, Oxford University Press, 475-497.
+        - Engle, R.F., Lilien, D.M. and Robins, R.P. (1987). "Estimating Time Varying Risk Premia in the Term
+        Structure: The ARCH-M Model." Econometrica, 55(2), 391-407.
+
+        Referenced against the GARCH, EGARCH, APARCH and ARCHInMean models of the arch package
+        (https://arch.readthedocs.io) and the sGARCH, iGARCH, apARCH, fGARCH and csGARCH models of R's rugarch
+        (https://cran.r-project.org/package=rugarch).
         - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
         between the Expected Value and the Volatility of the Nominal Excess Return on
         Stocks." The Journal of Finance, 48(5), 1779-1801.
@@ -97,16 +151,35 @@ class VolatilityRisk:
         sigma_1^2 = Omega + (Alpha + Gamma / 2 + Beta) * Backcast
         - method="egarch": ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2,
         with z_t = r_t / sigma_t and ln sigma_1^2 = Omega + Beta * ln(Backcast)
+        - method="igarch": sigma_t^2 = Omega + Alpha * e_(t-1)^2 + (1 - Alpha) * sigma_(t-1)^2, with
+        sigma_1^2 = Omega + Backcast
+        - method="aparch": sigma_t^Delta = Omega + Alpha * (|e_(t-1)| - Gamma * e_(t-1))^Delta + Beta * sigma_(t-1)^Delta,
+        with sigma_1^Delta = Omega + (Alpha + Beta) * Backcast^(Delta / 2)
+        - method="tgarch": sigma_t = Omega + Alpha * (|e_(t-1)| - Gamma * e_(t-1)) + Beta * sigma_(t-1), APARCH with Delta = 1
+        - method="ngarch": sigma_t^Delta = Omega + Alpha * |e_(t-1)|^Delta + Beta * sigma_(t-1)^Delta, APARCH with Gamma = 0
+        - method="avgarch": sigma_t = Omega + Alpha * sigma_(t-1) * (|z_(t-1) - Shift| - Gamma * (z_(t-1) - Shift))
+        + Beta * sigma_(t-1)
+        - method="nagarch": sigma_t^2 = Omega + Alpha * sigma_(t-1)^2 * (z_(t-1) - Shift)^2 + Beta * sigma_(t-1)^2
+        - method="component": sigma_t^2 = q_t + Alpha * (e_(t-1)^2 - q_(t-1)) + Beta * (sigma_(t-1)^2 - q_(t-1)), with
+        the long-run component q_t = Omega + Rho * q_(t-1) + Phi * (e_(t-1)^2 - sigma_(t-1)^2) and q_1 = sigma_1^2 =
+        Omega + Rho * Backcast
+        - mean="zero": e_t = r_t; mean="constant": e_t = r_t - Mu; mean="arma": e_t = r_t - Mu - AR(1) * r_(t-1)
+        - MA(1) * e_(t-1) from the second return, with e_1 = 0 before it; mean="in_mean": e_t = r_t - Mu - Lambda * sigma_t
 
-        Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise, √(2 / π) is the
-        expected |z| of a standard normal shock and the Backcast is an exponentially weighted average (decay 0.94)
-        of the first 75 squared returns. The parameters maximize the Gaussian log-likelihood, i.e. minimize
-        Σ (ln sigma_t^2 + r_t^2 / sigma_t^2), under Omega, Alpha, Beta > 0 and Alpha + Beta < 1 for GARCH, under
-        Alpha + Gamma / 2 + Beta < 1 and Alpha + Gamma >= 0 for GJR-GARCH and with |Beta| < 1 for EGARCH, whose log
-        variance is kept within [-20, 20] (see `get_garch_parameters`).
+        Where r_t are the returns (not demeaned), e_t the residuals of the mean model (the returns themselves with
+        the default mean="zero", so r_t = e_t in the first three lines), z_t = e_t / sigma_t, I_(t-1) is 1 when
+        r_(t-1) < 0 and 0 otherwise, √(2 / π) is the expected |z| of a standard normal shock and the Backcast is an
+        exponentially weighted average (decay 0.94) of the first 75 squared residuals of the mean model at its
+        starting values (the returns less their average for a constant or in-mean mean, the residuals of the
+        least-squares AR(1) for the ARMA mean). The parameters maximize the log-likelihood of the innovation
+        distribution, which for the default normal distribution means minimizing Σ (ln sigma_t^2 + e_t^2 / sigma_t^2),
+        under the constraints listed in `get_garch_parameters`; the log variance of EGARCH is kept within [-20, 20].
 
         Also known as: GARCH, volatility clustering, conditional heteroscedasticity, GJR-GARCH, gjr garch,
-        threshold GARCH, TGARCH, EGARCH, exponential GARCH, log-GARCH.
+        threshold GARCH, TGARCH, EGARCH, exponential GARCH, log-GARCH, integrated GARCH, IGARCH, asymmetric power
+        ARCH, APARCH, power GARCH, family GARCH, fGARCH, NGARCH, nonlinear GARCH, AVGARCH, absolute value GARCH,
+        NAGARCH, nonlinear asymmetric GARCH, component GARCH, CGARCH, GARCH-in-mean, ARCH-M, AR-GARCH, ARMA-GARCH,
+        Student-t GARCH, skewed-t GARCH, standardized residuals.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -118,8 +191,20 @@ class VolatilityRisk:
             within_period (bool, optional): Whether to calculate GARCH within the specified period or for the entire
             period. Thus whether to look at the GARCH within a specific year (if period = 'yearly') or look at the
             entirety of all years. Defaults to False.
-            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
-                for EGARCH(1, 1). Defaults to "garch".
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1), "egarch" for
+                EGARCH(1, 1), "igarch" for IGARCH(1, 1), "aparch" for APARCH(1, 1), "tgarch", "ngarch", "avgarch" or
+                "nagarch" for the family GARCH sub-models, or "component" for the component GARCH. Defaults to "garch".
+            distribution (str, optional): The distribution of the standardized innovations z_t: "normal", "t"
+                (Student-t, with a Shape v > 2), "skewt" (Hansen's skewed Student-t, with a Shape and a Skew λ in
+                (-1, 1)), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t, the same distribution with
+                a Skew ξ = √((1 + λ) / (1 - λ)), as in R's rugarch), "ged" (generalized error distribution, with a
+                Shape v, 2 for the normal) or "johnson_su" (Johnson's SU, with a Shape and a Skew). Defaults to "normal".
+            mean (str, optional): The mean model: "zero" (the returns themselves are the shocks), "constant" (Mu),
+                "arma" (ARMA(1, 1)) or "in_mean" (GARCH-in-mean, Mu + Lambda * sigma_t). Defaults to "zero".
+            output (str, optional): "variance" for the conditional variance sigma_t^2, "standardized_residuals" for
+                z_t = e_t / sigma_t (which should look like independent draws from the chosen distribution when the
+                model fits) or "long_run_variance" for the long-run component q_t of method="component".
+                Defaults to "variance".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to False.
@@ -141,7 +226,12 @@ class VolatilityRisk:
         - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
         does not shorten the sample of the others; dates without a return for an asset are NaN.
         - The EGARCH fit is a deterministic multi-start search that takes far longer than the GARCH and
-        GJR-GARCH fits, about 45 seconds per ticker of daily returns.
+        GJR-GARCH fits, about 45 seconds per ticker of daily returns. The AVGARCH and NAGARCH recursions and the
+        GARCH-in-mean filter also run step by step and take several times longer than the other models; the
+        others take one to a few seconds per ticker of ten years of daily returns.
+        - Every model other than GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean is fitted on
+        the returns divided by their standard deviation, which puts every parameter on a scale of about 1, and the
+        parameters are converted back (see `get_garch_parameters`).
         - If `growth` is set to True, the method calculates the growth of GARCH values using the specified `lag`.
 
         As an example:
@@ -169,8 +259,7 @@ class VolatilityRisk:
         | 2025-12-30 |   0.0004 |           0 |
         | 2025-12-31 |   0.0004 |           0 |
         """
-        if method not in GARCH_METHODS:
-            raise ValueError("Method must be garch, gjr or egarch.")
+        garch_model.validate_garch_family(method, distribution, mean)
 
         period = period if period else "daily"
 
@@ -191,9 +280,12 @@ class VolatilityRisk:
         # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
         returns = self._get_returns(period, within_period).dropna(how="all")
 
-        garch_sigma_2 = GARCH_METHODS[method][0](
+        garch_sigma_2 = garch_model.get_garch_family(
             returns=returns,
-            weights=None,
+            method=method,
+            distribution=distribution,
+            mean=mean,
+            output=output,
             time_steps=time_steps,
             optimization_t=optimization_t,
         )
@@ -220,7 +312,20 @@ class VolatilityRisk:
         period: str | None = None,
         time_steps: int = 10,
         within_period: bool = False,
-        method: Literal["garch", "gjr", "egarch"] = "garch",
+        method: Literal[
+            "garch",
+            "gjr",
+            "egarch",
+            "igarch",
+            "aparch",
+            "tgarch",
+            "ngarch",
+            "avgarch",
+            "nagarch",
+            "component",
+        ] = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -228,8 +333,10 @@ class VolatilityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates sigma_2 forecasts with a GARCH(1, 1) model, or with its asymmetric GJR-GARCH(1, 1, 1) or
-        EGARCH(1, 1) variant.
+        Calculates sigma_2 forecasts with a GARCH(1, 1) model, or with one of its variants (see `get_garch`): the
+        asymmetric GJR-GARCH(1, 1, 1) and EGARCH(1, 1), IGARCH(1, 1), APARCH(1, 1), the TGARCH, NGARCH, AVGARCH and
+        NAGARCH sub-models of family GARCH and the component GARCH, with any of its innovation distributions and
+        mean models.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is
         for instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH
@@ -243,12 +350,23 @@ class VolatilityRisk:
         with sigma_L^2 = Omega / (1 - Alpha - Gamma / 2 - Beta)
         - method="egarch": ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L), with L = Omega / (1 - Beta)
         and sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
+        - method="igarch": sigma_(n+h)^2 = sigma_(n+1)^2 + (h - 1) * Omega
+        - method="aparch", "tgarch", "ngarch", "avgarch" and "nagarch": s_(n+h) = Omega + P * s_(n+h-1), with
+        s = sigma^d the power of the model (Delta, 1 for TGARCH and AVGARCH, 2 for NAGARCH), P the persistence (see
+        `get_garch_parameters`) and sigma_(n+h)^2 = s_(n+h)^(2 / d)
+        - method="component": sigma_(n+h)^2 = q_(n+h) + (Alpha + Beta)^(h - 1) * (sigma_(n+1)^2 - q_(n+1)), with
+        q_(n+h) = Omega + Rho * q_(n+h-1)
 
         Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step,
         sigma_(n+1)^2 the one-step-ahead variance of the fitted recursion (see `get_garch`) and sigma_L^2 the
         long-run variance. The leverage term of GJR-GARCH enters at its expectation, Gamma / 2, as a negative
         shock is as likely as a positive one; the shock terms of EGARCH drop out at their expectation of zero,
-        so its forecast is the exponential of the expected log variance.
+        so its forecast is the exponential of the expected log variance. The other models also take the shock
+        terms at their expectation over the innovation distribution, which makes the recursion of the power of the
+        volatility linear; transforming its forecast back, like the exponential of EGARCH, understates the expected
+        variance somewhat (Jensen's inequality) when the power is not 2. With a skewed distribution the leverage
+        term of GJR-GARCH enters at Gamma * E[z^2 1(z < 0)] instead of Gamma / 2, and EGARCH's shock term at
+        Alpha * (E|z| - √(2 / π)). The mean model only changes the residuals the recursion runs on.
 
         For more information about the methods, see the following sources:
 
@@ -259,7 +377,13 @@ class VolatilityRisk:
         - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
         Approach." Econometrica, 59(2), 347-370.
 
-        Also known as: volatility forecast, predicted volatility, GJR-GARCH forecast, EGARCH forecast.
+        - Ding, Z., Granger, C.W.J. and Engle, R.F. (1993). "A Long Memory Property of Stock Market Returns and
+        a New Model." Journal of Empirical Finance, 1(1), 83-106.
+        - Engle, R.F. and Lee, G.G.J. (1999). "A Long-Run and Short-Run Component Model of Stock Return
+        Volatility." In Cointegration, Causality and Forecasting, Oxford University Press, 475-497.
+
+        Also known as: volatility forecast, predicted volatility, GJR-GARCH forecast, EGARCH forecast, APARCH
+        forecast, IGARCH forecast, component GARCH forecast.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -268,8 +392,16 @@ class VolatilityRisk:
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
             look at the entirety of all years. Defaults to False.
-            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
-                for EGARCH(1, 1). Defaults to "garch".
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1), "egarch" for
+                EGARCH(1, 1), "igarch" for IGARCH(1, 1), "aparch" for APARCH(1, 1), "tgarch", "ngarch", "avgarch" or
+                "nagarch" for the family GARCH sub-models, or "component" for the component GARCH. Defaults to "garch".
+            distribution (str, optional): The distribution of the standardized innovations z_t: "normal", "t"
+                (Student-t, with a Shape v > 2), "skewt" (Hansen's skewed Student-t, with a Shape and a Skew λ in
+                (-1, 1)), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t, the same distribution with
+                a Skew ξ = √((1 + λ) / (1 - λ)), as in R's rugarch), "ged" (generalized error distribution, with a
+                Shape v, 2 for the normal) or "johnson_su" (Johnson's SU, with a Shape and a Skew). Defaults to "normal".
+            mean (str, optional): The mean model: "zero" (the returns themselves are the shocks), "constant" (Mu),
+                "arma" (ARMA(1, 1)) or "in_mean" (GARCH-in-mean, Mu + Lambda * sigma_t). Defaults to "zero".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the GARCH values over time. Defaults to
             False.
@@ -291,7 +423,12 @@ class VolatilityRisk:
         - Every asset is fitted on its own available returns, so an asset with a shorter history (or a gap)
         does not shorten the sample of the others.
         - The EGARCH fit is a deterministic multi-start search that takes far longer than the GARCH and
-        GJR-GARCH fits, about 45 seconds per ticker of daily returns.
+        GJR-GARCH fits, about 45 seconds per ticker of daily returns. The AVGARCH and NAGARCH recursions and the
+        GARCH-in-mean filter also run step by step and take several times longer than the other models; the
+        others take one to a few seconds per ticker of ten years of daily returns.
+        - Every model other than GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean is fitted on
+        the returns divided by their standard deviation, which puts every parameter on a scale of about 1, and the
+        parameters are converted back (see `get_garch_parameters`).
         - If `growth` is set to True, the method calculates the growth of the forecasted sigma_2 values using
         the specified `lag`.
 
@@ -325,8 +462,7 @@ class VolatilityRisk:
         | 2026-01-13 |  0.0001 |      0.0001 |
         | 2026-01-14 |  0.0001 |      0.0001 |
         """
-        if method not in GARCH_METHODS:
-            raise ValueError("Method must be garch, gjr or egarch.")
+        garch_model.validate_garch_family(method, distribution, mean)
 
         period = period if period else "daily"
 
@@ -347,26 +483,14 @@ class VolatilityRisk:
         # Only rows without any return are dropped: every column is fitted on its own non-missing returns, so a ticker that listed later (or has a gap) does not cut the others down to its history.  # noqa: E501
         returns = self._get_returns(period, within_period).dropna(how="all")
 
-        sigma_2_forecast = GARCH_METHODS[method][1](returns, None, time_steps)
-
-        # The forecast steps continue the period of the returns (business days for daily).
-        period_symbol = {
-            "daily": "B",
-            "weekly": "W",
-            "monthly": "ME",
-            "quarterly": "QE",
-        }.get(period, "YE")
-        # Business days are kept as daily periods, as business-day periods are deprecated.
-        period_index = pd.PeriodIndex(
-            pd.date_range(
-                start=returns.index[-1].to_timestamp(),
-                periods=time_steps + 1,
-                freq=period_symbol,
-            ),
-            freq="D" if period_symbol == "B" else None,
+        sigma_2_forecast = garch_model.get_garch_family_forecast(
+            returns,
+            method=method,
+            distribution=distribution,
+            mean=mean,
+            time_steps=time_steps,
         )
-
-        sigma_2_forecast.index = period_index[1:]
+        sigma_2_forecast.index = _forecast_index(returns.index, period, time_steps)
 
         return finalize_dataset(
             dataset=sigma_2_forecast,
@@ -387,14 +511,32 @@ class VolatilityRisk:
         self,
         period: str | None = None,
         optimization_t: int | None = None,
-        method: Literal["garch", "gjr", "egarch"] = "garch",
+        method: Literal[
+            "garch",
+            "gjr",
+            "egarch",
+            "igarch",
+            "aparch",
+            "tgarch",
+            "ngarch",
+            "avgarch",
+            "nagarch",
+            "component",
+        ] = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        diagnostics: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fits a GARCH(1, 1) model, or its asymmetric GJR-GARCH(1, 1, 1) or EGARCH(1, 1) variant, to the
-        historical returns and returns the estimated Omega, Alpha and Beta parameters for each asset, with
-        the Gamma of the leverage effect for GJR-GARCH and EGARCH.
+        Fits a GARCH(1, 1) model, or one of its variants (see `get_garch`), to the historical returns and returns
+        the estimated Omega, Alpha and Beta parameters for each asset, with the Gamma of the leverage effect for
+        GJR-GARCH, EGARCH, APARCH, TGARCH and AVGARCH, the power Delta of APARCH and NGARCH, the Shift of AVGARCH and
+        NAGARCH, the Rho and Phi of the long-run component of component GARCH, the parameters of the mean model
+        (Mu, AR(1), MA(1), Lambda) and the Shape and Skew of the innovation distribution. With diagnostics=True,
+        it adds the persistence, half-life and unconditional variance of the model, the log-likelihood and
+        information criteria, and the standard and robust standard error of every parameter.
 
         GARCH (Generalized autoregressive conditional heteroskedasticity) is a stochastic model
         for time series, used to model volatility clustering. A positive Gamma of GJR-GARCH, or a negative
@@ -407,6 +549,17 @@ class VolatilityRisk:
         - method="gjr": sigma_t^2 = Omega + (Alpha + Gamma * I_(t-1)) * r_(t-1)^2 + Beta * sigma_(t-1)^2
         - method="egarch": ln sigma_t^2 = Omega + Alpha * (|z_(t-1)| - √(2 / π)) + Gamma * z_(t-1) + Beta * ln sigma_(t-1)^2
         - Log-Likelihood = -Σ (ln sigma_t^2 + r_t^2 / sigma_t^2) (up to constants)
+        - The other models: see `get_garch`, with Log-Likelihood = Σ (ln f(z_t) - ln(sigma_t^2) / 2), f the density
+        of the standardized innovation distribution
+        - Persistence = Alpha + Beta (GARCH), Alpha + Gamma * E[z^2 1(z < 0)] + Beta (GJR-GARCH), Beta (EGARCH), 1 (IGARCH),
+        Alpha * E[(|z| - Gamma * z)^Delta] + Beta (APARCH, TGARCH, NGARCH), Alpha * E[(|z - Shift| - Gamma *
+        (z - Shift))^d] + Beta (AVGARCH, NAGARCH) or Rho (component GARCH)
+        - Half-Life = ln(0.5) / ln(Persistence)
+        - Unconditional Variance = (Omega / (1 - Persistence))^(2 / d), Omega / (1 - Rho) for component GARCH and
+        exp(Omega / (1 - Beta)) for EGARCH
+        - AIC = (-2 LL + 2 k) / n, BIC = (-2 LL + k ln n) / n, Shibata = -2 LL / n + ln((n + 2 k) / n) and
+        Hannan-Quinn = (-2 LL + 2 k ln ln n) / n
+        - Standard Error = √diag(H^-1) and Robust Standard Error = √diag(H^-1 J H^-1)
 
         Where r_t are the returns (not demeaned), I_(t-1) is 1 when r_(t-1) < 0 and 0 otherwise and
         z_t = r_t / sigma_t. The constraints are Omega, Alpha, Beta > 0 and Alpha + Beta < 1 for GARCH,
@@ -423,6 +576,26 @@ class VolatilityRisk:
         expectation, Gamma / 2, and ln sigma_1^2 = Omega + Beta * ln(Backcast) for EGARCH), and every
         observation enters the likelihood. This is the start the arch package uses, so the estimates agree
         with it.
+
+        The other models (and GARCH, GJR-GARCH and EGARCH with another distribution or mean) are fitted the same way
+        on the returns divided by their standard deviation, with bounds for every parameter on that scale, and the
+        parameters are converted back: Omega is multiplied by the scale to the power of the model (2, Delta, or 1
+        for TGARCH and AVGARCH; EGARCH's Omega gains 2 * (1 - Beta) * ln(scale)) and Mu by the scale. The constraints
+        are a persistence below 1 (IGARCH sets Beta = 1 - Alpha), |Gamma| < 1 for the rotation of APARCH and family
+        GARCH, Delta in [0.05, 4], 0 < Alpha + Beta < Rho < 1 and Phi < Beta for component GARCH, |AR(1)| and
+        |MA(1)| < 1, a Shape in [2.05, 100] for the Student-t distributions, in [1.01, 50] for the GED and in
+        [0.2, 20] for the Johnson SU, and a Skew in (-1, 1) for Hansen's, [0.1, 10] for Fernández and Steel's and
+        [-10, 10] for the Johnson SU. The power models (APARCH and its sub-models) start from sigma_1^Delta = Omega +
+        (Alpha + Beta) * Backcast^(Delta / 2), as the arch package does, and the component model from
+        q_1 = sigma_1^2 = Omega + Rho * Backcast.
+
+        The persistence is the factor by which a shock carries over to the next period on average, and the
+        half-life the number of periods until half of it has faded. The expectations over the innovation
+        distribution are evaluated numerically. The information criteria are per observation, as in R's rugarch, so
+        the lowest value marks the preferred model among fits on the same returns. The standard errors come from
+        the Hessian H of the log-likelihood and the robust ones (Bollerslev and Wooldridge, 1992) also from the
+        outer product J of the scores of every observation, both by central finite differences; the robust ones
+        remain valid when the innovation distribution is misspecified (quasi maximum likelihood).
 
         Unlike `get_garch` and `get_garch_forecast`, which return a (forecasted) conditional variance
         path, this method returns the fitted parameters themselves. This is useful when the parameters
@@ -442,16 +615,47 @@ class VolatilityRisk:
         - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
         Approach." Econometrica, 59(2), 347-370.
 
+        - Ding, Z., Granger, C.W.J. and Engle, R.F. (1993). "A Long Memory Property of Stock Market Returns and
+        a New Model." Journal of Empirical Finance, 1(1), 83-106.
+        - Hentschel, L. (1995). "All in the Family: Nesting Symmetric and Asymmetric GARCH Models." Journal of
+        Financial Economics, 39(1), 71-104.
+        - Bollerslev, T. (1987). "A Conditionally Heteroskedastic Time Series Model for Speculative Prices and
+        Rates of Return." The Review of Economics and Statistics, 69(3), 542-547.
+        - Hansen, B.E. (1994). "Autoregressive Conditional Density Estimation." International Economic Review,
+        35(3), 705-730.
+        - Fernández, C. and Steel, M.F.J. (1998). "On Bayesian Modeling of Fat Tails and Skewness." Journal of
+        the American Statistical Association, 93(441), 359-371.
+        - Johnson, N.L. (1949). "Systems of Frequency Curves Generated by Methods of Translation." Biometrika,
+        36(1/2), 149-176.
+        - Bollerslev, T. and Wooldridge, J.M. (1992). "Quasi-Maximum Likelihood Estimation and Inference in
+        Dynamic Models with Time-Varying Covariances." Econometric Reviews, 11(2), 143-172.
+
+        Referenced against the parameters, log-likelihood and "classic" and "robust" standard errors of the arch
+        package (https://arch.readthedocs.io) and `persistence`, `halflife`, `uncvariance` and `infocriteria` of
+        R's rugarch (https://cran.r-project.org/package=rugarch).
+
         Also known as: GARCH weights, GARCH coefficients, conditional variance parameters, GJR-GARCH
-        parameters, EGARCH parameters, leverage parameters.
+        parameters, EGARCH parameters, leverage parameters, APARCH parameters, degrees of freedom, persistence,
+        half-life, unconditional variance, long-run variance, information criteria, GARCH standard errors.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
-            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1) or "egarch"
-                for EGARCH(1, 1). Defaults to "garch".
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1), "egarch" for
+                EGARCH(1, 1), "igarch" for IGARCH(1, 1), "aparch" for APARCH(1, 1), "tgarch", "ngarch", "avgarch" or
+                "nagarch" for the family GARCH sub-models, or "component" for the component GARCH. Defaults to "garch".
+            distribution (str, optional): The distribution of the standardized innovations z_t: "normal", "t"
+                (Student-t, with a Shape v > 2), "skewt" (Hansen's skewed Student-t, with a Shape and a Skew λ in
+                (-1, 1)), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t, the same distribution with
+                a Skew ξ = √((1 + λ) / (1 - λ)), as in R's rugarch), "ged" (generalized error distribution, with a
+                Shape v, 2 for the normal) or "johnson_su" (Johnson's SU, with a Shape and a Skew). Defaults to "normal".
+            mean (str, optional): The mean model: "zero" (the returns themselves are the shocks), "constant" (Mu),
+                "arma" (ARMA(1, 1)) or "in_mean" (GARCH-in-mean, Mu + Lambda * sigma_t). Defaults to "zero".
+            diagnostics (bool, optional): Whether to add the Persistence, Half-Life (in periods), Unconditional
+                Variance, Log-Likelihood, AIC, BIC, Shibata and Hannan-Quinn criteria and the Standard Error and Robust
+                Standard Error of every parameter. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -460,7 +664,8 @@ class VolatilityRisk:
 
         Returns:
             pd.DataFrame: Omega, Alpha and Beta values per asset, with Gamma between Alpha and Beta for
-            method="gjr" and method="egarch".
+            method="gjr" and method="egarch", the other parameters of the model as listed above (Beta = 1 - Alpha for
+            IGARCH) and, with diagnostics=True, the diagnostics below them.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and fits the model
@@ -497,8 +702,158 @@ class VolatilityRisk:
         | Alpha | 0.035763 | 0.057692 | 0.048602 |    0.154079 |
         | Beta  | 0.875036 | 0.715864 | 0.940197 |    0.811018 |
         """
-        if method not in GARCH_METHODS:
-            raise ValueError("Method must be garch, gjr or egarch.")
+        garch_model.validate_garch_family(method, distribution, mean)
+
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        returns = self._historical_data[period]["Return"]
+        names = garch_model.get_garch_family_parameter_names(method, distribution, mean)
+
+        columns = {}
+        for ticker in returns.columns:
+            # Each ticker is fitted on its own non-missing returns, see get_garch.
+            ticker_returns = returns[ticker].dropna().to_numpy()
+            weights = garch_model.get_garch_family_weights(
+                ticker_returns, method, distribution, mean, optimization_t
+            )
+            values = dict(zip(names, weights, strict=True))
+            if method == "igarch":
+                # IGARCH's Beta is not estimated but follows from Alpha + Beta = 1.
+                values = {
+                    "Omega": values.pop("Omega"),
+                    "Alpha": values.pop("Alpha"),
+                    "Beta": 1 - weights[1],
+                    **values,
+                }
+            if diagnostics:
+                fitted = (
+                    ticker_returns[:optimization_t]
+                    if optimization_t is not None
+                    else ticker_returns
+                )
+                values.update(
+                    garch_model.get_garch_family_diagnostics(
+                        fitted, weights, method, distribution, mean
+                    )
+                    if np.all(np.isfinite(weights))
+                    else {}
+                )
+            columns[ticker] = pd.Series(values, dtype=float)
+
+        parameters = pd.DataFrame(columns)
+
+        return apply_rounding(
+            parameters, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_news_impact_curve(
+        self,
+        period: str | None = None,
+        method: Literal[
+            "garch",
+            "gjr",
+            "egarch",
+            "igarch",
+            "aparch",
+            "tgarch",
+            "ngarch",
+            "avgarch",
+            "nagarch",
+            "component",
+        ] = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the news impact curve of Engle and Ng (1993) of a GARCH-family model fitted to the returns of
+        each asset: the conditional variance of the next period as a function of this period's shock, with this
+        period's variance at the unconditional (long-run) variance of the model.
+
+        The curve shows how a model lets news move volatility. For GARCH it is a parabola that is symmetric around
+        zero: a fall raises the next variance by as much as a rise of the same size. The asymmetric models
+        (GJR-GARCH, EGARCH, APARCH, TGARCH, AVGARCH and NAGARCH) let it rise more steeply to the left when they find
+        a leverage effect, so bad news raises volatility by more than good news, and the power models bend it into
+        a different shape than a parabola.
+
+        The formula is as follows:
+
+        - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
+
+        Where z is the shock in unconditional standard deviations (-5 to 5 in steps of 0.5), sigma^2 the
+        unconditional variance of the model (see `get_garch_parameters`) and sigma_(t+1)^2 follows from the
+        variance recursion of the model (see `get_garch`). The long-run component of component GARCH is also set
+        to sigma^2. IGARCH has no unconditional variance, so its curve is NaN; the curve of EGARCH is taken at
+        exp(Omega / (1 - Beta)), the exponential of its long-run log variance.
+
+        For more information, see the following paper:
+
+        - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on Volatility." The Journal
+        of Finance, 48(5), 1749-1778.
+
+        Referenced against `newsimpact` of R's rugarch (https://cran.r-project.org/package=rugarch).
+
+        Also known as: news impact, leverage effect curve, asymmetric volatility response.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1), "egarch" for
+                EGARCH(1, 1), "igarch" for IGARCH(1, 1), "aparch" for APARCH(1, 1), "tgarch", "ngarch", "avgarch" or
+                "nagarch" for the family GARCH sub-models, or "component" for the component GARCH, see `get_garch`.
+                Defaults to "garch".
+            distribution (str, optional): The distribution of the standardized innovations: "normal", "t",
+                "skewt", "skewt_fernandez_steel", "ged" or "johnson_su", see `get_garch`. Defaults to "normal".
+            mean (str, optional): The mean model: "zero", "constant", "arma" or "in_mean", see `get_garch`.
+                Defaults to "zero".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The conditional variance of the next period per asset, indexed by the shock z.
+
+        Notes:
+        - Every asset is fitted on its own available returns, see `get_garch_parameters`.
+        - The variance is that of a single period of the chosen `period`; its square root is the volatility.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_news_impact_curve(method="gjr", rounding=6).iloc[::4]
+        ```
+
+        Which returns:
+
+        |   Shock |     AAPL |     MSFT |   Benchmark |
+        |--------:|---------:|---------:|------------:|
+        |      -5 | 0.002686 | 0.001411 |    0.001215 |
+        |      -3 | 0.001217 | 0.000689 |    0.000523 |
+        |      -1 | 0.000483 | 0.000328 |    0.000176 |
+        |       1 | 0.000398 | 0.000288 |    0.000139 |
+        |       3 | 0.000452 | 0.000327 |    0.00019  |
+        |       5 | 0.00056  | 0.000404 |    0.000292 |
+        """
+        garch_model.validate_garch_family(method, distribution, mean)
 
         period = period if period else "daily"
 
@@ -509,23 +864,173 @@ class VolatilityRisk:
 
         returns = self._historical_data[period]["Return"]
 
-        parameters = pd.DataFrame(
+        news_impact = pd.DataFrame(
             {
                 # Each ticker is fitted on its own non-missing returns, see get_garch.
-                ticker: GARCH_METHODS[method][2](
-                    returns[ticker].dropna().to_numpy(), t=optimization_t
+                ticker: garch_model.get_news_impact_curve(
+                    garch_model.get_garch_family_weights(
+                        returns[ticker].dropna().to_numpy(), method, distribution, mean
+                    ),
+                    method,
+                    distribution,
+                    mean,
                 )
                 for ticker in returns.columns
-            },
-            index=(
-                ["Omega", "Alpha", "Beta"]
-                if method == "garch"
-                else ["Omega", "Alpha", "Gamma", "Beta"]
-            ),
+            }
         )
 
         return apply_rounding(
-            parameters, rounding if rounding is not None else self._rounding
+            news_impact, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_garch_simulation(
+        self,
+        period: str | None = None,
+        time_steps: int = 10,
+        paths: int = 10000,
+        seed: int | None = 0,
+        output: str = "returns",
+        method: Literal[
+            "garch",
+            "gjr",
+            "egarch",
+            "igarch",
+            "aparch",
+            "tgarch",
+            "ngarch",
+            "avgarch",
+            "nagarch",
+            "component",
+        ] = "garch",
+        distribution: str = "normal",
+        mean: str = "zero",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Simulates paths of the returns (or the conditional volatility) of each asset for the periods after the
+        last return with a GARCH-family model fitted to its returns, and summarizes the distribution of the
+        paths per period: the mean and the 5th, 25th, 50th, 75th and 95th percentiles.
+
+        Unlike `get_garch_forecast`, which gives the expected variance, the simulation shows the whole spread of
+        outcomes the model implies, including the fat tails and skewness of the innovation distribution and the
+        way a large shock raises the volatility of the periods after it. The percentiles of the cumulative return
+        give a GARCH-based Value at Risk over the horizon.
+
+        The formula is as follows, for h = 1, ..., `time_steps`:
+
+        - e_(n+h) = sigma_(n+h) * z_(n+h)
+        - r_(n+h) = Mean_(n+h) + e_(n+h)
+        - sigma_(n+h+1)^2 from the variance recursion of the model (see `get_garch`)
+
+        Where n is the last return, sigma_(n+1)^2 the one-step-ahead variance of the fitted model, z drawn from
+        the fitted innovation distribution and Mean_(n+h) = 0, Mu, Mu + AR(1) * r_(n+h-1) + MA(1) * e_(n+h-1) or
+        Mu + Lambda * sigma_(n+h) by the mean model (the last return and residual start the ARMA mean). The
+        cumulative return compounds the simulated returns, (1 + r_(n+1)) * ... * (1 + r_(n+h)) - 1, treating
+        them as simple returns.
+
+        Referenced against `ugarchsim` and `ugarchpath` of R's rugarch (https://cran.r-project.org/package=rugarch).
+
+        Also known as: GARCH Monte Carlo, volatility simulation, GARCH scenarios, simulated return paths.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            time_steps (int, optional): The number of periods to simulate. Defaults to 10.
+            paths (int, optional): The number of simulated paths per asset. Defaults to 10,000.
+            seed (int | None, optional): The seed of the random draws, None for a different simulation every
+                time. Defaults to 0.
+            output (str, optional): "returns" for the return of each period, "cumulative_returns" for the
+                compounded return from the last return to each period, or "volatility" for the conditional
+                volatility sigma of each period. Defaults to "returns".
+            method (str, optional): The model: "garch" for GARCH(1, 1), "gjr" for GJR-GARCH(1, 1, 1), "egarch" for
+                EGARCH(1, 1), "igarch" for IGARCH(1, 1), "aparch" for APARCH(1, 1), "tgarch", "ngarch", "avgarch" or
+                "nagarch" for the family GARCH sub-models, or "component" for the component GARCH, see `get_garch`.
+                Defaults to "garch".
+            distribution (str, optional): The distribution of the standardized innovations: "normal", "t",
+                "skewt", "skewt_fernandez_steel", "ged" or "johnson_su", see `get_garch`. Defaults to "normal".
+            mean (str, optional): The mean model: "zero", "constant", "arma" or "in_mean", see `get_garch`.
+                Defaults to "zero".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Mean, 5%, 25%, 50%, 75% and 95% of the simulated values per asset, indexed by the
+            periods after the last return.
+
+        Notes:
+        - Every asset is fitted on its own available returns, see `get_garch_parameters`.
+        - The paths of every asset are drawn independently of the other assets.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_garch_simulation(
+            output="cumulative_returns", distribution="t", show_columns="AAPL"
+        )
+        ```
+
+        Which returns:
+
+        |            |    Mean |      5% |     25% |     50% |    75% |    95% |
+        |:-----------|--------:|--------:|--------:|--------:|-------:|-------:|
+        | 2026-01-01 |  0      | -0.0154 | -0.0054 | -0.0002 | 0.0053 | 0.0151 |
+        | 2026-01-02 | -0.0001 | -0.0227 | -0.0084 | -0.0001 | 0.0079 | 0.0225 |
+        | 2026-01-05 | -0.0002 | -0.0286 | -0.0106 | -0.0003 | 0.0102 | 0.0278 |
+        | 2026-01-06 | -0.0003 | -0.033  | -0.0126 | -0.0004 | 0.012  | 0.0325 |
+        | 2026-01-07 | -0.0003 | -0.0379 | -0.0144 | -0.0002 | 0.0138 | 0.0372 |
+        | 2026-01-08 | -0.0002 | -0.0419 | -0.0159 | -0.0005 | 0.0152 | 0.0417 |
+        | 2026-01-09 | -0.0002 | -0.0451 | -0.0173 | -0.0007 | 0.0167 | 0.0457 |
+        | 2026-01-12 | -0.0001 | -0.0489 | -0.0189 | -0.0005 | 0.0183 | 0.0494 |
+        | 2026-01-13 | -0.0001 | -0.0523 | -0.0203 | -0.0007 | 0.0196 | 0.0544 |
+        | 2026-01-14 | -0.0002 | -0.0555 | -0.0217 | -0.001  | 0.0208 | 0.0575 |
+        """
+        garch_model.validate_garch_family(method, distribution, mean)
+
+        period = period if period else "daily"
+
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        returns = self._historical_data[period]["Return"].dropna(how="all")
+
+        simulation = pd.concat(
+            {
+                # Each ticker is fitted on its own non-missing returns, see get_garch.
+                ticker: garch_model.get_garch_simulation(
+                    returns[ticker].dropna().to_numpy(),
+                    method=method,
+                    distribution=distribution,
+                    mean=mean,
+                    time_steps=time_steps,
+                    paths=paths,
+                    seed=seed,
+                    output=output,
+                )
+                for ticker in returns.columns
+            },
+            axis=1,
+        )
+        simulation.index = _forecast_index(returns.index, period, time_steps)
+
+        return apply_rounding(
+            simulation, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
@@ -540,6 +1045,7 @@ class VolatilityRisk:
             "garman_klass",
             "rogers_satchell",
             "yang_zhang",
+            "garman_klass_yang_zhang",
         ] = "close_to_close",
         rounding: int | None = None,
         growth: bool = False,
@@ -574,6 +1080,9 @@ class VolatilityRisk:
         the open-to-close Variance and the Rogers-Satchell Variance. It is both
         drift-independent and accounts for overnight jumps, which makes it the most
         statistically efficient of the range-based estimators implemented here.
+        - `"garman_klass_yang_zhang"` — Garman-Klass with the squared overnight (close-to-open)
+        return of Yang and Zhang added, so it accounts for overnight jumps while keeping the
+        Garman-Klass term for the session (still assuming no drift).
 
         The formula is as follows (with the default method="close_to_close"):
 
@@ -592,14 +1101,15 @@ class VolatilityRisk:
         - Rogers-Satchell Variance = Mean(ln(H / C) * ln(H / O) + ln(L / C) * ln(L / O))
         - Yang-Zhang Variance = Var(ln(O / C_(-1))) + k * Var(ln(C / O)) + (1 - k) * Rogers-Satchell Variance
         - k = 0.34 / (1.34 + (n + 1) / (n - 1)), with n the number of days in the period
+        - Garman-Klass Yang-Zhang Variance = Mean(ln(O / C_(-1))^2 + 0.5 * ln(H / L)^2 - (2 * ln 2 - 1) * ln(C / O)^2)
 
         With `rolling`, the result is the sample standard deviation of the last `rolling` returns of the
         chosen period itself, without scaling.
 
         Also known as: standard deviation of returns. The range-based estimators are also known
         as Parkinson's range-based or high-low Volatility, Garman-Klass range-based Volatility,
-        Rogers-Satchell drift-independent Volatility and Yang-Zhang drift-independent
-        overnight-aware Volatility.
+        Rogers-Satchell drift-independent Volatility, Yang-Zhang drift-independent
+        overnight-aware Volatility and GK-YZ Volatility.
 
         For more information about the range-based estimators, see the following papers:
 
@@ -620,7 +1130,8 @@ class VolatilityRisk:
             and rolling=6 gives the rolling 6-month Volatility) instead of one value per `period`.
             Only available for method="close_to_close". Defaults to None.
             method (str, optional): Which Volatility estimator to use, one of "close_to_close",
-            "parkinson", "garman_klass", "rogers_satchell" or "yang_zhang", as described above.
+            "parkinson", "garman_klass", "rogers_satchell", "yang_zhang" or "garman_klass_yang_zhang", as
+            described above.
             Defaults to "close_to_close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -682,10 +1193,11 @@ class VolatilityRisk:
             "garman_klass",
             "rogers_satchell",
             "yang_zhang",
+            "garman_klass_yang_zhang",
         ):
             raise ValueError(
                 "Method must be close_to_close, parkinson, garman_klass, "
-                "rogers_satchell, or yang_zhang."
+                "rogers_satchell, yang_zhang or garman_klass_yang_zhang."
             )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -718,6 +1230,7 @@ class VolatilityRisk:
                 "garman_klass": realized_volatility_model.get_garman_klass_volatility,
                 "rogers_satchell": realized_volatility_model.get_rogers_satchell_volatility,
                 "yang_zhang": realized_volatility_model.get_yang_zhang_volatility,
+                "garman_klass_yang_zhang": realized_volatility_model.get_garman_klass_yang_zhang_volatility,
             }
 
             volatility = estimators[method](

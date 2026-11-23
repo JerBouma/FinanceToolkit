@@ -61,6 +61,7 @@ EXPECTED_RETURN_NAMES = {
     "bayes_stein": "Bayes-Stein",
     "james_stein": "James-Stein",
     "bodnar_okhrin_parolya": "Bodnar-Okhrin-Parolya",
+    "centroid": "Centroid",
 }
 
 DEFAULT_BACKTEST_METHODS = (
@@ -197,9 +198,14 @@ class AnalysisConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -368,9 +374,14 @@ class AnalysisConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -764,9 +775,14 @@ class AnalysisConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -1096,6 +1112,7 @@ class AnalysisConstruction:
         period: str = "daily",
         span: int = 180,
         adjust: bool = True,
+        ranking: list | dict | pd.Series | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1124,6 +1141,13 @@ class AnalysisConstruction:
         - Bodnar-Okhrin-Parolya: μ = α μ̂ + β b with the grand mean as the target b and
           the weights α and β of Bodnar, Okhrin and Parolya (2019) (skfolio's ShrunkMu
           BODNAR_OKHRIN, Riskfolio-Lib's mean_vector "BOP").
+        - Centroid: the returns that only an ordering of the assets implies (Almgren and
+          Chriss, 2006), μ_i = c_i σ_i with σ_i the annualized volatility and c_i the
+          expected value of the i-th largest of N standard normal draws, approximated by
+          c_j = Φ⁻¹((N + 1 - j - α) / (N - 2α + 1)) with α = 0.4424 - 0.1185 N^(-0.21);
+          assets ranked together share the average c of their positions. It takes the
+          ranking, from the highest expected return to the lowest, from anywhere: a view,
+          or the scores of any metric of the Toolkit.
 
         For more information, see the following papers:
 
@@ -1134,17 +1158,23 @@ class AnalysisConstruction:
           Financial and Quantitative Analysis, 21(3), 279-292.
         - Bodnar, T., Okhrin, O. and Parolya, N. (2019). "Optimal Shrinkage Estimator for
           High-Dimensional Mean Vector." Journal of Multivariate Analysis, 170, 63-79.
+        - Almgren, R. and Chriss, N. (2006). "Optimal Portfolios from Ordering
+          Information." Journal of Risk, 9(1), 1-47.
         - skfolio: ShrunkMu, EmpiricalMu, EWMu (https://github.com/skfolio/skfolio).
+        - PortfolioAnalytics: ac.ranking, centroid.complete.mc
+          (https://github.com/braverock/PortfolioAnalytics).
         - PyPortfolioOpt: expected_returns (https://github.com/robertmartin8/PyPortfolioOpt).
         - Riskfolio-Lib: mean_vector (https://github.com/dcajasn/Riskfolio-Lib).
 
-        Also known as: shrunk mu, shrinkage expected returns, CAGR, geometric mean return.
+        Also known as: shrunk mu, shrinkage expected returns, CAGR, geometric mean return,
+        centroid returns, ranking returns, returns from an ordering.
 
         Args:
             method (str | list[str] | None, optional): The estimators: "mean",
                 "geometric", "exponential", "exponential_geometric", "capm",
-                "bayes_stein", "james_stein" or "bodnar_okhrin_parolya". Defaults to
-                None, all of them (CAPM only when there is a benchmark).
+                "bayes_stein", "james_stein", "bodnar_okhrin_parolya" or "centroid".
+                Defaults to None, all of them (CAPM only when there is a benchmark,
+                Centroid only with a ranking).
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of the exponential averages.
@@ -1152,6 +1182,12 @@ class AnalysisConstruction:
             adjust (bool, optional): Whether the exponential averages normalize the
                 weights over the whole history (pandas' adjust=True) rather than follow
                 the recursion m_t = α r_t + (1 - α) m_(t-1). Defaults to True.
+            ranking (list | dict | pd.Series | None, optional): The ordering of "centroid", from the
+                highest expected return to the lowest: a list of every asset
+                (["MSFT", "AAPL", ...]), whose entries can be lists of assets ranked
+                together (["MSFT", ["AAPL", "JNJ"], "XOM"]), or a score per asset
+                ({"AAPL": 2.1, ...} or a pd.Series, higher is better, equal scores ranked
+                together). Defaults to None.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1171,6 +1207,11 @@ class AnalysisConstruction:
         - James-Stein needs at least three assets to shrink (with two, its β is negative
           and clipped to 0); skfolio and Riskfolio-Lib leave β unclipped. Bayes-Stein
           uses Jorion's Σ, where skfolio (BAYES_STEIN) and Riskfolio-Lib ("BS") use S.
+        - The centroid values match, within 0.01, the mean of sorted normal draws that
+          PortfolioAnalytics' centroid.complete.mc simulates. PortfolioAnalytics takes the
+          order from the lowest return up and rescales the centroid to lie between -0.05
+          and 0.05 (ac.ranking), where here it is scaled by each asset's volatility, so
+          every asset's return over its volatility is its centroid value.
 
         As an example:
 
@@ -1204,7 +1245,8 @@ class AnalysisConstruction:
             methods = [
                 name
                 for name in optimization_model.EXPECTED_RETURN_METHODS
-                if name != "capm" or benchmark is not None
+                if (name != "capm" or benchmark is not None)
+                and (name != "centroid" or ranking is not None)
             ]
         else:
             methods = [method] if isinstance(method, str) else list(method)
@@ -1221,6 +1263,7 @@ class AnalysisConstruction:
                     benchmark,
                     risk_free_rate,
                     adjust,
+                    ranking,
                 )
                 for name in methods
             }
@@ -1305,6 +1348,33 @@ class AnalysisConstruction:
           half_life / 2) of |w' r_t| / √(w' S_(t-1) w) / √(2 / π) for the inverse
           volatility portfolio w, clipped to [0.7, 1.6] (Paleologo, 2025; skfolio's
           RegimeAdjustedEWCovariance).
+        - "denoised_detoned": the denoised correlation ("denoised") with its first
+          `components` principal components removed and rescaled to a unit diagonal, the
+          order of López de Prado (2020, section 2.6). Singular, like "detoned".
+        - "nercome": Σ = (1 / M) Σ_s P_1 diag(P_1' S_2 P_1) P_1' over M = 50 random splits of
+          the periods into a first part of m and the rest, with P_1 the eigenvectors of the
+          first part's sample covariance and S_2 the second part's: eigenvalues that are not
+          fitted to the same noise as the eigenvectors (Abadir, Distaso and Žikeš, 2014;
+          Lam, 2016). m is chosen from 2√T, 0.2T, ..., 0.8T, T - 2.5√T and T - 1.5√T by the
+          smallest ‖avg(Σ_m - S_2)‖² (Lam, 2016), and the splits drawn with the seed.
+        - "ccc_garch": the next-period covariance of the constant conditional correlation
+          model of Bollerslev (1990), Σ_T+1 = D R D with D the GARCH(1, 1) volatilities
+          forecast for the next period, σ²_i,T+1 = ω_i + α_i ε²_i,T + β_i σ²_i,T, and R the
+          correlation of the standardized residuals ε_t / σ_t of the returns around their
+          average. It follows the volatility now, not its average over the history.
+        - "mm": the MM-estimator, robust to almost half the periods being outliers and 95%
+          as efficient in its shape (the correlations and variance ratios) as the sample
+          covariance for normal returns: an S-estimator with
+          Tukey's bisquare ρ(d) = 1 - (1 - (d / c)²)³ (the scatter with the smallest scale s
+          solving avg ρ(d_t / √s) = (1 - N / T) / 2), followed by a bisquare M-step with a
+          larger c at that scale (Tatsuoka and Tyler, 2000; Salibián-Barrera, Van Aelst
+          and Willems, 2006). Both are iteratively reweighted means and covariances, with
+          weights that fall to zero for periods far from the bulk.
+        - "rocke": the S-estimator with the translated biweight of Rocke (1996) on the
+          squared distances, ρ(x) = ((x - 1) / (4γ)) (3 - ((x - 1) / γ)²) + ½ within γ of 1
+          (0 below, 1 above), with γ = min(χ²_N(0.995) / N - 1, 1), made consistent at
+          the normal distribution through the median distance, which keeps its robustness
+          for many assets (Maronna, Martin, Yohai and Salibián-Barrera, 2019).
 
         For more information, see the following papers:
 
@@ -1335,6 +1405,24 @@ class AnalysisConstruction:
           Covariance Estimation." SIAM Journal on Matrix Analysis and Applications, 42(2),
           528-556.
         - Paleologo, G. A. (2025). "The Elements of Quantitative Investing." Wiley Finance.
+        - Abadir, K. M., Distaso, W. and Žikeš, F. (2014). "Design-Free Estimation of
+          Variance Matrices." Journal of Econometrics, 181(2), 165-180.
+        - Lam, C. (2016). "Nonparametric Eigenvalue-Regularized Precision or Covariance
+          Matrix Estimator." The Annals of Statistics, 44(3), 928-953.
+        - Bollerslev, T. (1990). "Modelling the Coherence in Short-Run Nominal Exchange
+          Rates: A Multivariate Generalized ARCH Model." The Review of Economics and
+          Statistics, 72(3), 498-505.
+        - Rocke, D. M. (1996). "Robustness Properties of S-Estimators of Multivariate
+          Location and Shape in High Dimension." The Annals of Statistics, 24(3),
+          1327-1345.
+        - Tatsuoka, K. S. and Tyler, D. E. (2000). "On the Uniqueness of S-Functionals and
+          M-Functionals under Nonelliptical Distributions." The Annals of Statistics,
+          28(4), 1219-1243.
+        - Salibián-Barrera, M., Van Aelst, S. and Willems, G. (2006). "Principal Components
+          Analysis Based on Multivariate MM Estimators with Fast and Robust Bootstrap."
+          Journal of the American Statistical Association, 101(475), 1198-1211.
+        - Maronna, R. A., Martin, R. D., Yohai, V. J. and Salibián-Barrera, M. (2019).
+          "Robust Statistics: Theory and Methods (with R)." 2nd edition, Wiley.
         - skfolio: ShrunkCovariance, GerberCovariance, DenoiseCovariance,
           DetoneCovariance (https://github.com/skfolio/skfolio).
         - PyPortfolioOpt: risk_models.CovarianceShrinkage
@@ -1350,19 +1438,25 @@ class AnalysisConstruction:
           similar logic for the TMFG and j-LoGo (https://github.com/dcajasn/Riskfolio-Lib).
         - skfolio: GeodesicShrinkageCovariance, RegimeAdjustedEWCovariance
           (https://github.com/skfolio/skfolio).
+        - RiskLabAI: nercome_denoised_covariance (https://github.com/RiskLabAI/RiskLabAI.py).
+        - PortfolioAnalytics: CCCgarch.MM, custom.covRob.MM, custom.covRob.Rocke
+          (https://github.com/braverock/PortfolioAnalytics).
 
         Also known as: covariance estimator, risk model, shrunk covariance, Gerber
         covariance, denoised covariance, detoned correlation, factor covariance, factor
         risk model, robust covariance, MCD, FastMCD, TMFG, LoGo, sparse inverse covariance,
-        geodesic shrinkage, regime adjusted EWMA covariance, short-term volatility update.
+        geodesic shrinkage, regime adjusted EWMA covariance, short-term volatility update,
+        NERCOME, split-sample covariance, CCC-GARCH, constant conditional correlation,
+        MM-estimator, S-estimator, Rocke estimator, translated biweight.
 
         Args:
             method (str, optional): The estimator: "sample", "ledoit_wolf",
                 "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor", "oas",
                 "shrunk", "semicovariance", "exponential", "denoised",
                 "denoised_spectral", "denoised_shrink", "gerber", "detoned", "factor",
-                "minimum_covariance_determinant", "jlogo", "geodesic" or
-                "regime_adjusted_ew". Defaults to "sample".
+                "minimum_covariance_determinant", "jlogo", "geodesic",
+                "regime_adjusted_ew", "denoised_detoned", "nercome", "ccc_garch", "mm" or
+                "rocke". Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
@@ -1375,8 +1469,8 @@ class AnalysisConstruction:
                 to 1.
             denoise_alpha (float, optional): The share α of the noise correlations
                 "denoised_shrink" keeps, between 0 and 1. Defaults to 0.
-            components (int, optional): The number of principal components "detoned"
-                removes. Defaults to 1.
+            components (int, optional): The number of principal components "detoned" and
+                "denoised_detoned" remove. Defaults to 1.
             factor_selection (str, optional): How "factor" estimates the loadings: "ols"
                 (every factor), "forward" or "backward" (stepwise by the p-values, 0.05) or
                 "pcr" (principal components regression keeping 95% of the variance).
@@ -1390,7 +1484,8 @@ class AnalysisConstruction:
             half_life (float, optional): The half-life in periods of the exponential
                 weights of "regime_adjusted_ew". Defaults to 40, skfolio's default as well.
             seed (int | None, optional): The seed of the random subsets of
-                "minimum_covariance_determinant" (numpy's default generator), so the
+                "minimum_covariance_determinant", which also starts "mm" and "rocke", and
+                of the random splits of "nercome" (numpy's default generator), so the
                 same returns give the same estimate. Defaults to 0.
             correlation (bool, optional): Whether to return the correlation matrix of
                 the estimate instead. Defaults to False.
@@ -1424,6 +1519,20 @@ class AnalysisConstruction:
           Riskfolio-Lib's and skfolio's estimates, which they match. "regime_adjusted_ew"
           takes the returns around zero, as skfolio does by default, and uses the whole
           history, where "exponential" takes a span of 180 periods.
+        - "nercome" estimates the covariance itself, as Lam (2016) does; RiskLabAI's
+          nercome_denoised_covariance splits at 2T / 3 and estimates the correlation of the
+          standardized returns, so its variances are the sample ones.
+        - "ccc_garch" fits every GARCH(1, 1) by Gaussian likelihood from the arch package's
+          backcast (see get_garch); PortfolioAnalytics' CCCgarch.MM uses fGarch and a
+          constant volatility for an asset whose α is below 0.01. A GARCH fit takes a few
+          seconds per asset on daily returns.
+        - "mm" and "rocke" start from the minimum covariance determinant (with the seed)
+          and from the sample covariance and keep the smaller S scale; RobStatTM's
+          covRobMM and covRobRocke, which PortfolioAnalytics calls, start from the
+          kurtosis-based estimate of Peña and Prieto (2007), so on small samples the two
+          can end in different local minima. Rocke's estimator suits ten or more assets;
+          with fewer, γ = 1 and its weights are low for many ordinary periods, so "mm" is
+          the more efficient there (Maronna et al., 2019).
 
         As an example:
 
@@ -1452,6 +1561,12 @@ class AnalysisConstruction:
         returns = self._get_returns(period, include_benchmark)
         if method == "detoned":
             matrix = estimation_model.get_detoned_covariance(returns, components)
+        elif method == "denoised_detoned":
+            matrix = estimation_model.get_detoned_covariance(
+                returns,
+                components,
+                optimization_model.get_denoised_covariance(returns)[0],
+            )
         elif method == "factor":
             returns, factor_returns = self._align_factors(
                 returns, self._get_factor_returns(period, factors, region)
@@ -1484,6 +1599,143 @@ class AnalysisConstruction:
         )
 
     @handle_errors
+    def get_random_matrix_statistics(
+        self,
+        output: str = "summary",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Fit the Marčenko-Pastur distribution to the eigenvalues of the correlation matrix
+        of the assets, to see how much of it random returns alone could produce. The
+        eigenvalues of the correlation matrix of T periods of N unrelated returns with
+        variance σ² fall between the edges λ- and λ+ of the Marčenko-Pastur distribution;
+        an eigenvalue above λ+ is signal (the market, sectors, styles), the ones below it
+        are indistinguishable from noise and are what the "denoised" covariance estimators
+        average, remove or shrink (López de Prado, 2020, chapter 2).
+
+        The formula is as follows:
+
+        - f(λ) = q / (2π σ² λ) √((λ+ - λ)(λ - λ-)) for λ- ≤ λ ≤ λ+, with q = T / N
+        - λ± = σ² (1 ± √(1 / q))²
+        - σ² minimizes Σ_x (f(x) - k(x))² over 1,000 points x between λ- and λ+, with k a
+          Gaussian kernel density of the eigenvalues (bandwidth 0.01), from σ² = 0.5 and
+          between 0.00001 and 0.99999 (López de Prado, 2020, section 2.4)
+        - signal eigenvalues: λ_k > λ+
+
+        For more information, see the following sources:
+
+        - Marčenko, V. A. and Pastur, L. A. (1967). "Distribution of Eigenvalues for Some
+          Sets of Random Matrices." Mathematics of the USSR-Sbornik, 1(4), 457-483.
+        - Laloux, L., Cizeau, P., Potters, M. and Bouchaud, J.-P. (2000). "Random Matrix
+          Theory and Financial Correlations." International Journal of Theoretical and
+          Applied Finance, 3(3), 391-397.
+        - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
+          University Press, chapter 2.
+        - RiskLabAI: find_max_eval, marcenko_pastur_pdf
+          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Also known as: Marchenko-Pastur, Marcenko-Pastur fit, random matrix theory, RMT,
+        eigenvalue spectrum, noise eigenvalues, signal eigenvalues.
+
+        Args:
+            output (str, optional): "summary" (one row: the Periods, Assets, Noise
+                Variance σ², Lower Edge λ-, Upper Edge λ+, Largest Eigenvalue, the number of
+                Signal Eigenvalues and their Signal Share of the trace N) or
+                "eigenvalues" (every eigenvalue from the largest, its Explained Variance
+                λ / N and whether it is Signal). Defaults to "summary".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The summary of the fit or the table of eigenvalues, from the
+            periods in which every asset has a return.
+
+        Notes:
+        - The fit is the one the "denoised" covariance estimators use; σ² and λ+ are
+          referenced against RiskLabAI's find_max_eval, which fits the same density with
+          scikit-learn's KernelDensity and matches to 1e-9 when it evaluates the densities
+          at the book's 1,000 points (it uses as many points as there are eigenvalues,
+          which moves σ² by a few percent for 30 assets). With few assets the eigenvalues
+          are too few to pin the density down, so σ² is a rough guide there; the
+          distribution describes many assets.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM", "JPM", "PG", "KO", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_random_matrix_statistics(output="eigenvalues")
+        ```
+
+        Which returns:
+
+        |              |   Eigenvalue |   Explained Variance | Signal   |
+        |:-------------|-------------:|---------------------:|:---------|
+        | Eigenvalue 1 |       2.8514 |               0.3564 | True     |
+        | Eigenvalue 2 |       1.7917 |               0.224  | True     |
+        | Eigenvalue 3 |       1.0929 |               0.1366 | False    |
+        | Eigenvalue 4 |       0.6159 |               0.077  | False    |
+        | Eigenvalue 5 |       0.5604 |               0.0701 | False    |
+        | Eigenvalue 6 |       0.4081 |               0.051  | False    |
+        | Eigenvalue 7 |       0.3617 |               0.0452 | False    |
+        | Eigenvalue 8 |       0.3178 |               0.0397 | False    |
+        """
+        outputs = ("summary", "eigenvalues")
+        if output not in outputs:
+            raise ValueError(
+                f"The output must be one of {', '.join(outputs)}, not '{output}'."
+            )
+        returns = self._get_returns(period, include_benchmark)
+        periods, assets = returns.shape
+        eigenvalues = np.linalg.eigvalsh(returns.corr().to_numpy())[::-1]
+        variance, lower, upper = optimization_model.get_marcenko_pastur_fit(
+            eigenvalues, periods / assets
+        )
+        signal = eigenvalues > upper
+        if output == "eigenvalues":
+            table = pd.DataFrame(
+                {
+                    "Eigenvalue": eigenvalues,
+                    "Explained Variance": eigenvalues / assets,
+                    "Signal": signal,
+                },
+                index=[f"Eigenvalue {number}" for number in range(1, assets + 1)],
+            )
+        else:
+            table = pd.DataFrame(
+                {
+                    "Periods": periods,
+                    "Assets": assets,
+                    "Noise Variance": variance,
+                    "Lower Edge": lower,
+                    "Upper Edge": upper,
+                    "Largest Eigenvalue": eigenvalues[0],
+                    "Signal Eigenvalues": int(signal.sum()),
+                    "Signal Share": float(eigenvalues[signal].sum() / assets),
+                },
+                index=["Marčenko-Pastur"],
+            )
+        return self._round(table, rounding)
+
+    @handle_errors
     def get_codependence_matrix(
         self,
         method: Literal[
@@ -1495,6 +1747,9 @@ class AnalysisConstruction:
             "distance",
             "mutual_information",
             "lower_tail",
+            "absolute_angular",
+            "squared_angular",
+            "gnpr",
         ] = "pearson",
         period: str = "daily",
         covariance: str = "sample",
@@ -1504,6 +1759,8 @@ class AnalysisConstruction:
         components: int = 1,
         bins: str | int = "freedman",
         tail_level: float = 0.05,
+        gnpr_theta: float = 0.5,
+        gnpr_bandwidth: float = 0.01,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1529,6 +1786,17 @@ class AnalysisConstruction:
           (H(X) + H(Y) - 2 I(X, Y)) / H(X, Y) (Meilă, 2007).
         - "lower_tail": the lower tail dependence, P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) with
           α = tail_level; distance -ln λ (λ at least 1e-8).
+        - "absolute_angular": |ρ| of the "pearson" correlation, distance √(1 - |ρ|), and
+          "squared_angular": ρ², distance √(1 - ρ²) (López de Prado, 2020), which put
+          assets that move strongly against each other close together, as hedges of one
+          another.
+        - "gnpr": the Generic Non-Parametric Representation distance of Marti et al.
+          (2016), d² = θ d_1² + (1 - θ) d_0² with θ = gnpr_theta, d_1² = 3 / (T (T² - 1))
+          Σ_t (R_i,t - R_j,t)² of the ranks R of the returns ((1 - ρ_S) / 2 without ties)
+          and d_0² = ½ Σ_b (√g_i,b - √g_j,b)² the squared Hellinger distance between the
+          histograms g of the returns, with bins gnpr_bandwidth wide; codependence 1 - d².
+          θ = 1 compares only how the assets move together, θ = 0 only how their returns
+          are distributed.
 
         For more information, see the following papers:
 
@@ -1539,6 +1807,9 @@ class AnalysisConstruction:
           2769-2794.
         - Meilă, M. (2007). "Comparing Clusterings - An Information Based Distance."
           Journal of Multivariate Analysis, 98(5), 873-895.
+        - Marti, G., Andler, S., Nielsen, F. and Donnat, P. (2016). "Clustering Financial
+          Time Series: How Long Is Enough?" Proceedings of the Twenty-Fifth International
+          Joint Conference on Artificial Intelligence (IJCAI-16), 2583-2589.
         - Hacine-Gharbi, A. and Ravier, P. (2018). "A Binning Formula of Bi-histogram for
           Joint Entropy Estimation Using Mean Square Error Minimization." Pattern
           Recognition Letters, 101, 21-28.
@@ -1548,14 +1819,17 @@ class AnalysisConstruction:
           (https://github.com/skfolio/skfolio).
         - Riskfolio-Lib: dcorr_matrix, mutual_info_matrix, var_info_matrix, ltdi_matrix,
           codep_dist (https://github.com/dcajasn/Riskfolio-Lib).
+        - mlfinlab: absolute_angular_distance, squared_angular_distance, gnpr_distance
+          (https://github.com/hudson-and-thames/mlfinlab).
 
         Also known as: codependence, distance correlation, mutual information, variation
-        of information, tail dependence matrix, correlation distance.
+        of information, tail dependence matrix, correlation distance, angular distance,
+        absolute angular distance, squared angular distance, GNPR, copula distance.
 
         Args:
             method (str, optional): The codependence: "pearson", "spearman", "kendall",
-                "gerber", "detoned", "distance", "mutual_information" or "lower_tail".
-                Defaults to "pearson".
+                "gerber", "detoned", "distance", "mutual_information", "lower_tail",
+                "absolute_angular", "squared_angular" or "gnpr". Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The covariance estimator whose correlation
@@ -1574,6 +1848,10 @@ class AnalysisConstruction:
                 López de Prado). Defaults to "freedman".
             tail_level (float, optional): The share of the lowest returns that forms the
                 tail of "lower_tail". Defaults to 0.05.
+            gnpr_theta (float, optional): The weight θ of the co-movement in "gnpr",
+                between 0 and 1. Defaults to 0.5.
+            gnpr_bandwidth (float, optional): The width of the histogram bins of "gnpr",
+                in returns per period. Defaults to 0.01.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1592,6 +1870,9 @@ class AnalysisConstruction:
           takes longer on many daily periods.
         - Riskfolio-Lib's mutual information defaults to Knuth's bins, skfolio's to
           Freedman-Diaconis; with the same bins, both equal this one.
+        - mlfinlab's absolute and squared angular distances take half of 1 - |ρ| and
+          1 - ρ², √2 times smaller with the same clusters. Its gnpr_distance applies d_1 to
+          the values it is given, which matches this one when it is given the ranks.
 
         As an example:
 
@@ -1640,6 +1921,8 @@ class AnalysisConstruction:
             components,
             bins,
             tail_level,
+            gnpr_theta,
+            gnpr_bandwidth,
         )
         return self._round(matrix, rounding)
 
@@ -1654,6 +1937,7 @@ class AnalysisConstruction:
         clusters: int | None = None,
         cluster_criterion: str = "two_difference_gap",
         threshold: float = 0.5,
+        seed: int | None = 0,
         include_benchmark: bool = False,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1674,21 +1958,37 @@ class AnalysisConstruction:
           threshold with H, and then L with those above it with L. This repeats until
           every asset belongs to a cluster. It needs no number of clusters and is
           referenced against ffn's calc_ftca, which it matches on the Pearson correlation.
+        - "onc": the Optimal Number of Clusters algorithm of López de Prado and Lewis
+          (2019). Every asset is the point given by its row of the distance matrix. For
+          k = 2 to N - 1 clusters, k-means runs ten times (from k-means++ starts drawn with
+          the seed), and the clustering with the highest quality E[S] / √V[S] of the
+          silhouette coefficients S_i = (b_i - a_i) / max(a_i, b_i) is kept. The clusters
+          of below-average quality are then clustered again on their own, and their new
+          clusters kept when they raise the average quality above that of the clusters
+          they replace (López de Prado, 2020, snippets 4.1 and 4.2). It finds the number of
+          clusters itself, needs no tree and suits uneven groups of assets.
 
         For more information, see the following papers:
 
         - Varadi, D. (2013). "The Fast Threshold Clustering Algorithm (FTCA)." CSS
           Analytics.
+        - López de Prado, M. and Lewis, M. J. (2019). "Detection of False Investment
+          Strategies Using Unsupervised Learning Methods." Quantitative Finance, 19(9),
+          1555-1565.
         - Yue, S., Wang, X. and Wei, M. (2008). "Application of Two-Order Difference to
           Gap Statistic." Transactions of Tianjin University, 14(3), 217-221.
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge
           University Press.
         - ffn: calc_ftca (https://github.com/pmorissette/ffn).
+        - mlfinlab: get_onc_clusters (https://github.com/hudson-and-thames/mlfinlab).
+        - RiskLabAI: cluster_k_means_top (https://github.com/RiskLabAI/RiskLabAI.py).
 
-        Also known as: asset clustering, FTCA, correlation clusters.
+        Also known as: asset clustering, FTCA, correlation clusters, ONC, optimal number of
+        clusters, k-means clustering.
 
         Args:
-            method (str, optional): "hierarchical" or "ftca". Defaults to "hierarchical".
+            method (str, optional): "hierarchical", "ftca" or "onc". Defaults to
+                "hierarchical".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             codependence (str, optional): The codependence the assets are clustered on
@@ -1699,15 +1999,19 @@ class AnalysisConstruction:
                 "complete", "average", "ward" or "dbht" (the Directed Bubble Hierarchical
                 Tree of Song, Di Matteo and Aste, 2012, which finds the number of clusters
                 itself in the TMFG planar graph of the codependence). Defaults to "ward".
-            clusters (int | None, optional): The number of clusters of "hierarchical".
-                Defaults to None, chosen by the two-order difference of the gap statistic
-                (by the DBHT itself for "dbht").
+            clusters (int | None, optional): The number of clusters of "hierarchical", or
+                the most clusters "onc" tries. Defaults to None, chosen by the two-order
+                difference of the gap statistic (by the DBHT itself for "dbht"; up to
+                N - 1 for "onc").
             cluster_criterion (str, optional): How "hierarchical" chooses the number of
                 clusters when it is not given: "two_difference_gap" or
                 "standardized_silhouette" (the highest mean over standard deviation of
                 the silhouette coefficients). Defaults to "two_difference_gap".
             threshold (float, optional): The codependence above which "ftca" puts assets
                 in one cluster. Defaults to 0.5.
+            seed (int | None, optional): The seed of the k-means starts of "onc" (numpy's
+                default generator), so the same returns give the same clusters. Defaults
+                to 0.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1717,7 +2021,15 @@ class AnalysisConstruction:
 
         Returns:
             pd.DataFrame: The Cluster of every asset, numbered from 1 (for "ftca" in the
-            order the clusters are formed).
+            order the clusters are formed, for "onc" in the order of their first asset).
+
+        Notes:
+        - "onc" follows the book's comparisons, referenced against mlfinlab's
+          get_onc_clusters, which clusters again only when more than two clusters are below
+          the average quality and keeps the new clusters when their quality is the lower
+          one. A cluster whose silhouettes are all equal (one asset alone) has no quality
+          and is left as it is. Across seeds the clusters of well-separated groups agree;
+          where groups overlap, a k-means start can settle elsewhere, which the seed fixes.
 
         As an example:
 
@@ -1743,9 +2055,9 @@ class AnalysisConstruction:
         | JNJ  |         2 |
         | XOM  |         3 |
         """
-        if method not in ("hierarchical", "ftca"):
+        if method not in ("hierarchical", "ftca", "onc"):
             raise ValueError(
-                f"The method must be hierarchical or ftca, not '{method}'."
+                f"The method must be hierarchical, ftca or onc, not '{method}'."
             )
         returns = self._get_returns(period, include_benchmark)
         covariance_matrix = optimization_model.get_covariance_matrix(
@@ -1756,7 +2068,15 @@ class AnalysisConstruction:
                 self._get_factor_returns(period) if covariance == "factor" else None
             ),
         )
-        if method == "ftca":
+        if method == "onc":
+            labels = estimation_model.get_optimal_number_of_clusters(
+                optimization_model.get_codependence_distance(
+                    returns, covariance_matrix, codependence
+                ),
+                clusters,
+                seed=seed,
+            )
+        elif method == "ftca":
             labels = estimation_model.get_fast_threshold_clusters(
                 optimization_model.get_codependence(
                     returns, covariance_matrix, codependence
@@ -1805,7 +2125,10 @@ class AnalysisConstruction:
         - m_ijk = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k)
         - "sample": w_t = 1 / T; "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with
           λ = 1 - 2 / (span + 1); "semi": w_t = 1 / T with min(r_ti - μ_i, 0) in place of
-          every deviation (only returns below the average count)
+          every deviation (only returns below the average count); "ccc_garch": w_t = 1 / T
+          on the standardized residuals of the CCC-GARCH(1, 1) model at the next-period
+          volatilities, z_i,t σ_i,T+1 / s(z_i) (Bollerslev, 1990; see
+          get_covariance_estimate), the next-period coskewness of the model
         - standardized: m_ijk / (σ_i σ_j σ_k) with σ² = Σ_t w_t (r_t - μ)²
 
         For more information, see the following papers:
@@ -1821,8 +2144,8 @@ class AnalysisConstruction:
         Also known as: coskewness, third co-moment matrix, M3.
 
         Args:
-            method (str, optional): "sample", "exponential" or "semi". Defaults to
-                "sample".
+            method (str, optional): "sample", "exponential", "semi" or "ccc_garch".
+                Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
@@ -1901,7 +2224,9 @@ class AnalysisConstruction:
         - m_ijkl = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k)(r_tl - μ_l)
         - "sample": w_t = 1 / T; "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with
           λ = 1 - 2 / (span + 1); "semi": w_t = 1 / T with min(r_ti - μ_i, 0) in place of
-          every deviation, the lower semi cokurtosis
+          every deviation, the lower semi cokurtosis; "ccc_garch": w_t = 1 / T on the
+          standardized residuals of the CCC-GARCH(1, 1) model at the next-period
+          volatilities (see get_coskewness_matrix), the next-period cokurtosis of the model
         - standardized: m_ijkl / (σ_i σ_j σ_k σ_l) with σ² = Σ_t w_t (r_t - μ)²
 
         For more information, see the following papers:
@@ -1916,8 +2241,8 @@ class AnalysisConstruction:
         Also known as: cokurtosis, fourth co-moment matrix, M4, semi cokurtosis.
 
         Args:
-            method (str, optional): "sample", "exponential" or "semi". Defaults to
-                "sample".
+            method (str, optional): "sample", "exponential", "semi" or "ccc_garch".
+                Defaults to "sample".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             span (int, optional): The span in periods of "exponential". Defaults to 180.
@@ -2425,6 +2750,7 @@ class AnalysisConstruction:
         views: dict | None = None,
         volatility_views: dict | None = None,
         correlation_views: dict | None = None,
+        ranking: list[str] | None = None,
         opinions: list[dict] | None = None,
         opinion_weights: list[float] | None = None,
         pooling: str = "linear",
@@ -2449,6 +2775,10 @@ class AnalysisConstruction:
           year) or the difference of two ({"AAPL-MSFT": 0.02}).
         - volatility_views: the annualized volatility of an asset ({"AAPL": 0.25}).
         - correlation_views: the correlation of two assets ({"AAPL-MSFT": 0.5}).
+        - ranking: an ordering of the expected returns, from the highest to the lowest
+          (["XOM", "MSFT", "AAPL"]), the ranking views of Meucci (2008): the inequalities
+          E_p[r_(k+1)] ≤ E_p[r_(k)] for every pair of neighbours, imposed with the views on
+          the expected returns. Only the order is stated, not by how much.
 
         A view is an equality (a number) or an inequality, a pair (">=", 0.10) or
         ("<=", 0.10). The views on volatilities hold the means found with the mean views,
@@ -2458,7 +2788,7 @@ class AnalysisConstruction:
         L-BFGS-B.
 
         With opinions, a list of views of several experts, each a dictionary with the
-        keys "views", "volatility_views" and "correlation_views", every opinion gets its
+        keys "views", "volatility_views", "correlation_views" and "ranking", every opinion gets its
         own posterior and these are pooled with the opinion weights (equal by default; any
         weight left to sum to one goes to the equal prior probabilities): linearly,
         p = Σ π_k p_k (Stone, 1961), or logarithmically, p ∝ Π p_k^π_k (Genest and Zidek,
@@ -2475,9 +2805,10 @@ class AnalysisConstruction:
           Critique and an Annotated Bibliography." Statistical Science, 1(1), 114-135.
         - skfolio: EntropyPooling, OpinionPooling (https://github.com/skfolio/skfolio).
         - Riskfolio-Lib: entropy_pooling (https://github.com/dcajasn/Riskfolio-Lib).
+        - PortfolioAnalytics: meucci.ranking (https://github.com/braverock/PortfolioAnalytics).
 
         Also known as: fully flexible views, fully flexible probabilities, opinion pooling,
-        views on scenarios.
+        views on scenarios, ranking views, ordering views.
 
         Args:
             views (dict | None, optional): The annualized expected return views. Defaults
@@ -2486,8 +2817,11 @@ class AnalysisConstruction:
                 Defaults to None.
             correlation_views (dict | None, optional): The correlation views. Defaults to
                 None.
+            ranking (list[str] | None, optional): Assets from the highest expected return
+                to the lowest, at least two. Defaults to None.
             opinions (list[dict] | None, optional): The views of several experts to pool,
-                instead of views, volatility_views and correlation_views. Defaults to None.
+                instead of views, volatility_views, correlation_views and ranking. Defaults
+                to None.
             opinion_weights (list[float] | None, optional): The weight of every opinion,
                 summing to at most one. Defaults to None, equal weights.
             pooling (str, optional): "linear" or "logarithmic". Defaults to "linear".
@@ -2530,6 +2864,10 @@ class AnalysisConstruction:
           probabilities agree to 1e-9; with correlation views the views are met here more
           tightly and the posterior lies at least as close to the prior (a lower relative
           entropy).
+        - A ranking is the set of relative views ("MSFT-XOM": ("<=", 0)) that
+          PortfolioAnalytics' meucci.ranking imposes, which takes the order from the lowest
+          expected return to the highest. A ranking the history already follows leaves the
+          probabilities equal.
 
         As an example:
 
@@ -2580,11 +2918,16 @@ class AnalysisConstruction:
             }
 
         def posterior(opinion: dict) -> pd.Series:
-            unknown = set(opinion) - {"views", "volatility_views", "correlation_views"}
+            unknown = set(opinion) - {
+                "views",
+                "volatility_views",
+                "correlation_views",
+                "ranking",
+            }
             if unknown:
                 raise ValueError(
-                    f"An opinion holds views, volatility_views and correlation_views, not "
-                    f"{', '.join(sorted(unknown))}."
+                    "An opinion holds views, volatility_views, correlation_views and "
+                    f"ranking, not {', '.join(sorted(unknown))}."
                 )
             return estimation_model.get_entropy_pooling(
                 returns,
@@ -2596,10 +2939,11 @@ class AnalysisConstruction:
                     lambda value: value / np.sqrt(periods_per_year),
                 ),
                 opinion.get("correlation_views") or None,
+                ranking=opinion.get("ranking"),
             )
 
         if opinions:
-            if views or volatility_views or correlation_views:
+            if views or volatility_views or correlation_views or ranking:
                 raise ValueError(
                     "Pass the views either directly or as opinions, not both."
                 )
@@ -2615,6 +2959,7 @@ class AnalysisConstruction:
                     "views": views,
                     "volatility_views": volatility_views,
                     "correlation_views": correlation_views,
+                    "ranking": ranking,
                 }
             )
 

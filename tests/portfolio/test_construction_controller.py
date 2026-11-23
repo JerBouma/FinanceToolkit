@@ -1889,3 +1889,122 @@ def test_a_backtest_strategy_whose_bounds_cannot_be_met_has_no_returns(caplog):
     assert weights["Minimum Variance"].isna().all().all()
     assert summary.loc["Equal Weight"].notna().any()
     assert "Minimum Variance found no weights on any of the" in caplog.text
+
+
+def test_get_covariance_estimate_split_and_robust(recorder, portfolio_module):
+    for method in ("denoised_detoned", "nercome", "mm", "rocke"):
+        covariance = portfolio_module.get_covariance_estimate(
+            method=method, include_benchmark=True, rounding=8
+        )
+        recorder.capture(covariance)
+        eigenvalues = np.linalg.eigvalsh(covariance.to_numpy())
+        if method == "denoised_detoned":
+            # The market component is removed, so the matrix is singular.
+            assert eigenvalues.min() == pytest.approx(0, abs=1e-6)
+        else:
+            assert eigenvalues.min() > 0
+    # The robust estimates feed the optimizers.
+    weights = portfolio_module.get_minimum_variance_weights(
+        covariance="rocke", include_benchmark=True
+    )
+    assert weights["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-6)
+
+
+def test_get_covariance_estimate_ccc_garch(recorder, portfolio_module):
+    # Rounded to 6 decimals: the GARCH legs come from a multi-start likelihood fit whose
+    # optimum moves by about 1e-8 (relative) under 1e-12 changes of the returns.
+    covariance = portfolio_module.get_covariance_estimate(
+        method="ccc_garch", rounding=6
+    )
+    recorder.capture(covariance)
+    coskewness = portfolio_module.get_coskewness_matrix(method="ccc_garch", rounding=6)
+    recorder.capture(coskewness)
+    # The constant correlations are those of the standardized residuals, below the
+    # sample correlation of returns that share volatility bursts.
+    correlation = covariance.loc["AAPL", "MSFT"] / np.sqrt(
+        covariance.loc["AAPL", "AAPL"] * covariance.loc["MSFT", "MSFT"]
+    )
+    assert 0 < correlation < 1
+
+
+def test_get_random_matrix_statistics(recorder, portfolio_module):
+    summary = portfolio_module.get_random_matrix_statistics(include_benchmark=True)
+    recorder.capture(summary)
+    eigenvalues = portfolio_module.get_random_matrix_statistics(
+        output="eigenvalues", include_benchmark=True
+    )
+    recorder.capture(eigenvalues)
+    assert eigenvalues["Eigenvalue"].sum() == pytest.approx(3, abs=1e-3)
+    assert summary["Signal Eigenvalues"].iloc[0] == eigenvalues["Signal"].sum()
+    assert portfolio_module.get_random_matrix_statistics(output="pdf").empty
+
+
+def test_get_expected_returns_estimate_centroid(recorder, portfolio_module):
+    table = portfolio_module.get_expected_returns_estimate(
+        ranking=["MSFT", "Benchmark", "AAPL"], include_benchmark=True
+    )
+    recorder.capture(table)
+    assert table["Centroid"]["MSFT"] > 0 > table["Centroid"]["AAPL"]
+    assert table["Centroid"]["Benchmark"] == pytest.approx(0)
+    recorder.capture(
+        portfolio_module.get_expected_returns_estimate(
+            method="centroid",
+            ranking={"AAPL": 2.0, "MSFT": 2.0, "Benchmark": 1.0},
+            include_benchmark=True,
+        )
+    )
+    # Without a ranking every other estimator is shown, and the centroid alone is empty.
+    assert "Centroid" not in portfolio_module.get_expected_returns_estimate().columns
+    assert portfolio_module.get_expected_returns_estimate(method="centroid").empty
+
+
+def test_get_codependence_matrix_angular_and_gnpr(recorder, portfolio_module):
+    for method in ("absolute_angular", "squared_angular", "gnpr"):
+        recorder.capture(
+            portfolio_module.get_codependence_matrix(
+                method=method, include_benchmark=True
+            )
+        )
+    distance = portfolio_module.get_codependence_matrix(
+        method="gnpr", gnpr_theta=1.0, distance=True, include_benchmark=True
+    )
+    recorder.capture(distance)
+    assert np.allclose(np.diag(distance), 0)
+
+
+def test_get_asset_clusters_onc(recorder, portfolio_module):
+    clusters = portfolio_module.get_asset_clusters(method="onc", include_benchmark=True)
+    recorder.capture(clusters)
+    for seed in (1, 2):
+        assert clusters.equals(
+            portfolio_module.get_asset_clusters(
+                method="onc", seed=seed, include_benchmark=True
+            )
+        )
+    weights = portfolio_module.get_nested_clustered_optimization_weights(
+        cluster_criterion="onc", include_benchmark=True
+    )
+    recorder.capture(weights)
+    assert (weights["Cluster"].drop("Portfolio") == clusters["Cluster"]).all()
+    assert portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+        cluster_criterion="onc"
+    ).empty
+
+
+def test_get_entropy_pooling_ranking(recorder, portfolio_module):
+    # The history has AAPL above MSFT; the opposite ranking pulls them level.
+    table = portfolio_module.get_entropy_pooling(ranking=["MSFT", "AAPL"], rounding=6)
+    recorder.capture(table)
+    assert (
+        table.loc["MSFT", "Posterior Return"] >= table.loc["AAPL", "Posterior Return"]
+    )
+    unchanged = portfolio_module.get_entropy_pooling(
+        ranking=["AAPL", "MSFT"], output="summary"
+    )
+    assert unchanged["Relative Entropy"].iloc[0] == pytest.approx(0, abs=1e-10)
+    recorder.capture(
+        portfolio_module.get_entropy_pooling(
+            opinions=[{"ranking": ["MSFT", "AAPL"]}, {"views": {"AAPL": 0.3}}],
+            rounding=6,
+        )
+    )

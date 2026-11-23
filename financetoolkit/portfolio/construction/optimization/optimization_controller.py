@@ -310,9 +310,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -514,9 +519,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -758,9 +768,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -993,9 +1008,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -1215,9 +1235,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -1409,8 +1434,12 @@ class OptimizationConstruction:
                 2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
                 correlation, Székely et al., 2007, through √(1 - dCor)),
                 "mutual_information" (through the variation of information, Meilă, 2007)
-                or "lower_tail" (how often two assets fall into their lowest 5% of
-                returns together, through -ln λ). The rank correlations depend only on
+                "lower_tail" (how often two assets fall into their lowest 5% of returns
+                together, through -ln λ), "absolute_angular" or "squared_angular" (|ρ| or
+                ρ² through √(1 - |ρ|) or √(1 - ρ²), which puts assets that hedge each other
+                together, López de Prado, 2020) or "gnpr" (the rank co-movement and the
+                difference between the return distributions, θ = 0.5, Marti et al., 2016).
+                The rank correlations depend only on
                 the order of the returns, so a few extreme returns weigh less; the
                 distance correlation and mutual information also capture non-linear
                 co-movement. Defaults to "pearson".
@@ -1435,9 +1464,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -2010,8 +2044,12 @@ class OptimizationConstruction:
                 2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
                 correlation, Székely et al., 2007, through √(1 - dCor)),
                 "mutual_information" (through the variation of information, Meilă, 2007)
-                or "lower_tail" (how often two assets fall into their lowest 5% of
-                returns together, through -ln λ). The rank correlations depend only on
+                "lower_tail" (how often two assets fall into their lowest 5% of returns
+                together, through -ln λ), "absolute_angular" or "squared_angular" (|ρ| or
+                ρ² through √(1 - |ρ|) or √(1 - ρ²), which puts assets that hedge each other
+                together, López de Prado, 2020) or "gnpr" (the rank co-movement and the
+                difference between the return distributions, θ = 0.5, Marti et al., 2016).
+                The rank correlations depend only on
                 the order of the returns, so a few extreme returns weigh less; the
                 distance correlation and mutual information also capture non-linear
                 co-movement. Defaults to "pearson".
@@ -2037,9 +2075,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 clusters when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -2248,10 +2291,12 @@ class OptimizationConstruction:
                 chosen by the two-order difference of the gap statistic.
             cluster_criterion (str, optional): How the number of clusters is chosen when
                 it is not given: "two_difference_gap" (the sharpest bend of the
-                within-cluster dispersion, Yue, Wang and Wei, 2008) or
+                within-cluster dispersion, Yue, Wang and Wei, 2008),
                 "standardized_silhouette" (the highest mean over standard deviation of the
-                silhouette coefficients, López de Prado, 2020). Defaults to
-                "two_difference_gap".
+                silhouette coefficients, López de Prado, 2020) or "onc" (the clusters of the
+                Optimal Number of Clusters algorithm, k-means with its own choice of their
+                number, López de Prado and Lewis, 2019, as in the paper; see
+                get_asset_clusters). Defaults to "two_difference_gap".
             codependence (str, optional): The codependence the assets are clustered on:
                 "pearson" (the linear correlation of the covariance matrix), "spearman"
                 (the rank correlation of the returns, Spearman, 1904), "kendall" (the
@@ -2261,8 +2306,12 @@ class OptimizationConstruction:
                 2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
                 correlation, Székely et al., 2007, through √(1 - dCor)),
                 "mutual_information" (through the variation of information, Meilă, 2007)
-                or "lower_tail" (how often two assets fall into their lowest 5% of
-                returns together, through -ln λ). The rank correlations depend only on
+                "lower_tail" (how often two assets fall into their lowest 5% of returns
+                together, through -ln λ), "absolute_angular" or "squared_angular" (|ρ| or
+                ρ² through √(1 - |ρ|) or √(1 - ρ²), which puts assets that hedge each other
+                together, López de Prado, 2020) or "gnpr" (the rank co-movement and the
+                difference between the return distributions, θ = 0.5, Marti et al., 2016).
+                The rank correlations depend only on
                 the order of the returns, so a few extreme returns weigh less; the
                 distance correlation and mutual information also capture non-linear
                 co-movement. Defaults to "pearson".
@@ -2282,8 +2331,9 @@ class OptimizationConstruction:
                 RiskMetrics), "denoised_spectral", "denoised_shrink" (López de Prado,
                 2020), "gerber" (Gerber et al., 2022), "minimum_covariance_determinant"
                 (Rousseeuw and Van Driessen, 1999), "jlogo" (Barfuss et al., 2016), "geodesic"
-                (Bhatia, 2007) or "regime_adjusted_ew" (Paleologo, 2025). Defaults to
-                "denoised", as in the paper.
+                (Bhatia, 2007), "regime_adjusted_ew" (Paleologo, 2025), "nercome" (Lam, 2016),
+                "ccc_garch" (Bollerslev, 1990), "mm" or "rocke" (Maronna et al., 2019).
+                Defaults to "denoised", as in the paper.
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2460,9 +2510,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -3110,9 +3165,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The algorithm needs a positive definite covariance matrix. Defaults to
                 "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
@@ -3297,8 +3357,9 @@ class OptimizationConstruction:
                 "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor", "oas",
                 "shrunk", "semicovariance", "exponential", "denoised",
                 "denoised_spectral", "denoised_shrink", "gerber", "factor",
-                "minimum_covariance_determinant", "jlogo", "geodesic" or
-                "regime_adjusted_ew". It also sets Σ_μ. Defaults to "sample".
+                "minimum_covariance_determinant", "jlogo", "geodesic",
+                "regime_adjusted_ew", "nercome", "ccc_garch", "mm" or "rocke". It also
+                sets Σ_μ. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns, as in
@@ -3736,9 +3797,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".
@@ -3928,9 +3994,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
@@ -4166,9 +4237,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
@@ -4390,9 +4466,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
@@ -4689,9 +4770,14 @@ class OptimizationConstruction:
                 covariance determinant, robust to outliers, Rousseeuw and Van Driessen, 1999),
                 "jlogo" (the sparse inverse covariance on the TMFG planar graph of the
                 correlations, Barfuss et al., 2016), "geodesic" (10% towards the scaled identity
-                along the geodesic of the positive definite matrices, Bhatia, 2007) or
+                along the geodesic of the positive definite matrices, Bhatia, 2007),
                 "regime_adjusted_ew" (exponentially weighted with a half-life of 40 periods,
-                rescaled by the recent realized against predicted risk, Paleologo, 2025).
+                rescaled by the recent realized against predicted risk, Paleologo, 2025),
+                "nercome" (eigenvectors from one part of the periods and the variances along
+                them from the other, averaged over random splits, Lam, 2016), "ccc_garch" (the
+                next-period covariance of GARCH(1, 1) volatilities with constant correlations,
+                Bollerslev, 1990), "mm" or "rocke" (the robust MM-estimator and Rocke's
+                S-estimator, Maronna et al., 2019).
                 The shrinkage and denoised estimators stabilize the
                 weights when there are many assets compared to the number of periods.
                 Defaults to "sample".

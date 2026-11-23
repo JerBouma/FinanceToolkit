@@ -857,6 +857,67 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
 DENOISE_METHODS = ("fixed", "spectral", "shrink")
 
 
+def get_marcenko_pastur_fit(
+    eigenvalues: np.ndarray, ratio: float
+) -> tuple[float, float, float]:
+    """
+    The Marčenko-Pastur distribution that fits the eigenvalues of a correlation matrix
+    best. The eigenvalues of the correlation matrix of T periods of N unrelated returns
+    with variance σ² follow, as T and N grow with T / N = q, the density
+
+    - f(λ) = q / (2π σ² λ) √((λ+ - λ)(λ - λ-)) for λ- ≤ λ ≤ λ+
+    - λ± = σ² (1 ± √(1 / q))²
+
+    The variance σ² is the one whose density is closest to a Gaussian kernel density of
+    the eigenvalues (bandwidth 0.01) in the sum of squared differences at 1,000 points
+    between the edges λ- and λ+, minimized with SciPy's L-BFGS-B for σ² between 0.00001
+    and 0.99999 from 0.5 (López de Prado, 2020, section 2.4, which fits σ² this way). The
+    eigenvalues above λ+ are the signal; those below it could come from noise alone.
+    Referenced against RiskLabAI's find_max_eval and marcenko_pastur_pdf
+    (https://github.com/RiskLabAI/RiskLabAI.py), which fit σ² the same way with
+    scikit-learn's KernelDensity and match to 1e-9 at the book's 1,000 points; RiskLabAI
+    itself evaluates the densities at as many points as there are eigenvalues, which moves
+    σ² by a few percent when there are few.
+
+    See Marčenko, V. A. and Pastur, L. A. (1967), "Distribution of Eigenvalues for Some
+    Sets of Random Matrices", Mathematics of the USSR-Sbornik, 1(4), 457-483, and López de
+    Prado, M. (2020), Machine Learning for Asset Managers, Cambridge University Press,
+    chapter 2.
+
+    Args:
+        eigenvalues (np.ndarray): The eigenvalues of the correlation matrix.
+        ratio (float): The number of periods over the number of assets, T / N.
+
+    Returns:
+        tuple[float, float, float]: The variance σ² of the noise and the lower and upper
+            edges λ- and λ+ of its eigenvalues.
+    """
+
+    def density_error(variance: np.ndarray) -> float:
+        # The Marčenko-Pastur density at 1,000 points between its edges against a Gaussian
+        # kernel density of the eigenvalues at the same points.
+        lower = variance[0] * (1 - (1 / ratio) ** 0.5) ** 2
+        upper = variance[0] * (1 + (1 / ratio) ** 0.5) ** 2
+        points = np.linspace(lower, upper, 1000)
+        theoretical = (
+            ratio
+            / (2 * np.pi * variance[0] * points)
+            * np.sqrt(np.clip((upper - points) * (points - lower), 0, None))
+        )
+        bandwidth = 0.01
+        empirical = np.exp(
+            -0.5 * ((points[:, None] - eigenvalues[None, :]) / bandwidth) ** 2
+        ).mean(axis=1) / (bandwidth * np.sqrt(2 * np.pi))
+        return float(np.sum((empirical - theoretical) ** 2))
+
+    variance = float(minimize(density_error, x0=0.5, bounds=((1e-5, 1 - 1e-5),)).x[0])
+    return (
+        variance,
+        variance * (1 - (1 / ratio) ** 0.5) ** 2,
+        variance * (1 + (1 / ratio) ** 0.5) ** 2,
+    )
+
+
 def get_denoised_covariance(
     returns: pd.DataFrame, method: str = "fixed", alpha: float = 0.0
 ) -> tuple[pd.DataFrame, int]:
@@ -925,26 +986,7 @@ def get_denoised_covariance(
     correlation = sample / np.outer(volatility, volatility)
     eigenvalues, eigenvectors = np.linalg.eigh(correlation)
     eigenvalues, eigenvectors = eigenvalues[::-1], eigenvectors[:, ::-1]
-
-    def density_error(variance: np.ndarray) -> float:
-        # The Marčenko-Pastur density at 1,000 points between its edges against a Gaussian
-        # kernel density of the eigenvalues at the same points.
-        lower = variance[0] * (1 - (1 / ratio) ** 0.5) ** 2
-        upper = variance[0] * (1 + (1 / ratio) ** 0.5) ** 2
-        points = np.linspace(lower, upper, 1000)
-        theoretical = (
-            ratio
-            / (2 * np.pi * variance[0] * points)
-            * np.sqrt(np.clip((upper - points) * (points - lower), 0, None))
-        )
-        bandwidth = 0.01
-        empirical = np.exp(
-            -0.5 * ((points[:, None] - eigenvalues[None, :]) / bandwidth) ** 2
-        ).mean(axis=1) / (bandwidth * np.sqrt(2 * np.pi))
-        return float(np.sum((empirical - theoretical) ** 2))
-
-    variance = minimize(density_error, x0=0.5, bounds=((1e-5, 1 - 1e-5),)).x[0]
-    upper_edge = variance * (1 + (1 / ratio) ** 0.5) ** 2
+    upper_edge = get_marcenko_pastur_fit(eigenvalues, ratio)[2]
     signals = int(assets - np.searchsorted(eigenvalues[::-1], upper_edge))
 
     if method == "spectral" and signals == 0:
@@ -999,6 +1041,10 @@ COVARIANCE_METHODS = (
     "jlogo",
     "geodesic",
     "regime_adjusted_ew",
+    "nercome",
+    "ccc_garch",
+    "mm",
+    "rocke",
 )
 
 EXPECTED_RETURN_METHODS = (
@@ -1010,6 +1056,7 @@ EXPECTED_RETURN_METHODS = (
     "bayes_stein",
     "james_stein",
     "bodnar_okhrin_parolya",
+    "centroid",
 )
 
 
@@ -1055,6 +1102,13 @@ def get_covariance_matrix(
     - "regime_adjusted_ew": exponentially weighted, rescaled by the recent ratio of
       realized to predicted risk (see
       estimation_model.get_regime_adjusted_exponential_covariance).
+    - "nercome": the eigenvectors of one part of the periods with the variances along them
+      of the other, averaged over random splits (see
+      estimation_model.get_nercome_covariance).
+    - "ccc_garch": the next-period covariance of the constant conditional correlation
+      GARCH(1, 1) model (see estimation_model.get_ccc_garch_covariance).
+    - "mm", "rocke": the robust MM-estimator and Rocke's S-estimator (see
+      estimation_model.get_robust_covariance).
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1077,7 +1131,8 @@ def get_covariance_matrix(
         half_life (float, optional): The half-life in periods of "regime_adjusted_ew".
             Defaults to 40.
         seed (int | None, optional): The seed of the random subsets of
-            "minimum_covariance_determinant". Defaults to 0.
+            "minimum_covariance_determinant" (also the start of "mm" and "rocke") and of the
+            random splits of "nercome". Defaults to 0.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -1139,6 +1194,12 @@ def get_covariance_matrix(
         return estimation_model.get_regime_adjusted_exponential_covariance(
             returns, half_life
         )[0]
+    if method == "nercome":
+        return estimation_model.get_nercome_covariance(returns, seed=seed)
+    if method == "ccc_garch":
+        return estimation_model.get_ccc_garch_covariance(returns)[0]
+    if method in ("mm", "rocke"):
+        return estimation_model.get_robust_covariance(returns, method, seed=seed)[1]
     raise ValueError(
         f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
         f"'{method}'."
@@ -1153,6 +1214,7 @@ def get_expected_returns(
     benchmark_returns: pd.Series | None = None,
     risk_free_rate: float = 0.0,
     adjust: bool = True,
+    ranking: list | dict | pd.Series | None = None,
 ) -> pd.Series:
     """
     The annualized expected return of each asset, estimated from its returns per period.
@@ -1186,6 +1248,9 @@ def get_expected_returns(
     - "bodnar_okhrin_parolya": the shrinkage estimator of Bodnar, Okhrin and Parolya
       (2019) towards the grand mean (see
       estimation_model.get_bodnar_okhrin_parolya_expected_returns).
+    - "centroid": the returns an ordering of the assets implies, the centroid of Almgren
+      and Chriss (2006) times the annualized volatility (see
+      estimation_model.get_centroid_expected_returns); it needs the ranking.
 
     The average returns are the noisiest input of a mean-variance optimization; the
     shrinkage estimators are strongest when the averages differ little compared to their
@@ -1202,8 +1267,8 @@ def get_expected_returns(
             missing values.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
         method (str, optional): "mean", "geometric", "exponential",
-            "exponential_geometric", "capm", "bayes_stein", "james_stein" or
-            "bodnar_okhrin_parolya". Defaults to "mean".
+            "exponential_geometric", "capm", "bayes_stein", "james_stein",
+            "bodnar_okhrin_parolya" or "centroid". Defaults to "mean".
         span (int, optional): The span in periods of the exponential averages. Defaults
             to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
@@ -1213,6 +1278,9 @@ def get_expected_returns(
         adjust (bool, optional): Whether the exponential averages normalize the weights
             over the whole history (pandas' adjust=True) rather than follow the
             recursion. Defaults to True.
+        ranking (list | dict | pd.Series | None, optional): The ordering of "centroid",
+            from the highest expected return to the lowest: a list of assets (an entry can
+            be a list of assets ranked together) or scores per asset. Defaults to None.
 
     Returns:
         pd.Series: The annualized expected return per asset.
@@ -1273,6 +1341,15 @@ def get_expected_returns(
         mean, _, _ = estimation_model.get_bodnar_okhrin_parolya_expected_returns(
             returns
         )
+    elif method == "centroid":
+        if ranking is None:
+            raise ValueError(
+                "The centroid expected returns need a ranking of the assets, from the "
+                "highest expected return to the lowest."
+            )
+        return estimation_model.get_centroid_expected_returns(
+            returns, ranking, periods_per_year
+        )
     else:
         raise ValueError(
             f"The expected returns must be one of {', '.join(EXPECTED_RETURN_METHODS)}, "
@@ -1309,13 +1386,16 @@ def get_expected_returns_and_covariance(
             "denoised_shrink" (Marčenko-Pastur), "gerber" (threshold 0.5, statistic 1),
             "factor" (a factor model with OLS loadings), "minimum_covariance_determinant"
             (robust, seed 0), "jlogo" (the LoGo sparse inverse on the TMFG), "geodesic" (10%
-            towards the scaled identity along the geodesic) or "regime_adjusted_ew"
-            (half-life 40, rescaled by the recent realized risk). Defaults to "sample".
+            towards the scaled identity along the geodesic), "regime_adjusted_ew"
+            (half-life 40, rescaled by the recent realized risk), "nercome" (split-sample
+            eigenvalues, seed 0), "ccc_garch" (the next-period CCC-GARCH(1, 1) covariance),
+            "mm" or "rocke" (robust, seed 0). Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
         expected_returns (str, optional): The estimator of the expected returns: "mean",
             "geometric", "exponential", "exponential_geometric", "capm", "bayes_stein",
-            "james_stein" or "bodnar_okhrin_parolya". Defaults to "mean".
+            "james_stein" or "bodnar_okhrin_parolya" ("centroid" needs a ranking, see
+            get_expected_returns). Defaults to "mean".
         expected_returns_span (int, optional): The span in periods of the exponential
             expected returns. Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
@@ -2064,6 +2144,9 @@ CODEPENDENCE_METHODS = (
     "distance",
     "mutual_information",
     "lower_tail",
+    "absolute_angular",
+    "squared_angular",
+    "gnpr",
 )
 
 
@@ -2076,6 +2159,8 @@ def get_codependence(
     components: int = 1,
     bins: str | int = "freedman",
     tail_level: float = 0.05,
+    gnpr_theta: float = 0.5,
+    gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
     """
     The codependence matrix the hierarchical clustering of the assets works on: a
@@ -2102,6 +2187,12 @@ def get_codependence(
       returns (see estimation_model.get_mutual_information_matrix).
     - "lower_tail": the lower tail dependence, how often two assets fall into their
       lowest returns together (see estimation_model.get_lower_tail_dependence_matrix).
+    - "absolute_angular", "squared_angular": |ρ| and ρ² of the linear correlation of the
+      covariance matrix, which treat a negative correlation as as close as a positive one
+      of the same size (López de Prado, 2020, chapter 3).
+    - "gnpr": 1 - d², with d the distance of the Generic Non-Parametric Representation of
+      Marti et al. (2016), a mix of the rank co-movement and the difference between the
+      distributions of the returns (see estimation_model.get_gnpr_distance_matrix).
 
     The rank, Gerber, distance, information and tail measures depend on the returns
     themselves, whatever the covariance estimator; the rank correlations capture any
@@ -2133,6 +2224,10 @@ def get_codependence(
             "freedman".
         tail_level (float, optional): The share of the lowest returns that forms the
             tail of "lower_tail". Defaults to 0.05.
+        gnpr_theta (float, optional): The weight θ of the co-movement in "gnpr", between 0
+            and 1. Defaults to 0.5.
+        gnpr_bandwidth (float, optional): The width of the histogram bins of "gnpr", in the
+            units of the returns. Defaults to 0.01.
 
     Returns:
         pd.DataFrame: The codependence matrix, in the order of the covariance matrix.
@@ -2142,7 +2237,21 @@ def get_codependence(
             f"The codependence must be one of {', '.join(CODEPENDENCE_METHODS)}, not "
             f"'{method}'."
         )
-    if method in ("pearson", "gerber", "detoned"):
+    if method == "gnpr":
+        return (
+            1
+            - estimation_model.get_gnpr_distance_matrix(
+                returns[covariance.index], gnpr_theta, gnpr_bandwidth
+            )
+            ** 2
+        )
+    if method in (
+        "pearson",
+        "gerber",
+        "detoned",
+        "absolute_angular",
+        "squared_angular",
+    ):
         if method == "gerber":
             covariance = estimation_model.get_gerber_covariance(
                 returns[covariance.index], gerber_threshold, gerber_statistic
@@ -2152,7 +2261,12 @@ def get_codependence(
                 returns[covariance.index], components
             )
         volatility = np.sqrt(np.diag(covariance.to_numpy()))
-        return covariance / np.outer(volatility, volatility)
+        correlation = covariance / np.outer(volatility, volatility)
+        if method == "absolute_angular":
+            return correlation.abs()
+        if method == "squared_angular":
+            return correlation**2
+        return correlation
     if method == "distance":
         return estimation_model.get_distance_correlation_matrix(
             returns[covariance.index]
@@ -2177,6 +2291,8 @@ def get_codependence_distance(
     components: int = 1,
     bins: str | int = "freedman",
     tail_level: float = 0.05,
+    gnpr_theta: float = 0.5,
+    gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
     """
     The distance between every pair of assets that the hierarchical clustering works on,
@@ -2190,6 +2306,12 @@ def get_codependence_distance(
       as in skfolio's MutualInformation and Riskfolio-Lib's codep_dist ("mutual_info").
     - "lower_tail": d = -ln(λ), with the tail dependence λ raised to at least 1e-8, as in
       Riskfolio-Lib's codep_dist ("tail").
+    - "absolute_angular": d = √(1 - |ρ|), "squared_angular": d = √(1 - ρ²) (López de
+      Prado, 2020, chapter 3), so strongly negatively correlated assets, which hedge each
+      other, end up close. mlfinlab's absolute_angular_distance and
+      squared_angular_distance take half of 1 - |ρ| and 1 - ρ², a distance √2 times smaller
+      that gives the same clusters.
+    - "gnpr": the GNPR distance d_θ itself (see estimation_model.get_gnpr_distance_matrix).
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -2202,6 +2324,9 @@ def get_codependence_distance(
         bins (str | int, optional): The histogram bins of "mutual_information".
             Defaults to "freedman".
         tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+        gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
+        gnpr_bandwidth (float, optional): The histogram bin width of "gnpr". Defaults to
+            0.01.
 
     Returns:
         pd.DataFrame: The distance matrix, with zeros on the diagonal, in the order of
@@ -2221,8 +2346,11 @@ def get_codependence_distance(
             components,
             bins,
             tail_level,
+            gnpr_theta,
+            gnpr_bandwidth,
         ).to_numpy(dtype=float)
-        if method == "distance":
+        if method in ("distance", "absolute_angular", "squared_angular", "gnpr"):
+            # 1 - dCor, 1 - |ρ|, 1 - ρ² and, for the GNPR, 1 - (1 - d²) = d².
             distance = np.sqrt(np.clip(1 - codependence, 0, None))
         elif method == "lower_tail":
             distance = -np.log(
@@ -2243,6 +2371,8 @@ def get_codependence_similarity(
     components: int = 1,
     bins: str | int = "freedman",
     tail_level: float = 0.05,
+    gnpr_theta: float = 0.5,
+    gnpr_bandwidth: float = 0.01,
 ) -> pd.DataFrame:
     """
     The non-negative similarity between every pair of assets that the Directed Bubble
@@ -2253,9 +2383,11 @@ def get_codependence_similarity(
     - "pearson", "spearman", "kendall", "gerber", "detoned": s = 1 - d² = (1 + ρ) / 2,
       with d = √((1 - ρ) / 2) the correlation distance. Song, Di Matteo and Aste (2012)
       take 1 + ρ, which gives the same graph and clusters.
-    - "distance", "mutual_information", "lower_tail": the codependence itself, the
-      distance correlation, the normalized mutual information or the lower tail
-      dependence, all between 0 and 1.
+    - "distance", "mutual_information", "lower_tail", "absolute_angular",
+      "squared_angular", "gnpr": the codependence itself, the distance correlation, the
+      normalized mutual information, the lower tail dependence, |ρ|, ρ² or 1 - d² of the
+      GNPR distance, all between 0 and 1 (the last three equal to 1 - d² of their
+      distance d).
 
     The choice per codependence is that of Riskfolio-Lib's HCPortfolio(linkage="DBHT").
 
@@ -2270,6 +2402,9 @@ def get_codependence_similarity(
         bins (str | int, optional): The histogram bins of "mutual_information".
             Defaults to "freedman".
         tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+        gnpr_theta (float, optional): The weight θ of "gnpr". Defaults to 0.5.
+        gnpr_bandwidth (float, optional): The histogram bin width of "gnpr". Defaults to
+            0.01.
 
     Returns:
         pd.DataFrame: The similarity matrix, in the order of the covariance matrix.
@@ -2283,8 +2418,17 @@ def get_codependence_similarity(
         components,
         bins,
         tail_level,
+        gnpr_theta,
+        gnpr_bandwidth,
     )
-    if method in ("distance", "mutual_information", "lower_tail"):
+    if method in (
+        "distance",
+        "mutual_information",
+        "lower_tail",
+        "absolute_angular",
+        "squared_angular",
+        "gnpr",
+    ):
         return codependence
     return (1 + codependence.clip(-1, 1)) / 2
 
@@ -2461,6 +2605,12 @@ def get_hierarchical_clusters(
     Prado (2020), the mean of the silhouette coefficients over their standard deviation
     (see get_standardized_silhouette).
 
+    With cluster_criterion="onc", the clusters are those of the Optimal Number of Clusters
+    algorithm of López de Prado and Lewis (2019), k-means on the rows of the distance matrix
+    with its own choice of their number (see estimation_model.get_optimal_number_of_clusters,
+    seed 0), as Nested Clustered Optimization clusters in López de Prado (2020, chapter 7);
+    they are not a cut of the tree, which is returned as well.
+
     With linkage_method="dbht", the tree is the Directed Bubble Hierarchical Tree of Song,
     Di Matteo and Aste (2012) on the distance and the similarity (see get_dbht_linkage),
     and without a number of clusters the clusters are its own, the converging bubbles;
@@ -2487,8 +2637,8 @@ def get_hierarchical_clusters(
             clustered on, e.g. from get_codependence_distance, in place of the
             correlation distance of the correlation. Defaults to None.
         cluster_criterion (str, optional): How the number of clusters is chosen when it
-            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
-            "two_difference_gap".
+            is not given: "two_difference_gap", "standardized_silhouette" or "onc".
+            Defaults to "two_difference_gap".
         similarity (pd.DataFrame | None, optional): The similarity matrix of "dbht", e.g.
             from get_codependence_similarity. Defaults to None, 1 - d² of the distance.
 
@@ -2547,6 +2697,10 @@ def get_hierarchical_clusters(
         elif count == 2:  # noqa: PLR2004
             # Two assets have no second difference; each is its own cluster.
             clusters = 2
+        elif cluster_criterion == "onc":
+            return matrix, estimation_model.get_optimal_number_of_clusters(
+                pd.DataFrame(distance)
+            )
         elif cluster_criterion == "standardized_silhouette":
             # Column j of the cut tree holds the clusters of the cut into N - j clusters.
             levels = cut_tree(matrix)
@@ -2930,6 +3084,12 @@ def get_hierarchical_equal_risk_contribution_weights(
         pd.Series: The weight per asset.
     """
     _validate_covariance(covariance)
+    if cluster_criterion == "onc" and clusters is None:
+        raise ValueError(
+            "HERC splits its weight along the tree, which the ONC clusters (k-means) do "
+            "not follow; use 'two_difference_gap' or 'standardized_silhouette', or ONC "
+            "with get_nested_clustered_optimization_weights."
+        )
     constraints = get_weight_constraints(
         covariance.index, minimum_weight, maximum_weight, groups, group_bounds
     )
@@ -3047,7 +3207,8 @@ def get_nested_clustered_optimization_weights(
     cluster without an asset above the risk free rate holds its minimum variance
     portfolio. Both levels are long only and fully invested. The paper clusters with
     k-means and solves both levels without bounds, allowing short positions; here the
-    clustering is hierarchical, as in HERC.
+    clustering is hierarchical, as in HERC, or the paper's k-means with
+    cluster_criterion="onc".
 
     With another risk measure than the variance (or the volatility, whose minimum and
     equal risk contribution portfolios are those of the variance), "minimum_variance"
@@ -3090,7 +3251,9 @@ def get_nested_clustered_optimization_weights(
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
         cluster_criterion (str, optional): How the number of clusters is chosen when it
-            is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
+            is not given: "two_difference_gap", "standardized_silhouette" or "onc" (the
+            k-means clusters of the Optimal Number of Clusters algorithm, as in López de
+            Prado, 2020, chapter 7, see get_hierarchical_clusters). Defaults to
             "two_difference_gap".
         similarity (pd.DataFrame | None, optional): The similarity matrix of
             linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
@@ -4995,7 +5158,7 @@ HIERARCHICAL_RISK_MEASURES = {
 }
 
 # How the number of clusters is chosen when it is not given.
-CLUSTER_CRITERIA = ("two_difference_gap", "standardized_silhouette")
+CLUSTER_CRITERIA = ("two_difference_gap", "standardized_silhouette", "onc")
 
 
 def get_hierarchical_risk(
@@ -5133,24 +5296,9 @@ def get_standardized_silhouette(distance: np.ndarray, labels: np.ndarray) -> flo
     Returns:
         float: The mean of the silhouette coefficients over their standard deviation.
     """
-    euclidean = squareform(pdist(distance))
-    clusters = np.unique(labels)
-    # The average distance of every asset to the assets of every cluster, itself left out.
-    members = labels[:, None] == clusters[None, :]
-    sizes = members.sum(axis=0) - members
-    average = np.divide(
-        euclidean @ members,
-        sizes,
-        out=np.full(members.shape, np.nan),
-        where=sizes > 0,
+    silhouette = estimation_model.get_silhouette_coefficients(
+        squareform(pdist(distance)), labels
     )
-    within = average[members]
-    between = np.where(members, np.inf, average).min(axis=1)
-    alone = sizes[members] == 0
-    with np.errstate(invalid="ignore"):
-        silhouette = np.where(
-            alone, 0.0, (between - within) / np.maximum(between, within)
-        )
     return float(silhouette.mean() / silhouette.std())
 
 

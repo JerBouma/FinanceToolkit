@@ -1245,6 +1245,7 @@ def _simplify_annotation(ann: Any) -> Any:
     - ``float | str``                    → ``float | str``
     - ``DataFrame | ndarray | list[list[float]]`` → ``list[list[float]]``
     - ``Literal["garch", "gjr"]``         → ``str``
+    - ``list | dict | None``               → ``list[str] | dict[str, float] | None``
     """
     if ann is inspect.Parameter.empty or ann is None:
         return str
@@ -1312,6 +1313,14 @@ def _simplify_annotation(ann: Any) -> Any:
         )
         if matrix is not None:
             return matrix | None if has_none else matrix
+        # Labels in order or a score per label (the ranking of the centroid expected returns,
+        # ['MSFT', 'AAPL'] or {'MSFT': 2, 'AAPL': 1}) take either form.
+        if any(
+            a is list or (typing.get_origin(a) is list and typing.get_args(a) == (str,))
+            for a in args
+        ) and any(typing.get_origin(a) is dict or a is dict for a in args):
+            labels = list[str] | dict[str, float]
+            return labels | None if has_none else labels
         # A mapping without a single-value form (portfolio weights per ticker) stays one,
         # so a caller can pass {"AAPL": 0.6, "MSFT": 0.4}.
         mapping = next(

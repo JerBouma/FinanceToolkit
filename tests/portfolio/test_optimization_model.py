@@ -4298,3 +4298,420 @@ def test_the_worst_case_sharpe_ratio_holds_the_rest_in_cash_at_the_risk_free_rat
 
     # The box's worst case is homogeneous, so half the net exposure halves the weights.
     np.testing.assert_allclose(weights[0.5], 0.5 * weights[1.0], atol=1e-5)
+
+
+def _estimator_returns(
+    seed: int = 7, periods: int = 500, sizes=(4, 4, 4)
+) -> pd.DataFrame:
+    # Returns with a common factor per block of assets and fat-tailed noise.
+    rng = np.random.default_rng(seed)
+    labels = np.repeat(np.arange(len(sizes)), sizes)
+    factors = rng.standard_normal((periods, len(sizes)))
+    noise = rng.standard_t(5, (periods, labels.size))
+    return pd.DataFrame(
+        0.01 * (0.8 * factors[:, labels] + 0.6 * noise),
+        columns=[f"A{number}" for number in range(labels.size)],
+    )
+
+
+def test_onc_finds_the_blocks_for_every_seed():
+    returns = _estimator_returns(sizes=(3, 5, 7))
+    distance = optimization_model.get_codependence_distance(returns, returns.cov())
+    expected = np.repeat([0, 1, 2], [3, 5, 7])
+    for seed in range(5):
+        labels = estimation_model.get_optimal_number_of_clusters(distance, seed=seed)
+        np.testing.assert_array_equal(labels, expected)
+    # Shuffled assets keep their clusters, numbered in the order of their first asset.
+    order = np.random.default_rng(1).permutation(15)
+    shuffled = distance.iloc[order, order]
+    labels = estimation_model.get_optimal_number_of_clusters(shuffled)
+    assert len(np.unique(labels)) == 3
+    assert labels[0] == 0
+    for label in range(3):
+        assert len(set(expected[order][labels == label])) == 1
+
+
+def test_onc_handles_few_assets_and_bad_input():
+    returns = _estimator_returns(sizes=(1, 1))
+    distance = optimization_model.get_codependence_distance(returns, returns.cov())
+    # Two assets leave no number of clusters between 2 and N - 1 to choose from.
+    np.testing.assert_array_equal(
+        estimation_model.get_optimal_number_of_clusters(distance), [0, 0]
+    )
+    with pytest.raises(ValueError, match="square"):
+        estimation_model.get_optimal_number_of_clusters(distance.iloc[:, :1])
+    with pytest.raises(ValueError, match="at least 2"):
+        estimation_model.get_optimal_number_of_clusters(distance, maximum_clusters=1)
+
+
+def test_onc_redoes_the_clusters_of_below_average_quality():
+    # Two tight blocks and a loose one that holds two sub-blocks: the clusters of
+    # below-average quality are clustered again and split when that raises the quality.
+    rng = np.random.default_rng(3)
+    periods = 600
+    tight = rng.standard_normal((periods, 2))
+    loose = rng.standard_normal((periods, 1))
+    sub = rng.standard_normal((periods, 2))
+    columns = [tight[:, [0]]] * 4 + [tight[:, [1]]] * 4
+    returns = np.hstack(
+        [0.9 * column + 0.3 * rng.standard_normal((periods, 1)) for column in columns]
+        + [
+            0.5 * loose
+            + 0.6 * sub[:, [k // 3]]
+            + 0.4 * rng.standard_normal((periods, 1))
+            for k in range(6)
+        ]
+    )
+    frame = pd.DataFrame(returns)
+    distance = optimization_model.get_codependence_distance(frame, frame.cov())
+    labels = estimation_model.get_optimal_number_of_clusters(distance)
+    assert len(set(labels[:4])) == 1 and len(set(labels[4:8])) == 1
+    assert labels[0] != labels[4]
+    assert set(labels[:8]).isdisjoint(labels[8:])
+
+
+def test_the_silhouette_coefficients_match_the_definition():
+    rng = np.random.default_rng(0)
+    points = rng.standard_normal((7, 3))
+    labels = np.array([0, 0, 1, 1, 1, 2, 0])
+    euclidean = squareform(pdist(points))
+    coefficients = estimation_model.get_silhouette_coefficients(euclidean, labels)
+    # A single-asset cluster has a coefficient of 0.
+    assert coefficients[5] == 0
+    for asset in (0, 1, 2, 3, 4, 6):
+        same = (labels == labels[asset]) & (np.arange(7) != asset)
+        within = euclidean[asset, same].mean()
+        between = min(
+            euclidean[asset, labels == other].mean()
+            for other in set(labels) - {labels[asset]}
+        )
+        assert coefficients[asset] == pytest.approx(
+            (between - within) / max(between, within)
+        )
+
+
+def test_the_angular_distances_follow_the_correlation():
+    returns = _estimator_returns(sizes=(2, 2))
+    returns["A3"] = -returns["A0"] + 0.002 * np.random.default_rng(2).standard_normal(
+        500
+    )
+    correlation = returns.corr().to_numpy()
+    absolute = optimization_model.get_codependence_distance(
+        returns, returns.cov(), "absolute_angular"
+    )
+    squared = optimization_model.get_codependence_distance(
+        returns, returns.cov(), "squared_angular"
+    )
+    expected = np.sqrt(np.clip(1 - np.abs(correlation), 0, None))
+    np.fill_diagonal(expected, 0)
+    np.testing.assert_allclose(absolute, expected, atol=1e-12)
+    expected = np.sqrt(np.clip(1 - correlation**2, 0, None))
+    np.fill_diagonal(expected, 0)
+    np.testing.assert_allclose(squared, expected, atol=1e-12)
+    # A hedge is as close as a twin.
+    assert absolute.loc["A0", "A3"] < 0.15 < absolute.loc["A0", "A2"]
+    similarity = optimization_model.get_codependence_similarity(
+        returns, returns.cov(), "absolute_angular"
+    )
+    np.testing.assert_allclose(similarity, 1 - absolute**2, atol=1e-12)
+
+
+def test_the_gnpr_distance_mixes_ranks_and_distributions():
+    returns = _estimator_returns(sizes=(2, 1))
+    # Without ties the rank term is (1 - Spearman) / 2.
+    spearman = returns.corr("spearman").to_numpy()
+    copula = estimation_model.get_gnpr_distance_matrix(returns, theta=1.0)
+    expected = np.sqrt(np.clip((1 - spearman) / 2, 0, None))
+    np.fill_diagonal(expected, 0)
+    np.testing.assert_allclose(copula, expected, atol=1e-12)
+    # The distribution term is the Hellinger distance of the histograms, by hand.
+    first, second = returns["A0"].to_numpy(), returns["A2"].to_numpy()
+    low, high = min(first.min(), second.min()), max(first.max(), second.max())
+    edges = np.arange(low, high + 0.005, 0.005)
+    hellinger = 0.5 * np.sum(
+        (
+            np.sqrt(np.histogram(first, edges)[0] / 500)
+            - np.sqrt(np.histogram(second, edges)[0] / 500)
+        )
+        ** 2
+    )
+    marginal = estimation_model.get_gnpr_distance_matrix(returns, 0.0, 0.005)
+    assert marginal.loc["A0", "A2"] == pytest.approx(np.sqrt(hellinger))
+    mixed = estimation_model.get_gnpr_distance_matrix(returns, 0.3, 0.005)
+    np.testing.assert_allclose(
+        mixed**2, 0.3 * copula**2 + 0.7 * marginal**2, atol=1e-12
+    )
+    assert (mixed.to_numpy() <= 1).all()
+    # The same returns scaled up differ only in their distribution.
+    scaled = returns.assign(A1=returns["A0"] * 3)
+    assert estimation_model.get_gnpr_distance_matrix(scaled, 1.0).loc[
+        "A0", "A1"
+    ] == pytest.approx(0, abs=1e-12)
+    assert estimation_model.get_gnpr_distance_matrix(scaled, 0.0).loc["A0", "A1"] > 0.3
+    with pytest.raises(ValueError, match="theta"):
+        estimation_model.get_gnpr_distance_matrix(returns, 1.5)
+
+
+def test_the_nercome_covariance_matches_its_definition():
+    returns = _estimator_returns(periods=300, sizes=(2, 2))
+    values = returns.to_numpy()
+    estimate = estimation_model.get_nercome_covariance(returns, splits=4, seed=3)
+    # By hand: the same random orders, every candidate split, the one with the smallest
+    # Frobenius norm of the averaged difference with the second part's covariance.
+    rng = np.random.default_rng(3)
+    orders = [rng.permutation(300) for _ in range(4)]
+    best, best_error = None, np.inf
+    for size in sorted(
+        {
+            round(x)
+            for x in (
+                2 * np.sqrt(300),
+                60,
+                120,
+                180,
+                240,
+                300 - 2.5 * np.sqrt(300),
+                300 - 1.5 * np.sqrt(300),
+            )
+        }
+    ):
+        total, difference = 0, 0
+        for order in orders:
+            second = np.cov(values[order[size:]], rowvar=False)
+            vectors = np.linalg.eigh(np.cov(values[order[:size]], rowvar=False))[1]
+            variances = np.diag(vectors.T @ second @ vectors)
+            total = total + vectors @ np.diag(variances) @ vectors.T / 4
+            difference = (
+                difference + (vectors @ np.diag(variances) @ vectors.T - second) / 4
+            )
+        if np.sum(difference**2) < best_error:
+            best, best_error = total, np.sum(difference**2)
+    np.testing.assert_allclose(estimate, best, rtol=1e-10)
+    assert np.linalg.eigvalsh(estimate).min() > 0
+    assert estimation_model.get_nercome_covariance(returns).equals(
+        estimation_model.get_nercome_covariance(returns)
+    )
+    with pytest.raises(ValueError, match="more periods than assets"):
+        estimation_model.get_nercome_covariance(returns.iloc[:6])
+
+
+def test_the_ccc_garch_covariance_combines_the_garch_volatilities():
+    from financetoolkit.risk.volatility import garch_model
+
+    returns = _estimator_returns(periods=400, sizes=(2,))
+    covariance, scenarios = estimation_model.get_ccc_garch_covariance(returns)
+    residuals = (returns - returns.mean()).to_numpy()
+    standardized, volatility = [], []
+    for column in range(2):
+        weights = garch_model.get_garch_weights(residuals[:, column])
+        variance = garch_model.get_garch(residuals[:, column], weights)
+        standardized.append(residuals[:, column] / np.sqrt(variance))
+        volatility.append(
+            np.sqrt(
+                weights[0]
+                + weights[1] * residuals[-1, column] ** 2
+                + weights[2] * variance[-1]
+            )
+        )
+    expected = np.corrcoef(standardized) * np.outer(volatility, volatility)
+    np.testing.assert_allclose(covariance, expected, rtol=1e-10)
+    # The scenarios carry the next-period covariance.
+    np.testing.assert_allclose(scenarios.cov(), covariance, rtol=1e-10)
+    with pytest.raises(ValueError, match="100 periods"):
+        estimation_model.get_ccc_garch_covariance(returns.iloc[:50])
+
+
+def test_the_bisquare_constants_match_statsmodels():
+    # statsmodels' table of biweight constants for 95% shape efficiency (Lopuhaä, 1989),
+    # 1 to 5 and 14 variables.
+    for assets, constant in (
+        (1, 5.49025),
+        (2, 5.81032),
+        (3, 6.09627),
+        (4, 6.35622),
+        (5, 6.59558),
+        (14, 8.22785),
+    ):
+        assert estimation_model.get_bisquare_constants(assets, 0.5, 0.95)[
+            1
+        ] == pytest.approx(constant, abs=5e-5)
+    # The S constant makes E[ρ(√X)] = δ for X ~ χ²_N, checked by quadrature.
+    from scipy import integrate, stats
+
+    for assets, delta in ((2, 0.5), (4, 0.45), (10, 0.3)):
+        constant = estimation_model.get_bisquare_constants(assets, delta, 0.95)[0]
+        average = integrate.quad(
+            lambda x: min(1 - (1 - x / constant**2) ** 3, 1)
+            * stats.chi2.pdf(x, assets),
+            0,
+            constant**2,
+        )[0] + stats.chi2.sf(constant**2, assets)
+        assert average == pytest.approx(delta, abs=1e-9)
+
+
+def _contaminated_returns():
+    rng = np.random.default_rng(9)
+    covariance = (
+        np.array(
+            [
+                [1, 0.6, 0.3, 0.2],
+                [0.6, 1, 0.4, 0.1],
+                [0.3, 0.4, 1, 0.5],
+                [0.2, 0.1, 0.5, 1],
+            ]
+        )
+        * 1e-4
+    )
+    values = rng.multivariate_normal(np.zeros(4), covariance, 500)
+    values[:25] = rng.multivariate_normal(np.full(4, 0.05), covariance * 25, 25)
+    return pd.DataFrame(values, columns=ASSETS), covariance
+
+
+@pytest.mark.parametrize("method", ["mm", "rocke"])
+def test_the_robust_covariances_withstand_outliers(method):
+    returns, covariance = _contaminated_returns()
+
+    def error(matrix) -> float:
+        return np.linalg.norm(np.asarray(matrix) - covariance) / np.linalg.norm(
+            covariance
+        )
+
+    location, robust = estimation_model.get_robust_covariance(returns, method)
+    # Five percent of the periods far away inflate the sample covariance several times
+    # over; the robust estimates stay close to the covariance of the bulk.
+    assert error(returns.cov()) > 3
+    assert error(robust) < 0.2
+    assert np.abs(location.to_numpy()).max() < 0.002
+    # On the clean periods the MM-estimator is close to the sample covariance.
+    clean = returns.iloc[25:]
+    if method == "mm":
+        np.testing.assert_allclose(
+            estimation_model.get_robust_covariance(clean, method)[1],
+            clean.cov(),
+            rtol=0.1,
+            atol=2e-6,
+        )
+
+
+@pytest.mark.parametrize("method", ["mm", "rocke"])
+def test_the_robust_covariances_are_fixed_points(method):
+    # The iterations run to the fixed point, so returns perturbed by 1e-12 give the same
+    # estimate to about 1e-10, and the same seed the same estimate.
+    returns, _ = _contaminated_returns()
+    noise = np.random.default_rng(11).standard_normal(returns.shape) * 1e-12
+    first = estimation_model.get_robust_covariance(returns, method)[1]
+    second = estimation_model.get_robust_covariance(returns + noise, method)[1]
+    np.testing.assert_allclose(first, second, rtol=1e-8)
+    assert first.equals(estimation_model.get_robust_covariance(returns, method)[1])
+    with pytest.raises(ValueError, match="mm, rocke"):
+        estimation_model.get_robust_covariance(returns, "tyler")
+    with pytest.raises(ValueError, match="twice as many periods"):
+        estimation_model.get_robust_covariance(returns.iloc[:8], method)
+
+
+def test_the_centroid_matches_the_order_statistics():
+    from scipy import stats
+
+    returns = _estimator_returns(sizes=(5,))
+    ranking = ["A3", "A0", "A4", "A1", "A2"]
+    expected = estimation_model.get_centroid_expected_returns(returns, ranking, 252)
+    alpha = 0.4424 - 0.1185 * 5 ** (-0.21)
+    centroid = stats.norm.ppf((5 + 1 - np.arange(1, 6) - alpha) / (5 - 2 * alpha + 1))
+    volatility = returns.std() * np.sqrt(252)
+    np.testing.assert_allclose(
+        expected[ranking], centroid * volatility[ranking].to_numpy(), rtol=1e-12
+    )
+    # The approximation is close to the Monte Carlo mean of sorted normal draws.
+    draws = -np.sort(-np.random.default_rng(0).standard_normal((200000, 5)), axis=1)
+    np.testing.assert_allclose(centroid, draws.mean(axis=0), atol=0.01)
+    # Assets ranked together share the average of their positions; scores rank alike.
+    buckets = estimation_model.get_centroid_expected_returns(
+        returns, ["A3", ["A0", "A4"], "A1", "A2"], 252
+    )
+    assert buckets["A0"] / volatility["A0"] == pytest.approx(centroid[1:3].mean())
+    scores = estimation_model.get_centroid_expected_returns(
+        returns, {"A3": 5, "A0": 4, "A4": 4, "A1": 2, "A2": 1}, 252
+    )
+    pd.testing.assert_series_equal(scores, buckets)
+    with pytest.raises(ValueError, match="every asset once"):
+        estimation_model.get_centroid_expected_returns(returns, ranking[:4], 252)
+    with pytest.raises(ValueError, match="ranking"):
+        optimization_model.get_expected_returns(returns, 252, "centroid")
+
+
+def test_the_ranking_views_order_the_posterior_means():
+    returns = _estimator_returns(sizes=(3,))
+    means = returns.mean()
+    ranking = list(means.sort_values().index)  # from the lowest to the highest
+    probabilities = estimation_model.get_entropy_pooling(returns, ranking=ranking)
+    posterior = probabilities @ returns
+    assert all(
+        posterior[higher] >= posterior[lower] - 1e-10
+        for higher, lower in itertools.pairwise(ranking)
+    )
+    # The closest probabilities in relative entropy, checked with SLSQP on the primal.
+    count = len(returns)
+    data = returns.to_numpy()
+    order = [returns.columns.get_loc(name) for name in ranking]
+    solution = minimize(
+        lambda p: np.sum(p * np.log(np.maximum(p, 1e-300) * count)),
+        np.full(count, 1 / count),
+        method="SLSQP",
+        bounds=[(0, 1)] * count,
+        constraints=[{"type": "eq", "fun": lambda p: p.sum() - 1}]
+        + [
+            {"type": "ineq", "fun": lambda p, i=i, j=j: p @ (data[:, i] - data[:, j])}
+            for i, j in itertools.pairwise(order)
+        ],
+        options={"maxiter": 500, "ftol": 1e-14},
+    )
+    np.testing.assert_allclose(probabilities, solution.x, atol=1e-6)
+    # A ranking the history already follows leaves the probabilities equal.
+    np.testing.assert_allclose(
+        estimation_model.get_entropy_pooling(returns, ranking=ranking[::-1]),
+        1 / count,
+    )
+    with pytest.raises(ValueError, match="at least two different assets"):
+        estimation_model.get_entropy_pooling(returns, ranking=["A0"])
+
+
+def test_the_denoised_detoned_covariance_detones_the_denoised_correlation():
+    returns = _estimator_returns(sizes=(3, 3))
+    denoised = optimization_model.get_denoised_covariance(returns)[0]
+    detoned = estimation_model.get_detoned_covariance(returns, 1, denoised)
+    volatility = np.sqrt(np.diag(denoised))
+    correlation = denoised.to_numpy() / np.outer(volatility, volatility)
+    values, vectors = np.linalg.eigh(correlation)
+    expected = correlation - values[-1] * np.outer(vectors[:, -1], vectors[:, -1])
+    scale = np.sqrt(np.diag(expected))
+    expected = expected / np.outer(scale, scale) * np.outer(volatility, volatility)
+    np.testing.assert_allclose(detoned, expected, atol=1e-14)
+    np.testing.assert_allclose(np.diag(detoned), returns.var(), rtol=1e-12)
+
+
+def test_the_marcenko_pastur_fit_of_random_returns():
+    # Unrelated returns: every eigenvalue lies near the Marčenko-Pastur bulk with σ² ≈ 1.
+    returns = np.random.default_rng(4).standard_normal((2000, 100))
+    eigenvalues = np.linalg.eigvalsh(np.corrcoef(returns, rowvar=False))
+    variance, lower, upper = optimization_model.get_marcenko_pastur_fit(eigenvalues, 20)
+    assert variance == pytest.approx(1, abs=0.1)
+    assert upper == pytest.approx(variance * (1 + np.sqrt(1 / 20)) ** 2)
+    assert lower == pytest.approx(variance * (1 - np.sqrt(1 / 20)) ** 2)
+    assert (eigenvalues < upper * 1.1).all()
+
+
+def test_onc_clusters_nested_clustered_optimization_but_not_herc():
+    returns = _estimator_returns(sizes=(3, 3))
+    covariance = returns.cov() * 252
+    weights = optimization_model.get_nested_clustered_optimization_weights(
+        returns.mean() * 252, covariance, cluster_criterion="onc"
+    )
+    assert weights.sum() == pytest.approx(1)
+    _, labels = optimization_model.get_hierarchical_clusters(
+        covariance, cluster_criterion="onc"
+    )
+    np.testing.assert_array_equal(labels, [0, 0, 0, 1, 1, 1])
+    with pytest.raises(ValueError, match="ONC"):
+        optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance, cluster_criterion="onc"
+        )

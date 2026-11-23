@@ -7,7 +7,7 @@ from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-from scipy import optimize
+from scipy import optimize, special
 from scipy.stats import qmc
 
 from financetoolkit.utilities.logger_model import get_logger
@@ -350,6 +350,7 @@ def get_garch(
     optimization_t: int | None = None,
     p: int = 1,
     q: int = 1,
+    backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
     """Calculates the conditional variance of the GARCH model.
 
@@ -373,6 +374,9 @@ def get_garch(
         optimization_t (int): Time steps to optimize GARCH for. It is only used if no weights are given.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+        backcast (float | None): The squared return and variance before the first observation of a
+        np.ndarray of returns. Defaults to None, which uses the backcast of the returns themselves
+        (see `get_backcast`); a mean model passes the backcast of its starting residuals instead.
 
     Returns:
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
@@ -433,7 +437,9 @@ def get_garch(
         omega, alpha, beta = weights[0], weights[1], weights[2]
 
         # The first step treats the squared return and the variance before the sample as the backcast, as the arch package does, see get_backcast.  # noqa: E501
-        first_variance = omega + (alpha + beta) * get_backcast(returns)
+        if backcast is None:
+            backcast = get_backcast(returns)
+        first_variance = omega + (alpha + beta) * backcast
 
         # The GARCH(1, 1) variance (omega plus alpha times the previous squared return plus
         # beta times the previous variance) is a first-order linear recursion, which lfilter
@@ -669,6 +675,7 @@ def get_gjr_garch(
     optimization_t: int | None = None,
     p: int = 1,
     q: int = 1,
+    backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
     """Calculates the conditional variance of the GJR-GARCH model.
 
@@ -698,6 +705,9 @@ def get_gjr_garch(
         optimization_t (int): Time steps to optimize GJR-GARCH for. It is only used if no weights are given.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+        backcast (float | None): The squared return and variance before the first observation of a
+        np.ndarray of returns. Defaults to None, which uses the backcast of the returns themselves
+        (see `get_backcast`); a mean model passes the backcast of its starting residuals instead.
 
     Returns:
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
@@ -760,7 +770,9 @@ def get_gjr_garch(
         indicator = np.where(lagged < 0, 1.0, 0.0)
 
         # The first step uses the backcast for the squared return and the variance before the sample, with the leverage term at its expectation (a negative shock half of the time), as the arch package does.  # noqa: E501
-        first_variance = omega + (alpha + gamma / 2 + beta) * get_backcast(returns)
+        if backcast is None:
+            backcast = get_backcast(returns)
+        first_variance = omega + (alpha + gamma / 2 + beta) * backcast
 
         # A first-order linear recursion like GARCH, see _linear_variance_recursion.
         return _linear_variance_recursion(
@@ -971,6 +983,7 @@ def get_egarch(
     optimization_t: int | None = None,
     p: int = 1,
     q: int = 1,
+    backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
     """Calculates the conditional variance of the EGARCH model.
 
@@ -1000,6 +1013,9 @@ def get_egarch(
         optimization_t (int): Time steps to optimize EGARCH for. It is only used if no weights are given.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
+        backcast (float | None): The squared return and variance before the first observation of a
+        np.ndarray of returns. Defaults to None, which uses the backcast of the returns themselves
+        (see `get_backcast`); a mean model passes the backcast of its starting residuals instead.
 
     Returns:
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
@@ -1068,7 +1084,9 @@ def get_egarch(
         sigma2 = [0.0] * time_steps
         # The first step starts from the backcast (see get_backcast) with the shock terms
         # at their expected value of zero, as the arch package does.
-        log_variance = omega + beta * math.log(get_backcast(returns) + 1e-12)
+        if backcast is None:
+            backcast = get_backcast(returns)
+        log_variance = omega + beta * math.log(backcast + 1e-12)
         log_variance = min(max(log_variance, -20.0), 20.0)
         sigma2[0] = math.exp(log_variance)
 
@@ -1188,3 +1206,1679 @@ def get_egarch_forecast(
         return sigma_2
 
     raise TypeError("Expects pd.DataFrame or pd.Series or np.ndarry, no other value.")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# The GARCH family: APARCH and the family GARCH sub-models, component and integrated
+# GARCH, innovation distributions and mean models, written from the papers cited in
+# each function. Every model is fitted by the same multi-start search as GARCH(1, 1).
+# ──────────────────────────────────────────────────────────────────────────────
+
+# The variance parameters of each model, in the order of its weights.
+GARCH_FAMILY_VARIANCE_PARAMETERS = {
+    "garch": ["Omega", "Alpha", "Beta"],
+    "gjr": ["Omega", "Alpha", "Gamma", "Beta"],
+    "egarch": ["Omega", "Alpha", "Gamma", "Beta"],
+    "igarch": ["Omega", "Alpha"],
+    "aparch": ["Omega", "Alpha", "Gamma", "Beta", "Delta"],
+    "tgarch": ["Omega", "Alpha", "Gamma", "Beta"],
+    "ngarch": ["Omega", "Alpha", "Beta", "Delta"],
+    "avgarch": ["Omega", "Alpha", "Gamma", "Shift", "Beta"],
+    "nagarch": ["Omega", "Alpha", "Shift", "Beta"],
+    "component": ["Omega", "Alpha", "Beta", "Rho", "Phi"],
+}
+
+# The mean model parameters, after the variance parameters in the weights.
+GARCH_FAMILY_MEAN_PARAMETERS = {
+    "zero": [],
+    "constant": ["Mu"],
+    "arma": ["Mu", "AR(1)", "MA(1)"],
+    "in_mean": ["Mu", "Lambda"],
+}
+
+# The parameters of each standardized innovation distribution, after the mean parameters.
+GARCH_FAMILY_DISTRIBUTION_PARAMETERS = {
+    "normal": [],
+    "t": ["Shape"],
+    "skewt": ["Shape", "Skew"],
+    "skewt_fernandez_steel": ["Shape", "Skew"],
+    "ged": ["Shape"],
+    "johnson_su": ["Shape", "Skew"],
+}
+
+# The search bounds and starting values of the variance parameters, on returns scaled to a unit Variance (see get_garch_family_weights), so a long-run variance of about 1. The rotation Gamma of APARCH and family GARCH stays within (-1, 1) so the shock term is never negative, and Delta within the (0.05, 4) of the arch package.  # noqa: E501
+VARIANCE_BOUNDS = {
+    "garch": ([(1e-9, 2), (1e-9, 1), (1e-9, 1)], [0.1, 0.1, 0.8]),
+    "gjr": ([(1e-9, 2), (1e-9, 1), (-1, 1), (1e-9, 1)], [0.1, 0.05, 0.1, 0.8]),
+    "egarch": ([(-2, 2), (-1, 1), (-1, 1), (-0.999, 0.999)], [0.0, 0.1, -0.1, 0.9]),
+    "igarch": ([(1e-9, 2), (1e-9, 1)], [0.05, 0.1]),
+    "aparch": (
+        [(1e-9, 2), (1e-9, 1), (-0.9997, 0.9997), (1e-9, 1), (0.05, 4)],
+        [0.1, 0.1, 0.1, 0.8, 1.5],
+    ),
+    "tgarch": (
+        [(1e-9, 2), (1e-9, 1), (-0.9997, 0.9997), (1e-9, 1)],
+        [0.1, 0.1, 0.1, 0.8],
+    ),
+    "ngarch": ([(1e-9, 2), (1e-9, 1), (1e-9, 1), (0.05, 4)], [0.1, 0.1, 0.8, 1.5]),
+    "avgarch": (
+        [(1e-9, 2), (1e-9, 1), (-0.9997, 0.9997), (-10, 10), (1e-9, 1)],
+        [0.1, 0.1, 0.1, 0.0, 0.8],
+    ),
+    "nagarch": ([(1e-9, 2), (1e-9, 1), (-10, 10), (1e-9, 1)], [0.1, 0.1, 0.3, 0.8]),
+    "component": (
+        [(1e-9, 2), (1e-9, 1), (1e-9, 1), (1e-9, 1), (1e-9, 1)],
+        [0.01, 0.05, 0.85, 0.99, 0.03],
+    ),
+}
+
+# The Shape of the Student-t distributions is kept below 100, where they no longer differ from the normal distribution in any sample of returns.  # noqa: E501
+DISTRIBUTION_BOUNDS = {
+    "normal": ([], []),
+    "t": ([(2.05, 100)], [8.0]),
+    "skewt": ([(2.05, 100), (-0.99, 0.99)], [8.0, 0.0]),
+    "skewt_fernandez_steel": ([(2.05, 100), (0.1, 10)], [8.0, 1.0]),
+    "ged": ([(1.01, 50)], [1.5]),
+    "johnson_su": ([(0.2, 20), (-10, 10)], [2.0, 0.0]),
+}
+
+# The models whose variance recursion is in a power of the volatility rather than in the variance, with that power: Delta for APARCH and NGARCH (a weight), 1 for the TGARCH and AVGARCH volatility and 2 for the rest.  # noqa: E501
+POWER_OF_VOLATILITY = {"tgarch": 1.0, "avgarch": 1.0}
+
+# The expectations over a standardized distribution (the persistence of APARCH and family GARCH, the share of negative shocks of GJR-GARCH) are integrals evaluated on a grid z = sinh(u), dense around zero and reaching far into the tails, with trapezoid weights.  # noqa: E501
+_GRID_U = np.linspace(-11, 11, 4401)
+EXPECTATION_GRID = np.sinh(_GRID_U)
+EXPECTATION_WEIGHTS = np.cosh(_GRID_U) * (_GRID_U[1] - _GRID_U[0])
+EXPECTATION_WEIGHTS[[0, -1]] /= 2
+
+LOG_2_PI = math.log(2 * math.pi)
+EXPECTED_ABSOLUTE_NORMAL = math.sqrt(2 / math.pi)
+
+GARCH_FAMILY_WEIGHTS_CACHE: OrderedDict[tuple, np.ndarray] = OrderedDict()
+GARCH_FAMILY_WEIGHTS_CACHE_LOCK = threading.Lock()
+
+
+def validate_garch_family(method: str, distribution: str, mean: str) -> None:
+    """
+    Checks that the model, the innovation distribution and the mean model are known.
+
+    Args:
+        method (str): The variance model, a key of GARCH_FAMILY_VARIANCE_PARAMETERS.
+        distribution (str): The innovation distribution, a key of
+            GARCH_FAMILY_DISTRIBUTION_PARAMETERS.
+        mean (str): The mean model, a key of GARCH_FAMILY_MEAN_PARAMETERS.
+
+    Raises:
+        ValueError: When one of them is not known.
+    """
+    for value, options, name in (
+        (method, GARCH_FAMILY_VARIANCE_PARAMETERS, "method"),
+        (distribution, GARCH_FAMILY_DISTRIBUTION_PARAMETERS, "distribution"),
+        (mean, GARCH_FAMILY_MEAN_PARAMETERS, "mean"),
+    ):
+        if value not in options:
+            raise ValueError(
+                f"The {name} must be one of {', '.join(options)}, not {value!r}."
+            )
+
+
+def get_garch_family_parameter_names(
+    method: str = "garch", distribution: str = "normal", mean: str = "zero"
+) -> list[str]:
+    """
+    Returns the names of the weights of a GARCH-family model: the variance parameters,
+    then the mean parameters and then those of the innovation distribution.
+
+    Args:
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+
+    Returns:
+        list[str]: The parameter names, in the order of the weights.
+    """
+    validate_garch_family(method, distribution, mean)
+
+    return (
+        GARCH_FAMILY_VARIANCE_PARAMETERS[method]
+        + GARCH_FAMILY_MEAN_PARAMETERS[mean]
+        + GARCH_FAMILY_DISTRIBUTION_PARAMETERS[distribution]
+    )
+
+
+def _split_weights(
+    weights, method: str, mean: str
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Splits the weights into the variance, mean and distribution parameters."""
+    weights = np.asarray(weights, dtype=float)
+    variance_end = len(GARCH_FAMILY_VARIANCE_PARAMETERS[method])
+    mean_end = variance_end + len(GARCH_FAMILY_MEAN_PARAMETERS[mean])
+
+    return weights[:variance_end], weights[variance_end:mean_end], weights[mean_end:]
+
+
+def get_standardized_log_density(
+    z: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
+) -> np.ndarray:
+    """
+    Calculates the log density of a standardized innovation distribution (mean 0 and
+    Variance 1) at the standardized residuals z = epsilon / sigma.
+
+    The formula is as follows, with Shape and Skew the distribution parameters:
+
+    - normal: ln f(z) = -(ln(2π) + z^2) / 2
+    - t (Bollerslev, 1987), Shape v > 2: ln f(z) = ln Γ((v + 1) / 2) - ln Γ(v / 2) - ln(π (v - 2)) / 2
+      - (v + 1) / 2 * ln(1 + z^2 / (v - 2))
+    - skewt (Hansen, 1994), Shape η > 2 and Skew λ in (-1, 1):
+      f(z) = b c (1 + ((b z + a) / (1 ± λ))^2 / (η - 2))^(-(η + 1) / 2), with 1 - λ below z = -a / b and 1 + λ
+      above it, c = Γ((η + 1) / 2) / (√(π (η - 2)) Γ(η / 2)), a = 4 λ c (η - 2) / (η - 1) and b^2 = 1 + 3 λ^2 - a^2
+    - skewt_fernandez_steel (Fernández and Steel, 1998), Shape v > 2 and Skew ξ > 0: the standardized Student-t g
+      scaled by ξ above zero and by 1 / ξ below it, f(x) = 2 / (ξ + 1 / ξ) * g(x / ξ) for x >= 0 and g(x ξ) for
+      x < 0, then standardized with its mean m = M1 (ξ - 1 / ξ) and Variance s^2 = ξ^2 + 1 / ξ^2 - 1 - m^2,
+      M1 = 2 √(v - 2) Γ((v + 1) / 2) / (√π (v - 1) Γ(v / 2)), so f(z) = s f(m + s z)
+    - ged (Nelson, 1991), Shape v > 0: ln f(z) = ln v - ln λ - (1 + 1 / v) ln 2 - ln Γ(1 / v) - |z / λ|^v / 2,
+      with λ = √(2^(-2 / v) Γ(1 / v) / Γ(3 / v))
+    - johnson_su (Johnson, 1949), Shape δ > 0 and Skew γ: x = sinh((n - γ) / δ) for a standard normal n,
+      f(x) = δ / (√(2π) √(1 + x^2)) exp(-(γ + δ asinh(x))^2 / 2), standardized with its mean
+      m = -exp(1 / (2 δ^2)) sinh(γ / δ) and Variance s^2 = (exp(1 / δ^2) - 1) (exp(1 / δ^2) cosh(2 γ / δ) + 1) / 2
+
+    A negative Skew of Hansen's distribution, a Skew below 1 of Fernández and Steel's and a positive
+    Skew of the Johnson SU make large negative shocks more likely than large positive ones.
+
+    For more information, see the following papers:
+
+    - Bollerslev, T. (1987). "A Conditionally Heteroskedastic Time Series Model for Speculative
+    Prices and Rates of Return." The Review of Economics and Statistics, 69(3), 542-547.
+    - Hansen, B.E. (1994). "Autoregressive Conditional Density Estimation." International
+    Economic Review, 35(3), 705-730.
+    - Fernández, C. and Steel, M.F.J. (1998). "On Bayesian Modeling of Fat Tails and Skewness."
+    Journal of the American Statistical Association, 93(441), 359-371.
+    - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New Approach."
+    Econometrica, 59(2), 347-370.
+    - Johnson, N.L. (1949). "Systems of Frequency Curves Generated by Methods of Translation."
+    Biometrika, 36(1/2), 149-176.
+
+    Referenced against the Normal, StudentsT, SkewStudent and GeneralizedError distributions of
+    the arch package (https://arch.readthedocs.io) and the "sstd" and "jsu" distributions of R's
+    rugarch (https://cran.r-project.org/package=rugarch).
+
+    Args:
+        z (np.ndarray): The standardized residuals.
+        distribution (str, optional): "normal", "t", "skewt", "skewt_fernandez_steel", "ged" or
+            "johnson_su". Defaults to "normal".
+        parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
+            Defaults to (), for the normal distribution.
+
+    Returns:
+        np.ndarray: The log density at every z.
+    """
+    if distribution == "normal":
+        return -0.5 * (LOG_2_PI + z * z)
+
+    if distribution == "t":
+        shape = parameters[0]
+        return (
+            special.gammaln((shape + 1) / 2)
+            - special.gammaln(shape / 2)
+            - 0.5 * math.log(math.pi * (shape - 2))
+            - (shape + 1) / 2 * np.log1p(z * z / (shape - 2))
+        )
+
+    if distribution == "skewt":
+        shape, skew = parameters
+        c = math.exp(
+            special.gammaln((shape + 1) / 2) - special.gammaln(shape / 2)
+        ) / math.sqrt(math.pi * (shape - 2))
+        a = 4 * skew * c * (shape - 2) / (shape - 1)
+        b = math.sqrt(1 + 3 * skew**2 - a**2)
+        x = b * z + a
+        x = x / np.where(x < 0, 1 - skew, 1 + skew)
+        return (
+            math.log(b) + math.log(c) - (shape + 1) / 2 * np.log1p(x * x / (shape - 2))
+        )
+
+    if distribution == "skewt_fernandez_steel":
+        shape, skew = parameters
+        location, scale = _fernandez_steel_moments(shape, skew)
+        x = location + scale * z
+        x = np.where(x >= 0, x / skew, x * skew)
+        return (
+            math.log(2 / (skew + 1 / skew))
+            + math.log(scale)
+            + get_standardized_log_density(x, "t", (shape,))
+        )
+
+    if distribution == "ged":
+        shape = parameters[0]
+        scale = math.sqrt(
+            2 ** (-2 / shape)
+            * math.exp(special.gammaln(1 / shape) - special.gammaln(3 / shape))
+        )
+        return (
+            math.log(shape)
+            - math.log(scale)
+            - (1 + 1 / shape) * math.log(2)
+            - special.gammaln(1 / shape)
+            - 0.5 * np.abs(z / scale) ** shape
+        )
+
+    if distribution == "johnson_su":
+        shape, skew = parameters
+        location, scale = _johnson_su_moments(shape, skew)
+        x = location + scale * z
+        return (
+            math.log(scale)
+            + math.log(shape)
+            - 0.5 * LOG_2_PI
+            - 0.5 * np.log1p(x * x)
+            - 0.5 * (skew + shape * np.arcsinh(x)) ** 2
+        )
+
+    raise ValueError(f"Unknown distribution {distribution!r}.")
+
+
+def _fernandez_steel_moments(shape: float, skew: float) -> tuple[float, float]:
+    """The mean and standard deviation of Fernández and Steel's skewed standardized Student-t."""
+    absolute_moment = (
+        2
+        * math.sqrt(shape - 2)
+        * math.exp(special.gammaln((shape + 1) / 2) - special.gammaln(shape / 2))
+        / (math.sqrt(math.pi) * (shape - 1))
+    )
+    location = absolute_moment * (skew - 1 / skew)
+
+    return location, math.sqrt(skew**2 + 1 / skew**2 - 1 - location**2)
+
+
+def _johnson_su_moments(shape: float, skew: float) -> tuple[float, float]:
+    """The mean and standard deviation of the Johnson SU distribution x = sinh((n - Skew) / Shape)."""
+    w = math.exp(1 / shape**2)
+    location = -math.sqrt(w) * math.sinh(skew / shape)
+    variance = 0.5 * (w - 1) * (w * math.cosh(2 * skew / shape) + 1)
+
+    return location, math.sqrt(variance)
+
+
+def get_standardized_draws(
+    distribution: str,
+    parameters,
+    size: int | tuple[int, ...],
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Draws standardized innovations (mean 0 and Variance 1) from one of the distributions of
+    `get_standardized_log_density`.
+
+    The Student-t is drawn from numpy's Student-t scaled to a unit Variance; the skewed
+    Student-t of Hansen and of Fernández and Steel draw the size of a standardized
+    Student-t and put it below zero with probability (1 - λ) / 2 (Hansen) or 1 / (1 + ξ^2)
+    (Fernández and Steel), scaled by the side's factor, and standardize the result; the GED
+    takes |z| = λ (2 W)^(1 / v) with W from a Gamma(1 / v) distribution and a random sign; the
+    Johnson SU transforms a standard normal draw.
+
+    Args:
+        distribution (str): The distribution, see `get_standardized_log_density`.
+        parameters (Sequence[float]): The Shape (and Skew) of the distribution.
+        size (int | tuple[int, ...]): The number (or shape) of draws.
+        rng (np.random.Generator): The random number generator.
+
+    Returns:
+        np.ndarray: The draws.
+    """
+    if distribution == "normal":
+        return rng.standard_normal(size)
+
+    if distribution == "johnson_su":
+        shape, skew = parameters
+        location, scale = _johnson_su_moments(shape, skew)
+        return (np.sinh((rng.standard_normal(size) - skew) / shape) - location) / scale
+
+    if distribution == "ged":
+        shape = parameters[0]
+        scale = math.sqrt(
+            2 ** (-2 / shape)
+            * math.exp(special.gammaln(1 / shape) - special.gammaln(3 / shape))
+        )
+        sign = rng.choice([-1.0, 1.0], size)
+        return sign * scale * (2 * rng.gamma(1 / shape, 1.0, size)) ** (1 / shape)
+
+    shape = parameters[0]
+    draws = rng.standard_t(shape, size) * math.sqrt((shape - 2) / shape)
+
+    if distribution == "t":
+        return draws
+
+    size_of_draws = np.abs(draws)
+    uniform = rng.random(size)
+
+    if distribution == "skewt":
+        skew = parameters[1]
+        c = math.exp(
+            special.gammaln((shape + 1) / 2) - special.gammaln(shape / 2)
+        ) / math.sqrt(math.pi * (shape - 2))
+        a = 4 * skew * c * (shape - 2) / (shape - 1)
+        b = math.sqrt(1 + 3 * skew**2 - a**2)
+        x = np.where(
+            uniform < (1 - skew) / 2,
+            -(1 - skew) * size_of_draws,
+            (1 + skew) * size_of_draws,
+        )
+        return (x - a) / b
+
+    skew = parameters[1]
+    location, scale = _fernandez_steel_moments(shape, skew)
+    x = np.where(
+        uniform < 1 / (1 + skew**2), -size_of_draws / skew, size_of_draws * skew
+    )
+    return (x - location) / scale
+
+
+def get_standardized_expectation(
+    values: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
+) -> float:
+    """
+    Calculates the expectation E[h(z)] over a standardized innovation distribution of a
+    function h evaluated on EXPECTATION_GRID, by the trapezoid rule on z = sinh(u).
+
+    Args:
+        values (np.ndarray): h(z) at every point of EXPECTATION_GRID.
+        distribution (str, optional): The distribution. Defaults to "normal".
+        parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
+
+    Returns:
+        float: The expectation.
+    """
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        density = np.exp(
+            get_standardized_log_density(EXPECTATION_GRID, distribution, parameters)
+        )
+        return float(np.sum(values * density * EXPECTATION_WEIGHTS))
+
+
+def _power_weights(method: str, variance_weights) -> tuple[float, ...]:
+    """Omega, Alpha, Gamma, Beta and Delta of APARCH and its TGARCH and NGARCH sub-models."""
+    if method == "aparch":
+        omega, alpha, gamma, beta, delta = variance_weights
+    elif method == "tgarch":
+        omega, alpha, gamma, beta = variance_weights
+        delta = 1.0
+    else:
+        omega, alpha, beta, delta = variance_weights
+        gamma = 0.0
+
+    return omega, alpha, gamma, beta, delta
+
+
+def _family_weights(method: str, variance_weights) -> tuple[float, ...]:
+    """Omega, Alpha, Gamma (rotation), Shift, Beta and the power of AVGARCH and NAGARCH."""
+    if method == "avgarch":
+        omega, alpha, gamma, shift, beta = variance_weights
+        return omega, alpha, gamma, shift, beta, 1.0
+
+    omega, alpha, shift, beta = variance_weights
+    return omega, alpha, 0.0, shift, beta, 2.0
+
+
+def get_garch_family_persistence(
+    variance_weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    distribution_weights: tuple[float, ...] = (),
+) -> float:
+    """
+    Calculates the persistence of a GARCH-family model: the factor by which a shock to the
+    (power of the) conditional variance carries over to the next period on average.
+
+    The formula is as follows, with z a standardized innovation of the chosen distribution:
+
+    - garch: Alpha + Beta
+    - igarch: 1
+    - gjr: Alpha + Gamma * E[z^2 1(z < 0)] + Beta, with E[z^2 1(z < 0)] = 1 / 2 for a symmetric distribution
+    - egarch: Beta, the persistence of the log variance
+    - aparch, tgarch and ngarch: Alpha * E[(|z| - Gamma * z)^Delta] + Beta
+    - avgarch and nagarch: Alpha * E[(|z - Shift| - Gamma * (z - Shift))^d] + Beta, with d = 1 and 2
+    - component: Rho, the persistence of the long-run component (the short-run component fades with
+      Alpha + Beta, which is smaller)
+
+    For more information, see the following papers:
+
+    - Ding, Z., Granger, C.W.J. and Engle, R.F. (1993). "A Long Memory Property of Stock Market
+    Returns and a New Model." Journal of Empirical Finance, 1(1), 83-106.
+    - Hentschel, L. (1995). "All in the Family: Nesting Symmetric and Asymmetric GARCH Models."
+    Journal of Financial Economics, 39(1), 71-104.
+
+    Args:
+        variance_weights (Sequence[float]): The variance parameters of the model.
+        method (str, optional): The model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        distribution_weights (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
+
+    Returns:
+        float: The persistence, infinite where the expectation does not exist (a Student-t with
+        a Shape at or below Delta).
+    """
+    w = variance_weights
+
+    if method == "garch":
+        return float(w[1] + w[2])
+    if method == "igarch":
+        return 1.0
+    if method == "egarch":
+        return float(w[3])
+    if method == "component":
+        return float(w[3])
+    if method == "gjr":
+        # E[z^2 1(z < 0)], the share of the unit variance that comes from negative shocks: 1 / 2 for a symmetric distribution.  # noqa: E501
+        negative_share = (
+            0.5
+            if distribution in ("normal", "t", "ged")
+            else get_standardized_expectation(
+                np.where(EXPECTATION_GRID < 0, EXPECTATION_GRID**2, 0.0),
+                distribution,
+                distribution_weights,
+            )
+        )
+        return float(w[1] + w[2] * negative_share + w[3])
+
+    if method in ("aparch", "tgarch", "ngarch"):
+        _, alpha, gamma, beta, power = _power_weights(method, w)
+        shift = 0.0
+    else:
+        _, alpha, gamma, shift, beta, power = _family_weights(method, w)
+
+    # A Student-t has moments below its Shape only.
+    if (
+        distribution in ("t", "skewt", "skewt_fernandez_steel")
+        and power >= distribution_weights[0]
+    ):
+        return math.inf
+
+    centred = EXPECTATION_GRID - shift
+    kappa = get_standardized_expectation(
+        (np.abs(centred) - gamma * centred) ** power, distribution, distribution_weights
+    )
+
+    return float(alpha * kappa + beta)
+
+
+def _is_admissible(
+    method: str, variance_weights, distribution: str, distribution_weights
+) -> bool:
+    """Whether the weights give a positive, stationary variance (integrated for IGARCH)."""
+    w = variance_weights
+
+    if method == "gjr" and w[1] + w[2] < 0:
+        return False
+    if method == "component":
+        _, alpha, beta, rho, phi = w
+        # Engle and Lee (1999): 0 < Alpha + Beta < Rho < 1 and 0 < Phi < Beta keep both components positive.  # noqa: E501
+        return alpha + beta < rho < 1 and phi < beta
+    if method in ("igarch", "egarch"):
+        return True
+
+    return (
+        get_garch_family_persistence(w, method, distribution, distribution_weights) < 1
+    )
+
+
+def _first_variance(method: str, variance_weights, backcast: float) -> float:
+    """
+    The conditional variance of the first observation: the backcast (see get_backcast)
+    stands in for the squared residual and the variance before the sample, as in the arch
+    package. The leverage term of GJR-GARCH enters at its expectation, Gamma / 2, and the
+    shock terms of EGARCH at zero; a power model takes the backcast to the power Delta / 2
+    for both the shock and the (powered) volatility, and the component model starts both
+    components at Omega + Rho * Backcast.
+    """
+    w = variance_weights
+
+    if method == "garch":
+        return w[0] + (w[1] + w[2]) * backcast
+    if method == "igarch":
+        return w[0] + backcast
+    if method == "gjr":
+        return w[0] + (w[1] + w[2] / 2 + w[3]) * backcast
+    if method == "egarch":
+        return math.exp(min(max(w[0] + w[3] * math.log(backcast + 1e-12), -20.0), 20.0))
+    if method == "component":
+        return w[0] + w[3] * backcast
+
+    if method in ("aparch", "tgarch", "ngarch"):
+        omega, alpha, _, beta, power = _power_weights(method, w)
+    else:
+        omega, alpha, _, _, beta, power = _family_weights(method, w)
+
+    return (omega + (alpha + beta) * backcast ** (power / 2)) ** (2 / power)
+
+
+def _variance_step(method: str, variance_weights):
+    """
+    Returns the one-step variance update of a model, variance_t = step(variance_(t-1),
+    residual_(t-1), long_run_(t-1)), which also returns the long-run component of the
+    component model (its third argument passed through for the other models). It takes
+    floats or np.ndarrays, so it serves the recursions that cannot be vectorised over time
+    (the family GARCH models and GARCH-in-mean) and the simulation over many paths.
+    """
+    w = [float(weight) for weight in variance_weights]
+
+    if method in ("garch", "igarch"):
+        omega, alpha = w[0], w[1]
+        beta = w[2] if method == "garch" else 1 - alpha
+
+        def step(variance, residual, long_run):
+            return omega + alpha * residual * residual + beta * variance, long_run
+
+    elif method == "gjr":
+        omega, alpha, gamma, beta = w
+
+        def step(variance, residual, long_run):
+            return (
+                omega
+                + (alpha + gamma * (residual < 0)) * residual * residual
+                + beta * variance,
+                long_run,
+            )
+
+    elif method == "egarch":
+        omega, alpha, gamma, beta = w
+
+        def step(variance, residual, long_run):
+            z = residual / variance**0.5
+            log_variance = (
+                omega
+                + beta * np.log(variance)
+                + alpha * (abs(z) - EXPECTED_ABSOLUTE_NORMAL)
+                + gamma * z
+            )
+            return np.exp(np.clip(log_variance, -20.0, 20.0)), long_run
+
+    elif method == "component":
+        omega, alpha, beta, rho, phi = w
+
+        def step(variance, residual, long_run):
+            squared = residual * residual
+            new_long_run = omega + rho * long_run + phi * (squared - variance)
+            return (
+                new_long_run
+                + alpha * (squared - long_run)
+                + beta * (variance - long_run),
+                new_long_run,
+            )
+
+    elif method in ("aparch", "tgarch", "ngarch"):
+        omega, alpha, gamma, beta, power = _power_weights(method, w)
+
+        def step(variance, residual, long_run):
+            powered = (
+                omega
+                + alpha * (abs(residual) - gamma * residual) ** power
+                + beta * variance ** (power / 2)
+            )
+            return powered ** (2 / power), long_run
+
+    else:
+        omega, alpha, gamma, shift, beta, power = _family_weights(method, w)
+
+        def step(variance, residual, long_run):
+            powered_volatility = variance ** (power / 2)
+            centred = residual / variance**0.5 - shift
+            shock = abs(centred) - gamma * centred
+            powered = omega + powered_volatility * (alpha * shock**power + beta)
+            return powered ** (2 / power), long_run
+
+    return step
+
+
+def _component_variance(
+    variance_weights, residuals: np.ndarray, backcast: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The conditional variance and its long-run component of the component GARCH model of
+    Engle and Lee (1999), for every residual and one step past the last.
+
+    The two components follow a linear system in the squared residuals e_t:
+
+    - sigma_t^2 = Omega + (Rho - Alpha - Beta) * q_(t-1) + (Alpha + Phi) * e_(t-1) + (Beta - Phi) * sigma_(t-1)^2
+    - q_t = Omega + Rho * q_(t-1) + Phi * (e_(t-1) - sigma_(t-1)^2)
+
+    By the Cayley-Hamilton theorem the variance then follows a second-order linear
+    recursion, sigma_t^2 = T * sigma_(t-1)^2 - D * sigma_(t-2)^2 + d_t, with T and D the trace
+    and determinant of the system matrix, which lfilter computes in compiled code; the
+    long-run component follows from the variance as a first-order recursion.
+    """
+    from scipy import signal  # noqa: PLC0415
+
+    omega, alpha, beta, rho, phi = (float(weight) for weight in variance_weights)
+    squared = residuals * residuals
+    steps = len(residuals) + 1
+
+    sigma2 = np.empty(steps)
+    sigma2[0] = omega + rho * backcast
+
+    if steps > 1:
+        sigma2[1] = (
+            omega
+            + (rho - alpha - beta) * sigma2[0]
+            + (alpha + phi) * squared[0]
+            + (beta - phi) * sigma2[0]
+        )
+
+    if steps > 2:  # noqa: PLR2004
+        trace = beta - phi + rho
+        determinant = (beta - phi) * rho + phi * (rho - alpha - beta)
+        driver_variance = omega + (alpha + phi) * squared
+        driver_long_run = omega + phi * squared
+        driver = (
+            driver_variance[1:]
+            - rho * driver_variance[:-1]
+            + (rho - alpha - beta) * driver_long_run[:-1]
+        )
+        denominator = [1.0, -trace, determinant]
+        sigma2[2:], _ = signal.lfilter(
+            [1.0],
+            denominator,
+            driver,
+            zi=signal.lfiltic([1.0], denominator, [sigma2[1], sigma2[0]]),
+        )
+
+    long_run = _linear_variance_recursion(
+        omega + phi * (squared - sigma2[:-1]), rho, sigma2[0], steps
+    )
+
+    return sigma2, long_run
+
+
+def _starting_residuals(returns: np.ndarray, mean: str) -> np.ndarray:
+    """
+    The residuals of the mean model at its starting values, whose backcast starts the
+    variance recursion throughout the fit (as in the arch package): the returns themselves
+    for a zero mean, the returns less their average for a constant mean and GARCH-in-mean,
+    and the residuals of the least-squares AR(1) for the ARMA(1, 1) mean.
+    """
+    if mean == "zero":
+        return returns
+    if mean in ("constant", "in_mean"):
+        return returns - returns.mean()
+
+    regressors = np.column_stack([np.ones(len(returns) - 1), returns[:-1]])
+    coefficients = np.linalg.lstsq(regressors, returns[1:], rcond=None)[0]
+
+    return returns[1:] - regressors @ coefficients
+
+
+def _garch_family_filter(
+    returns: np.ndarray,
+    weights,
+    method: str,
+    mean: str,
+    backcast: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:
+    """
+    Runs the mean model and the variance recursion of a GARCH-family model over the returns.
+
+    Returns:
+        tuple: The residuals, the conditional variance of every residual and one step past
+        the last, the long-run component of the component model (None for the others) and
+        the number of returns the mean model holds back (1 for the ARMA(1, 1) mean).
+    """
+    variance_weights, mean_weights, _ = _split_weights(weights, method, mean)
+
+    if mean == "in_mean":
+        return _in_mean_filter(
+            returns, variance_weights, mean_weights, method, backcast
+        )
+
+    if mean == "zero":
+        residuals, held_back = returns, 0
+    elif mean == "constant":
+        residuals, held_back = returns - mean_weights[0], 0
+    else:
+        from scipy import signal  # noqa: PLC0415
+
+        mu, autoregressive, moving_average = mean_weights
+        # e_t + MA * e_(t-1) = r_t - Mu - AR * r_(t-1) from t = 1, the residual before it zero.
+        residuals = signal.lfilter(
+            [1.0],
+            [1.0, moving_average],
+            returns[1:] - mu - autoregressive * returns[:-1],
+        )
+        held_back = 1
+
+    steps = len(residuals) + 1
+    long_run = None
+
+    if method in ("garch", "igarch"):
+        garch_weights = (
+            variance_weights
+            if method == "garch"
+            else [variance_weights[0], variance_weights[1], 1 - variance_weights[1]]
+        )
+        sigma2 = get_garch(residuals, garch_weights, steps, backcast=backcast)
+    elif method == "gjr":
+        sigma2 = get_gjr_garch(residuals, variance_weights, steps, backcast=backcast)
+    elif method == "egarch":
+        sigma2 = get_egarch(residuals, variance_weights, steps, backcast=backcast)
+    elif method == "component":
+        sigma2, long_run = _component_variance(variance_weights, residuals, backcast)
+    elif method in ("aparch", "tgarch", "ngarch"):
+        omega, alpha, gamma, beta, power = _power_weights(method, variance_weights)
+        # The power of the volatility follows a first-order linear recursion in the shocks, like the GARCH variance.  # noqa: E501
+        shocks = (np.abs(residuals) - gamma * residuals) ** power
+        powered = _linear_variance_recursion(
+            omega + alpha * shocks,
+            beta,
+            _first_variance(method, variance_weights, backcast) ** (power / 2),
+            steps,
+        )
+        sigma2 = powered ** (2 / power)
+    else:
+        # The shock of the family GARCH models is measured in units of the volatility itself, so the recursion is not linear and runs step by step on plain Python floats (see get_egarch).  # noqa: E501
+        step = _variance_step(method, variance_weights)
+        variance = _first_variance(method, variance_weights, backcast)
+        values = [variance]
+        for residual in residuals.tolist():
+            variance, _ = step(variance, residual, None)
+            values.append(variance)
+        sigma2 = np.array(values)
+
+    return residuals, sigma2, long_run, held_back
+
+
+def _in_mean_filter(
+    returns: np.ndarray, variance_weights, mean_weights, method: str, backcast: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:
+    """
+    The GARCH-in-mean filter of Engle, Lilien and Robins (1987), r_t = Mu + Lambda * sigma_t
+    + e_t: the residual of each return depends on its own conditional volatility, so the mean
+    and the variance run step by step.
+    """
+    mu, risk_premium = (float(weight) for weight in mean_weights)
+    step = _variance_step(method, variance_weights)
+    variance = _first_variance(method, variance_weights, backcast)
+    long_run = variance if method == "component" else None
+
+    sigma2 = [variance]
+    long_runs = [long_run]
+    residuals = []
+
+    for value in returns.tolist():
+        residual = value - mu - risk_premium * variance**0.5
+        residuals.append(residual)
+        variance, long_run = step(variance, residual, long_run)
+        sigma2.append(variance)
+        long_runs.append(long_run)
+
+    return (
+        np.array(residuals),
+        np.array(sigma2, dtype=float),
+        np.array(long_runs, dtype=float) if method == "component" else None,
+        0,
+    )
+
+
+@np.errstate(over="ignore", invalid="ignore", divide="ignore")
+def get_garch_family_log_likelihood(
+    returns: np.ndarray,
+    weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    backcast: float | None = None,
+    per_observation: bool = False,
+) -> float | np.ndarray:
+    """
+    Calculates the log-likelihood of a GARCH-family model:
+
+    - Log-Likelihood = Σ (ln f(e_t / sigma_t) - ln(sigma_t^2) / 2)
+
+    Where e_t are the residuals of the mean model, sigma_t^2 the conditional variance and f
+    the density of the standardized innovation distribution (see
+    `get_standardized_log_density`). The normal log-likelihood includes its constant, so it
+    equals the log-likelihood the arch package reports.
+
+    Args:
+        returns (np.ndarray): The returns.
+        weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        backcast (float | None, optional): The backcast that starts the recursion. Defaults
+            to None, which uses the backcast of the starting residuals of the mean model.
+        per_observation (bool, optional): Whether to return the log-likelihood of every
+            observation instead of their sum. Defaults to False.
+
+    Returns:
+        float | np.ndarray: The log-likelihood, -inf for weights outside the model's region.
+    """
+    returns = np.asarray(returns, dtype=float)
+    variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
+
+    if backcast is None:
+        backcast = get_backcast(_starting_residuals(returns, mean))
+
+    residuals, sigma2, _, _ = _garch_family_filter(
+        returns, weights, method, mean, backcast
+    )
+    sigma2 = sigma2[: len(residuals)]
+
+    log_likelihood = get_standardized_log_density(
+        residuals / np.sqrt(sigma2), distribution, distribution_weights
+    ) - 0.5 * np.log(sigma2)
+
+    if per_observation:
+        return log_likelihood
+
+    total = float(np.sum(log_likelihood))
+
+    return total if np.isfinite(total) else -math.inf
+
+
+def _scale_exponents(method: str, mean: str, weights) -> np.ndarray:
+    """
+    The power of the scale of the returns in every weight: returns divided by c give
+    weights with Omega divided by c^2 (c^Delta for APARCH and NGARCH, c for TGARCH and
+    AVGARCH) and Mu divided by c, while the other weights are unchanged. EGARCH's Omega
+    shifts instead (see get_garch_family_weights).
+    """
+    variance_names = GARCH_FAMILY_VARIANCE_PARAMETERS[method]
+    exponents = np.zeros(len(weights))
+
+    if method != "egarch":
+        exponents[0] = (
+            weights[variance_names.index("Delta")]
+            if "Delta" in variance_names
+            else POWER_OF_VOLATILITY.get(method, 2.0)
+        )
+    if mean != "zero":
+        exponents[len(variance_names)] = 1.0
+
+    return exponents
+
+
+def _rescale_weights(weights, method: str, mean: str, scale: float) -> np.ndarray:
+    """
+    Converts the weights fitted on the returns divided by `scale` to the weights of the
+    returns themselves (pass 1 / scale for the reverse).
+    """
+    weights = np.array(weights, dtype=float)
+    rescaled = weights * scale ** _scale_exponents(method, mean, weights)
+
+    if method == "egarch":
+        # ln sigma_t^2 of the returns is that of the scaled returns plus 2 ln(scale), so Omega gains 2 (1 - Beta) ln(scale).  # noqa: E501
+        rescaled[0] = weights[0] + 2 * (1 - weights[3]) * math.log(scale)
+
+    return rescaled
+
+
+def get_garch_family_weights(
+    returns: np.ndarray,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    t: int | None = None,
+) -> np.ndarray:
+    """
+    Estimates the weights of a GARCH-family model by maximum likelihood, with the same
+    deterministic multi-start search as GARCH(1, 1) (see `_fit_multi_start`).
+
+    GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean are fitted by
+    `get_garch_weights`, `get_gjr_garch_weights` and `get_egarch_weights`. Every other
+    combination is fitted on the returns divided by their standard deviation, which puts
+    every weight on a scale of about 1 (Omega of a daily return series would otherwise be
+    of the order of 1e-6), and the weights are converted back: Omega is multiplied by the
+    scale to the power of the model (2, Delta or 1), Mu by the scale, and EGARCH's Omega
+    gains 2 (1 - Beta) ln(scale). The log-likelihood of the scaled returns differs by a
+    constant only, so the maximum is the same.
+
+    The constraints are those that keep the variance positive and stationary: a persistence
+    below 1 (see `get_garch_family_persistence`; Alpha + Beta = 1 for IGARCH by construction),
+    |Beta| < 1 for EGARCH, Alpha + Gamma >= 0 for GJR-GARCH, |Gamma| < 1 for the rotation of
+    APARCH and family GARCH, and 0 < Alpha + Beta < Rho < 1 and Phi < Beta for the component
+    model.
+
+    Args:
+        returns (np.ndarray): The returns.
+        method (str, optional): The variance model, see GARCH_FAMILY_VARIANCE_PARAMETERS.
+            Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        t (int | None, optional): The number of returns, from the first, to fit on.
+            Defaults to None, which uses every return.
+
+    Returns:
+        np.ndarray: The weights, see `get_garch_family_parameter_names`; NaN when the fit
+        does not converge from any starting point.
+    """
+    validate_garch_family(method, distribution, mean)
+
+    if isinstance(returns, pd.DataFrame):
+        returns = returns.iloc[:, 0].to_numpy()
+
+    returns = np.asarray(returns, dtype=float)
+
+    if distribution == "normal" and mean == "zero":
+        if method == "garch":
+            return get_garch_weights(returns, t)
+        if method == "gjr":
+            return get_gjr_garch_weights(returns, t)
+        if method == "egarch":
+            return get_egarch_weights(returns, t)
+
+    returns = returns[:t] if t is not None else returns
+    key = (
+        hashlib.sha256(np.ascontiguousarray(returns).tobytes()).hexdigest(),
+        len(returns),
+        method,
+        distribution,
+        mean,
+    )
+    with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
+        cached = GARCH_FAMILY_WEIGHTS_CACHE.get(key)
+        if cached is not None:
+            GARCH_FAMILY_WEIGHTS_CACHE.move_to_end(key)
+            return cached.copy()
+
+    scale = float(np.std(returns))
+    scale = scale if scale > 0 else 1.0
+    scaled = returns / scale
+    backcast = get_backcast(_starting_residuals(scaled, mean))
+
+    variance_bounds, variance_guess = VARIANCE_BOUNDS[method]
+    distribution_bounds, distribution_guess = DISTRIBUTION_BOUNDS[distribution]
+    mean_bounds, mean_guess = {
+        "zero": ([], []),
+        "constant": ([(-1, 1)], [float(scaled.mean())]),
+        "arma": (
+            [(-1, 1), (-0.999, 0.999), (-0.999, 0.999)],
+            [float(scaled.mean()), 0, 0],
+        ),
+        "in_mean": ([(-1, 1), (-1, 1)], [float(scaled.mean()), 0.0]),
+    }[mean]
+
+    bounds = variance_bounds + mean_bounds + distribution_bounds
+    initial_guess = variance_guess + mean_guess + distribution_guess
+
+    def objective(weights):
+        variance_weights, _, distribution_weights = _split_weights(
+            weights, method, mean
+        )
+        if not _is_admissible(
+            method, variance_weights, distribution, distribution_weights
+        ):
+            return np.inf
+        log_likelihood = get_garch_family_log_likelihood(
+            scaled, weights, method, distribution, mean, backcast
+        )
+        return -log_likelihood if np.isfinite(log_likelihood) else np.inf
+
+    weights = _fit_multi_start(
+        objective, bounds, initial_guess, f"{method} ({distribution}, {mean} mean)"
+    )
+    weights = _rescale_weights(weights, method, mean, scale)
+
+    with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
+        GARCH_FAMILY_WEIGHTS_CACHE[key] = weights.copy()
+        if len(GARCH_FAMILY_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
+            GARCH_FAMILY_WEIGHTS_CACHE.popitem(last=False)
+
+    return weights
+
+
+def _garch_family_path(
+    returns: np.ndarray,
+    weights,
+    method: str,
+    distribution: str,
+    mean: str,
+    output: str,
+    time_steps: int | None,
+) -> np.ndarray:
+    """
+    The conditional variance (or the standardized residuals or the long-run component) of
+    every return of one series, NaN for a return the mean model holds back.
+    """
+    backcast = get_backcast(_starting_residuals(returns, mean))
+    residuals, sigma2, long_run, held_back = _garch_family_filter(
+        returns, weights, method, mean, backcast
+    )
+
+    if output == "variance":
+        values = sigma2[: len(residuals)]
+    elif output == "standardized_residuals":
+        values = residuals / np.sqrt(sigma2[: len(residuals)])
+    elif long_run is None:
+        raise ValueError(
+            "The long-run variance is only defined for method='component'."
+        )
+    else:
+        values = long_run[: len(residuals)]
+
+    path = np.concatenate([np.full(held_back, np.nan), values])
+
+    return path[:time_steps] if time_steps is not None else path
+
+
+def get_garch_family(
+    returns: np.ndarray | pd.Series | pd.DataFrame,
+    weights: np.ndarray | list | None = None,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    output: str = "variance",
+    time_steps: int | None = None,
+    optimization_t: int | None = None,
+) -> np.ndarray | pd.DataFrame:
+    """
+    Calculates the conditional variance of a GARCH-family model, or its standardized
+    residuals or (for the component model) its long-run component, with every model of
+    `get_garch_family_weights`.
+
+    Every series is fitted on its own returns (see `_apply_per_column`) and a 'within period'
+    index fits every period separately, as in `get_garch`.
+
+    Args:
+        returns (np.ndarray | pd.Series | pd.DataFrame): The returns.
+        weights (np.ndarray | list | None, optional): The weights, see
+            `get_garch_family_parameter_names`, used for every column. Defaults to None, which
+            fits them per column.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        output (str, optional): "variance" for the conditional variance, "standardized_residuals"
+            for e_t / sigma_t or "long_run_variance" for the long-run component q_t of
+            method="component". Defaults to "variance".
+        time_steps (int | None, optional): The number of returns, from the first, to return.
+            Defaults to None, which returns every return.
+        optimization_t (int | None, optional): The number of returns, from the first, to fit on.
+            Defaults to None, which uses every return.
+
+    Returns:
+        np.ndarray | pd.DataFrame: The values, NaN for a return the mean model holds back
+        (the first, for the ARMA(1, 1) mean).
+    """
+    validate_garch_family(method, distribution, mean)
+
+    if output not in ("variance", "standardized_residuals", "long_run_variance"):
+        raise ValueError(
+            "The output must be variance, standardized_residuals or long_run_variance."
+        )
+    if output == "long_run_variance" and method != "component":
+        raise ValueError("Only method='component' has a long-run variance component.")
+
+    arguments = {
+        "weights": weights,
+        "method": method,
+        "distribution": distribution,
+        "mean": mean,
+        "output": output,
+        "time_steps": time_steps,
+        "optimization_t": optimization_t,
+    }
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = [
+                _apply_per_column(
+                    returns.loc[sub_period], get_garch_family, **arguments
+                )
+                for sub_period in returns.index.get_level_values(0).unique()
+            ]
+            return pd.concat(
+                [period for period in periods if not period.dropna(how="all").empty],
+                axis=0,
+            )
+        return _apply_per_column(returns, get_garch_family, **arguments)
+
+    if isinstance(returns, pd.Series):
+        return get_garch_family(returns.to_numpy(), **arguments)
+
+    returns = np.asarray(returns, dtype=float)
+
+    if weights is None:
+        weights = get_garch_family_weights(
+            returns, method, distribution, mean, optimization_t
+        )
+
+    return _garch_family_path(
+        returns, weights, method, distribution, mean, output, time_steps
+    )
+
+
+def get_garch_family_forecast(
+    returns: np.ndarray | pd.Series | pd.DataFrame,
+    weights: np.ndarray | list | None = None,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    time_steps: int = 10,
+) -> np.ndarray | pd.DataFrame:
+    """
+    Forecasts the conditional variance of a GARCH-family model for h = 1, ..., time_steps
+    periods after the last return.
+
+    The first value is the one-step-ahead variance of the fitted recursion, which consumes the
+    last return. Further steps take the expectation of the shock terms over the innovation
+    distribution, which makes the recursion linear in the variance (or its power):
+
+    - garch, gjr, igarch, aparch, tgarch, ngarch, avgarch and nagarch: s_(n+h) = Omega + P * s_(n+h-1), with
+      s = sigma^d the power of the model (2 for the variance models, Delta, or 1 for TGARCH and AVGARCH) and P
+      the persistence (see `get_garch_family_persistence`), and sigma_(n+h)^2 = s_(n+h)^(2 / d)
+    - component: q_(n+h) = Omega + Rho * q_(n+h-1) and
+      sigma_(n+h)^2 - q_(n+h) = (Alpha + Beta) * (sigma_(n+h-1)^2 - q_(n+h-1))
+    - egarch: ln sigma_(n+h)^2 = Omega + Alpha * (E|z| - √(2 / π)) + Beta * ln sigma_(n+h-1)^2, and
+      sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
+
+    The forecast of a power other than 2, and of EGARCH, is that of the power (or the log)
+    of the variance, transformed back, which understates the expected variance somewhat
+    (Jensen's inequality), as the forecasts of `get_egarch_forecast` do. For IGARCH (P = 1)
+    the variance grows by Omega every step. GARCH, GJR-GARCH and EGARCH with normal
+    innovations and a zero mean are forecast by `get_garch_forecast`,
+    `get_gjr_garch_forecast` and `get_egarch_forecast`.
+
+    Args:
+        returns (np.ndarray | pd.Series | pd.DataFrame): The returns.
+        weights (np.ndarray | list | None, optional): The weights, see
+            `get_garch_family_parameter_names`. Defaults to None, which fits them per column.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        time_steps (int, optional): The number of periods to forecast. Defaults to 10.
+
+    Returns:
+        np.ndarray | pd.DataFrame: The forecasted variance, one row per step.
+    """
+    validate_garch_family(method, distribution, mean)
+
+    arguments = {
+        "weights": weights,
+        "method": method,
+        "distribution": distribution,
+        "mean": mean,
+        "time_steps": time_steps,
+    }
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            period_data_list = []
+            for sub_period in returns.index.get_level_values(0).unique():
+                period_data = _apply_per_column(
+                    returns.loc[sub_period],
+                    get_garch_family_forecast,
+                    forecast=True,
+                    **arguments,
+                )
+                period_data.columns = [
+                    f"{column} {sub_period}" for column in period_data.columns
+                ]
+                if not period_data.dropna(how="all").empty:
+                    period_data_list.append(period_data)
+            return pd.concat(period_data_list, axis=1)
+        return _apply_per_column(
+            returns, get_garch_family_forecast, forecast=True, **arguments
+        )
+
+    if isinstance(returns, pd.Series):
+        return get_garch_family_forecast(returns.to_numpy(), **arguments)
+
+    returns = np.asarray(returns, dtype=float)
+
+    if weights is None:
+        weights = get_garch_family_weights(returns, method, distribution, mean)
+
+    if (
+        distribution == "normal"
+        and mean == "zero"
+        and method in ("garch", "gjr", "egarch")
+    ):
+        forecast = {
+            "garch": get_garch_forecast,
+            "gjr": get_gjr_garch_forecast,
+            "egarch": get_egarch_forecast,
+        }[method]
+        return forecast(returns, weights, time_steps)
+
+    variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
+    backcast = get_backcast(_starting_residuals(returns, mean))
+    _, sigma2, long_run, _ = _garch_family_filter(
+        returns, weights, method, mean, backcast
+    )
+
+    forecast = np.empty(time_steps)
+
+    if method == "component" and long_run is not None:
+        _, alpha, beta, rho, _ = variance_weights
+        level, short_run = long_run[-1], sigma2[-1] - long_run[-1]
+        for step in range(time_steps):
+            forecast[step] = level + short_run
+            level = variance_weights[0] + rho * level
+            short_run = (alpha + beta) * short_run
+        return forecast
+
+    if method == "egarch":
+        omega, alpha, _, beta = variance_weights
+        expected_absolute = get_standardized_expectation(
+            np.abs(EXPECTATION_GRID), distribution, distribution_weights
+        )
+        log_variance = math.log(sigma2[-1])
+        for step in range(time_steps):
+            forecast[step] = math.exp(log_variance)
+            log_variance = (
+                omega
+                + alpha * (expected_absolute - EXPECTED_ABSOLUTE_NORMAL)
+                + beta * log_variance
+            )
+        return forecast
+
+    power = (
+        variance_weights[GARCH_FAMILY_VARIANCE_PARAMETERS[method].index("Delta")]
+        if method in ("aparch", "ngarch")
+        else POWER_OF_VOLATILITY.get(method, 2.0)
+    )
+    persistence = get_garch_family_persistence(
+        variance_weights, method, distribution, distribution_weights
+    )
+    powered = sigma2[-1] ** (power / 2)
+    for step in range(time_steps):
+        forecast[step] = powered ** (2 / power)
+        powered = variance_weights[0] + persistence * powered
+
+    return forecast
+
+
+def get_garch_family_unconditional_variance(
+    variance_weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    distribution_weights=(),
+) -> float:
+    """
+    Calculates the unconditional (long-run) variance a GARCH-family model reverts to:
+
+    - sigma^2 = (Omega / (1 - P))^(2 / d), with P the persistence (see
+      `get_garch_family_persistence`) and d the power of the model (2, Delta, or 1 for TGARCH and AVGARCH)
+    - component: Omega / (1 - Rho)
+    - egarch: exp(Omega / (1 - Beta)), the exponential of the long-run log variance, which
+      understates the expected variance somewhat (Jensen's inequality)
+
+    Args:
+        variance_weights (Sequence[float]): The variance parameters.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        distribution_weights (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
+
+    Returns:
+        float: The unconditional variance, NaN for IGARCH (P = 1), which has none.
+    """
+    w = variance_weights
+
+    if method == "egarch":
+        return math.exp(w[0] / (1 - w[3]))
+
+    persistence = get_garch_family_persistence(
+        w, method, distribution, distribution_weights
+    )
+
+    if not persistence < 1:
+        return math.nan
+
+    if method == "component":
+        return w[0] / (1 - w[3])
+
+    power = (
+        w[GARCH_FAMILY_VARIANCE_PARAMETERS[method].index("Delta")]
+        if method in ("aparch", "ngarch")
+        else POWER_OF_VOLATILITY.get(method, 2.0)
+    )
+
+    return (w[0] / (1 - persistence)) ** (2 / power)
+
+
+def _numerical_hessian(function, point: np.ndarray, steps: np.ndarray) -> np.ndarray:
+    """The Hessian of a scalar function by central differences."""
+    dimension = len(point)
+    hessian = np.empty((dimension, dimension))
+
+    for i in range(dimension):
+        for j in range(i, dimension):
+            values = []
+            for sign_i, sign_j in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                shifted = point.copy()
+                shifted[i] += sign_i * steps[i]
+                shifted[j] += sign_j * steps[j]
+                values.append(function(shifted))
+            hessian[i, j] = hessian[j, i] = (
+                values[0] - values[1] - values[2] + values[3]
+            ) / (4 * steps[i] * steps[j])
+
+    return hessian
+
+
+@np.errstate(over="ignore", invalid="ignore", divide="ignore")
+def get_garch_family_diagnostics(
+    returns: np.ndarray,
+    weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+) -> dict[str, float]:
+    """
+    Calculates the fit diagnostics of a GARCH-family model: its persistence, half-life and
+    unconditional variance, the log-likelihood and information criteria and the standard
+    errors of the weights.
+
+    The formula is as follows, with LL the log-likelihood, k the number of estimated
+    weights and n the number of returns in the likelihood:
+
+    - Persistence = P, see `get_garch_family_persistence`
+    - Half-Life = ln(0.5) / ln(P), in periods
+    - Unconditional Variance, see `get_garch_family_unconditional_variance`
+    - AIC = (-2 LL + 2 k) / n
+    - BIC = (-2 LL + k ln(n)) / n
+    - Shibata = -2 LL / n + ln((n + 2 k) / n)
+    - Hannan-Quinn = (-2 LL + 2 k ln(ln(n))) / n
+    - Standard Error = √diag(H^-1), with H the negative Hessian of LL
+    - Robust Standard Error = √diag(H^-1 J H^-1), with J = Σ s_t s_t' the outer product of the
+      scores s_t of every observation (Bollerslev and Wooldridge, 1992)
+
+    The information criteria are per observation, as in R's rugarch. The Hessian and the
+    scores are central finite differences of the log-likelihood on returns scaled to a unit
+    Variance (where every weight is of the order of 1), converted to the weights of the
+    returns with the Jacobian of `_rescale_weights` (the delta method). The robust standard
+    errors remain valid when the innovation distribution is misspecified (quasi maximum
+    likelihood).
+
+    For more information, see the following papers:
+
+    - Bollerslev, T. and Wooldridge, J.M. (1992). "Quasi-Maximum Likelihood Estimation and
+    Inference in Dynamic Models with Time-Varying Covariances." Econometric Reviews, 11(2),
+    143-172.
+    - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
+    Volatility." The Journal of Finance, 48(5), 1749-1778.
+
+    Referenced against the information criteria, `persistence`, `halflife`, `uncvariance` and
+    `vcov` of R's rugarch and the "classic" and "robust" covariances of the arch package.
+
+    Args:
+        returns (np.ndarray): The returns.
+        weights (Sequence[float]): The fitted weights.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+
+    Returns:
+        dict[str, float]: The diagnostics, with a "<weight> Standard Error" and a
+        "<weight> Robust Standard Error" for every estimated weight.
+    """
+    returns = np.asarray(returns, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    names = get_garch_family_parameter_names(method, distribution, mean)
+    variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
+
+    log_likelihoods = get_garch_family_log_likelihood(
+        returns, weights, method, distribution, mean, per_observation=True
+    )
+    log_likelihood = float(np.sum(log_likelihoods))
+    observations = len(log_likelihoods)
+    estimated = len(names)
+    persistence = get_garch_family_persistence(
+        variance_weights, method, distribution, distribution_weights
+    )
+
+    diagnostics = {
+        "Persistence": persistence,
+        "Half-Life": (
+            math.log(0.5) / math.log(persistence) if 0 < persistence < 1 else math.nan
+        ),
+        "Unconditional Variance": get_garch_family_unconditional_variance(
+            variance_weights, method, distribution, distribution_weights
+        ),
+        "Log-Likelihood": log_likelihood,
+        "AIC": (-2 * log_likelihood + 2 * estimated) / observations,
+        "BIC": (-2 * log_likelihood + estimated * math.log(observations))
+        / observations,
+        "Shibata": -2 * log_likelihood / observations
+        + math.log((observations + 2 * estimated) / observations),
+        "Hannan-Quinn": (
+            -2 * log_likelihood + 2 * estimated * math.log(math.log(observations))
+        )
+        / observations,
+    }
+
+    scale = float(np.std(returns))
+    scale = scale if scale > 0 else 1.0
+    scaled = returns / scale
+    scaled_weights = _rescale_weights(weights, method, mean, 1 / scale)
+    backcast = get_backcast(_starting_residuals(scaled, mean))
+    steps = 1e-4 * np.maximum(np.abs(scaled_weights), 0.1)
+
+    def per_observation(point):
+        return get_garch_family_log_likelihood(
+            scaled, point, method, distribution, mean, backcast, per_observation=True
+        )
+
+    hessian = _numerical_hessian(
+        lambda point: float(np.sum(per_observation(point))), scaled_weights, steps
+    )
+    scores = np.column_stack(
+        [
+            (
+                per_observation(scaled_weights + np.eye(estimated)[i] * steps[i])
+                - per_observation(scaled_weights - np.eye(estimated)[i] * steps[i])
+            )
+            / (2 * steps[i])
+            for i in range(estimated)
+        ]
+    )
+    jacobian = np.column_stack(
+        [
+            (
+                _rescale_weights(
+                    scaled_weights + np.eye(estimated)[i] * steps[i],
+                    method,
+                    mean,
+                    scale,
+                )
+                - _rescale_weights(
+                    scaled_weights - np.eye(estimated)[i] * steps[i],
+                    method,
+                    mean,
+                    scale,
+                )
+            )
+            / (2 * steps[i])
+            for i in range(estimated)
+        ]
+    )
+
+    try:
+        inverse = np.linalg.inv(-hessian)
+        covariance = jacobian @ inverse @ jacobian.T
+        robust = jacobian @ inverse @ (scores.T @ scores) @ inverse @ jacobian.T
+    except np.linalg.LinAlgError:
+        covariance = robust = np.full((estimated, estimated), np.nan)
+
+    for i, name in enumerate(names):
+        diagnostics[f"{name} Standard Error"] = (
+            math.sqrt(covariance[i, i]) if covariance[i, i] >= 0 else math.nan
+        )
+    for i, name in enumerate(names):
+        diagnostics[f"{name} Robust Standard Error"] = (
+            math.sqrt(robust[i, i]) if robust[i, i] >= 0 else math.nan
+        )
+
+    return diagnostics
+
+
+def get_news_impact_curve(
+    weights,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    shocks: np.ndarray | None = None,
+) -> pd.Series:
+    """
+    Calculates the news impact curve of Engle and Ng (1993): the conditional variance of
+    the next period as a function of this period's shock, with the variance of this period
+    at the unconditional variance sigma^2 of the model.
+
+    The formula is as follows:
+
+    - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
+
+    Where z is the shock in unconditional standard deviations, sigma^2 the unconditional
+    variance (see `get_garch_family_unconditional_variance`) and, for the component model,
+    the long-run component also at sigma^2. IGARCH has no unconditional variance, so its
+    curve is NaN. A curve that rises faster to the left than to the right shows the
+    leverage effect: bad news raises volatility by more than good news of the same size.
+
+    For more information, see the following paper:
+
+    - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
+    Volatility." The Journal of Finance, 48(5), 1749-1778.
+
+    Referenced against `newsimpact` of R's rugarch.
+
+    Args:
+        weights (Sequence[float]): The fitted weights.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        shocks (np.ndarray | None, optional): The shocks z, in unconditional standard
+            deviations. Defaults to None, which uses -5, -4.5, ..., 5.
+
+    Returns:
+        pd.Series: The variance of the next period, indexed by the shock z.
+    """
+    shocks = np.linspace(-5, 5, 21) if shocks is None else np.asarray(shocks, float)
+    variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
+    variance = get_garch_family_unconditional_variance(
+        variance_weights, method, distribution, distribution_weights
+    )
+
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        news_impact, _ = _variance_step(method, variance_weights)(
+            np.full(len(shocks), variance), shocks * math.sqrt(variance), variance
+        )
+
+    return pd.Series(news_impact, index=pd.Index(shocks, name="Shock"))
+
+
+# The quantiles that summarize the simulated paths per step.
+SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
+
+
+def get_garch_simulation(
+    returns: np.ndarray,
+    weights=None,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "zero",
+    time_steps: int = 10,
+    paths: int = 10000,
+    seed: int | None = 0,
+    output: str = "returns",
+) -> pd.DataFrame:
+    """
+    Simulates paths of the returns and conditional volatility of a GARCH-family model from
+    the end of the sample and summarizes them per step: the mean and the 5th, 25th, 50th,
+    75th and 95th percentiles.
+
+    Every path starts from the fitted state after the last return (its one-step-ahead
+    variance and, for the ARMA(1, 1) mean, the last return and residual) and draws the
+    standardized innovations z_t from the fitted distribution (see
+    `get_standardized_draws`):
+
+    - e_t = sigma_t * z_t
+    - r_t = Mean_t + e_t, with Mean_t = 0, Mu, Mu + AR * r_(t-1) + MA * e_(t-1) or Mu + Lambda * sigma_t
+    - sigma_(t+1)^2 from the variance recursion of the model
+
+    Referenced against `ugarchsim` and `ugarchpath` of R's rugarch.
+
+    Args:
+        returns (np.ndarray): The returns.
+        weights (Sequence[float] | None, optional): The weights. Defaults to None, which fits them.
+        method (str, optional): The variance model. Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model. Defaults to "zero".
+        time_steps (int, optional): The number of periods to simulate. Defaults to 10.
+        paths (int, optional): The number of paths. Defaults to 10,000.
+        seed (int | None, optional): The seed of the random draws, None for a different
+            simulation every time. Defaults to 0.
+        output (str, optional): "returns" for the return of each step, "cumulative_returns"
+            for the compounded return from the end of the sample, (1 + r_1) ... (1 + r_h) - 1,
+            or "volatility" for sigma_t. Defaults to "returns".
+
+    Returns:
+        pd.DataFrame: The Mean and the percentiles per step (1 to time_steps).
+    """
+    validate_garch_family(method, distribution, mean)
+
+    if output not in ("returns", "cumulative_returns", "volatility"):
+        raise ValueError(
+            "The output must be returns, cumulative_returns or volatility."
+        )
+
+    returns = np.asarray(returns, dtype=float)
+
+    if weights is None:
+        weights = get_garch_family_weights(returns, method, distribution, mean)
+
+    variance_weights, mean_weights, distribution_weights = _split_weights(
+        weights, method, mean
+    )
+    backcast = get_backcast(_starting_residuals(returns, mean))
+    residuals, sigma2, long_run, _ = _garch_family_filter(
+        returns, weights, method, mean, backcast
+    )
+
+    rng = np.random.default_rng(seed)
+    step = _variance_step(method, variance_weights)
+    variance = np.full(paths, sigma2[-1])
+    long_run_state = np.full(paths, long_run[-1]) if long_run is not None else None
+    previous_return = np.full(paths, returns[-1])
+    previous_residual = np.full(paths, residuals[-1])
+
+    simulated = np.empty((time_steps, paths))
+    wealth = np.ones(paths)
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        for h in range(time_steps):
+            volatility = np.sqrt(variance)
+            residual = volatility * get_standardized_draws(
+                distribution, distribution_weights, paths, rng
+            )
+
+            if mean == "zero":
+                value = residual
+            elif mean == "constant":
+                value = mean_weights[0] + residual
+            elif mean == "arma":
+                value = (
+                    mean_weights[0]
+                    + mean_weights[1] * previous_return
+                    + mean_weights[2] * previous_residual
+                    + residual
+                )
+            else:
+                value = mean_weights[0] + mean_weights[1] * volatility + residual
+
+            wealth = wealth * (1 + value)
+            simulated[h] = {
+                "returns": value,
+                "cumulative_returns": wealth - 1,
+                "volatility": volatility,
+            }[output]
+
+            variance, long_run_state = step(variance, residual, long_run_state)
+            previous_return, previous_residual = value, residual
+
+    return pd.DataFrame(
+        {
+            "Mean": simulated.mean(axis=1),
+            **{
+                f"{quantile:.0%}": np.quantile(simulated, quantile, axis=1)
+                for quantile in SIMULATION_QUANTILES
+            },
+        },
+        index=pd.Index(np.arange(1, time_steps + 1), name="Step"),
+    )

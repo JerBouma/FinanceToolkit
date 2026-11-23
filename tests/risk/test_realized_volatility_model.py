@@ -255,3 +255,27 @@ def test_yang_zhang_volatility_leaves_out_a_bad_open():
     pd.testing.assert_series_equal(
         yang_zhang(bad), yang_zhang(ohlc), check_exact=False, rtol=0.01
     )
+
+
+def test_get_garman_klass_yang_zhang_volatility(recorder):
+    ohlc = _generate_ohlc()
+    result = realized_volatility_model.get_garman_klass_yang_zhang_volatility(
+        ohlc["Open"], ohlc["High"], ohlc["Low"], ohlc["Close"], period="monthly"
+    )
+    recorder.capture(result.round(4))
+
+    garman_klass = realized_volatility_model.get_garman_klass_volatility(
+        ohlc["Open"], ohlc["High"], ohlc["Low"], ohlc["Close"], period="monthly"
+    )
+
+    # Garman-Klass plus the squared overnight return; the scaling cancels in the ratio to Garman-Klass.
+    january = ohlc.loc["2021-01"]
+    overnight = np.log(january["Open"] / ohlc["Close"].shift(1).loc["2021-01"]) ** 2
+    session = (
+        0.5 * np.log(january["High"] / january["Low"]) ** 2
+        - (2 * np.log(2) - 1) * np.log(january["Close"] / january["Open"]) ** 2
+    )
+    # The first day has no previous Close, so its overnight return (and the day) is left out.
+    assert (result.iloc[0] / garman_klass.iloc[0]) ** 2 == pytest.approx(
+        (overnight + session).iloc[1:].mean() / session.mean()
+    )

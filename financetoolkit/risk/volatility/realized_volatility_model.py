@@ -228,6 +228,101 @@ def get_garman_klass_volatility(
 
 
 @by_own_trading_days
+def get_garman_klass_yang_zhang_volatility(
+    open_prices: pd.Series | pd.DataFrame,
+    high_prices: pd.Series | pd.DataFrame,
+    low_prices: pd.Series | pd.DataFrame,
+    close_prices: pd.Series | pd.DataFrame,
+    period: str,
+    groups: pd.Series | np.ndarray | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Garman-Klass Volatility with the overnight term of Yang and Zhang for a
+    given period (weekly, monthly, quarterly or yearly) based on daily Open, High, Low and
+    Close prices.
+
+    The Garman-Klass estimator assumes prices only move during the trading session, so it
+    misses the jump from the previous Close to the Open. Adding the squared overnight return,
+    as Yang and Zhang do for their own estimator, makes it account for that jump while
+    keeping the Garman-Klass term for the session itself.
+
+    The formula is as follows:
+
+    - Variance = (1 / N) * SUM[ln(Open_t / Close_t-1)^2 + 0.5 * ln(High_t / Low_t)^2 -
+      (2 * ln(2) - 1) * ln(Close_t / Open_t)^2]
+
+    Where `N` is the number of trading days within the period. The daily Variance is
+    scaled to the given period in the same way as `risk_model.get_volatility` and the
+    square root is taken to obtain Volatility. Like Garman-Klass, the overnight term is a
+    squared return rather than a Variance around the mean, so the estimator assumes no drift.
+
+    Also known as: GK-YZ Volatility, Garman-Klass Yang-Zhang Volatility.
+
+    For more information about the method, see the following papers:
+
+    - Garman, M.B., & Klass, M.J. (1980). "On the Estimation of Security Price
+    Volatilities from Historical Data." Journal of Business, 53(1), 67-78.
+    - Yang, D., & Zhang, Q. (2000). "Drift-Independent Volatility Estimation Based on
+    High, Low, Open, and Close Prices." Journal of Business, 73(3), 477-492.
+
+    Referenced against `volatility(calc = "gk.yz")` of R's TTR
+    (https://cran.r-project.org/package=TTR), which scales by a fixed number of days per year.
+
+    Args:
+        open_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Open prices.
+        high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
+        low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
+        period (str): The period to calculate the Volatility for. Can be weekly, monthly,
+        quarterly or yearly. Ignored when `groups` is provided.
+        groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
+        per row of the price inputs, to group by instead of deriving calendar periods
+        from the index via `.asfreq()`. Defaults to None, which requires a
+        DatetimeIndex/PeriodIndex.
+
+    Returns:
+        pd.Series | pd.DataFrame: Garman-Klass Yang-Zhang Volatility values with time (or
+        `groups`) as the index.
+
+    Notes:
+    - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
+    and is left out, and so is the first day, which has no previous Close; the period is
+    measured over the remaining days.
+    """
+    validate_period(period)
+
+    if not all(
+        isinstance(prices, pd.Series | pd.DataFrame)
+        for prices in (open_prices, high_prices, low_prices, close_prices)
+    ):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    days_per_period = get_days_per_period(close_prices, period, groups)
+
+    # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
+    # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
+    open_prices, high_prices, low_prices, close_prices = (
+        prices.where(prices > 0)
+        for prices in (open_prices, high_prices, low_prices, close_prices)
+    )
+
+    # Computed before grouping so a period transition lands in the next period.
+    overnight_returns = np.log(open_prices / close_prices.shift(1))
+    log_high_low = np.log(high_prices / low_prices)
+    log_close_open = np.log(close_prices / open_prices)
+
+    daily_term = (
+        overnight_returns**2
+        + 0.5 * log_high_low**2
+        - (2 * LN_2 - 1) * log_close_open**2
+    )
+
+    variance = _group_and_scale(daily_term, period, groups=groups)
+
+    return np.sqrt(variance) * np.sqrt(days_per_period)
+
+
+@by_own_trading_days
 def get_rogers_satchell_volatility(
     open_prices: pd.Series | pd.DataFrame,
     high_prices: pd.Series | pd.DataFrame,

@@ -26,8 +26,10 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class LiquidityRisk:
     """
-    Market liquidity: the Amihud illiquidity measure, the Roll spread and the EDGE, Corwin-Schultz
-    and Abdi-Ranaldo bid-ask spreads, the share turnover and the idiosyncratic volatility.
+    Market liquidity: the Amihud illiquidity measure, the price impact (Kyle's, Amihud's and
+    Hasbrouck's lambdas and the Roll impact), the Roll spread, the EDGE, Corwin-Schultz and
+    Abdi-Ranaldo bid-ask spreads, the Bekker-Parkinson volatility, the share turnover, the
+    idiosyncratic volatility and VPIN.
     """
 
     # The Toolkit sets this to a function returning the Weighted Average Shares of the
@@ -178,6 +180,210 @@ class LiquidityRisk:
 
         return finalize_dataset(
             dataset=illiquidity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_price_impact(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        method: Literal["kyle", "amihud", "hasbrouck", "roll"] = "kyle",
+        scale: float | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the price impact of trading per asset and period: how much the price moves per unit traded,
+        with Kyle's, Amihud's or Hasbrouck's lambda as the regression slopes of López de Prado (2018, chapter
+        19.4) or with the Roll Impact (section 19.3.1).
+
+        Each lambda is the slope of a regression, without an intercept, of the daily price changes on a
+        measure of the trading of the day, over the days within the period. A high value is an illiquid asset,
+        in which trading moves the price a lot:
+
+        - method="kyle": Kyle (1985) models market makers who cannot tell informed from uninformed orders and
+        move the price by λ per share of net order flow. The price change of a day is regressed on its Volume,
+        signed with the tick rule (a rise is buying, a fall selling).
+        - method="amihud": the absolute log return of a day is regressed on its dollar volume. This is the
+        regression form of the Amihud (2002) illiquidity ratio (`get_amihud_illiquidity`, the mean of the
+        ratios), which weighs the days by their dollar volume, so a quiet day with a large move does not
+        dominate it.
+        - method="hasbrouck": Hasbrouck (2009) uses the square root of the signed dollar volume, as the impact
+        of an order grows less than proportionally with its size. The log return of a day is regressed on the
+        square root of its dollar volume, signed with the tick rule.
+        - method="roll": the Roll (1984) spread of the period (see `get_roll_spread`) divided by the mean
+        dollar volume of its days, the spread paid per dollar traded.
+
+        The measures are mostly used to compare assets and periods: a rising lambda is a market that has
+        become thinner. Their level depends on the size of the asset (a large cap trades billions of dollars a
+        day), so compare assets of a similar size or look at the changes over time.
+
+        For more information about the methods, see the following sources:
+
+        - Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." Econometrica, 53(6), 1315-1335.
+        - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and Time-Series Effects." Journal of
+        Financial Markets, 5(1), 31-56.
+        - Hasbrouck, J. (2009). "Trading Costs and Returns for U.S. Equities: Estimating Effective Costs from
+        Daily Data." The Journal of Finance, 64(3), 1445-1477.
+        - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread in an Efficient Market."
+        The Journal of Finance, 39(4), 1127-1139.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections 19.3.1 and 19.4.
+
+        The formula is as follows:
+
+        With method="kyle":
+
+        - b_t = sign(ΔP_t), or b_(t-1) when ΔP_t = 0
+        - ΔP_t = λ * (b_t * V_t) + ε_t
+        - Kyle's Lambda = Σ(ΔP_t * b_t * V_t) / Σ((b_t * V_t)^2) * 1,000,000
+
+        With method="amihud":
+
+        - |r_t| = λ * DV_t + ε_t
+        - Amihud's Lambda = Σ(|r_t| * DV_t) / Σ(DV_t^2) * 1,000,000,000
+
+        With method="hasbrouck":
+
+        - b_t = sign(r_t), or b_(t-1) when r_t = 0
+        - r_t = λ * (b_t * √DV_t) + ε_t
+        - Hasbrouck's Lambda = Σ(r_t * b_t * √DV_t) / Σ(DV_t) * 1,000,000
+
+        With method="roll":
+
+        - Roll Spread = 2 * √(-Cov(ΔP_t, ΔP_(t-1)))
+        - Roll Impact = Roll Spread / Mean(DV_t) * 1,000,000,000
+
+        Where ΔP_t is the change of the Close, V_t the Volume, DV_t = Close_t * V_t the dollar volume and r_t
+        the log return of the Adjusted Close (continuously compounded) on day t; the sums, the covariance
+        (ddof=1) and the mean run over the days within the period. The default `scale` makes the measures of
+        stocks readable: Kyle's lambda is the change of the price per million shares of net buying, Amihud's
+        lambda the absolute log return per billion dollars traded (as `get_amihud_illiquidity` is shown),
+        Hasbrouck's lambda the log return per square root of a dollar times 1,000,000 and the Roll Impact the
+        spread in price units per billion dollars traded a day.
+
+        Also known as: price impact coefficient, Kyle's lambda, market depth, Amihud's lambda, Hasbrouck's
+        lambda, Roll impact.
+
+        Args:
+            period (str, optional): The period each regression runs within (weekly, monthly, quarterly or yearly).
+                Defaults to "monthly".
+            rolling (int, optional): Regress on the days of the last `rolling` periods together instead of one
+                period (e.g. period='monthly' and rolling=3 for a three-month lambda at every month end).
+                Defaults to None.
+            method (str, optional): The measure: "kyle", "amihud", "hasbrouck" or "roll". Defaults to "kyle".
+            scale (float | None, optional): A multiplier applied to the measure for readability. Defaults to
+                None, which uses 1,000,000 for method="kyle" and "hasbrouck" and 1,000,000,000 for "amihud" and
+                "roll".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the measure over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The price impact with the periods as the index and the assets as columns.
+
+        Notes:
+        - The method uses the daily prices of each asset on its own trading days; the price change and log
+        return of a day are those since the asset's previous trading day.
+        - A day without a price change keeps the sign of the last change (the tick rule), as in the book.
+        - A period with fewer than two days, or for method="roll" with fewer than three pairs of consecutive
+        price changes within the period or an autocovariance of zero or above (no Roll spread), is NaN.
+        - The book's lambdas are regression slopes. mlfinlab's bar-based lambdas are the rolling means of the
+        ratios (ΔP_t / (b_t * V_t) and the like) instead, which weigh every day equally however little traded
+        on it; its trades-based Kyle and Amihud lambdas are the regressions and equal these. Its Roll impact
+        divides 2 * √|Cov| by the dollar volume of the last day; here a positive autocovariance is NaN, as in
+        `get_roll_spread`, and the spread is divided by the mean dollar volume of the period.
+        - Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SNAP", "ETSY", "LYFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-06-30",
+        )
+
+        toolkit.risk.get_price_impact()
+        ```
+
+        Which returns:
+
+        | Date    |   SNAP |   ETSY |   LYFT |   Benchmark |
+        |:--------|-------:|-------:|-------:|------------:|
+        | 2025-01 | 0.0121 | 0.3753 | 0.018  |      0.091  |
+        | 2025-02 | 0.008  | 0.2696 | 0.0139 |      0.089  |
+        | 2025-03 | 0.008  | 0.2065 | 0.0151 |      0.0879 |
+        | 2025-04 | 0.0079 | 0.2512 | 0.0307 |      0.1089 |
+        | 2025-05 | 0.006  | 0.2008 | 0.0263 |      0.0672 |
+        | 2025-06 | 0.0061 | 0.1986 | 0.0166 |      0.0462 |
+        """
+        if method not in ("kyle", "amihud", "hasbrouck", "roll"):
+            raise ValueError("Method must be kyle, amihud, hasbrouck or roll.")
+
+        period = period if period else "monthly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        scale = (
+            scale
+            if scale is not None
+            else {
+                "kyle": 1_000_000,
+                "amihud": 1_000_000_000,
+                "hasbrouck": 1_000_000,
+                "roll": 1_000_000_000,
+            }[method]
+        )
+        close, volume = self._get_prices("Close"), self._get_prices("Volume")
+        dollar_volume = close * volume
+
+        if method == "kyle":
+            impact = market_liquidity_model.get_kyle_lambda(
+                close, volume, period, rolling, scale
+            )
+        elif method == "roll":
+            impact = market_liquidity_model.get_roll_impact(
+                close, dollar_volume, period, rolling, scale
+            )
+        else:
+            estimator = (
+                market_liquidity_model.get_amihud_lambda
+                if method == "amihud"
+                else market_liquidity_model.get_hasbrouck_lambda
+            )
+            impact = estimator(
+                self._get_prices("Adj Close"), dollar_volume, period, rolling, scale
+            )
+
+        impact = impact.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=impact,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -521,6 +727,141 @@ class LiquidityRisk:
 
     @handle_portfolio
     @handle_errors
+    def get_bekker_parkinson_volatility(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Bekker-Parkinson Volatility per asset and period: the volatility in the daily High/Low
+        range once the bid-ask spread of Corwin and Schultz (2012) is taken out.
+
+        The daily High is almost always a trade at the ask and the daily Low one at the bid, so the range of a
+        day holds both the volatility and the spread, and a range-based volatility such as Parkinson's
+        overstates the volatility of an asset with a wide spread. Corwin and Schultz write the expected squared
+        range of one day and of two days in terms of the spread and the volatility; the spread part does not
+        grow with the length of the window while the volatility part does. Solving the two equations for the
+        spread gives the Corwin-Schultz spread (`get_bid_ask_spread` with method="corwin_schultz"), and solving
+        them for the volatility gives this estimate, as López de Prado (2018, section 19.3.2 and snippet 19.2)
+        does; mlfinlab and RiskLabAI name it the Bekker-Parkinson volatility.
+
+        For more information about the method, see the following sources:
+
+        - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low
+        Prices." The Journal of Finance, 67(2), 719-760.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 19.3.2.
+        - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the Rate of Return."
+        Journal of Business, 53(1), 61-65.
+
+        The formula is as follows:
+
+        - β = [ln(H_t / L_t)]^2 + [ln(H_(t+1) / L_(t+1))]^2
+        - γ = [ln(max(H_t, H_(t+1)) / min(L_t, L_(t+1)))]^2
+        - k_2 = √(8 / π)
+        - σ_t = max((√(β / 2) - √β) / (k_2 * (3 - 2√2)) + √(γ / (k_2^2 * (3 - 2√2))), 0)
+        - Bekker-Parkinson Volatility = Mean(σ_t within the period) * √(Trading Days per Period)
+
+        Where H and L are the daily High and Low of two consecutive trading days t and t+1 of the asset, with
+        the overnight adjustment of day t+1 of the Corwin-Schultz spread. σ_t is the volatility of the log price
+        (continuously compounded) over one day; the mean is scaled to the period as the Parkinson Volatility of
+        `get_volatility` is, by the square root of the trading days per period (252 / 12 for monthly, or
+        365 / 12 for a ticker that trades on weekends).
+
+        Also known as: Corwin-Schultz volatility, spread-adjusted high-low volatility.
+
+        Args:
+            period (str, optional): The period to estimate the volatility over and scale to (weekly, monthly,
+                quarterly or yearly). Defaults to "monthly", as for the Corwin-Schultz spread.
+            rolling (int, optional): Average the two-day volatilities of the last `rolling` periods instead of
+                one period (e.g. period='monthly' and rolling=3 for a three-month estimate at every month end).
+                Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the volatility over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The volatility as a decimal, with the periods as the index and the assets as columns.
+
+        Notes:
+        - The pairs are those of the Corwin-Schultz spread: consecutive trading days of the asset of which both
+        fall within the period, without days with a price of 0 or below.
+        - A two-day volatility below zero (the range over both days is narrow relative to the single days) is
+        set to 0 before the average is taken, as in López de Prado's snippet 19.2.
+        - mlfinlab's `get_bekker_parkinson_vol` and RiskLabAI's `bekker_parkinson_volatility_estimates` average
+        β over a rolling window of days but take γ of the last pair only, and do not adjust for the overnight
+        return. Here σ is taken per pair and averaged per period, as the Corwin-Schultz spread is; per pair the
+        two are the same. Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab) and
+        RiskLabAI (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SNAP", "ETSY", "LYFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-06-30",
+        )
+
+        toolkit.risk.get_bekker_parkinson_volatility()
+        ```
+
+        Which returns:
+
+        | Date    |   SNAP |   ETSY |   LYFT |   Benchmark |
+        |:--------|-------:|-------:|-------:|------------:|
+        | 2025-01 | 0.1554 | 0.1103 | 0.1333 |      0.03   |
+        | 2025-02 | 0.1062 | 0.1188 | 0.1899 |      0.0311 |
+        | 2025-03 | 0.1375 | 0.1276 | 0.1383 |      0.0458 |
+        | 2025-04 | 0.1692 | 0.1336 | 0.1422 |      0.0851 |
+        | 2025-05 | 0.1086 | 0.1143 | 0.1353 |      0.0319 |
+        | 2025-06 | 0.1184 | 0.1271 | 0.0643 |      0.0236 |
+        """
+        period = period if period else "monthly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        volatility = market_liquidity_model.get_bekker_parkinson_volatility(
+            self._get_prices("High"),
+            self._get_prices("Low"),
+            self._get_prices("Close"),
+            period,
+            rolling,
+        )
+
+        volatility = volatility.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=volatility,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_share_turnover(
         self,
         period: str | None = None,
@@ -818,4 +1159,127 @@ class LiquidityRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_vpin(
+        self,
+        buckets: int = 50,
+        window: int = 50,
+        degrees_of_freedom: float | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Volume-Synchronized Probability of Informed Trading (VPIN) of Easley, López de Prado and
+        O'Hara (2012) per asset and day, from daily bars.
+
+        VPIN measures the toxicity of the order flow, the share of the volume that is one-sided: informed traders
+        buy (or sell) persistently, while uninformed trading roughly balances. The volume is cut into buckets of
+        the same size (a volume clock rather than a time clock), the volume of each bucket is split into buys and
+        sells with the Bulk Volume Classification (a large rise is mostly buying, a day without a change half
+        buying and half selling) and VPIN is the mean order imbalance over the last 50 buckets. A high VPIN
+        means a one-sided market in which market makers lose to informed traders and may withdraw; the paper
+        finds that VPIN was at its highest in the hours before the flash crash of 6 May 2010.
+
+        This is a coarse approximation of a measure designed for intraday data. The paper fills 50 buckets a day
+        from one-minute bars, so its VPIN measures the toxicity within a day. On daily bars the finest
+        classification is a whole day, which nets the buying and selling within it, and a bucket holds about a
+        day of volume, so VPIN here is a slow-moving estimate of the one-sidedness of the volume over about 50
+        trading days. Use it to compare assets and periods, not as the published intraday VPIN or as a warning
+        of an intraday liquidity crash.
+
+        For more information about the method, see the following sources:
+
+        - Easley, D., López de Prado, M., & O'Hara, M. (2012). "Flow Toxicity and Liquidity in a High-Frequency
+        World." The Review of Financial Studies, 25(5), 1457-1493.
+        - Easley, D., López de Prado, M., & O'Hara, M. (2016). "Discerning Information from Trade Data." Journal
+        of Financial Economics, 120(2), 269-285.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 19.5.2.
+
+        The formula is as follows:
+
+        - ΔP_t = P_t - P_(t-1)
+        - V^B_t = V_t * Z(ΔP_t / σ_ΔP)
+        - V^B_τ = the buy volume of the volume in bucket τ, V^S_τ = V - V^B_τ
+        - VPIN = Σ |V^S_τ - V^B_τ| / (n * V) over the last n buckets
+
+        Where P is the Adjusted Close and V_t the Volume of day t, Z the cumulative distribution function of the
+        standard normal distribution (or of the Student-t distribution with `degrees_of_freedom`), σ_ΔP the
+        sample standard deviation (ddof=1) of the price changes of the last `window` days, V the volume of a
+        bucket and n the number of `buckets`.
+
+        Also known as: volume-synchronized probability of informed trading, flow toxicity, order flow toxicity,
+        bulk volume classification, BVC.
+
+        Args:
+            buckets (int, optional): The number of buckets n VPIN is the mean over. Defaults to 50, as in the
+                paper.
+            window (int, optional): The number of days the standard deviation of the price changes of the
+                classification is taken over. Defaults to 50.
+            degrees_of_freedom (float | None, optional): The degrees of freedom of a Student-t distribution for
+                the classification, as in Easley, López de Prado and O'Hara (2016), instead of the standard normal
+                distribution. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: VPIN between 0 and 1, with the dates as the index and the assets as columns.
+
+        Notes:
+        - The volume of a bucket is the mean daily Volume of the asset over the data of the Toolkit, so a bucket
+        holds about a day of trading. It sets the length of the volume clock; the classification and VPIN of a
+        day otherwise use the data up to that day only.
+        - A day that fills more than the rest of a bucket carries its excess volume into the next bucket with its
+        own buy share, as in the paper, so every bucket holds the same volume.
+        - VPIN is updated on the day a bucket completes and kept on the days in between; it is NaN until the
+        first `window` days are classified and `buckets` buckets are complete, so start the Toolkit about half
+        a year before the first date of interest.
+        - The days are those the asset traded on; the Adjusted Close keeps a dividend from counting as selling.
+        - mlfinlab's `get_vpin` takes the bars as given and divides their mean imbalance by the volume of the
+        last bar, which is the same on buckets of equal volume; its `get_bvc_buy_volume` is the classification.
+        Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SNAP", "ETSY", "LYFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-07-01",
+            end_date="2025-06-30",
+        )
+
+        toolkit.risk.get_vpin().tail()
+        ```
+
+        Which returns:
+
+        | Date       |   SNAP |   ETSY |   LYFT |   Benchmark |
+        |:-----------|-------:|-------:|-------:|------------:|
+        | 2025-06-24 | 0.3767 | 0.5349 | 0.4046 |      0.2362 |
+        | 2025-06-25 | 0.3715 | 0.5349 | 0.4046 |      0.2376 |
+        | 2025-06-26 | 0.3662 | 0.535  | 0.4079 |      0.2277 |
+        | 2025-06-27 | 0.3903 | 0.5428 | 0.4059 |      0.2315 |
+        | 2025-06-30 | 0.371  | 0.5324 | 0.4059 |      0.2435 |
+        """
+        vpin = market_liquidity_model.get_vpin(
+            self._get_prices("Adj Close"),
+            self._get_prices("Volume"),
+            buckets=buckets,
+            window=window,
+            degrees_of_freedom=degrees_of_freedom,
+        )
+
+        vpin = vpin.loc[self._start_date : self._end_date]
+
+        return apply_rounding(
+            vpin, rounding if rounding is not None else self._rounding
         )

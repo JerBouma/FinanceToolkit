@@ -1734,3 +1734,44 @@ def test_get_acerbi_szekely_test_garch(recorder, risk_module):
     recorder.capture(
         risk_module.get_acerbi_szekely_test(distribution="garch", refit_every=63)
     )
+
+
+def test_get_price_impact(recorder, risk_module):
+    recorder.capture(risk_module.get_price_impact())
+    for method in ("amihud", "hasbrouck", "roll"):
+        recorder.capture(risk_module.get_price_impact(method=method))
+    recorder.capture(risk_module.get_price_impact(period="quarterly", rolling=2))
+    recorder.capture(risk_module.get_price_impact(method="amihud", scale=1e12))
+
+    pd.testing.assert_frame_equal(
+        risk_module.get_price_impact(), risk_module.get_price_impact(method="kyle")
+    )
+    assert risk_module.get_price_impact(method="lambda").empty
+
+
+def test_get_bekker_parkinson_volatility(recorder, risk_module):
+    recorder.capture(risk_module.get_bekker_parkinson_volatility())
+    recorder.capture(
+        risk_module.get_bekker_parkinson_volatility(period="quarterly", rolling=2)
+    )
+
+    # Taking the spread out leaves at most the range-based (Parkinson) volatility on average.
+    volatility = risk_module.get_bekker_parkinson_volatility(
+        period="yearly", rounding=10
+    )
+    parkinson = risk_module.get_volatility(
+        period="yearly", method="parkinson", rounding=10
+    )
+    assert (volatility.mean() <= parkinson.reindex(volatility.index).mean()).all()
+
+
+def test_get_vpin(recorder, risk_module):
+    result = risk_module.get_vpin()
+    recorder.capture(result.dropna(how="all").iloc[::20])
+    recorder.capture(
+        risk_module.get_vpin(buckets=20, degrees_of_freedom=0.25)
+        .dropna(how="all")
+        .iloc[::20]
+    )
+
+    assert result.stack().dropna().between(0, 1).all()

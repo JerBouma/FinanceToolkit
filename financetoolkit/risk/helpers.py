@@ -568,6 +568,131 @@ def average_two_day_spreads(spreads: pd.Series, rolling: int | None, name) -> pd
     return (totals / counts).rename(name)
 
 
+def get_corwin_schultz_pairs(
+    high_prices: pd.Series,
+    low_prices: pd.Series,
+    close_prices: pd.Series,
+    period: str,
+) -> pd.DataFrame:
+    """
+    The β and γ of Corwin and Schultz (2012) of each pair of consecutive trading days within
+    a period, which both the Corwin-Schultz spread and the Bekker-Parkinson volatility take.
+
+    The second day of a pair is adjusted for the overnight return as in section III.B of the
+    paper: when its Low is above the previous Close, its High and Low are lowered by the gap,
+    and when its High is below the previous Close, they are raised by the gap.
+
+    Args:
+        high_prices (pd.Series): The daily High prices.
+        low_prices (pd.Series): The daily Low prices.
+        close_prices (pd.Series): The daily Close prices.
+        period (str): The period both days of a pair fall within: weekly, monthly, quarterly
+            or yearly.
+
+    Returns:
+        pd.DataFrame: The columns Beta and Gamma, one row per pair, with the period of the
+        pair as the index.
+    """
+    prices = pd.concat([high_prices, low_prices, close_prices], axis=1)
+    # A bad bar (a price of 0 or below) has no logarithm, and a day without a High, Low or Close is not a trading day of the asset, so both leave the pairs.  # noqa: E501
+    prices = prices.where(prices > 0).dropna()
+    periods = to_period_index(prices.index).asfreq(PERIOD_TRANSLATION[period])
+
+    high, low, close = (prices.iloc[:, number].to_numpy() for number in range(3))
+
+    # The overnight adjustment of the second day: only one of the two gaps can be positive.
+    shift = np.maximum(close[:-1] - high[1:], 0) - np.maximum(low[1:] - close[:-1], 0)
+    second_high = high[1:] + shift
+    second_low = low[1:] + shift
+
+    beta = np.log(high[:-1] / low[:-1]) ** 2 + np.log(second_high / second_low) ** 2
+    gamma = (
+        np.log(np.maximum(high[:-1], second_high) / np.minimum(low[:-1], second_low))
+        ** 2
+    )
+
+    same_period = np.asarray(periods[1:] == periods[:-1])
+
+    return pd.DataFrame(
+        {"Beta": beta[same_period], "Gamma": gamma[same_period]},
+        index=periods[1:][same_period],
+    )
+
+
+def sum_per_period(values: pd.DataFrame, rolling: int | None) -> pd.DataFrame:
+    """
+    The sums of the observations per period, or over the last `rolling` periods, for the
+    estimators that follow from sums (a regression slope, a covariance, a mean).
+
+    A rolling window spans `rolling` periods of the calendar: a period without observations
+    is a row of its own, so a window that holds one is NaN.
+
+    Args:
+        values (pd.DataFrame): The observations, one row each, with their period as the
+            index.
+        rolling (int | None): The number of periods summed together, or None for one
+            period.
+
+    Returns:
+        pd.DataFrame: The sums with the periods as the index.
+    """
+    sums = values.groupby(level=0).sum()
+
+    if not rolling or sums.empty:
+        return sums
+
+    full_range = pd.period_range(
+        sums.index.min(), sums.index.max(), freq=sums.index.freq
+    )
+
+    return sums.reindex(full_range).rolling(rolling).sum()
+
+
+def get_slope_through_origin(
+    dependent: pd.Series,
+    regressor: pd.Series,
+    period: str,
+    rolling: int | None,
+    minimum_observations: int = 2,
+) -> pd.Series:
+    """
+    The slope of a least squares regression without an intercept, y_t = λ * x_t + ε_t, of the
+    observations within each period (or the last `rolling` periods): λ = Σ(x_t * y_t) / Σ(x_t^2).
+
+    This is the regression form of the price impact coefficients (Kyle's, Amihud's and
+    Hasbrouck's lambda) of López de Prado (2018), chapter 19.4.
+
+    Args:
+        dependent (pd.Series): The dependent variable y_t, with a daily DatetimeIndex or
+            PeriodIndex.
+        regressor (pd.Series): The regressor x_t on the same dates.
+        period (str): The period each regression runs within: weekly, monthly, quarterly or
+            yearly.
+        rolling (int | None): Regress on the observations of the last `rolling` periods
+            instead of a single period; a window with a period without observations is NaN.
+        minimum_observations (int, optional): The fewest observations a regression runs on.
+            Defaults to 2.
+
+    Returns:
+        pd.Series: The slope per period, NaN for a period with fewer than
+        `minimum_observations` observations or with a regressor of 0 throughout.
+    """
+    data = pd.concat([dependent, regressor], axis=1).dropna()
+    periods = to_period_index(data.index).asfreq(PERIOD_TRANSLATION[period])
+    y, x = data.iloc[:, 0].to_numpy(), data.iloc[:, 1].to_numpy()
+
+    sums = sum_per_period(
+        pd.DataFrame({"XY": x * y, "XX": x * x, "Count": 1.0}, index=periods), rolling
+    )
+
+    if sums.empty:
+        return pd.Series(dtype=float, name=dependent.name)
+
+    estimable = (sums["Count"] >= minimum_observations) & (sums["XX"] > 0)
+
+    return (sums["XY"] / sums["XX"].where(estimable)).rename(dependent.name)
+
+
 def get_paired_windows(
     returns: pd.Series,
     market_returns: pd.Series,

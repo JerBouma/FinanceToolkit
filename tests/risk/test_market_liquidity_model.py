@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.risk.liquidity import market_liquidity_model
 
@@ -583,3 +584,264 @@ def test_get_edge_spread_without_price_changes_is_nan():
         market_liquidity_model.get_edge_spread(1, 2, 3, 4)  # type: ignore
     with pytest.raises(TypeError):
         market_liquidity_model.get_abdi_ranaldo_spread(1, 2, 3)  # type: ignore
+
+
+def daily_bars(days: int = 120, seed: int = 7) -> pd.DataFrame:
+    """Weekday Close, High, Low and Volume of a random walk with a bid-ask bounce."""
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2024-01-01", periods=days).to_period("D")
+    close = 50 * np.exp(np.cumsum(rng.normal(0, 0.01, days)))
+    close = np.round(close + rng.choice([-0.05, 0.05], days), 2)
+
+    return pd.DataFrame(
+        {
+            "High": close * (1 + np.abs(rng.normal(0, 0.01, days))),
+            "Low": close * (1 - np.abs(rng.normal(0, 0.01, days))),
+            "Close": close,
+            "Volume": np.round(rng.lognormal(14, 0.5, days)),
+        },
+        index=dates,
+    )
+
+
+def test_get_bekker_parkinson_volatility_matches_the_formula(recorder):
+    # Three days in one month without an overnight gap (each Close lies in the next day's range).
+    dates = pd.period_range("2024-01-02", periods=3, freq="D")
+    high = pd.Series([101.0, 102.0, 101.5], index=dates)
+    low = pd.Series([99.0, 99.5, 99.8], index=dates)
+    close = pd.Series([100.5, 100.0, 100.0], index=dates)
+
+    result = market_liquidity_model.get_bekker_parkinson_volatility(high, low, close)
+
+    k2 = np.sqrt(8 / np.pi)
+    denominator = 3 - 2 * np.sqrt(2)
+    sigmas = []
+    for first, second in ((0, 1), (1, 2)):
+        beta = np.log(high.iloc[first] / low.iloc[first]) ** 2 + (
+            np.log(high.iloc[second] / low.iloc[second]) ** 2
+        )
+        gamma = (
+            np.log(
+                max(high.iloc[first], high.iloc[second])
+                / min(low.iloc[first], low.iloc[second])
+            )
+            ** 2
+        )
+        sigma = (np.sqrt(beta / 2) - np.sqrt(beta)) / (k2 * denominator) + np.sqrt(
+            gamma / (k2**2 * denominator)
+        )
+        sigmas.append(max(sigma, 0))
+    days_per_period = market_liquidity_model.get_days_per_period(high, "monthly")
+
+    assert result.iloc[0] == pytest.approx(
+        np.mean(sigmas) * np.sqrt(days_per_period), rel=1e-12
+    )
+    recorder.capture(result.round(6))
+
+
+def test_get_bekker_parkinson_volatility_rolling_and_dataframe(recorder):
+    bars = daily_bars()
+    frame = pd.DataFrame({"A": bars["High"], "B": bars["High"] * 2})
+
+    monthly = market_liquidity_model.get_bekker_parkinson_volatility(
+        frame,
+        pd.DataFrame({"A": bars["Low"], "B": bars["Low"] * 2}),
+        pd.DataFrame({"A": bars["Close"], "B": bars["Close"] * 2}),
+    )
+    rolling = market_liquidity_model.get_bekker_parkinson_volatility(
+        bars["High"], bars["Low"], bars["Close"], "monthly", rolling=2
+    )
+
+    # The volatility is that of the log price, so it does not change with the price level.
+    pd.testing.assert_series_equal(monthly["A"], monthly["B"], check_names=False)
+    assert (monthly["A"] >= 0).all()
+    assert np.isnan(rolling.iloc[0])
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_bekker_parkinson_volatility(1, 2, 3)  # type: ignore
+    recorder.capture(monthly.round(6))
+    recorder.capture(rolling.round(6))
+
+
+def test_price_impact_lambdas_recover_an_exact_impact():
+    # Prices built from λ times the signed order flow are fitted exactly by each regression.
+    rng = np.random.default_rng(3)
+    dates = pd.bdate_range("2024-01-01", periods=60).to_period("D")
+    signs = rng.choice([-1.0, 1.0], len(dates))
+    volume = pd.Series(rng.lognormal(12, 0.5, len(dates)), index=dates)
+
+    kyle_prices = pd.Series(
+        100 + np.cumsum(np.r_[0, 2e-6 * (signs * volume.to_numpy())[1:]]), index=dates
+    )
+    log_returns = np.r_[0, 1e-4 * (signs * np.sqrt(volume.to_numpy()))[1:]]
+    hasbrouck_prices = pd.Series(100 * np.exp(np.cumsum(log_returns)), index=dates)
+
+    kyle = market_liquidity_model.get_kyle_lambda(
+        kyle_prices, volume, "monthly", scale=1
+    )
+    hasbrouck = market_liquidity_model.get_hasbrouck_lambda(
+        hasbrouck_prices, volume, "monthly", scale=1
+    )
+    # |r_t| = λ * DV_t: the dollar volume that gives each absolute return.
+    amihud_volume = pd.Series(np.abs(log_returns) / 3e-9, index=dates)
+    amihud = market_liquidity_model.get_amihud_lambda(
+        hasbrouck_prices, amihud_volume, "monthly", scale=1
+    )
+
+    np.testing.assert_allclose(kyle.to_numpy(), 2e-6, rtol=1e-9)
+    np.testing.assert_allclose(hasbrouck.to_numpy(), 1e-4, rtol=1e-9)
+    np.testing.assert_allclose(amihud.to_numpy(), 3e-9, rtol=1e-9)
+
+
+def test_get_kyle_lambda_matches_least_squares(recorder):
+    bars = daily_bars()
+    result = market_liquidity_model.get_kyle_lambda(
+        bars["Close"], bars["Volume"], "monthly"
+    )
+    rolling = market_liquidity_model.get_kyle_lambda(
+        bars["Close"], bars["Volume"], "monthly", rolling=2
+    )
+
+    change = bars["Close"].diff()
+    # The tick rule: a day without a change keeps the sign of the last change.
+    sign = np.sign(change).replace(0, np.nan).ffill()
+    months = bars.index.asfreq("M")
+    for month in result.index:
+        rows = (months == month) & sign.notna()
+        regressor = (sign * bars["Volume"])[rows].to_numpy()[:, None]
+        slope = np.linalg.lstsq(regressor, change[rows].to_numpy(), rcond=None)[0][0]
+        assert result[month] == pytest.approx(slope * 1_000_000, rel=1e-10)
+
+    rows = (months >= result.index[0]) & (months <= result.index[1]) & sign.notna()
+    regressor, target = (sign * bars["Volume"])[rows], change[rows]
+    assert rolling.iloc[1] == pytest.approx(
+        (regressor * target).sum() / (regressor**2).sum() * 1_000_000, rel=1e-10
+    )
+    assert np.isnan(rolling.iloc[0])
+    recorder.capture(result.round(6))
+    recorder.capture(rolling.round(6))
+
+
+def test_get_amihud_and_hasbrouck_lambda(recorder):
+    bars = daily_bars()
+    dollar_volume = bars["Close"] * bars["Volume"]
+    frame = pd.DataFrame({"A": bars["Close"], "B": bars["Close"]})
+    volumes = pd.DataFrame({"A": dollar_volume, "B": dollar_volume * 4})
+
+    amihud = market_liquidity_model.get_amihud_lambda(frame, volumes, "quarterly")
+    hasbrouck = market_liquidity_model.get_hasbrouck_lambda(frame, volumes, "quarterly")
+
+    log_return = np.log(bars["Close"]).diff()
+    quarters = bars.index.asfreq("Q")
+    first = (quarters == quarters[0]) & log_return.notna()
+    expected = (log_return.abs() * dollar_volume)[first].sum() / (
+        dollar_volume[first] ** 2
+    ).sum()
+    assert amihud["A"].iloc[0] == pytest.approx(expected * 1_000_000, rel=1e-10)
+    # Four times the dollar volume: a quarter of Amihud's lambda and half of Hasbrouck's.
+    np.testing.assert_allclose(amihud["B"], amihud["A"] / 4, rtol=1e-10)
+    np.testing.assert_allclose(hasbrouck["B"], hasbrouck["A"] / 2, rtol=1e-10)
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_hasbrouck_lambda(1, 2)  # type: ignore
+    recorder.capture(amihud.round(6))
+    recorder.capture(hasbrouck.round(6))
+
+
+def test_get_roll_impact(recorder):
+    bars = daily_bars()
+    dollar_volume = bars["Close"] * bars["Volume"]
+
+    result = market_liquidity_model.get_roll_impact(
+        bars["Close"], dollar_volume, "monthly", scale=1
+    )
+
+    months = bars.index.asfreq("M")
+    for month in result.index:
+        rows = months == month
+        changes = bars["Close"][rows].diff().dropna().to_numpy()
+        autocovariance = np.cov(changes[:-1], changes[1:], ddof=1)[0, 1]
+        if autocovariance >= 0:
+            assert np.isnan(result[month])
+            continue
+        expected = 2 * np.sqrt(-autocovariance) / dollar_volume[rows].mean()
+        assert result[month] == pytest.approx(expected, rel=1e-10)
+
+    assert result.notna().any()
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_roll_impact(1, 2)  # type: ignore
+    recorder.capture(result.round(12))
+
+
+def test_get_bulk_volume_classification(recorder):
+    bars = daily_bars()
+
+    normal = market_liquidity_model.get_bulk_volume_classification(
+        bars["Close"], bars["Volume"], window=20
+    )
+    student = market_liquidity_model.get_bulk_volume_classification(
+        bars["Close"], bars["Volume"], window=20, degrees_of_freedom=0.25
+    )
+
+    change = bars["Close"].diff()
+    standardized = change / change.rolling(20).std()
+    pd.testing.assert_series_equal(
+        normal, bars["Volume"] * stats.norm.cdf(standardized), check_names=False
+    )
+    pd.testing.assert_series_equal(
+        student,
+        bars["Volume"] * stats.t.cdf(standardized, 0.25),
+        check_names=False,
+    )
+    assert normal.iloc[:20].isna().all()
+    recorder.capture(normal.round(2))
+
+
+def test_get_vpin_equal_buckets_and_split_days(recorder, monkeypatch):
+    # Three days with a buy share of 0.9, 0.2 and 0.6 and volumes of 1.5, 0.5 and 1 bucket.
+    dates = pd.period_range("2024-01-01", periods=4, freq="D")
+    prices = pd.Series([100.0, 101.0, 100.5, 101.0], index=dates)
+    volume = pd.Series([1.0, 150.0, 50.0, 100.0], index=dates)
+    shares = pd.Series([np.nan, 0.9, 0.2, 0.6], index=dates)
+
+    monkeypatch.setattr(
+        market_liquidity_model,
+        "get_bulk_volume_classification",
+        lambda prices, volume, window, degrees_of_freedom: volume
+        * shares,  # noqa: ARG005
+    )
+    result = market_liquidity_model.get_vpin(
+        prices, volume, buckets=2, bucket_volume=100
+    )
+
+    # Bucket 1 is 100 of day 1 (90 bought), bucket 2 is 50 of day 1 and 50 of day 2 (45 + 10
+    # bought) and bucket 3 is day 3 (60 bought).
+    first = (abs(100 - 2 * 90) + abs(100 - 2 * 55)) / 200
+    second = (abs(100 - 2 * 55) + abs(100 - 2 * 60)) / 200
+    assert np.isnan(result.iloc[0]) and np.isnan(result.iloc[1])
+    assert result.iloc[2] == pytest.approx(first)
+    assert result.iloc[3] == pytest.approx(second)
+    recorder.capture(result)
+
+
+def test_get_vpin(recorder):
+    bars = daily_bars(days=200)
+    frame = pd.DataFrame({"A": bars["Close"], "B": bars["Close"]})
+    volume = pd.DataFrame({"A": bars["Volume"], "B": bars["Volume"].mean()})
+
+    result = market_liquidity_model.get_vpin(frame, volume, buckets=20, window=20)
+    equal = market_liquidity_model.get_bulk_volume_classification(
+        bars["Close"], volume["B"], window=20
+    )
+    imbalance = (volume["B"] - 2 * equal).abs()
+
+    # With the same volume every day, each day is a bucket and VPIN is a rolling mean.
+    pd.testing.assert_series_equal(
+        result["B"],
+        imbalance.rolling(20).sum() / (20 * volume["B"]),
+        check_names=False,
+        rtol=1e-10,
+    )
+    assert result["A"].dropna().between(0, 1).all()
+    assert result["A"].notna().any()
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_vpin(1, 2)  # type: ignore
+    recorder.capture(result.round(6))

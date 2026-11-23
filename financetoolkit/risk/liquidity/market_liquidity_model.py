@@ -5,8 +5,15 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
-from financetoolkit.risk.helpers import average_two_day_spreads
+from financetoolkit.risk.helpers import (
+    average_two_day_spreads,
+    get_corwin_schultz_pairs,
+    get_days_per_period,
+    get_slope_through_origin,
+    sum_per_period,
+)
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
@@ -25,8 +32,22 @@ MINIMUM_ROLL_OBSERVATIONS = 3
 # The denominator 3 - 2√2 of alpha in Corwin and Schultz (2012).
 CORWIN_SCHULTZ_DENOMINATOR = 3 - 2 * np.sqrt(2)
 
+# k_2 = E[ln(H / L)] / σ = √(8 / π) for a Brownian motion within a day, the constant of the
+# Bekker-Parkinson volatility in Corwin and Schultz (2012).
+BEKKER_PARKINSON_K2 = np.sqrt(8 / np.pi)
+
 # EDGE needs at least two pairs of days with a price change, as in the authors' implementation.
 MINIMUM_EDGE_PRICE_CHANGES = 2
+
+# The price impact regressions have one coefficient, so they need two observations.
+MINIMUM_LAMBDA_OBSERVATIONS = 2
+
+# Easley, López de Prado and O'Hara (2012) measure VPIN over 50 volume buckets.
+VPIN_BUCKETS = 50
+
+# The share of a bucket by which the cumulative volume may fall short of a bucket edge through
+# floating point rounding and still complete the bucket on that day.
+VPIN_EDGE_TOLERANCE = 1e-9
 
 # Ang, Hodrick, Xing and Zhang (2006) require at least 15 daily returns within a month.
 MINIMUM_IDIOSYNCRATIC_OBSERVATIONS = 15
@@ -303,32 +324,118 @@ def get_corwin_schultz_spread(
     if not isinstance(high_prices, pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    prices = pd.concat([high_prices, low_prices, close_prices], axis=1)
-    # A bad bar (a price of 0 or below) has no logarithm, and a day without a High, Low or Close is not a trading day of the asset, so both leave the pairs.  # noqa: E501
-    prices = prices.where(prices > 0).dropna()
-    periods = to_period_index(prices.index).asfreq(PERIOD_TRANSLATION[period])
+    pairs = get_corwin_schultz_pairs(high_prices, low_prices, close_prices, period)
+    beta, gamma = pairs["Beta"], pairs["Gamma"]
 
-    high, low, close = (prices.iloc[:, number].to_numpy() for number in range(3))
-
-    # The overnight adjustment of the second day: only one of the two gaps can be positive.
-    shift = np.maximum(close[:-1] - high[1:], 0) - np.maximum(low[1:] - close[:-1], 0)
-    second_high = high[1:] + shift
-    second_low = low[1:] + shift
-
-    beta = np.log(high[:-1] / low[:-1]) ** 2 + np.log(second_high / second_low) ** 2
-    gamma = (
-        np.log(np.maximum(high[:-1], second_high) / np.minimum(low[:-1], second_low))
-        ** 2
-    )
     alpha = (np.sqrt(2 * beta) - np.sqrt(beta)) / CORWIN_SCHULTZ_DENOMINATOR - np.sqrt(
         gamma / CORWIN_SCHULTZ_DENOMINATOR
     )
-    spread = np.maximum(2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha)), 0)
-
-    same_period = np.asarray(periods[1:] == periods[:-1])
-    spreads = pd.Series(spread[same_period], index=periods[1:][same_period])
+    spreads = np.maximum(2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha)), 0)
 
     return average_two_day_spreads(spreads, rolling, high_prices.name)
+
+
+def get_bekker_parkinson_volatility(
+    high_prices: pd.Series | pd.DataFrame,
+    low_prices: pd.Series | pd.DataFrame,
+    close_prices: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Bekker-Parkinson Volatility per period: the volatility that remains in the
+    High/Low range of two consecutive days once the bid-ask spread of Corwin and Schultz
+    (2012) is taken out.
+
+    Corwin and Schultz write the expected squared log range of one day and of two days as
+    a function of the spread (α) and the volatility (σ). The spread is the part that does not
+    grow with the length of the window, and solving the same two equations for σ instead of
+    α gives the volatility:
+
+    - β = [ln(H_t / L_t)]^2 + [ln(H_(t+1) / L_(t+1))]^2
+    - γ = [ln(max(H_t, H_(t+1)) / min(L_t, L_(t+1)))]^2
+    - k_2 = √(8 / π)
+    - σ = (√(β / 2) - √β) / (k_2 * (3 - 2√2)) + √(γ / (k_2^2 * (3 - 2√2)))
+
+    López de Prado (2018, section 19.3.2 and snippet 19.2) derives it this way, and mlfinlab
+    and RiskLabAI name it the Bekker-Parkinson volatility: the range-based volatility of
+    Parkinson (1980) corrected for the spread. The volatility of each pair is set to 0 when it is negative (the range over
+    the two days is narrow relative to the single days), as in López de Prado's snippet
+    19.2, and the volatilities of the pairs of a period are averaged. The result is the
+    volatility of the log price (continuously compounded) over one day, scaled to the period
+    as the Parkinson Volatility of `realized_volatility_model.get_parkinson_volatility` is:
+    multiplied by the square root of the trading days in the period (252 / 12 for monthly).
+
+    The pairs, the overnight adjustment of the second day and the rule that both days fall
+    within the period are those of `get_corwin_schultz_spread`.
+
+    For more information about the method, see the following sources:
+
+    - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from
+    Daily High and Low Prices." The Journal of Finance, 67(2), 719-760.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.3.2.
+    - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the
+    Rate of Return." Journal of Business, 53(1), 61-65.
+
+    Referenced against mlfinlab's `get_bekker_parkinson_vol`
+    (https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's
+    `bekker_parkinson_volatility_estimates` (https://github.com/RiskLabAI/RiskLabAI.py). Both
+    average β over a rolling window of days while taking γ of the last pair only and do not
+    adjust for the overnight return; here σ is taken per pair (with the overnight adjustment)
+    and averaged per period, as the Corwin-Schultz spread is. On a pair without an overnight
+    gap the two agree to machine precision.
+
+    Args:
+        high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
+        low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
+        prices, used for the overnight adjustment.
+        period (str, optional): The period to average the two-day volatilities over and
+        scale to: weekly, monthly, quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Average the two-day volatilities of the last
+        `rolling` periods instead of those of a single period. A window with a period
+        without pairs is NaN. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The volatility as a decimal, with the periods as the index
+        (and the assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(high_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_bekker_parkinson_volatility(
+                    high_prices[column],
+                    low_prices[column],
+                    close_prices[column],
+                    period,
+                    rolling,
+                )
+                for column in high_prices.columns
+            }
+        )
+    if not isinstance(high_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    pairs = get_corwin_schultz_pairs(high_prices, low_prices, close_prices, period)
+    beta, gamma = pairs["Beta"], pairs["Gamma"]
+
+    volatilities = np.maximum(
+        (np.sqrt(beta / 2) - np.sqrt(beta))
+        / (BEKKER_PARKINSON_K2 * CORWIN_SCHULTZ_DENOMINATOR)
+        + np.sqrt(gamma / (BEKKER_PARKINSON_K2**2 * CORWIN_SCHULTZ_DENOMINATOR)),
+        0,
+    )
+    days_per_period = get_days_per_period(high_prices.dropna(), period)
+
+    return average_two_day_spreads(volatilities, rolling, high_prices.name) * np.sqrt(
+        days_per_period
+    )
 
 
 def get_abdi_ranaldo_spread(
@@ -844,3 +951,601 @@ def get_idiosyncratic_volatility(
         )
 
     return volatility.rename_axis(excess_returns.index.name)
+
+
+def get_kyle_lambda(
+    close_prices: pd.Series | pd.DataFrame,
+    volume: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+    scale: float = 1_000_000,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Kyle's lambda per period: the change of the price per share of signed volume,
+    as the slope of a regression of the price changes on the signed volume.
+
+    In the model of Kyle (1985), market makers cannot tell informed from uninformed orders
+    and move the price by λ for every unit of net order flow, so λ measures the depth of the
+    market: a high λ is an illiquid market in which an order moves the price a lot. López de
+    Prado (2018, section 19.4.1) estimates it from bars, signing each bar's volume with the
+    tick rule:
+
+    - ΔP_t = P_t - P_(t-1)
+    - b_t = sign(ΔP_t), or b_(t-1) when ΔP_t = 0
+    - ΔP_t = λ * (b_t * V_t) + ε_t
+    - λ = Σ(ΔP_t * b_t * V_t) / Σ((b_t * V_t)^2)
+
+    Where P is the Close and V the Volume of a day, and the regression runs without an
+    intercept on the days within the period, as in the book. λ is multiplied by `scale` for
+    readability: with the default of 1,000,000 it is the change of the price per million
+    shares of net buying.
+
+    For more information about the method, see the following sources:
+
+    - Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." Econometrica, 53(6),
+    1315-1335.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.4.1.
+
+    Referenced against mlfinlab's `get_bar_based_kyle_lambda` and
+    `get_trades_based_kyle_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
+    bar-based function there is the rolling mean of the ratio ΔP_t / (b_t * V_t) rather than
+    the regression slope of the book, which weighs every day equally however small its
+    volume; the trades-based function is the regression, which this function equals.
+
+    Args:
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
+        volume (pd.Series | pd.DataFrame): The daily Volume on the same dates.
+        period (str, optional): The period each regression runs within: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Regress on the days of the last `rolling` periods
+        instead of a single period. A window with a period without days is NaN. Defaults to
+        None.
+        scale (float, optional): A multiplier applied to λ for readability. Defaults to
+        1,000,000.
+
+    Returns:
+        pd.Series | pd.DataFrame: Kyle's lambda with the periods as the index (and the assets
+        as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(close_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_kyle_lambda(
+                    close_prices[column], volume[column], period, rolling, scale
+                )
+                for column in close_prices.columns
+            }
+        )
+    if not isinstance(close_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    # The asset's own trading days: a day without a (positive) price or a Volume is left out.
+    data = pd.concat([close_prices, volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    change = data.iloc[:, 0].diff()
+    # The tick rule: a day without a price change keeps the sign of the last change.
+    sign = np.sign(change).replace(0, np.nan).ffill()
+
+    return (
+        get_slope_through_origin(
+            change.rename(close_prices.name),
+            sign * data.iloc[:, 1],
+            period,
+            rolling,
+            MINIMUM_LAMBDA_OBSERVATIONS,
+        )
+        * scale
+    )
+
+
+def get_amihud_lambda(
+    prices: pd.Series | pd.DataFrame,
+    dollar_volume: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+    scale: float = 1_000_000,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Amihud's lambda per period: the absolute log return per dollar traded, as the
+    slope of a regression of the absolute log returns on the dollar volume.
+
+    Amihud (2002) measures illiquidity as the mean of the ratio of the absolute return to the
+    dollar volume (`get_amihud_illiquidity`). López de Prado (2018, section 19.4.2) estimates
+    the same price impact as a regression slope instead:
+
+    - r_t = ln(P_t / P_(t-1))
+    - |r_t| = λ * DV_t + ε_t
+    - λ = Σ(|r_t| * DV_t) / Σ(DV_t^2)
+
+    Where P is the price, DV the dollar volume of a day and the regression runs without an
+    intercept on the days within the period, as in the book. Unlike the mean of the ratios,
+    the slope weighs the days by their dollar volume, so a quiet day with a large move does
+    not dominate it. λ is multiplied by `scale` for readability: with the default of
+    1,000,000 it is the absolute log return per million dollars traded.
+
+    For more information about the method, see the following sources:
+
+    - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and Time-Series
+    Effects." Journal of Financial Markets, 5(1), 31-56.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.4.2.
+
+    Referenced against mlfinlab's `get_bar_based_amihud_lambda` and
+    `get_trades_based_amihud_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
+    bar-based function there is the rolling mean of the ratio |r_t| / DV_t, which is
+    Amihud's ratio (`get_amihud_illiquidity`) rather than the book's slope; the trades-based
+    function is the regression, which this function equals.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices for the
+        returns (e.g. the Adjusted Close).
+        dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
+        times the Volume) on the same dates.
+        period (str, optional): The period each regression runs within: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Regress on the days of the last `rolling` periods
+        instead of a single period. A window with a period without days is NaN. Defaults to
+        None.
+        scale (float, optional): A multiplier applied to λ for readability. Defaults to
+        1,000,000.
+
+    Returns:
+        pd.Series | pd.DataFrame: Amihud's lambda with the periods as the index (and the
+        assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_amihud_lambda(
+                    prices[column], dollar_volume[column], period, rolling, scale
+                )
+                for column in prices.columns
+            }
+        )
+    if not isinstance(prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat([prices, dollar_volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    log_return = np.log(data.iloc[:, 0]).diff()
+
+    return (
+        get_slope_through_origin(
+            log_return.abs().rename(prices.name),
+            data.iloc[:, 1],
+            period,
+            rolling,
+            MINIMUM_LAMBDA_OBSERVATIONS,
+        )
+        * scale
+    )
+
+
+def get_hasbrouck_lambda(
+    prices: pd.Series | pd.DataFrame,
+    dollar_volume: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+    scale: float = 1_000_000,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Hasbrouck's lambda per period: the log return per square root of the signed
+    dollar volume, as the slope of a regression of the log returns on the signed square root
+    of the dollar volume.
+
+    Hasbrouck (2009) estimates the price impact of trading with the square root of the
+    signed dollar volume, which captures that the impact grows less than proportionally with
+    the size of an order. López de Prado (2018, section 19.4.3) estimates it from bars,
+    signing each bar with the tick rule:
+
+    - r_t = ln(P_t / P_(t-1))
+    - b_t = sign(r_t), or b_(t-1) when r_t = 0
+    - r_t = λ * (b_t * √DV_t) + ε_t
+    - λ = Σ(r_t * b_t * √DV_t) / Σ(DV_t)
+
+    Where P is the price, DV the dollar volume of a day and the regression runs without an
+    intercept on the days within the period, as in the book. λ is multiplied by `scale` for
+    readability.
+
+    For more information about the method, see the following sources:
+
+    - Hasbrouck, J. (2009). "Trading Costs and Returns for U.S. Equities: Estimating
+    Effective Costs from Daily Data." The Journal of Finance, 64(3), 1445-1477.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.4.3.
+
+    Referenced against mlfinlab's `get_bar_based_hasbrouck_lambda` and
+    `get_trades_based_hasbrouck_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
+    bar-based function there is the rolling mean of the ratio r_t / (b_t * √DV_t) rather than
+    the regression slope of the book, and the trades-based function regresses the absolute
+    log return |r_t|; here the slope is that of the signed log return, as in the book.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices for the
+        returns (e.g. the Adjusted Close).
+        dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
+        times the Volume) on the same dates.
+        period (str, optional): The period each regression runs within: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Regress on the days of the last `rolling` periods
+        instead of a single period. A window with a period without days is NaN. Defaults to
+        None.
+        scale (float, optional): A multiplier applied to λ for readability. Defaults to
+        1,000,000.
+
+    Returns:
+        pd.Series | pd.DataFrame: Hasbrouck's lambda with the periods as the index (and the
+        assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_hasbrouck_lambda(
+                    prices[column], dollar_volume[column], period, rolling, scale
+                )
+                for column in prices.columns
+            }
+        )
+    if not isinstance(prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat([prices, dollar_volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    log_return = np.log(data.iloc[:, 0]).diff()
+    sign = np.sign(log_return).replace(0, np.nan).ffill()
+
+    return (
+        get_slope_through_origin(
+            log_return.rename(prices.name),
+            sign * np.sqrt(data.iloc[:, 1]),
+            period,
+            rolling,
+            MINIMUM_LAMBDA_OBSERVATIONS,
+        )
+        * scale
+    )
+
+
+def get_roll_impact(
+    close_prices: pd.Series | pd.DataFrame,
+    dollar_volume: pd.Series | pd.DataFrame,
+    period: str = "monthly",
+    rolling: int | None = None,
+    scale: float = 1_000_000,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Roll Impact per period: the Roll (1984) spread of the period divided by
+    its mean dollar volume, the spread paid per dollar traded.
+
+    López de Prado (2018, section 19.3.1) divides the Roll measure by the dollar volume, so
+    that the spread an asset pays relates to how much of it trades:
+
+    - ΔP_t = P_t - P_(t-1)
+    - Roll Spread = 2 * √(-Cov(ΔP_t, ΔP_(t-1)))
+    - Roll Impact = Roll Spread / Mean(DV_t)
+
+    Where P is the Close, DV the dollar volume of a day, Cov the sample autocovariance
+    (ddof=1) of the consecutive price changes within the period and the mean runs over the
+    days of the period. A period with an autocovariance of zero or above has no Roll spread
+    and is NaN, as in `get_roll_spread`, and so is a period with fewer than three pairs of
+    consecutive price changes. The changes are those between the prices within the period,
+    so a pair of changes spans three days of the period (also in a rolling window). The
+    result is multiplied by `scale` for readability: with the default of 1,000,000 it is the
+    spread in price units per million dollars traded a day.
+
+    For more information about the method, see the following sources:
+
+    - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread in an
+    Efficient Market." The Journal of Finance, 39(4), 1127-1139.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.3.1.
+
+    Referenced against mlfinlab's `get_roll_impact` (https://github.com/hudson-and-thames/mlfinlab),
+    which divides a rolling Roll measure of 2 * √|Cov| by the dollar volume of the last day.
+    Here a positive autocovariance gives NaN rather than the spread of its absolute value,
+    since Roll's model has no spread then, and the spread is divided by the mean dollar
+    volume of the days it is estimated from.
+
+    Args:
+        close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
+        dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
+        times the Volume) on the same dates.
+        period (str, optional): The period to estimate the impact over: weekly, monthly,
+        quarterly or yearly. Defaults to "monthly".
+        rolling (int | None, optional): Estimate from the days of the last `rolling` periods
+        instead of a single period. A window with a period without days is NaN. Defaults to
+        None.
+        scale (float, optional): A multiplier applied to the result for readability.
+        Defaults to 1,000,000.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Roll Impact with the periods as the index (and the
+        assets as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    validate_period(period)
+
+    if isinstance(close_prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_roll_impact(
+                    close_prices[column], dollar_volume[column], period, rolling, scale
+                )
+                for column in close_prices.columns
+            }
+        )
+    if not isinstance(close_prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat([close_prices, dollar_volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    periods = to_period_index(data.index).asfreq(PERIOD_TRANSLATION[period])
+
+    if len(data) <= MINIMUM_ROLL_OBSERVATIONS:
+        return pd.Series(dtype=float, name=close_prices.name)
+
+    change = data.iloc[:, 0].diff().to_numpy()
+    previous, current = change[1:-1], change[2:]
+    # A pair is two consecutive changes of the prices within the period (the three days fall within it), as the Roll Spread of a period in `get_roll_spread` takes the changes of the period's prices.  # noqa: E501
+    same_period = np.asarray(periods[2:] == periods[:-2])
+
+    pair_sums = sum_per_period(
+        pd.DataFrame(
+            {
+                "Previous": previous,
+                "Current": current,
+                "Product": previous * current,
+                "Count": 1.0,
+            },
+            index=periods[2:],
+        )[same_period],
+        rolling,
+    )
+    day_sums = sum_per_period(
+        pd.DataFrame(
+            {"Dollar Volume": data.iloc[:, 1].to_numpy(), "Days": 1.0}, index=periods
+        ),
+        rolling,
+    )
+    pair_sums = pair_sums.reindex(day_sums.index)
+
+    count = pair_sums["Count"]
+    autocovariance = (
+        pair_sums["Product"] - pair_sums["Previous"] * pair_sums["Current"] / count
+    ) / (count - 1)
+    estimable = (count >= MINIMUM_ROLL_OBSERVATIONS) & (autocovariance < 0)
+    roll_spread = 2 * np.sqrt(-autocovariance.where(estimable))
+    mean_dollar_volume = day_sums["Dollar Volume"] / day_sums["Days"]
+
+    return (
+        roll_spread / mean_dollar_volume.where(mean_dollar_volume > 0) * scale
+    ).rename(close_prices.name)
+
+
+def get_bulk_volume_classification(
+    prices: pd.Series | pd.DataFrame,
+    volume: pd.Series | pd.DataFrame,
+    window: int = VPIN_BUCKETS,
+    degrees_of_freedom: float | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the buy volume of each bar with the Bulk Volume Classification of Easley,
+    López de Prado and O'Hara (2012).
+
+    Rather than signing every trade, the Bulk Volume Classification splits the volume of a
+    bar into buys and sells by how large the price change of the bar is relative to the
+    usual price change: a bar with a large rise is mostly buying, one without a change is
+    half buying and half selling:
+
+    - ΔP_t = P_t - P_(t-1)
+    - V^B_t = V_t * Z(ΔP_t / σ_ΔP)
+    - V^S_t = V_t - V^B_t
+
+    Where Z is the cumulative distribution function of the standard normal distribution (or
+    of the Student-t distribution with `degrees_of_freedom`, as in Easley, López de Prado and
+    O'Hara (2016)), and σ_ΔP the sample standard deviation (ddof=1) of the price changes of
+    the last `window` bars, the bar itself included. The papers classify one-minute or other
+    intraday bars; on daily bars each day is classified as a whole.
+
+    For more information about the method, see the following papers:
+
+    - Easley, D., López de Prado, M., & O'Hara, M. (2012). "Flow Toxicity and Liquidity in a
+    High-Frequency World." The Review of Financial Studies, 25(5), 1457-1493.
+    - Easley, D., López de Prado, M., & O'Hara, M. (2016). "Discerning Information from Trade
+    Data." Journal of Financial Economics, 120(2), 269-285.
+
+    Referenced against mlfinlab's `get_bvc_buy_volume` (https://github.com/hudson-and-thames/mlfinlab),
+    which it equals with the normal distribution and the same window.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): A Series or Dataframe of the prices of the bars.
+        volume (pd.Series | pd.DataFrame): The Volume of the bars on the same dates.
+        window (int, optional): The number of bars the standard deviation of the price changes
+        is taken over. Defaults to 50.
+        degrees_of_freedom (float | None, optional): The degrees of freedom of a Student-t
+        distribution for Z instead of the standard normal distribution. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The buy volume of each bar, NaN before the first full
+        window.
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    if isinstance(prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_bulk_volume_classification(
+                    prices[column], volume[column], window, degrees_of_freedom
+                )
+                for column in prices.columns
+            }
+        )
+    if not isinstance(prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat([prices, volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    change = data.iloc[:, 0].diff()
+    deviation = change.rolling(window).std()
+    standardized = (change / deviation.where(deviation > 0)).to_numpy()
+
+    probability = (
+        stats.norm.cdf(standardized)
+        if degrees_of_freedom is None
+        else stats.t.cdf(standardized, degrees_of_freedom)
+    )
+
+    return (data.iloc[:, 1] * probability).rename(prices.name)
+
+
+def get_vpin(
+    prices: pd.Series | pd.DataFrame,
+    volume: pd.Series | pd.DataFrame,
+    buckets: int = VPIN_BUCKETS,
+    bucket_volume: float | None = None,
+    window: int = VPIN_BUCKETS,
+    degrees_of_freedom: float | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Volume-Synchronized Probability of Informed Trading (VPIN) of Easley,
+    López de Prado and O'Hara (2012) on daily bars.
+
+    VPIN measures the toxicity of the order flow: the share of the volume that is one-sided,
+    as informed traders buy (or sell) persistently while uninformed trading roughly
+    balances. The volume is split into buckets of the same volume V (a volume clock rather
+    than a time clock), the volume of each bucket is classified into buys and sells with the
+    Bulk Volume Classification and VPIN is the mean order imbalance over the last n buckets:
+
+    - V^B_τ = Σ V_t * Z(ΔP_t / σ_ΔP) over the volume in bucket τ
+    - V^S_τ = V - V^B_τ
+    - VPIN = Σ |V^S_τ - V^B_τ| / (n * V) over the last n buckets
+
+    A day that fills more than the rest of a bucket carries its excess volume into the next
+    bucket, as in the paper, with its own buy share, so every bucket holds exactly V. VPIN
+    is updated when a bucket completes; on a day without a completed bucket it is that of
+    the last one, and before n buckets are complete it is NaN. It lies between 0 and 1.
+
+    VPIN was designed for intraday data: the paper fills 50 buckets a day from one-minute
+    bars, so it measures the toxicity within a day. On daily bars the finest classification
+    is a whole day, which nets the buying and selling within it, so this is a coarse
+    approximation of the measure: a slow-moving estimate of the one-sidedness of the
+    volume over weeks rather than the flow toxicity that warns of an intraday liquidity
+    crash. Use it to compare assets and periods, not as the published intraday VPIN.
+
+    For more information about the method, see the following sources:
+
+    - Easley, D., López de Prado, M., & O'Hara, M. (2012). "Flow Toxicity and Liquidity in a
+    High-Frequency World." The Review of Financial Studies, 25(5), 1457-1493.
+    - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
+    19.5.2.
+
+    Referenced against mlfinlab's `get_vpin` (https://github.com/hudson-and-thames/mlfinlab),
+    which takes the bars as given and divides the mean imbalance of the last n bars by the
+    volume of the last bar; on bars of equal volume the two are the same. Here the buckets
+    are formed from the days, so they hold the same volume as the paper's.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices.
+        volume (pd.Series | pd.DataFrame): The daily Volume on the same dates.
+        buckets (int, optional): The number of buckets n VPIN is the mean over. Defaults to 50,
+        as in the paper.
+        bucket_volume (float | None, optional): The volume V of a bucket. Defaults to None,
+        which takes the mean daily Volume of each asset over the data, so that a bucket
+        holds about a day of trading and VPIN spans about `buckets` days.
+        window (int, optional): The number of days the standard deviation of the price
+        changes of the classification is taken over. Defaults to 50.
+        degrees_of_freedom (float | None, optional): The degrees of freedom of a Student-t
+        distribution for the classification instead of the standard normal distribution.
+        Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: VPIN per day, with the dates as the index (and the assets
+        as columns for a DataFrame).
+
+    Raises:
+        TypeError: If the prices are not a pd.Series or pd.DataFrame.
+    """
+    if isinstance(prices, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_vpin(
+                    prices[column],
+                    volume[column],
+                    buckets,
+                    bucket_volume,
+                    window,
+                    degrees_of_freedom,
+                )
+                for column in prices.columns
+            }
+        )
+    if not isinstance(prices, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    data = pd.concat([prices, volume], axis=1)
+    data = data[(data.iloc[:, 0] > 0) & (data.iloc[:, 1] >= 0)]
+    buy_volume = get_bulk_volume_classification(
+        data.iloc[:, 0], data.iloc[:, 1], window, degrees_of_freedom
+    )
+    vpin = pd.Series(np.nan, index=data.index, name=prices.name)
+    size = bucket_volume if bucket_volume else data.iloc[:, 1].mean()
+
+    # The days that fill the buckets: classified and with volume (a day without volume adds nothing to a bucket).  # noqa: E501
+    filled = buy_volume.notna() & (data.iloc[:, 1] > 0)
+
+    if not size > 0 or not filled.any():
+        return vpin
+
+    cumulative_volume = np.concatenate([[0], data.iloc[:, 1][filled].cumsum()])
+    cumulative_buy_volume = np.concatenate([[0], buy_volume[filled].cumsum()])
+    completed = int(cumulative_volume[-1] // size)
+
+    if completed < buckets:
+        return vpin
+
+    # The buy share of a day is the same for all of its volume, so the cumulative buy volume is linear within a day and its value at each bucket edge follows by interpolation, splitting a day over two buckets.  # noqa: E501
+    edges = size * np.arange(completed + 1)
+    bucket_buy_volume = np.diff(
+        np.interp(edges, cumulative_volume, cumulative_buy_volume)
+    )
+    imbalance = np.abs(size - 2 * bucket_buy_volume)
+    bucket_vpin = pd.Series(imbalance).rolling(buckets).sum().to_numpy() / (
+        buckets * size
+    )
+
+    # The day on which each bucket completes (a day that ends exactly on an edge completes it, also after rounding of the sums); on a day that completes several, the last one counts.  # noqa: E501
+    completion = (
+        np.searchsorted(
+            cumulative_volume, edges[1:] - VPIN_EDGE_TOLERANCE * size, side="left"
+        )
+        - 1
+    )
+    completion_day = data.index[filled][np.minimum(completion, filled.sum() - 1)]
+    bucket_vpin = pd.Series(bucket_vpin, index=completion_day)
+    bucket_vpin = bucket_vpin[~bucket_vpin.index.duplicated(keep="last")]
+
+    return (
+        bucket_vpin.reindex(data.index)
+        .ffill()
+        .reindex(prices.index)
+        .rename(prices.name)
+    )

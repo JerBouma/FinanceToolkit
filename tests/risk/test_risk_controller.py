@@ -234,6 +234,9 @@ def test_get_garch_forecast_gjr_monthly_matches_the_arch_package(
 
 
 # The EGARCH variants have tests of their own, as only they carry the platform drift mark.
+# The first one fits EGARCH three times (daily, monthly, yearly), which takes minutes on a
+# loaded machine; without the longer timeout the xfail mark would hide that timeout as a pass.
+@pytest.mark.timeout(600)
 @EGARCH_PLATFORM_DRIFT
 def test_get_garch_egarch(recorder, risk_module):
     recorder.capture(risk_module.get_garch(method="egarch"))

@@ -2719,10 +2719,10 @@ def get_employee_count(
             "employeeCount"
         ].sort_index()
         employee_count = employee_count.truncate(before=start_date, after=end_date)
-        # A 52/53-week fiscal year ending in the first days of January (2 January 2021)
+        # A 52/53-week fiscal year ending in the first week of January (2 January 2021)
         # belongs to the year before, as its statements do.
         employee_count.index = (
-            pd.DatetimeIndex(employee_count.index) - pd.Timedelta(days=6)
+            pd.DatetimeIndex(employee_count.index) - pd.Timedelta(days=7)
         ).to_period(freq="Y")
         employee_count = employee_count[~employee_count.index.duplicated(keep="last")]
         employee_count.index.name = "Period"

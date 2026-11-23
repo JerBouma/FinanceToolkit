@@ -2577,7 +2577,7 @@ def test_align_employee_count_matches_the_fiscal_year_ends():
 def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
     test_toolkit, monkeypatch
 ):
-    # The counts as get_employee_count returns them: per year of the fiscal year end.
+    # The counts as the Toolkit collects them: per year of the fiscal year end.
     counts = pd.DataFrame(
         {
             "AAPL": [147000, 154000, 164000, 161000],
@@ -2585,7 +2585,7 @@ def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
         },
         index=pd.PeriodIndex(["2020", "2021", "2022", "2023"], freq="Y", name="Period"),
     )
-    monkeypatch.setattr(test_toolkit, "get_employee_count", lambda: counts)
+    monkeypatch.setattr(test_toolkit, "_collect_employee_count", lambda: counts)
 
     revenue_per_employee = test_toolkit.ratios.get_revenue_per_employee(rounding=None)
 
@@ -2626,3 +2626,17 @@ def test_align_employee_count_puts_a_year_ending_in_early_january_in_the_year_be
     )
     aligned = align_employee_count(counts, quarterly, quarterly=True)
     assert aligned.loc["K"].tolist() == [200, 200, 300, 300]
+
+
+def test_align_employee_count_puts_a_year_ending_on_7_january_in_the_year_before():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    counts = pd.DataFrame(
+        {"K": [100, 200]}, index=pd.PeriodIndex(["2017", "2018"], freq="Y")
+    )
+    yearly = pd.DataFrame(
+        [["2018-01-07", "2019-01-06"]],
+        index=["K"],
+        columns=[pd.Period("2017", "Y"), pd.Period("2018", "Y")],
+    )
+    assert align_employee_count(counts, yearly).loc["K"].tolist() == [100, 200]

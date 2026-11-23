@@ -100,13 +100,13 @@ def align_employee_count(
 
     The employee counts are labelled with the calendar year of the fiscal year end of the
     annual filing they come from (the period of report; a 52/53-week year ending in the first
-    six days of January counts as the December before), which for a fiscal year ending in
+    week of January counts as the December before), which for a fiscal year ending in
     January through May is the year after the statement label (NVIDIA's fiscal year ending
     January 2024 is the statement column 2023). They are therefore matched on the period
     end dates of the statements, not on the labels:
 
     - Yearly: a period gets the count of the filing whose fiscal year ends in the same
-      calendar year as the period (with the same first days of January rule), the
+      calendar year as the period (with the same first week of January rule), the
       headcount the annual report of that period states.
     - Quarterly: a quarter gets the count of the latest fiscal year that ended in a calendar
       year before the one the quarter ends in, or in the same one for a quarter ending in
@@ -147,10 +147,10 @@ def align_employee_count(
             lambda dates: dates.dt.year - (dates.dt.month != 12)  # noqa: PLR2004
         )
     else:
-        # A fiscal year ending in the first days of January belongs to the year before, as
+        # A fiscal year ending in the first week of January belongs to the year before, as
         # the counts are labelled (get_employee_count).
         count_years = end_dates.apply(
-            lambda dates: (dates - pd.Timedelta(days=6)).dt.year
+            lambda dates: (dates - pd.Timedelta(days=7)).dt.year
         )
 
     aligned = pd.DataFrame(

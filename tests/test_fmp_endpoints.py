@@ -112,6 +112,59 @@ def test_employee_count_of_a_year_ending_in_early_january_is_the_year_before(res
     }
 
 
+def test_employee_count_of_a_year_ending_on_the_first_sunday_of_january(responses):
+    canned, _ = responses
+    # Fiscal years ending on the first Sunday of January, 7 January included.
+    year_ends = ["2018-01-07", "2019-01-06", "2020-01-05", "2024-01-07", "2025-01-05"]
+    canned["historical-employee-count"] = [
+        {"periodOfReport": end, "filingDate": end, "employeeCount": 100 * (number + 1)}
+        for number, end in enumerate(year_ends)
+    ]
+
+    employees, _ = fmp_model.get_employee_count(
+        ["K"], "key", start_date="2017-01-01", user_subscription="Free"
+    )
+
+    assert employees["K"].to_dict() == {
+        pd.Period(year, "Y"): count
+        for year, count in zip(
+            ["2017", "2018", "2019", "2023", "2024"],
+            [100, 200, 300, 400, 500],
+            strict=True,
+        )
+    }
+
+
+def test_toolkit_employee_count_keeps_the_year_before_for_the_first_quarters(
+    responses, cache_location, known_fmp_plan
+):
+    canned, _ = responses
+    canned["historical-employee-count"] = [
+        {"periodOfReport": end, "filingDate": end, "employeeCount": count}
+        for end, count in [("2021-12-31", 100), ("2022-12-31", 200)]
+    ]
+
+    toolkit = toolkit_controller.Toolkit(
+        ["MSFT"],
+        api_key="test-key",
+        start_date="2022-01-01",
+        end_date="2023-06-30",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+        benchmark_ticker=None,
+    )
+
+    # The rows shown start at the start date's year; the quarters of 2022 use the count of
+    # 2021, which is collected as well.
+    assert toolkit.get_employee_count()["MSFT"].to_dict() == {
+        pd.Period("2022", "Y"): 200
+    }
+    assert toolkit._employee_count["MSFT"].to_dict() == {
+        pd.Period("2021", "Y"): 100,
+        pd.Period("2022", "Y"): 200,
+    }
+
+
 def test_shares_float_and_etf_weights_are_decimals(responses):
     canned, _ = responses
     canned["shares-float"] = [

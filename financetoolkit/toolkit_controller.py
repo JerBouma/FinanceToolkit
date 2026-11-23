@@ -774,7 +774,8 @@ class Toolkit:
 
             # The counts are matched on the fiscal period end dates, as they are labelled with
             # the year of the fiscal year end rather than the statement period.
-            counts = self.get_employee_count()
+            # Including the year before the start date, which the first quarters use.
+            counts = self._collect_employee_count()
 
             if counts is None or counts.empty:
                 return pd.DataFrame()
@@ -4156,7 +4157,7 @@ class Toolkit:
                 year is the calendar year in which the fiscal year ends, the period of the annual
                 filing: Walmart's count at the end of January 2025 is 2025, a year after the label of
                 its financial statements for that fiscal year (2024), which follow the calendar year
-                holding most of it. A 52/53-week year ending in the first six days of January
+                holding most of it. A 52/53-week year ending in the first week of January
                 (2 January 2021) counts as the year before (2020). The revenue and net income per
                 employee match the counts on the period end dates, so they divide each year by the
                 headcount of that year.
@@ -4186,9 +4187,23 @@ class Toolkit:
         | 2024     | 2100000 | 1556000 |
         | 2025     | 2100000 | 1576000 |
         """
+        counts = self._collect_employee_count(overwrite=overwrite)
+
+        if counts is None or counts.empty:
+            return counts
+
+        return counts.loc[counts.index >= pd.Period(self._start_date[:4], freq="Y")]
+
+    def _collect_employee_count(self, overwrite: bool = False) -> pd.DataFrame | None:
+        """The employee counts from the start of the year before the start date, see get_employee_count."""
         if not self._api_key:
             self._missing_api_key_message()
             return None
+
+        # A quarter takes the count of the fiscal year before it (align_employee_count), so
+        # the counts are collected from the start of the year before the start date; the
+        # rows shown start at the start date's year.
+        count_start_date = f"{int(self._start_date[:4]) - 1}-01-01"
 
         if self._employee_count.empty or overwrite:
             self._employee_count, self._invalid_tickers = self._collect_per_ticker(
@@ -4196,14 +4211,14 @@ class Toolkit:
                 tickers=self._tickers,
                 ticker_axis=ticker_model.TICKER_ON_COLUMNS,
                 parameters={
-                    "start_date": self._start_date,
+                    "start_date": count_start_date,
                     "end_date": self._end_date,
                     "user_subscription": self._fmp_plan,
                 },
                 collector=lambda tickers: _get_employee_count(
                     tickers=tickers,
                     api_key=self._api_key,
-                    start_date=self._start_date,
+                    start_date=count_start_date,
                     end_date=self._end_date,
                     sleep_timer=self._sleep_timer,
                     user_subscription=self._fmp_plan,

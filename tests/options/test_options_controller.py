@@ -1657,6 +1657,63 @@ def test_get_touch_option(recorder, options_module):
     )
 
 
+def test_get_chooser_option(recorder, options_module):
+    recorder.capture(options_module.get_chooser_option())
+    recorder.capture(options_module.get_chooser_option(choice_period=0.25))
+    recorder.capture(
+        options_module.get_chooser_option(
+            choice_period=1,
+            strike_price_range=0.10,
+            expiration_time_range=5,
+            risk_free_rate=0.01,
+            rounding=2,
+        )
+    )
+
+
+def test_get_forward_start_option(recorder, options_module):
+    recorder.capture(options_module.get_forward_start_option())
+    recorder.capture(
+        options_module.get_forward_start_option(put_option=True, moneyness=1.1)
+    )
+    recorder.capture(options_module.get_forward_start_option(start_period=0, periods=3))
+    recorder.capture(
+        options_module.get_forward_start_option(
+            start_period=0.25,
+            periods=2,
+            performance=True,
+            expiration_time_range=5,
+            dividend_yield=0.01,
+            rounding=6,
+        )
+    )
+
+
+def test_compound_style_options_refuse_invalid_choices(options_module, caplog):
+    # Each invalid choice is reported with an empty result.
+    for call, message in (
+        (
+            lambda: options_module.get_chooser_option(choice_period=1.5),
+            "choice_period",
+        ),
+        (
+            lambda: options_module.get_forward_start_option(start_period=1),
+            "start_period",
+        ),
+        (
+            lambda: options_module.get_forward_start_option(moneyness=0),
+            "moneyness",
+        ),
+        (
+            lambda: options_module.get_forward_start_option(periods=0),
+            "periods",
+        ),
+    ):
+        caplog.clear()
+        assert call().empty
+        assert message in caplog.text
+
+
 def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
     # Each invalid combination is reported with an empty result.
     for call, message in (

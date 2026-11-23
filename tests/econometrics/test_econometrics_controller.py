@@ -1237,3 +1237,72 @@ def test_the_portfolio_is_no_default_independent_of_its_holdings():
     assert EconometricsBase._resolve_dependent_independent(
         stub, independent_tickers=["MSFT", "Portfolio"]
     ) == ("AAPL", ["MSFT", "Portfolio"])
+
+
+def test_get_fractional_difference(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_fractional_difference(period="weekly", threshold=1e-3)
+    )
+    recorder.capture(
+        econometrics_module.get_fractional_difference(
+            period="weekly", d=0.6, method="expanding"
+        )
+    )
+
+
+def test_get_minimum_fractional_difference(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_minimum_fractional_difference(period="weekly")
+    )
+    recorder.capture(
+        econometrics_module.get_minimum_fractional_difference(
+            period="weekly", threshold=1e-3, grid=True
+        )
+    )
+
+
+def test_get_bubble_test(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_bubble_test(period="weekly", replications=100)
+    )
+    recorder.capture(
+        econometrics_module.get_bubble_test(
+            period="weekly", method="sadf", lag_order=1, replications=100
+        )
+    )
+
+
+def test_get_bubble_episodes(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(period="weekly", replications=100)
+    )
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(
+            period="weekly", replications=100, time_series=True
+        )
+    )
+    # The runs above the critical value in the test data are shorter than the default
+    # minimum duration (round(log(157)) = 5 weeks), so these episodes only appear with 1.
+    recorder.capture(
+        econometrics_module.get_bubble_episodes(
+            period="weekly", replications=100, minimum_duration=1
+        )
+    )
+
+
+def test_get_chow_dickey_fuller_test(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_chow_dickey_fuller_test(
+            period="weekly", replications=200
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_chow_dickey_fuller_test(
+            period="weekly", time_series=True
+        )
+    )
+
+
+def test_log_prices_need_positive_values(econometrics_module):
+    # @handle_errors returns an empty Series for the ValueError on a non-positive series.
+    assert econometrics_module.get_fractional_difference(column="Return").empty

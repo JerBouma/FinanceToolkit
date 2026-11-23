@@ -1709,3 +1709,41 @@ def test_monte_carlo_asian_option_is_reproducible_and_close_to_curran(options_mo
 
     pd.testing.assert_frame_equal(first, second)
     assert (first - curran).abs().max().max() < 0.05
+
+
+@pytest.mark.parametrize("method", ["svi", "ssvi", "sabr"])
+def test_get_volatility_surface_methods(recorder, option_market, method):
+    module, labels = option_market
+    surface = module.get_volatility_surface(method=method, number_of_expirations=2)
+    recorder.capture(surface.rename(columns=labels))
+    # Every model follows the simulated skew: lower strikes carry the higher volatility.
+    for ticker in surface.index.get_level_values(0).unique():
+        smile = surface.loc[ticker].iloc[:, 0].dropna()
+        assert smile.iloc[0] > smile.iloc[-1]
+
+
+@pytest.mark.parametrize("method", ["ssvi", "sabr"])
+def test_get_volatility_surface_parameters(recorder, option_market, method):
+    module, labels = option_market
+    parameters = module.get_volatility_surface(
+        method=method,
+        expiration_dates=list(labels)[1:],
+        sabr_beta=0.5,
+        show_parameters=True,
+    )
+    recorder.capture(stable(parameters, labels))
+    if method == "sabr":
+        assert (parameters["beta"] == 0.5).all()
+    else:
+        # One rho, eta and gamma for the whole surface of a ticker.
+        for ticker in parameters.index.get_level_values(0).unique():
+            assert parameters.loc[ticker, ["rho", "eta", "gamma"]].nunique().max() == 1
+    assert module.get_volatility_surface(method="heston").empty
+
+
+def test_get_local_volatility_surface(recorder, option_market):
+    module, labels = option_market
+    local_volatility = module.get_local_volatility_surface(method="ssvi")
+    recorder.capture(local_volatility.rename(columns=labels))
+    assert list(local_volatility.columns) == list(labels)
+    assert module.get_local_volatility_surface(method="sabr").empty

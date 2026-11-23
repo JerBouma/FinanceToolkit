@@ -2596,3 +2596,33 @@ def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
         expected.loc[:, revenue_per_employee.columns],
         check_names=False,
     )
+
+
+def test_align_employee_count_puts_a_year_ending_in_early_january_in_the_year_before():
+    from financetoolkit.ratios.helpers import align_employee_count
+
+    # A 52/53-week year ending 2 January 2021 is fiscal 2020, labelled as get_employee_count
+    # labels it; the yearly statement of that year gets its own count, not the next one.
+    counts = pd.DataFrame(
+        {"K": [100, 200, 300, 400]},
+        index=pd.PeriodIndex(["2019", "2020", "2021", "2022"], freq="Y"),
+    )
+    yearly = pd.DataFrame(
+        [["2019-12-28", "2021-01-02", "2022-01-01", "2022-12-31"]],
+        index=["K"],
+        columns=[pd.Period(year, "Y") for year in ["2019", "2020", "2021", "2022"]],
+    )
+    assert align_employee_count(counts, yearly).loc["K"].tolist() == [
+        100,
+        200,
+        300,
+        400,
+    ]
+
+    quarterly = pd.DataFrame(
+        [["2021-01-02", "2021-07-03", "2022-01-01", "2022-07-02"]],
+        index=["K"],
+        columns=[pd.Period(q, "Q") for q in ["2020Q4", "2021Q2", "2021Q4", "2022Q2"]],
+    )
+    aligned = align_employee_count(counts, quarterly, quarterly=True)
+    assert aligned.loc["K"].tolist() == [200, 200, 300, 300]

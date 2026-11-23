@@ -3208,13 +3208,14 @@ def get_dynamic_momentum_index(
     )
 
     # The sums over the last Period changes of each period, as differences of the running
-    # sums; a period with fewer price changes than its Period has no value. The changes are
-    # counted rather than the positions so that a series starting later (leading NaN) needs
-    # Period real changes as well.
+    # sums; a window holding fewer real price changes than its Period (a series starting
+    # later, or a gap of missing prices) has no value.
     positions = np.arange(len(prices))
+    period_values = periods.fillna(0).to_numpy().astype(int)
+    in_range = periods.notna().to_numpy() & (positions >= period_values)
+    starts = np.where(in_range, positions - period_values, 0)
     changes = price_diff.notna().cumsum().to_numpy()
-    valid = periods.notna().to_numpy() & (changes >= periods.fillna(0).to_numpy())
-    starts = np.where(valid, positions - periods.fillna(0).to_numpy(), 0).astype(int)
+    valid = in_range & (changes - changes[starts] >= period_values)
 
     gains = cumulative_gains[positions + 1] - cumulative_gains[starts + 1]
     losses = cumulative_losses[positions + 1] - cumulative_losses[starts + 1]

@@ -1595,9 +1595,10 @@ def get_volume_profile(
     direction = np.sign(close.diff())
 
     edges = np.linspace(close.min(), close.max(), bins + 1)
-    if close.empty or close.min() == close.max():
-        # Without a range the edges coincide and no bin can be cut: a constant close puts
-        # all the volume in the first bin, and without closes every bin is empty.
+    if close.empty or not np.all(np.diff(edges) > 0):
+        # Without a range (or one of rounding only) the edges coincide and no bin can be
+        # cut: a constant close puts all the volume in the first bin, and without closes
+        # every bin is empty.
         price_bin = pd.Series(1, index=close.index)
     else:
         price_bin = pd.cut(close, edges, labels=False, include_lowest=True) + 1

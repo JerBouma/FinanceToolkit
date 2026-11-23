@@ -551,3 +551,14 @@ def test_get_level_significance_dates_the_drawdown_from_the_last_visit_to_the_pe
     result = diagnostics_model.get_level_significance(values)
     assert str(result["Drawdown Peak Date"]) == "2024-01-04"
     assert str(result["Drawdown Trough Date"]) == "2024-01-05"
+
+
+def test_get_cusum_test_of_a_series_constant_up_to_rounding_is_not_defined():
+    # The steps of a cumulated constant differ by rounding only (spread 4e-16).
+    steps = pd.Series(np.diff(np.cumsum(np.full(40, 0.1))))
+    result = diagnostics_model.get_cusum_test(steps)
+    assert np.isnan(result["CUSUM Statistic"])
+    assert not result["Reject Stability (5%)"]
+    # Real returns with little spread keep their statistic.
+    returns = pd.Series(np.random.default_rng(1).normal(0.001, 0.0001, 50))
+    assert np.isfinite(diagnostics_model.get_cusum_test(returns)["CUSUM Statistic"])

@@ -1753,7 +1753,8 @@ class Performance:
         Args:
             period (str, optional): The period for the calculation (e.g., "weekly", "monthly", "quarterly", "yearly").
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
-            method (str, optional): The regression method to use for the calculation. Defaults to 'multi'.
+            method (str, optional): "multi" for one regression on all factors together or "simple" for a
+                separate regression per factor. Defaults to "multi".
             factors_to_calculate (list of str, optional): List of factors to calculate scores and residuals for.
                 Defaults to ["Mkt-RF", "SMB", "HML", "RMW", "CMA"].
             include_daily_residuals (bool, optional): Whether to also return the pointwise (daily)

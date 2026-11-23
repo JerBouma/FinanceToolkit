@@ -4156,8 +4156,10 @@ class Toolkit:
                 year is the calendar year in which the fiscal year ends, the period of the annual
                 filing: Walmart's count at the end of January 2025 is 2025, a year after the label of
                 its financial statements for that fiscal year (2024), which follow the calendar year
-                holding most of it. The revenue and net income per employee match the counts on the
-                period end dates, so they divide each year by the headcount of that year.
+                holding most of it. A 52/53-week year ending in the first six days of January
+                (2 January 2021) counts as the year before (2020). The revenue and net income per
+                employee match the counts on the period end dates, so they divide each year by the
+                headcount of that year.
 
         As an example:
 

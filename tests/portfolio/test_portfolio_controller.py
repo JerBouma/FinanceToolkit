@@ -121,6 +121,27 @@ def test_get_gross_leverage(recorder):
     assert np.allclose(table["Gross Leverage"].dropna(), 1)
 
 
+def test_get_trades(recorder):
+    trades = portfolio.get_trades(rounding=8)
+    recorder.capture(trades)
+    recorder.capture(portfolio.get_trades(method="LIFO"))
+    # The gross PnL of the closed trades of a ticker is its realized PnL with the same method.
+    overview = portfolio.get_transactions_overview(exclude_sold_positions=False)
+    realized = overview.groupby(level=1)["PnL"].sum()
+    closed = trades[trades["Status"] == "Closed"].groupby("Ticker")["Gross PnL"].sum()
+    assert np.allclose(closed, realized.reindex(closed.index), atol=1e-4)
+
+
+def test_get_trade_statistics(recorder):
+    recorder.capture(portfolio.get_trade_statistics())
+    recorder.capture(portfolio.get_trade_statistics(by="ticker"))
+    recorder.capture(portfolio.get_trade_statistics(method="LIFO", by="direction"))
+
+
+def test_get_position_timing(recorder):
+    recorder.capture(portfolio.get_position_timing())
+
+
 def test_get_return_contributions(recorder):
     table = portfolio.get_return_contributions(period="yearly", rounding=8)
     recorder.capture(table)
@@ -1225,6 +1246,9 @@ def test_the_toolkit_leaves_the_portfolio_data_untouched():
         ("get_turnover", {"period": "yearly"}),
         ("get_gross_leverage", {"period": "yearly"}),
         ("get_return_contributions", {"period": "yearly"}),
+        ("get_trades", {}),
+        ("get_trade_statistics", {}),
+        ("get_position_timing", {}),
     ]:
         pd.testing.assert_frame_equal(
             getattr(touched, method)(**kwargs),

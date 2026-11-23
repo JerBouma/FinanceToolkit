@@ -1752,8 +1752,8 @@ class ToolRegistry:
             tickers_optional (list[str] | None): Toolkit methods that answer the same for any
                 ticker (market-wide snapshots) and so may be called without tickers.
                 Defaults to None.
-            parameter_limits (dict[str, Any] | None): The most a size parameter may be
-                ("maximums") and the most parameters computed together may multiply to
+            parameter_limits (dict[str, Any] | None): The most and least a size parameter may
+                be ("maximums", "minimums") and the most parameters computed together may multiply to
                 ("products"), see coercion_model.size_limit_problem, and the values refused
                 per indicator ("refused_values"), see coercion_model.refused_value_problem.
                 Defaults to None (no limits).

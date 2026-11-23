@@ -21,6 +21,9 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 
 # Number of deterministic Sobol starting points a GARCH-family fit tries, in addition to the domain-informed initial guess.  # noqa: E501
 N_MULTI_START_POINTS = 32
+# The distance to a bound, as a fraction of the bounds' width, within which a weight of a
+# warm-started fit counts as on that bound.
+BOUND_DISTANCE = 1e-6
 
 # The GARCH and GJR-GARCH recursions start from a backcast: an exponentially weighted average of the first squared returns, with the same window and decay as the arch package (Kevin Sheppard), so the fitted parameters agree with it.  # noqa: E501
 BACKCAST_OBSERVATIONS = 75
@@ -169,6 +172,16 @@ def _fit_multi_start(
         if result.fun < best_value:
             best_value = result.fun
             best_x = lower + result.x * span
+
+    if best_x is None and number_of_points == 0:
+        # A single search from earlier weights (a warm start) that stalls on the constraint
+        # wall still starts the Nelder-Mead polish below from those weights, when admissible.
+        start = np.clip(
+            (np.asarray(initial_guess, dtype=float) - lower) / span, 0.0, 1.0
+        )
+        if np.isfinite(scaled_objective(start)):
+            best_x = lower + start * span
+            best_value = scaled_objective(start)
 
     if best_x is None:
         logger.warning(
@@ -2116,10 +2129,19 @@ def get_garch_family_weights(
     distribution: str = "normal",
     mean: str = "zero",
     t: int | None = None,
+    starting_weights: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Estimates the weights of a GARCH-family model by maximum likelihood, with the same
     deterministic multi-start search as GARCH(1, 1) (see `_fit_multi_start`).
+
+    With `starting_weights` (the weights of an earlier fit, such as the previous window of
+    a rolling forecast) the search is a local search from them: the likelihood of a window
+    that shares most of its returns with the previous one peaks close to the previous
+    weights, and one search takes a fraction of the 33 of the multi-start search. A local
+    search can stay on a bound the previous optimum sat on, or stop short along it, so a fit
+    that starts or ends on a bound also runs the multi-start search of a fit without
+    starting weights and keeps the higher likelihood.
 
     GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean are fitted by
     `get_garch_weights`, `get_gjr_garch_weights` and `get_egarch_weights`. Every other
@@ -2144,6 +2166,9 @@ def get_garch_family_weights(
         mean (str, optional): The mean model. Defaults to "zero".
         t (int | None, optional): The number of returns, from the first, to fit on.
             Defaults to None, which uses every return.
+        starting_weights (np.ndarray | None, optional): The weights to start a local
+            search from, on the scale of the returns. Defaults to None, which runs the
+            multi-start search.
 
     Returns:
         np.ndarray: The weights, see `get_garch_family_parameter_names`; NaN when the fit
@@ -2155,8 +2180,11 @@ def get_garch_family_weights(
         returns = returns.iloc[:, 0].to_numpy()
 
     returns = np.asarray(returns, dtype=float)
+    warm_start = starting_weights is not None and bool(
+        np.all(np.isfinite(starting_weights))
+    )
 
-    if distribution == "normal" and mean == "zero":
+    if distribution == "normal" and mean == "zero" and not warm_start:
         if method == "garch":
             return get_garch_weights(returns, t)
         if method == "gjr":
@@ -2171,6 +2199,7 @@ def get_garch_family_weights(
         method,
         distribution,
         mean,
+        tuple(np.round(starting_weights, 12)) if warm_start else None,
     )
     with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
         cached = GARCH_FAMILY_WEIGHTS_CACHE.get(key)
@@ -2198,6 +2227,16 @@ def get_garch_family_weights(
     bounds = variance_bounds + mean_bounds + distribution_bounds
     initial_guess = variance_guess + mean_guess + distribution_guess
 
+    if warm_start:
+        # The starting weights are on the scale of the returns; the search runs on the scaled returns, kept inside the bounds.  # noqa: E501
+        initial_guess = list(
+            np.clip(
+                _rescale_weights(starting_weights, method, mean, 1 / scale),
+                [bound[0] for bound in bounds],
+                [bound[1] for bound in bounds],
+            )
+        )
+
     def objective(weights):
         variance_weights, _, distribution_weights = _split_weights(
             weights, method, mean
@@ -2211,9 +2250,35 @@ def get_garch_family_weights(
         )
         return -log_likelihood if np.isfinite(log_likelihood) else np.inf
 
-    weights = _fit_multi_start(
-        objective, bounds, initial_guess, f"{method} ({distribution}, {mean} mean)"
-    )
+    model_name = f"{method} ({distribution}, {mean} mean)"
+
+    if warm_start:
+        # A local search from weights on a bound (Alpha or Beta = 0 when the previous window had little volatility clustering) can stay in that corner, or stop short along the bound, while the new window peaks elsewhere. A fit that starts or ends on a bound therefore also runs the multi-start search of a fit without starting weights (the warm weights as a start of their own can displace the one that polishes to the highest likelihood) and keeps the higher likelihood.  # noqa: E501
+        lower = np.array([bound[0] for bound in bounds])
+        span = np.array([bound[1] for bound in bounds]) - lower
+        weights = _fit_multi_start(
+            objective, bounds, initial_guess, model_name, number_of_points=0
+        )
+        value = objective(weights) if np.all(np.isfinite(weights)) else np.inf
+        on_bound = [
+            np.any(np.minimum(unit, 1 - unit) < BOUND_DISTANCE)
+            for unit in (
+                (np.asarray(initial_guess) - lower) / span,
+                (weights - lower) / span,
+            )
+        ]
+        if not np.isfinite(value) or any(on_bound):
+            multi_start = _fit_multi_start(
+                objective,
+                bounds,
+                variance_guess + mean_guess + distribution_guess,
+                model_name,
+            )
+            if np.all(np.isfinite(multi_start)) and objective(multi_start) < value:
+                weights = multi_start
+    else:
+        weights = _fit_multi_start(objective, bounds, initial_guess, model_name)
+
     weights = _rescale_weights(weights, method, mean, scale)
 
     with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
@@ -2882,3 +2947,380 @@ def get_garch_simulation(
         },
         index=pd.Index(np.arange(1, time_steps + 1), name="Step"),
     )
+
+
+def get_standardized_cdf(
+    z: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
+) -> np.ndarray:
+    """
+    Calculates the distribution function F(z) = P(Z <= z) of a standardized innovation
+    distribution (mean 0 and Variance 1) of `get_standardized_log_density`.
+
+    The formula is as follows, with G the standardized Student-t distribution function
+    G(x) = T_v(x √(v / (v - 2))) and the constants a, b, m and s of `get_standardized_log_density`:
+
+    - normal: F(z) = Φ(z)
+    - t: F(z) = G(z)
+    - skewt (Hansen, 1994): F(z) = (1 - λ) G((b z + a) / (1 - λ)) below z = -a / b and
+      (1 - λ) / 2 + (1 + λ) (G((b z + a) / (1 + λ)) - 1 / 2) above it
+    - skewt_fernandez_steel: with x = m + s z, F = 2 / (ξ + 1 / ξ) G(x ξ) / ξ below zero and
+      1 / (1 + ξ^2) + 2 ξ / (ξ + 1 / ξ) (G(x / ξ) - 1 / 2) above it
+    - ged: F(z) = 1 / 2 + sign(z) P(Γ(1 / v), |z / λ|^v / 2) / 2, with P the regularized lower
+      incomplete gamma function
+    - johnson_su: F(z) = Φ(γ + δ asinh(m + s z))
+
+    Args:
+        z (np.ndarray): The standardized values.
+        distribution (str, optional): The distribution, see `get_standardized_log_density`.
+            Defaults to "normal".
+        parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
+            Defaults to (), for the normal distribution.
+
+    Returns:
+        np.ndarray: The probability at every z.
+    """
+    z = np.asarray(z, dtype=float)
+
+    if distribution == "normal":
+        return special.ndtr(z)
+
+    if distribution == "johnson_su":
+        shape, skew = parameters
+        location, scale = _johnson_su_moments(shape, skew)
+        return special.ndtr(skew + shape * np.arcsinh(location + scale * z))
+
+    if distribution == "ged":
+        shape = parameters[0]
+        scale = _ged_scale(shape)
+        return 0.5 + 0.5 * np.sign(z) * special.gammainc(
+            1 / shape, 0.5 * np.abs(z / scale) ** shape
+        )
+
+    shape = parameters[0]
+    t_scale = math.sqrt(shape / (shape - 2))
+
+    def student_t(x):
+        return special.stdtr(shape, x * t_scale)
+
+    if distribution == "t":
+        return student_t(z)
+
+    if distribution == "skewt":
+        skew = parameters[1]
+        a, b = _hansen_constants(shape, skew)
+        x = b * z + a
+        return np.where(
+            x < 0,
+            (1 - skew) * student_t(x / (1 - skew)),
+            (1 - skew) / 2 + (1 + skew) * (student_t(x / (1 + skew)) - 0.5),
+        )
+
+    if distribution == "skewt_fernandez_steel":
+        skew = parameters[1]
+        location, scale = _fernandez_steel_moments(shape, skew)
+        x = location + scale * z
+        weight = 2 / (skew + 1 / skew)
+        return np.where(
+            x < 0,
+            weight / skew * student_t(x * skew),
+            1 / (1 + skew**2) + weight * skew * (student_t(x / skew) - 0.5),
+        )
+
+    raise ValueError(f"Unknown distribution {distribution!r}.")
+
+
+def get_standardized_quantile(
+    probability: float | np.ndarray,
+    distribution: str = "normal",
+    parameters: tuple[float, ...] = (),
+) -> np.ndarray:
+    """
+    Calculates the quantile F^-1(p) of a standardized innovation distribution (mean 0 and
+    Variance 1), the inverse of `get_standardized_cdf`, in closed form:
+
+    - normal: Φ^-1(p)
+    - t: G^-1(p) = T_v^-1(p) √((v - 2) / v)
+    - skewt (Hansen, 1994): z = ((1 - λ) G^-1(p / (1 - λ)) - a) / b for p < (1 - λ) / 2 and
+      z = ((1 + λ) G^-1(1 / 2 + (p - (1 - λ) / 2) / (1 + λ)) - a) / b otherwise
+    - skewt_fernandez_steel: x = G^-1(p ξ (ξ + 1 / ξ) / 2) / ξ for p < 1 / (1 + ξ^2) and
+      x = ξ G^-1(1 / 2 + (p - 1 / (1 + ξ^2)) (ξ + 1 / ξ) / (2 ξ)) otherwise, z = (x - m) / s
+    - ged: z = sign(p - 1 / 2) λ (2 P^-1(1 / v, |2 p - 1|))^(1 / v)
+    - johnson_su: z = (sinh((Φ^-1(p) - γ) / δ) - m) / s
+
+    Args:
+        probability (float | np.ndarray): The probability (e.g., 0.05 for the 5% quantile).
+        distribution (str, optional): The distribution, see `get_standardized_log_density`.
+            Defaults to "normal".
+        parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
+            Defaults to (), for the normal distribution.
+
+    Returns:
+        np.ndarray: The quantile.
+    """
+    p = np.asarray(probability, dtype=float)
+
+    if distribution == "normal":
+        return special.ndtri(p)
+
+    if distribution == "johnson_su":
+        shape, skew = parameters
+        location, scale = _johnson_su_moments(shape, skew)
+        return (np.sinh((special.ndtri(p) - skew) / shape) - location) / scale
+
+    if distribution == "ged":
+        shape = parameters[0]
+        return (
+            np.sign(p - 0.5)
+            * _ged_scale(shape)
+            * (2 * special.gammaincinv(1 / shape, np.abs(2 * p - 1))) ** (1 / shape)
+        )
+
+    shape = parameters[0]
+    t_scale = math.sqrt((shape - 2) / shape)
+
+    def inverse_student_t(q):
+        return special.stdtrit(shape, q) * t_scale
+
+    if distribution == "t":
+        return inverse_student_t(p)
+
+    if distribution == "skewt":
+        skew = parameters[1]
+        a, b = _hansen_constants(shape, skew)
+        x = np.where(
+            p < (1 - skew) / 2,
+            (1 - skew) * inverse_student_t(np.minimum(p / (1 - skew), 1.0)),
+            (1 + skew)
+            * inverse_student_t(
+                np.clip(0.5 + (p - (1 - skew) / 2) / (1 + skew), 0.0, 1.0)
+            ),
+        )
+        return (x - a) / b
+
+    if distribution == "skewt_fernandez_steel":
+        skew = parameters[1]
+        location, scale = _fernandez_steel_moments(shape, skew)
+        weight = skew + 1 / skew
+        below = p < 1 / (1 + skew**2)
+        x = np.where(
+            below,
+            inverse_student_t(np.minimum(p * skew * weight / 2, 1.0)) / skew,
+            skew
+            * inverse_student_t(
+                np.clip(0.5 + (p - 1 / (1 + skew**2)) * weight / (2 * skew), 0.0, 1.0)
+            ),
+        )
+        return (x - location) / scale
+
+    raise ValueError(f"Unknown distribution {distribution!r}.")
+
+
+def get_standardized_expected_shortfall(
+    probability: float,
+    distribution: str = "normal",
+    parameters: tuple[float, ...] = (),
+) -> float:
+    """
+    Calculates the expected shortfall of a standardized innovation distribution (mean 0 and
+    Variance 1), the mean of z below its quantile at `probability`:
+
+    - ES(p) = E[z | z <= F^-1(p)] = (1 / p) ∫_0^p F^-1(u) du
+
+    The normal and Student-t distributions have closed forms, ES = -φ(Φ^-1(p)) / p and
+    ES = -√((v - 2) / v) (v + t^2) / (v - 1) f_v(t) / p with t = T_v^-1(p) and f_v the Student-t
+    density; the other distributions integrate their quantile (see
+    `get_standardized_quantile`) numerically.
+
+    Args:
+        probability (float): The tail probability (e.g., 0.05).
+        distribution (str, optional): The distribution, see `get_standardized_log_density`.
+            Defaults to "normal".
+        parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
+            Defaults to (), for the normal distribution.
+
+    Returns:
+        float: The expected shortfall, negative for a probability below 1 / 2.
+    """
+    from scipy import integrate  # noqa: PLC0415
+
+    if distribution == "normal":
+        return float(
+            -math.exp(-0.5 * special.ndtri(probability) ** 2 - 0.5 * LOG_2_PI)
+            / probability
+        )
+
+    if distribution == "t":
+        shape = parameters[0]
+        t = float(special.stdtrit(shape, probability))
+        density = math.exp(
+            special.gammaln((shape + 1) / 2)
+            - special.gammaln(shape / 2)
+            - 0.5 * math.log(shape * math.pi)
+            - (shape + 1) / 2 * math.log1p(t * t / shape)
+        )
+        return float(
+            -math.sqrt((shape - 2) / shape)
+            * (shape + t * t)
+            / (shape - 1)
+            * density
+            / probability
+        )
+
+    integral, _ = integrate.quad(
+        lambda u: float(get_standardized_quantile(u, distribution, parameters)),
+        0,
+        probability,
+        limit=200,
+    )
+
+    return integral / probability
+
+
+def _ged_scale(shape: float) -> float:
+    """The λ that gives the generalized error distribution of Shape v a unit Variance."""
+    return math.sqrt(
+        2 ** (-2 / shape)
+        * math.exp(special.gammaln(1 / shape) - special.gammaln(3 / shape))
+    )
+
+
+def _hansen_constants(shape: float, skew: float) -> tuple[float, float]:
+    """The constants a and b of Hansen's (1994) skewed Student-t distribution."""
+    c = math.exp(
+        special.gammaln((shape + 1) / 2) - special.gammaln(shape / 2)
+    ) / math.sqrt(math.pi * (shape - 2))
+    a = 4 * skew * c * (shape - 2) / (shape - 1)
+
+    return a, math.sqrt(1 + 3 * skew**2 - a**2)
+
+
+ROLLING_FORECAST_CACHE_SIZE = 32
+ROLLING_FORECAST_CACHE: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
+ROLLING_FORECAST_CACHE_LOCK = threading.Lock()
+
+
+def get_garch_family_rolling_forecast(
+    returns: pd.Series,
+    window_size: int | None = None,
+    refit_every: int = 21,
+    method: str = "garch",
+    distribution: str = "normal",
+    mean: str = "constant",
+) -> pd.DataFrame:
+    """
+    Forecasts the conditional mean and volatility of the next return with a GARCH-family
+    model refitted every `refit_every` returns on a moving window of `window_size` returns,
+    with the parameters of the innovation distribution of every fit.
+
+    The model is fitted on the window of returns that ends at a refit date and the fitted
+    weights filter every later return until the next refit, so the forecast for each return
+    only uses the returns before it:
+
+    - Mean_(t+1) = Mu (0 for mean="zero")
+    - Volatility_(t+1) = √(sigma_(t+1)^2), the one-step variance of the recursion of the weights of
+      the last refit on or before t, run over the returns from the start of that fit's window
+
+    The first fit is the multi-start search of `get_garch_family_weights`; every later fit
+    starts a local search from the previous weights, and a fit that starts or ends on a bound
+    also runs the multi-start search (see `get_garch_family_weights`). The recursion of a
+    refit starts from the backcast of its own window, as in the fit.
+
+    Without `window_size`, the model is fitted once on every return and the result is the
+    forecast for the period after the last return.
+
+    Referenced against the rolling estimation of `ugarchroll` in R's rugarch
+    (https://cran.r-project.org/package=rugarch), which refits every `refit.every` periods on a
+    moving or expanding window; rugarch starts every fit from its default starting values.
+
+    Args:
+        returns (pd.Series): The returns of one asset, without missing values.
+        window_size (int | None, optional): The number of returns of every fit. Defaults to
+            None, which fits once on every return.
+        refit_every (int, optional): The number of returns between two fits. Defaults to 21.
+        method (str, optional): The variance model, see GARCH_FAMILY_VARIANCE_PARAMETERS.
+            Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        mean (str, optional): The mean model, "zero" or "constant". Defaults to "constant".
+
+    Returns:
+        pd.DataFrame: The Mean and Volatility of the next return and the parameters of the
+        innovation distribution (Shape, Skew), indexed by the date of the last return each
+        forecast uses.
+    """
+    validate_garch_family(method, distribution, mean)
+
+    if mean not in ("zero", "constant"):
+        raise ValueError(
+            "The rolling forecast takes mean='zero' or mean='constant', whose next mean "
+            "is known without the next return."
+        )
+    if refit_every < 1:
+        raise ValueError("refit_every must be at least 1.")
+
+    returns = returns.dropna()
+    values = returns.to_numpy(dtype=float)
+    n = len(values)
+    window = n if window_size is None else int(window_size)
+
+    if window < MINIMUM_FIT_OBSERVATIONS or n < window:
+        raise ValueError(
+            f"The GARCH forecast needs at least {max(window, MINIMUM_FIT_OBSERVATIONS)} "
+            f"returns, received {n}."
+        )
+
+    key = (
+        hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest(),
+        n,
+        window,
+        refit_every,
+        method,
+        distribution,
+        mean,
+    )
+    with ROLLING_FORECAST_CACHE_LOCK:
+        cached = ROLLING_FORECAST_CACHE.get(key)
+        if cached is not None:
+            ROLLING_FORECAST_CACHE.move_to_end(key)
+            return cached.copy()
+
+    variance_end = len(GARCH_FAMILY_VARIANCE_PARAMETERS[method])
+    distribution_names = GARCH_FAMILY_DISTRIBUTION_PARAMETERS[distribution]
+    forecasts = np.full((n - window + 1, 2 + len(distribution_names)), np.nan)
+    previous_weights = None
+
+    for fit_end in range(window, n + 1, refit_every):
+        fit_returns = values[fit_end - window : fit_end]
+        weights = get_garch_family_weights(
+            fit_returns, method, distribution, mean, starting_weights=previous_weights
+        )
+
+        # The forecasts of this fit run up to the next refit, the last one past the final return.  # noqa: E501
+        block_end = min(fit_end + refit_every - 1, n)
+        first, last = fit_end - window, block_end - window + 1
+
+        if np.all(np.isfinite(weights)):
+            previous_weights = weights
+            backcast = get_backcast(_starting_residuals(fit_returns, mean))
+            _, sigma2, _, _ = _garch_family_filter(
+                values[fit_end - window : block_end], weights, method, mean, backcast
+            )
+            forecasts[first:last, 0] = (
+                weights[variance_end] if mean == "constant" else 0.0
+            )
+            forecasts[first:last, 1] = np.sqrt(sigma2[window:])
+            forecasts[first:last, 2:] = weights[
+                len(weights) - len(distribution_names) :
+            ]
+
+    result = pd.DataFrame(
+        forecasts,
+        index=returns.index[window - 1 :],
+        columns=["Mean", "Volatility", *distribution_names],
+    )
+
+    with ROLLING_FORECAST_CACHE_LOCK:
+        ROLLING_FORECAST_CACHE[key] = result.copy()
+        if len(ROLLING_FORECAST_CACHE) > ROLLING_FORECAST_CACHE_SIZE:
+            ROLLING_FORECAST_CACHE.popitem(last=False)
+
+    return result

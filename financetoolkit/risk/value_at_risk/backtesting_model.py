@@ -5,10 +5,19 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from scipy import special, stats
+from scipy import optimize, special, stats
 
 MINIMUM_OBSERVATIONS_FOR_TRANSITIONS = 2
 MINIMUM_OBSERVATIONS_FOR_ES_BACKTEST = 5
+
+# The Weibull likelihood of the duration test needs two durations, one of which is not censored.
+MINIMUM_DURATIONS = 2
+
+# The t-statistic of the exceedance residuals needs their standard deviation (ddof=1).
+MINIMUM_BREACHES_FOR_RESIDUAL_TEST = 2
+
+# The search interval of the Weibull shape, as in rugarch's VaRDurTest.
+WEIBULL_SHAPE_BOUNDS = (0.001, 10.0)
 
 
 def _align(returns: pd.Series, var_estimates: pd.Series) -> pd.DataFrame:
@@ -304,3 +313,358 @@ def get_acerbi_szekely_test(
                 "Breaches": int(breach.sum()),
             }
         )
+
+
+def get_conditional_coverage_test(
+    returns: pd.Series | pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Christoffersen's conditional coverage test for a Value at Risk model.
+
+    The test joins Kupiec's unconditional coverage test (is the breach rate alpha?) and
+    Christoffersen's independence test (does a breach make the next one more likely?) into
+    one likelihood ratio, which is asymptotically chi-squared distributed with 2 degrees of
+    freedom under the null hypothesis that breaches occur independently with probability
+    alpha:
+
+    - LR_cc = LR_uc + LR_ind
+
+    Where LR_uc is the statistic of `get_kupiec_test` on all n observations and LR_ind that
+    of `get_christoffersen_test` on the n - 1 transitions of the breach sequence. A breach is
+    a return strictly below the VaR.
+
+    For more information about the method, see the following paper:
+
+    - Christoffersen, P.F. (1998). "Evaluating Interval Forecasts." International Economic
+    Review, 39(4), 841-862.
+
+    Referenced against `VaRTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
+    which adds the two statistics in the same way.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
+        var_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Value at Risk
+            estimates, aligned to the same index as `returns`.
+        alpha (float): The tail probability the VaR estimates were built with (e.g., 0.05
+            for the 95% confidence level).
+
+    Returns:
+        pd.Series | pd.DataFrame: The conditional coverage statistic and its p-value.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_conditional_coverage_test(
+                    returns[column], var_estimates[column], alpha
+                )
+                for column in returns.columns
+            }
+        )
+    if isinstance(returns, pd.Series):
+        statistic = (
+            get_kupiec_test(returns, var_estimates, alpha)["Kupiec Statistic"]
+            + get_christoffersen_test(returns, var_estimates)[
+                "Christoffersen Statistic"
+            ]
+        )
+
+        return pd.Series(
+            {
+                "Conditional Coverage Statistic": statistic,
+                "P-Value": stats.chi2.sf(statistic, 2),
+            }
+        )
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_duration_test(
+    returns: pd.Series | pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate Christoffersen and Pelletier's duration-based test of independence for a Value
+    at Risk model.
+
+    Under a correct model, breaches arrive without memory: the number of periods between two
+    breaches (the duration) is exponentially distributed, with a constant probability of a
+    breach whatever the time since the last one. The test fits a Weibull distribution to the
+    durations, which nests the exponential distribution at a Shape b of 1, and compares the
+    two likelihoods; a Shape below 1 means breaches cluster (a breach is most likely soon
+    after another one):
+
+    - f(D) = a^b * b * D^(b - 1) * exp(-(a * D)^b) and S(D) = exp(-(a * D)^b)
+    - ln L(a, b) = C_1 * ln S(D_1) + (1 - C_1) * ln f(D_1) + Σ_(i=2)^(N-1) ln f(D_i) + C_N * ln S(D_N)
+      + (1 - C_N) * ln f(D_N)
+    - LR = 2 * (ln L(a_hat, b_hat) - ln L(a_tilde, 1)), compared with a χ² distribution with 1 degree of freedom
+
+    Where D_i = t_i - t_(i-1) are the periods between consecutive breaches at t_1 < ... < t_N.
+    A sample that does not start with a breach adds the periods up to the first breach as a
+    censored duration (C_1 = 1), and one that does not end with a breach the periods after
+    the last breach (C_N = 1): a censored duration only says that the next breach came later,
+    so it enters with its survival probability. For a given b, the likelihood is largest at
+    a = (number of uncensored durations / Σ D_i^b)^(1 / b), so b is found by maximizing over
+    a single parameter.
+
+    For more information about the method, see the following paper:
+
+    - Christoffersen, P.F. and Pelletier, D. (2004). "Backtesting Value-at-Risk: A
+    Duration-Based Approach." Journal of Financial Econometrics, 2(1), 84-108.
+
+    Referenced against `VaRDurTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
+    which defines the durations and their censoring in the same way.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
+        var_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Value at Risk
+            estimates, aligned to the same index as `returns`.
+
+    Returns:
+        pd.Series | pd.DataFrame: The duration statistic, its p-value and the fitted Weibull
+        Shape b; NaN with fewer than two durations.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_duration_test(returns[column], var_estimates[column])
+                for column in returns.columns
+            }
+        )
+    if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
+        aligned = _align(returns, var_estimates)
+        breach = (aligned["returns"] < aligned["var"]).to_numpy()
+        breach_times = np.flatnonzero(breach) + 1
+
+        durations = list(np.diff(breach_times).astype(float))
+        censored = [0.0] * len(durations)
+
+        if len(breach_times) and not breach[0]:
+            durations.insert(0, float(breach_times[0]))
+            censored.insert(0, 1.0)
+        if len(breach_times) and not breach[-1]:
+            durations.append(float(len(breach) - breach_times[-1]))
+            censored.append(1.0)
+
+        d = np.array(durations)
+        c = np.array(censored)
+
+        if len(d) < MINIMUM_DURATIONS or c[0] + c[-1] >= len(d):
+            return pd.Series(
+                {
+                    "Duration Statistic": np.nan,
+                    "P-Value": np.nan,
+                    "Weibull Shape": np.nan,
+                }
+            )
+
+        uncensored = len(d) - c[0] - c[-1]
+        log_d = np.log(d)
+
+        def log_likelihood(shape: float) -> float:
+            # The scale that maximizes the likelihood for this shape (see the docstring).
+            log_scale = (np.log(uncensored) - np.log(np.sum(d**shape))) / shape
+            cumulative_hazard = np.exp(shape * (log_scale + log_d))
+            log_density = (
+                shape * log_scale
+                + np.log(shape)
+                + (shape - 1) * log_d
+                - cumulative_hazard
+            )
+            # Censored durations enter with their log survival, -(a * D)^b.
+            return float(np.sum(np.where(c == 1, -cumulative_hazard, log_density)))
+
+        fit = optimize.minimize_scalar(
+            lambda shape: -log_likelihood(shape),
+            bounds=WEIBULL_SHAPE_BOUNDS,
+            method="bounded",
+            options={"xatol": 1e-10},
+        )
+        shape = float(fit.x)
+        lr_statistic = max(2 * (log_likelihood(shape) - log_likelihood(1.0)), 0.0)
+
+        return pd.Series(
+            {
+                "Duration Statistic": lr_statistic,
+                "P-Value": stats.chi2.sf(lr_statistic, 1),
+                "Weibull Shape": shape,
+            }
+        )
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_mcneil_frey_test(
+    returns: pd.Series | pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+    cvar_estimates: pd.Series | pd.DataFrame,
+    volatility_estimates: pd.Series | pd.DataFrame,
+    n_bootstrap: int = 1000,
+    random_state: int = 42,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate McNeil and Frey's exceedance residual test for an Expected Shortfall (CVaR)
+    model.
+
+    On every breach day the gap between the return and the Expected Shortfall forecast,
+    in units of the forecast volatility, is an exceedance residual. If the model describes
+    the tail correctly, the residuals have a mean of zero; when it understates the losses
+    beyond the VaR, they are positive:
+
+    - e_t = (CVaR_t - Return_t) / Volatility_t, for every t with Return_t < VaR_t
+    - Statistic = mean(e) / (std(e) / √k)
+    - P-Value = (1 / B) * Σ_b 1{Statistic*_b >= Statistic}
+
+    Where k is the number of breaches, std the sample standard deviation (ddof=1) and
+    Statistic*_b the statistic of the b-th of B resamples (with replacement) of the residuals
+    less their mean, which have a mean of zero as under the null hypothesis. The test is
+    one-sided: only an understatement of the tail losses rejects the model. Returns, VaR and
+    CVaR are negative for a loss, so a positive residual is a loss beyond the CVaR.
+
+    For more information about the method, see the following papers:
+
+    - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for
+    Heteroscedastic Financial Time Series: An Extreme Value Approach." Journal of Empirical
+    Finance, 7(3-4), 271-300.
+    - Efron, B. and Tibshirani, R.J. (1993). "An Introduction to the Bootstrap." Chapman and
+    Hall, section 16.4.
+
+    Referenced against `ESTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
+    which tests the unscaled gap CVaR_t - Return_t with a normal p-value and, with boot=TRUE,
+    reports the average of the p-values of the resamples instead.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
+        var_estimates (pd.Series | pd.DataFrame): The Value at Risk estimates, aligned to the
+            same index as `returns`.
+        cvar_estimates (pd.Series | pd.DataFrame): The Conditional Value at Risk (Expected
+            Shortfall) estimates, aligned to the same index.
+        volatility_estimates (pd.Series | pd.DataFrame): The volatility forecasts, aligned to
+            the same index.
+        n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
+        random_state (int, optional): The seed of the bootstrap. Defaults to 42.
+
+    Returns:
+        pd.Series | pd.DataFrame: The McNeil-Frey statistic, its bootstrap p-value and the
+        number of breaches; NaN with fewer than two breaches.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_mcneil_frey_test(
+                    returns[column],
+                    var_estimates[column],
+                    cvar_estimates[column],
+                    volatility_estimates[column],
+                    n_bootstrap,
+                    random_state,
+                )
+                for column in returns.columns
+            }
+        )
+    if isinstance(returns, pd.Series):
+        aligned = pd.concat(
+            [returns, var_estimates, cvar_estimates, volatility_estimates],
+            axis=1,
+            join="inner",
+        ).dropna()
+        aligned.columns = ["returns", "var", "cvar", "volatility"]
+        breaches = aligned[aligned["returns"] < aligned["var"]]
+        residuals = (
+            (breaches["cvar"] - breaches["returns"]) / breaches["volatility"]
+        ).to_numpy()
+        k = len(residuals)
+
+        def t_statistic(values: np.ndarray) -> np.ndarray:
+            return (
+                values.mean(axis=-1)
+                / values.std(axis=-1, ddof=1)
+                * np.sqrt(values.shape[-1])
+            )
+
+        if k < MINIMUM_BREACHES_FOR_RESIDUAL_TEST or np.ptp(residuals) == 0:
+            return pd.Series(
+                {"McNeil-Frey Statistic": np.nan, "P-Value": np.nan, "Breaches": k}
+            )
+
+        statistic = float(t_statistic(residuals))
+        rng = np.random.default_rng(random_state)
+        centered = residuals - residuals.mean()
+        resamples = centered[rng.integers(0, k, size=(n_bootstrap, k))]
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            bootstrap_statistics = t_statistic(resamples)
+
+        # A resample of identical residuals has no statistic; it is left out of the p-value.
+        bootstrap_statistics = bootstrap_statistics[np.isfinite(bootstrap_statistics)]
+
+        return pd.Series(
+            {
+                "McNeil-Frey Statistic": statistic,
+                "P-Value": float(np.mean(bootstrap_statistics >= statistic)),
+                "Breaches": k,
+            }
+        )
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_tick_loss(
+    returns: pd.Series | pd.DataFrame,
+    var_estimates: pd.Series | pd.DataFrame,
+    alpha: float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the tick (quantile) loss of a Value at Risk model, the average loss of its VaR
+    estimates as alpha quantiles of the returns.
+
+    The VaR at alpha is the value that minimizes the expected tick loss, so of two VaR
+    models on the same returns the one with the lower loss is the better quantile forecast.
+    Unlike the coverage tests it weighs how far each return falls from the VaR, so it ranks
+    models rather than accepting or rejecting one:
+
+    - Tick Loss = (1 / n) * Σ (alpha - 1{Return_t < VaR_t}) * (Return_t - VaR_t)
+
+    Every term is non-negative: a breach costs (1 - alpha) times its size and every other
+    period alpha times the distance to the VaR.
+
+    For more information about the method, see the following papers:
+
+    - Koenker, R. and Bassett, G. (1978). "Regression Quantiles." Econometrica, 46(1), 33-50.
+    - González-Rivera, G., Lee, T.H. and Mishra, S. (2004). "Forecasting Volatility: A Reality
+    Check Based on Option Pricing, Utility Function, Value-at-Risk, and Predictive
+    Likelihood." International Journal of Forecasting, 20(4), 629-645.
+
+    Referenced against `VaRloss` of R's rugarch (https://cran.r-project.org/package=rugarch),
+    which smooths the breach indicator with a steep logistic function and reports the loss of
+    every period in percentage points; the loss here is the exact one, in decimals, averaged.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
+        var_estimates (pd.Series | pd.DataFrame): The Value at Risk estimates, aligned to the
+            same index as `returns`.
+        alpha (float): The tail probability the VaR estimates were built with.
+
+    Returns:
+        pd.Series | pd.DataFrame: The tick loss.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_tick_loss(returns[column], var_estimates[column], alpha)
+                for column in returns.columns
+            }
+        )
+    if isinstance(returns, pd.Series):
+        if not isinstance(var_estimates, pd.Series):
+            raise TypeError("A Series of returns needs a Series of VaR estimates.")
+        aligned = _align(returns, var_estimates)
+        gap = aligned["returns"] - aligned["var"]
+        loss = (alpha - (gap < 0)) * gap
+
+        return pd.Series({"Tick Loss": loss.mean() if len(loss) else np.nan})
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")

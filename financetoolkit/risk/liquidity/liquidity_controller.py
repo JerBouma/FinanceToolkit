@@ -208,7 +208,7 @@ class LiquidityRisk:
         """
         Calculate the price impact of trading per asset and period: how much the price moves per unit traded,
         with Kyle's, Amihud's or Hasbrouck's lambda as the regression slopes of López de Prado (2018, chapter
-        19.4) or with the Roll Impact (section 19.3.1).
+        19.4) or with the Roll Impact (section 19.3.2).
 
         Each lambda is the slope of a regression, without an intercept, of the daily price changes on a
         measure of the trading of the day, over the days within the period. A high value is an illiquid asset,
@@ -240,7 +240,7 @@ class LiquidityRisk:
         Daily Data." The Journal of Finance, 64(3), 1445-1477.
         - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread in an Efficient Market."
         The Journal of Finance, 39(4), 1127-1139.
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections 19.3.1 and 19.4.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections 19.3.2 and 19.4.
 
         The formula is as follows:
 
@@ -308,12 +308,10 @@ class LiquidityRisk:
         - A day without a price change keeps the sign of the last change (the tick rule), as in the book.
         - A period with fewer than two days, or for method="roll" with fewer than three pairs of consecutive
         price changes within the period or an autocovariance of zero or above (no Roll spread), is NaN.
-        - The book's lambdas are regression slopes. mlfinlab's bar-based lambdas are the rolling means of the
-        ratios (ΔP_t / (b_t * V_t) and the like) instead, which weigh every day equally however little traded
-        on it; its trades-based Kyle and Amihud lambdas are the regressions and equal these. Its Roll impact
-        divides 2 * √|Cov| by the dollar volume of the last day; here a positive autocovariance is NaN, as in
-        `get_roll_spread`, and the spread is divided by the mean dollar volume of the period.
-        - Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab).
+        - The lambdas are the regression slopes of the book, not the means of the ratios (ΔP_t / (b_t * V_t)
+        and the like), which would weigh every day equally however little traded on it. For the Roll impact a
+        positive autocovariance is NaN, as in `get_roll_spread`, and the spread is divided by the mean dollar
+        volume of the period.
 
         As an example:
 
@@ -747,14 +745,14 @@ class LiquidityRisk:
         range of one day and of two days in terms of the spread and the volatility; the spread part does not
         grow with the length of the window while the volatility part does. Solving the two equations for the
         spread gives the Corwin-Schultz spread (`get_bid_ask_spread` with method="corwin_schultz"), and solving
-        them for the volatility gives this estimate, as López de Prado (2018, section 19.3.2 and snippet 19.2)
-        does; mlfinlab and RiskLabAI name it the Bekker-Parkinson volatility.
+        them for the volatility gives this estimate, as López de Prado (2018, section 19.3.4 and snippet 19.2)
+        does; RiskLabAI names it the Bekker-Parkinson volatility.
 
         For more information about the method, see the following sources:
 
         - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low
         Prices." The Journal of Finance, 67(2), 719-760.
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 19.3.2.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 19.3.4.
         - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the Rate of Return."
         Journal of Business, 53(1), 61-65.
 
@@ -800,10 +798,9 @@ class LiquidityRisk:
         fall within the period, without days with a price of 0 or below.
         - A two-day volatility below zero (the range over both days is narrow relative to the single days) is
         set to 0 before the average is taken, as in López de Prado's snippet 19.2.
-        - mlfinlab's `get_bekker_parkinson_vol` and RiskLabAI's `bekker_parkinson_volatility_estimates` average
-        β over a rolling window of days but take γ of the last pair only, and do not adjust for the overnight
-        return. Here σ is taken per pair and averaged per period, as the Corwin-Schultz spread is; per pair the
-        two are the same. Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab) and
+        - RiskLabAI's `bekker_parkinson_volatility_estimates` averages β over a rolling window of days but takes
+        γ of the last pair only, and does not adjust for the overnight return. Here σ is taken per pair and
+        averaged per period, as the Corwin-Schultz spread is; per pair the two are the same. Referenced against
         RiskLabAI (https://github.com/RiskLabAI/RiskLabAI.py).
 
         As an example:
@@ -1241,9 +1238,7 @@ class LiquidityRisk:
         first `window` days are classified and `buckets` buckets are complete, so start the Toolkit about half
         a year before the first date of interest.
         - The days are those the asset traded on; the Adjusted Close keeps a dividend from counting as selling.
-        - mlfinlab's `get_vpin` takes the bars as given and divides their mean imbalance by the volume of the
-        last bar, which is the same on buckets of equal volume; its `get_bvc_buy_volume` is the classification.
-        Referenced against mlfinlab (https://github.com/hudson-and-thames/mlfinlab).
+        - Every bucket holds the same volume V, so the mean imbalance of the buckets is divided by that volume.
 
         As an example:
 

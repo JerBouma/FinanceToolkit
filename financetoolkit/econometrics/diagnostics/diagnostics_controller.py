@@ -565,10 +565,8 @@ class DiagnosticsEconometrics:
         Markets: A Comparison of Alternative Methods." Journal of Financial Econometrics,
         10(1), 198-231.
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley,
-        section 17.3.
-        - Referenced against statsmodels' breaks_cusumolsresid and recursive_olsresiduals
-        and mlfinlab's get_chu_stinchcombe_white_statistics
-        (https://github.com/quantopian/mlfinlab).
+        section 17.3 (17.3.2 for the Chu-Stinchcombe-White test).
+        - Referenced against statsmodels' breaks_cusumolsresid and recursive_olsresiduals.
 
         Also known as: CUSUM test, CUSUM of OLS residuals test, Ploberger-Kramer test,
         recursive CUSUM test, Brown-Durbin-Evans test, Chu-Stinchcombe-White test, CSW CUSUM,
@@ -606,9 +604,9 @@ class DiagnosticsEconometrics:
         CUSUM test for each asset in the Toolkit instance.
         - statsmodels' recursive_olsresiduals scales the recursive path with the standard
         deviation of the recursive residuals around their mean; Brown, Durbin and Evans (1975)
-        use the residual variance of the full-sample fit, as here. mlfinlab divides the
-        Chu-Stinchcombe-White statistic by the variance rather than the volatility; the reference
-        date and the critical value are the same.
+        use the residual variance of the full-sample fit, as here. The Chu-Stinchcombe-White
+        statistic divides by the volatility σ̂ₜ and σ̂ₜ² averages the t - 1 squared changes, as in
+        López de Prado (2018, section 17.3.2).
         - The critical value of the Chu-Stinchcombe-White test is the 5% value Homm and Breitung
         (2012) simulated; it has no p-value.
 

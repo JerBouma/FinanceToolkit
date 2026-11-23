@@ -357,8 +357,8 @@ def get_bekker_parkinson_volatility(
     - k_2 = √(8 / π)
     - σ = (√(β / 2) - √β) / (k_2 * (3 - 2√2)) + √(γ / (k_2^2 * (3 - 2√2)))
 
-    López de Prado (2018, section 19.3.2 and snippet 19.2) derives it this way, and mlfinlab
-    and RiskLabAI name it the Bekker-Parkinson volatility: the range-based volatility of
+    López de Prado (2018, section 19.3.4 and snippet 19.2) derives it this way, and
+    RiskLabAI names it the Bekker-Parkinson volatility: the range-based volatility of
     Parkinson (1980) corrected for the spread. The volatility of each pair is set to 0 when it is negative (the range over
     the two days is narrow relative to the single days), as in López de Prado's snippet
     19.2, and the volatilities of the pairs of a period are averaged. The result is the
@@ -374,15 +374,14 @@ def get_bekker_parkinson_volatility(
     - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from
     Daily High and Low Prices." The Journal of Finance, 67(2), 719-760.
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
-    19.3.2.
+    19.3.4.
     - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the
     Rate of Return." Journal of Business, 53(1), 61-65.
 
-    Referenced against mlfinlab's `get_bekker_parkinson_vol`
-    (https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's
-    `bekker_parkinson_volatility_estimates` (https://github.com/RiskLabAI/RiskLabAI.py). Both
-    average β over a rolling window of days while taking γ of the last pair only and do not
-    adjust for the overnight return; here σ is taken per pair (with the overnight adjustment)
+    Referenced against RiskLabAI's `bekker_parkinson_volatility_estimates`
+    (https://github.com/RiskLabAI/RiskLabAI.py), which averages β over a rolling window of
+    days while taking γ of the last pair only and does not adjust for the overnight return;
+    here σ is taken per pair (with the overnight adjustment)
     and averaged per period, as the Corwin-Schultz spread is. On a pair without an overnight
     gap the two agree to machine precision.
 
@@ -987,11 +986,8 @@ def get_kyle_lambda(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
     19.4.1.
 
-    Referenced against mlfinlab's `get_bar_based_kyle_lambda` and
-    `get_trades_based_kyle_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
-    bar-based function there is the rolling mean of the ratio ΔP_t / (b_t * V_t) rather than
-    the regression slope of the book, which weighs every day equally however small its
-    volume; the trades-based function is the regression, which this function equals.
+    The lambda is the regression slope of the book rather than the mean of the ratio
+    ΔP_t / (b_t * V_t), which would weigh every day equally however small its volume.
 
     Args:
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
@@ -1076,11 +1072,8 @@ def get_amihud_lambda(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
     19.4.2.
 
-    Referenced against mlfinlab's `get_bar_based_amihud_lambda` and
-    `get_trades_based_amihud_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
-    bar-based function there is the rolling mean of the ratio |r_t| / DV_t, which is
-    Amihud's ratio (`get_amihud_illiquidity`) rather than the book's slope; the trades-based
-    function is the regression, which this function equals.
+    The lambda is the regression slope of the book; the mean of the ratio |r_t| / DV_t is
+    Amihud's ratio instead (`get_amihud_illiquidity`).
 
     Args:
         prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices for the
@@ -1165,11 +1158,9 @@ def get_hasbrouck_lambda(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
     19.4.3.
 
-    Referenced against mlfinlab's `get_bar_based_hasbrouck_lambda` and
-    `get_trades_based_hasbrouck_lambda` (https://github.com/hudson-and-thames/mlfinlab). The
-    bar-based function there is the rolling mean of the ratio r_t / (b_t * √DV_t) rather than
-    the regression slope of the book, and the trades-based function regresses the absolute
-    log return |r_t|; here the slope is that of the signed log return, as in the book.
+    The lambda is the regression slope of the book rather than the mean of the ratio
+    r_t / (b_t * √DV_t), and it regresses the signed log return r_t, as in the book, rather
+    than its absolute value.
 
     Args:
         prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices for the
@@ -1233,7 +1224,7 @@ def get_roll_impact(
     Calculate the Roll Impact per period: the Roll (1984) spread of the period divided by
     its mean dollar volume, the spread paid per dollar traded.
 
-    López de Prado (2018, section 19.3.1) divides the Roll measure by the dollar volume, so
+    López de Prado (2018, section 19.3.2) divides the Roll measure by the dollar volume, so
     that the spread an asset pays relates to how much of it trades:
 
     - ΔP_t = P_t - P_(t-1)
@@ -1254,11 +1245,9 @@ def get_roll_impact(
     - Roll, R. (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread in an
     Efficient Market." The Journal of Finance, 39(4), 1127-1139.
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
-    19.3.1.
+    19.3.2.
 
-    Referenced against mlfinlab's `get_roll_impact` (https://github.com/hudson-and-thames/mlfinlab),
-    which divides a rolling Roll measure of 2 * √|Cov| by the dollar volume of the last day.
-    Here a positive autocovariance gives NaN rather than the spread of its absolute value,
+    A positive autocovariance gives NaN rather than the spread of its absolute value,
     since Roll's model has no spread then, and the spread is divided by the mean dollar
     volume of the days it is estimated from.
 
@@ -1372,9 +1361,6 @@ def get_bulk_volume_classification(
     - Easley, D., López de Prado, M., & O'Hara, M. (2016). "Discerning Information from Trade
     Data." Journal of Financial Economics, 120(2), 269-285.
 
-    Referenced against mlfinlab's `get_bvc_buy_volume` (https://github.com/hudson-and-thames/mlfinlab),
-    which it equals with the normal distribution and the same window.
-
     Args:
         prices (pd.Series | pd.DataFrame): A Series or Dataframe of the prices of the bars.
         volume (pd.Series | pd.DataFrame): The Volume of the bars on the same dates.
@@ -1458,10 +1444,8 @@ def get_vpin(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
     19.5.2.
 
-    Referenced against mlfinlab's `get_vpin` (https://github.com/hudson-and-thames/mlfinlab),
-    which takes the bars as given and divides the mean imbalance of the last n bars by the
-    volume of the last bar; on bars of equal volume the two are the same. Here the buckets
-    are formed from the days, so they hold the same volume as the paper's.
+    The buckets are formed from the days, so each holds the same volume, as in the paper,
+    and the mean imbalance of the last n buckets is divided by that volume.
 
     Args:
         prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices.

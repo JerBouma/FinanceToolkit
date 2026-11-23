@@ -116,8 +116,8 @@ class LabelingTechnicals:
           price hovering around a level triggers no events, unlike a band crossing, as it takes
           a full run of the threshold to set one off.
         - "z_score": the z-score filter: an event when the price lies at least `threshold`
-          standard deviations from its average over `window` periods, a filter defined by
-          Hudson & Thames in mlfinlab after J.P.G. van Brakel's peak detection.
+          standard deviations from its average over `window` periods, a filter after the
+          z-score peak detection of van Brakel (2014).
 
         The formula is as follows, per method:
 
@@ -137,8 +137,9 @@ class LabelingTechnicals:
         - Lam, K. and Yam, H.C. (1997). "CUSUM Techniques for Technical Trading in Financial
           Markets." Financial Engineering and the Japanese Markets, 4(3), 257-274.
         - Page, E.S. (1954). "Continuous Inspection Schemes." Biometrika, 41(1/2), 100-115.
-        - Referenced against mlfinlab's `cusum_filter` and `z_score_filter` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's `symmetric_cusum_filter`
+        - van Brakel, J.P.G. (2014). "Robust peak detection algorithm using z-scores." Stack
+          Overflow (https://stackoverflow.com/questions/22583391).
+        - Referenced against RiskLabAI's `symmetric_cusum_filter`
           (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: CUSUM filter, symmetric CUSUM filter, event-based sampling, z-score filter,
@@ -170,8 +171,8 @@ class LabelingTechnicals:
         Notes:
         - The CUSUM sums start on each ticker's first return and the threshold needs two returns
           for its volatility, so the first event comes after the third price.
-        - mlfinlab's z-score filter only reports prices above the band and takes separate
-          windows for the average and the standard deviation; this filter reports both sides.
+        - The z-score filter reports prices both above and below the band and takes one window
+          for the average and the standard deviation.
         - The CUSUM test of `toolkit.econometrics.get_cusum_test` is a different tool: a test of
           a stable mean over the whole sample rather than a filter that marks dates.
 
@@ -275,8 +276,7 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 3
           (Snippets 3.1 to 3.7).
-        - Referenced against mlfinlab's `get_events` and `get_bins` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's `triple_barrier` and
+        - Referenced against RiskLabAI's `triple_barrier` and
           `meta_labeling` (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: triple barrier method, triple-barrier labeling, meta-labeling, meta labels,
@@ -306,8 +306,8 @@ class LabelingTechnicals:
                 1 (long), -1 (short) and 0 (no bet). Only the dates with a bet are labeled.
                 Defaults to None, which gives the triple-barrier labels themselves.
             vertical_barrier_zero (bool, optional): Whether a date whose vertical barrier is
-                reached first is labeled 0 rather than with the sign of its return, as in
-                mlfinlab. Defaults to False.
+                reached first is labeled 0 rather than with the sign of its return. Defaults
+                to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -326,13 +326,11 @@ class LabelingTechnicals:
           label yet (NaN), so the last `horizon` dates are mostly empty.
         - The volatility is that of each period's return. López de Prado's Snippet 3.1 measures
           the return over the bar a calendar day earlier, written for intraday bars.
-        - The vertical barrier lies `horizon` periods ahead, where mlfinlab's lies a number of
-          calendar days ahead. Without a side mlfinlab takes the profit-taking multiple for both
-          barriers; here the two multiples apply as given. mlfinlab compares the log return with
-          the log of the barrier when it labels a touch of an upper barrier other than one
-          volatility; here the barrier reached decides. The return of a short bet is minus
-          the price return, as in López de Prado's Snippet 3.7, where mlfinlab takes
-          p_t / p_t+k - 1.
+        - The vertical barrier lies `horizon` periods ahead, where López de Prado's Snippet 3.4
+          places it a number of calendar days ahead. Without a side the two multiples apply as
+          given, where Snippet 3.3 takes the profit-taking multiple for both barriers. The label
+          is that of the barrier reached first. The return of a short bet is minus the price
+          return, as in López de Prado's Snippet 3.7.
 
         As an example:
 
@@ -444,9 +442,6 @@ class LabelingTechnicals:
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 3.2.
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge University
           Press, section 5.2.
-        - Referenced against mlfinlab's `fixed_time_horizon`, `excess_over_mean`,
-          `excess_over_median` and `return_over_benchmark` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab).
 
         Also known as: fixed-time horizon labels, fixed horizon method, return labels, excess
         return labels, relative labels.
@@ -482,9 +477,8 @@ class LabelingTechnicals:
           label.
         - A relative label leaves out the Benchmark (and a Portfolio) as tickers; the mean or
           median is that of the tickers with a return on the date.
-        - mlfinlab's labels look one period ahead and its standardized variant divides by the
-          rolling standard deviation of the forward returns; the volatility scaling here uses
-          the volatility known at the date.
+        - The volatility of a scaled threshold is the one known at the date, not that of the
+          forward returns.
 
         As an example:
 
@@ -595,10 +589,9 @@ class LabelingTechnicals:
         For more information, see the following book:
 
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge University
-          Press, section 5.4.
-        - Referenced against mlfinlab's `trend_scanning_labels` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's
-          `find_trend_using_trend_scanning` (https://github.com/RiskLabAI/RiskLabAI.py).
+          Press, section 5.4 (Snippets 5.1 and 5.2).
+        - Referenced against RiskLabAI's `find_trend_using_trend_scanning`
+          (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: trend scanning, trend-scanning method, t-value labels.
 
@@ -624,11 +617,10 @@ class LabelingTechnicals:
         Notes:
         - The windows count each ticker's own trading days. A date gets a label once all its
           windows are complete, so the last `maximum_window - 1` dates have none.
-        - The trend is fitted on the prices, as in mlfinlab; a tie between windows goes to the
-          shortest.
-        - mlfinlab scans the windows up to one shorter than its `look_forward_window`; its 21
-          scans the same windows as a `maximum_window` of 20 here, but needs one price more
-          after them, so it labels one date fewer at the end.
+        - The trend is fitted on the prices, as in López de Prado's Snippet 5.1; a tie between
+          windows goes to the shortest.
+        - The windows run up to and including `maximum_window`; the span of López de Prado's
+          Snippet 5.2 is a Python range, which leaves its end out.
 
         As an example:
 
@@ -699,11 +691,14 @@ class LabelingTechnicals:
         Labels look forward by construction: the score of a date is the return of the `horizon`
         periods after it, divided by the volatility known at the date.
 
-        The tail sets are defined by Hudson & Thames in mlfinlab.
+        The tail sets follow Huerta, Corbacho and Elkan (2013), who label the stocks with the
+        highest and lowest volatility-adjusted returns and leave the middle out.
 
         For more information, see the following sources:
 
-        - Hudson & Thames, mlfinlab's `TailSetLabels` (https://github.com/hudson-and-thames/mlfinlab).
+        - Huerta, R., Corbacho, F. and Elkan, C. (2013). "Nonlinear Support Vector Machines Can
+          Systematically Identify Stocks with High and Low Future Returns." Algorithmic Finance,
+          2(1), 45-58.
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge University
           Press, chapter 5.
 
@@ -734,11 +729,8 @@ class LabelingTechnicals:
         - The Benchmark (and a Portfolio) are left out of the ranking; it needs at least two
           tickers, and with fewer than 1 / quantile tickers each tail holds a single ticker.
         - Tickers with an equal score share their average rank. A ticker exactly on the
-          boundary of a tail belongs to the tail on both sides, where mlfinlab's equal-count
-          bins (`pd.qcut`) leave the boundary of the top tail out.
-        - mlfinlab labels the log return of the period ending at the date, adjusted by a
-          rolling standard deviation or mean absolute deviation; here the forward return is
-          labeled, adjusted by the volatility known at the date.
+          boundary of a tail belongs to the tail on both sides.
+        - The forward return is labeled, adjusted by the volatility known at the date.
 
         As an example:
 
@@ -815,7 +807,7 @@ class LabelingTechnicals:
         The templates are those of Leigh, Modani, Purvis and Roberts (2002), "leigh_bull", and of
         Cervelló-Royo, Guijarro and Michniuk (2015), "cervello_royo_bull", who proposed a flag
         whose weights are concentrated in the consolidation. The bear templates are the bull
-        templates upside down.
+        templates upside down, the highest decile becoming the lowest.
 
         The formula is as follows:
 
@@ -835,8 +827,6 @@ class LabelingTechnicals:
         - Cervelló-Royo, R., Guijarro, F. and Michniuk, K. (2015). "Stock Market Trading Rule
           Based on Pattern Recognition and Technical Analysis: Forecasting the DJIA Index with
           Intraday Data." Expert Systems with Applications, 42(14), 5963-5975.
-        - Referenced against mlfinlab's `MatrixFlagLabels` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab).
 
         Also known as: matrix flags, bull flag, bear flag, flag pattern, template matching.
 
@@ -865,9 +855,8 @@ class LabelingTechnicals:
         - The window counts each ticker's own trading days; a window that is not a multiple of
           ten gives its first parts one price more.
         - A price on the boundary of two deciles belongs to the lower one.
-        - mlfinlab scores the window before each date and labels the scores below the threshold
-          -1; here the window ends at the date and those scores are labeled 0, since a missing
-          flag is no sign of the opposite move.
+        - The window ends at the date, and the scores below the threshold are labeled 0, since
+          a missing flag is no sign of the opposite move.
 
         As an example:
 
@@ -943,10 +932,7 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections
           4.3 and 4.4 (Snippets 4.1 and 4.2).
-        - Referenced against mlfinlab's `num_concurrent_events` and
-          `get_av_uniqueness_from_triple_barrier` (Hudson & Thames,
-          https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's
-          `calculate_average_uniqueness` (https://github.com/RiskLabAI/RiskLabAI.py).
+        - Referenced against RiskLabAI's `calculate_average_uniqueness` (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: label concurrency, number of concurrent events, average uniqueness,
         sample uniqueness, overlapping labels.
@@ -1063,9 +1049,8 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections
           4.6 and 4.7 (Snippets 4.10 and 4.11).
-        - Referenced against mlfinlab's `get_weights_by_return` and `get_weights_by_time_decay`
-          (Hudson & Thames, https://github.com/hudson-and-thames/mlfinlab) and RiskLabAI's
-          `sample_weight_absolute_return_meta_labeling` and `calculate_time_decay`
+        - Referenced against RiskLabAI's `sample_weight_absolute_return_meta_labeling` and
+          `calculate_time_decay`
           (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: sample weights, return attribution, time decay, time-decay weights.
@@ -1096,7 +1081,7 @@ class LabelingTechnicals:
         Notes:
         - The weights are calculated per ticker, over the labels from the start date of the
           Toolkit, so each ticker's weights add up to its number of labels ("return").
-        - López de Prado's Snippet 4.10 and mlfinlab also add the return into the label's date,
+        - López de Prado's Snippet 4.10 also adds the return into the label's date,
           the period before the label starts; the sum here starts after it, with the returns the
           label earns.
 
@@ -1210,9 +1195,7 @@ class LabelingTechnicals:
         - López de Prado, M. and Foreman, M. (2014). "A mixture of two Gaussians approach to
           mathematical portfolio oversight: the EF3M algorithm." Quantitative Finance, 14(5),
           913-930.
-        - Referenced against mlfinlab's `bet_size_budget`, `bet_size_reserve` and
-          `bet_size_probability` (Hudson & Thames, https://github.com/hudson-and-thames/mlfinlab)
-          and RiskLabAI's `probability_bet_size` and `avg_active_signals`
+        - Referenced against RiskLabAI's `probability_bet_size` and `avg_active_signals`
           (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: bet sizing, position sizing from meta-labels, budget bet size, reserve bet
@@ -1252,20 +1235,19 @@ class LabelingTechnicals:
         Notes:
         - The bets are those whose barrier was reached; a bet still open at the end of the data
           has no Holding Period yet and is left out.
-        - A bet counts from the date it is placed up to, but not including, the date it closes,
-          as in mlfinlab. The "budget" maximum and the "reserve" fit cover each ticker's whole
-          sample, as in López de Prado, so like the labels themselves they describe the bets of
-          the sample rather than a size known on the date. The hit rate of "probability" uses
-          only the bets closed by the date.
+        - A bet counts from the date it is placed up to, but not including, the date it closes.
+          The "budget" maximum and the "reserve" fit cover each ticker's whole sample, as in
+          López de Prado, so like the labels themselves they describe the bets of the sample
+          rather than a size known on the date. The hit rate of "probability" uses only the bets
+          closed by the date.
         - The "reserve" fit solves the five moment equations of EF3M with Powell's hybrid method
           from EF3M's random starting points rather than with EF3M's fixed-point iteration, whose
-          solution is often a repelling point it cannot reach; mlfinlab returns the closest
-          iterate, which differs per seed. Here every seed reaches the same exact solution, so
-          `seed` only matters when the moments allow several.
+          solution is often a repelling point it cannot reach, so where it stops differs per
+          seed. Here every seed reaches the same exact solution, so `seed` only matters when
+          the moments allow several.
         - "probability" sizes the bets with the hit rate of the past bets as the predicted
-          probability, a simple secondary model; mlfinlab's `bet_size_probability` (in
-          `bet_sizing_model.get_probability_bet_size`) takes the probabilities of a classifier of
-          your own.
+          probability, a simple secondary model; `bet_sizing_model.get_probability_bet_size`
+          takes the probabilities of a classifier of your own.
 
         As an example:
 

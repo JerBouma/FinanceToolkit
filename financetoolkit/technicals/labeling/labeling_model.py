@@ -8,8 +8,8 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 # The bull flag templates of the matrix flag labels: rows from the highest price decile of the
 # window (top) to the lowest, columns from the first tenth of the window (left) to the last.
-# Leigh, Modani, Purvis and Roberts (2002) and Cervelló-Royo, Guijarro and Michniuk (2015); the
-# bear templates are the bull templates upside down, as mlfinlab defines them.
+# Leigh, Modani, Purvis and Roberts (2002) and Cervelló-Royo, Guijarro and Michniuk (2015). The
+# bear templates are the bull templates upside down, the highest decile becoming the lowest.
 LEIGH_BULL_TEMPLATE = np.array(
     [
         [0.5, 0, -1, -1, -1, -1, -1, -1, -1, 0],
@@ -143,9 +143,9 @@ def get_z_score_events(
 
     For more information, see the following source:
 
-    - Hudson & Thames, mlfinlab's `z_score_filter`
-      (https://github.com/hudson-and-thames/mlfinlab), after J.P.G. van Brakel's peak detection
-      of 2014 (https://stackoverflow.com/questions/22583391).
+    - van Brakel, J.P.G. (2014). "Robust peak detection algorithm using z-scores." Stack
+      Overflow (https://stackoverflow.com/questions/22583391), the peak detection this filter
+      follows.
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -157,9 +157,9 @@ def get_z_score_events(
         window is filled.
 
     Notes:
-        A window of equal prices has no standard deviation and gives no event. mlfinlab's
-        filter is one-sided (only prices above the band) with separate windows for the mean and
-        the standard deviation; this one is symmetric with one window.
+        A window of equal prices has no standard deviation and gives no event. The filter is
+        symmetric, with events above and below the band, and takes one window for the mean and
+        the standard deviation.
     """
     rolling = prices.rolling(window)
     z_scores = (prices - rolling.mean()) / rolling.std()
@@ -465,8 +465,10 @@ def get_tail_set_labels(scores: pd.DataFrame, quantile: float = 0.1) -> pd.DataF
     - q_i = (rank_i - 1) / (N - 1), the percentile rank among the N tickers with a score
     - label = 1 when q_i >= 1 - quantile, -1 when q_i <= quantile, else 0
 
-    The tail sets are defined by Hudson & Thames in mlfinlab's `TailSetLabels`
-    (https://github.com/hudson-and-thames/mlfinlab).
+    The tail sets follow Huerta, R., Corbacho, F. and Elkan, C. (2013). "Nonlinear Support
+    Vector Machines Can Systematically Identify Stocks with High and Low Future Returns."
+    Algorithmic Finance, 2(1), 45-58, who label the stocks with the highest and lowest
+    volatility-adjusted returns and leave the middle out.
 
     Args:
         scores (pd.DataFrame): The scores, a column per ticker.

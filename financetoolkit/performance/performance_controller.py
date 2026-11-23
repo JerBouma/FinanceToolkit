@@ -11147,11 +11147,9 @@ class Performance:
 
         For more information, see the following sources:
 
-        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.4
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 14.5.1
         (Snippet 14.3).
         - Herfindahl, O.C. (1950). "Concentration in the Steel Industry." Columbia University.
-        - Referenced against mlfinlab's `all_bets_concentration` (Hudson & Thames,
-        https://github.com/hudson-and-thames/mlfinlab).
 
         Also known as: bets concentration, HHI of returns, Herfindahl-Hirschman Index of returns.
 

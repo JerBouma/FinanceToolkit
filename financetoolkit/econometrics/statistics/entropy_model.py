@@ -434,11 +434,9 @@ def get_shannon_entropy(symbols: np.ndarray, word_length: int = 1) -> float:
     chapter 18.3 (Snippet 18.1). Shannon, C.E. (1948). "A Mathematical Theory of
     Communication." Bell System Technical Journal, 27(3), 379-423.
 
-    Referenced against mlfinlab's get_plug_in_entropy and get_shannon_entropy
-    (https://github.com/hudson-and-thames/mlfinlab).
-
     Notes:
-        - Every overlapping word is counted, the last one included.
+        - Every overlapping word is counted, the last one included; the loop of López de
+          Prado's Snippet 18.1 stops one word short.
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -473,9 +471,6 @@ def get_lempel_ziv_entropy(symbols: np.ndarray) -> float:
     chapter 18.4 (Snippet 18.2). Ziv, J. & Lempel, A. (1978). "Compression of individual
     sequences via variable-rate coding." IEEE Transactions on Information Theory, 24(5),
     530-536.
-
-    Referenced against mlfinlab's get_lempel_ziv_entropy
-    (https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -521,11 +516,8 @@ def get_kontoyiannis_entropy(symbols: np.ndarray) -> float:
     Reference: Kontoyiannis, I., Algoet, P.H., Suhov, Y.M. & Wyner, A.J. (1998).
     "Nonparametric entropy estimation for stationary processes and random fields, with
     applications to English text." IEEE Transactions on Information Theory, 44(3), 1319-1327.
-    López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.5
+    López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.4
     (Snippets 18.3 and 18.4).
-
-    Referenced against mlfinlab's get_konto_entropy
-    (https://github.com/hudson-and-thames/mlfinlab).
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.

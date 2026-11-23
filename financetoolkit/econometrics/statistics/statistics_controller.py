@@ -1178,9 +1178,7 @@ class StatisticsEconometrics:
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.
         - Referenced against nolds' sampen (https://github.com/CSchoel/nolds), antropy's
           sample_entropy, app_entropy, perm_entropy, spectral_entropy and svd_entropy
-          (https://github.com/raphaelvallat/antropy) and mlfinlab's get_shannon_entropy,
-          get_plug_in_entropy, get_lempel_ziv_entropy and get_konto_entropy
-          (https://github.com/hudson-and-thames/mlfinlab).
+          (https://github.com/raphaelvallat/antropy).
 
         Also known as: SampEn, ApEn, ordinal pattern entropy, spectral entropy, SVD entropy,
         plug-in entropy, LZ entropy, Kontoyiannis entropy, entropy features.

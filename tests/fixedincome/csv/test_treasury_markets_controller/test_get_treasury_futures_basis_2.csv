@@ -1,0 +1,3 @@
+CUSIP,Coupon,Maturity,Price,Conversion Factor,Futures Price,Invoice Price,Gross Basis,Carry,Net Basis,Implied Repo Rate,Repo Rate,Cheapest to Deliver,Futures Symbol,Delivery Date,Price Date
+912810UJ5,0.0475,2045-02-15,92.25,0.8635,106.2812,93.5551,0.4761,0.1058,0.3703,0.006,0.04,True,ZBZ26.CBT,2026-12-31,2026-11-19
+912810UN6,0.0488,2045-08-15,93.5312,0.8753,106.2812,94.8561,0.5032,0.114,0.3892,0.0048,0.04,False,ZBZ26.CBT,2026-12-31,2026-11-19

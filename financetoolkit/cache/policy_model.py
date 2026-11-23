@@ -269,6 +269,9 @@ POLICIES: dict[str, CachePolicy] = {
     # Auctions are added several times a week; a past year's results are final.
     f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
+    # TreasuryDirect's auctions of a kind of security (FRN spreads, TIPS reference CPIs, the
+    # 13-week bill rates that index the FRNs) change with each auction.
+    f"{US_TREASURY}.securities": CachePolicy(ttl_seconds=DAY),
     # The FedInvest prices of a day are completed with the end-of-day price the next
     # business day; a day that has them is final.
     f"{US_TREASURY}.fedinvest_prices": CachePolicy(ttl_seconds=3600),

@@ -1,4 +1,4 @@
-"""TreasuryDirect FedInvest Price Model"""
+"""TreasuryDirect FedInvest Price and Security Model"""
 
 __docformat__ = "google"
 
@@ -13,7 +13,7 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS
+from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 
 logger = logger_model.get_logger()
@@ -46,6 +46,15 @@ SECURITY_TYPES = {
 # price the next business day, so a weekend or holiday is skipped by trying the days
 # before it.
 LOOKBACK_DAYS = 7
+
+# TreasuryDirect's securities service lists every auction of a kind of security since 1979,
+# reopenings included, with the terms of the security: the spread of a floating rate note,
+# the reference CPI of a TIPS's dated date, the original term of a note and the high rate of
+# a bill. One request answers for a kind (and term), without an API key.
+SECURITIES_URL = "https://www.treasurydirect.gov/TA_WS/securities/search"
+
+# The kinds of security the service is asked for, as it names them.
+AUCTIONED_TYPES = ("Bill", "Note", "Bond", "TIPS", "FRN")
 
 ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
 CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
@@ -211,4 +220,106 @@ def get_treasury_prices(price_date: str | None = None) -> tuple[pd.DataFrame, da
 
     raise ValueError(
         f"FedInvest has no Treasury prices for {day} or the {LOOKBACK_DAYS} days before it."
+    )
+
+
+def _date(value: str | None) -> date | None:
+    """The date of a TreasuryDirect timestamp ("2026-07-31T00:00:00"), None when empty."""
+    return date.fromisoformat(value[:10]) if value else None
+
+
+def _number(value: str | None) -> float:
+    """A number TreasuryDirect publishes as text, NaN when empty."""
+    try:
+        return float(value) if value not in (None, "") else float("nan")
+    except ValueError:
+        return float("nan")
+
+
+def get_auctioned_securities(
+    security_type: str, security_term: str | None = None
+) -> pd.DataFrame:
+    """
+    Retrieves every auction of a kind of Treasury security from TreasuryDirect's securities
+    service, with the terms that do not show in the daily prices: the dated date, the
+    original term, the spread of a floating rate note, the reference CPI of the dated date
+    of a TIPS and the high rate of a bill. The answer changes with each auction, so it is
+    cached for a day.
+
+    Args:
+        security_type (str): "Bill", "Note", "Bond", "TIPS" or "FRN". The service files TIPS
+            and floating rate notes apart from the other notes and bonds.
+        security_term (str | None): The term of the auction as the Treasury writes it, such
+            as "13-Week" or "5-Year" (an original issue; a reopening has the remaining term,
+            such as "4-Year 10-Month"). Defaults to None, every term.
+
+    Returns:
+        pd.DataFrame: One row per auction with the CUSIP, Security Term, Original Security
+        Term, Reopening (bool), Auction Date, Issue Date, Dated Date (the original dated date),
+        Maturity Date, Days to Maturity, Interest Rate, Spread and High Rate (decimals) and
+        the Reference CPI on the Dated Date, sorted by auction date.
+
+    Raises:
+        ValueError: When the security type is unknown or the answer has no auctions.
+    """
+    if security_type not in AUCTIONED_TYPES:
+        raise ValueError(
+            f"The security type must be one of {', '.join(AUCTIONED_TYPES)}, not {security_type}."
+        )
+    query = f"?format=json&type={security_type}"
+    if security_term:
+        query += f"&securityTerm={security_term}"
+    description = (
+        f"TreasuryDirect {security_term or ''} {security_type} auctions".replace(
+            "  ", " "
+        )
+    )
+
+    def fetch() -> pd.DataFrame:
+        records = get_request(
+            f"{SECURITIES_URL}{query}", timeout=120, extra_headers=TOOLKIT_HEADERS
+        ).json()
+        if not isinstance(records, list) or not records:
+            raise ValueError(f"The {description} came back without auctions.")
+        record_url(SECURITIES_URL)
+
+        rows = [
+            {
+                "CUSIP": record.get("cusip"),
+                "Security Term": record.get("securityTerm"),
+                "Original Security Term": record.get("originalSecurityTerm")
+                or record.get("securityTerm"),
+                "Reopening": record.get("reopening") == "Yes",
+                # The auction date is the close of competitive bidding.
+                "Auction Date": _date(record.get("competitiveAuctionCloseDate")),
+                "Issue Date": _date(record.get("issueDate")),
+                # A reopening carries the dated date of the original issue.
+                "Dated Date": _date(record.get("originalDatedDate"))
+                or _date(record.get("datedDate"))
+                or _date(record.get("issueDate")),
+                "Maturity Date": _date(record.get("maturityDate")),
+                "Days to Maturity": _number(record.get("daysIssueToMaturity")),
+                "Interest Rate": _number(record.get("interestRate")) / 100,
+                "Spread": _number(record.get("spread")) / 100,
+                "High Rate": _number(record.get("highRate")) / 100,
+                "Reference CPI on Dated Date": _number(
+                    record.get("referenceCpiOnOriginalDatedDate")
+                ),
+                "Cash Management Bill": record.get("cashManagementBill") == "Yes",
+            }
+            for record in records
+        ]
+        auctions = pd.DataFrame(rows)
+        require_columns(auctions, {"CUSIP", "Auction Date"}, description)
+
+        return auctions.sort_values(
+            ["Auction Date", "CUSIP"], kind="stable", na_position="last"
+        ).reset_index(drop=True)
+
+    return collect_cached_data(
+        source=policy_model.US_TREASURY,
+        dataset="securities",
+        entity=f"{security_type}:{security_term or 'all'}",
+        fetch=fetch,
+        description=description,
     )

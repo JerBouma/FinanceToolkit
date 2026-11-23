@@ -845,7 +845,9 @@ def test_every_rolling_refit_reaches_the_multi_start_maximum():
         multi_start = garch_model.get_garch_family_weights(
             window, "garch", "normal", "constant"
         )
-        assert log_likelihood(window, warm) == pytest.approx(
-            log_likelihood(window, multi_start), abs=1e-6
+        # At least as high as the multi-start: on some platforms the multi-start's own polish
+        # stops a little short (by about 2e-3) and the warm refit is the higher of the two.
+        assert (
+            log_likelihood(window, warm) >= log_likelihood(window, multi_start) - 1e-6
         )
         previous = warm

@@ -103,6 +103,7 @@ class Performance:
         progress_bar: bool = True,
         returns_function: Callable[[list[str], str], pd.DataFrame] | None = None,
         market_cap_function: Callable[[], pd.DataFrame] | None = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -130,6 +131,11 @@ class Performance:
             market_cap_function (Callable[[], pd.DataFrame] | None, optional): Returns the daily market
                 capitalization of the tickers, as `get_beta_implied_return` values the Residual with.
                 Defaults to None, which leaves the Residual Value empty.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the profile items (such as "Sector" and
+                "Industry") as rows, or a function that retrieves them when first needed,
+                for the groups of get_factor_analysis. Defaults to None, which leaves
+                group="sector" and group="industry" unavailable.
 
         As an example:
 
@@ -171,6 +177,7 @@ class Performance:
         | 2025Q4 |  0.0235 |  0.0496 |
         """
         self._tickers_source = tickers
+        self._profile_source = profile
         self._benchmark_name = "Benchmark"
         self._quarterly: bool | None = quarterly
         self._rounding: int | None = rounding
@@ -9224,6 +9231,9 @@ class Performance:
         periods_apart: int = 1,
         detail: str | None = None,
         column: str | None = None,
+        group: str | dict | None = None,
+        demeaned: bool = False,
+        binning: str = "quantile",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
         **kwargs,
@@ -9238,13 +9248,27 @@ class Performance:
         IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
         high information ratio.
 
-        The summary has a row per metric and horizon with the mean IC, its standard deviation,
-        the IC information ratio (mean divided by standard deviation), the t-statistic of the
-        mean with its p-value, the share of periods with a positive IC, the number of periods,
-        the top minus bottom spread (the mean forward return of the highest quantile minus
-        that of the lowest), the mean turnover of the top and bottom quantiles and the mean
-        rank autocorrelation of the metric from one period to the next. With detail, it
-        returns one of those parts per period (or per quantile) for a single metric.
+        The summary has a row per metric and horizon with the mean IC, its standard deviation, the
+        IC information ratio (mean divided by standard deviation), the t-statistic of the mean with
+        its p-value, the skewness and excess kurtosis of the IC, the share of periods with a
+        positive IC, the number of periods, the top minus bottom spread (the mean forward return of
+        the highest quantile minus that of the lowest), the annualized alpha and the beta of the
+        factor-weighted long-short portfolio against the equally weighted tickers, the mean turnover
+        of the top and bottom quantiles and the mean rank autocorrelation of the metric from one
+        period to the next. With detail, it returns one part of the analysis per period, quantile or
+        group for a single metric.
+
+        The formula is as follows:
+
+        - IC(t) = Spearman rank correlation of f(i, t) and R(i, t, t + h) over the tickers i,
+          with f the factor and R the forward return over the horizon h
+        - Demeaned return: R(i, t) − mean R(j, t) over the tickers j (of the group of i)
+        - Portfolio weight: w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+        - Portfolio return: R_F(t) = Σ_i w(i, t) × R(i, t, t + h)
+        - Alpha and beta: R_F(t) = α + β × R_U(t) + ε(t), with R_U(t) = mean R(i, t, t + h)
+        - Annualized Alpha = (1 + α) ^ (periods per year / h) − 1
+        - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
+        - Standard error of a quantile = standard deviation over the periods / √periods
 
         Each metric is measured within each period (e.g. the volatility of a month's daily
         returns) and compared with the returns from the close of the period's last trading day
@@ -9276,11 +9300,37 @@ class Performance:
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
             detail (str | None, optional): Returns one part of the analysis of a single metric
                 instead of the summary: "information_coefficient" (per period and horizon),
-                "quantile_returns" (the mean forward return per quantile and horizon),
-                "quantile_turnover" (per period and quantile) or "rank_autocorrelation" (per
-                period). Defaults to None.
+                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
+                per calendar month or year), "group_information_coefficient" (the IC statistics
+                within each group, needs group), "quantile_returns" (the mean forward return per
+                quantile and horizon), "quantile_returns_by_date" (per period),
+                "quantile_return_statistics" (the mean, its standard error and both per single
+                period), "quantile_statistics" (the range, mean and count of the factor values in
+                each quantile), "quantile_turnover" (per period and quantile),
+                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
+                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
+                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
+                each quantile) or "event_returns" (the mean price path of each quantile from the
+                longest horizon before to the longest horizon after the periods it is formed).
+                Defaults to None.
             column (str | None, optional): The output to use of a metric with several.
                 Defaults to None, which uses the first.
+            group (str | dict | None, optional): The group of each ticker for the group options:
+                "sector" or "industry" (or another company profile item) from the company profiles
+                of Financial Modeling Prep, or a dictionary of tickers and their groups. Defaults to
+                None.
+            demeaned (bool, optional): Whether to compare the forward returns with the mean of
+                the tickers in each period, or with group with the mean of the ticker's group:
+                a group-neutral analysis, in which the IC is group-adjusted and the
+                factor-weighted portfolio neutral within each group. Without group the IC
+                stays the same, as subtracting one mean from every ticker keeps their ranks.
+                Defaults to False.
+            binning (str, optional): How the tickers are sorted into quantiles per period:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
+                and highest value), "zero_aware" (half of the quantiles for the negative and half
+                for the zero and positive values, for a signal centred on zero; needs an even number
+                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
+                "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the metrics that take them, e.g. alpha=0.05.
@@ -9302,8 +9352,28 @@ class Performance:
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
-              Management.
+            - The groups from the company profiles are today's sector or industry, applied
+              to every period.
+            - The factor-weighted portfolio is long-short: its weights sum to zero and their
+              absolute values to one. A horizon longer than one period makes its returns
+              overlap too, so its alpha and beta are averages rather than tests.
+            - The cumulative returns split the capital over as many portfolios as the horizon
+              has periods, started on consecutive periods and each rebalanced once per
+              horizon; a value shows when its holding period ends, so the series starts at 1.
+            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
+              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
+              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
+              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
+              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
+              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
+              35(1).
+            - Referenced against alphalens-reloaded
+              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
+              spread is half of the one here (a gross exposure of one rather than two), it
+              drops a period and ticker without every horizon's return where each horizon
+              here uses its own, and its event returns average the single-period returns at
+              each offset where these are the price paths rebased to the period itself.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -9329,10 +9399,10 @@ class Performance:
 
         Which returns:
 
-        |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
-        |:-------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('Custom Factor', '1 Month')   |    0.018  |                  0.3745 |                 0.0481 |        0.498  |    0.6195 |           0.4953 |            107 |             0.004  |              0.2391 |                 0.8822 |
-        | ('Custom Factor', '12 Months') |    0.1122 |                  0.419  |                 0.2678 |        2.6242 |    0.0101 |           0.5729 |             96 |             0.0195 |              0.2391 |                 0.8822 |
+        |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |:-------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|-------:|--------------------:|-----------------------:|
+        | ('Custom Factor', '1 Month')   |    0.0175 |                  0.3747 |                 0.0467 |        0.4834 |    0.6298 |       -0.2827 |       -0.6356 |           0.4953 |            107 |             0.004  |             0.0649 | 0.0264 |              0.2391 |                 0.8823 |
+        | ('Custom Factor', '12 Months') |    0.1118 |                  0.4188 |                 0.2669 |        2.6147 |    0.0104 |       -0.4185 |       -0.2819 |           0.5729 |             96 |             0.0193 |             0.0152 | 0.1642 |              0.2391 |                 0.8823 |
         """
         if isinstance(metrics, pd.DataFrame):
             factors = {
@@ -9360,6 +9430,9 @@ class Performance:
             self._start_date,
             self._end_date,
             returns=self._historical_data["daily"].get("Return"),
+            binning=binning,
+            demeaned=demeaned,
+            groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
 
         return apply_rounding(

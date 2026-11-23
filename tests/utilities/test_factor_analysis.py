@@ -45,6 +45,7 @@ class FakeModule:
     _historical_data = {"daily": daily_prices()}
     _daily_historical_data = daily_prices()
     _period_end_dates = None
+    _profile_source = None
     _rounding = None
     _start_date = "2020-01-01"
     _end_date = "2022-12-31"
@@ -287,3 +288,78 @@ def test_a_variant_label_need_not_be_in_a_collection(monkeypatch):
     # The parameters are checked against the method's signature.
     with pytest.raises(ValueError, match="size is not a parameter"):
         Technicals.get_factor_analysis(technicals, "get_moving_average(size=10)")
+
+
+def performance_with_profile(profile=None):
+    return Performance(
+        tickers=[*TICKERS, "Benchmark"],
+        historical_data={"daily": daily_prices()},
+        risk_free_rate_data={},
+        rounding=None,
+        start_date="2020-01-01",
+        end_date="2022-12-31",
+        profile=profile,
+    )
+
+
+def test_group_sector_takes_the_sectors_from_the_company_profiles():
+    sectors = ["Technology"] * 5 + ["Energy"] * 5
+    profile = pd.DataFrame(
+        [sectors, ["Software"] * 10], index=["Sector", "Industry"], columns=TICKERS
+    )
+    performance = performance_with_profile(lambda: profile)
+    factor = future_monthly_return_factor()
+
+    by_sector = performance.get_factor_analysis(
+        factor, horizons=1, detail="group_information_coefficient", group="sector"
+    )
+    by_mapping = performance.get_factor_analysis(
+        factor,
+        horizons=1,
+        detail="group_information_coefficient",
+        group=dict(zip(TICKERS, sectors, strict=True)),
+    )
+
+    # A perfect factor ranks the later returns perfectly within every sector too.
+    assert list(by_sector.index) == [("Energy", "1 Month"), ("Technology", "1 Month")]
+    assert (by_sector["Mean IC"] == 1).all()
+    pd.testing.assert_frame_equal(by_sector, by_mapping)
+
+
+def test_group_without_company_profiles_names_the_alternative(monkeypatch):
+    performance = performance_with_profile()
+    factor = future_monthly_return_factor()
+
+    assert performance.get_factor_analysis(factor, horizons=1, group="sector").empty
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="Financial Modeling Prep API key.*group=\\{"):
+        performance.get_factor_analysis(factor, horizons=1, group="sector")
+    with pytest.raises(ValueError, match="need the groups"):
+        performance.get_factor_analysis(factor, horizons=1, binning="group")
+
+
+def test_every_controller_passes_the_group_options_on(monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    groups = {
+        ticker: "A" if number < 5 else "B" for number, ticker in enumerate(TICKERS)
+    }
+
+    ratios = FakeRatios()
+    technicals = FakeTechnicals()
+    summary = ratios.get_factor_analysis(
+        "get_price_to_earnings_ratio", horizons=1, group=groups, demeaned=True
+    )
+    statistics = technicals.get_factor_analysis(
+        "get_stochastic_oscillator",
+        horizons=1,
+        column="Stochastic %K",
+        group=groups,
+        binning="group",
+        detail="quantile_statistics",
+    )
+
+    # The factor ranks the raw returns perfectly, but not those relative to each group.
+    assert 0.5 < summary["Mean IC"].iloc[0] < 1  # noqa: PLR2004
+    assert summary["Annualized Alpha"].iloc[0] > 0
+    # Five tickers per group and five quantiles: one ticker of each group per quantile.
+    assert statistics["Count Share"].tolist() == pytest.approx([0.2] * 5)

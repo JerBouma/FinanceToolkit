@@ -268,3 +268,182 @@ def test_a_metric_label_parses_into_the_method_and_its_parameters():
         "get_rate_of_change",
         ("get_moving_average", {"method": "hull", "window": 10}),
     ]
+
+
+def deterministic_factor_data():
+    """Eight tickers in two groups with a smooth factor; the values of the alphalens tests."""
+    tickers = [f"T{number}" for number in range(8)]
+    dates = pd.bdate_range("2021-01-04", periods=60)
+    time = np.arange(len(dates))[:, None]
+    ticker = np.arange(8)[None, :]
+    prices = pd.DataFrame(
+        100
+        * np.exp(np.cumsum(0.01 * np.sin(0.37 * time * (ticker + 1) + ticker), axis=0)),
+        index=dates,
+        columns=tickers,
+    )
+    factor = pd.DataFrame(
+        np.cos(0.23 * time + 1.3 * ticker) + 0.5 * np.sin(0.11 * time * (ticker + 2)),
+        index=dates,
+        columns=tickers,
+    )
+    # alphalens drops the dates without every horizon's return; these have no factor.
+    factor.iloc[-3:] = np.nan
+    groups = pd.Series(
+        {name: "A" if number < 4 else "B" for number, name in enumerate(tickers)}
+    )
+
+    return {"factor": factor}, prices, groups
+
+
+def analyse_deterministic(**options):
+    factors, prices, groups = deterministic_factor_data()
+    return factor_model.get_factor_analysis(
+        factors,
+        prices,
+        period="daily",
+        horizons=[1, 3],
+        quantiles=4,
+        groups=options.pop("groups", groups),
+        **options,
+    )
+
+
+# The values below are those of alphalens-reloaded 0.5.1 on the same prices and factor
+# (get_clean_factor_and_forward_returns with quantiles=4 and periods=(1, 3)).
+
+
+def test_the_summary_matches_alphalens():
+    summary = analyse_deterministic(groups=None).loc["factor"]
+
+    assert summary["Mean IC"].tolist() == pytest.approx(
+        [0.026315789474, 0.062656641604]
+    )
+    assert summary["IC Skewness"].tolist() == pytest.approx(
+        [-0.354942333396, 0.028818855841]
+    )
+    assert summary["IC Kurtosis"].tolist() == pytest.approx(
+        [0.335427622028, -0.736409935571]
+    )
+    assert summary["Annualized Alpha"].tolist() == pytest.approx(
+        [0.065993210888, 0.063218552399]
+    )
+    assert summary["Beta"].tolist() == pytest.approx([0.024868995927, 0.038568624188])
+
+
+def test_the_group_neutral_analysis_matches_alphalens():
+    summary = analyse_deterministic(demeaned=True).loc["factor"]
+    by_group = analyse_deterministic(detail="group_information_coefficient")
+
+    # The group-adjusted IC and the group-neutral portfolio's alpha and beta.
+    assert summary["Mean IC"].tolist() == pytest.approx([0.02589807853, 0.065580618212])
+    assert summary["Annualized Alpha"].tolist() == pytest.approx(
+        [0.093077202018, 0.073641628512]
+    )
+    assert summary["Beta"].tolist() == pytest.approx([0.042115565901, 0.056862224084])
+    assert by_group["Mean IC"].tolist() == pytest.approx(
+        [0.087719298246, 0.122807017544, 0.021052631579, -0.024561403509]
+    )
+
+
+def test_the_quantile_return_statistics_match_alphalens():
+    statistics = analyse_deterministic(
+        detail="quantile_return_statistics", demeaned=True, groups=None
+    ).loc["3 Days"]
+    quantiles = statistics.drop("Top Minus Bottom")
+
+    assert quantiles["Mean Return"].tolist() == pytest.approx(
+        [-0.001140108598, 0.000669828758, -0.000510530358, 0.000980810198]
+    )
+    assert quantiles["Standard Error"].tolist() == pytest.approx(
+        [0.000913913978, 0.000794695939, 0.000944373166, 0.000947614109]
+    )
+    assert quantiles["Mean Return Per Period"].tolist() == pytest.approx(
+        [-0.000380180718, 0.000223226419, -0.000170205754, 0.000326829903]
+    )
+    assert quantiles["Standard Error Per Period"].tolist() == pytest.approx(
+        [0.000527648481, 0.000458817915, 0.000545234102, 0.000547105261]
+    )
+    # The spread is the full difference (alphalens halves it) with √(SE² + SE²).
+    spread = statistics.loc["Top Minus Bottom"]
+    assert spread["Mean Return"] == pytest.approx(0.000980810198 + 0.001140108598)
+    assert spread["Standard Error"] == pytest.approx(
+        np.hypot(0.000947614109, 0.000913913978)
+    )
+
+
+def test_the_factor_returns_and_their_growth_match_alphalens():
+    returns = analyse_deterministic(detail="factor_returns", groups=None)
+    cumulative = analyse_deterministic(detail="cumulative_returns", groups=None)
+
+    assert returns.mean().tolist() == pytest.approx([0.000256152725, 0.000740267509])
+    # The growth starts at 1 and ends after the last holding period.
+    assert cumulative[("1 Day", "Factor")].iloc[0] == 1
+    assert cumulative[("1 Day", "Factor")].iloc[-1] == pytest.approx(1.014461813361)
+
+
+def test_the_quantile_statistics_and_binnings_match_alphalens():
+    factors, prices, _ = deterministic_factor_data()
+    statistics = analyse_deterministic(detail="quantile_statistics", groups=None)
+    factor = factors["factor"].iloc[:-3]
+
+    assert statistics["Mean"].tolist() == pytest.approx(
+        [-0.954787408311, -0.340603535638, 0.325418259198, 0.971555515138]
+    )
+    equal_width = factor_model.assign_bins(factor, 4, "equal_width")
+    assert equal_width.stack().value_counts().sort_index().tolist() == [
+        125,
+        114,
+        77,
+        140,
+    ]
+    centred = factor.sub(factor.median(axis=1), axis=0)
+    zero_aware = factor_model.assign_bins(centred, 4, "zero_aware")
+    assert zero_aware.stack().value_counts().sort_index().tolist() == [114] * 4
+    assert (zero_aware.where(centred < 0).stack().dropna() <= 2).all()  # noqa: PLR2004
+
+
+def test_quantiles_within_groups_hold_every_group_equally():
+    factors, _, groups = deterministic_factor_data()
+    assignment = factor_model.assign_bins(factors["factor"], 4, "group", groups)
+
+    # Four tickers per group and four quantiles: each group has one ticker per quantile.
+    for name in ("A", "B"):
+        members = assignment.loc[:, groups == name].dropna()
+        assert (members.apply(sorted, axis=1).tolist()) == [[1, 2, 3, 4]] * len(members)
+
+
+def test_the_event_returns_are_the_rebased_price_paths():
+    factors, prices, _ = deterministic_factor_data()
+    events = analyse_deterministic(detail="event_returns", groups=None)
+    assignment = factor_model.assign_quantiles(factors["factor"].iloc[:-3], 4)
+
+    # The path of quantile 1 three days after its dates, by hand.
+    later = prices.shift(-3) / prices - 1
+    by_hand = later.reindex(assignment.index).where(assignment == 1).mean(axis=1)
+    assert events.loc[3, ("Quantile 1", "Mean")] == pytest.approx(by_hand.mean())
+    assert events.loc[0, ("Quantile 1", "Mean")] == 0
+    assert list(events.index) == [-3, -2, -1, 0, 1, 2, 3]
+
+
+def test_the_mean_ic_per_calendar_period_needs_a_shorter_period():
+    factors, prices, _ = deterministic_factor_data()
+    monthly = analyse_deterministic(
+        detail="information_coefficient_by_month", groups=None
+    )
+    ic = analyse_deterministic(detail="information_coefficient", groups=None)
+
+    assert monthly.loc["2021-02", "1 Day"] == pytest.approx(
+        ic.loc["2021-02", "1 Day"].mean()
+    )
+    with pytest.raises(ValueError, match="needs a period of a month or shorter"):
+        factor_model.get_factor_analysis(
+            factors,
+            prices,
+            period="quarterly",
+            detail="information_coefficient_by_month",
+        )
+    with pytest.raises(ValueError, match="need the groups"):
+        factor_model.get_factor_analysis(factors, prices, binning="group")
+    with pytest.raises(ValueError, match="even number of quantiles"):
+        factor_model.get_factor_analysis(factors, prices, binning="zero_aware")

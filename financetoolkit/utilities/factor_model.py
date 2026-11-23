@@ -4,6 +4,7 @@ import ast
 import inspect
 import re
 import typing
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -11,11 +12,15 @@ from scipy import stats
 
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
 logger = get_logger()
 
 # The fewest tickers a period needs for its values to be ranked against each other.
 MINIMUM_TICKERS = 3
+
+# The fewest periods a statistic over time (the shape of the IC, a regression) needs.
+MINIMUM_PERIODS = 3
 
 # The labels of the forward return horizons, per period frequency.
 HORIZON_UNITS = {
@@ -39,10 +44,33 @@ DEFAULT_HORIZONS = {
 # The parts of the analysis that detail= returns for a single metric.
 DETAILS = (
     "information_coefficient",
+    "information_coefficient_by_month",
+    "information_coefficient_by_year",
+    "group_information_coefficient",
     "quantile_returns",
+    "quantile_returns_by_date",
+    "quantile_return_statistics",
+    "quantile_statistics",
     "quantile_turnover",
     "rank_autocorrelation",
+    "factor_weights",
+    "factor_returns",
+    "cumulative_returns",
+    "event_returns",
 )
+
+# The ways the tickers of a period are sorted into quantiles (binning=).
+BINNINGS = ("quantile", "equal_width", "zero_aware", "group")
+
+# The calendar periods the IC is averaged over, and the evaluation periods that fit in them.
+CALENDAR_PERIODS = {
+    "information_coefficient_by_month": ("M", "Month", ("daily", "weekly", "monthly")),
+    "information_coefficient_by_year": (
+        "Y",
+        "Year",
+        ("daily", "weekly", "monthly", "quarterly", "yearly"),
+    ),
+}
 
 # The price columns some indicators return next to their own values, never a factor.
 PRICE_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close", "Volume")
@@ -122,7 +150,9 @@ def get_forward_returns(
     Args:
         prices (pd.DataFrame): The (dividend and split adjusted) prices with the periods as
             index and the tickers as columns, NaN where a ticker did not trade.
-        horizon (int): The number of periods the return covers.
+        horizon (int): The number of periods the return covers. A negative horizon gives
+            the change from the period back to that many periods before, P(t - k) / P(t) - 1,
+            the part of an event window before the event (see get_event_returns).
         period (str): The period frequency: daily, weekly, monthly, quarterly or yearly.
 
     Returns:
@@ -232,8 +262,9 @@ def summarize_information_coefficient(
     """
     Summarizes the information coefficients per horizon as alphalens' information table
     does: the mean, the standard deviation (ddof=1), their ratio (the IC information ratio,
-    the risk-adjusted IC), the t-statistic of the mean and its two-sided p-value, the share
-    of dates with a positive IC and the number of dates.
+    the risk-adjusted IC), the t-statistic of the mean and its two-sided p-value, the
+    skewness and excess (Fisher) kurtosis of the IC (the population moments, as scipy's
+    skew and kurtosis), the share of dates with a positive IC and the number of dates.
 
     Args:
         information_coefficient (pd.DataFrame): The IC per date (index) and horizon (columns).
@@ -254,6 +285,23 @@ def summarize_information_coefficient(
     positive_share = (information_coefficient > 0).sum() / observations.replace(
         0, np.nan
     )
+    # The population moments of the dates with an IC; too few dates or a constant IC has
+    # no shape.
+    skewness, kurtosis = (
+        pd.Series(
+            {
+                horizon: (
+                    moment(values.dropna())
+                    if values.count() >= MINIMUM_PERIODS and values.std() > 0
+                    else np.nan
+                )
+                for horizon, values in information_coefficient.items()
+            },
+            index=information_coefficient.columns,
+            dtype=float,
+        )
+        for moment in (stats.skew, stats.kurtosis)
+    )
 
     return pd.DataFrame(
         {
@@ -262,6 +310,8 @@ def summarize_information_coefficient(
             "IC Information Ratio": mean / standard_deviation,
             "t-Statistic": t_statistic,
             "p-Value": p_value,
+            "IC Skewness": skewness,
+            "IC Kurtosis": kurtosis,
             "Positive Share": positive_share,
             "Observations": observations.astype(float),
         }
@@ -291,6 +341,45 @@ def assign_quantiles(factor: pd.DataFrame, quantiles: int) -> pd.DataFrame:
     return assignment.where(count >= quantiles, axis=0)
 
 
+def get_quantile_returns_by_date(
+    quantile_assignment: pd.DataFrame, forward_returns: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Calculates the equally weighted forward return of the tickers in each quantile per date,
+    and the top minus bottom spread, the highest quantile's return minus the lowest
+    quantile's return on that date (alphalens' mean_return_by_quantile with by_date=True).
+
+    Args:
+        quantile_assignment (pd.DataFrame): The quantile of each ticker per date.
+        forward_returns (pd.DataFrame): The forward returns on the same index and columns.
+
+    Returns:
+        pd.DataFrame: The return of "Quantile 1" to "Quantile n" and the "Top Minus Bottom"
+        spread (columns) per date (index).
+    """
+    quantile_numbers = sorted(
+        int(value) for value in pd.unique(quantile_assignment.stack().dropna())
+    )
+
+    returns_per_date = pd.DataFrame(
+        {
+            f"Quantile {number}": forward_returns.where(
+                quantile_assignment == number
+            ).mean(axis=1)
+            for number in quantile_numbers
+        },
+        index=quantile_assignment.index,
+    )
+
+    if quantile_numbers:
+        returns_per_date["Top Minus Bottom"] = (
+            returns_per_date[f"Quantile {quantile_numbers[-1]}"]
+            - returns_per_date[f"Quantile {quantile_numbers[0]}"]
+        )
+
+    return returns_per_date
+
+
 def get_quantile_returns(
     quantile_assignment: pd.DataFrame, forward_returns: pd.DataFrame
 ) -> pd.Series:
@@ -308,29 +397,7 @@ def get_quantile_returns(
         pd.Series: The mean forward return of "Quantile 1" to "Quantile n" and the
         "Top Minus Bottom" spread.
     """
-    quantile_numbers = sorted(
-        int(value) for value in pd.unique(quantile_assignment.stack().dropna())
-    )
-
-    returns_per_date = pd.DataFrame(
-        {
-            f"Quantile {number}": forward_returns.where(
-                quantile_assignment == number
-            ).mean(axis=1)
-            for number in quantile_numbers
-        }
-    )
-
-    mean_returns = returns_per_date.mean()
-
-    if quantile_numbers:
-        spread = (
-            returns_per_date[f"Quantile {quantile_numbers[-1]}"]
-            - returns_per_date[f"Quantile {quantile_numbers[0]}"]
-        )
-        mean_returns["Top Minus Bottom"] = spread.mean()
-
-    return mean_returns
+    return get_quantile_returns_by_date(quantile_assignment, forward_returns).mean()
 
 
 def get_quantile_turnover(
@@ -388,6 +455,441 @@ def get_factor_rank_autocorrelation(factor: pd.DataFrame, lag: int = 1) -> pd.Se
     ranks = factor.rank(axis=1)
 
     return get_row_correlation(ranks, ranks.shift(lag))
+
+
+def get_groups(
+    group: str | dict | pd.Series | None,
+    profile: pd.DataFrame | Callable[[], pd.DataFrame] | None,
+    tickers: list[str],
+) -> pd.Series | None:
+    """
+    Returns the group of each ticker, such as its sector or industry, for the group options
+    of the factor analysis. A text names a company profile item ("sector", "industry",
+    "country", matched regardless of case) and takes it from the company profiles; a
+    mapping (dict or Series) gives the group of each ticker directly. A ticker without a
+    group is left out of every group calculation.
+
+    Args:
+        group (str | dict | pd.Series | None): The profile item or the group per ticker.
+        profile (pd.DataFrame | Callable | None): The company profiles with the profile items
+            as index and the tickers as columns, or a function that retrieves them. Only
+            used when group is a text.
+        tickers (list[str]): The tickers of the analysis.
+
+    Returns:
+        pd.Series | None: The group per ticker, NaN for a ticker without one, or None when
+        no group is given.
+    """
+    if group is None:
+        return None
+
+    if isinstance(group, str):
+        profile = profile() if callable(profile) else profile
+        if profile is None or profile.empty:
+            raise ValueError(
+                f"group='{group}' takes the groups from the company profiles, which need a "
+                "Financial Modeling Prep API key. Alternatively, pass the group of each "
+                "ticker, e.g. group={'AAPL': 'Technology', 'JPM': 'Financial Services'}."
+            )
+        items = {str(item).lower(): item for item in profile.index}
+        if group.lower() not in items:
+            raise ValueError(
+                f"group must be a company profile item such as 'sector' or 'industry', or "
+                f"the group of each ticker as a dictionary, not '{group}'."
+            )
+        values = profile.loc[items[group.lower()]]
+    else:
+        values = pd.Series(group, dtype=object)
+
+    values = values.reindex(tickers)
+
+    return values.where(values.notna() & (values.astype(str).str.strip() != ""))
+
+
+def demean_forward_returns(
+    forward_returns: pd.DataFrame, groups: pd.Series | None = None
+) -> pd.DataFrame:
+    """
+    Subtracts the mean forward return of the tickers on each date, or with groups the mean
+    of the ticker's own group on that date, so the returns are relative to the universe or
+    the group (alphalens' demean_forward_returns):
+
+    - R̃(i, t) = R(i, t) − mean of R(j, t) over the tickers j in the group of i on date t
+
+    Args:
+        forward_returns (pd.DataFrame): The forward returns with the dates as index and the
+            tickers as columns, NaN for a ticker outside the analysis on that date.
+        groups (pd.Series | None, optional): The group per ticker. Defaults to None, which
+            demeans by the mean of all tickers.
+
+    Returns:
+        pd.DataFrame: The demeaned forward returns, NaN for a ticker without a group when
+        groups are given.
+    """
+    if groups is None:
+        return forward_returns.sub(forward_returns.mean(axis=1), axis=0)
+
+    group_of = groups.reindex(forward_returns.columns)
+    group_means = forward_returns.T.groupby(group_of).transform("mean").T
+
+    return forward_returns - group_means
+
+
+def get_group_information_coefficient(
+    factor: pd.DataFrame, forward_returns: pd.DataFrame, groups: pd.Series
+) -> dict[str, pd.Series]:
+    """
+    Calculates the information coefficient per date within each group: the Spearman rank
+    correlation between the factor and the forward returns of the tickers of that group only
+    (alphalens' factor_information_coefficient with by_group=True). A group needs at least
+    three tickers with both values on a date for an IC on that date.
+
+    Args:
+        factor (pd.DataFrame): The factor with the dates as index and the tickers as columns.
+        forward_returns (pd.DataFrame): The forward returns on the same index and columns.
+        groups (pd.Series): The group per ticker.
+
+    Returns:
+        dict[str, pd.Series]: The IC per date of each group.
+    """
+    group_of = groups.reindex(factor.columns)
+
+    return {
+        str(name): get_information_coefficient(
+            factor.loc[:, group_of == name], forward_returns.loc[:, group_of == name]
+        )
+        for name in sorted(group_of.dropna().unique(), key=str)
+    }
+
+
+def assign_bins(
+    factor: pd.DataFrame,
+    quantiles: int,
+    binning: str = "quantile",
+    groups: pd.Series | None = None,
+) -> pd.DataFrame:
+    """
+    Sorts the tickers of each date into bins of the factor, 1 for the lowest values:
+
+    - "quantile": equally sized quantiles (see assign_quantiles).
+    - "equal_width": bins of equal width between the lowest and highest factor of the date,
+      each closed on the right, so a value on an edge falls in the lower bin. A date whose
+      factor does not vary has no bins.
+    - "zero_aware": quantiles / 2 equally sized quantiles of the negative values (1 to
+      quantiles / 2) and of the zero and positive values (quantiles / 2 + 1 to quantiles),
+      so the sign of the factor decides the side, as for a signal centred on zero.
+    - "group": equally sized quantiles within each group, so each quantile holds the same
+      share of every group.
+
+    Args:
+        factor (pd.DataFrame): The factor with the dates as index and the tickers as columns.
+        quantiles (int): The number of bins.
+        binning (str, optional): The way to bin, see above. Defaults to "quantile".
+        groups (pd.Series | None, optional): The group per ticker, for "group". Defaults to
+            None.
+
+    Returns:
+        pd.DataFrame: The bin (1 to quantiles) of each ticker per date, NaN where the ticker
+        has no factor or its date (or group) too few tickers.
+    """
+    if binning == "equal_width":
+        lowest = factor.min(axis=1)
+        width = (factor.max(axis=1) - lowest) / quantiles
+        position = factor.sub(lowest, axis=0).div(width.replace(0, np.nan), axis=0)
+
+        return np.ceil(position).clip(lower=1, upper=quantiles)
+
+    if binning == "zero_aware":
+        half = quantiles // 2
+        negative = assign_quantiles(factor.where(factor < 0), half)
+        positive = assign_quantiles(factor.where(factor >= 0), half) + half
+
+        return negative.fillna(positive)
+
+    if binning == "group" and groups is not None:
+        group_of = groups.reindex(factor.columns)
+        assignment = pd.DataFrame(np.nan, index=factor.index, columns=factor.columns)
+        for name in group_of.dropna().unique():
+            members = factor.columns[group_of == name]
+            assignment[members] = assign_quantiles(factor[members], quantiles)
+
+        return assignment
+
+    return assign_quantiles(factor, quantiles)
+
+
+def summarize_quantile_returns(
+    returns_per_date: pd.DataFrame, horizon: int
+) -> pd.DataFrame:
+    """
+    Summarizes the quantile returns per date of one horizon: the mean over the dates, its
+    standard error (the standard deviation over the dates, ddof=1, divided by the square
+    root of the number of dates) and both converted to a single period (alphalens'
+    mean_return_by_quantile, rate_of_return and std_conversion):
+
+    - Mean Return Per Period = (1 + Mean Return) ^ (1 / horizon) − 1
+    - Standard Error Per Period = Standard Error / √horizon
+
+    The top minus bottom spread takes the difference of the two quantiles' means with the
+    standard error √(SE top² + SE bottom²), which treats the two legs as independent
+    (compute_mean_returns_spread).
+
+    Args:
+        returns_per_date (pd.DataFrame): The return per date of each quantile and the spread
+            (see get_quantile_returns_by_date).
+        horizon (int): The number of periods the returns cover.
+
+    Returns:
+        pd.DataFrame: The Mean Return, Standard Error, Mean Return Per Period and Standard
+        Error Per Period (columns) per quantile and the spread (index).
+    """
+    quantile_columns = [
+        column for column in returns_per_date.columns if column != "Top Minus Bottom"
+    ]
+    quantile_returns = returns_per_date[quantile_columns]
+
+    mean = quantile_returns.mean()
+    standard_error = quantile_returns.std(ddof=1) / np.sqrt(quantile_returns.count())
+    statistics = pd.DataFrame(
+        {
+            "Mean Return": mean,
+            "Standard Error": standard_error,
+            "Mean Return Per Period": (1 + mean) ** (1 / horizon) - 1,
+            "Standard Error Per Period": standard_error / np.sqrt(horizon),
+        }
+    )
+
+    if quantile_columns:
+        top, bottom = statistics.iloc[-1], statistics.iloc[0]
+        statistics.loc["Top Minus Bottom"] = [
+            top["Mean Return"] - bottom["Mean Return"],
+            np.sqrt(top["Standard Error"] ** 2 + bottom["Standard Error"] ** 2),
+            top["Mean Return Per Period"] - bottom["Mean Return Per Period"],
+            np.sqrt(
+                top["Standard Error Per Period"] ** 2
+                + bottom["Standard Error Per Period"] ** 2
+            ),
+        ]
+
+    return statistics
+
+
+def get_quantile_statistics(
+    factor: pd.DataFrame, quantile_assignment: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Describes the factor values in each quantile over all dates and tickers: the lowest,
+    highest and mean value, the standard deviation (ddof=1), the number of values and their
+    share of all values in a quantile (alphalens' quantile statistics table). Overlapping
+    ranges between quantiles show that the factor's level shifts over time, as quantiles
+    are formed per date.
+
+    Args:
+        factor (pd.DataFrame): The factor with the dates as index and the tickers as columns.
+        quantile_assignment (pd.DataFrame): The quantile of each ticker per date.
+
+    Returns:
+        pd.DataFrame: The Minimum, Maximum, Mean, Standard Deviation, Count and Count Share
+        (columns) per quantile (index).
+    """
+    values = pd.DataFrame(
+        {"Factor": factor.stack(), "Quantile": quantile_assignment.stack()}
+    ).dropna()
+
+    statistics = values.groupby("Quantile")["Factor"].agg(
+        ["min", "max", "mean", "std", "count"]
+    )
+    statistics.columns = ["Minimum", "Maximum", "Mean", "Standard Deviation", "Count"]
+    statistics["Count"] = statistics["Count"].astype(float)
+    statistics["Count Share"] = statistics["Count"] / statistics["Count"].sum()
+    statistics.index = [f"Quantile {int(number)}" for number in statistics.index]
+
+    return statistics
+
+
+def get_factor_weights(
+    factor: pd.DataFrame, groups: pd.Series | None = None
+) -> pd.DataFrame:
+    """
+    Calculates the weights of the factor-weighted long-short portfolio per date: each
+    ticker's factor minus the mean factor of the date, divided by the sum of the absolute
+    deviations, so the long and short sides each hold half of a gross exposure of one
+    (alphalens' factor_weights with demeaned=True). With groups, the factor is demeaned and
+    scaled within each group and the weights then rescaled to a gross exposure of one, so
+    every group gets the same gross weight and the portfolio is neutral within each group
+    (group_adjust=True):
+
+    - w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+
+    Args:
+        factor (pd.DataFrame): The factor with the dates as index and the tickers as columns.
+        groups (pd.Series | None, optional): The group per ticker. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The weight per date and ticker, NaN for a ticker without a factor (or
+        group) and for a date whose factor does not vary.
+    """
+    if groups is None:
+        demeaned = factor.sub(factor.mean(axis=1), axis=0)
+
+        return demeaned.div(demeaned.abs().sum(axis=1).replace(0, np.nan), axis=0)
+
+    group_of = groups.reindex(factor.columns)
+    demeaned = factor - factor.T.groupby(group_of).transform("mean").T
+    gross = demeaned.abs().T.groupby(group_of).transform("sum").T
+    weights = demeaned / gross.replace(0, np.nan)
+
+    return weights.div(weights.abs().sum(axis=1).replace(0, np.nan), axis=0)
+
+
+def get_alpha_beta(
+    factor_returns: pd.Series, universe_returns: pd.Series, periods_per_year: float
+) -> tuple[float, float]:
+    """
+    Calculates the alpha and beta of the factor-weighted portfolio against the equally
+    weighted universe by ordinary least squares over the dates with both returns (Jensen,
+    1968, as in alphalens' factor_alpha_beta). The alpha is annualized by compounding it
+    over the number of horizons in a year:
+
+    - R_F(t) = α + β × R_U(t) + ε(t)
+    - β = Cov(R_F, R_U) / Var(R_U), α = mean R_F − β × mean R_U
+    - Annualized Alpha = (1 + α) ^ periods_per_year − 1
+
+    Args:
+        factor_returns (pd.Series): The return of the factor-weighted portfolio per date.
+        universe_returns (pd.Series): The mean return of the tickers per date.
+        periods_per_year (float): The number of horizons in a year, e.g. 12 / 3 for a three
+            month horizon.
+
+    Returns:
+        tuple[float, float]: The annualized alpha and the beta, NaN with fewer than three
+        dates or a universe return that does not vary.
+    """
+    both = factor_returns.notna() & universe_returns.notna()
+    dependent, independent = factor_returns[both], universe_returns[both]
+
+    if both.sum() < MINIMUM_PERIODS or independent.var(ddof=1) == 0:
+        return np.nan, np.nan
+
+    beta = dependent.cov(independent) / independent.var(ddof=1)
+    alpha = dependent.mean() - beta * independent.mean()
+
+    return (1 + alpha) ** periods_per_year - 1, beta
+
+
+def get_cumulative_returns(
+    returns_per_date: pd.DataFrame, horizon: int
+) -> pd.DataFrame:
+    """
+    Calculates the growth of 1 invested in portfolios rebalanced every horizon periods.
+    With a horizon of more than one period the returns of consecutive dates overlap, so the
+    capital is split over horizon sub-portfolios started on consecutive dates, each
+    rebalanced every horizon periods and compounding its own returns; their mean is the
+    value of the whole (as alphalens describes for its multi-period returns). A value is
+    known once its holding period has ended, so the return from date t over the horizon
+    shows on the date horizon periods later and the series starts at 1. A date without a
+    return (too few tickers) is held in cash.
+
+    - V_k(s) = Π (1 + R(t)) over the dates t ≡ k (mod horizon) with t + horizon ≤ s
+    - V(s) = mean of V_k(s) over k = 0 to horizon − 1
+
+    Args:
+        returns_per_date (pd.DataFrame): The return over the horizon from each date
+            (index) per portfolio (columns).
+        horizon (int): The number of periods the returns cover.
+
+    Returns:
+        pd.DataFrame: The value per date and portfolio, starting at 1.
+    """
+    sub_portfolios = []
+
+    for start in range(horizon):
+        rebalancing = returns_per_date.iloc[start::horizon]
+        growth = (1 + rebalancing).cumprod()
+        # The value after each holding period, on the date the period ends.
+        positions = np.arange(start, len(returns_per_date), horizon) + horizon
+        ended = positions < len(returns_per_date)
+        value = pd.DataFrame(
+            np.nan, index=returns_per_date.index, columns=returns_per_date.columns
+        )
+        value.iloc[positions[ended]] = growth.iloc[ended].to_numpy()
+        sub_portfolios.append(value.ffill().fillna(1.0))
+
+    return sum(sub_portfolios) / horizon
+
+
+def get_event_returns(
+    quantile_assignment: pd.DataFrame,
+    prices: pd.DataFrame,
+    period: str,
+    periods_before: int,
+    periods_after: int,
+    demeaned: bool = False,
+    groups: pd.Series | None = None,
+) -> pd.DataFrame:
+    """
+    Calculates the average price path of the tickers of each quantile around the dates they
+    are in it, an event study (MacKinlay, 1997, "Event Studies in Economics and Finance")
+    with each date as the event. The path is rebased to 0 on the date itself, so the values
+    before it show how the tickers got into the quantile and the values after it what
+    followed. As for the quantile returns, the tickers of a quantile are averaged per date
+    first, so the standard deviation is that of the quantile's path across dates:
+
+    - path(i, t, k) = P(i, t + k) / P(i, t) − 1 for k = −periods_before to periods_after
+    - demeaned: path(i, t, k) − mean of path(j, t, k) over the tickers j with a quantile on
+      date t (or in the group of i)
+    - path(q, t, k) = mean of path(i, t, k) over the tickers i in quantile q on date t
+    - mean and standard deviation (ddof=1) of path(q, t, k) over the dates t per q and k
+
+    Args:
+        quantile_assignment (pd.DataFrame): The quantile of each ticker per date.
+        prices (pd.DataFrame): The prices on the same index, which may hold the periods
+            before and after the assignment.
+        period (str): The period frequency, see get_forward_returns.
+        periods_before (int): The number of periods before each date.
+        periods_after (int): The number of periods after each date.
+        demeaned (bool, optional): Whether to subtract the mean path of the tickers with a
+            quantile on the date, or with groups that of the ticker's group. Defaults to
+            False.
+        groups (pd.Series | None, optional): The group per ticker. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The Mean and Standard Deviation per quantile (columns) and offset k
+        (index).
+    """
+    quantile_numbers = sorted(
+        int(value) for value in pd.unique(quantile_assignment.stack().dropna())
+    )
+    in_analysis = quantile_assignment.notna()
+
+    paths = {}
+    for offset in range(-periods_before, periods_after + 1):
+        path = (
+            pd.DataFrame(0.0, index=prices.index, columns=prices.columns).where(
+                prices.notna()
+            )
+            if offset == 0
+            else get_forward_returns(prices, offset, period)
+        )
+        path = path.reindex(quantile_assignment.index).where(in_analysis)
+        if demeaned:
+            path = demean_forward_returns(path, groups)
+        paths[offset] = path
+
+    statistics = {}
+    for number in quantile_numbers:
+        members = quantile_assignment == number
+        values = pd.DataFrame(
+            {offset: path.where(members).mean(axis=1) for offset, path in paths.items()}
+        )
+        statistics[f"Quantile {number}"] = pd.DataFrame(
+            {"Mean": values.mean(), "Standard Deviation": values.std(ddof=1)}
+        )
+
+    result = pd.concat(statistics, axis=1)
+    result.index.name = "Offset"
+
+    return result
 
 
 def get_horizons(period: str, horizons: list[int] | int | None) -> list[int]:
@@ -701,11 +1203,17 @@ def analyse_factor(
     horizons: list[int],
     quantiles: int,
     periods_apart: int,
+    detail: str | None = None,
+    binning: str = "quantile",
+    demeaned: bool = False,
+    groups: pd.Series | None = None,
 ) -> dict[str, pd.DataFrame | pd.Series] | None:
     """
     Analyses one factor: the information coefficient per period and horizon, the mean
-    forward return per quantile, the quantile turnover and the rank autocorrelation.
-    A factor that no period has for at least three tickers can't be ranked and gives None.
+    forward return per quantile, the quantile turnover, the rank autocorrelation and the
+    alpha and beta of the factor-weighted portfolio, which the summary uses, or the one
+    part detail names. A factor that no period has for at least three tickers can't be
+    ranked and gives None.
 
     Args:
         factor (pd.DataFrame): The daily factor with the dates as index and tickers as columns.
@@ -715,10 +1223,18 @@ def analyse_factor(
         quantiles (int): The number of quantiles.
         periods_apart (int): The periods between the dates the turnover and the rank
             autocorrelation compare.
+        detail (str | None, optional): The part of DETAILS to calculate. Defaults to None,
+            which calculates the parts of the summary.
+        binning (str, optional): The way the tickers are sorted into quantiles, one of
+            BINNINGS (see assign_bins). Defaults to "quantile".
+        demeaned (bool, optional): Whether to compare the forward returns with the mean of
+            the tickers on each date, or with groups with the mean of their group, which also
+            makes the factor-weighted portfolio neutral within each group. Defaults to False.
+        groups (pd.Series | None, optional): The group per ticker. Defaults to None.
 
     Returns:
-        dict[str, pd.DataFrame | pd.Series] | None: The four parts, keyed as in DETAILS, or
-            None when too few tickers have a value.
+        dict[str, pd.DataFrame | pd.Series] | None: The parts, keyed as in DETAILS, or None
+            when too few tickers have a value.
     """
     prices = prices.loc[:, prices.columns.isin(factor.columns)]
     sampled_prices = sample_by_period(prices, period)
@@ -731,39 +1247,186 @@ def analyse_factor(
     if sampled_factor.notna().sum(axis=1).max() < MINIMUM_TICKERS:
         return None
 
-    information_coefficient = pd.DataFrame(
-        {
-            get_horizon_label(horizon, period): get_information_coefficient(
-                sampled_factor,
-                get_forward_returns(sampled_prices, horizon, period).reindex(
-                    sampled_factor.index
-                ),
+    # The forward returns of the tickers with a factor; demeaned against those tickers (or
+    # their group) where asked, which shifts the quantile returns but not the ranks of the
+    # IC unless the mean is taken per group. Demeaned with groups is a group-neutral
+    # analysis, so the factor-weighted portfolio is neutral within each group as well.
+    forward_returns = {
+        horizon: get_forward_returns(sampled_prices, horizon, period)
+        .reindex(sampled_factor.index)
+        .where(sampled_factor.notna())
+        for horizon in horizons
+    }
+    compared_returns = {
+        horizon: (demean_forward_returns(returns, groups) if demeaned else returns)
+        for horizon, returns in forward_returns.items()
+    }
+    portfolio_groups = groups if demeaned else None
+    quantile_assignment = assign_bins(sampled_factor, quantiles, binning, groups)
+
+    labels = {horizon: get_horizon_label(horizon, period) for horizon in horizons}
+
+    parts: dict[str, pd.DataFrame | pd.Series] = {
+        "quantile_assignment": quantile_assignment
+    }
+
+    if detail in (
+        None,
+        "information_coefficient",
+        "information_coefficient_by_month",
+        "information_coefficient_by_year",
+    ):
+        parts["information_coefficient"] = pd.DataFrame(
+            {
+                labels[horizon]: get_information_coefficient(
+                    sampled_factor, compared_returns[horizon]
+                )
+                for horizon in horizons
+            },
+            index=sampled_factor.index,
+        )
+
+    if detail in CALENDAR_PERIODS:
+        frequency, name, fitting_periods = CALENDAR_PERIODS[detail]
+        if period not in fitting_periods:
+            raise ValueError(
+                f"{detail} averages the IC per {name.lower()}, which needs a period of a "
+                f"{name.lower()} or shorter instead of {period}."
             )
-            for horizon in horizons
-        },
-        index=sampled_factor.index,
-    )
-    quantile_assignment = assign_quantiles(sampled_factor, quantiles)
-    quantile_returns = pd.DataFrame(
-        {
-            get_horizon_label(horizon, period): get_quantile_returns(
-                quantile_assignment,
-                get_forward_returns(sampled_prices, horizon, period).reindex(
-                    sampled_factor.index
-                ),
+        information_coefficient = parts["information_coefficient"]
+        calendar = information_coefficient.index.asfreq(frequency, how="end")
+        parts[detail] = (
+            information_coefficient.groupby(calendar).mean().dropna(how="all")
+        )
+        parts[detail].index.name = name
+
+    if detail == "group_information_coefficient" and groups is not None:
+        per_group = {
+            labels[horizon]: get_group_information_coefficient(
+                sampled_factor, compared_returns[horizon], groups
             )
             for horizon in horizons
         }
-    )
+        summaries = {
+            name: summarize_information_coefficient(
+                pd.DataFrame(
+                    {label: per_group[label][name] for label in per_group},
+                    index=sampled_factor.index,
+                )
+            ).T
+            for name in next(iter(per_group.values()))
+        }
+        result = pd.concat(summaries)
+        result.index.names = ["Group", "Horizon"]
+        parts[detail] = result
 
-    return {
-        "information_coefficient": information_coefficient,
-        "quantile_returns": quantile_returns,
-        "quantile_turnover": get_quantile_turnover(quantile_assignment, periods_apart),
-        "rank_autocorrelation": get_factor_rank_autocorrelation(
+    if detail in (
+        None,
+        "quantile_returns",
+        "quantile_returns_by_date",
+        "quantile_return_statistics",
+        "cumulative_returns",
+    ):
+        returns_by_date = {
+            labels[horizon]: get_quantile_returns_by_date(
+                quantile_assignment, compared_returns[horizon]
+            )
+            for horizon in horizons
+        }
+        parts["quantile_returns"] = pd.DataFrame(
+            {label: returns.mean() for label, returns in returns_by_date.items()}
+        )
+        parts["quantile_returns_by_date"] = pd.concat(returns_by_date, axis=1)
+        parts["quantile_return_statistics"] = pd.concat(
+            {
+                labels[horizon]: summarize_quantile_returns(
+                    returns_by_date[labels[horizon]], horizon
+                )
+                for horizon in horizons
+            }
+        )
+
+    if detail == "quantile_statistics":
+        parts[detail] = get_quantile_statistics(sampled_factor, quantile_assignment)
+
+    if detail in (None, "quantile_turnover"):
+        parts["quantile_turnover"] = get_quantile_turnover(
+            quantile_assignment, periods_apart
+        )
+
+    if detail in (None, "rank_autocorrelation"):
+        parts["rank_autocorrelation"] = get_factor_rank_autocorrelation(
             sampled_factor, periods_apart
-        ),
-    }
+        )
+
+    if detail == "factor_weights":
+        parts[detail] = get_factor_weights(sampled_factor, portfolio_groups)
+
+    if detail in (None, "factor_returns", "cumulative_returns"):
+        # The weights of the tickers with a forward return over the horizon, so the
+        # portfolio stays fully invested when a ticker has no return.
+        factor_returns = {
+            horizon: (
+                get_factor_weights(
+                    sampled_factor.where(forward_returns[horizon].notna()),
+                    portfolio_groups,
+                )
+                * forward_returns[horizon]
+            ).sum(axis=1, min_count=1)
+            for horizon in horizons
+        }
+        parts["factor_returns"] = pd.DataFrame(
+            {labels[horizon]: factor_returns[horizon] for horizon in horizons}
+        )
+        # The alpha against the equally weighted tickers with a factor, compounded over
+        # the number of horizons in a year.
+        parts["alpha_beta"] = pd.DataFrame(
+            {
+                labels[horizon]: get_alpha_beta(
+                    factor_returns[horizon],
+                    forward_returns[horizon].mean(axis=1),
+                    PERIODS_PER_YEAR[period] / horizon,
+                )
+                for horizon in horizons
+            },
+            index=["Annualized Alpha", "Beta"],
+        ).T
+
+    if detail == "cumulative_returns":
+        # The periods after the last factor show the value of the last holding periods.
+        calendar = sampled_prices.index[sampled_prices.index >= sampled_factor.index[0]]
+        parts[detail] = pd.concat(
+            {
+                labels[horizon]: get_cumulative_returns(
+                    pd.concat(
+                        [
+                            factor_returns[horizon].rename("Factor"),
+                            returns_by_date[labels[horizon]].drop(
+                                columns="Top Minus Bottom", errors="ignore"
+                            ),
+                        ],
+                        axis=1,
+                    ).reindex(calendar),
+                    horizon,
+                )
+                for horizon in horizons
+            },
+            axis=1,
+        )
+
+    if detail == "event_returns":
+        window = max(horizons)
+        parts[detail] = get_event_returns(
+            quantile_assignment,
+            sampled_prices,
+            period,
+            window,
+            window,
+            demeaned,
+            groups,
+        )
+
+    return parts
 
 
 def get_factor_analysis(
@@ -777,16 +1440,21 @@ def get_factor_analysis(
     start_date: str | None = None,
     end_date: str | None = None,
     returns: pd.DataFrame | None = None,
+    binning: str = "quantile",
+    demeaned: bool = False,
+    groups: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Analyses the predictive power of each factor: a summary row per factor and horizon, or
     with detail one part of the analysis of a single factor.
 
     The summary has the mean information coefficient (IC), its standard deviation (ddof=1),
-    the IC information ratio, the t-statistic of the mean with its p-value, the share of
-    periods with a positive IC, the number of periods, the top minus bottom quantile spread,
-    the mean turnover of the top and bottom quantiles and the mean rank autocorrelation. The
-    turnover and the rank autocorrelation do not depend on the horizon.
+    the IC information ratio, the t-statistic of the mean with its p-value, the skewness and
+    excess kurtosis of the IC, the share of periods with a positive IC, the number of
+    periods, the top minus bottom quantile spread, the annualized alpha and the beta of the
+    factor-weighted long-short portfolio against the equally weighted tickers, the mean
+    turnover of the top and bottom quantiles and the mean rank autocorrelation. The turnover
+    and the rank autocorrelation do not depend on the horizon.
 
     Args:
         factors (dict[str, pd.DataFrame]): The daily factor (dates × tickers) per name.
@@ -808,6 +1476,13 @@ def get_factor_analysis(
             which mark the days a ticker did not trade (see `mask_non_trading_days`), so
             daily forward returns count trading days only. Defaults to None, which treats
             every price as traded.
+        binning (str, optional): The way the tickers are sorted into quantiles, one of
+            BINNINGS (see assign_bins). Defaults to "quantile".
+        demeaned (bool, optional): Whether to compare the forward returns with the mean of
+            the tickers on each date, or with groups with the mean of their group (a
+            group-neutral analysis). Defaults to False.
+        groups (pd.Series | None, optional): The group per ticker (see get_groups), needed
+            for binning="group" and the group IC. Defaults to None.
 
     Returns:
         pd.DataFrame: The summary per factor and horizon (index), or the detail.
@@ -819,6 +1494,20 @@ def get_factor_analysis(
 
     if detail is not None and detail not in DETAILS:
         raise ValueError(f"detail must be one of {', '.join(DETAILS)}.")
+    if binning not in BINNINGS:
+        raise ValueError(f"binning must be one of {', '.join(BINNINGS)}.")
+    if binning == "zero_aware" and (not quantiles or quantiles % 2):
+        raise ValueError(
+            "binning='zero_aware' splits the quantiles evenly over the negative and the "
+            f"positive values, so it needs an even number of quantiles instead of {quantiles}."
+        )
+    if groups is None and (
+        binning == "group" or detail == "group_information_coefficient"
+    ):
+        raise ValueError(
+            "binning='group' and the group_information_coefficient need the groups: pass "
+            "group='sector', group='industry' or the group of each ticker."
+        )
     if detail is not None and len(factors) != 1:
         raise ValueError(
             "detail shows one metric at a time; name a single metric instead of "
@@ -835,6 +1524,10 @@ def get_factor_analysis(
             horizon_list,
             quantiles,
             periods_apart,
+            detail,
+            binning,
+            demeaned,
+            groups,
         )
         for name, factor in factors.items()
     }
@@ -860,24 +1553,45 @@ def get_factor_analysis(
             MINIMUM_TICKERS,
         )
 
-    if detail is not None:
-        result = next(iter(analyses.values()))[detail]
-        if detail == "rank_autocorrelation":
-            result = result.to_frame("Rank Autocorrelation")
-        if detail != "quantile_returns":
-            result = result.dropna(how="all")
-            result.index.name = "Date"
-        return result
-
     # Fewer tickers than quantiles leave every period without quantiles to compare.
-    if all(
-        "Top Minus Bottom" not in analysis["quantile_returns"].T
+    if (
+        detail is None or detail.startswith("quantile") or detail == "event_returns"
+    ) and all(
+        analysis["quantile_assignment"].isna().all(axis=None)
         for analysis in analyses.values()
     ):
         raise ValueError(
             f"{quantiles} quantiles need at least {quantiles} tickers with a value in a "
-            "period; add tickers or lower quantiles."
+            "period (per group with binning='group', per sign with binning='zero_aware'); "
+            "add tickers or lower quantiles."
         )
+
+    if detail is not None:
+        result = next(iter(analyses.values()))[detail]
+        if detail == "rank_autocorrelation":
+            result = result.to_frame("Rank Autocorrelation")
+        if detail in (
+            "information_coefficient",
+            "quantile_returns_by_date",
+            "quantile_turnover",
+            "rank_autocorrelation",
+            "factor_weights",
+            "factor_returns",
+        ):
+            result = result.dropna(how="all")
+        if detail in (
+            "information_coefficient",
+            "quantile_returns_by_date",
+            "quantile_turnover",
+            "rank_autocorrelation",
+            "factor_weights",
+            "factor_returns",
+            "cumulative_returns",
+        ):
+            result.index.name = "Date"
+        if detail == "quantile_return_statistics":
+            result.index.names = ["Horizon", "Quantile"]
+        return result
 
     summaries = {}
     for name, analysis in analyses.items():
@@ -887,6 +1601,7 @@ def get_factor_analysis(
         summary["Top Minus Bottom"] = analysis["quantile_returns"].T.get(
             "Top Minus Bottom", np.nan
         )
+        summary = summary.join(analysis["alpha_beta"])
         turnover = analysis["quantile_turnover"]
         summary["Quantile Turnover"] = (
             turnover.iloc[:, [0, -1]].stack().mean() if not turnover.empty else np.nan

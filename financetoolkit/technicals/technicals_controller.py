@@ -57,6 +57,7 @@ class TechnicalsBase:
         rounding: int | None = 4,
         start_date: str | None = None,
         end_date: str | None = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Technicals Controller Class.
@@ -71,6 +72,11 @@ class TechnicalsBase:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculation. Defaults to None.
             end_date (str | None, optional): The end date to use for the calculation. Defaults to None.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the profile items (such as "Sector" and
+                "Industry") as rows, or a function that retrieves them when first needed,
+                for the groups of get_factor_analysis. Defaults to None, which leaves
+                group="sector" and group="industry" unavailable.
 
         As an example:
 
@@ -98,6 +104,7 @@ class TechnicalsBase:
         | 2025-12-31 | 18.7103 | 20.3475 |     12.9966 |
         """
         self._tickers_source = tickers
+        self._profile_source = profile
         self._historical_data = historical_data
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
@@ -389,6 +396,9 @@ class TechnicalsBase:
         periods_apart: int = 1,
         detail: str | None = None,
         column: str | None = None,
+        group: str | dict | None = None,
+        demeaned: bool = False,
+        binning: str = "quantile",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
         **kwargs,
@@ -403,14 +413,27 @@ class TechnicalsBase:
         fundamental law of active management, IR ≈ IC × √breadth: a small but consistent IC
         across many tickers and periods gives a high information ratio.
 
-        The summary has a row per indicator and horizon with the mean IC, its standard
-        deviation, the IC information ratio (mean divided by standard deviation), the
-        t-statistic of the mean with its p-value, the share of periods with a positive IC, the
-        number of periods, the top minus bottom spread (the mean forward return of the highest
-        quantile minus that of the lowest), the mean turnover of the top and bottom quantiles
-        and the mean rank autocorrelation of the indicator from one period to the next. With
-        detail, it returns one of those parts per period (or per quantile) for a single
-        indicator.
+        The summary has a row per indicator and horizon with the mean IC, its standard deviation,
+        the IC information ratio (mean divided by standard deviation), the t-statistic of the mean
+        with its p-value, the skewness and excess kurtosis of the IC, the share of periods with a
+        positive IC, the number of periods, the top minus bottom spread (the mean forward return of
+        the highest quantile minus that of the lowest), the annualized alpha and the beta of the
+        factor-weighted long-short portfolio against the equally weighted tickers, the mean turnover
+        of the top and bottom quantiles and the mean rank autocorrelation of the indicator from one
+        period to the next. With detail, it returns one part of the analysis per period, quantile or
+        group for a single indicator.
+
+        The formula is as follows:
+
+        - IC(t) = Spearman rank correlation of f(i, t) and R(i, t, t + h) over the tickers i,
+          with f the factor and R the forward return over the horizon h
+        - Demeaned return: R(i, t) − mean R(j, t) over the tickers j (of the group of i)
+        - Portfolio weight: w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+        - Portfolio return: R_F(t) = Σ_i w(i, t) × R(i, t, t + h)
+        - Alpha and beta: R_F(t) = α + β × R_U(t) + ε(t), with R_U(t) = mean R(i, t, t + h)
+        - Annualized Alpha = (1 + α) ^ (periods per year / h) − 1
+        - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
+        - Standard error of a quantile = standard deviation over the periods / √periods
 
         The indicators are calculated daily and the value on the last trading day of each
         period is compared with the returns from that day's close onwards, using the dividend
@@ -446,15 +469,41 @@ class TechnicalsBase:
                 period. Defaults to 5.
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
-            detail (str | None, optional): Returns one part of the analysis of a single
-                indicator instead of the summary: "information_coefficient" (per period and
-                horizon), "quantile_returns" (the mean forward return per quantile and
-                horizon), "quantile_turnover" (per period and quantile) or
-                "rank_autocorrelation" (per period). Defaults to None.
+            detail (str | None, optional): Returns one part of the analysis of a single indicator
+                instead of the summary: "information_coefficient" (per period and horizon),
+                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
+                per calendar month or year), "group_information_coefficient" (the IC statistics
+                within each group, needs group), "quantile_returns" (the mean forward return per
+                quantile and horizon), "quantile_returns_by_date" (per period),
+                "quantile_return_statistics" (the mean, its standard error and both per single
+                period), "quantile_statistics" (the range, mean and count of the factor values in
+                each quantile), "quantile_turnover" (per period and quantile),
+                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
+                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
+                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
+                each quantile) or "event_returns" (the mean price path of each quantile from the
+                longest horizon before to the longest horizon after the periods it is formed).
+                Defaults to None.
             column (str | None, optional): The output to use of an indicator with several,
                 e.g. "Signal Line" of the MACD or "Upper Band" of the Bollinger Bands.
                 Defaults to None, which uses the first output in alphabetical order other
                 than a price, a histogram or a signal line, e.g. "MACD Line" or "Lower Band".
+            group (str | dict | None, optional): The group of each ticker for the group options:
+                "sector" or "industry" (or another company profile item) from the company profiles
+                of Financial Modeling Prep, or a dictionary of tickers and their groups. Defaults to
+                None.
+            demeaned (bool, optional): Whether to compare the forward returns with the mean of
+                the tickers in each period, or with group with the mean of the ticker's group:
+                a group-neutral analysis, in which the IC is group-adjusted and the
+                factor-weighted portfolio neutral within each group. Without group the IC
+                stays the same, as subtracting one mean from every ticker keeps their ranks.
+                Defaults to False.
+            binning (str, optional): How the tickers are sorted into quantiles per period:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
+                and highest value), "zero_aware" (half of the quantiles for the negative and half
+                for the zero and positive values, for a signal centred on zero; needs an even number
+                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
+                "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the indicators that take them, e.g. window=14,
@@ -477,9 +526,28 @@ class TechnicalsBase:
             - A horizon longer than one period makes consecutive returns overlap, which
               inflates the t-statistic; judge those horizons by their mean IC and IC
               information ratio.
-            - Inspired by the factor analysis of alphalens (Quantopian); the information
-              coefficient is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
-              Management." 2nd ed. McGraw-Hill.
+            - The groups from the company profiles are today's sector or industry, applied
+              to every period.
+            - The factor-weighted portfolio is long-short: its weights sum to zero and their
+              absolute values to one. A horizon longer than one period makes its returns
+              overlap too, so its alpha and beta are averages rather than tests.
+            - The cumulative returns split the capital over as many portfolios as the horizon
+              has periods, started on consecutive periods and each rebalanced once per
+              horizon; a value shows when its holding period ends, so the series starts at 1.
+            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
+              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
+              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
+              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
+              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
+              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
+              35(1).
+            - Referenced against alphalens-reloaded
+              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
+              spread is half of the one here (a gross exposure of one rather than two), it
+              drops a period and ticker without every horizon's return where each horizon
+              here uses its own, and its event returns average the single-period returns at
+              each offset where these are the price paths rebased to the period itself.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -504,12 +572,12 @@ class TechnicalsBase:
 
         Which returns:
 
-        |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
-        |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_rate_of_change', '1 Month')   |    0.0477 |                  0.3456 |                 0.1381 |        1.5063 |    0.1347 |           0.5798 |            119 |             0.0092 |              0.2626 |                 0.8582 |
-        | ('get_rate_of_change', '12 Months') |    0.1181 |                  0.3986 |                 0.2964 |        3.0802 |    0.0026 |           0.6389 |            108 |             0.08   |              0.2626 |                 0.8582 |
-        | ('get_moving_average', '1 Month')   |    0.0383 |                  0.3458 |                 0.1107 |        1.2071 |    0.2298 |           0.563  |            119 |             0.0125 |              0.3074 |                 0.8031 |
-        | ('get_moving_average', '12 Months') |    0.1018 |                  0.3848 |                 0.2646 |        2.7503 |    0.007  |           0.5833 |            108 |             0.0853 |              0.3074 |                 0.8031 |
+        |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |    Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|--------:|--------------------:|-----------------------:|
+        | ('get_rate_of_change', '1 Month')   |    0.0468 |                  0.3467 |                 0.1349 |        1.4713 |    0.1439 |       -0.3812 |       -0.3944 |           0.5798 |            119 |             0.0091 |             0.1115 |  0.0444 |              0.2637 |                 0.8582 |
+        | ('get_rate_of_change', '12 Months') |    0.1184 |                  0.3988 |                 0.2968 |        3.0848 |    0.0026 |       -0.4661 |       -0.3225 |           0.6389 |            108 |             0.079  |            -0.0334 |  0.6091 |              0.2637 |                 0.8582 |
+        | ('get_moving_average', '1 Month')   |    0.0382 |                  0.346  |                 0.1104 |        1.204  |    0.231  |       -0.2546 |       -0.7156 |           0.563  |            119 |             0.0125 |             0.1154 | -0.0278 |              0.3074 |                 0.8036 |
+        | ('get_moving_average', '12 Months') |    0.102  |                  0.3847 |                 0.2651 |        2.7545 |    0.0069 |       -0.3393 |       -0.5643 |           0.5833 |            108 |             0.0853 |            -0.0393 |  0.5512 |              0.3074 |                 0.8036 |
         """
         tickers = self._tickers
         selected = factor_model.select_metrics(metrics, FACTOR_COLLECTIONS)
@@ -559,6 +627,9 @@ class TechnicalsBase:
             self._start_date,
             self._end_date,
             returns=self._historical_data["daily"].get("Return"),
+            binning=binning,
+            demeaned=demeaned,
+            groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
 
         return apply_rounding(

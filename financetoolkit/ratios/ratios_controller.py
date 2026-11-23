@@ -211,6 +211,7 @@ class Ratios:
         gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
         consumer_price_index_function: Callable[[str], pd.Series] | None = None,
         employee_count_function: Callable[[], pd.DataFrame] | None = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -275,6 +276,11 @@ class Ratios:
                 period, with the tickers as index and the periods as columns (see
                 financetoolkit.ratios.helpers.align_employee_count), for the revenue and net
                 income per employee. Defaults to None, which leaves those ratios unavailable.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the profile items (such as "Sector" and
+                "Industry") as rows, or a function that retrieves them when first needed,
+                for the groups of get_factor_analysis. Defaults to None, which leaves
+                group="sector" and group="industry" unavailable.
 
         As an example:
 
@@ -320,6 +326,7 @@ class Ratios:
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
         self._tickers_source = tickers
+        self._profile_source = profile
         self._balance_source = balance
         self._income_source = income
         self._cash_source = cash
@@ -19616,6 +19623,9 @@ class Ratios:
         periods_apart: int = 1,
         detail: str | None = None,
         column: str | None = None,
+        group: str | dict | None = None,
+        demeaned: bool = False,
+        binning: str = "quantile",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
         **kwargs,
@@ -19630,13 +19640,27 @@ class Ratios:
         IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
         high information ratio.
 
-        The summary has a row per ratio and horizon with the mean IC, its standard deviation,
-        the IC information ratio (mean divided by standard deviation), the t-statistic of the
-        mean with its p-value, the share of periods with a positive IC, the number of periods,
-        the top minus bottom spread (the mean forward return of the highest quantile minus
-        that of the lowest), the mean turnover of the top and bottom quantiles and the mean
-        rank autocorrelation of the ratio from one period to the next. With detail, it returns
-        one of those parts per period (or per quantile) for a single ratio.
+        The summary has a row per ratio and horizon with the mean IC, its standard deviation, the IC
+        information ratio (mean divided by standard deviation), the t-statistic of the mean with its
+        p-value, the skewness and excess kurtosis of the IC, the share of periods with a positive
+        IC, the number of periods, the top minus bottom spread (the mean forward return of the
+        highest quantile minus that of the lowest), the annualized alpha and the beta of the
+        factor-weighted long-short portfolio against the equally weighted tickers, the mean turnover
+        of the top and bottom quantiles and the mean rank autocorrelation of the ratio from one
+        period to the next. With detail, it returns one part of the analysis per period, quantile or
+        group for a single ratio.
+
+        The formula is as follows:
+
+        - IC(t) = Spearman rank correlation of f(i, t) and R(i, t, t + h) over the tickers i,
+          with f the factor and R the forward return over the horizon h
+        - Demeaned return: R(i, t) − mean R(j, t) over the tickers j (of the group of i)
+        - Portfolio weight: w(i, t) = (f(i, t) − mean f(t)) / Σ_j |f(j, t) − mean f(t)|
+        - Portfolio return: R_F(t) = Σ_i w(i, t) × R(i, t, t + h)
+        - Alpha and beta: R_F(t) = α + β × R_U(t) + ε(t), with R_U(t) = mean R(i, t, t + h)
+        - Annualized Alpha = (1 + α) ^ (periods per year / h) − 1
+        - Per period: (1 + mean return) ^ (1 / h) − 1 and standard error / √h
+        - Standard error of a quantile = standard deviation over the periods / √periods
 
         The ratios are calculated daily from the closing price where they can be (show_daily)
         and otherwise per statement period. Statement figures apply from the end of each fiscal
@@ -19664,12 +19688,38 @@ class Ratios:
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
             detail (str | None, optional): Returns one part of the analysis of a single ratio
                 instead of the summary: "information_coefficient" (per period and horizon),
-                "quantile_returns" (the mean forward return per quantile and horizon),
-                "quantile_turnover" (per period and quantile) or "rank_autocorrelation" (per
-                period). Defaults to None.
+                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
+                per calendar month or year), "group_information_coefficient" (the IC statistics
+                within each group, needs group), "quantile_returns" (the mean forward return per
+                quantile and horizon), "quantile_returns_by_date" (per period),
+                "quantile_return_statistics" (the mean, its standard error and both per single
+                period), "quantile_statistics" (the range, mean and count of the factor values in
+                each quantile), "quantile_turnover" (per period and quantile),
+                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
+                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
+                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
+                each quantile) or "event_returns" (the mean price path of each quantile from the
+                longest horizon before to the longest horizon after the periods it is formed).
+                Defaults to None.
             column (str | None, optional): Not used by the ratios, which have one value per
                 ticker; it exists for the modules whose metrics have several outputs. Defaults
                 to None.
+            group (str | dict | None, optional): The group of each ticker for the group options:
+                "sector" or "industry" (or another company profile item) from the company profiles
+                of Financial Modeling Prep, or a dictionary of tickers and their groups. Defaults to
+                None.
+            demeaned (bool, optional): Whether to compare the forward returns with the mean of
+                the tickers in each period, or with group with the mean of the ticker's group:
+                a group-neutral analysis, in which the IC is group-adjusted and the
+                factor-weighted portfolio neutral within each group. Without group the IC
+                stays the same, as subtracting one mean from every ticker keeps their ranks.
+                Defaults to False.
+            binning (str, optional): How the tickers are sorted into quantiles per period:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
+                and highest value), "zero_aware" (half of the quantiles for the negative and half
+                for the zero and positive values, for a signal centred on zero; needs an even number
+                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
+                "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the ratios that take them, e.g. trailing=4 or
@@ -19694,8 +19744,28 @@ class Ratios:
             - A ratio that returns no data (e.g. one missing a statement line item), or that
               fewer than three tickers have in every period (e.g. the preferred dividend
               coverage ratio), is left out of a collection with a warning.
-            - Based on alphalens (Quantopian) and on Grinold and Kahn (2000), Active Portfolio
-              Management.
+            - The groups from the company profiles are today's sector or industry, applied
+              to every period.
+            - The factor-weighted portfolio is long-short: its weights sum to zero and their
+              absolute values to one. A horizon longer than one period makes its returns
+              overlap too, so its alpha and beta are averages rather than tests.
+            - The cumulative returns split the capital over as many portfolios as the horizon
+              has periods, started on consecutive periods and each rebalanced once per
+              horizon; a value shows when its holding period ends, so the series starts at 1.
+            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
+              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
+              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
+              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
+              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
+              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
+              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
+              35(1).
+            - Referenced against alphalens-reloaded
+              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
+              spread is half of the one here (a gross exposure of one rather than two), it
+              drops a period and ticker without every horizon's return where each horizon
+              here uses its own, and its event returns average the single-period returns at
+              each offset where these are the price paths rebased to the period itself.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 
@@ -19720,11 +19790,11 @@ class Ratios:
 
         Which returns:
 
-        |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
-        |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.0505 |                  0.2917 |                 0.173  |        1.7981 |    0.075  |           0.5741 |            108 |             0.0854 |              0.0872 |                 0.9499 |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1163 |                  0.2959 |                 0.393  |        4.0845 |    0.0001 |           0.6759 |            108 |             0.1699 |              0.0476 |                 0.978  |
-        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
+        |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|-------:|--------------------:|-----------------------:|
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.051  |                  0.2917 |                 0.1748 |        1.817  |    0.072  |       -0.6608 |        0.1215 |           0.5741 |            108 |             0.0852 |            -0.0921 | 0.5704 |              0.0872 |                 0.9499 |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1232 |                  0.3142 |                 0.392  |        4.0741 |    0.0001 |       -0.2513 |       -0.4526 |           0.6759 |            108 |             0.1688 |            -0.0322 | 0.2882 |              0.0301 |                 0.989  |
+        | ('get_return_on_equity', '12 Months')        |    0.0359 |                  0.3528 |                 0.1018 |        1.0178 |    0.3113 |        0.314  |       -0.1457 |           0.49   |            100 |             0.0194 |            -0.0313 | 0.1369 |              0.0494 |                 0.9665 |
         """
         factors = factor_model.get_daily_factors(
             self,
@@ -19746,6 +19816,9 @@ class Ratios:
             self._start_date,
             self._end_date,
             returns=self._daily_historical_data.get("Return"),
+            binning=binning,
+            demeaned=demeaned,
+            groups=factor_model.get_groups(group, self._profile_source, self._tickers),
         )
 
         return apply_rounding(

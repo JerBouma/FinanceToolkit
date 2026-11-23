@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.econometrics.diagnostics import diagnostics_model
 
@@ -562,3 +563,283 @@ def test_get_cusum_test_of_a_series_constant_up_to_rounding_is_not_defined():
     # Real returns with little spread keep their statistic.
     returns = pd.Series(np.random.default_rng(1).normal(0.001, 0.0001, 50))
     assert np.isfinite(diagnostics_model.get_cusum_test(returns)["CUSUM Statistic"])
+
+
+def test_get_cusum_test_recursive_rejects_a_mean_shift_late_in_the_sample(recorder):
+    rng = np.random.default_rng(7)
+    stable = pd.Series(rng.standard_normal(300) * 0.01)
+    shifted = pd.Series(
+        np.concatenate(
+            [rng.standard_normal(240) * 0.01, rng.standard_normal(60) * 0.01 + 0.02]
+        )
+    )
+    assert not diagnostics_model.get_cusum_test(stable, method="recursive")[
+        "Reject Stability (5%)"
+    ]
+    result = diagnostics_model.get_cusum_test(shifted, method="recursive")
+    assert result["Reject Stability (5%)"]
+    recorder.capture(result.round(4))
+
+
+def test_get_cusum_test_recursive_follows_brown_durbin_and_evans():
+    # The recursive residuals of a constant-mean model are the forecast errors of the mean of
+    # the returns before each date, scaled by sqrt(1 + 1 / (t - 1)); their squares add up to
+    # the sum of squared OLS residuals.
+    rng = np.random.default_rng(3)
+    returns = rng.standard_normal(50)
+    recursive = np.array(
+        [
+            (returns[t] - returns[:t].mean()) / np.sqrt(1 + 1 / t)
+            for t in range(1, len(returns))
+        ]
+    )
+    np.testing.assert_allclose(
+        np.sum(recursive**2), np.sum((returns - returns.mean()) ** 2), rtol=1e-12
+    )
+    sigma = np.sqrt(np.sum(recursive**2) / (len(returns) - 1))
+    boundary = np.sqrt(49) + 2 * np.arange(1, 50) / np.sqrt(49)
+    statistic = np.max(np.abs(np.cumsum(recursive) / sigma) / boundary)
+
+    result = diagnostics_model.get_cusum_test(pd.Series(returns), method="recursive")
+
+    assert result["CUSUM Statistic"] == pytest.approx(statistic, rel=1e-12)
+    # The crossing probability of Brown, Durbin and Evans (1975) at their tabulated values.
+    for level, critical_value in ((0.01, 1.143), (0.05, 0.948), (0.10, 0.850)):
+        crossing = 2 * (
+            1
+            - stats.norm.cdf(3 * critical_value)
+            + np.exp(-4 * critical_value**2) * stats.norm.cdf(critical_value)
+        )
+        assert crossing == pytest.approx(level, abs=1e-4)
+
+
+def test_get_cusum_test_chu_stinchcombe_white_by_hand():
+    returns = pd.Series(
+        [0.01, -0.02, 0.015, 0.03, 0.02, -0.01, 0.025, 0.02, 0.03, 0.01, 0.02, 0.015]
+    )
+    levels = np.concatenate([[0.0], np.cumsum(np.log1p(returns.to_numpy()))])
+    t = len(returns)
+    sigma = np.sqrt(np.mean(np.diff(levels) ** 2))
+    statistics = [(levels[t] - levels[n]) / (sigma * np.sqrt(t - n)) for n in range(t)]
+    reference = int(np.argmax(statistics))
+
+    result = diagnostics_model.get_cusum_test(returns, method="chu_stinchcombe_white")
+
+    assert result["CUSUM Statistic"] == pytest.approx(max(statistics), rel=1e-12)
+    assert result["Critical Value 5%"] == pytest.approx(
+        np.sqrt(4.6 + np.log(t - reference)), rel=1e-12
+    )
+    assert result["Observations"] == t
+
+
+def test_get_cusum_test_chu_stinchcombe_white_detects_a_rise_without_look_ahead(
+    recorder,
+):
+    rng = np.random.default_rng(11)
+    returns = pd.Series(
+        np.concatenate([rng.normal(0, 0.01, 200), rng.normal(0.008, 0.01, 100)]),
+        index=pd.bdate_range("2020-01-01", periods=300),
+    )
+    path = diagnostics_model.get_cusum_test(
+        returns, method="chu_stinchcombe_white", time_series=True
+    )
+    summary = diagnostics_model.get_cusum_test(returns, method="chu_stinchcombe_white")
+
+    assert summary["Reject Stability (5%)"]
+    assert summary["CUSUM Statistic"] == path["CUSUM Statistic"].iloc[-1]
+    # The first nine dates have too few returns for a verdict.
+    assert path["CUSUM Statistic"].iloc[:9].isna().all()
+    # A date's statistic only uses the returns up to it.
+    truncated = diagnostics_model.get_cusum_test(
+        returns.iloc[:150], method="chu_stinchcombe_white", time_series=True
+    )
+    pd.testing.assert_frame_equal(truncated, path.iloc[:150])
+    # The test is one-sided: the same fall is not a rise.
+    assert not diagnostics_model.get_cusum_test(
+        -returns, method="chu_stinchcombe_white"
+    )["Reject Stability (5%)"]
+    recorder.capture(path.iloc[::25].astype(float).round(4))
+
+
+def test_get_cusum_test_time_series_needs_chu_stinchcombe_white():
+    with pytest.raises(ValueError, match="chu_stinchcombe_white"):
+        diagnostics_model.get_cusum_test(
+            pd.Series(np.ones(20)), method="recursive", time_series=True
+        )
+    with pytest.raises(ValueError, match="method"):
+        diagnostics_model.get_cusum_test(pd.Series(np.ones(20)), method="mosum")
+
+
+def test_get_ljung_box_test_weighted_by_hand(recorder):
+    rng = np.random.default_rng(5)
+    values = rng.standard_normal(400)
+    values[1:] += 0.2 * values[:-1]
+    n, lags = len(values), 6
+    demeaned = values - values.mean()
+    autocorrelations = np.array(
+        [
+            demeaned[k:] @ demeaned[:-k] / (demeaned @ demeaned)
+            for k in range(1, lags + 1)
+        ]
+    )
+    k = np.arange(1, lags + 1)
+    statistic = (
+        n * (n + 2) * np.sum((lags - k + 1) / lags * autocorrelations**2 / (n - k))
+    )
+    shape = 0.75 * (lags + 1) ** 2 * lags / (2 * lags**2 + 3 * lags + 1)
+    scale = 2 / 3 * (2 * lags**2 + 3 * lags + 1) / (lags * (lags + 1))
+
+    result = diagnostics_model.get_ljung_box_test(
+        pd.Series(values), lags=lags, weighted=True
+    )
+
+    assert result["Weighted Ljung-Box Statistic"] == pytest.approx(statistic, rel=1e-12)
+    assert result["P-Value"] == pytest.approx(
+        stats.gamma.sf(statistic, shape, scale=scale), rel=1e-10
+    )
+    assert result["P-Value"] < LOW_P_VALUE_THRESHOLD
+    recorder.capture(result.round(4))
+
+
+def test_get_arch_lm_test_weighted_gamma_of_rugarch():
+    # rugarch's weighted ARCH test of the third lag after a GARCH(1, 1) (lags=3, model_df=2)
+    # has the Gamma shape 0.5 and scale 2 printed in its vignette: a chi-squared with 1
+    # degree of freedom of n times the third squared autocorrelation.
+    rng = np.random.default_rng(9)
+    values = rng.standard_normal(500)
+    squared = (values - values.mean()) ** 2
+    demeaned = squared - squared.mean()
+    third = demeaned[3:] @ demeaned[:-3] / (demeaned @ demeaned)
+
+    result = diagnostics_model.get_arch_lm_test(
+        pd.Series(values), lags=3, weighted=True, model_df=2
+    )
+
+    assert result["Weighted ARCH-LM Statistic"] == pytest.approx(
+        500 * third**2, rel=1e-12
+    )
+    assert result["P-Value"] == pytest.approx(
+        stats.chi2.sf(500 * third**2, 1), rel=1e-10
+    )
+    with pytest.raises(ValueError, match="model_df"):
+        diagnostics_model.get_arch_lm_test(
+            pd.Series(values), lags=3, weighted=True, model_df=3
+        )
+
+
+def test_get_arch_lm_test_weighted_detects_volatility_clustering(recorder):
+    rng = np.random.default_rng(42)
+    calm = pd.Series(rng.standard_normal(500) * 0.01)
+    variance = np.empty(500)
+    clustered = np.empty(500)
+    variance[0], clustered[0] = 1e-4, 0.0
+    for t in range(1, 500):
+        variance[t] = 1e-6 + 0.2 * clustered[t - 1] ** 2 + 0.75 * variance[t - 1]
+        clustered[t] = np.sqrt(variance[t]) * rng.standard_normal()
+
+    assert (
+        diagnostics_model.get_arch_lm_test(calm, weighted=True)["P-Value"]
+        > HIGH_P_VALUE_THRESHOLD
+    )
+    result = diagnostics_model.get_arch_lm_test(pd.Series(clustered), weighted=True)
+    assert result["P-Value"] < LOW_P_VALUE_THRESHOLD
+    recorder.capture(result.round(4))
+
+
+def _gjr_garch(gamma: float, n: int = 3000, seed: int = 1):
+    """Residuals and standardized residuals of a GJR-GARCH(1, 1) with leverage gamma."""
+    rng = np.random.default_rng(seed)
+    z = rng.standard_normal(n)
+    variance = np.empty(n)
+    residuals = np.empty(n)
+    variance[0] = 1e-4
+    residuals[0] = np.sqrt(variance[0]) * z[0]
+    for t in range(1, n):
+        shock = residuals[t - 1]
+        variance[t] = (
+            2e-6 + (0.05 + gamma * (shock < 0)) * shock**2 + 0.85 * variance[t - 1]
+        )
+        residuals[t] = np.sqrt(variance[t]) * z[t]
+    return residuals, residuals / np.sqrt(variance)
+
+
+def test_get_sign_bias_test_detects_leverage(recorder):
+    # Standardized with the symmetric variance, a GJR process leaves the leverage in the
+    # squared standardized residuals; standardized with its own variance it does not.
+    residuals, standardized = _gjr_garch(0.15)
+    symmetric = residuals / np.sqrt(
+        pd.Series(residuals**2).ewm(alpha=0.06).mean().shift(1).bfill().to_numpy()
+    )
+    leverage = diagnostics_model.get_sign_bias_test(
+        pd.Series(residuals), pd.Series(symmetric)
+    )
+    own = diagnostics_model.get_sign_bias_test(
+        pd.Series(residuals), pd.Series(standardized)
+    )
+
+    assert leverage["Negative Size Bias t-Statistic"] < -2
+    assert leverage["Joint P-Value"] < LOW_P_VALUE_THRESHOLD
+    assert own["Joint P-Value"] > HIGH_P_VALUE_THRESHOLD
+    recorder.capture(leverage.round(4))
+
+
+def test_get_sign_bias_test_by_hand():
+    residuals, standardized = _gjr_garch(0.1, n=400, seed=4)
+    shocks, squared = residuals[:-1], standardized[1:] ** 2
+    negative = (shocks < 0).astype(float)
+    design = np.column_stack(
+        [np.ones(len(shocks)), negative, negative * shocks, (1 - negative) * shocks]
+    )
+    coefficients, *_ = np.linalg.lstsq(design, squared, rcond=None)
+    errors = squared - design @ coefficients
+    covariance = errors @ errors / (len(squared) - 4) * np.linalg.inv(design.T @ design)
+    t_statistics = coefficients / np.sqrt(np.diag(covariance))
+    r_squared = 1 - errors @ errors / np.sum((squared - squared.mean()) ** 2)
+
+    result = diagnostics_model.get_sign_bias_test(
+        pd.Series(residuals), pd.Series(standardized)
+    )
+
+    np.testing.assert_allclose(
+        result[
+            [
+                "Sign Bias t-Statistic",
+                "Negative Size Bias t-Statistic",
+                "Positive Size Bias t-Statistic",
+            ]
+        ].to_numpy(dtype=float),
+        t_statistics[1:],
+        rtol=1e-9,
+    )
+    assert result["Joint Statistic"] == pytest.approx(399 * r_squared, rel=1e-9)
+    assert result["Observations"] == 399
+
+
+def test_get_pearson_goodness_of_fit_test_by_hand():
+    # Residuals at the middle of 20 equal-probability bins fill every bin equally.
+    even = pd.Series(stats.norm.ppf((np.arange(200) + 0.5) / 200))
+    assert diagnostics_model.get_pearson_goodness_of_fit_test(even)[
+        "Pearson Statistic"
+    ] == pytest.approx(0, abs=1e-12)
+
+    # Every residual below the median: two full bins and two empty ones out of four, and the
+    # empty bins above the last occupied one count as well.
+    low = pd.Series(stats.norm.ppf((np.arange(100) + 0.5) / 200))
+    result = diagnostics_model.get_pearson_goodness_of_fit_test(low, bins=4)
+    assert result["Pearson Statistic"] == pytest.approx(100.0)
+    assert result["P-Value"] == pytest.approx(stats.chi2.sf(100.0, 3))
+
+
+def test_get_pearson_goodness_of_fit_test_tells_the_distributions_apart(recorder):
+    rng = np.random.default_rng(2)
+    # Student-t draws with 4 degrees of freedom, scaled to a unit variance.
+    draws = pd.Series(rng.standard_t(4, 3000) / np.sqrt(2))
+
+    normal = diagnostics_model.get_pearson_goodness_of_fit_test(draws)
+    student = diagnostics_model.get_pearson_goodness_of_fit_test(
+        draws, distribution="t", parameters=(4.0,)
+    )
+
+    assert normal["P-Value"] < LOW_P_VALUE_THRESHOLD
+    assert student["P-Value"] > HIGH_P_VALUE_THRESHOLD
+    recorder.capture(pd.DataFrame({"Normal": normal, "Student-t": student}).round(4))

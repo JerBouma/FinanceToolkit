@@ -160,7 +160,7 @@ def test_get_garch(recorder, risk_module):
     recorder.capture(risk_module.get_garch(method="gjr"))
     recorder.capture(risk_module.get_garch(method="gjr", period="monthly"))
     recorder.capture(risk_module.get_garch(method="gjr", period="yearly", growth=True))
-    assert risk_module.get_garch(method="figarch").empty
+    assert risk_module.get_garch(method="harch").empty
 
 
 def test_get_garch_forecast(recorder, risk_module):
@@ -1643,6 +1643,42 @@ def test_get_garch_simulation(recorder, risk_module):
             paths=1000, output="cumulative_returns", distribution="t"
         )
     )
+
+
+def test_get_garch_figarch(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(method="figarch"))
+    recorder.capture(risk_module.get_garch_forecast(method="figarch"))
+    # The standard errors move by about 1e-6 when the prices move by 1e-12 (the fit stops
+    # within its tolerance), so the parameters are recorded at three decimals.
+    recorder.capture(
+        risk_module.get_garch_parameters(method="figarch", diagnostics=True, rounding=3)
+    )
+
+
+def test_get_garch_arfima_mean(recorder, risk_module):
+    recorder.capture(risk_module.get_garch(mean="arfima"))
+
+
+def test_get_garch_simulation_bootstrap(recorder, risk_module):
+    recorder.capture(risk_module.get_garch_simulation(paths=500, bootstrap_fits=2))
+    recorder.capture(
+        risk_module.get_garch_simulation(
+            paths=500, bootstrap_fits=0, output="volatility"
+        )
+    )
+
+
+def test_realized_garch_takes_the_daily_parkinson_variance(risk_module):
+    # The realized GARCH fit itself (about 30 seconds for the three series) is tested on
+    # simulated data in test_garch_fit.py; here its realized measure.
+    measure = risk_module._get_realized_measure("realized", "daily")
+    high = risk_module._get_prices("High")
+    low = risk_module._get_prices("Low")
+    expected = np.log(high / low) ** 2 / (4 * np.log(2))
+
+    pd.testing.assert_frame_equal(measure, expected)
+    assert risk_module._get_realized_measure("garch", "daily") is None
+    assert risk_module.get_garch(method="realized", period="monthly").empty
 
 
 def test_get_volatility_garman_klass_yang_zhang(recorder, risk_module):

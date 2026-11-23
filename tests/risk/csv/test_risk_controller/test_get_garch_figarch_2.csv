@@ -1,0 +1,21 @@
+,AAPL,MSFT,Benchmark
+Omega,0.0,0.0,0.0
+Phi,0.177,0.265,-0.054
+D,0.461,0.617,0.633
+Beta,0.542,0.68,0.402
+Persistence,1.0,1.0,1.0
+Half-Life,,,
+Unconditional Variance,,,
+Log-Likelihood,1846.525,1927.455,2263.607
+AIC,-4.868,-5.082,-5.97
+BIC,-4.844,-5.057,-5.945
+Shibata,-4.868,-5.082,-5.97
+Hannan-Quinn,-4.859,-5.072,-5.96
+Omega Standard Error,0.0,0.0,0.0
+Phi Standard Error,0.108,0.128,0.124
+D Standard Error,0.168,0.248,0.118
+Beta Standard Error,0.18,0.192,0.172
+Omega Robust Standard Error,0.0,0.0,0.0
+Phi Robust Standard Error,0.136,0.169,0.135
+D Robust Standard Error,0.244,0.415,0.128
+Beta Robust Standard Error,0.252,0.332,0.177

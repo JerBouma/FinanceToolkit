@@ -843,3 +843,111 @@ def test_get_pearson_goodness_of_fit_test_tells_the_distributions_apart(recorder
     assert normal["P-Value"] < LOW_P_VALUE_THRESHOLD
     assert student["P-Value"] > HIGH_P_VALUE_THRESHOLD
     recorder.capture(pd.DataFrame({"Normal": normal, "Student-t": student}).round(4))
+
+
+@pytest.mark.parametrize(
+    ("statistic", "p_value"),
+    # The 10%, 5% and 1% quantiles of the Cramér-von Mises limit (Anderson and Darling, 1952).
+    [(0.34730, 0.10), (0.46136, 0.05), (0.74346, 0.01)],
+)
+def test_nyblom_p_value_of_one_parameter_is_the_cramer_von_mises_limit(
+    statistic, p_value
+):
+    # The quantiles are tabulated to five decimals, which moves the p-value by up to 3e-6.
+    assert diagnostics_model.get_nyblom_p_value(statistic, 1) == pytest.approx(
+        p_value, abs=1e-5
+    )
+
+
+def test_nyblom_p_value_of_several_parameters_matches_a_simulation():
+    rng = np.random.default_rng(0)
+    weights = 1 / (np.arange(1, 401) ** 2 * np.pi**2)
+    # Σ_j ∫ B_j^2 = Σ_n Σ_j Z_nj^2 / (n^2 π^2) for three bridges.
+    draws = (rng.standard_normal((100000, 400)) ** 2 @ weights).reshape(-1, 1)
+    draws = draws[:99999].reshape(33333, 3).sum(axis=1)
+
+    for statistic in (0.6, 1.01, 1.6):
+        assert diagnostics_model.get_nyblom_p_value(statistic, 3) == pytest.approx(
+            (draws > statistic).mean(), abs=4e-3
+        )
+    # Hansen's (1992) simulated 5% critical values are within 1% of the limiting ones.
+    for parameters, critical in ((1, 0.470), (2, 0.749), (3, 1.01), (5, 1.47)):
+        assert diagnostics_model.get_nyblom_p_value(
+            critical, parameters
+        ) == pytest.approx(0.05, abs=3e-3)
+
+
+def test_nyblom_test_detects_a_change_in_the_parameters():
+    rng = np.random.default_rng(1)
+    stable = rng.standard_normal((1000, 2))
+    # The scores of a mean that moves from -0.3 to 0.3 halfway (the fit sits at 0).
+    shifted = stable + np.r_[np.full(500, -0.3), np.full(500, 0.3)][:, None] * [1, 0]
+
+    # The scores of a fit sum to zero, so both sets are centred.
+    calm = diagnostics_model.get_nyblom_test(
+        stable - stable.mean(axis=0), ["Mu", "Sigma"]
+    )
+    broken = diagnostics_model.get_nyblom_test(
+        shifted - shifted.mean(axis=0), ["Mu", "Sigma"]
+    )
+
+    assert calm["Joint P-Value"] > 0.05
+    assert broken["Mu P-Value"] < 1e-3
+    assert broken["Sigma P-Value"] > 0.01
+    # The individual statistic is Σ S_t^2 / (T V), V the sum of the squared scores.
+    scores = shifted[:, 0] - shifted[:, 0].mean()
+    assert broken["Mu Statistic"] == pytest.approx(
+        np.sum(np.cumsum(scores) ** 2) / (1000 * np.sum(scores**2)), rel=1e-12
+    )
+    assert broken["Individual Critical Value (5%)"] == pytest.approx(0.4614, abs=1e-4)
+
+
+def test_gmm_moment_test_matches_t_tests_of_the_moments():
+    rng = np.random.default_rng(2)
+    z = pd.Series(rng.standard_t(8, 1500) * np.sqrt(6 / 8))
+
+    result = diagnostics_model.get_gmm_moment_test(z, lags=1, kurtosis=4.5)
+
+    values = z.to_numpy()[1:]
+    assert result["Mean t-Statistic"] == pytest.approx(
+        stats.ttest_1samp(values, 0).statistic, rel=1e-12
+    )
+    assert result["Kurtosis t-Statistic"] == pytest.approx(
+        stats.ttest_1samp(values**4 - 4.5, 0).statistic, rel=1e-12
+    )
+    # One lagged condition: its variance under the null is E[(z^2 - 1)^2]^2.
+    squared = z.to_numpy() ** 2 - 1
+    assert result["Q2 Statistic"] == pytest.approx(
+        1499
+        * np.mean(squared[1:] * squared[:-1]) ** 2
+        / np.mean(squared[1:] ** 2) ** 2,
+        rel=1e-12,
+    )
+    assert result["Joint P-Value"] == pytest.approx(
+        stats.chi2.sf(result["Joint Statistic"], 7), rel=1e-12
+    )
+    # Without a kurtosis the Kurtosis and Q4 conditions are left out.
+    without = diagnostics_model.get_gmm_moment_test(z, kurtosis=np.nan)
+    assert np.isnan(without["Kurtosis t-Statistic"]) and np.isnan(
+        without["Q4 Statistic"]
+    )
+    assert without["Joint P-Value"] == pytest.approx(
+        stats.chi2.sf(without["Joint Statistic"], 5), rel=1e-12
+    )
+
+
+def test_gmm_moment_test_keeps_its_size_under_the_null():
+    rng = np.random.default_rng(5)
+    results = pd.DataFrame(
+        [
+            diagnostics_model.get_gmm_moment_test(pd.Series(rng.standard_normal(2500)))
+            for _ in range(300)
+        ]
+    )
+
+    # The sample covariance of all seven conditions rejects about 20% of the time at 5%;
+    # the covariance under the null about 8% (7.7% over 2,000 replications).
+    assert (results["Joint P-Value"] < 0.05).mean() < 0.12
+    assert results["Joint Statistic"].mean() == pytest.approx(7, abs=0.8)
+    for group in ("Q2", "Q3", "Q4"):
+        assert (results[f"{group} P-Value"] < 0.05).mean() < 0.09

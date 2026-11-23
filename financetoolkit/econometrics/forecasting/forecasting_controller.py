@@ -25,8 +25,12 @@ logger = get_logger()
 
 PERIODS = ["daily", "weekly", "monthly", "quarterly", "yearly"]
 
-# The GARCH-family variance models the model confidence set can compare.
-VOLATILITY_GARCH_METHODS = list(garch_model.GARCH_FAMILY_VARIANCE_PARAMETERS)
+# The GARCH-family variance models the model confidence set can compare: those of the returns alone.
+VOLATILITY_GARCH_METHODS = [
+    method
+    for method in garch_model.GARCH_FAMILY_VARIANCE_PARAMETERS
+    if method != "realized"
+]
 
 # A GARCH fit needs at least 100 returns (as rugarch's ugarchfit), so its window is two years with that minimum.  # noqa: E501
 MINIMUM_GARCH_WINDOW = 100
@@ -41,7 +45,7 @@ def _garch_window_size(period: str) -> int:
 @track_sources
 class ForecastingEconometrics:
     """
-    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz and directional accuracy tests and the model confidence set.
+    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz, Hong-Li and directional accuracy tests and the model confidence set.
     """
 
     @handle_portfolio
@@ -1340,6 +1344,164 @@ class ForecastingEconometrics:
 
         if alpha is None:
             result = result.drop(index="Tail Observations")
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_hong_li_test(
+        self,
+        period: str | None = None,
+        model: str = "garch",
+        lags: int = 4,
+        window_size: int | None = None,
+        lambda_: float = 0.94,
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Test the one-period-ahead density forecasts of a return model with the nonparametric test of Hong and Li.
+
+        Correct density forecasts turn the realized returns into probability integral transforms (PITs) that
+        are independent and uniform on (0, 1), so every pair of a PIT and the PIT j periods before it is spread
+        evenly over the unit square. The test estimates the joint density of those pairs with a kernel and
+        measures how far it is from flat, for every lag: a forecast density of the wrong shape (too thin
+        tails, a missed skew) and dependence the model misses (volatility clustering it does not follow) both
+        move it away. Where `get_berkowitz_test` checks the mean, variance and first autocorrelation of the
+        normal quantiles of the PITs, this test looks at the whole joint density.
+
+        The formula is as follows (with the default model="garch" and daily returns, for which the window is 504):
+
+        - PIT_t = F((Return_t - Mu) / Volatility_t), from a GARCH(1, 1) with normal innovations fitted on the 504 returns
+          before t, refitted every 21 returns (see `get_berkowitz_test`)
+        - g_j(x_1, x_2) = Σ_t K_h(x_1, PIT_t) K_h(x_2, PIT_(t-j)) / (n - j), with K_h the boundary-modified quartic
+          kernel and h = S n^(-1/6), S the standard deviation of the PITs
+        - M(j) = ∫∫ (g_j(x_1, x_2) - 1)^2 dx_1 dx_2 over the unit square
+        - Q(j) = h ((n - j) M(j) - A_h) / √V_0, standard normal under the null, for j = 1, ..., `lags`
+        - W = Σ_j Q(j) / √`lags`, the portmanteau statistic, standard normal under the null
+
+        Where A_h and V_0 are the centring and scaling constants of Hong and Li (2005), see
+        `forecast_evaluation_model.get_hong_li_test`. Only large values reject: the p-values are those of the
+        upper tail of the standard normal distribution. model="gaussian" and model="ewma" give the density
+        forecasts of `get_berkowitz_test`.
+
+        For more information about the method, see the following papers:
+
+        - Hong, Y. and Li, H. (2005). "Nonparametric Specification Testing for Continuous-Time Models with
+        Applications to Term Structure of Interest Rates." The Review of Financial Studies, 18(1), 37-84.
+        - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with Applications to
+        Financial Risk Management." International Economic Review, 39(4), 863-883.
+        - Referenced against HLTest of R's rugarch (https://cran.r-project.org/package=rugarch) as its
+        documentation defines it.
+
+        Also known as: Hong-Li test, nonparametric density forecast test, PIT independence and uniformity
+        test, HL portmanteau test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
+            Defaults to "daily".
+            model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
+            lags (int, optional): The number of lags of the portmanteau statistic. Defaults to 4.
+            window_size (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
+            None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
+            a year with a minimum of 20 for "gaussian".
+            lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
+            refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
+            garch_method (str, optional): The GARCH variance model, one of the methods of `Risk.get_garch` other
+            than "realized". Defaults to "garch".
+            garch_distribution (str, optional): The GARCH innovation distribution (normal, t, skewt,
+            skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
+            to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The statistic Q(j) and its p-value for every lag, the portmanteau W and its p-value,
+            the bandwidth and the number of observations, per asset.
+
+        Notes:
+        - Every forecast only uses the returns before it, and each asset uses its own return history.
+        - The asymptotic normal distribution is reached slowly: on simulated independent uniform PITs the
+        statistics have a mean of about 0 and a standard deviation of about 1.2 at 500 to 2,000 observations,
+        so read the p-values as a guide.
+        - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "TLT", "GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2019-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_hong_li_test()
+        ```
+
+        Which returns:
+
+        |                |       QQQ |       TLT |       GLD |
+        |:---------------|----------:|----------:|----------:|
+        | Q(1) Statistic |    7.1786 |    4.2855 |    4.451  |
+        | Q(1) P-Value   |    0      |    0      |    0      |
+        | Q(2) Statistic |    4.7805 |    2.5799 |    3.4082 |
+        | Q(2) P-Value   |    0      |    0.0049 |    0.0003 |
+        | Q(3) Statistic |    3.666  |    2.833  |    2.463  |
+        | Q(3) P-Value   |    0.0001 |    0.0023 |    0.0069 |
+        | Q(4) Statistic |    4.8672 |    2.2805 |    5.7016 |
+        | Q(4) P-Value   |    0      |    0.0113 |    0      |
+        | W Statistic    |   10.2461 |    5.9894 |    8.0119 |
+        | W P-Value      |    0      |    0      |    0      |
+        | Bandwidth      |    0.0855 |    0.0855 |    0.0847 |
+        | Observations   | 1255      | 1255      | 1255      |
+        """
+        period = period if period else "daily"
+
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if model not in ("garch", "gaussian", "ewma"):
+            raise ValueError("The model must be garch, gaussian or ewma.")
+
+        window_size = (
+            window_size
+            if window_size
+            else (
+                _garch_window_size(period)
+                if model == "garch"
+                else max(PERIODS_PER_YEAR[period], 20)
+            )
+        )
+        returns = self._filter_benchmark(
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all"),
+            include_benchmark=include_benchmark,
+        )
+        pit = forecast_evaluation_model.get_probability_integral_transform(
+            returns,
+            model,
+            window_size,
+            lambda_,
+            refit_every,
+            garch_method,
+            garch_distribution,
+        )
+        result = forecast_evaluation_model.get_hong_li_test(pit, lags)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

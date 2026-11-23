@@ -754,6 +754,7 @@ class CurvesFixedIncome:
         date: str | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
+        middle_maturity: float | str | list | None = None,
     ):
         """
         Calculates the spreads between pairs of maturities of a country's government bond yield
@@ -775,15 +776,24 @@ class CurvesFixedIncome:
         difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
         use `yieldcurve_model.get_yield_curve_spread`.
 
-        Also known as: term spread, yield curve slope, 10Y-2Y spread.
+        With `middle_maturity` it calculates butterflies instead, the curvature of the curve:
+        how far the yield of a middle maturity (the body) lies above the line through a short
+        and a long maturity (the wings), with the wings weighted equally as butterflies are
+        quoted (2s5s10s):
+
+        - Butterfly = 2 * Middle Yield - Short Yield - Long Yield
+
+        A positive butterfly means the body yields more than the wings.
+
+        Also known as: term spread, yield curve slope, 10Y-2Y spread, fly, 2s5s10s.
 
         Args:
             long_maturity (float | str | list | None, optional): The longer maturity (or
                 maturities), in years or as labels such as '10Y'. Defaults to None, 5, 10 and
-                30 years.
+                30 years, or 10 years for a butterfly.
             short_maturity (float | str | list | None, optional): The shorter maturity (or
                 maturities), in years or as labels such as '3M'. Defaults to None, 3 months
-                and 2 years.
+                and 2 years, or 2 years for a butterfly.
             country (str, optional): The country, see `get_government_bond_yield_curve`.
                 Defaults to "United States".
             date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
@@ -794,10 +804,15 @@ class CurvesFixedIncome:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+            middle_maturity (float | str | list | None, optional): The middle maturity (or
+                maturities) of a butterfly, in years or as labels such as '5Y'. Defaults to
+                None, which calculates spreads.
 
         Returns:
             pd.DataFrame: The spread (decimal) for each combination of long (rows) and short
-            maturity (columns).
+            maturity (columns), or with `middle_maturity` the butterfly (decimal) for each
+            middle maturity (rows) and pair of wings (columns, short/long), NaN where the middle
+            maturity does not lie between the wings.
 
         As an example:
 
@@ -823,6 +838,38 @@ class CurvesFixedIncome:
         def par_yield(maturity: float) -> float:
             return float(
                 np.interp(maturity, maturities, par_curve.to_numpy(dtype=float))
+            )
+
+        if middle_maturity is not None:
+            middles = parse_maturities(middle_maturity, [])
+            wings = [
+                (short_years, long_years)
+                for short_years in parse_maturities(short_maturity, [2])
+                for long_years in parse_maturities(long_maturity, [10])
+            ]
+            label = fixedincome_helpers.maturity_label
+            butterflies = pd.DataFrame(
+                {
+                    f"{label(short_years)}/{label(long_years)}": {
+                        label(middle_years): (
+                            yieldcurve_model.get_yield_curve_butterfly(
+                                short_yield=par_yield(short_years),
+                                middle_yield=par_yield(middle_years),
+                                long_yield=par_yield(long_years),
+                            )
+                            if short_years < middle_years < long_years
+                            else np.nan
+                        )
+                        for middle_years in middles
+                    }
+                    for short_years, long_years in wings
+                }
+            )
+            butterflies.index.name = "Middle Maturity"
+            butterflies.columns.name = "Wings"
+
+            return apply_rounding(
+                butterflies, rounding if rounding is not None else self._rounding
             )
 
         long = parse_maturities(long_maturity, [5, 10, 30])

@@ -1361,3 +1361,255 @@ def get_taylor_price_change(
     )
 
     return price_change_pct
+
+
+def get_bond_cash_flows(
+    par_value: float, coupon_rate: float, years_to_maturity: float, frequency: int = 1
+) -> pd.Series:
+    """
+    The remaining cash flows of a fixed coupon bond by payment time in years: a coupon of
+    Coupon Rate * Par Value / m on every coupon date and the par value with the last coupon,
+    on the schedule `get_bond_price` discounts (running back from maturity, see
+    `get_cash_flow_periods`). These are the cash flows the curve risk measures of
+    `curve_risk_model` take; the cash flows of a portfolio are the sum of those of its bonds.
+
+    Args:
+        par_value (float): The face value of the bond.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the bond matures.
+        frequency (int): The number of coupon payments per year. Defaults to 1.
+
+    Returns:
+        pd.Series: The cash flow amounts by payment time in years.
+    """
+    periods = get_cash_flow_periods(years_to_maturity, frequency)
+    cash_flows = np.full(periods.size, par_value * coupon_rate / frequency)
+    cash_flows[-1] += par_value
+
+    return pd.Series(cash_flows, index=periods / frequency, name="Cash Flow")
+
+
+AMORTIZATIONS = ("bullet", "linear", "annuity")
+
+
+def get_amortizing_cash_flows(
+    par_value: float,
+    coupon_rate: float,
+    years_to_maturity: float,
+    frequency: int = 1,
+    amortization: str = "annuity",
+    sinking_fund: pd.Series | dict | None = None,
+) -> pd.DataFrame:
+    """
+    The schedule of an amortizing or sinking fund bond: on every remaining coupon date the
+    outstanding principal, the interest on it, the principal repaid and the total cash flow.
+    Where a bullet bond repays its principal at maturity, an amortizing bond repays it along
+    the way (a mortgage-style annuity or equal instalments), and a sinking fund bond retires
+    set amounts on set dates with the rest at maturity.
+
+    The formula is as follows:
+
+    - Interest_k = Coupon Rate / m * Outstanding_k
+    - Annuity: Payment = Par Value * r / (1 - (1 + r)^(-n)), Principal_k = Payment - Interest_k
+    - Linear: Principal_k = Par Value / n
+    - Sinking fund: Principal_k as scheduled, the remainder at maturity
+    - Outstanding_(k+1) = Outstanding_k - Principal_k
+
+    where m = frequency, r = Coupon Rate / m and n the number of remaining coupon dates. The
+    schedule runs back from maturity as for `get_bond_price`, so between coupon dates the first
+    payment carries the interest of the whole current period (part of which is accrued). The
+    par value is the principal outstanding today.
+
+    For more information, see Fabozzi (2012), Bond Markets, Analysis, and Strategies, 8th
+    edition, chapter 2, and https://en.wikipedia.org/wiki/Amortizing_loan.
+
+    Args:
+        par_value (float): The principal outstanding today.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the last payment.
+        frequency (int, optional): The number of payments per year. Defaults to 1.
+        amortization (str, optional): How the principal is repaid: "annuity" (equal total
+            payments, as a mortgage), "linear" (equal principal payments) or "bullet" (all at
+            maturity). Defaults to "annuity".
+        sinking_fund (pd.Series | dict | None, optional): The principal retired by payment time
+            in years, each on the coupon date nearest to it, with what remains repaid at
+            maturity; it replaces `amortization`. Defaults to None.
+
+    Returns:
+        pd.DataFrame: By payment time in years, the Outstanding (at the start of the period),
+        Interest, Principal and Cash Flow.
+
+    Raises:
+        ValueError: If the amortization is unknown, or the sinking fund retires more than the
+            par value or schedules a payment after maturity.
+    """
+    periods = get_cash_flow_periods(years_to_maturity, frequency)
+    count = periods.size
+    rate = coupon_rate / frequency
+
+    if sinking_fund is not None:
+        principal = np.zeros(count)
+        for years, amount in pd.Series(sinking_fund, dtype=float).items():
+            if float(years) > years_to_maturity + 1e-9:
+                raise ValueError(
+                    f"The sinking fund payment at {years} years falls after maturity."
+                )
+            principal[np.abs(periods / frequency - float(years)).argmin()] += amount
+        if principal.sum() > par_value + 1e-9:
+            raise ValueError("The sinking fund retires more than the par value.")
+        principal[-1] += par_value - principal.sum()
+    elif amortization == "bullet":
+        principal = np.zeros(count)
+        principal[-1] = par_value
+    elif amortization == "linear":
+        principal = np.full(count, par_value / count)
+    elif amortization == "annuity":
+        payment = (
+            par_value / count
+            if rate == 0
+            else par_value * rate / (1 - (1 + rate) ** -count)
+        )
+        # The principal of an annuity grows by (1 + r) every period, the share of the
+        # payment the falling interest leaves.
+        principal = (payment - par_value * rate) * (1 + rate) ** np.arange(count)
+    else:
+        raise ValueError(
+            f"The amortization must be one of {', '.join(AMORTIZATIONS)}, got {amortization}."
+        )
+
+    outstanding = par_value - np.concatenate([[0.0], np.cumsum(principal)[:-1]])
+    interest = rate * outstanding
+
+    schedule = pd.DataFrame(
+        {
+            "Outstanding": outstanding,
+            "Interest": interest,
+            "Principal": principal,
+            "Cash Flow": interest + principal,
+        },
+        index=periods / frequency,
+    )
+    schedule.index.name = "Years"
+
+    return schedule
+
+
+def get_amortizing_bond_measures(
+    par_value: float,
+    coupon_rate: float,
+    years_to_maturity: float,
+    frequency: int = 1,
+    yield_to_maturity: float | None = None,
+    bond_price: float | None = None,
+    amortization: str = "annuity",
+    sinking_fund: pd.Series | dict | None = None,
+) -> pd.Series:
+    """
+    The price, yield, durations, convexity and weighted average life of an amortizing or
+    sinking fund bond, from the schedule of `get_amortizing_cash_flows`. Given the yield it
+    returns the price, given the (clean) price it solves the yield. Because principal comes
+    back before maturity, the duration and weighted average life of an amortizing bond are
+    well below those of a bullet bond of the same maturity, which is why amortizing and
+    sinking fund bonds are compared on their weighted average life rather than their maturity.
+
+    The formula is as follows:
+
+    - Dirty Price = SUM(CF_k / (1 + y / m)^(t_k))
+    - Price = Dirty Price - Interest_1 * a
+    - Macaulay's Duration = SUM(t_k / m * CF_k / (1 + y / m)^(t_k)) / Dirty Price
+    - Modified Duration = Macaulay's Duration / (1 + y / m)
+    - Convexity = SUM(t_k * (t_k + 1) * CF_k / (1 + y / m)^(t_k + 2)) / (m^2 * Dirty Price)
+    - DV01 = (Price(y - 0.0001) - Price(y + 0.0001)) / 2
+    - Weighted Average Life = SUM(t_k / m * Principal_k) / SUM(Principal_k)
+
+    where m = frequency, y is the yield to maturity (a nominal annual rate compounded m times a
+    year, as for `get_bond_price`), t_k the time of the k-th payment in periods, CF_k its
+    interest plus principal and a the elapsed fraction of the current period (zero on a coupon
+    date). The convexity is the analytic second derivative, which `get_convexity` approximates
+    with 1 basis point differences. With amortization="bullet" the measures equal those of
+    `get_bond_price`, `get_macaulays_duration`, `get_modified_duration` and `get_dv01`.
+
+    Referenced against QuantLib's AmortizingFixedRateBond with BondFunctions
+    (https://www.quantlib.org).
+
+    Args:
+        par_value (float): The principal outstanding today.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the last payment.
+        frequency (int, optional): The number of payments per year. Defaults to 1.
+        yield_to_maturity (float | None, optional): The yield to maturity (in decimal).
+            Defaults to None, solved from `bond_price`.
+        bond_price (float | None, optional): The clean price, used when no yield is given.
+            Defaults to None.
+        amortization (str, optional): "annuity", "linear" or "bullet", see
+            `get_amortizing_cash_flows`. Defaults to "annuity".
+        sinking_fund (pd.Series | dict | None, optional): The principal retired by payment time
+            in years, see `get_amortizing_cash_flows`. Defaults to None.
+
+    Returns:
+        pd.Series: The Price (clean), Accrued Interest, Dirty Price, Yield to Maturity,
+        Macaulay's Duration, Modified Duration, Convexity, DV01 and Weighted Average Life (in
+        years).
+
+    Raises:
+        ValueError: If neither or both of yield_to_maturity and bond_price are given.
+    """
+    if (yield_to_maturity is None) == (bond_price is None):
+        raise ValueError("Give either the yield_to_maturity or the bond_price.")
+
+    schedule = get_amortizing_cash_flows(
+        par_value,
+        coupon_rate,
+        years_to_maturity,
+        frequency,
+        amortization,
+        sinking_fund,
+    )
+    periods = schedule.index.to_numpy(dtype=float) * frequency
+    cash_flows = schedule["Cash Flow"].to_numpy(dtype=float)
+    accrued_interest = float(schedule["Interest"].iloc[0]) * get_accrued_fraction(
+        years_to_maturity, frequency
+    )
+
+    def dirty_price(rate: float) -> float:
+        return float((cash_flows * (1 + rate / frequency) ** -periods).sum())
+
+    if yield_to_maturity is None:
+        target = float(bond_price)
+        yield_to_maturity = solve_with_secant_method(
+            lambda rate: dirty_price(rate) - accrued_interest - target,
+            coupon_rate if coupon_rate > 0 else 0.05,
+            1e-10,
+            100,
+            residual_tolerance=RESIDUAL_PRICE_TOLERANCE * max(abs(target), 1),
+        )
+
+    discounted = cash_flows * (1 + yield_to_maturity / frequency) ** -periods
+    full_price = float(discounted.sum())
+    macaulays_duration = float((periods / frequency * discounted).sum() / full_price)
+    convexity = float(
+        (periods * (periods + 1) * discounted).sum()
+        / ((1 + yield_to_maturity / frequency) ** 2 * frequency**2 * full_price)
+    )
+    principal = schedule["Principal"].to_numpy(dtype=float)
+
+    return pd.Series(
+        {
+            "Price": full_price - accrued_interest,
+            "Accrued Interest": accrued_interest,
+            "Dirty Price": full_price,
+            "Yield to Maturity": yield_to_maturity,
+            "Macaulay's Duration": macaulays_duration,
+            "Modified Duration": macaulays_duration
+            / (1 + yield_to_maturity / frequency),
+            "Convexity": convexity,
+            "DV01": (
+                dirty_price(yield_to_maturity - 0.0001)
+                - dirty_price(yield_to_maturity + 0.0001)
+            )
+            / 2,
+            "Weighted Average Life": float(
+                (periods / frequency * principal).sum() / principal.sum()
+            ),
+        }
+    )

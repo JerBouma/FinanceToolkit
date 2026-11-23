@@ -1804,3 +1804,47 @@ def test_get_local_volatility_surface(recorder, option_market):
     recorder.capture(local_volatility.rename(columns=labels))
     assert list(local_volatility.columns) == list(labels)
     assert module.get_local_volatility_surface(method="sabr").empty
+
+
+def test_get_exchange_option(recorder, options_module):
+    recorder.capture(options_module.get_exchange_option())
+    recorder.capture(options_module.get_exchange_option(american_option=True))
+    recorder.capture(
+        options_module.get_exchange_option(
+            second_ticker="MSFT",
+            exchange_ratio=0.9,
+            expiration_time_range=5,
+            rounding=6,
+        )
+    )
+
+
+def test_get_spread_option(recorder, options_module):
+    recorder.capture(options_module.get_spread_option())
+    recorder.capture(options_module.get_spread_option(method="kirk", put_option=True))
+    recorder.capture(
+        options_module.get_spread_option(
+            second_ticker="AAPL",
+            strike_price_range=0.1,
+            strike_step_size=2.5,
+            expiration_time_range=5,
+            risk_free_rate=0.01,
+            rounding=6,
+        )
+    )
+
+
+def test_the_spread_option_at_a_strike_of_zero_is_the_exchange_option(
+    options_module,
+):
+    spread = options_module.get_spread_option(rounding=10)
+    exchange = options_module.get_exchange_option(rounding=10)
+
+    for ticker in exchange.index:
+        pd.testing.assert_series_equal(
+            spread.loc[(ticker, 0)], exchange.loc[ticker], check_names=False, atol=1e-8
+        )
+
+
+def test_the_two_asset_options_reject_an_unknown_second_asset(options_module):
+    assert options_module.get_exchange_option(second_ticker="TSLA").empty

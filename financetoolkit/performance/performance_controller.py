@@ -9573,6 +9573,129 @@ class Performance:
 
     @handle_portfolio
     @handle_errors
+    def get_sharpe_ratio_difference_test(
+        self,
+        period: str | None = None,
+        method: str = "memmel",
+        lags: int | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Test whether the Sharpe ratio of each asset differs from that of the benchmark: is the difference in
+        risk-adjusted return more than the estimation error of two Sharpe ratios measured on the same dates?
+
+        Two Sharpe ratios measured over a year of daily returns are both estimates, and because the two assets
+        move together their errors are correlated, which a comparison of two separate standard errors ignores.
+        Jobson and Korkie (1981) derived the standard error of the difference for jointly normal returns, which
+        Memmel (2003) corrected. Ledoit and Wolf (2008) showed that this test is unreliable when returns have fat
+        tails or are serially correlated, as daily returns usually are, and replaced its standard error with a
+        heteroskedasticity and autocorrelation consistent (HAC) one by the delta method.
+
+        The formulas are as follows, with n the number of dates both have an excess return:
+
+        - "memmel": z = (SR_a − SR_b) / √((2 − 2ρ + (SR_a² + SR_b² − 2·SR_a·SR_b·ρ²) / 2) / n)
+        - "ledoit_wolf": z = Δ / √(∇f' Ψ ∇f / n), with Δ = f(v) = μ_a / √(γ_a − μ_a²) − μ_b / √(γ_b − μ_b²)
+        - ∇f = (γ_a / c_a, −γ_b / c_b, −μ_a / (2·c_a), μ_b / (2·c_b)), with c = (γ − μ²)^(3/2)
+        - Ψ = n / (n − 4) · (Γ(0) + Σ_{j=1..L} (1 − j / (L + 1))·(Γ(j) + Γ(j)')), Γ(j) = Σ_t y(t)·y(t − j)' / n
+        - y(t) = (r_a(t) − μ_a, r_b(t) − μ_b, r_a(t)² − γ_a, r_b(t)² − γ_b)
+        - P-Value = 2 · (1 − Φ(|z|))
+
+        Where SR is the Sharpe ratio of one observation (mean over standard deviation, ddof=1, of the daily
+        excess returns, as `get_sharpe_ratio` before annualizing), ρ the correlation of the two excess returns,
+        μ and γ the means of the excess returns and of their squares, Ψ the Bartlett (Newey-West) estimate of
+        their long-run covariance with L lags and Φ the standard normal distribution. A low p-value (e.g. below
+        0.05) means the Sharpe ratios differ significantly; a positive Sharpe Difference that the asset's
+        Sharpe ratio is the higher one.
+
+        For more information about the method, see the following papers:
+
+        - Jobson, J.D. and Korkie, B.M. (1981). "Performance Hypothesis Testing with the Sharpe and Treynor
+        Measures." Journal of Finance, 36(4), 889-908.
+        - Memmel, C. (2003). "Performance Hypothesis Testing with the Sharpe Ratio." Finance Letters, 1, 21-23.
+        - Ledoit, O. and Wolf, M. (2008). "Robust Performance Hypothesis Testing with the Sharpe Ratio." Journal
+        of Empirical Finance, 15(5), 850-859.
+        - Newey, W.K., & West, K.D. (1987). "A Simple, Positive Semi-Definite, Heteroskedasticity and
+        Autocorrelation Consistent Covariance Matrix." Econometrica, 55(3), 703-708.
+
+        Also known as: Jobson-Korkie test, Memmel test, Ledoit-Wolf test, Sharpe ratio equality test, Sharpe ratio
+        significance test.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            method (str, optional): "memmel" for the Jobson-Korkie test with Memmel's correction or
+                "ledoit_wolf" for the HAC test of Ledoit and Wolf. Defaults to "memmel".
+            lags (int, optional): The number of lags L in the Newey-West covariance, only used when
+                method="ledoit_wolf". Defaults to None, which uses the Newey and West (1994) rule
+                floor(4 * (n / 100)^(2/9)), 4 for a year of daily returns.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period, for each ticker the Sharpe Difference (its Sharpe ratio minus that of the
+                benchmark, of one observation), the Standard Error of the difference, the Z-Statistic and the
+                P-Value.
+
+        Notes:
+        - The tests use the daily excess returns within each period, as `get_sharpe_ratio` does; period="daily"
+        needs intraday data (initialise the Toolkit with an intraday_period). A period with fewer than five
+        shared dates is NaN.
+        - The "ledoit_wolf" Sharpe Difference uses standard deviations with 1 / n, as the delta method of Ledoit
+        and Wolf (2008) does, so it is a factor √((n − 1) / n) from the "memmel" one.
+        - Ledoit and Wolf (2008) use a prewhitened Quadratic Spectral kernel and also propose a studentized
+        bootstrap; the Toolkit uses the Bartlett kernel of `get_sharpe_ratio_standard_error(method="gmm")`, which
+        gives the same test with another weighting of the autocovariances. RiskLabAI's sharpe_difference_test
+        calibrates the p-value with that bootstrap instead.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            "MSFT",
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_sharpe_ratio_difference_test(method="ledoit_wolf")["MSFT"]
+        ```
+
+        Which returns:
+
+        |      |   Sharpe Difference |   Standard Error |   Z-Statistic |   P-Value |
+        |:-----|--------------------:|-----------------:|--------------:|----------:|
+        | 2021 |              0.0088 |           0.0509 |        0.1722 |    0.8633 |
+        | 2022 |             -0.0007 |           0.0326 |       -0.0218 |    0.9826 |
+        | 2023 |              0.016  |           0.0556 |        0.2881 |    0.7733 |
+        | 2024 |             -0.0632 |           0.046  |       -1.3738 |    0.1695 |
+        | 2025 |             -0.0111 |           0.0478 |       -0.2329 |    0.8158 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        difference_test = performance_model.get_sharpe_ratio_difference_test(
+            self._get_column(period, "Excess Return", within_period=True),
+            self._get_column(
+                period, "Excess Return", within_period=True, benchmark=True
+            ),
+            method=method,
+            lags=lags,
+        )
+
+        # A period cut to a single date by the start or end date has no test.
+        return apply_rounding(
+            difference_test.loc[self._start_date : self._end_date].dropna(how="all"),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_minimum_track_record_length(
         self,
         period: str | None = None,

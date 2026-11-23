@@ -185,7 +185,7 @@ def _get_out_of_sample_estimates(
 @track_sources
 class ValueAtRiskRisk:
     """
-    Value at Risk and its relatives: conditional and entropic VaR, marginal and component VaR, and the VaR and expected shortfall backtests.
+    Value at Risk and its relatives: conditional and entropic VaR, the higher moment coherent risk and expected quadratic shortfall, marginal and component VaR, and the VaR and expected shortfall backtests.
     """
 
     @handle_portfolio
@@ -965,6 +965,259 @@ class ValueAtRiskRisk:
 
         return self._finalize_measure(
             entropic_risk_measure,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_higher_moment_coherent_risk(
+        self,
+        period: str | None = None,
+        order: float = 2,
+        alpha: float = 0.05,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Higher Moment Coherent Risk (HMCR) of an investment portfolio or asset's returns, by
+        default of order 2, the Coherent Second Moment (CSM).
+
+        The Conditional Value at Risk averages the losses beyond a threshold, so a loss twice as deep counts
+        twice. The Higher Moment Coherent Risk measures those losses with a higher moment instead: of order 2
+        it takes the root mean square of the losses beyond the threshold, so a loss twice as deep counts four
+        times inside the square, and the measure reacts more to fat tails than the CVaR does. It stays a
+        coherent risk measure (Krokhmal 2007): it scales with the position, shifts with cash, rewards
+        diversification and rises with the losses, which makes it a portfolio objective (the minimum CSM
+        portfolio) that the variance and the VaR are not.
+
+        The formula is as follows (with the default order=2 and alpha=0.05):
+
+        - Loss = -Return
+        - HMCR = min over ζ of ζ + (1 / alpha) * (Mean(max(Loss - ζ, 0)^order))^(1 / order)
+
+        Where ζ is a threshold (the minimum is found by bisection on the derivative, which the convexity of
+        the objective makes increasing) and the mean runs over the n returns. With order=1 it is the CVaR in
+        the minimization form of Rockafellar and Uryasev (2002). A higher order weighs the deepest losses
+        more, so the HMCR rises with the order towards the worst return. The result is a return, negative
+        for a loss, as the VaR, CVaR and EVaR of the Toolkit are.
+
+        For more information, see the following sources:
+
+        - Krokhmal, P.A. (2007). "Higher Moment Coherent Risk Measures." Quantitative Finance, 7(4), 373-387.
+        - Rockafellar, R.T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General Loss
+        Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
+        - PortfolioAnalytics (R): extract_risk and the CSM objective (https://github.com/braverock/PortfolioAnalytics).
+
+        Also known as: HMCR, Coherent Second Moment, CSM, higher moment risk, second moment coherent risk.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            order (float, optional): The order p of the moment, at least 1. Defaults to 2.
+            alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
+                Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate the HMCR within the specified period or for the
+            entire period. Thus whether to look at the HMCR within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the HMCR is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the HMCR values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: HMCR values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the HMCR
+        for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of HMCR values using the specified `lag`.
+        - The HMCR of order 1 is the exact tail average of Rockafellar and Uryasev (2002), which counts the
+        return at the boundary with a fraction; `get_conditional_value_at_risk` averages the returns up to the
+        interpolated quantile, so the two differ slightly.
+        - The objective follows Krokhmal (2007), with the moment as a mean over the n returns. PortfolioAnalytics'
+        CSM objective takes the Euclidean norm of the excess losses without the factor 1 / SQRT(n), which makes it
+        grow with the length of the sample until it equals the worst loss; the Toolkit keeps the mean, so the
+        measure does not depend on the number of returns.
+        - With n returns the minimum lies at the worst loss whenever n^(-1 / order) >= alpha, the tail then
+        holding less than one return's worth of the moment (for order=1, n <= 1 / alpha). For order=2 and
+        alpha=0.05 that is any sample of 400 returns or fewer, so within a year of daily returns the CSM is the
+        worst day; use the whole history, a rolling window above 400 returns or a larger alpha.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GLD", "SLV", "USO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_higher_moment_coherent_risk()
+        ```
+
+        Which returns:
+
+        |           |   Value |
+        |:----------|--------:|
+        | GLD       | -0.0511 |
+        | SLV       | -0.0798 |
+        | USO       | -0.107  |
+        | Benchmark | -0.052  |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        higher_moment_coherent_risk = cvar_model.get_higher_moment_coherent_risk(
+            returns, order=order, alpha=alpha, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            higher_moment_coherent_risk,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_expected_quadratic_shortfall(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Expected Quadratic Shortfall (EQS) of an investment portfolio or asset's returns, the
+        average of the largest squared losses.
+
+        Where the Conditional Value at Risk averages the worst alpha share of the returns, the Expected
+        Quadratic Shortfall averages the worst alpha share of the squared losses, so a loss twice as deep counts
+        four times. It is the semi-variance restricted to the tail: gains and small losses do not count. It is
+        convex and rises with the losses, which makes it a portfolio objective that a linear program can
+        minimize, but it is not a coherent risk measure: it is in squared returns, so doubling the position
+        quadruples it, and adding cash does not lower it by that amount. Its square root is the root mean square
+        of the tail losses, on the scale of the returns. For a coherent measure that weighs the tail by its second
+        moment, see `get_higher_moment_coherent_risk` (the Coherent Second Moment).
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - Squared Loss = max(-Return, 0)^2
+        - EQS = min over ζ of ζ + (1 / (n * alpha)) * Σ max(Squared Loss - ζ, 0)
+
+        Where the sum runs over the n returns. The minimum is the average of the n * alpha largest squared
+        losses, the squared loss at the boundary counted with the fraction of it inside the tail (the Conditional
+        Value at Risk of Rockafellar and Uryasev (2002) applied to the squared losses). The result is positive, in
+        squared returns.
+
+        For more information, see the following sources:
+
+        - Rockafellar, R.T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General Loss
+        Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
+        - PortfolioAnalytics (R): extract_risk and the EQS objective (https://github.com/braverock/PortfolioAnalytics).
+
+        Also known as: EQS, expected squared shortfall, tail semi-variance.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
+                Defaults to 0.05.
+            within_period (bool, optional): Whether to calculate the EQS within the specified period or for the
+            entire period. Thus whether to look at the EQS within a specific year (if period = 'yearly') or look at
+            the entirety of all years. Defaults to False. Note that this requires intraday data when period =
+            'daily', since a single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the EQS is
+            calculated over a rolling window of this many periods across the full return history instead
+            of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the EQS values over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: EQS values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the EQS
+        for each asset in the Toolkit instance, each on its own returns.
+        - If `growth` is set to True, the method calculates the growth of EQS values using the specified `lag`.
+        - The values are small for daily returns (a tail of 3% losses gives about 0.0009), so set `rounding`
+        to 6 or more decimals, or take the square root.
+        - PortfolioAnalytics' EQS objective squares the positive part of the portfolio returns, the gains, while
+        its ES and CSM objectives next to it work on the losses; the Toolkit squares the losses.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GLD", "SLV", "USO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_expected_quadratic_shortfall(period="yearly", within_period=True, rounding=6)
+        ```
+
+        Which returns:
+
+        |      |      GLD |      SLV |      USO |   Benchmark |
+        |:-----|---------:|---------:|---------:|------------:|
+        | 2021 | 0.000533 | 0.00192  | 0.002941 |    0.000356 |
+        | 2022 | 0.000397 | 0.00117  | 0.004368 |    0.001163 |
+        | 2023 | 0.000303 | 0.001332 | 0.00198  |    0.000252 |
+        | 2024 | 0.00053  | 0.001643 | 0.001455 |    0.000389 |
+        | 2025 | 0.000904 | 0.002514 | 0.002213 |    0.000961 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        expected_quadratic_shortfall = cvar_model.get_expected_quadratic_shortfall(
+            returns, alpha=alpha, window_size=rolling
+        )
+
+        return self._finalize_measure(
+            expected_quadratic_shortfall,
             bool(rolling or within_period),
             rounding,
             growth,

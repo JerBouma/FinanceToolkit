@@ -615,3 +615,189 @@ def get_cvar_garch(
         distribution,
         expected_shortfall=True,
     )
+
+
+# The halvings of the bisection of the higher moment coherent risk: the bracket shrinks below
+# the spacing of floats long before, see get_higher_moment_coherent_risk_samples.
+HIGHER_MOMENT_BISECTIONS = 200
+
+
+def get_higher_moment_coherent_risk_samples(
+    samples: np.ndarray, order: float, alpha: float
+) -> np.ndarray:
+    """
+    Calculate the Higher Moment Coherent Risk (HMCR) of every row of an array of returns
+    without missing values, as `get_higher_moment_coherent_risk` reports it.
+
+    With the losses L = -Return, X = L - ζ and the mean over the n returns of a row:
+
+    - HMCR = min over ζ of ζ + (1 / alpha) * (mean(max(X, 0)^order))^(1 / order)
+    - dHMCR / dζ = 1 - (1 / alpha) * mean(max(X, 0)^(order - 1)) / mean(max(X, 0)^order)^((order - 1) / order)
+
+    The objective is convex in ζ, so its derivative rises with ζ and the minimum is where it
+    changes sign, found by bisection on all rows at once. Above the largest loss the objective is
+    ζ itself, so the minimum is at most the largest loss. As the norm is at least the mean
+    (Lyapunov), the objective lies above mean(L) / alpha + ζ * (1 - 1 / alpha), which exceeds the
+    largest loss below ζ = (mean(L) - alpha * max(L)) / (1 - alpha): the bracket starts at the
+    lower of that and the smallest loss. Just below the largest loss (a single one) the derivative
+    is 1 - n^(-1 / order) / alpha, so with n^(-1 / order) >= alpha the minimum is the largest loss.
+
+    Args:
+        samples (np.ndarray): The returns, one sample per row.
+        order (float): The order p of the moment, at least 1 (1 gives the Conditional Value at
+            Risk of Rockafellar and Uryasev, 2 the coherent second moment).
+        alpha (float): The tail probability, between 0 and 1.
+
+    Returns:
+        np.ndarray: The HMCR of every row as a return, negative for a loss.
+    """
+    losses = -samples
+    largest = losses.max(axis=1)
+    lower = np.minimum(
+        losses.min(axis=1), (losses.mean(axis=1) - alpha * largest) / (1 - alpha)
+    )
+    upper = largest.astype(float)
+
+    def objective(threshold: np.ndarray) -> np.ndarray:
+        excess = np.maximum(losses - threshold[:, None], 0)
+
+        return threshold + np.mean(excess**order, axis=1) ** (1 / order) / alpha
+
+    for _ in range(HIGHER_MOMENT_BISECTIONS):
+        middle = (lower + upper) / 2
+
+        # Every bracket is down to neighbouring floats.
+        if np.all((middle == lower) | (middle == upper)):
+            break
+
+        excess = np.maximum(losses - middle[:, None], 0)
+        moment = np.mean(excess**order, axis=1)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            lower_moment = (
+                np.mean(excess > 0, axis=1)
+                if order == 1
+                else np.mean(excess ** (order - 1), axis=1)
+            )
+            slope = 1 - lower_moment / moment ** ((order - 1) / order) / alpha
+
+        # No loss above the threshold: the objective is the threshold itself, rising.
+        slope = np.where(moment > 0, slope, 1.0)
+        falling = slope < 0
+        lower = np.where(falling, middle, lower)
+        upper = np.where(falling, upper, middle)
+
+    return -np.minimum(objective(lower), objective(upper))
+
+
+def get_higher_moment_coherent_risk(
+    returns: pd.Series | pd.DataFrame,
+    order: float = 2,
+    alpha: float = 0.05,
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Higher Moment Coherent Risk (HMCR) of returns (Krokhmal 2007), the coherent
+    risk measure that extends the Conditional Value at Risk from the first to a higher moment of
+    the losses beyond a threshold:
+
+    - HMCR = min over ζ of ζ + (1 / alpha) * (mean(max(-Return - ζ, 0)^order))^(1 / order)
+
+    With order=1 it is the Conditional Value at Risk of Rockafellar and Uryasev (2002), with
+    order=2 the coherent second moment (CSM). A higher order weighs the deepest losses more, so
+    the HMCR rises with the order towards the worst loss. The mean runs over the n returns, so
+    the measure does not depend on the length of the sample, see
+    `get_higher_moment_coherent_risk_samples` for the minimization.
+
+    For more information see:
+
+    - Krokhmal, P.A. (2007). "Higher Moment Coherent Risk Measures." Quantitative Finance,
+    7(4), 373-387.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        order (float, optional): The order p of the moment, at least 1. Defaults to 2.
+        alpha (float, optional): The tail probability. Defaults to 0.05.
+        window_size (int | None, optional): The size of the rolling window. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The HMCR as a return, negative for a loss.
+    """
+    if not 0 < alpha < 1:
+        raise ValueError("Alpha must lie between 0 and 1.")
+    if order < 1:
+        raise ValueError("The order must be at least 1.")
+
+    return risk_model.apply_to_observations(
+        returns,
+        lambda samples: get_higher_moment_coherent_risk_samples(samples, order, alpha),
+        window_size,
+    )
+
+
+def get_expected_quadratic_shortfall_samples(
+    samples: np.ndarray, alpha: float
+) -> np.ndarray:
+    """
+    Calculate the Expected Quadratic Shortfall (EQS) of every row of an array of returns
+    without missing values, as `get_expected_quadratic_shortfall` reports it.
+
+    The minimum of the Rockafellar and Uryasev (2002) form over ζ is the average of the alpha
+    share of the largest squared losses, counting the squared loss at the boundary with the
+    fraction of it inside the tail:
+
+    - EQS = (Σ_{i <= k} S_(i) + (n * alpha - k) * S_(k + 1)) / (n * alpha)
+
+    Where S_(1) >= S_(2) >= ... are the squared losses max(-Return, 0)^2 in descending order
+    and k = floor(n * alpha).
+
+    Args:
+        samples (np.ndarray): The returns, one sample per row.
+        alpha (float): The tail probability, between 0 and 1.
+
+    Returns:
+        np.ndarray: The EQS of every row, in squared returns and positive.
+    """
+    squared_losses = -np.sort(-np.maximum(-samples, 0) ** 2, axis=1)
+    tail = samples.shape[1] * alpha
+    whole = int(np.floor(tail))
+    boundary = squared_losses[:, min(whole, samples.shape[1] - 1)]
+
+    return (squared_losses[:, :whole].sum(axis=1) + (tail - whole) * boundary) / tail
+
+
+def get_expected_quadratic_shortfall(
+    returns: pd.Series | pd.DataFrame,
+    alpha: float = 0.05,
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Expected Quadratic Shortfall (EQS) of returns, the Conditional Value at Risk
+    of the squared losses, in the Rockafellar and Uryasev (2002) form:
+
+    - EQS = min over ζ of ζ + (1 / (n * alpha)) * Σ max(max(-Return, 0)^2 - ζ, 0)
+
+    It is the average of the alpha share of the largest squared losses, so it weighs a loss by
+    its square, as a semi-variance does, but only in the tail. Gains count as no loss. It is
+    convex and monotone in the losses, so it suits a portfolio objective, but it is not a
+    coherent measure: it scales with the square of the position and does not shift with cash.
+    Its square root is a tail root mean square loss on the scale of the returns.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        alpha (float, optional): The tail probability. Defaults to 0.05.
+        window_size (int | None, optional): The size of the rolling window. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The EQS in squared returns, positive.
+    """
+    if not 0 < alpha < 1:
+        raise ValueError("Alpha must lie between 0 and 1.")
+
+    return risk_model.apply_to_observations(
+        returns,
+        lambda samples: get_expected_quadratic_shortfall_samples(samples, alpha),
+        window_size,
+    )

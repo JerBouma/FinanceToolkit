@@ -1328,10 +1328,14 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
             Needed = -Drawdown / (1 + Drawdown)), in periods the time from peak to trough (To Trough),
             from trough to recovery (To Recovery) and from peak to recovery (Length), the same
             in calendar days (To Trough (Days), To Recovery (Days), Length (Days)) and Length
-            (Years). The Peak, and the lengths from it, are NaN when it is the starting
-            wealth before the first row.
+            (Years), To Recovery / To Trough (Recovery Ratio) and the return from the trough to
+            the close of the recovery (Recovery Return, at least the Recovery Needed as that
+            close may lie above the peak), both NaN when not yet recovered.
+            The Peak, and the lengths from it, are NaN when it is the starting wealth before
+            the first row.
     """
     drawdown_series = get_drawdown_series(returns)
+    wealth_series = get_wealth_and_peak(returns)[0]
     dates = drawdown_series.index
     # The last day of each period, so the calendar days between two months run from month end
     # to month end.
@@ -1349,6 +1353,7 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
 
     for column in drawdown_series.columns:
         drawdowns = drawdown_series[column].to_numpy()
+        wealth = wealth_series[column].to_numpy()
         below_peak = np.nan_to_num(drawdowns, nan=0.0) < 0
         # Edges of each run of rows below the peak.
         changes = np.diff(np.concatenate([[0], below_peak.astype(int), [0]]))
@@ -1375,6 +1380,16 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
                     "Length": (
                         float(recovery - peak) if recovery is not None else np.nan
                     ),
+                    "Recovery Ratio": (
+                        (recovery - trough) / (trough - peak)
+                        if recovery is not None
+                        else np.nan
+                    ),
+                    "Recovery Return": (
+                        wealth[recovery] / wealth[trough] - 1
+                        if recovery is not None
+                        else np.nan
+                    ),
                     "To Trough (Days)": calendar_days(peak, trough),
                     "To Recovery (Days)": calendar_days(trough, recovery),
                     "Length (Days)": calendar_days(peak, recovery),
@@ -1398,6 +1413,8 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         "To Trough",
         "To Recovery",
         "Length",
+        "Recovery Ratio",
+        "Recovery Return",
         "To Trough (Days)",
         "To Recovery (Days)",
         "Length (Days)",

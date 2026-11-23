@@ -149,3 +149,95 @@ def test_a_path_back_at_exactly_its_old_high_ends_the_episode():
     assert drawdown_model.get_average_drawdown(
         pd.Series(samples[0]), method="episode"
     ) == pytest.approx(-0.045)
+
+
+def test_get_conditional_expected_drawdown_averages_the_worst_path_drawdowns():
+    # Goldberg and Mahmoud (2017): the Maximum Drawdown of every path of `window` returns, each
+    # from a fresh wealth of 1, and the exact tail average of the deepest alpha share of them
+    # (36 paths at alpha 0.2: the 7 deepest and 0.2 of the 8th).
+    window, alpha = 5, 0.2
+    values = REFERENCE_RETURNS.to_numpy()
+    maximum_drawdowns = []
+
+    for start in range(len(values) - window + 1):
+        wealth = np.cumprod(1 + values[start : start + window])
+        peak = np.maximum(np.maximum.accumulate(wealth), 1)
+        maximum_drawdowns.append((wealth / peak - 1).min())
+
+    deepest = np.sort(maximum_drawdowns)
+    expected = (deepest[:7].sum() + 0.2 * deepest[7]) / 7.2
+
+    assert drawdown_model.get_conditional_expected_drawdown(
+        REFERENCE_RETURNS, window, alpha
+    ) == pytest.approx(expected, abs=1e-15)
+
+    # A path as long as the data leaves one path, its Maximum Drawdown.
+    assert drawdown_model.get_conditional_expected_drawdown(
+        REFERENCE_RETURNS, len(REFERENCE_RETURNS)
+    ) == pytest.approx(drawdown_model.get_maximum_drawdown(REFERENCE_RETURNS))
+
+
+def test_get_conditional_expected_drawdown_rolling_and_per_period():
+    returns = pd.DataFrame(
+        {"A": REFERENCE_RETURNS.to_numpy(), "B": REFERENCE_RETURNS.to_numpy()[::-1]},
+        index=pd.date_range("2024-01-01", periods=40, freq="D"),
+    )
+    rolling = drawdown_model.get_conditional_expected_drawdown(
+        returns, window=5, window_size=20
+    )
+
+    assert rolling.iloc[:19].isna().all().all()
+    assert rolling.iloc[-1]["B"] == pytest.approx(
+        drawdown_model.get_conditional_expected_drawdown(returns["B"].iloc[-20:], 5)
+    )
+
+    nested = returns.set_index(
+        [returns.index.to_period("M"), returns.index], append=False
+    )
+    per_period = drawdown_model.get_conditional_expected_drawdown(nested, window=5)
+    assert per_period.loc[pd.Period("2024-02", "M"), "A"] == pytest.approx(
+        drawdown_model.get_conditional_expected_drawdown(returns["A"].iloc[31:], 5)
+    )
+
+    with pytest.raises(ValueError, match="rolling window"):
+        drawdown_model.get_conditional_expected_drawdown(returns, 5, window_size=3)
+
+
+def test_get_drawdown_state_and_recovery_measures():
+    # Wealth: 0.9, 1.08 (a new high), 0.972, 1.1664 (a new high), 0.93312, 1.026432 (open).
+    returns = pd.DataFrame(
+        {
+            "A": [np.nan, -0.1, 0.2, -0.1, 0.2, -0.2, 0.1],
+            "C": [np.nan, 0.1] * 3 + [0.1],
+        },
+        index=pd.period_range("2024-01-01", periods=7, freq="D"),
+    )
+    statistics = drawdown_model.get_drawdown_statistics(returns)
+    row = statistics.loc["A"]
+
+    # Below the peak on four of six returns.
+    assert row["Coverage"] == pytest.approx(4 / 6)
+    assert row["Active Drawdown"] == pytest.approx(1.026432 / 1.1664 - 1)
+    assert row["Active Duration"] == 2
+    assert row["Active Recovery Duration"] == 1
+    assert row["Active Recovery Return"] == pytest.approx(0.1)
+    assert row["Active Recovery"] == pytest.approx(
+        1 - (1.026432 / 1.1664 - 1) / (0.93312 / 1.1664 - 1)
+    )
+    # Two recovered drawdowns, one period down and one back, each recovering to above the peak:
+    # 0.9 -> 1.08 and 0.972 -> 1.1664, a return of 20% from the trough.
+    assert row["Average Recovery Ratio"] == 1
+    assert row["Average Recovery Return"] == pytest.approx(0.2)
+
+    # Always at a new high, with dates without a return: no drawdown, nothing open.
+    never = statistics.loc["C"]
+    assert never["Coverage"] == 0
+    assert never["Active Drawdown"] == 0
+    assert never["Active Duration"] == 0
+    assert np.isnan(never["Active Recovery"])
+
+    table = risk_model.get_drawdown_table(returns[["A"]], top=3)
+    # The deepest drawdown (-20%) is the open one.
+    assert np.isnan(table.loc[("A", 1), "Recovery Ratio"])
+    assert table["Recovery Ratio"].dropna().tolist() == [1.0, 1.0]
+    assert table["Recovery Return"].dropna().to_numpy() == pytest.approx([0.2, 0.2])

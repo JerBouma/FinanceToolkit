@@ -236,7 +236,9 @@ class FixedIncome(
     terms of your own (bond pricing, swaptions, caps, floors, collars and year-on-year inflation caps with
     the Black, shifted Black and Bachelier models and their implied volatilities, bond options, caplets,
     swaptions and CIR++ shifts in the Vasicek, Hull-White, CIR and CIR++ models, the option-adjusted
-    spread of a callable or puttable bond, swaps and forwards, CDS options, inflation swaps and the
-    forward inflation index) are in bond_model, yieldcurve_model, derivative_model, short_rate_model,
-    swap_model, forward_model, cds_model and inflation_swap_model.
+    spread of a callable or puttable bond, Hull-White, Black-Karasinski and Black-Derman-Toy trees with
+    callable and puttable bonds, Bermudan swaptions and American bond options, swaps and forwards, CDS
+    options, inflation swaps and the forward inflation index) are in bond_model, yieldcurve_model,
+    derivative_model, short_rate_model, trinomial_tree_model, swap_model, forward_model, cds_model and
+    inflation_swap_model.
     """

@@ -253,6 +253,39 @@ def test_get_swaption_price(recorder, fixedincome):
     )
 
 
+def test_get_swaption_price_bermudan(recorder, fixedincome):
+    recorder.capture(
+        fixedincome.get_swaption_price(
+            expiries=[1, 5], tenors=[2, 10], exercise="bermudan"
+        )
+    )
+    recorder.capture(
+        fixedincome.get_swaption_price(
+            expiries=1,
+            tenors=5,
+            strike=0.03,
+            swaption_type="receiver",
+            fixed_frequency=2,
+            exercise="bermudan",
+        )
+    )
+
+
+def test_bermudan_swaption_is_worth_at_least_the_european(fixedincome, monkeypatch):
+    european = fixedincome.get_swaption_price(expiries=[1, 5], tenors=[2, 10])
+    bermudan = fixedincome.get_swaption_price(
+        expiries=[1, 5], tenors=[2, 10], exercise="bermudan"
+    )
+    # The tree prices the European exercise within a basis point of notional of the closed
+    # form, and the extra exercise dates only add value.
+    assert (bermudan.to_numpy() >= european.to_numpy() - 1e-4).all()
+    assert bermudan.loc[5, 10] > european.loc[5, 10]
+
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="Hull-White tree"):
+        fixedincome.get_swaption_price(model="cir++", exercise="bermudan")
+
+
 def test_swaption_price_is_at_the_money(fixedincome, monkeypatch):
     # At the money a payer and a receiver swaption are worth the same.
     for model in ("hull_white", "cir++"):

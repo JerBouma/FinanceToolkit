@@ -9,6 +9,7 @@ from scipy.stats import ncx2, norm
 
 from financetoolkit.fixedincome.bonds.bond_model import get_cash_flow_periods
 from financetoolkit.fixedincome.helpers import discount_factors
+from financetoolkit.fixedincome.short_rates import trinomial_tree_model
 
 MODELS = ("vasicek", "cir")
 # The models of the option formulas: Hull-White and CIR++ are Vasicek and CIR shifted to fit
@@ -1051,94 +1052,6 @@ def get_cir_plus_plus_shift(
     return float(shift) if np.ndim(shift) == 0 else shift
 
 
-def _ho_lee_tree(
-    discount_factors: np.ndarray, volatility: float, dt: float
-) -> list[np.ndarray]:
-    """
-    A Ho-Lee binomial tree of the short rate calibrated to the discount factors: at step i
-    the rates are θ_i + σ √dt (2j - i), j = 0..i, with θ_i solved so that the tree prices the
-    zero-coupon bond maturing one step later exactly (forward induction on Arrow-Debreu
-    prices with up and down probabilities of one half), which has the closed form
-    θ_i = [ln Σ_j Q_j e^(-σ √dt (2j - i) dt) - ln P(i + 1)] / dt.
-    """
-    steps = len(discount_factors)
-    rates = []
-    arrow = np.array([1.0])
-    for i in range(steps):
-        spread = volatility * np.sqrt(dt) * (2 * np.arange(i + 1) - i)
-        theta = (
-            np.log(np.sum(arrow * np.exp(-spread * dt))) - np.log(discount_factors[i])
-        ) / dt
-        step_rates = theta + spread
-        rates.append(step_rates)
-        discounted = arrow * np.exp(-step_rates * dt) / 2
-        arrow = np.zeros(i + 2)
-        arrow[:-1] += discounted
-        arrow[1:] += discounted
-    return rates
-
-
-def price_callable_bond(
-    tree: list[np.ndarray],
-    coupon_rate: float,
-    frequency: int,
-    face_value: float = 100.0,
-    call_price: float | None = None,
-    first_call_step: int = 0,
-    spread: float = 0.0,
-    steps_per_period: int = 1,
-    first_coupon_step: int | None = None,
-    put_price: float | None = None,
-    first_put_step: int = 0,
-) -> float:
-    """
-    The price of a bond on a short-rate tree, discounting at the tree rate plus a spread:
-    the value of all its remaining payments, so including the interest accrued since the
-    last coupon (the dirty price). A callable bond is redeemed by the issuer whenever its
-    value exceeds the call price on a coupon date from the first call date on, so its value
-    at those nodes is capped at the call price. A puttable bond is sold back by the investor
-    whenever its value falls below the put price on a coupon date from the first put date
-    on, so its value at those nodes is at least the put price:
-
-        - Value = min(Value, Call Price), then max(Value, Put Price), before the coupon
-
-    Args:
-        tree (list[np.ndarray]): The short rates per step; the last coupon is paid at the
-            end of the last step.
-        coupon_rate (float): The annual coupon rate.
-        frequency (int): The coupons per year.
-        face_value (float, optional): The face value. Defaults to 100.
-        call_price (float | None, optional): The call price; None for a straight bond.
-            Defaults to None.
-        first_call_step (int, optional): The first step on which the bond can be called (on
-            the coupon dates from then on). Defaults to 0.
-        spread (float, optional): The spread added to every rate (the OAS). Defaults to 0.
-        steps_per_period (int, optional): The tree steps per coupon period. Defaults to 1.
-        first_coupon_step (int | None, optional): The step of the next coupon. Defaults to
-            None, which is one coupon period from now.
-        put_price (float | None, optional): The put price; None for a bond without a put.
-            Defaults to None.
-        first_put_step (int, optional): The first step on which the bond can be put (on
-            the coupon dates from then on). Defaults to 0.
-
-    Returns:
-        float: The price.
-    """
-    dt = 1 / (frequency * steps_per_period)
-    coupon = face_value * coupon_rate / frequency
-    first = steps_per_period if first_coupon_step is None else first_coupon_step
-    value = np.full(len(tree) + 1, face_value + coupon)
-    for step in range(len(tree) - 1, -1, -1):
-        value = (value[:-1] + value[1:]) / 2 * np.exp(-(tree[step] + spread) * dt)
-        if step > 0 and step >= first and (step - first) % steps_per_period == 0:
-            if call_price is not None and step >= first_call_step:
-                value = np.minimum(value, call_price)
-            if put_price is not None and step >= first_put_step:
-                value = np.maximum(value, put_price)
-            value = value + coupon
-    return float(value[0])
-
-
 def get_option_adjusted_spread(
     price: float,
     coupon_rate: float,
@@ -1152,6 +1065,8 @@ def get_option_adjusted_spread(
     face_value: float = 100.0,
     put_price: float | None = None,
     years_to_first_put: float = 0.0,
+    model: str = "ho_lee",
+    speed: float = 0.0,
 ) -> dict[str, float]:
     """
     The option-adjusted spread (OAS) of a callable or puttable bond: the spread over a
@@ -1164,20 +1079,43 @@ def get_option_adjusted_spread(
     The effective duration and convexity follow from shifting the curve by 100 basis points
     up and down at an unchanged OAS.
 
-    The tree has twenty steps per coupon period. A bond bought between coupon dates also pays
-    the interest accrued since the last coupon, so the market (clean) price plus the accrued
-    interest is what the tree values; the next coupon date is placed on the nearest step
-    (within a twentieth of a period). The call and the put can be exercised on the coupon
-    dates from their first date on (Bermudan), at a clean price.
+    The bond is valued on a trinomial tree of the short rate fitted exactly to the zero
+    curve (`trinomial_tree_model.build_short_rate_tree`, the two-stage procedure of Hull and
+    White, 1994) in one of four models: Ho-Lee and Hull-White with normal rates,
+    Black-Karasinski and Black-Derman-Toy with lognormal rates (so the volatility is of the
+    rate for the first two and of its logarithm for the last two, and only Hull-White and
+    Ho-Lee allow a curve with negative forward rates). Hull-White and Black-Karasinski
+    revert to the curve at the speed a, which lowers the volatility of long rates and so the
+    value of a long-dated call.
+
+    The tree has twenty steps per coupon period and every coupon date among its dates. A
+    bond bought between coupon dates also pays the interest accrued since the last coupon,
+    so the market (clean) price plus the accrued interest is what the tree values. The call
+    and the put can be exercised on the coupon dates from their first date on (Bermudan), at
+    a clean price. The OAS and the tree rates are continuously compounded, the zero rates
+    annually compounded.
+
+    The formula is as follows:
+
+    - OAS solves Tree Price(s) = Price + Accrued Interest, see
+      `trinomial_tree_model.get_callable_bond_price`
+    - Option Value = Straight Bond Price(OAS) - Price
+    - Effective Duration = (P₋ - P₊) / (2 · P · Δy), Effective Convexity =
+      (P₋ + P₊ - 2P) / (P · Δy²)
+
+    with P₊ and P₋ the dirty prices at the OAS on trees fitted to the curve shifted 100
+    basis points (Δy) up and down.
 
     Referenced against QuantLib's `CallableFixedRateBond` with the
-    `TreeCallableFixedRateBondEngine` on a Hull-White tree with a speed of mean reversion
-    near zero (the Ho-Lee model), which agrees within a few cents per 100 of face value.
+    `TreeCallableFixedRateBondEngine` on `HullWhite` (a speed near zero for Ho-Lee) and
+    `BlackKarasinski`, and FinancePy's `callable_puttable_bond_tree` of `BDTTree`.
 
     For more information, see the following sources:
 
     - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest Rate
       Contingent Claims." Journal of Finance, 41(5), 1011-1029.
+    - Hull, J. and White, A. (1994). "Numerical Procedures for Implementing Term Structure
+      Models I: Single-Factor Models." Journal of Derivatives, 2(1), 7-16.
     - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th edition,
       chapter 18.
 
@@ -1187,8 +1125,9 @@ def get_option_adjusted_spread(
         years_to_maturity (float): The years to maturity.
         maturities (np.ndarray): The maturities of the zero curve in years.
         zero_rates (np.ndarray): The zero rates (annually compounded).
-        volatility (float, optional): The volatility of the short rate (Ho-Lee, in absolute
-            terms per year, e.g. 0.01 for 1%). Defaults to 0.01.
+        volatility (float, optional): The volatility σ: of the rate for Ho-Lee and Hull-White
+            (0.01 is 1% a year), of its logarithm for Black-Karasinski and Black-Derman-Toy
+            (0.2 is 20% of the rate). Defaults to 0.01.
         call_price (float | None, optional): The call price; None for a straight bond.
             Defaults to 100.
         years_to_first_call (float, optional): The years until the bond can first be called.
@@ -1199,6 +1138,10 @@ def get_option_adjusted_spread(
             Defaults to None.
         years_to_first_put (float, optional): The years until the bond can first be put.
             Defaults to 0.
+        model (str, optional): "ho_lee", "hull_white", "black_karasinski" or
+            "black_derman_toy". Defaults to "ho_lee".
+        speed (float, optional): The speed of mean reversion a of Hull-White and
+            Black-Karasinski. Defaults to 0.
 
     Returns:
         dict[str, float]: The Option-Adjusted Spread, the Straight Bond Price (clean) and
@@ -1222,81 +1165,64 @@ def get_option_adjusted_spread(
     Which returns:
 
     ```
-    {'Option-Adjusted Spread': 0.006554527303090879,
-     'Straight Bond Price': 98.88069716246667,
-     'Option Value': -5.119302837533326,
-     'Effective Duration': 5.639373501343137,
-     'Effective Convexity': 138.83933705466998}
+    {'Option-Adjusted Spread': 0.006554025670571298,
+     'Straight Bond Price': 98.88111024145738,
+     'Option Value': -5.118889758542622,
+     'Effective Duration': 5.639697383692862,
+     'Effective Convexity': 138.6028126744038}
     ```
     """
     periods = years_to_maturity * frequency
     coupons = int(np.ceil(periods - 1e-9))
     if coupons < 1:
         raise ValueError("The bond must have at least one coupon left.")
-    first_coupon_step = max(1, round((periods - (coupons - 1)) * STEPS_PER_PERIOD))
-    steps = first_coupon_step + (coupons - 1) * STEPS_PER_PERIOD
-    if steps > MAX_TREE_STEPS:
+    if coupons * STEPS_PER_PERIOD > MAX_TREE_STEPS:
         raise ValueError(
-            f"A tree of {steps:,} steps ({coupons:,} coupons of {STEPS_PER_PERIOD} steps) is too "
-            f"large; keep the coupons (years to maturity times frequency) under "
-            f"{MAX_TREE_STEPS // STEPS_PER_PERIOD:,}."
+            f"A tree of {coupons * STEPS_PER_PERIOD:,} steps ({coupons:,} coupons of "
+            f"{STEPS_PER_PERIOD} steps) is too large; keep the coupons (years to maturity "
+            f"times frequency) under {MAX_TREE_STEPS // STEPS_PER_PERIOD:,}."
         )
-    dt = 1 / (frequency * STEPS_PER_PERIOD)
-    accrued = (
-        face_value
-        * coupon_rate
-        / frequency
-        * (1 - first_coupon_step / STEPS_PER_PERIOD)
+    zero_curve = pd.Series(zero_rates, index=maturities)
+    coupon_times = get_cash_flow_periods(years_to_maturity, frequency) / frequency
+    accrued = float(
+        face_value * coupon_rate / frequency * (1 - coupon_times[0] * frequency)
     )
     dirty_price = price + accrued
-    times = np.arange(1, steps + 1) * dt
-    continuous = np.log1p(np.interp(times, maturities, zero_rates))
-    first_call_step = int(np.ceil(years_to_first_call / dt - 1e-9))
-    first_put_step = int(np.ceil(years_to_first_put / dt - 1e-9))
+    bond = (coupon_rate, years_to_maturity, frequency, face_value)
+    options = (call_price, years_to_first_call, put_price, years_to_first_put)
 
-    base_tree = _ho_lee_tree(np.exp(-continuous * times), volatility, dt)
-
-    def callable_price(tree: list[np.ndarray], spread: float) -> float:
-        return price_callable_bond(
-            tree,
-            coupon_rate,
-            frequency,
-            face_value,
-            call_price,
-            first_call_step,
-            spread,
-            STEPS_PER_PERIOD,
-            first_coupon_step,
-            put_price,
-            first_put_step,
+    def tree(curve_shift: float) -> dict:
+        return trinomial_tree_model.build_short_rate_tree(
+            zero_curve,
+            coupon_times,
+            speed,
+            volatility,
+            model,
+            STEPS_PER_PERIOD * frequency,
+            curve_shift,
         )
 
+    base_tree = tree(0.0)
     oas = brentq(
-        lambda spread: callable_price(base_tree, spread) - dirty_price, -0.2, 1.0
+        lambda spread: trinomial_tree_model.price_callable_bond(
+            base_tree, *bond, *options, spread
+        )
+        - dirty_price,
+        -0.2,
+        1.0,
     )
     straight = (
-        price_callable_bond(
-            base_tree,
-            coupon_rate,
-            frequency,
-            face_value,
-            None,
-            0,
-            oas,
-            STEPS_PER_PERIOD,
-            first_coupon_step,
-        )
-        - accrued
+        trinomial_tree_model.price_callable_bond(base_tree, *bond, spread=oas) - accrued
     )
 
-    # A 100 basis point shift: at 25 basis points the convexity of a callable bond is mostly
-    # lattice noise (it can even turn positive at a 2% volatility). A parallel shift of the
-    # continuously compounded curve moves every Ho-Lee node by the same amount, which is the
-    # same as moving the spread, so the base tree priced at OAS ± shift gives the shifted prices
-    # exactly without building two more trees.
+    # A 100 basis point parallel shift of the continuously compounded curve at an unchanged
+    # OAS: at 25 basis points the convexity of a callable bond is mostly lattice noise (it can
+    # even turn positive at a 2% volatility).
     shift = 0.01
-    up = callable_price(base_tree, oas + shift)
-    down = callable_price(base_tree, oas - shift)
+    up, down = (
+        trinomial_tree_model.price_callable_bond(tree(move), *bond, *options, oas)
+        for move in (shift, -shift)
+    )
 
     return {
         "Option-Adjusted Spread": float(oas),

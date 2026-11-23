@@ -9,7 +9,10 @@ from financetoolkit.economics.helpers import validate_period
 from financetoolkit.fixedincome.curves import curve_model
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
 from financetoolkit.fixedincome.helpers import parse_maturities
-from financetoolkit.fixedincome.short_rates import short_rate_model
+from financetoolkit.fixedincome.short_rates import (
+    short_rate_model,
+    trinomial_tree_model,
+)
 from financetoolkit.fixedincome.swaps import swap_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -417,10 +420,11 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         period: str = "daily",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
+        exercise: str = "european",
     ):
         """
-        Calculates the prices of European swaptions, the right to enter an interest rate swap
-        at the option's expiry, for a grid of expiries and swap tenors in a one-factor
+        Calculates the prices of European or Bermudan swaptions, the right to enter an
+        interest rate swap at the option's expiry, for a grid of expiries and swap tenors in a one-factor
         short-rate model fitted to today's government zero-coupon curve. A payer swaption is
         the right to pay the fixed rate (it gains when rates rise), a receiver swaption the
         right to receive it. Without a strike every swaption is at the money: struck at the
@@ -443,12 +447,24 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         splits into puts on its zero-coupon bonds, each priced in closed form (see
         `short_rate_model.get_swaption` and `get_zero_coupon_bond_option`).
 
+        A Bermudan swaption (exercise="bermudan", Hull-White only) can also be exercised on
+        every fixed payment date after the expiry, into the rest of a swap that ends at the
+        expiry plus the tenor (co-terminal, "10 non-call 1"). It has no closed form and is
+        valued on a Hull-White trinomial tree fitted exactly to the zero curve with the
+        two-stage procedure of Hull and White (1994), with at most 1/50 of a year between
+        two dates of the tree, comparing at every exercise date the value of the swap with
+        the value of waiting (see `trinomial_tree_model.get_bermudan_swaption`). It is worth
+        at least the European swaption of the same expiry, tenor and strike.
+
         The formula is as follows:
 
         - c_i = K τ_i, plus 1 on the last date T_n
         - x* solves SUM(c_i P(T, T_i; x*)) = 1, X_i = P(T, T_i; x*)
         - Payer Swaption = SUM(c_i ZBP(T, T_i, X_i))
         - Receiver Swaption = SUM(c_i ZBC(T, T_i, X_i))
+        - Bermudan: Option = max(E[Option next date] · e^(-r Δt), ±(1 - B(T_k))) at
+          T_0 = T, T_1, ..., T_{n-1}, with B(T_k) the coupon bond's payments after T_k on
+          the tree (+ for a payer, - for a receiver)
 
         with T the expiry, T_i the fixed payment dates every 1 / fixed_frequency years after
         it, τ_i = 1 / fixed_frequency, K the strike, P(T, T_i; x) the bond price at expiry
@@ -471,10 +487,14 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
           Tractable and Time-Homogeneous Short-Rate Models." Finance and Stochastics, 5(3),
           369-387.
 
-        Referenced against QuantLib's `JamshidianSwaptionEngine` with `HullWhite` and
-        `ExtendedCoxIngersollRoss`.
+        - Hull, J. and White, A. (1994). "Numerical Procedures for Implementing Term
+          Structure Models I: Single-Factor Models." Journal of Derivatives, 2(1), 7-16.
 
-        Also known as: swaption price, Hull-White swaption, CIR++ swaption, Jamshidian
+        Referenced against QuantLib's `JamshidianSwaptionEngine` with `HullWhite` and
+        `ExtendedCoxIngersollRoss`, and for Bermudan swaptions its `TreeSwaptionEngine` with
+        `HullWhite`.
+
+        Also known as: swaption price, Bermudan swaption, Hull-White swaption, CIR++ swaption, Jamshidian
         decomposition, interest rate option.
 
         Args:
@@ -499,6 +519,9 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+            exercise (str, optional): "european" (at the expiry only) or "bermudan" (on every
+                fixed payment date from the expiry on, Hull-White only). Defaults to
+                "european".
 
         Returns:
             pd.DataFrame: The swaption price per 1 of notional, by expiry in years (rows) and
@@ -539,6 +562,14 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             raise ValueError(
                 f"The model must be one of {', '.join(SWAPTION_MODELS)}, not {model!r}."
             )
+        if exercise not in ("european", "bermudan"):
+            raise ValueError(
+                f"The exercise must be 'european' or 'bermudan', not {exercise!r}."
+            )
+        if exercise == "bermudan" and model != "hull_white":
+            raise ValueError(
+                "Bermudan swaptions are valued on a Hull-White tree; use model='hull_white'."
+            )
 
         curve = self._yield_curves(country, period)[country]
         if short_rate not in curve.columns:
@@ -565,6 +596,25 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             index=pd.Index(expiry_years, name="Expiry"),
             columns=pd.Index(tenor_years, name="Tenor"),
         )
+        if exercise == "bermudan":
+            # One tree holds every expiry and payment date, and values all the swaptions.
+            tree = trinomial_tree_model.build_short_rate_tree(
+                zero_curve,
+                [
+                    time
+                    for expiry in expiry_years
+                    for tenor in tenor_years
+                    for time in (
+                        expiry,
+                        *trinomial_tree_model.swap_payment_times(
+                            expiry, tenor, fixed_frequency
+                        ),
+                    )
+                ],
+                parameters["Speed of Mean Reversion"],
+                parameters["Volatility"],
+                "hull_white",
+            )
         for expiry in expiry_years:
             for tenor in tenor_years:
                 fixed_rate = (
@@ -574,6 +624,18 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                         zero_curve, tenor, fixed_frequency, forward_start=expiry
                     )[0]
                 )
+                if exercise == "bermudan":
+                    prices.loc[expiry, tenor] = (
+                        trinomial_tree_model.price_bermudan_swaption(
+                            tree,
+                            expiry,
+                            tenor,
+                            fixed_rate,
+                            swaption_type,
+                            fixed_frequency,
+                        )
+                    )
+                    continue
                 prices.loc[expiry, tenor] = short_rate_model.get_swaption(
                     expiry,
                     tenor,

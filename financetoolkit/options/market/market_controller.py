@@ -10,7 +10,7 @@ from financetoolkit.options.helpers import (
     get_days_to_expiration,
     get_time_to_expiration,
 )
-from financetoolkit.options.market import market_metrics_model
+from financetoolkit.options.market import hedging_model, market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -135,11 +135,13 @@ class MarketOptions:
         expiration_dates: list[str] | dict[str, list[str]] | None,
         number_of_expirations: int,
         rounding: int | None,
+        with_ticker: bool = False,
     ) -> pd.DataFrame:
         """
         Run a calculation on every expiry of every ticker, rows (ticker, expiration). The
         expiries are the same for every ticker, or given per ticker as a dictionary, which
-        then also selects the tickers.
+        then also selects the tickers. With with_ticker the calculation also receives the
+        ticker and the expiration date, before the chain inputs.
         """
         self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         per_ticker = (
@@ -155,7 +157,11 @@ class MarketOptions:
                 inputs = self._expiry_inputs(ticker, expiration_date)
                 if inputs[0].empty or inputs[1].empty:
                     continue
-                result = calculate(*inputs)
+                result = (
+                    calculate(ticker, expiration_date, *inputs)
+                    if with_ticker
+                    else calculate(*inputs)
+                )
                 rows[(ticker, expiration_date)] = pd.concat(
                     [
                         pd.Series(
@@ -1322,3 +1328,595 @@ class MarketOptions:
             rounding if rounding is not None else self._rounding,
         )
         return table
+
+    @handle_errors
+    def get_variance_swap(
+        self,
+        expiration_dates: list[str] | None = None,
+        number_of_expirations: int = 4,
+        strike: float | None = None,
+        trade_date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the fair strike of a variance swap up to every expiry from the option chain,
+        replicated with the discrete strike weights of Demeterfi, Derman, Kamal and Zou (1999),
+        and with a strike the value of a swap, also of one traded in the past. A variance swap
+        pays the variance the stock realizes up to maturity minus the strike; the fair strike
+        is the price of a portfolio of out-of-the-money options that replicates the log
+        contract, whose payoff grows with the realized variance whatever the path:
+
+            - f(S) = (2/T) [(S - S*) / S* - ln(S / S*)]
+            - w(K_i) = the change in the slope of f at K_i, with f linear between the strikes
+            - Fair Variance = (2/T) [ln(F / S*) - (F / S* - 1)] + e^(rT) [Σ w(K_p) P(K_p) + Σ w(K_c) C(K_c)]
+            - Fair Volatility = sqrt(Fair Variance)
+            - Realized Variance = (252 / n) Σ ln(S_i / S_(i-1))², over the n returns since trade_date
+            - Value = e^(-r (T - t)) [(t / T) Realized Variance + ((T - t) / T) Fair Variance - Strike²]
+
+        with the forward price F and the boundary strike S* = K_0, the highest strike at or
+        below it, from put-call parity as in the Cboe VIX methodology, puts below S* and calls
+        above it. The Cboe Variance column is the VIX methodology's variance of the same
+        expiry (see get_model_free_implied_volatility): it discretises the same integral with
+        the midpoint rule, so the two agree when the strikes are close together and the Fair
+        Variance replicates the payoff at the quoted strikes exactly when they are not.
+
+        For more information, see the following papers:
+
+        - Demeterfi, K., Derman, E., Kamal, M. and Zou, J. (1999). "More Than You Ever Wanted
+          to Know About Volatility Swaps." Goldman Sachs Quantitative Strategies Research
+          Notes.
+        - Carr, P. and Madan, D. (1998). "Towards a Theory of Volatility Trading." In Volatility:
+          New Estimation Techniques for Pricing Derivatives, Risk Books, 417-427.
+
+        Referenced against QuantLib's ReplicatingVarianceSwapEngine and VarianceSwap
+        (https://www.quantlib.org) and FinancePy's EquityVarianceSwap
+        (https://github.com/domokane/FinancePy).
+
+        Also known as: variance swap rate, variance strike, fair variance, DDKZ replication.
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiries to use, the maturities
+                of the swaps. Defaults to None, the nearest `number_of_expirations` expiries.
+            number_of_expirations (int, optional): The number of nearest expiries to use when
+                no dates are given. Defaults to 4.
+            strike (float | None, optional): The volatility strike of the swap as a decimal
+                (0.25 for 25%), whose square is the variance strike. Defaults to None, which
+                gives the fair strike only.
+            trade_date (str | None, optional): The date the swap was traded, whose returns
+                since then count towards the realized variance. Requires a strike. Defaults to
+                None, a swap traded today.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, Forward Price, Boundary
+            Strike, Fair Variance, Fair Volatility and Cboe Variance (annualized, as decimals),
+            and with a strike the Variance Strike, the Realized Variance and its share of the
+            swap (Elapsed Fraction) and the Variance Swap Value per unit of variance notional.
+
+        Notes:
+        - The value is per unit of variance notional, paying σ² - K² on decimal variances. A
+          vega notional N_vega, the profit per volatility point, is N_vega / (2 Strike) units of
+          variance notional, so Value × 100 / (2 Strike) is the value per unit of vega notional
+          in volatility points.
+        - The fair strike uses the strip of the Cboe methodology: options with a bid, walking
+          away from K_0 until two strikes in a row have none. Outside US market hours Yahoo
+          Finance reports a bid of 0, and the fair strike is NaN.
+        - The realized variance counts the daily log returns of the Adjusted Close since
+          trade_date, without subtracting their mean, as variance swaps settle. The share t/T
+          counts those returns against the returns still to come, the weekdays up to the
+          expiry, and the value discounts over the time to expiration with the risk free rate
+          of the historical data (continuously compounded). Leave end_date at today: a warning
+          is logged when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "^SPX"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_variance_swap(
+            number_of_expirations=2,
+            strike=0.3,
+            show_columns=["Forward Price", "Fair Variance", "Fair Volatility", "Cboe Variance", "Variance Swap Value"],
+        )
+        ```
+
+        Which returns:
+
+        |                        |   Forward Price |   Fair Variance |   Fair Volatility |   Cboe Variance |   Variance Swap Value |
+        |:-----------------------|----------------:|----------------:|------------------:|----------------:|----------------------:|
+        | ('AAPL', '2026-11-25') |          349.55 |          0.1281 |            0.358  |          0.1281 |                0.0381 |
+        | ('AAPL', '2026-11-27') |          349.65 |          0.0887 |            0.2979 |          0.0887 |               -0.0013 |
+        | ('^SPX', '2026-11-24') |         7253.05 |          0.1076 |            0.328  |          0.1076 |                0.0176 |
+        | ('^SPX', '2026-11-25') |         7255    |          0.1055 |            0.3248 |          0.1055 |                0.0155 |
+        """
+        if trade_date is not None and strike is None:
+            raise ValueError(
+                "A swap traded on an earlier date needs its strike: the option chains of that "
+                "date are not available to find its fair strike."
+            )
+        if strike is not None and strike <= 0:
+            raise ValueError("The strike must be a positive volatility.")
+
+        prices = self._daily_historical["Adj Close"]
+
+        def calculate(ticker, expiration_date, calls, puts, _, time, rate, __):
+            strip, forward = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            if strip.empty:
+                logger.warning(
+                    "%s has no bid quotes for its %s options to build the strip from.",
+                    ticker,
+                    expiration_date,
+                )
+            below = strip.index[strip.index <= forward]
+            boundary = float(below.max()) if len(below) else np.nan
+            fair = (
+                np.nan
+                if strip.empty
+                else market_metrics_model.get_variance_swap_fair_strike(
+                    strip.index.to_numpy(dtype=float),
+                    strip["Call Price"].to_numpy(),
+                    strip["Put Price"].to_numpy(),
+                    forward,
+                    rate,
+                    time,
+                    boundary,
+                )
+            )
+            cboe, _ = market_metrics_model.get_model_free_variance(
+                calls, puts, time, rate
+            )
+            result = {
+                "Forward Price": forward,
+                "Boundary Strike": boundary,
+                "Fair Variance": fair,
+                "Fair Volatility": np.sqrt(fair) if fair > 0 else np.nan,
+                "Cboe Variance": cboe,
+            }
+            if strike is None:
+                return pd.Series(result)
+
+            history = prices[ticker].dropna()
+            last_date = history.index[-1].to_timestamp()
+            # The weekdays after the last historical date up to and including the expiry.
+            remaining = int(
+                np.busday_count(
+                    (last_date + pd.Timedelta(days=1)).date(),
+                    (pd.Timestamp(expiration_date) + pd.Timedelta(days=1)).date(),
+                )
+            )
+            realized, observed = np.nan, 0
+            if trade_date is not None:
+                since = history[history.index >= pd.Period(trade_date, freq="D")]
+                if since.empty:
+                    raise ValueError(
+                        f"The historical data of {ticker} ends before the trade date {trade_date}."
+                    )
+                observed = len(since) - 1
+                realized = float(market_metrics_model.get_realized_variance(since))
+            elapsed = observed / (observed + remaining) if observed + remaining else 1.0
+            result.update(
+                {
+                    "Variance Strike": strike**2,
+                    "Realized Variance": realized,
+                    "Elapsed Fraction": elapsed,
+                    "Variance Swap Value": market_metrics_model.get_variance_swap_value(
+                        realized_variance=realized,
+                        fair_variance=fair,
+                        variance_strike=strike**2,
+                        elapsed_fraction=elapsed,
+                        remaining_time=time,
+                        risk_free_rate=rate,
+                    ),
+                }
+            )
+            return pd.Series(result)
+
+        return self._per_expiry(
+            calculate,
+            expiration_dates,
+            number_of_expirations,
+            rounding,
+            with_ticker=True,
+        )
+
+    def _hedge_inputs(
+        self, ticker: str, date: pd.Period, volatility: float | None
+    ) -> tuple[float, float, float]:
+        """The volatility, risk free rate and dividend yield of a ticker on a date."""
+        if volatility is None:
+            volatility = float(self._volatility[ticker].loc[:date].dropna().iloc[-1])
+        risk_free_rate = float(self._risk_free_rate.loc[:date].dropna().iloc[-1])
+        dividend_yield = self._dividend_yield_on(ticker, date)
+        return (
+            volatility,
+            risk_free_rate,
+            0.0 if np.isnan(dividend_yield) else dividend_yield,
+        )
+
+    @handle_errors
+    def get_delta_hedging_backtest(
+        self,
+        days: int = 63,
+        start_date: str | None = None,
+        moneyness: float = 1.0,
+        volatility: float | None = None,
+        put_option: bool = False,
+        transaction_cost: float = 0.0,
+        rebalancing_days: int = 1,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the realized profit and loss of selling a European option on each ticker
+        and delta hedging it on the ticker's own prices until it expires `days` trading days
+        later (Hull, 2022, chapter 19). The option is sold at its Black-Scholes value, the
+        hedge holds its delta in shares, pays a proportional cost on every trade, receives
+        the dividends on the shares held and keeps the rest in cash at the risk free rate:
+
+            - Option Value = Black-Scholes value at the volatility σ on the start date
+            - Cash_(i+1) = Cash_i e^(r Δt) + Δ_i D_(i+1) - (Δ_(i+1) - Δ_i) S_(i+1) - k |Δ_(i+1) - Δ_i| S_(i+1)
+            - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)]
+
+        The profit and loss shows what the volatility the option was sold at earned against
+        the volatility the stock then realized: the seller gains about ½ Γ S² (σ² - σ²_realized)
+        per unit of time (Wilmott, 2006), so a positive result means the stock moved less than
+        the option priced, less the costs of hedging (Leland, 1985).
+
+        For more information, see the following sources:
+
+        - Hull, J. C. (2022). "Options, Futures, and Other Derivatives." 11th edition, chapter 19.
+        - Leland, H. E. (1985). "Option Pricing and Replication with Transactions Costs." The
+          Journal of Finance, 40(5), 1283-1301.
+        - Wilmott, P. (2006). "Paul Wilmott on Quantitative Finance." 2nd edition, chapter 12.
+
+        Also known as: delta hedging P&L, hedged option P&L, gamma scalping backtest,
+        realized hedging error.
+
+        Args:
+            days (int, optional): The trading days from the sale to expiration. Defaults to 63,
+                about three months.
+            start_date (str | None, optional): The date the option is sold, or the last
+                trading day before it. Defaults to None, `days` trading days before the end
+                of the historical data, so the option expires on its last date.
+            moneyness (float, optional): The strike as a fraction of the stock price on the
+                start date. Defaults to 1.0, at the money.
+            volatility (float | None, optional): The volatility the option is sold and hedged
+                at, such as an implied volatility, for every ticker. Defaults to None, the
+                volatility of the year of daily returns up to the start date, which is known on
+                that date.
+            put_option (bool, optional): Whether the option is a put. Defaults to False.
+            transaction_cost (float, optional): The cost of a trade as a fraction of its value
+                (0.001 is 10 basis points). Defaults to 0.0.
+            rebalancing_days (int, optional): The trading days between rebalances. Defaults to
+                1, daily.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Start Date, Expiration Date, Stock Price, Strike Price,
+            Volatility, Realized Volatility, Option Value, Payoff, Transaction Costs and Profit
+            and Loss. The costs and the profit and loss are discounted to the start date.
+
+        Notes:
+        - Time runs on each ticker's own trading days, 252 to a year, the same clock as the
+          volatility, so the option's time value and the variance the stock realizes count
+          the same days.
+        - The stock follows the traded Close and the hedge receives the cash dividends on
+          their ex-dates; the option is valued with the trailing dividend yield and the risk
+          free rate on the start date, both continuously compounded.
+        - At expiration the hedge moves to the position the option settles with (one share
+          for a call in the money, none out of the money), and that trade pays the cost as
+          well, as for physical settlement.
+        - The Realized Volatility is the square root of the mean squared daily log return of
+          the Adjusted Close over the option's life, annualized, as a variance swap settles.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2023-01-01", end_date="2025-12-31"
+        )
+
+        toolkit.options.get_delta_hedging_backtest(
+            start_date="2025-06-02",
+            transaction_cost=0.0005,
+            show_columns=["Volatility", "Realized Volatility", "Option Value", "Payoff", "Transaction Costs", "Profit and Loss"],
+        )
+        ```
+
+        Which returns:
+
+        |      |   Volatility |   Realized Volatility |   Option Value |   Payoff |   Transaction Costs |   Profit and Loss |
+        |:-----|-------------:|----------------------:|---------------:|---------:|--------------------:|------------------:|
+        | AAPL |       0.3304 |                0.2141 |        14.2012 |    28.02 |              0.2146 |            2.9596 |
+        | MSFT |       0.2574 |                0.1516 |        25.7479 |    43.15 |              0.3291 |            5.2927 |
+        """
+        if days < 1 or rebalancing_days < 1:
+            raise ValueError("The days and rebalancing days must be at least 1.")
+        if moneyness <= 0:
+            raise ValueError("The moneyness must be positive.")
+
+        dividends = (
+            self._daily_historical["Dividends"]
+            if "Dividends" in self._daily_historical.columns.get_level_values(0)
+            else None
+        )
+        rows = {}
+        for ticker in self._tickers:
+            history = self._prices[ticker].dropna()
+            if start_date is None:
+                start = len(history) - 1 - days
+            else:
+                start = (
+                    history.index.searchsorted(
+                        pd.Period(start_date, freq="D"), side="right"
+                    )
+                    - 1
+                )
+            if start < 0 or start + days >= len(history):
+                logger.warning(
+                    "The historical data of %s does not cover %d trading days after the start "
+                    "date, so it is left out.",
+                    ticker,
+                    days,
+                )
+                continue
+
+            path = history.iloc[start : start + days + 1]
+            date = path.index[0]
+            sigma, rate, dividend_yield = self._hedge_inputs(ticker, date, volatility)
+            paid = None
+            if dividends is not None:
+                paid = (
+                    dividends[ticker].reindex(path.index).fillna(0).to_numpy(copy=True)
+                )
+                # A dividend going ex on the start date belongs to the seller of the shares.
+                paid[0] = 0.0
+            result = hedging_model.get_delta_hedging_profit_and_loss(
+                stock_prices=path.to_numpy(),
+                strike_price=moneyness * float(path.iloc[0]),
+                time_to_expiration=days / 252,
+                risk_free_rate=rate,
+                volatility=sigma,
+                dividend_yield=dividend_yield,
+                put_option=put_option,
+                transaction_cost=transaction_cost,
+                rebalancing_interval=rebalancing_days,
+                dividends=paid,
+            ).iloc[0]
+            adjusted = self._daily_historical["Adj Close"][ticker].loc[
+                path.index[0] : path.index[-1]
+            ]
+            rows[ticker] = {
+                "Start Date": str(date),
+                "Expiration Date": str(path.index[-1]),
+                "Stock Price": float(path.iloc[0]),
+                "Strike Price": moneyness * float(path.iloc[0]),
+                "Volatility": sigma,
+                "Realized Volatility": float(
+                    np.sqrt(
+                        market_metrics_model.get_realized_variance(adjusted.dropna())
+                    )
+                ),
+                **result.to_dict(),
+            }
+
+        if not rows:
+            raise ValueError(
+                f"No ticker has {days} trading days of prices after the start date."
+            )
+
+        table = pd.DataFrame(rows).T
+        numeric = table.columns.drop(["Start Date", "Expiration Date"])
+        table[numeric] = apply_rounding(
+            table[numeric].astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+        return table
+
+    @handle_errors
+    def get_delta_hedging_simulation(
+        self,
+        days: int = 63,
+        start_date: str | None = None,
+        moneyness: float = 1.0,
+        volatility: float | None = None,
+        implied_volatility: float | None = None,
+        put_option: bool = False,
+        transaction_cost: float = 0.0,
+        rebalancing_days: int = 1,
+        paths: int = 10_000,
+        seed: int | None = 0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the distribution of the hedging error of selling a European option and
+        delta hedging it, by simulating the stock as a Geometric Brownian Motion from its
+        price on the start date. Each path is hedged as in get_delta_hedging_backtest: the
+        option is sold at its Black-Scholes value at the implied volatility, the hedge holds
+        its delta, rebalanced every `rebalancing_days` trading days at a proportional cost,
+        while the stock moves with the volatility:
+
+            - S(t + Δt) = S(t) e^((r - q - σ² / 2) Δt + σ sqrt(Δt) Z), Z ~ N(0, 1), Δt = 1 / 252
+            - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)], per path
+            - Approximate Standard Deviation = sqrt(π / 4) × Vega × σ / sqrt(N)
+
+        Hedging at discrete times leaves an error whose mean is near zero and whose standard
+        deviation falls with the square root of the number of rebalances N, as Boyle and
+        Emanuel (1980) and Derman and Kamal (1999) derive for an at-the-money option; the last
+        column gives their approximation. An implied volatility above the volatility gives the
+        seller a profit on average, transaction costs a loss that grows as the hedge is
+        rebalanced more often (Leland, 1985).
+
+        For more information, see the following papers:
+
+        - Boyle, P. P. and Emanuel, D. (1980). "Discretely Adjusted Option Hedges." Journal of
+          Financial Economics, 8(3), 259-282.
+        - Derman, E. and Kamal, M. (1999). "When You Cannot Hedge Continuously: The
+          Corrections of Black-Scholes." Risk, 12(1), 82-85.
+        - Leland, H. E. (1985). "Option Pricing and Replication with Transactions Costs." The
+          Journal of Finance, 40(5), 1283-1301.
+
+        Referenced against FinancePy's simulate_hedge_paths
+        (https://github.com/domokane/FinancePy), which reports the profit and loss at
+        expiration rather than discounted and closes the hedge in cash at expiration.
+
+        Also known as: hedging error distribution, discrete hedging simulation, delta hedging
+        Monte Carlo.
+
+        Args:
+            days (int, optional): The trading days to expiration. Defaults to 63, about three
+                months.
+            start_date (str | None, optional): The date of the stock price, volatility, risk
+                free rate and dividend yield, or the last trading day before it. Defaults to
+                None, the last date of the historical data.
+            moneyness (float, optional): The strike as a fraction of the stock price. Defaults
+                to 1.0, at the money.
+            volatility (float | None, optional): The volatility the stock moves with, for every
+                ticker. Defaults to None, the volatility of the year of daily returns up to the
+                start date.
+            implied_volatility (float | None, optional): The volatility the option is sold and
+                hedged at. Defaults to None, the volatility the stock moves with.
+            put_option (bool, optional): Whether the option is a put. Defaults to False.
+            transaction_cost (float, optional): The cost of a trade as a fraction of its value
+                (0.001 is 10 basis points). Defaults to 0.0.
+            rebalancing_days (int, optional): The trading days between rebalances. Defaults to
+                1, daily.
+            paths (int, optional): The number of simulated paths. Defaults to 10,000.
+            seed (int | None, optional): The seed of the random numbers, None for a different
+                draw on every call. Defaults to 0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Stock Price, Strike Price, Volatility, Implied
+            Volatility, Option Value, the Mean, Standard Deviation and 5% and 95% Quantiles of
+            the Profit and Loss, the Mean Transaction Costs (both discounted to the start date)
+            and the Approximate Standard Deviation.
+
+        Notes:
+        - The paths drift at the risk free rate. The real-world drift barely moves the hedging
+          error, since the hedge removes the exposure to the direction of the stock.
+        - The dividend yield is the trailing yield on the start date, continuously
+          compounded, paid on the shares held; the risk free rate is continuously compounded.
+        - The approximate standard deviation holds near the money without costs; the
+          simulated one also covers other strikes and costs.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY", start_date="2024-01-01", end_date="2025-12-31"
+        )
+
+        toolkit.options.get_delta_hedging_simulation(
+            start_date="2025-12-31",
+            rebalancing_days=5,
+            transaction_cost=0.0005,
+            show_columns=["Option Value", "Mean Profit and Loss", "Standard Deviation", "Approximate Standard Deviation"],
+        )
+        ```
+
+        Which returns:
+
+        |      |   Option Value |   Mean Profit and Loss |   Standard Deviation |   Approximate Standard Deviation |
+        |:-----|---------------:|-----------------------:|---------------------:|---------------------------------:|
+        | AAPL |        18.7557 |                -0.2161 |               4.1012 |                           4.2758 |
+        | MSFT |        25.3213 |                -0.3942 |               5.4501 |                           5.6839 |
+        """
+        if days < 1 or rebalancing_days < 1:
+            raise ValueError("The days and rebalancing days must be at least 1.")
+        if moneyness <= 0:
+            raise ValueError("The moneyness must be positive.")
+
+        rows = {}
+        for ticker in self._tickers:
+            history = self._prices[ticker].dropna()
+            if start_date is None:
+                date = history.index[-1]
+            else:
+                position = (
+                    history.index.searchsorted(
+                        pd.Period(start_date, freq="D"), side="right"
+                    )
+                    - 1
+                )
+                if position < 0:
+                    logger.warning(
+                        "%s has no price on or before %s, so it is left out.",
+                        ticker,
+                        start_date,
+                    )
+                    continue
+                date = history.index[position]
+            stock_price = float(history.loc[date])
+            sigma, rate, dividend_yield = self._hedge_inputs(ticker, date, volatility)
+            implied = sigma if implied_volatility is None else implied_volatility
+            strike_price = moneyness * stock_price
+            simulation = hedging_model.get_delta_hedging_simulation(
+                stock_price=stock_price,
+                strike_price=strike_price,
+                time_to_expiration=days / 252,
+                risk_free_rate=rate,
+                volatility=sigma,
+                implied_volatility=implied,
+                dividend_yield=dividend_yield,
+                put_option=put_option,
+                transaction_cost=transaction_cost,
+                steps=days,
+                rebalancing_interval=rebalancing_days,
+                paths=paths,
+                seed=seed,
+            )
+            profit = simulation["Profit and Loss"]
+            rows[ticker] = {
+                "Stock Price": stock_price,
+                "Strike Price": strike_price,
+                "Volatility": sigma,
+                "Implied Volatility": implied,
+                "Option Value": float(simulation["Option Value"].iloc[0]),
+                "Mean Profit and Loss": float(profit.mean()),
+                "Standard Deviation": float(profit.std()),
+                "5% Quantile": float(profit.quantile(0.05)),
+                "95% Quantile": float(profit.quantile(0.95)),
+                "Mean Transaction Costs": float(simulation["Transaction Costs"].mean()),
+                "Approximate Standard Deviation": hedging_model.get_hedging_error_approximation(
+                    stock_price=stock_price,
+                    strike_price=strike_price,
+                    time_to_expiration=days / 252,
+                    risk_free_rate=rate,
+                    volatility=sigma,
+                    rebalances=int(np.ceil(days / rebalancing_days)),
+                    dividend_yield=dividend_yield,
+                ),
+            }
+
+        if not rows:
+            raise ValueError("No ticker has a price to simulate the hedge from.")
+
+        return apply_rounding(
+            pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
+        )

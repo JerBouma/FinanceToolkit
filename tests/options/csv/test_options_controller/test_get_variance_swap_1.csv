@@ -1,0 +1,5 @@
+Ticker,Expiration,Forward Price,Boundary Strike,Fair Variance,Fair Volatility,Cboe Variance,Variance Strike,Realized Variance,Elapsed Fraction,Variance Swap Value
+AAPL,Expiry 1,130.0369,129.9,0.0629,0.2508,0.0629,0.09,,0.0,-0.0271
+AAPL,Expiry 2,130.1867,129.9,0.0627,0.2504,0.0627,0.09,,0.0,-0.0272
+MSFT,Expiry 1,240.0172,239.8,0.0631,0.2511,0.0631,0.09,,0.0,-0.0269
+MSFT,Expiry 2,240.2938,239.8,0.0628,0.2506,0.0628,0.09,,0.0,-0.0271

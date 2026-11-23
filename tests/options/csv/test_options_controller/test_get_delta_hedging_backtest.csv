@@ -1,0 +1,3 @@
+,Start Date,Expiration Date,Stock Price,Strike Price,Volatility,Realized Volatility,Option Value,Payoff,Transaction Costs,Profit and Loss
+AAPL,2022-09-30,2022-12-30,138.2,138.2,0.3193,0.3969,9.2884,0.0,0.0,-3.1046
+MSFT,2022-09-30,2022-12-30,232.9,232.9,0.3109,0.4043,15.138,6.92,0.0,-5.3246

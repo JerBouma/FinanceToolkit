@@ -1,4 +1,5 @@
 """Options Controller Tests""" ""
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -1905,3 +1906,94 @@ def test_the_spread_option_at_a_strike_of_zero_is_the_exchange_option(
 
 def test_the_two_asset_options_reject_an_unknown_second_asset(options_module):
     assert options_module.get_exchange_option(second_ticker="TSLA").empty
+
+
+def test_get_variance_swap(recorder, option_market):
+    module, labels = option_market
+    recorder.capture(stable(module.get_variance_swap(), labels))
+    recorder.capture(
+        stable(module.get_variance_swap(number_of_expirations=2, strike=0.3), labels)
+    )
+
+
+def test_the_variance_swap_is_close_to_the_vix_variance_and_values_a_traded_swap(
+    option_market, caplog
+):
+    module, _ = option_market
+    swaps = module.get_variance_swap(rounding=None)
+    # The strikes are a percent of the price apart, so the replication and the midpoint
+    # rule of the Cboe methodology agree to well within a percent.
+    np.testing.assert_allclose(
+        swaps["Fair Variance"], swaps["Cboe Variance"], rtol=0.01
+    )
+
+    traded = module.get_variance_swap(
+        number_of_expirations=1, strike=0.25, trade_date="2022-12-01", rounding=None
+    ).iloc[0]
+    assert 0 < traded["Elapsed Fraction"] < 1
+    rate = float(module._risk_free_rate.dropna().iloc[-1])
+    time = float(traded["Days to Expiration"]) / 365
+    expected = np.exp(-rate * time) * (
+        traded["Elapsed Fraction"] * traded["Realized Variance"]
+        + (1 - traded["Elapsed Fraction"]) * traded["Fair Variance"]
+        - 0.0625
+    )
+    # The table is rounded to four decimals.
+    assert traded["Variance Swap Value"] == pytest.approx(expected, abs=2e-4)
+
+    assert module.get_variance_swap(trade_date="2022-12-01").empty
+    assert "needs its strike" in caplog.text
+
+
+def test_get_delta_hedging_backtest(recorder, options_module):
+    recorder.capture(options_module.get_delta_hedging_backtest())
+    recorder.capture(
+        options_module.get_delta_hedging_backtest(
+            days=21,
+            start_date="2022-06-01",
+            moneyness=0.95,
+            volatility=0.3,
+            put_option=True,
+            transaction_cost=0.001,
+            rebalancing_days=5,
+        )
+    )
+
+
+def test_the_delta_hedging_backtest_without_moves_in_volatility_breaks_even(
+    options_module,
+):
+    # At the volatility the stock realized the seller roughly breaks even, against a clear
+    # profit when the option is sold at twice that volatility.
+    backtest = options_module.get_delta_hedging_backtest(days=126, rounding=None)
+    fair = options_module.get_delta_hedging_backtest(
+        days=126,
+        volatility=float(backtest["Realized Volatility"].iloc[0]),
+        rounding=None,
+    )
+    rich = options_module.get_delta_hedging_backtest(
+        days=126,
+        volatility=2 * float(backtest["Realized Volatility"].iloc[0]),
+        rounding=None,
+    )
+    first = backtest.index[0]
+    assert (
+        abs(fair.loc[first, "Profit and Loss"]) < 0.25 * fair.loc[first, "Option Value"]
+    )
+    assert rich.loc[first, "Profit and Loss"] > 0.25 * rich.loc[first, "Option Value"]
+
+
+def test_get_delta_hedging_simulation(recorder, options_module):
+    recorder.capture(options_module.get_delta_hedging_simulation(paths=2000))
+    recorder.capture(
+        options_module.get_delta_hedging_simulation(
+            days=21,
+            start_date="2022-06-01",
+            moneyness=1.05,
+            implied_volatility=0.35,
+            put_option=True,
+            transaction_cost=0.001,
+            rebalancing_days=5,
+            paths=2000,
+        )
+    )

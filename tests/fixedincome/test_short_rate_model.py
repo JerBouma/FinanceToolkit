@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.fixedincome.short_rates import short_rate_model
+from financetoolkit.fixedincome.short_rates import (
+    short_rate_model,
+    trinomial_tree_model,
+)
 
 ZERO_MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
 ZERO_RATES = np.array(
@@ -88,16 +91,15 @@ def test_option_adjusted_spread_of_a_straight_bond():
         zero_rates=ZERO_RATES,
         call_price=None,
     )
-    steps = short_rate_model.STEPS_PER_PERIOD
-    times = np.arange(1, 20 * steps + 1) / (2 * steps)
-    tree = short_rate_model._ho_lee_tree(
-        np.exp(-np.log1p(np.interp(times, ZERO_MATURITIES, ZERO_RATES)) * times),
+    tree = trinomial_tree_model.build_short_rate_tree(
+        pd.Series(ZERO_RATES, index=ZERO_MATURITIES),
+        np.arange(1, 21) / 2,
+        0.0,
         0.01,
-        1 / (2 * steps),
+        "ho_lee",
+        2 * short_rate_model.STEPS_PER_PERIOD,
     )
-    model_price = short_rate_model.price_callable_bond(
-        tree, 0.05, 2, steps_per_period=steps
-    )
+    model_price = trinomial_tree_model.price_callable_bond(tree, 0.05, 10)
     repriced = short_rate_model.get_option_adjusted_spread(
         price=model_price,
         coupon_rate=0.05,
@@ -247,12 +249,8 @@ def test_effective_convexity_is_negative_at_a_high_volatility():
 
 def test_effective_duration_shifts_the_curve():
     # A parallel shift of the continuously compounded curve moves every Ho-Lee node by the
-    # same amount, so rebuilding the tree on a shifted curve gives the price of the base tree
-    # at the spread plus the shift, which is what the effective duration and convexity use.
-    steps = short_rate_model.STEPS_PER_PERIOD
-    dt = 1 / (2 * steps)
-    times = np.arange(1, 20 * steps + 1) * dt
-    continuous = np.log1p(np.interp(times, ZERO_MATURITIES, ZERO_RATES))
+    # same amount, so the tree on a shifted curve prices the bond as the base tree does at the
+    # spread plus the shift.
     result = short_rate_model.get_option_adjusted_spread(
         price=101.0,
         coupon_rate=0.05,
@@ -263,13 +261,18 @@ def test_effective_duration_shifts_the_curve():
         years_to_first_call=2,
     )
     oas = result["Option-Adjusted Spread"]
+    tree = trinomial_tree_model.build_short_rate_tree(
+        pd.Series(ZERO_RATES, index=ZERO_MATURITIES),
+        np.arange(1, 21) / 2,
+        0.0,
+        0.01,
+        "ho_lee",
+        2 * short_rate_model.STEPS_PER_PERIOD,
+    )
 
     def price(shift):
-        tree = short_rate_model._ho_lee_tree(
-            np.exp(-(continuous + shift) * times), 0.01, dt
-        )
-        return short_rate_model.price_callable_bond(
-            tree, 0.05, 2, 100.0, 100.0, int(np.ceil(2 / dt - 1e-9)), oas, steps
+        return trinomial_tree_model.price_callable_bond(
+            tree, 0.05, 10, 2, 100.0, 100.0, 2, spread=oas + shift
         )
 
     up, down = price(0.01), price(-0.01)
@@ -552,20 +555,19 @@ def test_exact_vasicek_scheme_is_exact_at_any_step():
 def test_puttable_bond_matches_quantlib(volatility, coupon_rate, put_price, quantlib):
     # QuantLib's TreeCallableFixedRateBondEngine (800 steps) on a HullWhite tree with
     # a = 1e-6 (Ho-Lee) and a flat 3.5% curve: a 10-year semi-annual bond puttable at the
-    # put price on every coupon date from year 3. The trees differ (binomial against
-    # trinomial), so the prices agree within a cent per 100 of face value.
-    steps = short_rate_model.STEPS_PER_PERIOD
-    dt = 1 / (2 * steps)
-    times = np.arange(1, 20 * steps + 1) * dt
-    tree = short_rate_model._ho_lee_tree(1.035**-times, volatility, dt)
-    price = short_rate_model.price_callable_bond(
-        tree,
+    # put price on every coupon date from year 3. The trees have different steps, so the
+    # prices agree within a cent per 100 of face value.
+    price = trinomial_tree_model.get_callable_bond_price(
         coupon_rate,
-        2,
+        10,
+        pd.Series([0.035, 0.035], index=[1, 30]),
+        0.0,
+        volatility,
+        "ho_lee",
+        call_price=None,
         put_price=put_price,
-        first_put_step=round(3 / dt),
-        steps_per_period=steps,
-    )
+        years_to_first_put=3,
+    )["Price"]
 
     assert price == pytest.approx(quantlib, abs=0.01)
 

@@ -564,9 +564,14 @@ def test_get_smith_wilson_curve_keeps_the_par_curve(fixedincome):
     ) == pytest.approx(0.0001, abs=1e-9)
 
 
+# The nonlinear fits (Svensson, Nelson-Siegel and the exponential spline's decay) reproduce to
+# about 1e-8 between runs and platforms, which can still flip the sixth decimal of a value on a
+# rounding boundary, so they are recorded at four; the cubic spline is an exact linear solve.
 def test_get_fitted_bond_curve(recorder, fixedincome):
-    recorder.capture(fixedincome.get_fitted_bond_curve())
-    recorder.capture(fixedincome.get_fitted_bond_curve(method="nelson_siegel"))
+    recorder.capture(fixedincome.get_fitted_bond_curve(rounding=4))
+    recorder.capture(
+        fixedincome.get_fitted_bond_curve(method="nelson_siegel", rounding=4)
+    )
 
 
 def test_get_fitted_bond_curve_splines(recorder, fixedincome):
@@ -574,7 +579,9 @@ def test_get_fitted_bond_curve_splines(recorder, fixedincome):
         fixedincome.get_fitted_bond_curve(method="cubic_spline", maturities="1,5,10,25")
     )
     recorder.capture(
-        fixedincome.get_fitted_bond_curve(method="exponential_spline", residuals=True)
+        fixedincome.get_fitted_bond_curve(
+            method="exponential_spline", residuals=True, rounding=4
+        )
     )
 
 

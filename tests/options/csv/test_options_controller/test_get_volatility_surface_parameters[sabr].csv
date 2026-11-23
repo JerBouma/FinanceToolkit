@@ -1,0 +1,5 @@
+Ticker,Expiration Date,Time to Expiration,Forward Price,alpha,beta,rho,nu
+AAPL,Expiry 2,0.0658,130.199,2.8429,0.5,-0.5464,0.7182
+AAPL,Expiry 3,0.1233,130.4349,2.8415,0.5,-0.5508,0.6068
+MSFT,Expiry 2,0.0658,240.2599,3.8756,0.5,-0.5906,1.1592
+MSFT,Expiry 3,0.1233,240.6455,3.8782,0.5,-0.5629,0.9462

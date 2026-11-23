@@ -17,6 +17,9 @@ from financetoolkit.economics.sources import (
 from financetoolkit.fixedincome.bonds.bonds_controller import BondsFixedIncome
 from financetoolkit.fixedincome.credit.credit_controller import CreditFixedIncome
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
+from financetoolkit.fixedincome.inflation.inflation_controller import (
+    InflationFixedIncome,
+)
 from financetoolkit.fixedincome.loans.loans_controller import LoansFixedIncome
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
 from financetoolkit.fixedincome.policy.policy_controller import PolicyFixedIncome
@@ -218,6 +221,7 @@ class FixedIncomeBase:
 class FixedIncome(
     BondsFixedIncome,
     SwapsFixedIncome,
+    InflationFixedIncome,
     MarketsFixedIncome,
     ShortRatesFixedIncome,
     CurvesFixedIncome,
@@ -229,8 +233,10 @@ class FixedIncome(
     """
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
     spreads and individual bonds, and calculates bond measures from their market prices. The formulas for
-    terms of your own (bond pricing, swaptions with the Black and Bachelier models, bond options, caplets,
+    terms of your own (bond pricing, swaptions, caps, floors, collars and year-on-year inflation caps with
+    the Black, shifted Black and Bachelier models and their implied volatilities, bond options, caplets,
     swaptions and CIR++ shifts in the Vasicek, Hull-White, CIR and CIR++ models, the option-adjusted
-    spread of a callable or puttable bond, swaps and forwards) are in bond_model, yieldcurve_model,
-    derivative_model, short_rate_model, swap_model and forward_model.
+    spread of a callable or puttable bond, swaps and forwards, CDS options, inflation swaps and the
+    forward inflation index) are in bond_model, yieldcurve_model, derivative_model, short_rate_model,
+    swap_model, forward_model, cds_model and inflation_swap_model.
     """

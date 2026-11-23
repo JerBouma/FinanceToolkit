@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
-from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.bonds import bond_model, derivative_model
 from financetoolkit.fixedincome.credit.credit_curve_model import (
     DEFAULT_RECOVERY_RATE,
     MAXIMUM_HAZARD_RATE,
@@ -233,3 +233,179 @@ def get_cds_implied_hazard_rates(
         )
 
     return pd.Series(hazard_rates, index=maturities, name="Hazard Rate")
+
+
+CDS_OPTION_TYPES = ("payer", "receiver")
+
+
+def get_cds_option(
+    option_expiry: float,
+    maturity: float,
+    zero_curve: pd.Series,
+    hazard_rates: np.ndarray | list | pd.Series,
+    hazard_times: np.ndarray | list,
+    strike_spread: float,
+    volatility: float,
+    recovery_rate: float = DEFAULT_RECOVERY_RATE,
+    notional: float = 1.0,
+    frequency: int = 4,
+    option_type: str = "payer",
+    knockout: bool = True,
+) -> pd.Series:
+    """
+    Calculate the value of an option on a credit default swap (a CDS swaption) with Black's
+    formula on the forward CDS spread, discounted with the forward risky annuity
+    (Schönbucher, 2003; O'Kane, 2008, ch. 9).
+
+    A payer option is the right to buy protection from the expiry to the maturity at the
+    strike spread; a receiver option the right to sell it. The forward CDS starts at the
+    expiry, so its risky annuity is zero when the name defaults before then: under the
+    survival measure that uses this annuity as numeraire, the forward spread is lognormal and
+    the option is priced with Black's formula. A knockout option is cancelled by a default
+    before the expiry, as single-name CDS options trade. A payer option that does not knock
+    out also receives the front-end protection: (1 - R) at the expiry when the name defaulted
+    before it.
+
+    The formula is as follows:
+
+    - Forward Protection = (1 - R) * ∫_Te^T P(t) (-dQ(t))
+    - Forward RPV01 = SUM(τ_k P(t_k) Q(t_k)) + 365 / 360 * SUM(∫ (t - t_(k-1)) P(t) (-dQ(t))),
+      over the premium periods from the expiry Te to the maturity T
+    - Forward Spread S_f = Forward Protection / Forward RPV01
+    - Payer = N RPV01_f [S_f N(d_1) - K N(d_2)], Receiver = N RPV01_f [K N(-d_2) - S_f N(-d_1)]
+    - d_1 = (ln(S_f / K) + σ² Te / 2) / (σ √Te), d_2 = d_1 - σ √Te
+    - Front-End Protection = N (1 - R) P(Te) (1 - Q(Te)), added to a payer that does not
+      knock out
+
+    where P(t) = (1 + r(t))^(-t) is the discount factor of the annually compounded zero rate,
+    Q(t) the survival probability of the piecewise flat hazard rate curve, R the recovery
+    rate, K the strike spread and σ the lognormal volatility of the forward spread. The
+    premium dates are counted back from the maturity in periods of 1 / frequency years; the
+    first period accrues from the expiry. The premium accrues on ACT/360 (τ_k = (t_k -
+    t_(k-1)) * 365 / 360) and the legs are the exact integrals of `get_credit_default_swap`.
+
+    For more information, see the following sources:
+
+    - Schönbucher, P.J. (2003). "A Note on Survival Measures and the Pricing of Options on
+      Credit Default Swaps." ETH Zürich working paper.
+    - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
+      ch. 9.
+    - Hull, J.C. and White, A. (2003). "The Valuation of Credit Default Swap Options."
+      Journal of Derivatives, 10(3), 40-50.
+
+    Referenced against QuantLib's CdsOption with the BlackCdsOptionEngine. QuantLib takes the
+    forward spread and annuity from the engine of the underlying CDS; with its
+    IntegralCdsEngine the values agree to within a few hundredths of a percent, the
+    difference of its daily integration steps.
+
+    Args:
+        option_expiry (float): The years until the option expires and the forward CDS starts.
+        maturity (float): The years until the protection of the CDS ends.
+        zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
+            indexed by maturity in years.
+        hazard_rates (np.ndarray | list | pd.Series): The piecewise flat hazard rates per
+            year, such as those of `get_cds_implied_hazard_rates`.
+        hazard_times (np.ndarray | list): The maturities up to which each holds.
+        strike_spread (float): The strike spread K per year, as a decimal.
+        volatility (float): The lognormal volatility of the forward spread per year.
+        recovery_rate (float, optional): The share of the notional recovered on default.
+            Defaults to 0.4.
+        notional (float, optional): The notional. Defaults to 1.
+        frequency (int, optional): The number of premium payments per year. Defaults to 4.
+        option_type (str, optional): "payer" (buy protection) or "receiver" (sell it).
+            Defaults to "payer".
+        knockout (bool, optional): Whether a default before the expiry cancels the option.
+            Defaults to True.
+
+    Returns:
+        pd.Series: The Value (in the currency of the notional), the Forward Spread
+        (decimal), the Forward RPV01 (in years, per unit of notional) and the Front-End
+        Protection included in the value.
+
+    Raises:
+        ValueError: If the option type is unknown, the expiry is not before the maturity,
+            the strike spread is not positive or the recovery rate is not between 0 and 1.
+
+    As an example:
+
+    ```python
+    import pandas as pd
+
+    from financetoolkit.fixedincome.credit import cds_model
+
+    zero_curve = pd.Series([0.035, 0.037, 0.040], index=[1, 2, 5])
+
+    cds_model.get_cds_option(
+        option_expiry=0.5, maturity=5.5, zero_curve=zero_curve, hazard_rates=[0.02],
+        hazard_times=[10], strike_spread=0.012, volatility=0.4, notional=10_000_000,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    Value                   54968.924412
+    Forward Spread              0.011894
+    Forward RPV01               4.256598
+    Front-End Protection        0.000000
+    dtype: float64
+    ```
+    """
+    if option_type not in CDS_OPTION_TYPES:
+        raise ValueError(
+            f"The option type must be one of {', '.join(CDS_OPTION_TYPES)}, not {option_type!r}."
+        )
+    if not 0 < option_expiry < maturity:
+        raise ValueError(
+            f"The option expires ({option_expiry}) after today and before the maturity "
+            f"({maturity}) of the CDS."
+        )
+    if strike_spread <= 0:
+        raise ValueError("The strike spread of a CDS option must be positive.")
+    if not 0 <= recovery_rate < 1:
+        raise ValueError("The recovery rate must lie between 0 and 1.")
+
+    ends = (
+        option_expiry
+        + bond_model.get_cash_flow_periods(maturity - option_expiry, frequency)
+        / frequency
+    )
+    starts = np.maximum(ends - 1 / frequency, option_expiry)
+
+    risky_discount = discount_factors(zero_curve, ends) * get_survival_probability(
+        hazard_rates, hazard_times, ends
+    )
+    default_value, accrual_on_default = np.sum(
+        [
+            get_default_integrals(zero_curve, hazard_rates, hazard_times, begin, end)
+            for begin, end in zip(starts, ends)
+        ],
+        axis=0,
+    )
+    forward_rpv01 = ACCRUAL_PER_YEAR * float(
+        np.sum((ends - starts) * risky_discount) + accrual_on_default
+    )
+    forward_spread = (1 - recovery_rate) * default_value / forward_rpv01
+
+    value = forward_rpv01 * derivative_model._black_formula(
+        forward_spread,
+        strike_spread,
+        volatility,
+        option_expiry,
+        option_type == "payer",
+    )
+    front_end_protection = 0.0
+    if option_type == "payer" and not knockout:
+        front_end_protection = (1 - recovery_rate) * float(
+            discount_factors(zero_curve, option_expiry)
+            * (1 - get_survival_probability(hazard_rates, hazard_times, option_expiry))
+        )
+
+    return pd.Series(
+        {
+            "Value": notional * (value + front_end_protection),
+            "Forward Spread": forward_spread,
+            "Forward RPV01": forward_rpv01,
+            "Front-End Protection": notional * front_end_protection,
+        }
+    )

@@ -2164,3 +2164,91 @@ def test_volume_profile_of_a_constant_close_keeps_the_other_tickers():
     assert profile[("Total Volume", "A")].tolist() == [500.0, 0.0, 0.0]
     # A close on an inner edge (21) belongs to the lower bin.
     assert profile[("Total Volume", "B")].tolist() == [400.0, 200.0, 400.0]
+
+
+def test_get_event_filter(recorder, technical_module):
+    recorder.capture(technical_module.get_event_filter())
+    recorder.capture(technical_module.get_event_filter(method="z_score", threshold=2))
+
+
+def test_get_triple_barrier_labels(recorder, technical_module):
+    recorder.capture(technical_module.get_triple_barrier_labels())
+    recorder.capture(
+        technical_module.get_triple_barrier_labels(
+            events="cusum", profit_taking=2, horizon=5, vertical_barrier_zero=True
+        )
+    )
+    meta = technical_module.get_triple_barrier_labels(side="Moving Average Crossover")
+    recorder.capture(meta)
+
+    # Meta-labels only on the crossovers, 1 or 0.
+    signals = technical_module.get_signals()["Moving Average Crossover"]
+    labeled = meta["Label"].notna()
+    assert (signals.reindex_like(labeled)[labeled] != 0).all().all()
+    assert set(meta["Label"].stack().dropna().unique()) <= {0, 1}
+
+
+def test_get_fixed_horizon_labels(recorder, technical_module):
+    recorder.capture(technical_module.get_fixed_horizon_labels())
+    recorder.capture(
+        technical_module.get_fixed_horizon_labels(
+            horizon=5, threshold=0.5, volatility_scaled=True, relative_to="benchmark"
+        )
+    )
+    relative = technical_module.get_fixed_horizon_labels(relative_to="mean")
+    assert "Benchmark" not in relative.columns.get_level_values(1)
+
+
+def test_get_trend_scanning_labels(recorder, technical_module):
+    recorder.capture(technical_module.get_trend_scanning_labels())
+    recorder.capture(
+        technical_module.get_trend_scanning_labels(minimum_window=10, maximum_window=30)
+    )
+
+
+def test_get_tail_set_labels(recorder, technical_module):
+    labels = technical_module.get_tail_set_labels()
+    recorder.capture(labels)
+    # Two tickers: one in each tail on every date with both scores.
+    assert (labels["Label"].dropna().sum(axis=1) == 0).all()
+
+
+def test_get_matrix_flag_labels(recorder, technical_module):
+    recorder.capture(technical_module.get_matrix_flag_labels())
+    recorder.capture(
+        technical_module.get_matrix_flag_labels(
+            window=25, template="cervello_royo_bull", threshold=1
+        )
+    )
+
+
+def test_get_label_uniqueness(recorder, technical_module):
+    recorder.capture(technical_module.get_label_uniqueness())
+    labels = technical_module.get_fixed_horizon_labels(horizon=5)
+    uniqueness = technical_module.get_label_uniqueness(labels=labels)
+    recorder.capture(uniqueness)
+    # A label every date over six dates: six concurrent labels in the middle, a sixth each.
+    assert uniqueness["Concurrency"]["AAPL"].iloc[100] == 6
+    assert uniqueness["Average Uniqueness"]["AAPL"].iloc[100] == pytest.approx(
+        1 / 6, abs=1e-4
+    )
+
+
+def test_get_sample_weights(recorder, technical_module):
+    weights = technical_module.get_sample_weights()
+    recorder.capture(weights)
+    recorder.capture(
+        technical_module.get_sample_weights(method="time_decay", decay=0.5)
+    )
+    # The weights add up to the number of labels per ticker.
+    pd.testing.assert_series_equal(
+        weights.sum(), weights.count().astype(float), check_exact=False, atol=0.01
+    )
+
+
+def test_labeling_invalid_parameters(technical_module):
+    assert technical_module.get_event_filter(method="unknown").empty
+    assert technical_module.get_fixed_horizon_labels(relative_to="unknown").empty
+    assert technical_module.get_matrix_flag_labels(template="unknown").empty
+    assert technical_module.get_sample_weights(method="time_decay", decay=-1).empty
+    assert technical_module.get_triple_barrier_labels(side="unknown").empty

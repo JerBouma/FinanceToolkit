@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.econometrics.statistics import entropy_model
+
 
 def test_get_arch_lm_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_arch_lm_test())
@@ -1306,3 +1308,49 @@ def test_get_chow_dickey_fuller_test(recorder, econometrics_module):
 def test_log_prices_need_positive_values(econometrics_module):
     # @handle_errors returns an empty Series for the ValueError on a non-positive series.
     assert econometrics_module.get_fractional_difference(column="Return").empty
+
+
+def test_get_entropy(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_entropy())
+    recorder.capture(econometrics_module.get_entropy(method="approximate", window=100))
+    recorder.capture(econometrics_module.get_entropy(method="permutation", order=4))
+    recorder.capture(
+        econometrics_module.get_entropy(method="spectral", estimator="welch")
+    )
+    recorder.capture(econometrics_module.get_entropy(method="svd", period="weekly"))
+    recorder.capture(econometrics_module.get_entropy(method="shannon", word_length=2))
+    recorder.capture(
+        econometrics_module.get_entropy(method="lempel_ziv", encoding="quantile")
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="kontoyiannis", window=252, encoding="sigma"
+        )
+    )
+
+
+def test_get_lempel_ziv_complexity(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_lempel_ziv_complexity())
+    recorder.capture(econometrics_module.get_lempel_ziv_complexity(window=100))
+    recorder.capture(
+        econometrics_module.get_lempel_ziv_complexity(encoding="quantile", bins=4)
+    )
+
+
+def test_get_hjorth_parameters(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_hjorth_parameters())
+    recorder.capture(econometrics_module.get_hjorth_parameters(window=100))
+
+
+def test_entropy_of_each_series_over_its_own_dates(econometrics_module):
+    entropy = econometrics_module.get_entropy(method="permutation", rounding=10)
+    returns = econometrics_module._get_series_column("daily", "Return")
+
+    for ticker in entropy.index:
+        assert entropy[ticker] == pytest.approx(
+            entropy_model.get_permutation_entropy(returns[ticker].dropna().to_numpy())
+        )
+
+
+def test_entropy_with_an_unknown_method_is_empty(econometrics_module):
+    assert econometrics_module.get_entropy(method="unknown").empty

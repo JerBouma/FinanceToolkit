@@ -2052,6 +2052,7 @@ class ToolRegistry:
                     if parameter.default is not inspect.Parameter.empty
                 },
                 self._parameter_limits,
+                reference.indicator,
             ) or refused_value_problem(
                 reference.indicator, given, self._parameter_limits
             ):
@@ -2644,6 +2645,7 @@ class ToolRegistry:
                     if method_name in per_method
                 },
                 self._parameter_limits,
+                method_name,
             ):
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"

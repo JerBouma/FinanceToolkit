@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.distribution import fractal_model
 from financetoolkit.risk.helpers import (
     align_annualized_rate,
     compound_into_shared_dates,
@@ -658,7 +659,7 @@ def test_get_hurst_exponent_uses_log_prices(risk_module):
 
     for ticker in hurst_exponent.index:
         assert hurst_exponent[ticker] == pytest.approx(
-            risk_model.get_hurst_exponent(log_prices[ticker]), abs=1e-9
+            fractal_model.get_generalized_hurst_exponent(log_prices[ticker]), abs=1e-9
         )
 
 
@@ -1645,3 +1646,44 @@ def test_get_volatility_garman_klass_yang_zhang(recorder, risk_module):
     recorder.capture(
         risk_module.get_volatility(method="garman_klass_yang_zhang", period="monthly")
     )
+
+
+def test_get_hurst_exponent(recorder, risk_module):
+    recorder.capture(risk_module.get_hurst_exponent())
+    recorder.capture(risk_module.get_hurst_exponent(q=[1, 2]))
+    recorder.capture(risk_module.get_hurst_exponent(method="rescaled_range"))
+    recorder.capture(
+        risk_module.get_hurst_exponent(method="rescaled_range", corrected=False)
+    )
+    recorder.capture(risk_module.get_hurst_exponent(method="detrended_fluctuation"))
+    recorder.capture(
+        risk_module.get_hurst_exponent(method="detrended_fluctuation", rolling=252)
+    )
+
+
+def test_get_fractal_dimension(recorder, risk_module):
+    recorder.capture(risk_module.get_fractal_dimension())
+    recorder.capture(risk_module.get_fractal_dimension(method="katz"))
+    recorder.capture(risk_module.get_fractal_dimension(method="petrosian"))
+    recorder.capture(risk_module.get_fractal_dimension(rolling=100, period="weekly"))
+
+
+def test_get_correlation_dimension(recorder, risk_module):
+    recorder.capture(risk_module.get_correlation_dimension())
+    recorder.capture(risk_module.get_correlation_dimension(embedding=2))
+
+
+def test_get_lyapunov_exponent(recorder, risk_module):
+    recorder.capture(risk_module.get_lyapunov_exponent())
+    recorder.capture(risk_module.get_lyapunov_exponent(method="eckmann"))
+
+
+def test_fractal_measures_use_log_returns_per_ticker(risk_module):
+    alpha = risk_module.get_hurst_exponent(method="detrended_fluctuation", rounding=10)
+    log_returns = np.log(risk_module._historical_data["daily"]["Adj Close"]).diff()
+
+    for ticker in alpha.index:
+        assert alpha[ticker] == pytest.approx(
+            fractal_model.get_detrended_fluctuation(log_returns[ticker].dropna()),
+            abs=1e-9,
+        )

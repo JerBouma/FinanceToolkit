@@ -2,11 +2,13 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.econometrics.helpers import BENCHMARK_TICKER, calculate_per_series
-from financetoolkit.econometrics.statistics import statistics_model
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.econometrics.statistics import entropy_model, statistics_model
+from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -19,7 +21,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 @track_sources
 class StatisticsEconometrics:
     """
-    Rolling statistics of a series: the rolling linear regression and slope, the correlation with another series, the median, percentile, percent rank, z-score, mean absolute deviation, standard error and entropy.
+    Rolling statistics of a series: the rolling linear regression and slope, the correlation with another series, the median, percentile, percent rank, z-score, mean absolute deviation, standard error and entropy, and the entropies and complexity of a series: sample, approximate, permutation, spectral, SVD, Shannon, Lempel-Ziv and Kontoyiannis entropy, the Lempel-Ziv complexity and the Hjorth parameters.
     """
 
     @handle_portfolio
@@ -1085,4 +1087,461 @@ class StatisticsEconometrics:
 
         return apply_rounding(
             rolling_entropy, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_entropy(
+        self,
+        method: Literal[
+            "sample",
+            "approximate",
+            "permutation",
+            "spectral",
+            "svd",
+            "shannon",
+            "lempel_ziv",
+            "kontoyiannis",
+        ] = "sample",
+        period: str | None = None,
+        column: str = "Return",
+        window: int | None = None,
+        order: int | None = None,
+        delay: int = 1,
+        tolerance: float = 0.2,
+        normalize: bool = True,
+        estimator: str = "periodogram",
+        encoding: str = "binary",
+        bins: int = 10,
+        word_length: int = 1,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Entropy of a series, by default the returns: how irregular and
+        unpredictable it is, from the sample entropy of Richman and Moorman to the entropies of
+        encoded returns of López de Prado.
+
+        An entropy is low for a series that repeats itself, trends or is driven by a few
+        cycles, and high for a series that looks like noise. On daily returns, which are close
+        to noise, most entropies sit near their maximum, so they are mainly of use to compare
+        assets or periods with each other (e.g. with `window` for a rolling value) rather than
+        as an absolute level.
+
+        The methods are as follows (with the default order m = 2 for the sample and
+        approximate entropy and n = 3 for the permutation and SVD entropy):
+
+        - Sample (Richman and Moorman, 2000): SampEn = -ln(A / B), with B the number of pairs
+          of templates of m values within a Chebyshev distance of r = tolerance * Std(x) of
+          each other (a template not counted with itself) and A the same for m + 1 values.
+        - Approximate (Pincus, 1991): ApEn = Phi(m) - Phi(m + 1), Phi(m) = Mean(ln C_i(m)),
+          C_i(m) the share of templates within r of template i, itself included.
+        - Permutation (Bandt and Pompe, 2002): H = -Sum(p(pi) * log2(p(pi))) over the ordinal
+          patterns pi of n values `delay` apart, divided by log2(n!) when normalized.
+        - Spectral (Inouye et al., 1991): H = -Sum(p(f) * log2(p(f))), p(f) the power spectrum
+          (the periodogram or Welch's estimate) as shares of the total, divided by log2 of the
+          number of frequencies when normalized.
+        - SVD (Roberts, Penny and Rezek, 1999): H = -Sum(s_k * log2(s_k)), s_k the singular
+          values of the delay embedding of n values as shares of their sum, divided by log2(n)
+          when normalized.
+        - Shannon: the plug-in estimate -Sum(p(w) * log2(p(w))) / L over the words w of L
+          symbols (`word_length`) of the encoded returns, in bits per symbol.
+        - Lempel-Ziv: the number of distinct phrases of the Lempel-Ziv (1978) parsing of the
+          encoded returns divided by their number.
+        - Kontoyiannis (Kontoyiannis et al., 1998): Mean(log2(i + 1) / L_i) over the first half
+          of the encoded returns, L_i one more than the longest match of the symbols from
+          position i with the i symbols before it, in bits per symbol.
+
+        The last three encode the returns into symbols first (`encoding`): "binary" (1 for a
+        rise, 0 for a fall, returns of 0 left out), "quantile" (the decile of the return with
+        bins=10) or "sigma" (the bucket of one standard deviation the return falls in).
+
+        For more information, see the following sources:
+
+        - Richman, J.S. & Moorman, J.R. (2000). "Physiological time-series analysis using
+          approximate entropy and sample entropy." American Journal of Physiology - Heart and
+          Circulatory Physiology, 278(6), H2039-H2049.
+        - Pincus, S.M. (1991). "Approximate entropy as a measure of system complexity."
+          Proceedings of the National Academy of Sciences, 88(6), 2297-2301.
+        - Bandt, C. & Pompe, B. (2002). "Permutation entropy: a natural complexity measure for
+          time series." Physical Review Letters, 88(17), 174102.
+        - Inouye, T. et al. (1991). "Quantification of EEG irregularity by use of the entropy of
+          the power spectrum." Electroencephalography and Clinical Neurophysiology, 79(3),
+          204-210.
+        - Roberts, S.J., Penny, W. & Rezek, I. (1999). "Temporal and spatial complexity
+          measures for electroencephalogram based brain-computer interfacing." Medical &
+          Biological Engineering & Computing, 37(1), 93-98.
+        - Kontoyiannis, I., Algoet, P.H., Suhov, Y.M. & Wyner, A.J. (1998). "Nonparametric
+          entropy estimation for stationary processes and random fields, with applications to
+          English text." IEEE Transactions on Information Theory, 44(3), 1319-1327.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.
+        - Referenced against nolds' sampen (https://github.com/CSchoel/nolds), antropy's
+          sample_entropy, app_entropy, perm_entropy, spectral_entropy and svd_entropy
+          (https://github.com/raphaelvallat/antropy) and mlfinlab's get_shannon_entropy,
+          get_plug_in_entropy, get_lempel_ziv_entropy and get_konto_entropy
+          (https://github.com/hudson-and-thames/mlfinlab).
+
+        Also known as: SampEn, ApEn, ordinal pattern entropy, spectral entropy, SVD entropy,
+        plug-in entropy, LZ entropy, Kontoyiannis entropy, entropy features.
+
+        Args:
+            method (str, optional): The entropy, "sample", "approximate", "permutation",
+                "spectral", "svd", "shannon", "lempel_ziv" or "kontoyiannis". Defaults to "sample".
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly). Defaults to None, which uses "daily".
+            column (str, optional): The historical data column the entropy is calculated on:
+                "Return" for the returns (the changes of the series), "Adj Close" for the prices
+                (the series as given with `Econometrics(data=...)`) or "Close" for the traded
+                prices. Defaults to "Return".
+            window (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every series.
+            order (int | None, optional): The template length m of the sample and approximate
+                entropy or the number of values n of the permutation and SVD entropy. Defaults to
+                None, which uses 2 for the sample and approximate and 3 for the permutation and
+                SVD entropy.
+            delay (int, optional): The number of periods between the values of a pattern of the
+                permutation and SVD entropy. Defaults to 1.
+            tolerance (float, optional): The tolerance r of the sample and approximate entropy
+                as a multiple of the standard deviation (ddof=1). Defaults to 0.2.
+            normalize (bool, optional): Whether to divide the permutation, spectral and SVD
+                entropy by their maximum, so they lie between 0 and 1. Defaults to True.
+            estimator (str, optional): The power spectrum of the spectral entropy, "periodogram"
+                or "welch" (segments of 256 periods with a Hann window). Defaults to "periodogram".
+            encoding (str, optional): The encoding of the Shannon, Lempel-Ziv and Kontoyiannis
+                entropy, "binary", "quantile" or "sigma". Defaults to "binary".
+            bins (int, optional): The number of quantiles of the "quantile" encoding. Defaults to 10.
+            word_length (int, optional): The number of symbols per word of the Shannon entropy.
+                Defaults to 1.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame:
+            The entropy per asset, or with `window` per date (a column per asset). The sample,
+            approximate and Lempel-Ziv entropies have no unit; the others are in bits (per symbol),
+            or between 0 and 1 when normalized.
+
+        Notes:
+        - Each asset is measured over the dates it has a value. With a window, the first value
+          needs a full window of data from the start date.
+        - The sample and approximate entropy compare every template with every other one, so
+          their time grows with the square of the number of observations: about 0.1 seconds for
+          ten years of daily returns, and about 2 seconds for a rolling window of a year over ten
+          years (6 seconds for a window of two years).
+        - The sample entropy is NaN when no two templates match (a very short series), where
+          nolds and antropy give infinity. The tolerance uses the sample standard deviation
+          (ddof=1) and includes a distance of exactly r, as in Richman and Moorman.
+        - The Shannon entropy counts every overlapping word, the last one included.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_entropy(method="permutation", window=252).tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   NVDA |
+        |:-----------|-------:|-------:|-------:|
+        | 2025-12-24 | 0.9984 | 0.9911 | 0.9997 |
+        | 2025-12-26 | 0.998  | 0.9919 | 0.9995 |
+        | 2025-12-29 | 0.9982 | 0.9919 | 0.9993 |
+        | 2025-12-30 | 0.998  | 0.9921 | 0.9992 |
+        | 2025-12-31 | 0.9981 | 0.9919 | 0.9992 |
+        """
+        period = period if period else "daily"
+
+        data = self._filter_benchmark(
+            self._get_series_column(period, column),
+            include_benchmark=include_benchmark,
+        )
+
+        if method in ["sample", "approximate"]:
+            function = (
+                entropy_model.get_sample_entropy
+                if method == "sample"
+                else entropy_model.get_approximate_entropy
+            )
+            options = {"order": order or 2, "tolerance": tolerance}
+        elif method in ["permutation", "svd"]:
+            function = (
+                entropy_model.get_permutation_entropy
+                if method == "permutation"
+                else entropy_model.get_svd_entropy
+            )
+            options = {"order": order or 3, "delay": delay, "normalize": normalize}
+        elif method == "spectral":
+            function = entropy_model.get_spectral_entropy
+            options = {"estimator": estimator, "normalize": normalize}
+        elif method in ["shannon", "lempel_ziv", "kontoyiannis"]:
+            estimate = {
+                "shannon": lambda symbols: entropy_model.get_shannon_entropy(
+                    symbols, word_length=word_length
+                ),
+                "lempel_ziv": entropy_model.get_lempel_ziv_entropy,
+                "kontoyiannis": entropy_model.get_kontoyiannis_entropy,
+            }[method]
+
+            def function(values):
+                return estimate(entropy_model.encode_series(values, encoding, bins))
+
+            options = {}
+        else:
+            raise ValueError(
+                "Method should be 'sample', 'approximate', 'permutation', 'spectral', 'svd', "
+                "'shannon', 'lempel_ziv' or 'kontoyiannis'."
+            )
+
+        entropy = calculate_per_window(data, function, window, **options)
+
+        return apply_rounding(
+            entropy, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_lempel_ziv_complexity(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        window: int | None = None,
+        encoding: str = "binary",
+        bins: int = 10,
+        normalize: bool = True,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Lempel-Ziv Complexity of a series, by default of the direction of the
+        returns: the number of new patterns needed to write the series down.
+
+        The returns are encoded into symbols (by default 1 for a rise and 0 for a fall) and
+        parsed from the start into phrases, each the longest stretch that can be copied from
+        earlier in the series plus one new symbol. A series that repeats itself needs few
+        phrases, a random one many. Normalized, the complexity approaches 1 for independent,
+        equally likely symbols and falls towards 0 for a regular series, so on daily returns it
+        is mostly close to 1 and of use to compare assets or periods with each other.
+
+        The formula is as follows:
+
+        - c(N) = the number of phrases of the Lempel-Ziv (1976) parsing of the N symbols
+        - Normalized c(N) = c(N) * log_k(N) / N
+
+        with k the number of possible symbols: 2 for the "binary" encoding, `bins` for the
+        "quantile" encoding and the number of distinct symbols for the "sigma" encoding.
+
+        For more information, see the following sources:
+
+        - Lempel, A. & Ziv, J. (1976). "On the complexity of finite sequences." IEEE Transactions
+          on Information Theory, 22(1), 75-81.
+        - Kaspar, F. & Schuster, H.G. (1987). "Easily calculable measure for the complexity of
+          spatiotemporal patterns." Physical Review A, 36(2), 842-848.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.
+        - Referenced against antropy's lziv_complexity (https://github.com/raphaelvallat/antropy).
+
+        Also known as: LZ complexity, LZ76, Lempel-Ziv-Welch complexity, LZC.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly). Defaults to None, which uses "daily".
+            column (str, optional): The historical data column that is encoded: "Return" for the
+                returns (the changes of the series), "Adj Close" for the prices (the series as given
+                with `Econometrics(data=...)`) or "Close" for the traded prices. Defaults to "Return".
+            window (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every series.
+            encoding (str, optional): "binary" (1 for a positive and 0 for a negative value, values of
+                0 left out), "quantile" (the quantile of the value) or "sigma" (the bucket of one
+                standard deviation the value falls in). Defaults to "binary".
+            bins (int, optional): The number of quantiles of the "quantile" encoding. Defaults to 10.
+            normalize (bool, optional): Whether to normalize the number of phrases by N / log_k(N).
+                Defaults to True.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame:
+            The (normalized) complexity per asset, or with `window` per date (a column per asset).
+
+        Notes:
+        - Each asset is measured over the dates it has a value. With a window, the first value
+          needs a full window of data from the start date.
+        - It equals antropy's lziv_complexity of the same symbols; antropy leaves the encoding to
+          the user (often above or below the median, which for returns is close to the sign).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_lempel_ziv_complexity(window=252).tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   NVDA |
+        |:-----------|-------:|-------:|-------:|
+        | 2025-12-24 | 1.0763 | 1.1396 | 1.1396 |
+        | 2025-12-26 | 1.0763 | 1.108  | 1.1396 |
+        | 2025-12-29 | 1.0763 | 1.108  | 1.1396 |
+        | 2025-12-30 | 1.0763 | 1.108  | 1.1396 |
+        | 2025-12-31 | 1.0763 | 1.108  | 1.1396 |
+        """
+        period = period if period else "daily"
+
+        data = self._filter_benchmark(
+            self._get_series_column(period, column),
+            include_benchmark=include_benchmark,
+        )
+        alphabet = {"binary": 2, "quantile": bins}.get(encoding)
+
+        def complexity(values):
+            return entropy_model.get_lempel_ziv_complexity(
+                entropy_model.encode_series(values, encoding, bins),
+                normalize=normalize,
+                alphabet=alphabet,
+            )
+
+        lempel_ziv_complexity = calculate_per_window(data, complexity, window)
+
+        return apply_rounding(
+            lempel_ziv_complexity,
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_hjorth_parameters(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        window: int | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Hjorth parameters of a series, by default the returns: its Activity,
+        Mobility and Complexity, and the number of times it crosses zero.
+
+        The Activity is the variance. The Mobility, the standard deviation of the changes
+        relative to that of the series, is a mean frequency: it is about Sqrt(2) = 1.41 for
+        independent returns, lower when returns persist and higher when they alternate. The
+        Complexity compares the Mobility of the changes with that of the series and grows as
+        the series looks less like a single smooth wave. The Zero Crossings count how often the
+        returns change sign.
+
+        The formula is as follows:
+
+        - Activity = Var(x)
+        - Mobility = Sqrt(Var(dx) / Var(x))
+        - Complexity = Sqrt(Var(d2x) / Var(dx)) / Mobility
+        - Zero Crossings = the number of sign changes of x, values of exactly 0 skipped
+
+        with dx the first and d2x the second differences and Var the sample variance (ddof=1).
+
+        For more information, see the following sources:
+
+        - Hjorth, B. (1970). "EEG analysis based on time domain properties."
+          Electroencephalography and Clinical Neurophysiology, 29(3), 306-310.
+        - Referenced against antropy's hjorth_params and num_zerocross
+          (https://github.com/raphaelvallat/antropy).
+
+        Also known as: Hjorth activity, Hjorth mobility, Hjorth complexity, zero-crossing rate.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly). Defaults to None, which uses "daily".
+            column (str, optional): The historical data column the parameters are calculated on:
+                "Return" for the returns (the changes of the series), "Adj Close" for the prices
+                (the series as given with `Econometrics(data=...)`) or "Close" for the traded
+                prices. Defaults to "Return".
+            window (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates the parameters over the full history of every series.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame:
+            The Activity, Mobility, Complexity and Zero Crossings per asset (a row per asset), or
+            with `window` per date ((parameter, asset) columns).
+
+        Notes:
+        - Each asset is measured over the dates it has a value. With a window, the first value
+          needs a full window of data from the start date.
+        - antropy uses the population variance (ddof=0), which changes the Mobility and
+          Complexity by less than 0.1% for 1,000 observations, and counts a value of 0 as
+          positive in its zero crossings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_hjorth_parameters()
+        ```
+
+        Which returns:
+
+        |      |   Activity |   Mobility |   Complexity |   Zero Crossings |
+        |:-----|-----------:|-----------:|-------------:|-----------------:|
+        | AAPL |     0.0003 |     1.4058 |       1.228  |              611 |
+        | MSFT |     0.0003 |     1.4267 |       1.2057 |              625 |
+        | NVDA |     0.0011 |     1.4484 |       1.2098 |              619 |
+        """
+        period = period if period else "daily"
+
+        data = self._filter_benchmark(
+            self._get_series_column(period, column),
+            include_benchmark=include_benchmark,
+        )
+
+        hjorth_parameters = calculate_per_window(
+            data, entropy_model.get_hjorth_parameters, window
+        )
+
+        return apply_rounding(
+            hjorth_parameters, rounding if rounding is not None else self._rounding
         )

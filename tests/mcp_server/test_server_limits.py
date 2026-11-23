@@ -313,3 +313,12 @@ def test_a_hosted_server_never_retries_without_verifying_the_certificate(monkeyp
         requests_model.get_request("https://example.org/data.csv")
 
     assert False not in verified
+
+
+def test_size_limits_of_one_indicator():
+    limits = {"maximums": {"get_a.window": 100}, "products": []}
+
+    assert size_limit_problem({"window": 500}, {}, limits, "get_a")
+    assert size_limit_problem({"window": 50}, {}, limits, "get_a") is None
+    assert size_limit_problem({"window": 500}, {}, limits, "get_b") is None
+    assert size_limit_problem({"window": 500}, {}, limits) is None

@@ -12,6 +12,7 @@ from financetoolkit.options.pricing import (
     american_model,
     binomial_trees_model,
     black_scholes_model,
+    compound_model,
     exotics_model,
     path_dependent_model,
 )
@@ -33,7 +34,7 @@ logger = logger_model.get_logger()
 @track_sources
 class PricingOptions:
     """
-    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier (single, double, partial-time, soft and discretely watched), Asian (geometric and arithmetic), lookback and touch options, put-call parity and strategy payoffs.
+    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier (single, double, partial-time, soft and discretely watched), Asian (geometric and arithmetic), lookback and touch options, chooser, forward-start and cliquet options, put-call parity and strategy payoffs.
     """
 
     @handle_errors
@@ -3222,6 +3223,429 @@ class PricingOptions:
             )
 
         return touch_option_df
+
+    @handle_errors
+    def get_chooser_option(
+        self,
+        start_date: str | None = None,
+        choice_period: float = 0.5,
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the closed-form price of a simple chooser option with the formula of Rubinstein (1991). A chooser
+        option lets the holder decide at the choice time whether it becomes a European call or a European put with
+        the same strike price and expiration, so it is worth at least as much as either and at most as much as the
+        straddle of both.
+
+        The choice is made after choice_period of the life: at choice_period=0 the chooser is the larger of the
+        call and the put today, at choice_period=1 a straddle. By put-call parity at the choice time t the chooser
+        is a call on (K, T) plus a put on (K * e^(-(r - q)(T - t)), t), scaled by e^(-q(T - t)).
+
+        The formula is as follows:
+
+        - t = Choice Period * T
+        - d = (ln(S / K) + (r - q + σ² / 2) * T) / (σ√T)
+        - y = (ln(S / K) + (r - q) * T + σ² * t / 2) / (σ√t)
+        - Chooser = S * e^(-qT) * N(d) - K * e^(-rT) * N(d - σ√T) - S * e^(-qT) * N(-y) + K * e^(-rT) * N(-y + σ√t)
+
+        Where S is the stock price (the traded close on the pricing date), K is the strike price, r is the
+        continuously compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)), σ is the
+        annualized volatility (the standard deviation of the daily returns over the trailing 252 trading days times
+        √252), T is the time to expiration in years (days / 365) and N is the cumulative standard normal
+        distribution.
+
+        A complex chooser, which chooses between a call and a put with their own strike and expiration, is priced
+        by the model function financetoolkit.options.pricing.compound_model.get_chooser_option with
+        put_strike_price and put_time_to_expiration.
+
+        See: Rubinstein, M. (1991), "Options for the Undecided", Risk, 4(4), 43; Haug, E. G. (2007), The Complete
+        Guide to Option Pricing Formulas, 2nd ed., section 4.10. Referenced against QuantLib's
+        AnalyticSimpleChooserEngine (https://www.quantlib.org) and FinancePy's EquityChooserOption
+        (https://github.com/domokane/FinancePy).
+
+        Also known as: chooser option, as-you-like-it option, pay now choose later option.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            choice_period (float, optional): The share of the life after which the holder chooses between the call
+            and the put, at least 0 and at most 1. Defaults to 0.5, halfway.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Chooser option values containing the tickers and strike prices as the index and the time
+            to expiration as the columns.
+
+        Raises:
+            ValueError: If choice_period is not at least 0 and at most 1.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        chooser_option = toolkit.options.get_chooser_option(
+            strike_price_range=0.1, strike_step_size=5, expiration_time_range=91
+        )
+
+        chooser_option.loc["NVDA", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            165 |      25.515  |      30.5881 |      35.0495 |
+        |            170 |      22.4621 |      28.3685 |      33.27   |
+        |            175 |      20.1357 |      26.7519 |      32.0089 |
+        |            180 |      18.6412 |      25.7699 |      31.2783 |
+        |            185 |      18.0413 |      25.4352 |      31.0788 |
+        |            190 |      18.3475 |      25.7412 |      31.4009 |
+        |            195 |      19.5216 |      26.6638 |      32.226  |
+        |            200 |      21.485  |      28.1649 |      33.5281 |
+        |            205 |      24.1331 |      30.1962 |      35.2753 |
+        |            210 |      27.3507 |      32.7032 |      37.4324 |
+        """
+        if not 0 <= choice_period <= 1:
+            raise ValueError(
+                f"choice_period must be at least 0 and at most 1, received {choice_period!r}."
+            )
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        chooser_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+            }
+
+            chooser_option[ticker] = {
+                strike_price: {
+                    time_to_expiration: compound_model.get_chooser_option(
+                        **inputs,
+                        strike_price=float(strike_price),
+                        time_to_expiration=time_to_expiration,
+                        choice_time=choice_period * time_to_expiration,
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+                for strike_price in strike_prices
+            }
+
+        chooser_option_df = helpers.create_greek_dataframe(
+            greek_dictionary=chooser_option,
+            start_date=start_date,
+        )
+
+        chooser_option_df = chooser_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            chooser_option_df = calculate_standardization(
+                dataset=chooser_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return chooser_option_df
+
+    @handle_errors
+    def get_forward_start_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        start_period: float = 0.5,
+        moneyness: float = 1.0,
+        periods: int = 1,
+        performance: bool = False,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the closed-form price of a forward-start option with the formula of Rubinstein (1990), of a cliquet
+        (ratchet) option, a series of them, or of their performance versions.
+
+        - Forward-start (periods=1): a European option whose strike is set after start_period of the life to
+          moneyness times the stock price then, paying max(S(T) - α * S(t1), 0) for a call.
+        - Cliquet (periods above 1): the time from the start to expiration is split into equal periods, and each
+          period is a forward-start option whose strike is reset to moneyness times the stock price at its start and
+          whose payoff is paid at its end. With start_period=0 the first period starts today.
+        - Performance (performance=True): each period pays the return S(t(i+1)) / S(ti) beyond the moneyness
+          instead, max(S(t(i+1)) / S(ti) - α, 0) for a call, a decimal per unit of notional.
+
+        The options have no strike today, so the result has a row per ticker.
+
+        The formula is as follows:
+
+        - t1 = Start Period * T, ti = t1 + (i - 1) * (T - t1) / Periods and t(Periods + 1) = T
+        - Forward Start = Σ S * e^(-q ti) * BS(1, α, t(i+1) - ti)
+        - Performance = Σ e^(-r ti) * BS(1, α, t(i+1) - ti)
+        - BS(1, α, τ) = e^(-qτ) * N(d1) - α * e^(-rτ) * N(d1 - σ√τ) for a call and α * e^(-rτ) * N(-d1 + σ√τ)
+          - e^(-qτ) * N(-d1) for a put, d1 = (ln(1 / α) + (r - q + σ² / 2) * τ) / (σ√τ)
+
+        Where S is the stock price (the traded close on the pricing date), α is the moneyness, r is the continuously
+        compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)), σ is the annualized
+        volatility (the standard deviation of the daily returns over the trailing 252 trading days times √252), T is
+        the time to expiration in years (days / 365) and N is the cumulative standard normal distribution. A
+        performance option is a forward-start option divided by S only when r = q.
+
+        See: Rubinstein, M. (1990), "Pay Now, Choose Later", Risk, 3(2); Haug, E. G. (2007), The Complete Guide to
+        Option Pricing Formulas, 2nd ed., section 4.6. Referenced against QuantLib's ForwardEuropeanEngine,
+        AnalyticCliquetEngine and AnalyticPerformanceEngine (https://www.quantlib.org).
+
+        Also known as: forward-start option, delayed option, cliquet option, ratchet option, performance option.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            start_period (float, optional): The share of the life after which the (first) strike is set, at least
+            0 and below 1. Defaults to 0.5, halfway.
+            moneyness (float, optional): The strike as a share of the stock price at each start, above 0. Defaults
+            to 1, at the money.
+            periods (int, optional): The number of equal periods from the start to expiration, 1 for a
+            forward-start option and more for a cliquet. Defaults to 1.
+            performance (bool, optional): Whether each period pays its return beyond the moneyness instead of the
+            price difference. Defaults to False.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Forward-start option values containing the tickers as the index and the time to expiration
+            as the columns.
+
+        Raises:
+            ValueError: If start_period is not at least 0 and below 1, moneyness is not positive or periods is not
+            a positive whole number.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        forward_start_option = toolkit.options.get_forward_start_option(
+            expiration_time_range=91
+        )
+
+        forward_start_option[["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        | Ticker   |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |:---------|-------------:|-------------:|-------------:|
+        | NVDA     |       7.6351 |      10.8773 |      13.393  |
+        | AAPL     |       7.3395 |      10.4915 |      12.9514 |
+        | MSFT     |       9.834  |      14.0922 |      17.4287 |
+        """
+        if not 0 <= start_period < 1:
+            raise ValueError(
+                f"start_period must be at least 0 and below 1, received {start_period!r}."
+            )
+        if moneyness <= 0:
+            raise ValueError(f"moneyness must be positive, received {moneyness!r}.")
+        if isinstance(periods, bool) or not isinstance(periods, int) or periods < 1:
+            raise ValueError(
+                f"periods must be a positive whole number, received {periods!r}."
+            )
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        forward_start_option: dict[str, dict[float, float]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker in self._tickers:
+            # A ticker without a price on the date is left out, as on the strike price grids.
+            if pd.isna(stock_price.get(ticker)):
+                logger.warning(
+                    "%s has no price on %s, so it is left out of the option values.",
+                    ticker,
+                    stock_price.name,
+                )
+                continue
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "moneyness": float(moneyness),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+                "performance": performance,
+            }
+
+            # The pricing date itself (no time to expiration) has no periods and is left out of the result.
+            forward_start_option[ticker] = {
+                time_to_expiration: (
+                    compound_model.get_cliquet_option(
+                        **inputs,
+                        time_to_expiration=time_to_expiration,
+                        reset_times=[
+                            time_to_expiration
+                            * (start_period + (1 - start_period) * period / periods)
+                            for period in range(periods)
+                        ],
+                    )
+                    if time_to_expiration > 0
+                    else np.nan
+                )
+                for time_to_expiration in time_to_expiration_list
+            }
+
+        forward_start_option_df = helpers.create_expiration_dataframe(
+            value_dictionary=forward_start_option,
+            start_date=start_date,
+        )
+
+        forward_start_option_df = forward_start_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            forward_start_option_df = calculate_standardization(
+                dataset=forward_start_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return forward_start_option_df
 
     @handle_errors
     def get_strategy_payoff(

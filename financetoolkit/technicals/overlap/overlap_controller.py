@@ -47,7 +47,7 @@ MOVING_AVERAGE_WINDOWS = {
 @track_sources
 class OverlapTechnicals:
     """
-    Overlap indicators drawn over the price: the moving averages (`get_moving_average`, including the Kaufman adaptive moving average, Tillson T3, Arnaud Legoux moving average, volume weighted, elastic volume weighted and volume adjusted moving averages, McGinley Dynamic, variable index dynamic average, fractal adaptive moving average, Holt-Winters moving average, Ehlers' SuperSmoother filter and the Hilbert transform instantaneous trendline), the Holt-Winters channel, the price transforms and midpoints, TRIX, VWAP, the parabolic SAR, the Gann HiLo Activator, the Zig Zag, pivot points, support and resistance levels and Fibonacci retracement levels.
+    Overlap indicators drawn over the price: the moving averages (`get_moving_average`, including the Kaufman adaptive moving average, Tillson T3, Arnaud Legoux moving average, volume weighted, elastic volume weighted and volume adjusted moving averages, McGinley Dynamic, variable index dynamic average, fractal adaptive moving average, Holt-Winters moving average, Ehlers' SuperSmoother filter and the Hilbert transform instantaneous trendline), Guppy's multiple moving averages, the Holt-Winters channel, the price transforms and midpoints, TRIX, VWAP, the parabolic SAR, the Gann HiLo Activator, the Zig Zag, pivot points, support and resistance levels and Fibonacci retracement levels.
     """
 
     @handle_errors
@@ -383,6 +383,16 @@ class OverlapTechnicals:
         overlap_indicators["Fibonacci Retracement 61.8%"] = (
             fibonacci_retracement_levels["61.8%"]
         )
+
+        # The spreads of Guppy's groups; the averages themselves are EMAs of fixed windows,
+        # available through get_guppy_multiple_moving_averages.
+        guppy_multiple_moving_averages = self.get_guppy_multiple_moving_averages(
+            period=period, close_column=close_column
+        )
+        for spread in ["Short Group Spread", "Long Group Spread", "Group Spread"]:
+            overlap_indicators[f"GMMA {spread}"] = guppy_multiple_moving_averages[
+                spread
+            ]
 
         self._overlap_indicators = pd.concat(overlap_indicators, axis=1)
 
@@ -2608,6 +2618,169 @@ class OverlapTechnicals:
 
         return finalize_dataset(
             dataset=fibonacci_retracement_levels,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_guppy_multiple_moving_averages(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_windows: list[int] | None = None,
+        long_windows: list[int] | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate Daryl Guppy's Multiple Moving Averages (GMMA) for a given price series, with the
+        spreads of the two groups.
+
+        The Guppy Multiple Moving Averages are two groups of Exponential Moving Averages: a short
+        group of 3 to 15 periods that follows the traders, and a long group of 30 to 60 periods
+        that follows the investors. A trend is up when the short group lies above the long group
+        and down when it lies below, and a change of trend shows where the groups cross.
+
+        The formula is as follows:
+
+        - Short EMA(n) = EMA(Close, n), for n in 3, 5, 8, 10, 12 and 15
+        - Long EMA(n) = EMA(Close, n), for n in 30, 35, 40, 45, 50 and 60
+        - Short Group Spread = Max(Short EMAs) — Min(Short EMAs)
+        - Long Group Spread = Max(Long EMAs) — Min(Long EMAs)
+        - Group Spread = Mean(Short EMAs) — Mean(Long EMAs)
+
+        Guppy reads the spread within each group as the conviction of that group: a long group
+        that widens confirms the trend, one that compresses warns that the investors are changing
+        their minds, and a short group that compresses near the long group marks a pause in which
+        the traders test the trend. The Group Spread is positive when the short group lies above
+        the long group, and its sign changes where the groups cross.
+
+        For more information, see the following sources:
+
+        - Guppy, D. (2004). "Trend Trading: A Seven-Step Approach to Success." Wiley.
+        - Referenced against TTR's GMMA (https://cran.r-project.org/package=TTR).
+
+        Also known as: GMMA, Guppy multiple moving average, Guppy ribbons.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_windows (list[int] | None, optional): The windows of the short group. Defaults to
+                None, which uses Guppy's 3, 5, 8, 10, 12 and 15.
+            long_windows (list[int] | None, optional): The windows of the long group. Defaults to
+                None, which uses Guppy's 30, 35, 40, 45, 50 and 60.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: The short EMAs ("Short EMA 3" and on), the long EMAs ("Long
+            EMA 30" and on), the Short Group Spread, the Long Group Spread and the Group Spread, in
+            price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          averages for each asset in the Toolkit instance.
+        - The averages are those of `get_moving_average` with method="exponential", seeded with the
+          simple average of their first `n` prices, and equal TTR's GMMA. The spreads start once
+          every average of their groups has started; TTR's GMMA returns the averages only.
+        - If `growth` is set to True, the method calculates the growth of the averages using the
+          specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        guppy = toolkit.technicals.get_guppy_multiple_moving_averages()
+
+        guppy.xs("AAPL", level=1, axis="columns").iloc[:, [0, 11, 12, 13, 14]].tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Short EMA 3 |   Long EMA 60 |   Short Group Spread |   Long Group Spread |   Group Spread |
+        |:-----------|--------------:|--------------:|---------------------:|--------------------:|---------------:|
+        | 2025-12-24 |       272.079 |       265.43  |               1.4554 |              6.9689 |         3.2856 |
+        | 2025-12-26 |       272.265 |       265.66  |               1.1666 |              6.742  |         3.1498 |
+        | 2025-12-29 |       272.537 |       265.894 |               0.9006 |              6.5339 |         3.0817 |
+        | 2025-12-30 |       272.335 |       266.099 |               0.8491 |              6.3103 |         2.8482 |
+        | 2025-12-31 |       271.625 |       266.257 |               1.2684 |              6.056  |         2.4064 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        guppy_multiple_moving_averages = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            overlap_model.get_guppy_multiple_moving_averages,
+            short_windows,
+            long_windows,
+        ).loc[self._start_date : self._end_date]
+
+        # The columns per ticker come back sorted by name, which puts "Short EMA 10" before
+        # "Short EMA 3": the averages go back to the order of their windows.
+        guppy_multiple_moving_averages = guppy_multiple_moving_averages[
+            [
+                f"Short EMA {window}"
+                for window in short_windows or overlap_model.GUPPY_SHORT_WINDOWS
+            ]
+            + [
+                f"Long EMA {window}"
+                for window in long_windows or overlap_model.GUPPY_LONG_WINDOWS
+            ]
+            + ["Short Group Spread", "Long Group Spread", "Group Spread"]
+        ]
+
+        return finalize_dataset(
+            dataset=guppy_multiple_moving_averages,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

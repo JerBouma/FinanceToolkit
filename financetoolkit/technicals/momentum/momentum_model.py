@@ -3994,3 +3994,155 @@ def get_projection_oscillator(
     oscillator = pd.Series(oscillator, index=prices_close.index)
 
     return oscillator.where(np.isfinite(oscillator))
+
+
+def get_trend_detection_index(
+    prices: pd.Series, window: int = 20, multiple: int = 2
+) -> pd.DataFrame:
+    """
+    Calculate the Trend Detection Index (TDI) and its Direction Indicator of a given price series.
+
+    M.H. Pee's Trend Detection Index tells a trending market from a consolidating one. It
+    compares the net momentum over the window with how much the momentum moved over a longer
+    window: when the momentum keeps one sign, its sum outweighs the absolute momentum of the
+    earlier periods and the TDI is positive (a trend); when it changes sign, the sum cancels out
+    and the TDI is negative (a consolidation). The Direction Indicator, the sum of the momentum,
+    says which way the trend goes. Pee buys when both are positive and sells when the TDI is
+    positive and the Direction Indicator negative.
+
+    The formula is as follows:
+
+    - Momentum = Close(t) - Close(t - window)
+    - Direction Indicator = Sum(Momentum, window)
+    - TDI = |Direction Indicator| - (Sum(|Momentum|, multiple * window) - Sum(|Momentum|, window))
+
+    Also known as: TDI, trend detection index, Pee's trend detection index.
+
+    Reference: Pee, M.H. (2001). "Trend Detection Index." Technical Analysis of Stocks &
+    Commodities, 19(10).
+
+    Referenced against TTR's TDI (https://cran.r-project.org/package=TTR).
+
+    Notes:
+        - Every sum covers momentum values only, so the TDI starts on period
+          (multiple + 1) * window - 1. TTR's TDI sets the first `window` momentum values,
+          which have no earlier price, to 0 and starts at period multiple * window - 1, with
+          sums that include those zeros until the window has passed them.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the momentum and of the Direction Indicator.
+            Defaults to 20.
+        multiple (int): The longer window of the absolute momentum, as a multiple of
+            `window`. Defaults to 2.
+
+    Returns:
+        pd.DataFrame: The TDI and the Direction Indicator, in price units.
+    """
+    momentum = get_momentum(prices, window)
+    absolute_momentum = momentum.abs()
+
+    direction_indicator = momentum.rolling(window=window).sum()
+    trend_detection_index = direction_indicator.abs() - (
+        absolute_momentum.rolling(window=multiple * window).sum()
+        - absolute_momentum.rolling(window=window).sum()
+    )
+
+    return pd.concat(
+        [trend_detection_index, direction_indicator],
+        axis=1,
+        keys=["TDI", "Direction Indicator"],
+    )
+
+
+def get_dv_intermediate_oscillator(
+    prices: pd.Series, window: int = 252, magnitude_weight: float = 0.8
+) -> pd.DataFrame:
+    """
+    Calculate David Varadi's DV Intermediate Oscillator (DVI) of a given price series.
+
+    The DVI is a smooth oscillator between 0 and 1 that combines two rankings over the last
+    `window` periods. The magnitude ranks how far the price stands above or below its 3-period
+    average, smoothed over a short and a long window; the stretch ranks the number of up days
+    against down days over a short and a long window. Varadi weights the magnitude 0.8 and the
+    stretch 0.2. A DVI above 0.5 marks a price that is stretched upwards (Varadi's mean
+    reversion rules sell there) and below 0.5 one stretched downwards.
+
+    The formula is as follows:
+
+    - Return = Close(t) / SMA(Close, 3) - 1
+    - Magnitude = SMA((SMA(Return, 5) + SMA(Return, 100) / 10) / 2, 5)
+    - Direction = +1 if Close(t) > Close(t - 1), else -1
+    - Stretch = SMA((Sum(Direction, 10) + Sum(Direction, 100) / 10) / 2, 2)
+    - DVI Magnitude = Percent Rank(Magnitude, window)
+    - DVI Stretch = Percent Rank(Stretch, window)
+    - DVI = magnitude_weight * DVI Magnitude + (1 - magnitude_weight) * DVI Stretch
+
+    The Percent Rank is `get_percent_rank`: the share of the previous `window` values that are
+    lower than the latest one.
+
+    Also known as: DVI, DV Intermediate, DV indicator.
+
+    Reference: Varadi, D. (2009). "What is the DVI?" CSS Analytics, December 13, 2009
+    (https://cssanalytics.wordpress.com/2009/12/13/what-is-the-dvi/).
+
+    Referenced against TTR's DVI (https://cran.r-project.org/package=TTR).
+
+    Notes:
+        - The Percent Rank compares the latest value with the `window` values before it and
+          lies between 0 (a new low) and 1 (a new high). TTR's DVI ranks within a window of `n`
+          values that includes the latest one and counts it, and equal values, as lower
+          (`exact.multiplier = 1`), so its rank lies between 1/n and 1. Without equal values,
+          TTR's rank over n = window + 1 values equals (window * Percent Rank + 1) / (window + 1).
+        - An unchanged close counts as a down day, as in TTR's DVI.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of previous periods of the Percent Ranks. Defaults to 252, a year
+            of trading days.
+        magnitude_weight (float): Weight of the magnitude in the DVI, between 0 and 1; the
+            stretch gets the rest. Defaults to 0.8.
+
+    Returns:
+        pd.DataFrame: The DVI Magnitude, the DVI Stretch and the DVI, as decimals between 0
+        and 1.
+
+    Raises:
+        ValueError: If `magnitude_weight` is not between 0 and 1.
+    """
+    if not 0 <= magnitude_weight <= 1:
+        raise ValueError(
+            f"magnitude_weight must be between 0 and 1, not {magnitude_weight}."
+        )
+
+    price_return = prices / get_moving_average(prices, 3) - 1
+    magnitude = get_moving_average(
+        (
+            get_moving_average(price_return, 5)
+            + get_moving_average(price_return, 100) / 10
+        )
+        / 2,
+        5,
+    )
+
+    previous_prices = prices.shift(1)
+    direction = pd.Series(
+        np.where(prices > previous_prices, 1.0, -1.0), index=prices.index
+    ).where(prices.notna() & previous_prices.notna())
+    # The stretch only takes multiples of 1/40, and equal values must rank as equal: rounding
+    # removes the floating-point noise the running sums of the rolling windows leave behind.
+    stretch = get_moving_average(
+        (direction.rolling(window=10).sum() + direction.rolling(window=100).sum() / 10)
+        / 2,
+        2,
+    ).round(10)
+
+    dvi_magnitude = get_percent_rank(magnitude, window)
+    dvi_stretch = get_percent_rank(stretch, window)
+    dvi = magnitude_weight * dvi_magnitude + (1 - magnitude_weight) * dvi_stretch
+
+    return pd.concat(
+        [dvi_magnitude, dvi_stretch, dvi],
+        axis=1,
+        keys=["DVI Magnitude", "DVI Stretch", "DVI"],
+    )

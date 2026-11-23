@@ -1347,3 +1347,83 @@ def test_dynamic_momentum_index_needs_a_full_window_of_changes_after_a_gap():
         real_changes = changes[position] - changes[position - int(period)]
         if real_changes < period:
             assert np.isnan(result.iloc[position])
+
+
+def test_trend_detection_index_by_hand():
+    """With a window of 2: Momentum = 2, 0, 1, 3, 0, ... from period 2, so on period 5 the
+    Direction Indicator is 1 + 3 = 4 and the TDI |4| - ((2 + 0 + 1 + 3) - (1 + 3)) = 2.
+    """
+    prices = pd.Series([10.0, 11, 12, 11, 13, 14, 13, 15, 16, 15, 17])
+    result = momentum_model.get_trend_detection_index(prices, 2, 2)
+
+    assert result["Direction Indicator"].first_valid_index() == 3
+    assert result["TDI"].first_valid_index() == 5
+    assert result["Direction Indicator"].iloc[5] == pytest.approx(4)
+    assert result["TDI"].iloc[5] == pytest.approx(2)
+    # Period 6: the Direction Indicator is 3 + 0 = 3 and the TDI |3| - ((0 + 1 + 3 + 0) - 3).
+    assert result["Direction Indicator"].iloc[6] == pytest.approx(3)
+    assert result["TDI"].iloc[6] == pytest.approx(2)
+
+
+def test_get_trend_detection_index(recorder):
+    result = momentum_model.get_trend_detection_index(random_walk(), 10, 2)
+
+    assert result["TDI"].first_valid_index() == 29
+    assert list(result.columns) == ["TDI", "Direction Indicator"]
+    recorder.capture(result.round(6))
+
+
+def test_dv_intermediate_oscillator_by_hand():
+    """The ranks against a direct count of lower values in the previous window."""
+    rng = np.random.default_rng(3)
+    prices = pd.Series(100 * np.exp(rng.normal(0, 0.01, 200).cumsum()))
+    result = momentum_model.get_dv_intermediate_oscillator(prices, 20, 0.8)
+
+    ratio = prices / prices.rolling(3).mean() - 1
+    magnitude = (
+        ((ratio.rolling(5).mean() + ratio.rolling(100).mean() / 10) / 2)
+        .rolling(5)
+        .mean()
+    )
+    direction = np.sign(prices.diff()).replace(0, -1)
+    stretch = (
+        ((direction.rolling(10).sum() + direction.rolling(100).sum() / 10) / 2)
+        .rolling(2)
+        .mean()
+    )
+
+    def rank(values: pd.Series, position: int) -> float:
+        window = values.iloc[position - 20 : position]
+        return float((window < values.iloc[position] - 1e-9).sum() / 20)
+
+    # The magnitude starts on period 105 and the stretch on period 101, so the ranks of a
+    # 20-period window on periods 125 and 121.
+    assert result["DVI Magnitude"].first_valid_index() == 125
+    assert result["DVI Stretch"].first_valid_index() == 121
+    for position in (125, 150, 199):
+        assert result["DVI Magnitude"].iloc[position] == pytest.approx(
+            rank(magnitude, position)
+        )
+        assert result["DVI Stretch"].iloc[position] == pytest.approx(
+            rank(stretch, position)
+        )
+        assert result["DVI"].iloc[position] == pytest.approx(
+            0.8 * rank(magnitude, position) + 0.2 * rank(stretch, position)
+        )
+    assert result.min().min() >= 0
+    assert result.max().max() <= 1
+
+
+def test_get_dv_intermediate_oscillator(recorder):
+    rng = np.random.default_rng(5)
+    prices = pd.Series(100 * np.exp(rng.normal(0, 0.01, 200).cumsum()))
+    result = momentum_model.get_dv_intermediate_oscillator(prices, 50)
+
+    assert result["DVI"].first_valid_index() == 155
+    assert list(result.columns) == ["DVI Magnitude", "DVI Stretch", "DVI"]
+    recorder.capture(result.round(6))
+
+
+def test_dv_intermediate_oscillator_rejects_a_weight_outside_zero_and_one():
+    with pytest.raises(ValueError, match="magnitude_weight"):
+        momentum_model.get_dv_intermediate_oscillator(random_walk(), 20, 1.5)

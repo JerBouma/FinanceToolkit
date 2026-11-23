@@ -2,9 +2,11 @@
 
 __docformat__ = "google"
 
+import functools
+
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import optimize, stats
 
 from financetoolkit.econometrics.least_squares_model import (
     fit_least_squares,
@@ -1075,6 +1077,360 @@ def get_pearson_goodness_of_fit_test(
             "Observations": n,
         }
     )
+
+
+# The Nyblom statistic of k parameters converges to Σ_(j=1..k) ∫ B_j(r)^2 dr over k independent
+# Brownian bridges, Σ_n Σ_j Z_(n,j)^2 / (n^2 π^2) with independent standard normal Z. Its tail
+# probability is Imhof's (1961) integral over the first 300 weights 1 / (n^2 π^2), with the sums of
+# the weights beyond them, on a grid u = s^2 for s in (0, 80], where the integrand has fallen below
+# e^-20; it reproduces the Cramér-von Mises quantiles 0.3473, 0.4614 and 0.7435 of one parameter
+# to 1e-6.
+NYBLOM_TERMS = 300
+NYBLOM_GRID = np.linspace(0, 80, 16001)[1:]
+
+
+@functools.cache
+def _nyblom_integrand_terms() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The grid u = s^2 and, on it, Σ_n arctan(λ_n u) and Σ_n ln(1 + λ_n^2 u^2) / 4 of one parameter."""
+    weights = 1 / (np.arange(1, NYBLOM_TERMS + 1) ** 2 * np.pi**2)
+    tail = 1 / (np.arange(NYBLOM_TERMS + 1, 200_000) ** 2 * np.pi**2)
+    u = NYBLOM_GRID**2
+    # Beyond the first weights λ_n u is small: arctan(x) = x - x^3 / 3 and ln(1 + x^2) = x^2.
+    angle = (
+        np.arctan(np.outer(u, weights)).sum(axis=1)
+        + tail.sum() * u
+        - np.sum(tail**3) * u**3 / 3
+    )
+    log_scale = 0.25 * (
+        np.log1p(np.outer(u, weights) ** 2).sum(axis=1) + np.sum(tail**2) * u**2
+    )
+
+    return u, angle, log_scale
+
+
+# The moment conditions of the GMM orthogonality test that need the skewness and the kurtosis.
+GMM_SKEWNESS_MOMENTS = ("Skewness", "Q3")
+GMM_KURTOSIS_MOMENTS = ("Kurtosis", "Q4")
+
+
+def get_nyblom_p_value(statistic: float, parameters: int = 1) -> float:
+    """
+    Calculate the asymptotic p-value of the Nyblom (1989) parameter stability statistic of
+    `parameters` parameters: the probability that Σ_(j=1..k) ∫ B_j(r)^2 dr over k independent
+    Brownian bridges exceeds the statistic.
+
+    The formula is as follows (Imhof, 1961), with λ_n = 1 / (n^2 π^2), each with multiplicity k:
+
+    - P(L > x) = 1 / 2 + (1 / π) ∫_0^∞ sin θ(u) / (u ρ(u)) du
+    - θ(u) = (k / 2) Σ_n arctan(λ_n u) - x u / 2 and ρ(u) = Π_n (1 + λ_n^2 u^2)^(k / 4)
+
+    For one parameter this is the limiting distribution of the Cramér-von Mises statistic
+    (5% critical value 0.461); Hansen (1992) tabulates its quantiles by simulation (0.470 for
+    one parameter at 5%).
+
+    For more information, see the following papers:
+
+    - Imhof, J.P. (1961). "Computing the Distribution of Quadratic Forms in Normal
+    Variables." Biometrika, 48(3/4), 419-426.
+    - Hansen, B.E. (1992). "Testing for Parameter Instability in Linear Models." Journal of
+    Policy Modeling, 14(4), 517-533.
+
+    Args:
+        statistic (float): The Nyblom statistic.
+        parameters (int, optional): The number of parameters k the statistic covers.
+            Defaults to 1.
+
+    Returns:
+        float: The p-value, NaN for a statistic that is not finite.
+    """
+    if not np.isfinite(statistic):
+        return np.nan
+
+    u, angle, log_scale = _nyblom_integrand_terms()
+
+    with np.errstate(over="ignore"):
+        integrand = (
+            2
+            * np.sin(0.5 * parameters * angle - 0.5 * statistic * u)
+            / (NYBLOM_GRID * np.exp(parameters * log_scale))
+        )
+
+    # With u = s^2 the integrand is 2 sin θ / (s ρ), which is 0 at s = 0.
+    value = np.trapezoid(
+        np.concatenate([[0.0], integrand]), np.concatenate([[0.0], NYBLOM_GRID])
+    )
+
+    return float(np.clip(0.5 + value / np.pi, 0.0, 1.0))
+
+
+def get_nyblom_test(
+    scores: np.ndarray | pd.DataFrame, names: list[str] | None = None
+) -> pd.Series:
+    """
+    Calculate the parameter stability test of Nyblom (1989) and Hansen (1992) from the
+    scores of a model fitted by maximum likelihood: do the parameters stay the same over the
+    sample? At the maximum the scores of every parameter sum to zero over the whole sample;
+    when a parameter changes during the sample, their running sum wanders far from zero in
+    between.
+
+    The formula is as follows, with s_t the scores (the derivatives of the log-likelihood of
+    observation t with respect to the parameters, a row per observation) and T the number of
+    observations:
+
+    - S_t = Σ_(i=1..t) s_i, the running sum of the scores
+    - V = Σ_t s_t s_t', the outer product of the scores
+    - Individual Statistic of parameter j = Σ_t S_t,j^2 / (T V_jj)
+    - Joint Statistic = Σ_t S_t' V^-1 S_t / T
+    - P-values from the limiting distribution, the sum of k squared Brownian bridges integrated over
+      the sample with k = 1 for an individual and the number of parameters for the joint statistic
+      (see `get_nyblom_p_value`)
+
+    The statistics are large, and the p-values small, when a parameter changes during the
+    sample. A parameter that sits on a bound of its search at the maximum (such as a Beta of
+    0) has scores that do not sum to zero, which inflates its statistic and the joint one.
+
+    For more information, see the following papers:
+
+    - Nyblom, J. (1989). "Testing for the Constancy of Parameters Over Time." Journal of the
+    American Statistical Association, 84(405), 223-230.
+    - Hansen, B.E. (1992). "Testing for Parameter Instability in Linear Models." Journal of
+    Policy Modeling, 14(4), 517-533.
+
+    Args:
+        scores (np.ndarray | pd.DataFrame): The scores, one row per observation and one
+            column per parameter.
+        names (list[str] | None, optional): The parameter names. Defaults to None, which uses
+            the columns of a DataFrame or Parameter 1, 2, ...
+
+    Returns:
+        pd.Series: The Joint Statistic, its P-Value and 5% Critical Value, and the Statistic
+        and P-Value of every parameter, with the 5% Critical Value of one parameter and the
+        Observations.
+
+    Notes:
+        Referenced against `nyblom` of R's rugarch (https://cran.r-project.org/package=rugarch),
+        which reports Hansen's tabulated critical values; the p-values and critical values
+        here are those of the limiting distribution itself.
+    """
+    if isinstance(scores, pd.DataFrame):
+        names = list(scores.columns) if names is None else names
+        scores = scores.to_numpy(dtype=float)
+
+    scores = np.asarray(scores, dtype=float)
+    observations, parameters = scores.shape
+    names = (
+        [f"Parameter {i + 1}" for i in range(parameters)] if names is None else names
+    )
+
+    cumulative = np.cumsum(scores, axis=0)
+    outer = scores.T @ scores
+    individual = np.sum(cumulative**2, axis=0) / (observations * np.diag(outer))
+
+    try:
+        joint = float(
+            np.sum(cumulative * np.linalg.solve(outer, cumulative.T).T) / observations
+        )
+    except np.linalg.LinAlgError:
+        joint = np.nan
+
+    def critical_value(count: int) -> float:
+        return float(
+            optimize.brentq(
+                lambda x: get_nyblom_p_value(x, count) - SIGNIFICANCE_LEVEL,
+                1e-3,
+                10.0 + count,
+            )
+        )
+
+    result = {
+        "Joint Statistic": joint,
+        "Joint P-Value": get_nyblom_p_value(joint, parameters),
+        "Joint Critical Value (5%)": critical_value(parameters),
+    }
+    for name, statistic in zip(names, individual, strict=True):
+        result[f"{name} Statistic"] = float(statistic)
+        result[f"{name} P-Value"] = get_nyblom_p_value(float(statistic), 1)
+    result["Individual Critical Value (5%)"] = critical_value(1)
+    result["Observations"] = observations
+
+    return pd.Series(result)
+
+
+def get_gmm_moment_test(
+    standardized_residuals: pd.Series | pd.DataFrame,
+    lags: int = 1,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the GMM orthogonality test of Hansen (1982) on the standardized residuals of a
+    volatility model: do they have the mean, variance, skewness and kurtosis of the
+    innovation distribution, and are their squares, cubes and fourth powers uncorrelated over
+    time, as a correctly specified model implies?
+
+    The formula is as follows, with z_t the standardized residuals, s and κ the skewness and
+    kurtosis (not excess) of the innovation distribution and j = 1, ..., p the lags:
+
+    - Mean: E[z_t] = 0; Variance: E[z_t^2 - 1] = 0; Skewness: E[z_t^3 - s] = 0; Kurtosis: E[z_t^4 - κ] = 0
+    - Q2: E[(z_t^2 - 1)(z_(t-j)^2 - 1)] = 0; Q3: E[(z_t^3 - s)(z_(t-j)^3 - s)] = 0;
+      Q4: E[(z_t^4 - κ)(z_(t-j)^4 - κ)] = 0
+    - g_t the moment conditions of observation t, over the T observations t = p + 1, ..., n, and ḡ
+      their average
+    - S their covariance under the null of independent innovations: the sample covariance (ddof=1)
+      of the four moments, Cov(a_t b_(t-j), c_t d_(t-k)) = E[a c] E[b d] for j = k and 0 otherwise for the
+      lagged products, and 0 between the moments and the lagged products, with E[a c] the average of
+      the products of the centred moments
+    - t-Statistic of a moment = ḡ_i / √(S_ii / T), two-sided p-values from the normal distribution
+    - Q2, Q3 and Q4 Statistic = T ḡ' S^-1 ḡ over their p conditions, chi-squared with p degrees of freedom
+    - Joint Statistic = T ḡ' S^-1 ḡ over all 4 + 3 p conditions, chi-squared with 4 + 3 p degrees of
+      freedom
+
+    The parameters of the model are estimated, which the test leaves out of the covariance
+    of the moments, as rugarch's GMMTest does; read the p-values as a guide. The moments are
+    correlated with each other (z_t with z_t^3, z_t^2 with z_t^4, and Q2 with Q4), so the joint test
+    can reject while none of the individual tests does. The covariance of the lagged products is
+    the one the null implies rather than their sample covariance, which rests on 16th moments of
+    z_t: on 2,500 simulated normal innovations the joint test at 5% then rejects about 7% of the
+    time instead of 20%. The Kurtosis condition needs a finite 8th moment of z_t (a Student-t
+    with a Shape above 8) and converges slowly even then: on simulated Student-t innovations with
+    a Shape of 10, the Kurtosis test at 5% rejects about 11% of the time and the joint test 16%.
+
+    For more information about the method, see the following paper:
+
+    - Hansen, L.P. (1982). "Large Sample Properties of Generalized Method of Moments
+    Estimators." Econometrica, 50(4), 1029-1054.
+
+    Args:
+        standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals.
+        lags (int, optional): The number of lags p of the Q2, Q3 and Q4 conditions. Defaults to 1.
+        skewness (float, optional): The skewness s of the innovation distribution, NaN when
+            it has none (a Student-t with a Shape of 3 or less), which leaves the Skewness and
+            Q3 conditions out. Defaults to 0.
+        kurtosis (float, optional): The kurtosis κ (not excess) of the innovation
+            distribution, NaN when it has none (a Student-t with a Shape of 4 or less), which
+            leaves the Kurtosis and Q4 conditions out. Defaults to 3.
+
+    Returns:
+        pd.Series | pd.DataFrame: The t-statistic and p-value of the Mean, Variance, Skewness
+        and Kurtosis conditions, the Q2, Q3, Q4 and Joint statistics with their p-values,
+        the lags and the observations.
+
+    Notes:
+        Referenced against `GMMTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
+        as its documentation defines it: the moment conditions M1 to M4, Q2 to Q4 and the
+        joint J test.
+    """
+    if lags < 1:
+        raise ValueError(f"The test needs at least 1 lag, not {lags}.")
+
+    if isinstance(standardized_residuals, pd.DataFrame):
+        return pd.DataFrame(
+            {
+                column: get_gmm_moment_test(
+                    standardized_residuals[column], lags, skewness, kurtosis
+                )
+                for column in standardized_residuals.columns
+            }
+        )
+
+    z = standardized_residuals.dropna().to_numpy(dtype=float)
+    centred = {
+        "Mean": z,
+        "Variance": z**2 - 1,
+        "Skewness": z**3 - skewness,
+        "Kurtosis": z**4 - kurtosis,
+    }
+    conditions = {name: values[lags:] for name, values in centred.items()}
+    groups = {"Q2": "Variance", "Q3": "Skewness", "Q4": "Kurtosis"}
+    for group, name in groups.items():
+        for lag in range(1, lags + 1):
+            conditions[f"{group} {lag}"] = (
+                centred[name][lags:] * centred[name][lags - lag : len(z) - lag]
+            )
+
+    for moment, names in (
+        (skewness, GMM_SKEWNESS_MOMENTS),
+        (kurtosis, GMM_KURTOSIS_MOMENTS),
+    ):
+        if not np.isfinite(moment):
+            conditions = {
+                name: values
+                for name, values in conditions.items()
+                if not name.startswith(names)
+            }
+
+    observations = len(z) - lags
+    result: dict[str, float] = {}
+    names = list(conditions)
+    if observations <= len(names):
+        covariance = np.full((len(names), len(names)), np.nan)
+    else:
+        # The covariance of the conditions under the null of independent innovations: the sample
+        # covariance of the four moments, and for the lagged products (centred moments a and b at
+        # lags j and k) Cov = δ_jk E[a b]², uncorrelated with the moments. The sample covariance of
+        # the products themselves rests on 16th moments of z_t and on cross-products that are only
+        # zero in expectation, which more than doubles the size of the joint test at 5% for normal
+        # innovations; this one keeps it close to 5%.
+        base = [name for name in centred if name in conditions]
+        moments = np.column_stack([centred[name][lags:] for name in base])
+        products = np.atleast_2d(moments.T @ moments / observations)
+        covariance = np.zeros((len(names), len(names)))
+        size = len(base)
+        covariance[:size, :size] = np.atleast_2d(np.cov(moments, rowvar=False))
+        for row, first in enumerate(names[size:], size):
+            for column, second in enumerate(names[size:], size):
+                group_a, lag_a = first.split(" ")
+                group_b, lag_b = second.split(" ")
+                if lag_a == lag_b:
+                    covariance[row, column] = (
+                        products[
+                            base.index(groups[group_a]), base.index(groups[group_b])
+                        ]
+                        ** 2
+                    )
+    index = {name: position for position, name in enumerate(names)}
+
+    def wald(selected: list[str]) -> tuple[float, float]:
+        if not selected or observations <= len(names):
+            return np.nan, np.nan
+        positions = [index[name] for name in selected]
+        average = np.column_stack([conditions[name] for name in selected]).mean(axis=0)
+        try:
+            statistic = float(
+                observations
+                * average
+                @ np.linalg.solve(covariance[np.ix_(positions, positions)], average)
+            )
+        except np.linalg.LinAlgError:
+            return np.nan, np.nan
+        return statistic, float(stats.chi2.sf(statistic, len(selected)))
+
+    for name in centred:
+        if name in conditions and observations > 1:
+            values = conditions[name]
+            statistic = float(
+                values.mean() / (values.std(ddof=1) / np.sqrt(observations))
+            )
+            result[f"{name} t-Statistic"] = statistic
+            result[f"{name} P-Value"] = float(2 * stats.norm.sf(abs(statistic)))
+        else:
+            result[f"{name} t-Statistic"] = np.nan
+            result[f"{name} P-Value"] = np.nan
+
+    for group in groups:
+        statistic, p_value = wald(
+            [name for name in conditions if name.startswith(f"{group} ")]
+        )
+        result[f"{group} Statistic"] = statistic
+        result[f"{group} P-Value"] = p_value
+
+    statistic, p_value = wald(list(conditions))
+    result["Joint Statistic"] = statistic
+    result["Joint P-Value"] = p_value
+    result["Lags"] = lags
+    result["Observations"] = observations
+
+    return pd.Series(result)
 
 
 def get_level_significance(

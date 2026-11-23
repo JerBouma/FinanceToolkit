@@ -2,11 +2,12 @@
 
 __docformat__ = "google"
 
+import functools
 from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
-from scipy import optimize, special, stats
+from scipy import integrate, optimize, special, stats
 
 from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.risk import risk_model
@@ -26,6 +27,15 @@ MINIMUM_OBSERVATIONS_FOR_DIRECTIONAL_TEST = 3
 
 # The model confidence set compares at least two models.
 MINIMUM_MODELS_FOR_MCS = 2
+
+# The Hong-Li density estimate is integrated with an 8-point Gauss-Legendre rule on panels a fifth of
+# the bandwidth wide (five panels in each boundary strip); 4 and 16 points per panel agree with it to
+# 1e-6 of the statistic.
+HONG_LI_NODES_PER_PANEL = 8
+HONG_LI_PANELS_PER_BANDWIDTH = 5
+
+# The Hong-Li test needs a few pairs per lag to estimate their joint density.
+MINIMUM_OBSERVATIONS_FOR_HONG_LI_TEST = 20
 
 
 def get_diebold_mariano_test(
@@ -823,6 +833,185 @@ def get_berkowitz_test(
             "Tail Observations": np.nan,
         }
     )
+
+
+def _quartic_kernel(u: np.ndarray) -> np.ndarray:
+    """The quartic kernel k(u) = 15 / 16 (1 - u^2)^2 on [-1, 1]."""
+    return np.where(np.abs(u) <= 1, 15 / 16 * (1 - u * u) ** 2, 0.0)
+
+
+def _quartic_kernel_mass(b: np.ndarray | float) -> np.ndarray | float:
+    """∫_(-1)^b k(u) du = 15 / 16 (b - 2 b^3 / 3 + b^5 / 5) + 1 / 2 for b in [-1, 1]."""
+    b = np.clip(b, -1.0, 1.0)
+    return 15 / 16 * (b - 2 * b**3 / 3 + b**5 / 5) + 0.5
+
+
+@functools.cache
+def _hong_li_constants() -> tuple[float, float, float]:
+    """
+    ∫ k^2 du, ∫_0^1 ∫_(-1)^b k_b^2(u) du db with k_b = k / ∫_(-1)^b k and V_0 of Hong and Li
+    (2005) for the quartic kernel.
+    """
+    squared = integrate.quad(lambda u: float(_quartic_kernel(u) ** 2), -1, 1)[0]
+    boundary = integrate.quad(
+        lambda b: integrate.quad(lambda u: float(_quartic_kernel(u) ** 2), -1, b)[0]
+        / float(_quartic_kernel_mass(b)) ** 2,
+        0,
+        1,
+    )[0]
+
+    def convolution(u: float) -> float:
+        return integrate.quad(
+            lambda v: float(_quartic_kernel(u + v) * _quartic_kernel(v)), -1, 1
+        )[0]
+
+    variance = 2 * integrate.quad(lambda u: convolution(u) ** 2, -1, 1)[0] ** 2
+
+    return squared, boundary, variance
+
+
+def _boundary_kernel(x: np.ndarray, y: np.ndarray, bandwidth: float) -> np.ndarray:
+    """
+    The boundary-modified kernel K_h(x, y) of Hong and Li (2005) for every x (rows) and y
+    (columns): h^-1 k((x - y) / h), divided by ∫_(-x/h)^1 k(u) du for x in [0, h) and by
+    ∫_(-1)^((1-x)/h) k(u) du for x in (1 - h, 1], so it integrates to 1 over y in [0, 1].
+    """
+    kernel = _quartic_kernel((x[:, None] - y[None, :]) / bandwidth) / bandwidth
+    mass = np.where(
+        x < bandwidth,
+        _quartic_kernel_mass(x / bandwidth),
+        np.where(x > 1 - bandwidth, _quartic_kernel_mass((1 - x) / bandwidth), 1.0),
+    )
+
+    return kernel / mass[:, None]
+
+
+def get_hong_li_test(
+    pit: pd.Series | pd.DataFrame, lags: int = 4
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the nonparametric density forecast test of Hong and Li (2005).
+
+    If the density forecasts are correct, the probability integral transforms (PIT, see
+    `get_probability_integral_transform`) are independent and uniform on (0, 1), so the joint
+    density of every pair (PIT_t, PIT_(t-j)) is 1 on the unit square. The test estimates that
+    density with a kernel and measures its distance from 1, lag by lag: it detects a wrong
+    shape of the forecast density and dependence the model misses together, where the
+    Berkowitz test only looks at the mean, variance and first autocorrelation of the normal
+    quantiles.
+
+    The formula is as follows, with U_t the n PITs, k the quartic kernel 15 / 16 (1 - u^2)^2 on
+    [-1, 1], K_h its boundary-modified version (see the notes) and h = S_U n^(-1/6) the bandwidth,
+    with S_U the standard deviation of U (ddof=1):
+
+    - g_j(x_1, x_2) = Σ_(t=j+1..n) K_h(x_1, U_t) K_h(x_2, U_(t-j)) / (n - j)
+    - M(j) = ∫_0^1 ∫_0^1 (g_j(x_1, x_2) - 1)^2 dx_1 dx_2
+    - A_h = [(h^-1 - 2) ∫ k^2(u) du + 2 ∫_0^1 ∫_(-1)^b k_b^2(u) du db]^2 - 1, with k_b = k / ∫_(-1)^b k(v) dv
+    - V_0 = 2 [∫_(-1)^1 (∫_(-1)^1 k(u + v) k(v) dv)^2 du]^2
+    - Q(j) = h ((n - j) M(j) - A_h) / √V_0, standard normal under the null
+    - W = Σ_(j=1..p) Q(j) / √p, the portmanteau statistic over p = `lags` lags, standard normal under the null
+
+    Only large values reject (the upper tail): the p-values are P(N(0, 1) > statistic).
+
+    For more information about the method, see the following papers:
+
+    - Hong, Y. and Li, H. (2005). "Nonparametric Specification Testing for Continuous-Time
+    Models with Applications to Term Structure of Interest Rates." The Review of Financial
+    Studies, 18(1), 37-84.
+    - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with
+    Applications to Financial Risk Management." International Economic Review, 39(4), 863-883.
+
+    Args:
+        pit (pd.Series | pd.DataFrame): The probability integral transforms, one column per
+            asset.
+        lags (int, optional): The number of lags p. Defaults to 4.
+
+    Returns:
+        pd.Series | pd.DataFrame: The statistic Q(j) and its p-value for every lag, the
+        portmanteau W and its p-value, the bandwidth and the number of observations.
+
+    Notes:
+        Referenced against `HLTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
+        as its documentation defines it. (n - j) M(j) has an expected value of about A_h
+        under the null, so A_h enters multiplied by h, the scale of the statistic; without
+        it the statistic centres far below zero (around -60 on 1,000 independent uniform
+        draws). Simulated independent uniforms give Q(1) a mean of about 0 and a standard
+        deviation of about 1.2 at 500 to 2,000 observations, so read the p-values as a
+        guide. The integral is a Gauss-Legendre rule on panels of a fifth of the bandwidth.
+    """
+    if lags < 1:
+        raise ValueError(f"The test needs at least 1 lag, not {lags}.")
+
+    if isinstance(pit, pd.DataFrame):
+        return pd.DataFrame(
+            {column: get_hong_li_test(pit[column], lags) for column in pit.columns}
+        )
+    if not isinstance(pit, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    values = pit.dropna().to_numpy(dtype=float)
+    n = len(values)
+    names = [f"Q({lag})" for lag in range(1, lags + 1)]
+
+    if n < max(MINIMUM_OBSERVATIONS_FOR_HONG_LI_TEST, lags + 2):
+        return pd.Series(
+            {
+                **{
+                    f"{name} {kind}": np.nan
+                    for name in names
+                    for kind in ("Statistic", "P-Value")
+                },
+                "W Statistic": np.nan,
+                "W P-Value": np.nan,
+                "Bandwidth": np.nan,
+                "Observations": n,
+            }
+        )
+
+    bandwidth = float(np.std(values, ddof=1) * n ** (-1 / 6))
+    squared, boundary, variance = _hong_li_constants()
+    centring = ((1 / bandwidth - 2) * squared + 2 * boundary) ** 2 - 1
+
+    # Composite Gauss-Legendre nodes on [0, 1], with panel edges at h and 1 - h where the kernel's normalization changes.  # noqa: E501
+    panel = bandwidth / HONG_LI_PANELS_PER_BANDWIDTH
+    edges = np.unique(
+        np.concatenate(
+            [
+                np.linspace(0, bandwidth, HONG_LI_PANELS_PER_BANDWIDTH + 1),
+                np.linspace(
+                    bandwidth,
+                    1 - bandwidth,
+                    max(int(np.ceil((1 - 2 * bandwidth) / panel)), 1) + 1,
+                ),
+                np.linspace(1 - bandwidth, 1, HONG_LI_PANELS_PER_BANDWIDTH + 1),
+            ]
+        )
+    )
+    unit_nodes, unit_weights = np.polynomial.legendre.leggauss(HONG_LI_NODES_PER_PANEL)
+    half = np.diff(edges)[:, None] / 2
+    nodes = (half * unit_nodes + (edges[:-1, None] + half)).ravel()
+    weights = (half * unit_weights).ravel()
+
+    kernel = _boundary_kernel(nodes, values, bandwidth)
+    result = {}
+    statistics = []
+
+    for lag, name in zip(range(1, lags + 1), names, strict=True):
+        pairs = n - lag
+        density = kernel[:, lag:] @ kernel[:, :-lag].T / pairs
+        distance = float(weights @ (density - 1) ** 2 @ weights)
+        statistic = bandwidth * (pairs * distance - centring) / np.sqrt(variance)
+        statistics.append(statistic)
+        result[f"{name} Statistic"] = statistic
+        result[f"{name} P-Value"] = float(stats.norm.sf(statistic))
+
+    portmanteau = float(np.sum(statistics) / np.sqrt(lags))
+    result["W Statistic"] = portmanteau
+    result["W P-Value"] = float(stats.norm.sf(portmanteau))
+    result["Bandwidth"] = bandwidth
+    result["Observations"] = n
+
+    return pd.Series(result)
 
 
 def get_return_forecast(

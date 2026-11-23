@@ -158,10 +158,11 @@ def test_refused_and_estimation_choices_are_no_formula_variants():
     assert (
         "get_garch, get_garch_forecast, get_garch_parameters, get_garch_simulation, "
         "get_news_impact_curve: 'garch', 'gjr', 'igarch', 'aparch', 'tgarch', 'ngarch', "
-        "'nagarch', 'component';"
+        "'nagarch', 'component', 'figarch';"
     ) in description
     assert "egarch" not in description
     assert "avgarch" not in description
+    assert "'realized'" not in description
 
     # A method that is free text lists every value it accepts, however long the list.
     from financetoolkit.portfolio.construction.optimization.optimization_model import (

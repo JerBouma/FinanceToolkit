@@ -2,12 +2,15 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
 from financetoolkit import helpers
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.bonds import bond_model, curve_risk_model
+from financetoolkit.fixedincome.curves.curves_controller import BILL_CONVENTIONS
 from financetoolkit.fixedincome.helpers import parse_maturities
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
@@ -176,7 +179,7 @@ DURATION_TYPES = {
 @track_sources
 class BondsFixedIncome(MarketsFixedIncome):
     """
-    Bond analytics: present value, duration, yield to maturity, Z-spread, key rate durations, the Taylor price change, the bond equivalent yield and bond statistics.
+    Bond analytics: present value, duration, yield to maturity, Z-spread, key rate durations, bucketed deltas, the parallel shift ladder, the Taylor price change, the bond equivalent yield and bond statistics.
     """
 
     def _select_bonds(
@@ -1110,6 +1113,284 @@ class BondsFixedIncome(MarketsFixedIncome):
         return self._bond_table(
             selection,
             pd.DataFrame.from_dict(durations, orient="index"),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_bucketed_delta(
+        self,
+        method: Literal["par", "forward"] = "par",
+        bump: float = 0.0001,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the bucketed delta of individual bonds on the Treasury curve: the change in
+        each bond's present value, per 100 of par, when one maturity of the curve rises by a basis
+        point, for every maturity the Treasury quotes. Where `get_key_rate_duration` shocks a
+        zero-coupon rate with a tent around it, these deltas move the rates traders hedge with.
+
+        With method="par" (the par-rate delta) one par yield of the Treasury par curve rises by a
+        basis point and the zero-coupon curve is bootstrapped again, so the deltas are the
+        sensitivities to the notes and bonds of each maturity: a par bond maturing at a quoted
+        maturity has a delta to that maturity only. They follow from the chain rule through the
+        par-to-zero Jacobian of the bootstrap (see `curve_risk_model.get_par_rate_delta`):
+
+        - PV = SUM(CF(t) * (1 + Zero Rate(t))^(-t))
+        - Par Rate Delta(i) = SUM_j(dPV / dZero Rate(j) * dZero Rate(j) / dPar Yield(i)) * 0.0001
+
+        With method="forward" (the forward-rate delta) the continuously compounded instantaneous
+        forward rate between two neighbouring quoted maturities rises by a basis point, which moves
+        every discount factor beyond it as well (see `curve_risk_model.get_forward_rate_delta`):
+
+        - Forward Rate Delta(i) = SUM(CF(t) * (1 + Zero Rate(t))^(-t) * -Overlap(t, i)) * 0.0001
+
+        Where CF(t) are the bond's coupons (100 * Coupon / 2) and principal on its actual coupon
+        dates, Zero Rate(t) is the Treasury zero-coupon curve of the price date (annually
+        compounded, bootstrapped from the par yields with the zero rate of every coupon date, see
+        `get_zero_coupon_curve`, and interpolated linearly), and Overlap(t, i) is the part of the
+        bucket of maturity i (from the previous quoted maturity to i, the first from today and the
+        last without an end) before t. The par yields are bond-equivalent yields, compounded twice a
+        year beyond a year. The bump of the differences is 1 basis point by default; the deltas are
+        always per +1 basis point, in dollars per 100 of par, negative for a long position. Summed
+        over the maturities they give the change for a parallel shift of the par curve (par) or of
+        the continuously compounded zero rates (forward). The bonds are discounted on the Treasury
+        curve without a spread and selected as in `collect_bond_statistics`; TIPS have no delta on
+        the nominal curve. For cash flows or a curve of your own, use `curve_risk_model`.
+
+        Also known as: bucketed PV01, par-rate risk, forward-rate risk, DV01 ladder, partial DV01.
+
+        Args:
+            method (Literal["par", "forward"], optional): "par" for the par-rate delta or
+                "forward" for the forward-rate delta. Defaults to "par".
+            bump (float, optional): The move of a rate up and down in the differences (decimal).
+                Defaults to 0.0001.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and a delta per maturity of the Treasury curve.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        deltas = fixedincome.get_bucketed_delta(date="2026-11-05")
+
+        deltas[["Maturity", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]]
+        ```
+
+        Which returns:
+
+        |           | Maturity   |      2Y |      3Y |      5Y |      7Y |     10Y |     20Y |     30Y |
+        |:----------|:-----------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
+        | 91282CRU7 | 2028-10-31 | -0.0186 |  0      |  0      |  0      |  0      |  0      |  0      |
+        | 91282CLR0 | 2029-10-31 | -0.0003 | -0.0272 |  0      |  0      |  0      |  0      |  0      |
+        | 91282CRT0 | 2031-10-31 |  0      | -0.0004 | -0.044  |  0      |  0      |  0      |  0      |
+        | 91282CRV5 | 2033-10-31 |  0      | -0.0001 | -0.0005 | -0.0589 |  0      |  0      |  0      |
+        | 91282CRF0 | 2036-08-15 |  0      |  0.0001 |  0.0001 | -0.0054 | -0.0718 |  0      |  0      |
+        | 912810RU4 | 2046-11-15 |  0.0002 |  0.0005 |  0.001  |  0.0019 |  0.0097 | -0.1131 | -0.0003 |
+        | 912810UW6 | 2056-08-15 |  0      |  0      |  0      |  0.0001 |  0.0003 | -0.0024 | -0.1471 |
+        """
+        if method not in ("par", "forward"):
+            raise ValueError('The method must be "par" or "forward".')
+
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+
+        deltas: dict[str, pd.Series] = {}
+        for price_date in selection["Price Date"].unique():
+            par_curve = self._latest_yield_curve("United States", str(price_date))
+            labels = list(par_curve.index)
+            par_curve = pd.Series(
+                par_curve.to_numpy(dtype=float),
+                index=[
+                    fixedincome_helpers.maturity_in_years(label) for label in labels
+                ],
+            )
+            zero_curve = self._latest_zero_curve("United States", str(price_date))
+            for bond, row in selection[
+                selection["Price Date"] == price_date
+            ].iterrows():
+                if row["Security Type"] == "TIPS":
+                    deltas[bond] = pd.Series(np.nan, index=labels)
+                    continue
+                cash_flows = bond_model.get_bond_cash_flows(**_bond_terms(row))
+                delta = (
+                    curve_risk_model.get_par_rate_delta(
+                        cash_flows,
+                        par_curve,
+                        FREQUENCY,
+                        BILL_CONVENTIONS["United States"],
+                        bump,
+                    )
+                    if method == "par"
+                    else curve_risk_model.get_forward_rate_delta(
+                        cash_flows, zero_curve, par_curve.index, bump
+                    )
+                )
+                deltas[bond] = pd.Series(delta.to_numpy(), index=labels)
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame(deltas).T,
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_rate_shift_ladder(
+        self,
+        shifts: list[float] | str | None = None,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the parallel shift ladder of individual bonds on the Treasury zero-coupon curve:
+        the profit or loss, per 100 of par, when the whole curve shifts up or down by each of a range
+        of amounts, with the bond's delta and gamma to the shift. Where duration and convexity
+        extrapolate from today's curve, the ladder reprices the bond at every shift, so it shows the
+        full, asymmetric response to large moves.
+
+        The formula is as follows:
+
+        - PV(Δ) = SUM(CF(t) * (1 + Zero Rate(t) + Δ)^(-t))
+        - P&L(Δ) = PV(Δ) - PV(0)
+        - Delta = (PV(+h) - PV(-h)) / (2h)
+        - Gamma = (PV(+h) - 2 * PV(0) + PV(-h)) / h^2
+
+        Where CF(t) are the bond's coupons (100 * Coupon / 2) and principal on its actual coupon
+        dates, Zero Rate(t) is the Treasury zero-coupon curve of the price date (annually compounded,
+        see `get_zero_coupon_curve`, interpolated linearly), so Δ shifts annually compounded zero
+        rates, and h is 1 basis point. Delta and Gamma are per unit of rate, so P&L(Δ) ≈ Delta * Δ +
+        0.5 * Gamma * Δ^2 with Δ as a decimal: a Delta of -700 loses 0.07 for a 1 basis point rise.
+        The bonds are discounted on the Treasury curve without a spread and selected as in
+        `collect_bond_statistics`; TIPS have no ladder on the nominal curve. For cash flows or a curve
+        of your own, and the delta and gamma at every shift, use
+        `curve_risk_model.get_parallel_shift_ladder`.
+
+        Also known as: parallel shift report, scenario ladder, PV ladder, dollar gamma.
+
+        Args:
+            shifts (list[float] | str | None, optional): The parallel shifts (decimals), e.g.
+                [-0.01, 0.01]. Defaults to None, -200, -100, -50, -25, 25, 50, 100 and 200 basis
+                points.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date, the P&L of every shift (labelled in basis points, such as '-100bp')
+            and the Delta and Gamma.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        ladder = fixedincome.get_rate_shift_ladder(date="2026-11-05")
+
+        ladder[["Maturity", "-200bp", "-50bp", "+50bp", "+200bp", "Delta", "Gamma"]]
+        ```
+
+        Which returns:
+
+        |           | Maturity   |   -200bp |   -50bp |   +50bp |   +200bp |     Delta |     Gamma |
+        |:----------|:-----------|---------:|--------:|--------:|---------:|----------:|----------:|
+        | 91282CRU7 | 2028-10-31 |   3.7943 |  0.9284 | -0.9153 |  -3.5854 |  -184.36  |   521.782 |
+        | 91282CLR0 | 2029-10-31 |   5.5767 |  1.3548 | -1.3296 |  -5.1732 |  -268.428 |  1007.8   |
+        | 91282CRT0 | 2031-10-31 |   9.1613 |  2.1953 | -2.1354 |  -8.2008 |  -433.002 |  2397.28  |
+        | 91282CRV5 | 2033-10-31 |  12.4756 |  2.9498 | -2.8448 | -10.791  |  -579.318 |  4200.65  |
+        | 91282CRF0 | 2036-08-15 |  16.4436 |  3.8178 | -3.6394 | -13.579  |  -745.4   |  7130.76  |
+        | 912810RU4 | 2046-11-15 |  22.4745 |  4.8882 | -4.4764 | -15.7994 |  -935.114 | 16459.8   |
+        | 912810UW6 | 2056-08-15 |  35.7437 |  7.4714 | -6.6913 | -22.9696 | -1412.9   | 31157.5   |
+        """
+        shift_values = (
+            [shift for shift in curve_risk_model.DEFAULT_SHIFTS if shift != 0]
+            if shifts is None
+            else [float(shift) for shift in helpers.split_values(shifts)]
+        )
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        zero_curves = {
+            price_date: self._latest_zero_curve("United States", str(price_date))
+            for price_date in selection["Price Date"].unique()
+        }
+        labels = [f"{shift * 10_000:+g}bp" for shift in shift_values]
+
+        ladders = {}
+        for bond, row in selection.iterrows():
+            if row["Security Type"] == "TIPS":
+                ladders[bond] = pd.Series(np.nan, index=[*labels, "Delta", "Gamma"])
+                continue
+            ladder = curve_risk_model.get_parallel_shift_ladder(
+                bond_model.get_bond_cash_flows(**_bond_terms(row)),
+                zero_curves[row["Price Date"]],
+                [0.0, *shift_values],
+            )
+            ladders[bond] = pd.Series(
+                [
+                    *ladder["P&L"].iloc[1:],
+                    ladder["Delta"].iloc[0],
+                    ladder["Gamma"].iloc[0],
+                ],
+                index=[*labels, "Delta", "Gamma"],
+            )
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame(ladders).T,
             rounding if rounding is not None else self._rounding,
         )
 

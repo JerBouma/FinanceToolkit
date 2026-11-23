@@ -259,3 +259,11 @@ def test_get_carry_and_roll_down_invalid_input():
         yieldcurve_model.get_carry_and_roll_down(CARRY_CURVE, [2.0], short_rate="4%")
     with pytest.raises(ValueError, match="horizon"):
         yieldcurve_model.get_carry_and_roll_down(CARRY_CURVE, [2.0], horizon=0)
+
+
+def test_get_yield_curve_butterfly():
+    assert yieldcurve_model.get_yield_curve_butterfly(
+        0.04, 0.045, 0.047
+    ) == pytest.approx(0.003)
+    with pytest.raises(TypeError):
+        yieldcurve_model.get_yield_curve_butterfly(0.04, "0.045", 0.047)

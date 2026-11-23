@@ -1820,3 +1820,52 @@ def test_get_volatility_compounded(recorder, risk_module):
     compounded = risk_module.get_volatility(method="compounded")
     recorder.capture(compounded)
     recorder.capture(risk_module.get_volatility(method="compounded", period="monthly"))
+
+
+def test_get_higher_moment_coherent_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_higher_moment_coherent_risk())
+    recorder.capture(risk_module.get_higher_moment_coherent_risk(order=3, alpha=0.1))
+    recorder.capture(
+        risk_module.get_higher_moment_coherent_risk(period="weekly", rolling=52)
+    )
+    # Order 1 is the exact tail average of the returns, next to the interpolated historic CVaR.
+    assert np.allclose(
+        risk_module.get_higher_moment_coherent_risk(order=1, rounding=10),
+        risk_module.get_conditional_value_at_risk(rounding=10),
+        atol=2e-4,
+    )
+
+
+def test_get_expected_quadratic_shortfall(recorder, risk_module):
+    recorder.capture(risk_module.get_expected_quadratic_shortfall(rounding=8))
+    recorder.capture(
+        risk_module.get_expected_quadratic_shortfall(
+            period="monthly", within_period=True, rounding=8
+        )
+    )
+    recorder.capture(
+        risk_module.get_expected_quadratic_shortfall(rolling=60, alpha=0.1, rounding=8)
+    )
+
+
+def test_get_conditional_expected_drawdown(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_expected_drawdown())
+    recorder.capture(
+        risk_module.get_conditional_expected_drawdown(
+            period="yearly", within_period=True, window=10
+        )
+    )
+    recorder.capture(risk_module.get_conditional_expected_drawdown(rolling=126))
+    recorder.capture(
+        risk_module.get_conditional_expected_drawdown(period="weekly", compounded=False)
+    )
+    # Every path lies within the history, so no path is deeper than the Maximum Drawdown.
+    assert (
+        risk_module.get_conditional_expected_drawdown(rounding=10)
+        >= risk_module.get_maximum_drawdown(rounding=10) - 1e-12
+    ).all()
+
+
+def test_get_drawdown_table(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_table(top=3))
+    recorder.capture(risk_module.get_drawdown_table(top=2, period="weekly"))

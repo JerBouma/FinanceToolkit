@@ -336,6 +336,50 @@ def get_yield_curve_spread(
     return long_yield - short_yield
 
 
+def get_yield_curve_butterfly(
+    short_yield: float | pd.Series,
+    middle_yield: float | pd.Series,
+    long_yield: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the butterfly ("fly") of three points on the yield curve: how far the middle
+    maturity (the body) lies above the straight line through the two wings, the curvature of
+    the curve. A positive butterfly means the body yields more than the wings (it is cheap
+    against them), a negative one that it yields less.
+
+    Also known as: fly, curve butterfly, 2s5s10s, curvature.
+
+    The formula is as follows:
+
+        Butterfly = 2 * Middle Yield - Short Yield - Long Yield
+
+    The wings are weighted equally, as butterflies are quoted (e.g. 2s5s10s); a duration- or
+    regression-weighted butterfly trade has other weights.
+
+    For more information, see Tuckman and Serrat (2022), Fixed Income Securities, 4th
+    edition, chapter 6.
+
+    Args:
+        short_yield (float | pd.Series): The yield of the short wing (in decimal).
+        middle_yield (float | pd.Series): The yield of the body (in decimal).
+        long_yield (float | pd.Series): The yield of the long wing (in decimal).
+
+    Returns:
+        float | pd.Series: The butterfly (in decimal).
+
+    Raises:
+        TypeError: If a yield is not a float, int or pandas Series.
+    """
+    for value in (short_yield, middle_yield, long_yield):
+        if not isinstance(value, int | float | pd.Series):
+            raise TypeError(
+                "Expected the yields to be a float, int or pandas Series, received "
+                f"{type(value)} instead."
+            )
+
+    return 2 * middle_yield - short_yield - long_yield
+
+
 def get_breakeven_inflation_rate(
     nominal_yield: float | pd.Series, real_yield: float | pd.Series
 ) -> float | pd.Series:

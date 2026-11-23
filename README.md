@@ -404,7 +404,7 @@ And below each coefficient is shown with its 95% confidence interval. A rise of 
   <img alt="Economic Relations" src="https://raw.githubusercontent.com/JerBouma/FinanceToolkit/main/assets/readme/econometrics-light.png">
 </picture>
 
-The module also covers unit root and cointegration tests, Granger causality, panel data, causal inference, ARIMA, VAR and VECM forecasts, regime switching, a time-varying beta and pairs trading.
+The module also covers unit root and cointegration tests, fractional differentiation, bubble tests (SADF, GSADF) with the dates of each bubble, Granger causality, panel data, causal inference, ARIMA, VAR and VECM forecasts, regime switching, a time-varying beta and pairs trading.
 
 ## Comparing the Sector's ETFs
 

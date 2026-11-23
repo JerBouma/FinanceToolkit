@@ -3,12 +3,16 @@
 __docformat__ = "google"
 
 import itertools
+from typing import Literal
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.econometrics.stationarity import (
+    bubble_model,
     causality_model,
     cointegration_model,
+    fractional_model,
     unitroot_model,
 )
 from financetoolkit.helpers import handle_portfolio
@@ -27,8 +31,32 @@ logger = get_logger()
 @track_sources
 class StationarityEconometrics:
     """
-    Unit root tests (ADF, KPSS, Phillips-Perron, Zivot-Andrews), Engle-Granger and Johansen cointegration and Granger causality.
+    Unit root tests (ADF, KPSS, Phillips-Perron, Zivot-Andrews), fractional differentiation, bubble tests (SADF, GSADF, Chow-type Dickey-Fuller), Engle-Granger and Johansen cointegration and Granger causality.
     """
+
+    def _get_levels(
+        self, period: str, column: str, log_prices: bool, include_benchmark: bool
+    ) -> pd.DataFrame:
+        """
+        The `column` series of `period` per asset, as natural logarithms when `log_prices` is
+        True -- shared by the fractional differentiation and bubble methods, which work on the
+        levels of a series and, for prices, on their logarithms (López de Prado, 2018).
+        """
+        levels = self._filter_benchmark(
+            self._get_series_column(period, column),
+            include_benchmark=include_benchmark,
+        )
+
+        if not log_prices:
+            return levels
+
+        if (levels <= 0).any().any():
+            raise ValueError(
+                "The logarithm needs positive values; pass log_prices=False for a series that "
+                "can be zero or negative, such as a rate or a spread."
+            )
+
+        return np.log(levels)
 
     def _all_ordered_pairs(
         self, include_benchmark: bool = False
@@ -863,6 +891,737 @@ class StationarityEconometrics:
         # pandas does not round, so the numeric columns are restored first.
         result = pd.DataFrame(rows).T.infer_objects()
         result.index = result.index.set_names(["Dependent", "Independent"])
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_fractional_difference(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        d: float = 0.4,
+        method: Literal["fixed_width", "expanding"] = "fixed_width",
+        threshold: float | None = None,
+        log_prices: bool = True,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the fractional difference of a price series, per asset, (1 - L)^d applied to
+        the log prices with a d between 0 and 1.
+
+        A price series has a unit root, so models that need a stationary input usually take
+        returns, the first difference (d = 1), which throws away the memory of the series: the
+        return of today says nothing about where the price stands. López de Prado (2018) shows
+        that a fractional d, often between 0.2 and 0.6 for prices, already gives a stationary
+        series that keeps most of that memory (a correlation with the prices well above that of
+        the returns). Find the smallest such d with `get_minimum_fractional_difference`.
+
+        The formula is as follows, with Xₜ the log of the `column` (Adj Close by default):
+
+        - ω₀ = 1, ωₖ = -ωₖ₋₁·(d - k + 1) / k, the binomial weights of (1 - L)^d (Hosking, 1981)
+        - Fixed-width window (method="fixed_width", FFD): X̃ₜ = Σ(k=0..l*) ωₖ·Xₜ₋ₖ, with l* the last
+          lag whose weight is at least the threshold (1e-5 by default) in absolute value, so every
+          date has the same weights
+        - Expanding window (method="expanding"): X̃ₜ = Σ(k=0..t) ωₖ·Xₜ₋ₖ over the whole history up
+          to t, kept from the first date at which the share of the weight that falls before the
+          start of the series, Σ(j>t) |ωⱼ| / Σ(j=0..n-1) |ωⱼ|, is at most the threshold (0.01 by
+          default)
+        - d = 0 returns the log prices, d = 1 the log returns
+
+        For more information, see the following sources:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 5
+        (Snippets 5.1 to 5.3).
+        - Hosking, J.R.M. (1981). "Fractional Differencing." Biometrika, 68(1), 165-176.
+        - Referenced against mlfinlab's frac_diff and frac_diff_ffd (Hudson & Thames, open version
+        archived at https://github.com/quantopian/mlfinlab) and RiskLabAI's fractional_difference_std
+        and fractional_difference_fixed (https://github.com/RiskLabAI/RiskLabAI.py); the weights,
+        the skipped values and the series agree to 1e-14.
+
+        Also known as: fractional differentiation, fractionally differenced prices, FFD, fixed-width
+        window fracdiff, memory-preserving stationarity transform.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to differentiate. Defaults to "Adj Close".
+            d (float, optional): The order of differentiation, at least 0. Defaults to 0.4.
+            method (Literal["fixed_width", "expanding"], optional): The fixed-width window (FFD) or the
+                expanding window. Defaults to "fixed_width".
+            threshold (float | None, optional): The smallest absolute weight kept by the fixed-width
+                window, or the largest share of weight left out by the expanding window. Defaults to
+                None, which is 1e-5 for "fixed_width" and 0.01 for "expanding".
+            log_prices (bool, optional): Whether to take the natural logarithm of the series first.
+                Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The fractionally differentiated series per asset and date, NaN for the
+            dates before the first full window.
+
+        Notes:
+        - Each asset is differentiated over the dates it has a value. With a threshold of 1e-5 the
+          fixed-width window spans about 3,400 observations for d = 0.2, 1,460 for d = 0.4 and 230
+          for d = 0.8, so a small d needs a long history: on a shorter one the result is empty. A
+          larger threshold shortens the window (1e-4: about 500, 280 and 64; 0.01: about 10).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_fractional_difference(d=0.4).tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |
+        |:-----------|-------:|-------:|
+        | 2025-12-24 | 0.237  | 0.2441 |
+        | 2025-12-26 | 0.2332 | 0.2418 |
+        | 2025-12-29 | 0.2345 | 0.2401 |
+        | 2025-12-30 | 0.2313 | 0.241  |
+        | 2025-12-31 | 0.2274 | 0.2327 |
+        """
+        period = period if period else "daily"
+        levels = self._get_levels(period, column, log_prices, include_benchmark)
+
+        result = pd.DataFrame(
+            {
+                ticker: fractional_model.get_fractional_difference(
+                    levels[ticker], d=d, method=method, threshold=threshold
+                )
+                for ticker in levels.columns
+            },
+            index=levels.index,
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_minimum_fractional_difference(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        confidence: float = 0.95,
+        step: float = 0.1,
+        threshold: float = 0.01,
+        max_lag: int | None = 1,
+        log_prices: bool = True,
+        grid: bool = False,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the minimum order of fractional differentiation d that makes the log prices
+        stationary, per asset: the smallest d at which the fixed-width fractional difference
+        passes the Augmented Dickey-Fuller test, the stationary series that keeps the most memory
+        of the prices (López de Prado, 2018, section 5.6).
+
+        The formula is as follows, with Xₜ the log of the `column` (Adj Close by default):
+
+        - For d = 0, 0.1, ..., 1 (`step`): X̃ = FFD(X, d) of `get_fractional_difference` with the
+          weight threshold (0.01 by default) and the ADF test on X̃ with `get_augmented_dickey_fuller`
+          (constant, lags by AIC up to `max_lag`, 1 by default), as in López de Prado's Snippet 5.4
+        - d* = the smallest d whose ADF p-value is below 1 - confidence (0.05 by default), refined
+          in steps of step / 10 between the last d that fails and the first that passes
+        - Correlation = the correlation of X̃ with X over the dates of X̃, the memory kept
+
+        For more information, see the following sources:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 5.6
+        (Snippet 5.4).
+        - Dickey, D.A. and Fuller, W.A. (1979). "Distribution of the Estimators for Autoregressive
+        Time Series with a Unit Root." Journal of the American Statistical Association, 74(366a),
+        427-431.
+        - Referenced against mlfinlab's plot_min_ffd (https://github.com/quantopian/mlfinlab) and
+        RiskLabAI's find_optimal_ffd_simple (https://github.com/RiskLabAI/RiskLabAI.py). Both run
+        the ADF test with a single lag and a weight threshold of 0.01, the defaults here.
+
+        Also known as: minimum d, optimal fractional differentiation, minimum FFD, memory-preserving
+        stationarity.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to test. Defaults to "Adj Close".
+            confidence (float, optional): The confidence of the ADF test: the p-value has to be below
+                1 - confidence. Defaults to 0.95.
+            step (float, optional): The step of the grid of d from 0 to 1. Defaults to 0.1.
+            threshold (float, optional): The smallest absolute weight of the fixed-width window. At
+                1e-5 the window of d = 0.1 spans about 4,000 observations and at 1e-4 about 500, so
+                on a few years of data a small d leaves too few values to test. Defaults to 0.01.
+            max_lag (int | None, optional): The largest lag of the ADF lag search. Defaults to 1, as
+                López de Prado (2018) uses. None searches up to min(ceil(12·(n / 100)^(1/4)),
+                (n - 5) // 3) lags by AIC, which on daily data picks many lags, weakens the test and
+                pushes the minimum d towards 1.
+            log_prices (bool, optional): Whether to take the natural logarithm of the series first.
+                Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
+            grid (bool, optional): Whether to return the ADF test, the correlation and the window
+                width for every d tried instead of the minimum d per asset. Defaults to False.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset, the Minimum d and, at that d, the ADF Statistic, P-Value, 5%
+            Critical Value, Correlation with the log prices, Window Width and Observations (NaN
+            when no d up to 1 passes); with grid=True the ADF Statistic, P-Value, Lags Used,
+            Observations, Critical Value 5%, Correlation, Window Width and Stationary per d.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`) for the ADF test.
+        - A d whose window is longer than the history leaves fewer than 10 values to test and
+          shows NaN; pass a larger threshold or a longer history.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_minimum_fractional_difference()
+        ```
+
+        Which returns:
+
+        |                   |      AAPL |      MSFT |
+        |:------------------|----------:|----------:|
+        | Minimum d         |    0.53   |    0.56   |
+        | ADF Statistic     |   -2.9108 |   -2.9734 |
+        | P-Value           |    0.0441 |    0.0375 |
+        | Critical Value 5% |   -2.8627 |   -2.8627 |
+        | Correlation       |    0.9917 |    0.9919 |
+        | Window Width      |   10      |    9      |
+        | Observations      | 2503      | 2504      |
+        """
+        period = period if period else "daily"
+        levels = self._get_levels(period, column, log_prices, include_benchmark)
+
+        fits = {
+            ticker: fractional_model.get_minimum_fractional_difference(
+                levels[ticker],
+                confidence=confidence,
+                step=step,
+                threshold=threshold,
+                max_lag=max_lag,
+            )
+            for ticker in levels.columns
+        }
+
+        if grid:
+            result = pd.concat(
+                {ticker: table for ticker, (table, _) in fits.items()}, axis=1
+            )
+            result = result.swaplevel(0, 1, axis=1).sort_index(axis=1)
+        else:
+            summary = {}
+            for ticker, (table, minimum_d) in fits.items():
+                row = (
+                    table.loc[minimum_d]
+                    if not np.isnan(minimum_d)
+                    else table.iloc[0] * np.nan
+                )
+                summary[ticker] = pd.Series(
+                    {
+                        "Minimum d": minimum_d,
+                        "ADF Statistic": row["ADF Statistic"],
+                        "P-Value": row["P-Value"],
+                        "Critical Value 5%": row["Critical Value 5%"],
+                        "Correlation": row["Correlation"],
+                        "Window Width": row["Window Width"],
+                        "Observations": row["Observations"],
+                    },
+                    dtype=float,
+                )
+            result = pd.DataFrame(summary)
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_bubble_test(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        method: Literal["gsadf", "sadf"] = "gsadf",
+        lag_order: int = 0,
+        minimum_window: int | None = None,
+        replications: int = 500,
+        seed: int = 0,
+        log_prices: bool = True,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the GSADF test of Phillips, Shi and Yu (2015) or the SADF test of Phillips, Wu
+        and Yu (2011) for explosive behaviour, a bubble, in the log prices, per asset.
+
+        The ADF test looks for mean reversion (a left tail); these tests look at the right tail:
+        a price that grows faster than a random walk, as in a bubble, gives a large positive ADF
+        statistic over the window of the bubble. The SADF test runs the ADF regression on every
+        window from the first observation that is at least the minimum window long and takes the
+        largest statistic; the GSADF test also moves the start of the window, so it finds a
+        bubble that came after an earlier one collapsed. A statistic above its critical value
+        rejects the random walk in favour of explosive behaviour somewhere in the sample; which
+        dates are explosive follows from `get_bubble_episodes`.
+
+        The formula is as follows, with yₜ the log of the `column` (Adj Close by default) and T
+        observations:
+
+        - ADF(r₁, r₂) = β̂ / SE(β̂) of Δyₜ = α + β·yₜ₋₁ + Σ(i=1..k) γᵢ·Δyₜ₋ᵢ + εₜ on the observations r₁
+          to r₂, with k = `lag_order`
+        - w = floor((0.01 + 1.8 / √T)·T), the minimum window of PSY (2015)
+        - SADF = max over r₂ ≥ w - 1 of ADF(0, r₂)
+        - GSADF = max over r₂ of BSADF(r₂), with BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂)
+        - Critical values and the p-value from `replications` random walks yₜ = yₜ₋₁ + 1 / T + εₜ,
+          εₜ ~ N(0, 1), with the same T, w and k: the 90%, 95% and 99% quantiles of the simulated
+          statistic and the share of simulated statistics at least as large
+
+        For more information, see the following papers:
+
+        - Phillips, P.C.B., Shi, S. and Yu, J. (2015). "Testing for Multiple Bubbles: Historical
+        Episodes of Exuberance and Collapse in the S&P 500." International Economic Review, 56(4),
+        1043-1078.
+        - Phillips, P.C.B., Wu, Y. and Yu, J. (2011). "Explosive Behavior in the 1990s Nasdaq: When
+        Did Exuberance Escalate Asset Values?" International Economic Review, 52(1), 201-226.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 17.4.
+        - Referenced against mlfinlab's get_sadf (https://github.com/quantopian/mlfinlab) and
+        RiskLabAI's get_gsadf_statistic and simulate_psy_critical_values
+        (https://github.com/RiskLabAI/RiskLabAI.py). Every window statistic agrees with
+        statsmodels' adfuller to 1e-10, and the simulated critical values with those of PSY (2015,
+        Table 1).
+
+        Also known as: GSADF test, SADF test, sup ADF, generalized sup ADF, PSY test, PWY test,
+        explosive root test, right-tailed unit root test, bubble detection.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to test. Defaults to "Adj Close".
+            method (Literal["gsadf", "sadf"], optional): The generalized (GSADF) or the forward (SADF)
+                test. Defaults to "gsadf".
+            lag_order (int, optional): The number of lagged differences k in every ADF regression.
+                Defaults to 0, as PSY (2015) use.
+            minimum_window (int | None, optional): The smallest window in observations. Defaults to
+                None, floor((0.01 + 1.8 / √T)·T).
+            replications (int, optional): The number of simulated random walks for the critical
+                values. PSY (2015) use 2,000 to 5,000. Defaults to 500.
+            seed (int, optional): The seed of the simulation. Defaults to 0.
+            log_prices (bool, optional): Whether to take the natural logarithm of the series first.
+                Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The GSADF (or SADF) statistic, its simulated p-value, the 10%, 5% and 1%
+            critical values (the 90%, 95% and 99% quantiles), the observations, minimum window,
+            lag order and replications, and whether the series is explosive at the 5% level, per
+            asset.
+
+        Notes:
+        - The test fits about (T - w)² / 2 regressions per series and as many per simulated path,
+          each from window sums of prefix sums: about 0.14 seconds per path for ten years of daily
+          data and 0.04 for five, so 500 replications take about 70 and 20 seconds, and with
+          lag_order=2 about 60% longer. Ten years of weekly data take about 4 seconds; monthly
+          data, as in PSY (2015), less than one. The critical values depend
+          only on T, w, the lag order, the replications and the seed, so assets with the same
+          number of observations share one simulation, which is kept for the session.
+        - Each asset is tested over the dates it has a value.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_bubble_test(period="weekly")
+        ```
+
+        Which returns:
+
+        |                    |     NVDA |       KO |
+        |:-------------------|---------:|---------:|
+        | GSADF Statistic    |   1.5092 |   1.056  |
+        | P-Value            |   0.324  |   0.65   |
+        | Critical Value 10% |   2.0286 |   2.0286 |
+        | Critical Value 5%  |   2.1834 |   2.1834 |
+        | Critical Value 1%  |   2.7386 |   2.7386 |
+        | Observations       | 522      | 522      |
+        | Minimum Window     |  46      |  46      |
+        | Lags               |   0      |   0      |
+        | Replications       | 500      | 500      |
+        | Explosive (5%)     |   0      |   0      |
+        """
+        period = period if period else "daily"
+        levels = self._get_levels(period, column, log_prices, include_benchmark)
+
+        result = pd.DataFrame(
+            {
+                ticker: bubble_model.get_bubble_test(
+                    levels[ticker],
+                    method=method,
+                    lags=lag_order,
+                    minimum_window=minimum_window,
+                    replications=replications,
+                    seed=seed,
+                )
+                for ticker in levels.columns
+            }
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_bubble_episodes(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        method: Literal["gsadf", "sadf"] = "gsadf",
+        lag_order: int = 0,
+        minimum_window: int | None = None,
+        confidence: float = 0.95,
+        minimum_duration: int | None = None,
+        replications: int = 500,
+        seed: int = 0,
+        log_prices: bool = True,
+        time_series: bool = False,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Date-stamp the explosive episodes (bubbles) of the log prices, per asset, with the
+        backward SADF (BSADF) sequence of Phillips, Shi and Yu (2015) or the forward ADF sequence
+        of Phillips, Wu and Yu (2011).
+
+        For every date, the BSADF statistic is the largest ADF statistic of the windows that end
+        on that date, so it only uses data up to the date: it rises once the prices start to grow
+        explosively and falls back when the bubble collapses. A bubble starts on the first date
+        its statistic crosses above the critical value of that date and ends on the last date
+        before it falls back. PSY (2015) show that the backward windows date-stamp a bubble that
+        follows an earlier one, which the forward sequence of PWY (2011) misses.
+
+        The formula is as follows, with yₜ the log of the `column` (Adj Close by default) and the
+        ADF(r₁, r₂) statistics and minimum window w of `get_bubble_test`:
+
+        - BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂) (method="gsadf"), or ADF(0, r₂)
+          (method="sadf")
+        - cv(r₂) = the `confidence` quantile (95% by default) of the same statistic at r₂ over
+          `replications` simulated random walks yₜ = yₜ₋₁ + 1 / T + εₜ
+        - Bubble on r₂ when the statistic is above cv(r₂); an episode is a run of such dates of at
+          least `minimum_duration` observations, by default round(log(T)) (δ·log(T) with δ = 1 in
+          PSY, 2015)
+
+        For more information, see the following papers:
+
+        - Phillips, P.C.B., Shi, S. and Yu, J. (2015). "Testing for Multiple Bubbles: Historical
+        Episodes of Exuberance and Collapse in the S&P 500." International Economic Review, 56(4),
+        1043-1078.
+        - Phillips, P.C.B., Wu, Y. and Yu, J. (2011). "Explosive Behavior in the 1990s Nasdaq: When
+        Did Exuberance Escalate Asset Values?" International Economic Review, 52(1), 201-226.
+        - Referenced against RiskLabAI's get_bsadf_sequence and get_bubble_episodes
+        (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Also known as: BSADF, backward sup ADF, PSY date-stamping, bubble dating, explosive episodes,
+        exuberance periods.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to test. Defaults to "Adj Close".
+            method (Literal["gsadf", "sadf"], optional): The backward (BSADF, PSY) or the forward (ADF,
+                PWY) sequence. Defaults to "gsadf".
+            lag_order (int, optional): The number of lagged differences k in every ADF regression.
+                Defaults to 0.
+            minimum_window (int | None, optional): The smallest window in observations. Defaults to
+                None, floor((0.01 + 1.8 / √T)·T).
+            confidence (float, optional): The confidence of the critical value per date. Defaults to
+                0.95.
+            minimum_duration (int | None, optional): The fewest observations an episode lasts.
+                Defaults to None, round(log(T)).
+            replications (int, optional): The number of simulated random walks for the critical
+                values. Defaults to 500.
+            seed (int, optional): The seed of the simulation. Defaults to 0.
+            log_prices (bool, optional): Whether to take the natural logarithm of the series first.
+                Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
+            time_series (bool, optional): Whether to return the statistic, its critical value and
+                whether it is above it per date instead of the episodes. Defaults to False.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and episode, the Start and End date, the Duration in
+            observations, and the Peak Date and Peak Statistic (the largest statistic of the
+            episode); with time_series=True the BSADF (or ADF) statistic, Critical Value and Bubble
+            per date and asset.
+
+        Notes:
+        - The computation and its time are those of `get_bubble_test`, which shares the
+          simulation when called with the same settings.
+        - The critical value of a date is simulated for the observations up to it, so a date's
+          verdict only uses data up to that date.
+        - The critical value of a single date is lower than that of the GSADF test, which is the
+          largest statistic over all dates, so episodes can be dated while `get_bubble_test` does
+          not reject the random walk for the whole sample (as for NVDA below). PSY (2015) read
+          the dating as a monitoring device and the GSADF test as the verdict on the sample.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_bubble_episodes(period="weekly")
+        ```
+
+        Which returns:
+
+        |             | Start                 | End                   |   Duration | Peak Date             |   Peak Statistic |
+        |:------------|:----------------------|:----------------------|-----------:|:----------------------|-----------------:|
+        | ('NVDA', 1) | 2021-10-25/2021-10-31 | 2021-12-27/2022-01-02 |         10 | 2021-11-15/2021-11-21 |           1.4086 |
+        | ('NVDA', 2) | 2023-05-22/2023-05-28 | 2023-07-24/2023-07-30 |         10 | 2023-06-12/2023-06-18 |           1.091  |
+        | ('NVDA', 3) | 2024-01-29/2024-02-04 | 2024-04-08/2024-04-14 |         11 | 2024-03-18/2024-03-24 |           1.2949 |
+        | ('NVDA', 4) | 2024-04-22/2024-04-28 | 2025-01-20/2025-01-26 |         40 | 2024-06-10/2024-06-16 |           1.5092 |
+        """
+        period = period if period else "daily"
+        levels = self._get_levels(period, column, log_prices, include_benchmark)
+
+        fits = {
+            ticker: bubble_model.get_bubble_episodes(
+                levels[ticker],
+                method=method,
+                lags=lag_order,
+                minimum_window=minimum_window,
+                confidence=confidence,
+                minimum_duration=minimum_duration,
+                replications=replications,
+                seed=seed,
+            )
+            for ticker in levels.columns
+        }
+
+        if time_series:
+            result = pd.concat(
+                {ticker: sequence for ticker, (_, sequence) in fits.items()}, axis=1
+            ).reindex(levels.index)
+            result = result.swaplevel(0, 1, axis=1).sort_index(axis=1)
+        else:
+            result = pd.concat(
+                {ticker: episodes for ticker, (episodes, _) in fits.items()}
+            )
+            result.index = result.index.set_names(["Ticker", "Episode"])
+            # Episodes are numbered from 1 per asset.
+            result.index = result.index.set_levels(
+                result.index.levels[1] + 1, level="Episode"
+            )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_chow_dickey_fuller_test(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        trim: float = 0.15,
+        replications: int = 1000,
+        seed: int = 0,
+        log_prices: bool = True,
+        time_series: bool = False,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Chow-type Dickey-Fuller test for a switch from a random walk to explosive
+        behaviour at an unknown date, per asset (López de Prado, 2018, section 17.3.3; Homm and
+        Breitung, 2012).
+
+        The regression lets the log prices follow a random walk up to a break date and an
+        explosive process after it, and the statistic is the t-statistic of the explosive
+        coefficient. Every date in the middle of the sample is tried as the break; the largest
+        statistic (SDFC) is compared with critical values simulated under a random walk, and its
+        date is the most likely start of the explosive regime. Unlike the Chow test of
+        `get_chow_test`, which tests a known break in the coefficients of a regression, the break
+        date is unknown and the alternative is a bubble.
+
+        The formula is as follows, with yₜ the log of the `column` (Adj Close by default) minus its
+        first value, so the test does not depend on the level of the prices:
+
+        - Δyₜ = δ·yₜ₋₁·Dₜ(τ) + εₜ, Dₜ(τ) = 1 after the break date τ and 0 up to it
+        - DFC(τ) = δ̂ / SE(δ̂), with SE from the residuals of all T - 1 changes
+        - SDFC = max over τ from floor(trim·T) to T - 1 - floor(trim·T) of DFC(τ), the supremum over
+          the break dates of Andrews (1993)
+        - Critical values and the p-value from `replications` Gaussian random walks of the same
+          length started at zero
+
+        For more information, see the following sources:
+
+        - Homm, U. and Breitung, J. (2012). "Testing for Speculative Bubbles in Stock Markets: A
+        Comparison of Alternative Methods." Journal of Financial Econometrics, 10(1), 198-231.
+        - Andrews, D.W.K. (1993). "Tests for Parameter Instability and Structural Change With
+        Unknown Change Point." Econometrica, 61(4), 821-856.
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 17.3.3.
+        - Referenced against mlfinlab's get_chow_type_stat (https://github.com/quantopian/mlfinlab),
+        which agrees to 1e-14 on the series minus its first value; mlfinlab regresses the levels as
+        they are, so its statistic changes with the price level.
+
+        Also known as: DFC, SDFC, Chow-type Dickey-Fuller, sup DFC, Homm-Breitung test, explosive
+        break test.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
+                "daily".
+            column (str, optional): The historical data column to test. Defaults to "Adj Close".
+            trim (float, optional): The share of observations at either end that is not tried as the
+                break date. Defaults to 0.15.
+            replications (int, optional): The number of simulated random walks for the critical
+                values. Defaults to 1000.
+            seed (int, optional): The seed of the simulation. Defaults to 0.
+            log_prices (bool, optional): Whether to take the natural logarithm of the series first.
+                Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
+            time_series (bool, optional): Whether to return DFC(τ) per break date instead of the test.
+                Defaults to False.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The SDFC statistic, the break date, the simulated p-value, the 10%, 5% and 1%
+            critical values (the 90%, 95% and 99% quantiles), the observations and replications, and
+            whether the series turns explosive at the 5% level, per asset; with time_series=True
+            DFC(τ) per date and asset.
+
+        Notes:
+        - The test is right-tailed: a large positive statistic points to explosive behaviour after
+          the break date. A falling or mean-reverting series gives negative statistics.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_chow_dickey_fuller_test()
+        ```
+
+        Which returns:
+
+        |                    | NVDA       | KO         |
+        |:-------------------|:-----------|:-----------|
+        | SDFC Statistic     | 2.7139     | 1.0338     |
+        | Break Date         | 2019-06-03 | 2023-10-05 |
+        | P-Value            | 0.004      | 0.21       |
+        | Critical Value 10% | 1.4845     | 1.4845     |
+        | Critical Value 5%  | 1.8067     | 1.8067     |
+        | Critical Value 1%  | 2.4087     | 2.4087     |
+        | Observations       | 2514       | 2514       |
+        | Replications       | 1000       | 1000       |
+        | Explosive (5%)     | True       | False      |
+        """
+        period = period if period else "daily"
+        levels = self._get_levels(period, column, log_prices, include_benchmark)
+
+        if time_series:
+            result = pd.DataFrame(
+                {
+                    ticker: bubble_model.get_chow_dickey_fuller_statistics(
+                        levels[ticker], trim=trim
+                    )
+                    for ticker in levels.columns
+                },
+                index=levels.index,
+            )
+        else:
+            result = pd.DataFrame(
+                {
+                    ticker: bubble_model.get_chow_dickey_fuller_test(
+                        levels[ticker],
+                        trim=trim,
+                        replications=replications,
+                        seed=seed,
+                    )
+                    for ticker in levels.columns
+                }
+            )
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

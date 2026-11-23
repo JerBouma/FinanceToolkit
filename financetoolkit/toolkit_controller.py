@@ -819,6 +819,8 @@ class Toolkit:
             gross_domestic_product_function=gross_domestic_product,
             consumer_price_index_function=consumer_price_index,
             employee_count_function=employee_count,
+            # The sectors and industries of get_factor_analysis(group=...).
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -1188,6 +1190,8 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            # The sectors and industries of get_factor_analysis(group=...).
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -1270,6 +1274,8 @@ class Toolkit:
             # The daily market cap values the Residual of get_beta_implied_return; the
             # statements are only retrieved when that method asks for it.
             market_cap_function=lambda: self.ratios.get_market_cap(show_daily=True),
+            # The sectors and industries of get_factor_analysis(group=...).
+            profile=self._get_statement_profile,
         )
 
         if self._portfolio_weights:
@@ -1333,6 +1339,8 @@ class Toolkit:
             rounding=self._rounding,
             start_date=self._start_date,
             end_date=self._end_date,
+            # The sectors and industries of get_factor_analysis(group=...).
+            profile=self._get_statement_profile,
         )
 
         # The Share Turnover divides the Volume by the share count of the statements, which

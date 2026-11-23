@@ -222,9 +222,26 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "percentile at the time and the forward returns) instead of the summary."
     ),
     "detail": (
-        "get_factor_analysis only: 'information_coefficient', 'quantile_returns', "
-        "'quantile_turnover' or 'rank_autocorrelation' returns that part for a single metric "
-        "instead of the summary."
+        "get_factor_analysis only: returns one part for a single metric instead of the "
+        "summary: 'information_coefficient', 'information_coefficient_by_month', "
+        "'information_coefficient_by_year', 'group_information_coefficient', "
+        "'quantile_returns', 'quantile_returns_by_date', 'quantile_return_statistics', "
+        "'quantile_statistics', 'quantile_turnover', 'rank_autocorrelation', "
+        "'factor_weights', 'factor_returns', 'cumulative_returns' or 'event_returns'."
+    ),
+    "group": (
+        "get_factor_analysis only: 'sector' or 'industry' (from the company profiles) to "
+        "analyse within groups: the group_information_coefficient detail, binning='group' "
+        "and, with demeaned=true, a group-neutral analysis."
+    ),
+    "demeaned": (
+        "get_factor_analysis only: set to true to compare the forward returns with the mean "
+        "of the tickers in each period, or with group= with the mean of their group."
+    ),
+    "binning": (
+        "get_factor_analysis only: how the tickers are sorted into quantiles: 'quantile' "
+        "(default, equally sized), 'equal_width', 'zero_aware' (negative and positive "
+        "values apart; an even number of quantiles) or 'group' (within each group)."
     ),
     "period": (
         "Observation frequency, e.g. 'daily', 'weekly', 'monthly', 'quarterly', or 'annual' "

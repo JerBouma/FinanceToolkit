@@ -331,3 +331,146 @@ def test_the_cboe_skewness_does_not_depend_on_the_expansion_point():
 
     assert strikes[strikes <= forward].max() == 99
     assert skewness == pytest.approx(moments["Skewness"], abs=1e-4)
+
+
+def black_scholes_strip(
+    strikes, volatility, stock_price, rate, time, dividend_yield=0.0
+):
+    """Call and put prices at each strike, with a volatility per strike."""
+    calls, puts = [], []
+    for strike in strikes:
+        for put_option, prices in ((False, calls), (True, puts)):
+            prices.append(
+                black_scholes_model.get_black_scholes(
+                    stock_price=stock_price,
+                    strike_price=float(strike),
+                    risk_free_rate=rate,
+                    volatility=float(volatility(strike)),
+                    time_to_expiration=time,
+                    dividend_yield=dividend_yield,
+                    put_option=put_option,
+                )
+            )
+    return np.array(calls), np.array(puts)
+
+
+def test_the_variance_swap_fair_strike_matches_quantlib():
+    # QuantLib 1.44 ReplicatingVarianceSwapEngine (strike step 5) on a skewed
+    # BlackVarianceSurface, 91 days, spot 100, r = 5%: VarianceSwap.variance().
+    time = 91 / 365
+    strikes = np.arange(50.0, 151.0, 5.0)
+    calls, puts = black_scholes_strip(
+        strikes, lambda strike: 0.30 - 0.1 * (strike - 100) / 100, 100.0, 0.05, time
+    )
+    fair = market_metrics_model.get_variance_swap_fair_strike(
+        strikes,
+        calls,
+        puts,
+        100 * np.exp(0.05 * time),
+        0.05,
+        time,
+        boundary_strike=100.0,
+    )
+    assert fair == pytest.approx(0.09166679082402854, rel=1e-12)
+
+
+def test_the_variance_swap_fair_strike_matches_financepy():
+    # FinancePy 1.1.2 EquityVarianceSwap.fair_strike: 18 strikes of 5 on each side of the
+    # forward, a flat 25% volatility, r = 5%, no dividends, 90 days.
+    time = 90 / 365
+    forward = 100 * np.exp(0.05 * time)
+    strikes = forward + 5.0 * np.arange(-17, 18)
+    calls, puts = black_scholes_strip(strikes, lambda _: 0.25, 100.0, 0.05, time)
+    fair = market_metrics_model.get_variance_swap_fair_strike(
+        strikes, calls, puts, forward, 0.05, time, boundary_strike=forward
+    )
+    # FinancePy prices the options from its volatility curve with its own normal distribution,
+    # which differs from scipy's in the seventh digit.
+    assert fair == pytest.approx(0.06422763647544352, rel=1e-6)
+
+
+def test_the_variance_swap_fair_strike_converges_to_the_variance():
+    # Under Black-Scholes the log contract pays σ² T whatever the dividends, so finer strikes
+    # bring the fair strike to σ². FinancePy 1.1.2 gives 0.0841 for this case with a 1%
+    # dividend yield (and 0.0642 without), off by a fifth.
+    time, rate, dividend_yield = 90 / 365, 0.05, 0.01
+    forward = 100 * np.exp((rate - dividend_yield) * time)
+    errors = []
+    for step in (5.0, 1.0, 0.25):
+        strikes = forward + step * np.arange(-int(95 / step) + 1, int(190 / step))
+        calls, puts = black_scholes_strip(
+            strikes, lambda _: 0.25, 100.0, rate, time, dividend_yield
+        )
+        fair = market_metrics_model.get_variance_swap_fair_strike(
+            strikes, calls, puts, forward, rate, time, boundary_strike=forward
+        )
+        errors.append(fair - 0.0625)
+    assert errors[0] > errors[1] > errors[2] > 0
+    assert errors[2] < 1e-5
+
+
+def test_the_variance_swap_and_vix_weights_agree_for_fine_strikes():
+    time = 30 / 365
+    strikes = np.arange(60.0, 160.0, 0.5)
+    weights = market_metrics_model.get_variance_swap_weights(strikes[80:], 100.0, time)
+    vix = (2 / time) * 0.5 / strikes[80:] ** 2
+    np.testing.assert_allclose(weights[1:-1], vix[1:-1], rtol=1e-2)
+    calls, puts = black_scholes_strip(
+        strikes, lambda k: 0.2 + (100 - k) / 500, 100.0, RATE, time
+    )
+    forward = 100 * np.exp(RATE * time)
+    fair = market_metrics_model.get_variance_swap_fair_strike(
+        strikes, calls, puts, forward, RATE, time
+    )
+    strike_values, quotes, spacing, k0 = (
+        market_metrics_model.get_out_of_the_money_prices(strikes, calls, puts, forward)
+    )
+    cboe = (2 / time) * np.sum(
+        spacing / strike_values**2 * np.exp(RATE * time) * quotes
+    ) - (forward / k0 - 1) ** 2 / time
+    assert fair == pytest.approx(cboe, rel=2e-3)
+
+
+def test_the_variance_swap_fair_strike_needs_both_sides():
+    strikes = np.array([90.0, 100.0, 110.0])
+    calls = np.array([np.nan, 2.0, 1.0])
+    puts = np.array([1.0, np.nan, np.nan])
+    assert np.isnan(
+        market_metrics_model.get_variance_swap_fair_strike(
+            strikes, calls, puts, 100.0, 0.0, 0.1
+        )
+    )
+
+
+def test_realized_variance_has_no_mean_and_keeps_each_history():
+    prices = pd.DataFrame(
+        {"A": [100.0, 101.0, 99.0, 100.0], "B": [np.nan, 50.0, 51.0, 50.5]}
+    )
+    result = market_metrics_model.get_realized_variance(prices)
+    returns_a = np.diff(np.log([100.0, 101.0, 99.0, 100.0]))
+    returns_b = np.diff(np.log([50.0, 51.0, 50.5]))
+    assert result["A"] == pytest.approx(252 * np.mean(returns_a**2))
+    assert result["B"] == pytest.approx(252 * np.mean(returns_b**2))
+
+
+def test_the_variance_swap_value_matches_financepy():
+    # FinancePy 1.1.2 EquityVarianceSwap.value a month into a 90-day swap struck at 0.06,
+    # realized 0.05, fair 0.07, with the discount curve anchored at the valuation date.
+    value = market_metrics_model.get_variance_swap_value(
+        realized_variance=0.05,
+        fair_variance=0.07,
+        variance_strike=0.06,
+        elapsed_fraction=31 / 90,
+        remaining_time=59 / 365,
+        risk_free_rate=0.05,
+    )
+    assert value == pytest.approx(0.0030860678529896113, rel=1e-12)
+
+
+def test_a_new_variance_swap_at_its_fair_strike_is_worth_nothing():
+    value = market_metrics_model.get_variance_swap_value(
+        np.nan, 0.04, 0.04, 0.0, 0.5, 0.03, variance_notional=1e6
+    )
+    assert value == 0
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        market_metrics_model.get_variance_swap_value(0.04, 0.04, 0.04, 1.5, 0.5, 0.03)

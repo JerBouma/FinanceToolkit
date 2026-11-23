@@ -855,3 +855,213 @@ def get_skew_index(
         weight = (next_days - target_days) / (next_days - near_days)
         skewness = float(weight * near_skewness + (1 - weight) * next_skewness)
     return skewness, 100 - 10 * skewness
+
+
+def get_variance_swap_weights(
+    strike_prices: np.ndarray,
+    boundary_strike: float,
+    time_to_expiration: float,
+) -> np.ndarray:
+    """
+    The number of options at each strike that replicates the log contract of a variance swap,
+    from Demeterfi, Derman, Kamal and Zou (1999), appendix A. The payoff
+
+        - f(S_T) = (2/T) [(S_T - S*) / S* - ln(S_T / S*)]
+
+    is zero with a zero slope at the boundary strike S*, and convex on both sides. Calls at
+    the strikes K_0 = S* < K_1 < ... < K_n replicate it above S*, puts at S* = K_0 > K_1 > ...
+    > K_n below it, piecewise linear between the strikes:
+
+        - w(K_0) = [f(K_1) - f(K_0)] / |K_1 - K_0|
+        - w(K_i) = [f(K_(i+1)) - f(K_i)] / |K_(i+1) - K_i| - Σ_(j<i) w(K_j)
+
+    so each weight is the change in the slope of the payoff at its strike. The weight of the
+    outermost strike K_n uses K_(n+1), one interval of the last width further out (half the
+    strike for puts whose interval would reach zero), so that the replicated payoff keeps
+    growing beyond the last quoted strike as in the paper's example.
+
+    For finely spaced strikes w(K_i) approaches (2/T) ΔK_i / K_i², the weight of the Cboe VIX
+    methodology (see get_model_free_variance).
+
+    Args:
+        strike_prices (np.ndarray): The strikes of one side, starting at the boundary strike
+            and moving away from it: ascending for calls, descending for puts.
+        boundary_strike (float): The strike S* that separates the puts from the calls.
+        time_to_expiration (float): The time to expiration T in years.
+
+    Returns:
+        np.ndarray: The weight of each strike, in the order given. Zero weights when the
+        side has fewer than two strikes.
+    """
+    strikes = np.asarray(strike_prices, dtype=float)
+    if strikes.size < 2:  # noqa: PLR2004
+        return np.zeros(strikes.size)
+
+    last_interval = strikes[-1] - strikes[-2]
+    beyond = strikes[-1] + last_interval
+    if beyond <= 0:
+        beyond = strikes[-1] / 2
+    extended = np.append(strikes, beyond)
+
+    payoff = (2 / time_to_expiration) * (
+        (extended - boundary_strike) / boundary_strike
+        - np.log(extended / boundary_strike)
+    )
+    slopes = np.diff(payoff) / np.abs(np.diff(extended))
+    return np.concatenate([slopes[:1], np.diff(slopes)])
+
+
+def get_variance_swap_fair_strike(
+    strike_prices: np.ndarray,
+    call_prices: np.ndarray,
+    put_prices: np.ndarray,
+    forward_price: float,
+    risk_free_rate: float,
+    time_to_expiration: float,
+    boundary_strike: float | None = None,
+) -> float:
+    """
+    The fair variance strike of a variance swap, the annualized variance that makes the swap
+    worth nothing today, replicated with the discrete strikes of Demeterfi, Derman, Kamal and
+    Zou (1999):
+
+        - K_var = (2/T) [ln(F / S*) - (F / S* - 1)] + e^(rT) [Σ w(K_p) P(K_p) + Σ w(K_c) C(K_c)]
+
+    with the forward price F, the boundary strike S*, the puts at the strikes up to S* and the
+    calls from S* and the weights from get_variance_swap_weights. Without dividends F = S_0
+    e^(rT), and the first term is the paper's (2/T) [rT - (S_0 e^(rT) / S* - 1) - ln(S* / S_0)].
+
+    The Cboe VIX methodology (get_model_free_variance) discretises the same log contract with
+    the midpoint rule, weights (2/T) ΔK / K², and approximates the first term by -(1/T)
+    (F / K_0 - 1)². The weights here replicate the payoff exactly at every strike, so the two
+    agree for finely spaced strikes and differ by the discretisation error otherwise.
+
+    Args:
+        strike_prices (np.ndarray): The strikes.
+        call_prices (np.ndarray): The call price at each strike, NaN where there is none.
+        put_prices (np.ndarray): The put price at each strike, NaN where there is none.
+        forward_price (float): The forward price F of the underlying for the expiry.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        time_to_expiration (float): The time to expiration T in years.
+        boundary_strike (float | None, optional): The strike S* between the puts and the calls,
+            one of the strikes. Defaults to None, the highest strike at or below the forward
+            price (K_0 of the Cboe methodology).
+
+    Returns:
+        float: The fair variance strike, annualized, as a decimal (0.04 is a volatility of
+        20%). NaN when the boundary strike lacks a put or call price or either side has
+        fewer than two priced strikes.
+    """
+    strikes = np.asarray(strike_prices, dtype=float)
+    order = np.argsort(strikes)
+    strikes = strikes[order]
+    calls = np.asarray(call_prices, dtype=float)[order]
+    puts = np.asarray(put_prices, dtype=float)[order]
+
+    if boundary_strike is None:
+        below = strikes[strikes <= forward_price]
+        if below.size == 0:
+            return np.nan
+        boundary_strike = float(below.max())
+    at_boundary = strikes == boundary_strike
+    if not (
+        np.isfinite(calls[at_boundary]).any() and np.isfinite(puts[at_boundary]).any()
+    ):
+        return np.nan
+
+    # Strikes without a price for their side are left out, so their neighbours cover the gap.
+    call_side = (strikes >= boundary_strike) & np.isfinite(calls)
+    put_side = (strikes <= boundary_strike) & np.isfinite(puts)
+    call_strikes, put_strikes = strikes[call_side], strikes[put_side][::-1]
+    if call_strikes.size < 2 or put_strikes.size < 2:  # noqa: PLR2004
+        return np.nan
+
+    call_weights = get_variance_swap_weights(
+        call_strikes, boundary_strike, time_to_expiration
+    )
+    put_weights = get_variance_swap_weights(
+        put_strikes, boundary_strike, time_to_expiration
+    )
+    portfolio = float(
+        call_weights @ calls[call_side] + put_weights @ puts[put_side][::-1]
+    )
+    ratio = forward_price / boundary_strike
+
+    return float(
+        (2 / time_to_expiration) * (np.log(ratio) - (ratio - 1))
+        + np.exp(risk_free_rate * time_to_expiration) * portfolio
+    )
+
+
+def get_realized_variance(
+    prices: pd.Series | pd.DataFrame, trading_days: int = 252
+) -> float | pd.Series:
+    """
+    The realized variance as a variance swap settles it: the annualized mean of the squared
+    daily log returns, without subtracting their mean,
+
+        - σ²_realized = (A / N) Σ ln(S_i / S_(i-1))²
+
+    with N the number of returns and A the trading days per year. Each column keeps its own
+    history: missing prices are left out rather than counted as a zero return.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): The prices, one column per ticker.
+        trading_days (int, optional): The number of returns per year A. Defaults to 252.
+
+    Returns:
+        float | pd.Series: The realized variance as a decimal, per column for a DataFrame.
+        NaN without any return.
+    """
+    squared = np.log(prices.where(prices > 0)).diff().iloc[1:] ** 2
+    return squared.mean() * trading_days
+
+
+def get_variance_swap_value(
+    realized_variance: float,
+    fair_variance: float,
+    variance_strike: float,
+    elapsed_fraction: float,
+    remaining_time: float,
+    risk_free_rate: float,
+    variance_notional: float = 1.0,
+) -> float:
+    """
+    The value of a variance swap to the buyer of variance (who receives the realized
+    variance and pays the strike) during its life, from Demeterfi, Derman, Kamal and Zou
+    (1999). The variance it settles on is the realized variance so far and the fair variance
+    of the remaining time, weighted by their share of the whole period:
+
+        - Value = N e^(-r (T - t)) [(t / T) σ²_realized + ((T - t) / T) K_var(t, T) - K]
+
+    with the variance notional N, the variance strike K, the realized variance up to t and the
+    fair variance strike K_var(t, T) of the remaining time. At the start (t = 0) the value is
+    N e^(-rT) (K_var - K), zero for a swap struck at its fair strike.
+
+    A variance notional N pays N (σ² - K) on decimal variances. Quotes in vega notional
+    N_vega, the profit of one volatility point, translate to N = N_vega / (2 sqrt(K)).
+
+    Args:
+        realized_variance (float): The annualized realized variance since the start.
+        fair_variance (float): The fair variance strike of the remaining time.
+        variance_strike (float): The variance strike K of the swap, the square of its
+            volatility strike.
+        elapsed_fraction (float): The share t / T of the swap's observations already made.
+        remaining_time (float): The time to maturity T - t in years, for discounting.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        variance_notional (float, optional): The variance notional N. Defaults to 1.0.
+
+    Returns:
+        float: The present value of the swap to the buyer of variance.
+    """
+    if not 0 <= elapsed_fraction <= 1:
+        raise ValueError("The elapsed fraction of the swap must be between 0 and 1.")
+    realized_part = (
+        elapsed_fraction * realized_variance if elapsed_fraction > 0 else 0.0
+    )
+    expected_variance = realized_part + (1 - elapsed_fraction) * fair_variance
+    return float(
+        variance_notional
+        * np.exp(-risk_free_rate * remaining_time)
+        * (expected_variance - variance_strike)
+    )

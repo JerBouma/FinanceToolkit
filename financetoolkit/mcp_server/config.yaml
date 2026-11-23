@@ -267,7 +267,7 @@ hosted_limits:
 # indicator and how to read and narrow the answers before its first call.
 # ──────────────────────────────────────────────────────────────────────────────
 instructions: >-
-  The Finance Toolkit calculates financial data with 1000+ metrics: prices and
+  The Finance Toolkit calculates financial data with 1100+ metrics: prices and
   financial statements, ratios, valuation and risk models, performance, technical
   indicators, options and bonds, econometrics and macroeconomic data by country. Each tool groups indicators of
   one kind; pass the indicator by name (e.g. valuation with
@@ -1324,7 +1324,7 @@ utility_tools:
     description: "List the tools of a category with their indicator and metric counts."
 
   - tool_name: "search_metrics"
-    description: "Fuzzy keyword search across the indicators of all 1000+ available metrics."
+    description: "Fuzzy keyword search across the indicators of all 1100+ available metrics."
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -152,7 +152,7 @@ ROOT_PAGE = """<!DOCTYPE html>
 <main>
     <div class="head"><img src="/oauth/icon" alt=""><h1>Finance Toolkit <span>MCP</span></h1></div>
     <p>This address is an MCP server: it gives AI assistants such as Claude, Copilot and Cursor the
-    Finance Toolkit's 1000+ transparent financial metrics. It is meant to be added to an MCP client
+    Finance Toolkit's 1100+ transparent financial metrics. It is meant to be added to an MCP client
     rather than opened in a browser.</p>
     <ol>
         <li><strong>Add the server</strong> to your MCP client as a remote (HTTP) server, with this URL:

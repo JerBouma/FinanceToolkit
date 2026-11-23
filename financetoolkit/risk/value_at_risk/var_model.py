@@ -7,6 +7,7 @@ from scipy.optimize import brentq
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
+from financetoolkit.risk.volatility import garch_model
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 
@@ -29,6 +30,9 @@ MINIMUM_NUMBER_OF_EXCEEDANCES = 10
 
 # The standard deviation of the spreads needs two of them (ddof=1).
 MINIMUM_SPREAD_OBSERVATIONS = 2
+
+# A GARCH fit needs a long sample: as rugarch's ugarchfit, at least 100 returns per fit.
+MINIMUM_GARCH_OBSERVATIONS = 100
 
 
 def get_var_historic(
@@ -906,3 +910,146 @@ def get_liquidity_adjusted_value_at_risk(
         pd.Series | float: The liquidity-adjusted Value at Risk as a return.
     """
     return value_at_risk - get_liquidity_cost(spreads, alpha, spread_scaling)
+
+
+def get_var_garch(
+    returns: pd.Series | pd.DataFrame,
+    alpha: float,
+    window_size: int | None = None,
+    refit_every: int = 21,
+    method: str = "garch",
+    distribution: str = "normal",
+    expected_shortfall: bool = False,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the conditional Value at Risk (VaR) of returns from a GARCH-family model: the
+    alpha quantile of the model's distribution of the next return.
+
+    The formula is as follows:
+
+    - VaR_(t+1) = Mu + Volatility_(t+1) * F^-1(alpha)
+    - CVaR_(t+1) = Mu + Volatility_(t+1) * ES_F(alpha), with expected_shortfall=True
+
+    Where Mu and Volatility_(t+1) are the constant mean and the one-step volatility forecast of
+    the model fitted by maximum likelihood (see
+    `garch_model.get_garch_family_rolling_forecast`), F^-1 the quantile of its standardized
+    innovation distribution and ES_F(alpha) = E[z | z <= F^-1(alpha)] its expected shortfall
+    (see `garch_model.get_standardized_quantile` and
+    `garch_model.get_standardized_expected_shortfall`), both with the fitted Shape and Skew.
+
+    Without `window_size` the model is fitted on all returns of every column (or of every
+    period of a 'within period' index) and the result is the VaR of the period after the last
+    return. With `window_size` the result is the path of the VaR of the next period at every
+    date, from a model refitted every `refit_every` returns on the `window_size` returns
+    before it, so each value only uses the returns up to its date.
+
+    For more information, see the following sources:
+
+    - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity."
+    Journal of Econometrics, 31(3), 307-327.
+    - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for
+    Heteroscedastic Financial Time Series: An Extreme Value Approach." Journal of Empirical
+    Finance, 7(3-4), 271-300.
+
+    Referenced against `ugarchroll` and its VaR of R's rugarch
+    (https://cran.r-project.org/package=rugarch).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+        window_size (int | None, optional): The number of returns of every fit of a rolling
+            path, at least 100. Defaults to None, which fits once on all returns.
+        refit_every (int, optional): The number of returns between two fits of a rolling path.
+            Defaults to 21.
+        method (str, optional): The variance model of `garch_model.get_garch_family`. Defaults
+            to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        expected_shortfall (bool, optional): Whether to return the Conditional Value at Risk
+            (expected shortfall) instead. Defaults to False.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The VaR (or CVaR) of the next period as a float for a
+        Series, per column for a DataFrame and per period for a 'within period' index, or the
+        rolling path with `window_size`. A column with fewer than 100 returns is NaN.
+    """
+    arguments = {
+        "window_size": window_size,
+        "refit_every": refit_every,
+        "method": method,
+        "distribution": distribution,
+        "expected_shortfall": expected_shortfall,
+    }
+
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
+            return pd.DataFrame(
+                {
+                    sub_period: get_var_garch(
+                        returns.loc[sub_period], alpha, **arguments
+                    )
+                    for sub_period in periods
+                }
+            ).T
+
+        values = {
+            column: get_var_garch(returns[column], alpha, **arguments)
+            for column in returns.columns
+        }
+
+        if window_size is None:
+            return pd.Series(values, index=returns.columns, dtype=float)
+
+        return pd.DataFrame(values, columns=returns.columns)
+
+    if not isinstance(returns, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    returns = returns.dropna()
+    window = len(returns) if window_size is None else window_size
+
+    if window < MINIMUM_GARCH_OBSERVATIONS or len(returns) < window:
+        if window_size is not None and window_size < MINIMUM_GARCH_OBSERVATIONS:
+            raise ValueError(
+                f"A GARCH fit needs a window of at least {MINIMUM_GARCH_OBSERVATIONS} returns, "
+                f"received window_size={window_size}."
+            )
+        logger.warning(
+            "The GARCH VaR needs at least %s returns, %s has %s, so it is NaN.",
+            max(window, MINIMUM_GARCH_OBSERVATIONS),
+            returns.name,
+            len(returns),
+        )
+        return float("nan") if window_size is None else pd.Series(dtype=float)
+
+    forecast = garch_model.get_garch_family_rolling_forecast(
+        returns, window_size, refit_every, method, distribution, "constant"
+    )
+    parameter_names = list(forecast.columns[2:])
+    tail = (
+        garch_model.get_standardized_expected_shortfall
+        if expected_shortfall
+        else garch_model.get_standardized_quantile
+    )
+
+    # The distribution parameters change at a refit only, so the tail of each set is computed once.  # noqa: E501
+    parameters = (
+        list(forecast[parameter_names].itertuples(index=False, name=None))
+        if parameter_names
+        else [()] * len(forecast)
+    )
+    tails = {
+        values: float(tail(alpha, distribution, values))
+        for values in set(parameters)
+        if np.all(np.isfinite(values))
+    }
+    standardized = pd.Series(
+        [tails.get(values, np.nan) for values in parameters], index=forecast.index
+    )
+
+    value_at_risk = forecast["Mean"] + forecast["Volatility"] * standardized
+
+    if window_size is None:
+        return float(value_at_risk.iloc[-1])
+
+    return value_at_risk

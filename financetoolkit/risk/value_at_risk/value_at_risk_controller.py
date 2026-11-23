@@ -15,6 +15,7 @@ from financetoolkit.risk.value_at_risk import (
     evar_model,
     var_model,
 )
+from financetoolkit.risk.volatility import garch_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -29,6 +30,29 @@ from financetoolkit.utilities.statistics_model import (
 
 logger = get_logger()
 
+# The tests of get_var_backtest with the name of their P-Value row when several are run.
+VAR_BACKTESTS = {
+    "kupiec": "Kupiec",
+    "christoffersen": "Christoffersen",
+    "conditional_coverage": "Conditional Coverage",
+    "duration": "Duration",
+    "mcneil_frey": "McNeil-Frey",
+    "tick_loss": "Tick Loss",
+}
+
+
+def _default_window_size(period: str, distribution: str) -> int:
+    """
+    The rolling window of the backtests: a year of observations with a minimum of 20, as
+    get_move_significance uses (252 is a year of daily returns but more than the history
+    holds of quarterly or yearly ones), and two years with a minimum of 100 for a GARCH
+    fit, which needs a longer sample (var_model.MINIMUM_GARCH_OBSERVATIONS).
+    """
+    if distribution == "garch":
+        return max(2 * PERIODS_PER_YEAR[period], var_model.MINIMUM_GARCH_OBSERVATIONS)
+
+    return max(PERIODS_PER_YEAR[period], 20)
+
 
 def _get_out_of_sample_estimates(
     returns: pd.DataFrame,
@@ -36,10 +60,13 @@ def _get_out_of_sample_estimates(
     distribution: str,
     alpha: float,
     window_size: int,
+    refit_every: int = 21,
+    garch_method: str = "garch",
+    garch_distribution: str = "normal",
 ) -> pd.DataFrame:
     """
-    Builds the rolling, out-of-sample Value at Risk or Conditional Value at Risk path
-    of every ticker, as used by the VaR and Expected Shortfall backtests.
+    Builds the rolling, out-of-sample Value at Risk, Conditional Value at Risk or volatility
+    path of every ticker, as used by the VaR and Expected Shortfall backtests.
 
     Each ticker is rolled over its own non-missing returns, so a ticker with a shorter
     history (or a missing day) does not shorten the sample of the others, and the window
@@ -49,10 +76,16 @@ def _get_out_of_sample_estimates(
 
     Args:
         returns (pd.DataFrame): The returns, one column per ticker.
-        measure (str): Either "var" or "cvar".
-        distribution (str): One of "historic", "gaussian", "studentt" or "evt".
+        measure (str): "var", "cvar" or "volatility" (the sample standard deviation of the
+            window, ddof=1, or the GARCH volatility forecast).
+        distribution (str): One of "historic", "gaussian", "studentt", "evt" or "garch".
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
         window_size (int): The number of observations in each rolling window.
+        refit_every (int, optional): The number of returns between two GARCH fits. Defaults
+            to 21.
+        garch_method (str, optional): The GARCH variance model. Defaults to "garch".
+        garch_distribution (str, optional): The GARCH innovation distribution. Defaults to
+            "normal".
 
     Returns:
         pd.DataFrame: The out-of-sample estimates, on the index of `returns`.
@@ -66,7 +99,7 @@ def _get_out_of_sample_estimates(
         ("cvar", "evt"): cvar_model.get_cvar_evt,
     }
 
-    if distribution == "evt":
+    if distribution == "evt" and measure != "volatility":
         # The fit needs MINIMUM_NUMBER_OF_EXCEEDANCES losses above the 95th percentile in a window, see var_model.fit_gpd_tail. A shorter window gives NaN everywhere, so that is reported once instead of fitting every window.  # noqa: E501
         exceedances_per_window = var_model.get_number_of_exceedances(
             pd.DataFrame(np.arange(window_size, dtype=float)), 0.95
@@ -93,7 +126,33 @@ def _get_out_of_sample_estimates(
     for column in returns.columns:
         column_returns = returns[column].dropna()
 
-        if distribution == "historic":
+        if distribution == "garch":
+            # One rolling fit serves the VaR, the CVaR and the volatility, see garch_model.get_garch_family_rolling_forecast.  # noqa: E501
+            if len(column_returns) < window_size:
+                estimates[column] = pd.Series(np.nan, index=returns.index)
+                continue
+            if measure == "volatility":
+                estimate = garch_model.get_garch_family_rolling_forecast(
+                    column_returns,
+                    window_size,
+                    refit_every,
+                    garch_method,
+                    garch_distribution,
+                    "constant",
+                )["Volatility"]
+            else:
+                estimate = var_model.get_var_garch(
+                    column_returns,
+                    alpha,
+                    window_size,
+                    refit_every,
+                    garch_method,
+                    garch_distribution,
+                    expected_shortfall=measure == "cvar",
+                )
+        elif measure == "volatility":
+            estimate = column_returns.rolling(window=window_size).std(ddof=1)
+        elif distribution == "historic":
             estimate = (
                 var_model.get_rolling_var_historic(column_returns, alpha, window_size)
                 if measure == "var"
@@ -116,7 +175,7 @@ def _get_out_of_sample_estimates(
                 raw=False,
             )
 
-        # A trailing rolling window includes the current observation, so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
+        # A trailing rolling window includes the current observation (and a GARCH forecast is dated by the last return it uses), so without the shift each estimate would be compared against a return it was computed from.  # noqa: E501
         estimates[column] = estimate.shift(1).reindex(returns.index)
 
     return pd.DataFrame(estimates, index=returns.index, columns=returns.columns)
@@ -143,6 +202,9 @@ class ValueAtRiskRisk:
         standardize: bool = False,
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -178,6 +240,7 @@ class ValueAtRiskRisk:
         - Student-T VaR = Location + Scale * t_v^-1(alpha)
         - EVT VaR = -(u + (Scale_GPD / xi) * ((alpha / p)^(-xi) - 1))
         - Kernel VaR solves mean(Φ((VaR - Return_i) / h)) = alpha, with h = Std * (4 / (3 * n))^(1/5)
+        - GARCH VaR = Mu + Volatility_(t+1) * F^-1(alpha)
 
         Where z is the standard normal quantile at alpha, Std the sample standard deviation (ddof=1), S the
         sample skewness and K the sample excess kurtosis. The Student-T degrees of freedom v, Location and Scale
@@ -187,11 +250,22 @@ class ValueAtRiskRisk:
         Silverman's bandwidth h, a smoothed historical quantile (Gourieroux, Laurent and Scaillet 2000), and Φ the
         standard normal distribution function.
 
-        For more information about the kernel VaR, see the following sources:
+        The GARCH VaR is the conditional VaR of the next period: Mu is the constant mean and Volatility_(t+1) the
+        one-step volatility forecast of the GARCH-family model `garch_method` with innovations `garch_distribution`,
+        fitted by maximum likelihood (see `get_garch`), and F^-1 the quantile of the standardized innovations with
+        their fitted Shape and Skew. It responds to the latest volatility, where the other distributions weigh every
+        return of the period equally. With `rolling`, the model is refitted every `refit_every` returns on the
+        `rolling` returns before it, and the value at each date is the VaR of the next period given the returns up
+        to that date (McNeil and Frey 2000).
+
+        For more information about the kernel and GARCH VaR, see the following sources:
 
         - Gourieroux, C., Laurent, J.P. and Scaillet, O. (2000). "Sensitivity Analysis of Values at Risk."
         Journal of Empirical Finance, 7(3-4), 225-245.
         - Silverman, B.W. (1986). "Density Estimation for Statistics and Data Analysis." Chapman and Hall.
+        - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
+        Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
+        - rugarch: ugarchroll and its VaR (the rolling GARCH VaR, https://cran.r-project.org/package=rugarch).
 
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
@@ -207,8 +281,9 @@ class ValueAtRiskRisk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, VaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day VaR). Only available for
-            `distribution="historic"`; see `get_var_backtest` for a rolling, out-of-sample VaR path
-            under the parametric distributions. Defaults to None.
+            `distribution="historic"` and `distribution="garch"` (the number of returns of every fit, at
+            least 100); see `get_var_backtest` for a rolling, out-of-sample VaR path under the other
+            parametric distributions. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VaR values over time. Defaults to False.
@@ -217,16 +292,26 @@ class ValueAtRiskRisk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             distribution (str): The distribution to use for the VaR calculations (historic, gaussian,
-            cornish-fisher, studentt, evt or kernel). Defaults to "historic". The parametric distributions use the
+            cornish-fisher, studentt, evt, kernel or garch). Defaults to "historic". The parametric distributions use the
             sample standard deviation; "cornish-fisher" adjusts the gaussian quantile for the skewness and
             excess kurtosis of the returns (see `var_model.get_var_cornish_fisher`), "studentt" uses the
             quantile of a Student-T distribution fitted by maximum likelihood and "kernel" the quantile of a
-            Gaussian kernel density of the returns.
+            Gaussian kernel density of the returns. "garch" fits a GARCH-family model per ticker (and per period with
+            `within_period`), which takes one to five seconds per fit and needs at least 100 returns; a ticker
+            or period with fewer is NaN.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
             The fit needs at least 10 losses above the threshold (about 200 returns at 0.95); a period
             with fewer is NaN, with a logged warning. Defaults to 0.95.
+            refit_every (int, optional): Only used with `distribution="garch"` and `rolling`. The number of
+            returns between two fits; the fitted model filters the returns in between. Every refit after the
+            first starts from the previous fit and takes a fraction of a second. Defaults to 21.
+            garch_method (str, optional): Only used with `distribution="garch"`. The variance model, one of the
+            methods of `get_garch` (garch, gjr, egarch, igarch, aparch, tgarch, ngarch, avgarch, nagarch or
+            component). Defaults to "garch".
+            garch_distribution (str, optional): Only used with `distribution="garch"`. The innovation
+            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -290,14 +375,27 @@ class ValueAtRiskRisk:
                 "Set within_period=True to calculate growth."
             )
 
-        if rolling and distribution != "historic":
+        if rolling and distribution not in ("historic", "garch"):
             raise ValueError(
-                "The rolling parameter is only available for distribution='historic'. "
-                "Use get_var_backtest to obtain a rolling, out-of-sample VaR path "
-                "under one of the parametric distributions instead."
+                "The rolling parameter is only available for distribution='historic' and "
+                "distribution='garch'. Use get_var_backtest to obtain a rolling, out-of-sample "
+                "VaR path under one of the other parametric distributions instead."
             )
 
-        if rolling:
+        if distribution == "garch":
+            value_at_risk = var_model.get_var_garch(
+                (
+                    self._historical_data[period]["Return"]
+                    if rolling
+                    else self._get_returns(period, within_period)
+                ),
+                alpha,
+                rolling,
+                refit_every,
+                garch_method,
+                garch_distribution,
+            )
+        elif rolling:
             returns = self._historical_data[period]["Return"]
             value_at_risk = var_model.get_rolling_var_historic(returns, alpha, rolling)
         else:
@@ -320,7 +418,7 @@ class ValueAtRiskRisk:
             else:
                 raise ValueError(
                     "Distribution must be historic, gaussian, cornish-fisher, studentt, "
-                    "evt or kernel."
+                    "evt, kernel or garch."
                 )
 
         if rolling or within_period:
@@ -354,6 +452,9 @@ class ValueAtRiskRisk:
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
         alpha_weights: list[float] | None = None,
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -390,13 +491,16 @@ class ValueAtRiskRisk:
         - Cornish-Fisher CVaR = Mean of (Mean + z_cf(p) * Std) over 1,000 evenly spaced p in (0, alpha)
         - EVT CVaR = -(VaR_loss + Scale_GPD - xi * u) / (1 - xi)
         - Kernel CVaR = mean(Return_i * Φ(u_i) - h * φ(u_i)) / alpha, with u_i = (VaR_kernel - Return_i) / h
+        - GARCH CVaR = Mu + Volatility_(t+1) * E[z | z <= F^-1(alpha)]
 
         Where the Student-T v, Location and Scale are fitted by maximum likelihood (NaN for v <= 1), z_cf is the
         Cornish-Fisher quantile of `get_value_at_risk`, and u, xi, Scale_GPD and VaR_loss are the loss threshold,
         the fitted Generalized Pareto shape and scale and the EVT VaR as a positive loss (NaN for xi >= 1). The
         kernel CVaR is the mean return below the kernel VaR of `get_value_at_risk` under a Gaussian kernel
         density of the returns with Silverman's bandwidth h = Std * (4 / (3 * n))^(1/5) (Scaillet 2004), with Φ
-        and φ the standard normal distribution and density.
+        and φ the standard normal distribution and density. The GARCH CVaR is the conditional CVaR of the next
+        period, with Mu, Volatility_(t+1) and the standardized innovations z with distribution function F of the
+        GARCH VaR of `get_value_at_risk` (McNeil and Frey 2000).
 
         With a list of tail probabilities in `alpha`, the result is the Weighted Conditional Value at Risk,
         the weighted sum of the CVaR at each of them:
@@ -413,6 +517,8 @@ class ValueAtRiskRisk:
         Aversion." Journal of Banking & Finance, 26(7), 1505-1518.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
+        - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
+        Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
         - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected Shortfall."
         Mathematical Finance, 14(1), 115-129.
         - Riskfolio-Lib: OwaWeights.owa_wcvar (the Weighted CVaR, https://github.com/dcajasn/Riskfolio-Lib).
@@ -431,8 +537,9 @@ class ValueAtRiskRisk:
             rolling (int, optional): The rolling window size to use for the calculation. If set, CVaR is
             calculated over a rolling window of this many periods across the full return history instead
             of per `period` (e.g. a rolling 60-day CVaR). Only available for
-            `distribution="historic"`; see `get_acerbi_szekely_test` for a rolling, out-of-sample CVaR
-            path under the parametric distributions. Defaults to None.
+            `distribution="historic"` and `distribution="garch"` (the number of returns of every fit, at
+            least 100); see `get_acerbi_szekely_test` for a rolling, out-of-sample CVaR path under the
+            other parametric distributions. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CVaR values over time. Defaults to False.
@@ -441,7 +548,8 @@ class ValueAtRiskRisk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             distribution (str): The distribution to use for the CVaR calculations (historic, gaussian, studentt, laplace,
-            logistic, cornish-fisher, evt or kernel). Defaults to "historic".
+            logistic, cornish-fisher, evt, kernel or garch). Defaults to "historic". "garch" fits a GARCH-family
+            model per ticker (and per period with `within_period`), see `get_value_at_risk`.
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
@@ -449,6 +557,12 @@ class ValueAtRiskRisk:
             with fewer is NaN, with a logged warning. Defaults to 0.95.
             alpha_weights (list[float] | None, optional): The weight of the CVaR at each tail probability in `alpha`,
             non-negative and summing to 1. Defaults to None, which weighs every tail probability equally.
+            refit_every (int, optional): Only used with `distribution="garch"` and `rolling`. The number of
+            returns between two fits. Defaults to 21.
+            garch_method (str, optional): Only used with `distribution="garch"`. The variance model, one of the
+            methods of `get_garch`. Defaults to "garch".
+            garch_distribution (str, optional): Only used with `distribution="garch"`. The innovation
+            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -516,11 +630,11 @@ class ValueAtRiskRisk:
                 "Set within_period=True to calculate growth."
             )
 
-        if rolling and distribution != "historic":
+        if rolling and distribution not in ("historic", "garch"):
             raise ValueError(
-                "The rolling parameter is only available for distribution='historic'. "
-                "Use get_acerbi_szekely_test to obtain a rolling, out-of-sample CVaR "
-                "path under one of the parametric distributions instead."
+                "The rolling parameter is only available for distribution='historic' and "
+                "distribution='garch'. Use get_acerbi_szekely_test to obtain a rolling, "
+                "out-of-sample CVaR path under one of the other parametric distributions instead."
             )
 
         estimators = {
@@ -534,12 +648,19 @@ class ValueAtRiskRisk:
                 cvar_model.get_cvar_evt, threshold_percentile=threshold_percentile
             ),
             "kernel": cvar_model.get_cvar_kernel,
+            "garch": functools.partial(
+                cvar_model.get_cvar_garch,
+                window_size=rolling,
+                refit_every=refit_every,
+                method=garch_method,
+                distribution=garch_distribution,
+            ),
         }
 
         if distribution not in estimators:
             raise ValueError(
                 "Distribution must be historic, gaussian, studentt, laplace, "
-                "logistic, cornish-fisher, evt or kernel."
+                "logistic, cornish-fisher, evt, kernel or garch."
             )
 
         alphas = alpha if isinstance(alpha, list | tuple) else [alpha]
@@ -547,7 +668,11 @@ class ValueAtRiskRisk:
         if rolling:
             returns = self._historical_data[period]["Return"]
             conditional_values_at_risk = [
-                cvar_model.get_rolling_cvar_historic(returns, tail, rolling)
+                (
+                    estimators["garch"](returns, tail)
+                    if distribution == "garch"
+                    else cvar_model.get_rolling_cvar_historic(returns, tail, rolling)
+                )
                 for tail in alphas
             ]
         else:
@@ -1139,7 +1264,12 @@ class ValueAtRiskRisk:
         distribution: str = "historic",
         alpha: float = 0.05,
         window_size: int | None = None,
-        test: str = "both",
+        test: str | list[str] = "both",
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
+        n_bootstrap: int = 1000,
+        random_state: int = 42,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -1150,16 +1280,19 @@ class ValueAtRiskRisk:
         against reality. This method builds a rolling, out-of-sample VaR path (each
         VaR estimate uses only the `window_size` returns preceding it, never the
         return it is compared against) and tests it with Kupiec's Proportion of
-        Failures test (is the overall breach rate consistent with `alpha`?) and/or
-        Christoffersen's independence test (are breaches spread out over time, or do
-        they cluster together?).
+        Failures test (is the overall breach rate consistent with `alpha`?),
+        Christoffersen's independence and conditional coverage tests (are breaches spread
+        out over time, or do they cluster together?), Christoffersen and Pelletier's
+        duration test (does the time between breaches have no memory?), McNeil and Frey's
+        exceedance residual test of the Expected Shortfall (are the losses beyond the VaR
+        as large as the CVaR says?) and the tick loss, which ranks VaR models.
 
         Regulators backtest VaR on the number of exceptions over the last 250 trading days
         (the Basel traffic-light approach at 99% confidence), and Kupiec's test formalises
         the same question. With few exceptions the test has little power, so a model that
         passes is not necessarily well calibrated. Clustered exceptions, which
-        Christoffersen's test detects, are the usual failure of historical VaR when
-        volatility rises.
+        Christoffersen's and the duration test detect, are the usual failure of historical
+        VaR when volatility rises; distribution="garch" follows the volatility from day to day.
 
         The formula is as follows (with the default distribution="historic", alpha=0.05 and daily returns, for which the window is 252):
 
@@ -1167,11 +1300,27 @@ class ValueAtRiskRisk:
         - Breach_t = 1 if Return_t < VaR_t, else 0
         - Kupiec Statistic = -2 * ln[(1 - alpha)^(n - x) * alpha^x / ((1 - x / n)^(n - x) * (x / n)^x)]
         - Christoffersen Statistic = -2 * ln[L(pi) / L(pi_01, pi_11)]
+        - Conditional Coverage Statistic = Kupiec Statistic + Christoffersen Statistic
+        - Duration Statistic = 2 * (ln L(a_hat, b_hat) - ln L(a_tilde, 1))
+        - McNeil-Frey Statistic = mean(e) / (std(e) / √x), with e_t = (CVaR_t - Return_t) / Volatility_t if Breach_t = 1
+        - Tick Loss = (1 / n) * Σ (alpha - Breach_t) * (Return_t - VaR_t)
 
         Where n is the number of out-of-sample VaR estimates and x the number of breaches. L(pi) is the
         likelihood of the breach sequence with a single breach probability pi, and L(pi_01, pi_11) that of a
         first-order Markov chain in which the breach probability depends on whether the previous period was a
-        breach. Both statistics are compared with a χ² distribution with one degree of freedom for the p-value.
+        breach. L(a, b) is the Weibull likelihood of the number of periods between breaches, with the periods
+        before the first and after the last breach as censored durations, and b = 1 the exponential distribution
+        of a model without memory (b_hat below 1 means breaches cluster). CVaR_t is the Conditional Value at Risk of
+        the same window and distribution and Volatility_t the standard deviation (ddof=1) of the window (the
+        volatility forecast with distribution="garch"); the McNeil-Frey p-value is the share of `n_bootstrap`
+        resamples of the residuals less their mean whose statistic is at least as large (one-sided). The Kupiec,
+        Christoffersen and duration statistics are compared with a χ² distribution with one degree of freedom
+        and the conditional coverage statistic with two.
+
+        With distribution="garch", VaR_t = Mu + Volatility_t * F^-1(alpha) and CVaR_t = Mu + Volatility_t *
+        E[z | z <= F^-1(alpha)] come from the GARCH-family model `garch_method` with innovations
+        `garch_distribution`, refitted every `refit_every` returns on the `window_size` returns before it (see
+        `get_value_at_risk`).
 
         For more information about the methods, see the following papers:
 
@@ -1179,25 +1328,46 @@ class ValueAtRiskRisk:
         Measurement Models." The Journal of Derivatives, 3(2), 73-84.
         - Christoffersen, P.F. (1998). "Evaluating Interval Forecasts." International
         Economic Review, 39(4), 841-862.
+        - Christoffersen, P.F. and Pelletier, D. (2004). "Backtesting Value-at-Risk: A Duration-Based
+        Approach." Journal of Financial Econometrics, 2(1), 84-108.
+        - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
+        Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
+        - González-Rivera, G., Lee, T.H. and Mishra, S. (2004). "Forecasting Volatility: A Reality Check Based
+        on Option Pricing, Utility Function, Value-at-Risk, and Predictive Likelihood." International Journal
+        of Forecasting, 20(4), 629-645.
+        - rugarch: VaRTest, VaRDurTest, ESTest and VaRloss (https://cran.r-project.org/package=rugarch).
 
-        Also known as: VaR validation, VaR backtest, POF test.
+        Also known as: VaR validation, VaR backtest, POF test, conditional coverage test, duration test,
+        exceedance residual test, quantile loss.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
-            "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            "historic", "gaussian", "studentt", "evt" or "garch". Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
-            years of daily data, where "historic" and "gaussian" take well under a second.
+            years of daily data, where "historic" and "gaussian" take well under a second. "garch" takes
+            one to five seconds for its first fit per ticker and a fraction of a second for every refit.
             alpha (float, optional): The tail probability for the VaR estimates (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
             empty result (with a logged error).
             window_size (int | None, optional): The rolling window size (in number of return observations of
             `period`) used to estimate each VaR value. Defaults to None, which uses a year of observations
-            with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly returns).
-            test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
-            to "both".
+            with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly returns), and two
+            years with a minimum of 100 for "garch" (504 daily, 104 weekly and 100 otherwise).
+            test (str | list[str], optional): Which test(s) to run: "kupiec", "christoffersen",
+            "conditional_coverage", "duration", "mcneil_frey" or "tick_loss", a list of them, "both" (Kupiec and
+            Christoffersen) or "all". Defaults to "both".
+            refit_every (int, optional): Only used with `distribution="garch"`. The number of returns between
+            two fits. Defaults to 21.
+            garch_method (str, optional): Only used with `distribution="garch"`. The variance model, one of the
+            methods of `get_garch`. Defaults to "garch".
+            garch_distribution (str, optional): Only used with `distribution="garch"`. The innovation
+            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            n_bootstrap (int, optional): The number of bootstrap resamples of the McNeil-Frey test. Defaults
+            to 1000.
+            random_state (int, optional): The seed of the McNeil-Frey bootstrap. Defaults to 42.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1205,13 +1375,21 @@ class ValueAtRiskRisk:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The requested test statistic(s) and their p-value(s) per asset.
+            pd.DataFrame: The statistic and p-value of every requested test (named after the test), the
+            Weibull Shape of the duration test, the number of breaches of the McNeil-Frey test and the Tick
+            Loss, per asset.
 
         Notes:
         - The rolling VaR path is calculated over the full return history, not the `within_period` slices
         used elsewhere in this module, since a meaningful rolling window generally needs more history than
         a single sub-period provides. Each asset is rolled over its own available returns, so a shorter
         history of one asset does not shorten the others.
+        - The conditional coverage statistic adds Kupiec's statistic over all n estimates and
+        Christoffersen's over the n - 1 transitions, as rugarch's VaRTest does.
+        - rugarch's ESTest tests the unscaled gaps CVaR_t - Return_t with a normal p-value; the McNeil-Frey
+        test here scales them by the volatility forecast and bootstraps the p-value, as in the paper. rugarch's
+        VaRloss smooths the breach indicator and reports the loss per period in percentage points; the Tick
+        Loss here is the exact average in decimals.
 
         As an example:
 
@@ -1236,33 +1414,74 @@ class ValueAtRiskRisk:
         | P-Value          |   0.0038 |   0.1759 |   0.1377 |      0.7725 |
         """
         period = period if period else "daily"
+        tests = (
+            {
+                "both": ["kupiec", "christoffersen"],
+                "all": list(VAR_BACKTESTS),
+            }.get(test, test)
+            if isinstance(test, str)
+            else test
+        )
+        tests = [tests] if isinstance(tests, str) else list(tests)
 
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if distribution not in ["historic", "gaussian", "studentt", "evt"]:
+        if distribution not in ["historic", "gaussian", "studentt", "evt", "garch"]:
             raise ValueError(
-                "Distribution must be historic, gaussian, studentt, or evt."
+                "Distribution must be historic, gaussian, studentt, evt or garch."
             )
-        if test not in ["kupiec", "christoffersen", "both"]:
-            raise ValueError("Test must be kupiec, christoffersen, or both.")
+        if not tests or any(name not in VAR_BACKTESTS for name in tests):
+            raise ValueError(
+                f"Test must be {', '.join(VAR_BACKTESTS)}, a list of them, both or all."
+            )
 
-        # A year of observations with a minimum of 20, as get_move_significance uses: 252 is a year of daily returns but more than the history holds of quarterly or yearly ones.  # noqa: E501
-        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
-        returns = self._historical_data[period]["Return"].dropna(how="all")
-        rolling_var = _get_out_of_sample_estimates(
-            returns, "var", distribution, alpha, window_size
+        window_size = (
+            window_size if window_size else _default_window_size(period, distribution)
         )
+        returns = self._historical_data[period]["Return"].dropna(how="all")
+        estimates = functools.partial(
+            _get_out_of_sample_estimates,
+            returns,
+            distribution=distribution,
+            alpha=alpha,
+            window_size=window_size,
+            refit_every=refit_every,
+            garch_method=garch_method,
+            garch_distribution=garch_distribution,
+        )
+        rolling_var = estimates("var")
 
         results = []
-        if test in ("kupiec", "both"):
+        for name in tests:
+            if name == "kupiec":
+                result = backtesting_model.get_kupiec_test(returns, rolling_var, alpha)
+            elif name == "christoffersen":
+                result = backtesting_model.get_christoffersen_test(returns, rolling_var)
+            elif name == "conditional_coverage":
+                result = backtesting_model.get_conditional_coverage_test(
+                    returns, rolling_var, alpha
+                )
+            elif name == "duration":
+                result = backtesting_model.get_duration_test(returns, rolling_var)
+            elif name == "mcneil_frey":
+                result = backtesting_model.get_mcneil_frey_test(
+                    returns,
+                    rolling_var,
+                    estimates("cvar"),
+                    estimates("volatility"),
+                    n_bootstrap,
+                    random_state,
+                )
+            else:
+                result = backtesting_model.get_tick_loss(returns, rolling_var, alpha)
+
+            # Every test has a P-Value, so with more than one test each is named after its test.
             results.append(
-                backtesting_model.get_kupiec_test(returns, rolling_var, alpha)
-            )
-        if test in ("christoffersen", "both"):
-            results.append(
-                backtesting_model.get_christoffersen_test(returns, rolling_var)
+                result.rename(index={"P-Value": f"{VAR_BACKTESTS[name]} P-Value"})
+                if len(tests) > 1
+                else result
             )
 
         result = pd.concat(results, axis=0) if len(results) > 1 else results[0]
@@ -1279,6 +1498,9 @@ class ValueAtRiskRisk:
         distribution: str = "historic",
         alpha: float = 0.05,
         window_size: int | None = None,
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
         n_bootstrap: int = 1000,
         random_state: int = 42,
         rounding: int | None = None,
@@ -1318,9 +1540,10 @@ class ValueAtRiskRisk:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
-            one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
+            one of "historic", "gaussian", "studentt", "evt" or "garch". Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
-            years of daily data, where "historic" and "gaussian" take well under a second.
+            years of daily data, where "historic" and "gaussian" take well under a second. "garch" refits
+            a GARCH-family model every `refit_every` returns (see `get_var_backtest`).
             alpha (float, optional): The tail probability for the VaR/CVaR estimates (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
@@ -1328,7 +1551,13 @@ class ValueAtRiskRisk:
             window_size (int | None, optional): The rolling window size (in number of return observations
             of `period`) used to estimate each VaR/CVaR value. Defaults to None, which uses a year of
             observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly
-            returns).
+            returns), and two years with a minimum of 100 for "garch".
+            refit_every (int, optional): Only used with `distribution="garch"`. The number of returns between
+            two fits. Defaults to 21.
+            garch_method (str, optional): Only used with `distribution="garch"`. The variance model, one of the
+            methods of `get_garch`. Defaults to "garch".
+            garch_distribution (str, optional): Only used with `distribution="garch"`. The innovation
+            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
             n_bootstrap (int, optional): The number of bootstrap resamples used to estimate the Standard
             Error of Z2. Defaults to 1000.
             random_state (int, optional): The seed for the bootstrap random number generator. Defaults to
@@ -1381,19 +1610,27 @@ class ValueAtRiskRisk:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        if distribution not in ["historic", "gaussian", "studentt", "evt"]:
+        if distribution not in ["historic", "gaussian", "studentt", "evt", "garch"]:
             raise ValueError(
-                "Distribution must be historic, gaussian, studentt, or evt."
+                "Distribution must be historic, gaussian, studentt, evt or garch."
             )
 
-        # A year of observations with a minimum of 20, as get_move_significance uses: 252 is a year of daily returns but more than the history holds of quarterly or yearly ones.  # noqa: E501
-        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
-        returns = self._historical_data[period]["Return"].dropna(how="all")
-        rolling_var = _get_out_of_sample_estimates(
-            returns, "var", distribution, alpha, window_size
+        window_size = (
+            window_size if window_size else _default_window_size(period, distribution)
         )
-        rolling_cvar = _get_out_of_sample_estimates(
-            returns, "cvar", distribution, alpha, window_size
+        returns = self._historical_data[period]["Return"].dropna(how="all")
+        rolling_var, rolling_cvar = (
+            _get_out_of_sample_estimates(
+                returns,
+                measure,
+                distribution,
+                alpha,
+                window_size,
+                refit_every,
+                garch_method,
+                garch_distribution,
+            )
+            for measure in ("var", "cvar")
         )
 
         result = backtesting_model.get_acerbi_szekely_test(

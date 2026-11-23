@@ -562,3 +562,56 @@ def get_cvar_evt(
     conditional_value_at_risk = -expected_shortfall_loss
 
     return pd.Series(conditional_value_at_risk, index=returns.columns)
+
+
+def get_cvar_garch(
+    returns: pd.Series | pd.DataFrame,
+    alpha: float,
+    window_size: int | None = None,
+    refit_every: int = 21,
+    method: str = "garch",
+    distribution: str = "normal",
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the conditional Conditional Value at Risk (CVaR, expected shortfall) of returns
+    from a GARCH-family model: the mean of the model's distribution of the next return below
+    its alpha quantile.
+
+    The formula is as follows:
+
+    - CVaR_(t+1) = Mu + Volatility_(t+1) * ES_F(alpha), with ES_F(alpha) = E[z | z <= F^-1(alpha)]
+
+    Where Mu and Volatility_(t+1) are the constant mean and the one-step volatility forecast of
+    the fitted model and F the distribution function of its standardized innovations (see
+    `var_model.get_var_garch`, which also describes `window_size` and `refit_every`).
+
+    For more information, see the following paper:
+
+    - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for
+    Heteroscedastic Financial Time Series: An Extreme Value Approach." Journal of Empirical
+    Finance, 7(3-4), 271-300.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+        window_size (int | None, optional): The number of returns of every fit of a rolling
+            path, at least 100. Defaults to None, which fits once on all returns.
+        refit_every (int, optional): The number of returns between two fits of a rolling path.
+            Defaults to 21.
+        method (str, optional): The variance model of `garch_model.get_garch_family`. Defaults
+            to "garch".
+        distribution (str, optional): The innovation distribution. Defaults to "normal".
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The CVaR of the next period, shaped as the VaR of
+        `var_model.get_var_garch`.
+    """
+    return var_model.get_var_garch(
+        returns,
+        alpha,
+        window_size,
+        refit_every,
+        method,
+        distribution,
+        expected_shortfall=True,
+    )

@@ -1354,3 +1354,36 @@ def test_entropy_of_each_series_over_its_own_dates(econometrics_module):
 
 def test_entropy_with_an_unknown_method_is_empty(econometrics_module):
     assert econometrics_module.get_entropy(method="unknown").empty
+
+
+def test_get_berkowitz_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_berkowitz_test(refit_every=63))
+    recorder.capture(
+        econometrics_module.get_berkowitz_test(model="gaussian", alpha=0.05)
+    )
+
+
+def test_get_directional_accuracy_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_directional_accuracy_test())
+    recorder.capture(
+        econometrics_module.get_directional_accuracy_test(
+            method="anatolyev_gerko", forecast="autoregressive", window_size=60
+        )
+    )
+
+
+def test_get_model_confidence_set(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_model_confidence_set(
+            models=["ewma", "rolling", "garch"], refit_every=63
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_model_confidence_set(
+            models=["ewma", "rolling"], loss="squared", statistic="range", rounding=12
+        )
+    )
+
+
+def test_get_model_confidence_set_needs_two_models(econometrics_module):
+    assert econometrics_module.get_model_confidence_set(models=["ewma"]).empty

@@ -2,6 +2,9 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
+import numpy as np
 import pandas as pd
 
 from financetoolkit.econometrics.forecasting import (
@@ -9,22 +12,36 @@ from financetoolkit.econometrics.forecasting import (
     time_series_model,
 )
 from financetoolkit.helpers import handle_portfolio
+from financetoolkit.risk.volatility import garch_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
 # ruff: noqa: E501
 
 logger = get_logger()
+
+PERIODS = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+
+# The GARCH-family variance models the model confidence set can compare.
+VOLATILITY_GARCH_METHODS = list(garch_model.GARCH_FAMILY_VARIANCE_PARAMETERS)
+
+# A GARCH fit needs at least 100 returns (as rugarch's ugarchfit), so its window is two years with that minimum.  # noqa: E501
+MINIMUM_GARCH_WINDOW = 100
+
+
+def _garch_window_size(period: str) -> int:
+    """Two years of observations with a minimum of 100, the default window of a GARCH fit."""
+    return max(2 * PERIODS_PER_YEAR[period], MINIMUM_GARCH_WINDOW)
 
 
 @filter_shown_columns
 @track_sources
 class ForecastingEconometrics:
     """
-    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation and the Diebold-Mariano test.
+    Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation, the Diebold-Mariano, Berkowitz and directional accuracy tests and the model confidence set.
     """
 
     @handle_portfolio
@@ -1167,6 +1184,500 @@ class ForecastingEconometrics:
             raise ValueError("None of the tickers has enough data for an ARIMA fit.")
 
         result = pd.DataFrame(columns).reindex(columns=tickers)
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_berkowitz_test(
+        self,
+        period: str | None = None,
+        model: str = "garch",
+        alpha: float | None = None,
+        window_size: int | None = None,
+        lambda_: float = 0.94,
+        refit_every: int = 21,
+        garch_method: str = "garch",
+        garch_distribution: str = "normal",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Test the one-period-ahead density forecasts of a return model with Berkowitz's likelihood ratio test.
+
+        A Value at Risk backtest only looks at one quantile; a density forecast says how likely every return
+        is. The test transforms each realized return with the distribution function of its forecast (the
+        probability integral transform, PIT), which is uniform and independent over time when the forecasts
+        are right, takes the normal quantile of the PITs and tests whether those are independent standard
+        normal: a mean away from 0 means the forecasts are biased, a standard deviation above 1 that they
+        understate the risk and an autocorrelation that they miss its dynamics. With `alpha`, only the tail
+        below the alpha quantile is tested, the part a Value at Risk at `alpha` depends on.
+
+        The formula is as follows (with the default model="garch" and daily returns, for which the window is 504):
+
+        - PIT_t = F((Return_t - Mu) / Volatility_t), from a GARCH(1, 1) with normal innovations fitted on the 504 returns
+          before t, refitted every 21 returns
+        - z_t = Φ^-1(PIT_t) and z_t - μ = ρ (z_(t-1) - μ) + ε_t, with ε_t ~ N(0, σ^2)
+        - Berkowitz Statistic = -2 (ln L(0, 1, 0) - ln L(μ_hat, σ_hat, ρ_hat)), compared with a χ² distribution with 3
+          degrees of freedom
+        - With alpha: every z_t above q = Φ^-1(alpha) is censored at q, the AR(1) term is left out and the statistic
+          -2 (ln L(0, 1) - ln L(μ_hat, σ_hat)) is compared with a χ² distribution with 2 degrees of freedom
+
+        Where L is the exact Gaussian AR(1) likelihood (see `forecast_evaluation_model.get_berkowitz_test`) and F
+        the distribution function of the standardized innovations with their fitted Shape and Skew.
+        model="gaussian" uses a normal distribution with the mean and standard deviation (ddof=1) of the
+        `window_size` returns before t and model="ewma" a normal distribution with mean zero and the RiskMetrics
+        variance with decay `lambda_`.
+
+        For more information about the method, see the following papers:
+
+        - Berkowitz, J. (2001). "Testing Density Forecasts, With Applications to Risk Management." Journal of
+        Business & Economic Statistics, 19(4), 465-474.
+        - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with Applications to
+        Financial Risk Management." International Economic Review, 39(4), 863-883.
+        - rugarch: BerkowitzTest (https://cran.r-project.org/package=rugarch).
+
+        Also known as: density forecast test, PIT test, Berkowitz LR test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
+            Defaults to "daily".
+            model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
+            alpha (float | None, optional): The tail probability of the tail test. Defaults to None, which tests
+            the whole density.
+            window_size (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
+            None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
+            a year with a minimum of 20 for "gaussian".
+            lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
+            refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
+            garch_method (str, optional): The GARCH variance model, one of the methods of `Risk.get_garch`.
+            Defaults to "garch".
+            garch_distribution (str, optional): The GARCH innovation distribution (normal, t, skewt,
+            skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
+            to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Berkowitz statistic, its p-value, the fitted Mean, Standard Deviation and
+            Autocorrelation (NaN for the tail test) of z, the number of observations and, with `alpha`, of
+            tail observations, per asset.
+
+        Notes:
+        - Every forecast only uses the returns before it, and each asset uses its own return history.
+        - rugarch's BerkowitzTest fits the AR(1) by least squares, conditional on the first observation; the
+        statistic here maximizes the exact likelihood of the paper, which differs by about 1% of the statistic
+        on 800 observations.
+        - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "TLT", "GLD"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2019-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_berkowitz_test()
+        ```
+
+        Which returns:
+
+        |                     |       QQQ |       TLT |       GLD |
+        |:--------------------|----------:|----------:|----------:|
+        | Berkowitz Statistic |    8.5086 |    3.9236 |    3.8163 |
+        | P-Value             |    0.0366 |    0.2698 |    0.282  |
+        | Mean                |   -0.0443 |   -0.0153 |    0.0396 |
+        | Standard Deviation  |    1.0494 |    0.9641 |    1.0273 |
+        | Autocorrelation     |   -0.0028 |   -0.0176 |    0.002  |
+        | Observations        | 1255      | 1255      | 1255      |
+        """
+        period = period if period else "daily"
+
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if model not in ("garch", "gaussian", "ewma"):
+            raise ValueError("The model must be garch, gaussian or ewma.")
+
+        window_size = (
+            window_size
+            if window_size
+            else (
+                _garch_window_size(period)
+                if model == "garch"
+                else max(PERIODS_PER_YEAR[period], 20)
+            )
+        )
+        returns = self._filter_benchmark(
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all"),
+            include_benchmark=include_benchmark,
+        )
+        pit = forecast_evaluation_model.get_probability_integral_transform(
+            returns,
+            model,
+            window_size,
+            lambda_,
+            refit_every,
+            garch_method,
+            garch_distribution,
+        )
+        result = forecast_evaluation_model.get_berkowitz_test(pit, alpha)
+
+        if alpha is None:
+            result = result.drop(index="Tail Observations")
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_directional_accuracy_test(
+        self,
+        period: str | None = None,
+        method: Literal["pesaran_timmermann", "anatolyev_gerko"] = "pesaran_timmermann",
+        forecast: str = "momentum",
+        window_size: int | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Test whether a return forecast predicts the direction of the next return better than chance, with the
+        Pesaran-Timmermann or the Anatolyev-Gerko test.
+
+        A forecast that is right about the sign more than half of the time is not necessarily useful: in a rising
+        market a forecast that is always positive is right on most days. The Pesaran-Timmermann test compares the
+        share of correct signs with the share expected if the forecast and the returns were independent. The
+        Anatolyev-Gerko test weighs each sign by the size of the return: it is the excess return of going long
+        when the forecast is positive and short when it is negative over that of the same share of long positions
+        held at random, so it asks whether the forecast would have made money.
+
+        The formula is as follows (with the default forecast="momentum" and daily returns, for which the window is 252):
+
+        - Forecast_t = mean(Return_(t-252), ..., Return_(t-1))
+        - P = (1 / n) Σ 1{Forecast_t · Return_t > 0}, P* = P_y P_x + (1 - P_y) (1 - P_x)
+        - Pesaran-Timmermann Statistic = (P - P*) / √(V(P) - V(P*))
+        - Anatolyev-Gerko Statistic = (A - B) / √V, with A = (1 / n) Σ sign(Forecast_t) Return_t and
+          B = mean(sign(Forecast)) · mean(Return)
+        - P-Value = P(N(0, 1) > Statistic)
+
+        Where P_y and P_x are the shares of positive returns and forecasts, V(P) = P* (1 - P*) / n,
+        V(P*) = (2 P_y - 1)^2 P_x (1 - P_x) / n + (2 P_x - 1)^2 P_y (1 - P_y) / n + 4 P_y P_x (1 - P_y) (1 - P_x) / n^2
+        and V = 4 p (1 - p) Σ (Return_t - mean(Return))^2 / n^2 with p = (1 + mean(sign(Forecast))) / 2.
+        forecast="autoregressive" forecasts each return with a + b · Return_(t-1), the least-squares AR(1) over the
+        `window_size` pairs of returns before it. Both statistics are standard normal under the null hypothesis of
+        no directional predictability; the p-value is one-sided.
+
+        For more information about the methods, see the following papers:
+
+        - Pesaran, M.H. and Timmermann, A. (1992). "A Simple Nonparametric Test of Predictive Performance."
+        Journal of Business & Economic Statistics, 10(4), 461-465.
+        - Anatolyev, S. and Gerko, A. (2005). "A Trading Approach to Testing for Predictability." Journal of
+        Business & Economic Statistics, 23(4), 455-461.
+        - Moskowitz, T.J., Ooi, Y.H. and Pedersen, L.H. (2012). "Time Series Momentum." Journal of Financial
+        Economics, 104(2), 228-250.
+        - rugarch: DACTest (https://cran.r-project.org/package=rugarch).
+
+        Also known as: directional accuracy test, market timing test, sign test, PT test, AG test, DAC test.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
+            Defaults to "daily".
+            method (str, optional): The test, "pesaran_timmermann" or "anatolyev_gerko". Defaults to
+            "pesaran_timmermann".
+            forecast (str, optional): The return forecast, "momentum" (the mean of the previous `window_size`
+            returns) or "autoregressive" (the rolling AR(1)). Defaults to "momentum".
+            window_size (int | None, optional): The number of returns of every forecast window. Defaults to None,
+            which uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly,
+            quarterly or yearly returns).
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
+            to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The statistic, its one-sided p-value, the Directional Accuracy (the share of correctly
+            predicted signs) and the number of observations, per asset.
+
+        Notes:
+        - Every forecast only uses the returns before it, and each asset uses its own return history.
+        - A return or forecast of exactly zero counts as a wrong sign in P and as no position in A.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "TLT", "GLD", "USO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2010-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_directional_accuracy_test(period="monthly", window_size=12)
+        ```
+
+        Which returns:
+
+        |                              |      QQQ |      TLT |      GLD |      USO |
+        |:-----------------------------|---------:|---------:|---------:|---------:|
+        | Pesaran-Timmermann Statistic |   0.7683 |  -1.195  |   1.307  |  -0.9591 |
+        | P-Value                      |   0.2211 |   0.8839 |   0.0956 |   0.8312 |
+        | Directional Accuracy         |   0.6313 |   0.4581 |   0.5475 |   0.4637 |
+        | Observations                 | 179      | 179      | 179      | 179      |
+        """
+        period = period if period else "daily"
+
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+
+        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
+        returns = self._filter_benchmark(
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all"),
+            include_benchmark=include_benchmark,
+        )
+        forecasts = forecast_evaluation_model.get_return_forecast(
+            returns, forecast, window_size
+        )
+        result = forecast_evaluation_model.get_directional_accuracy_test(
+            returns, forecasts, method
+        )
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_model_confidence_set(
+        self,
+        period: str | None = None,
+        models: list[str] | None = None,
+        loss: str = "qlike",
+        statistic: str = "max",
+        alpha: float = 0.1,
+        n_bootstrap: int = 1000,
+        block_size: int | None = None,
+        window_size: int = 22,
+        lambda_: float = 0.94,
+        garch_window_size: int | None = None,
+        refit_every: int = 21,
+        random_state: int = 42,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Find the volatility forecasting models that cannot be told apart from the best one with the Model
+        Confidence Set (MCS) of Hansen, Lunde and Nason.
+
+        The Diebold-Mariano test compares two forecasts; the MCS compares any number of them. Every model forecasts
+        the next period's variance of each asset from the returns before it, and its loss against the squared return
+        is recorded. Starting from all models, the MCS tests whether they are equally good and, if not, eliminates
+        the worst and tests again, until the remaining models cannot be told apart. The models left over form a set
+        that contains the best model with a probability of at least 1 - alpha; the MCS p-value of a model says at
+        which size it would leave the set.
+
+        The formula is as follows (with the defaults statistic="max", loss="qlike" and daily returns):
+
+        - Loss_i,t = Return_t^2 / Forecast_i,t + ln(Forecast_i,t), or (Return_t^2 - Forecast_i,t)^2 with loss="squared"
+        - d_i = mean(Loss_i) - (1 / m) Σ_j mean(Loss_j) and t_i = d_i / √Var(d_i)
+        - T = max_i t_i, with P-Value = (1 / B) Σ_b 1{T*_b >= T} over B stationary bootstrap resamples
+        - while the p-value is below alpha, the model with the largest t_i is eliminated and the test repeated
+        - MCS P-Value of a model = the largest p-value of the steps up to its elimination (1 for the last model)
+
+        Where m is the number of models still in the set, Var(d_i) the bootstrap variance of d_i and T*_b the
+        statistic of the b-th resample centered at the full sample (see
+        `forecast_evaluation_model.get_model_confidence_set`, also for statistic="range", the largest |t_ij| of
+        all pairs). The forecasts of the models are:
+
+        - "ewma": the RiskMetrics variance λ·σₜ₋₁² + (1 - λ)·rₜ₋₁² with λ = `lambda_`
+        - "rolling": the sample variance (ddof=1) of the `window_size` returns before t
+        - "garch", "gjr" and the other methods of `Risk.get_garch`: the one-step variance of the GARCH-family model
+          with a constant mean and normal innovations (quasi-maximum likelihood), refitted every `refit_every`
+          returns on the `garch_window_size` returns before t
+
+        Every model is compared on the dates all of them have a forecast. The squared-error loss and QLIKE rank
+        volatility forecasts correctly with the squared return as a noisy proxy of the true variance (Patton
+        2011); QLIKE (written without the terms that do not depend on the forecast) is less sensitive to the
+        largest returns.
+
+        For more information about the method, see the following papers:
+
+        - Hansen, P.R., Lunde, A. and Nason, J.M. (2011). "The Model Confidence Set." Econometrica, 79(2),
+        453-497.
+        - Patton, A.J. (2011). "Volatility Forecast Comparison Using Imperfect Volatility Proxies." Journal of
+        Econometrics, 160(1), 246-256.
+        - arch: MCS (https://arch.readthedocs.io) and rugarch: mcsTest (https://cran.r-project.org/package=rugarch).
+
+        Also known as: MCS, model confidence set, Hansen-Lunde-Nason test, forecast model selection.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
+            Defaults to "daily".
+            models (list[str] | None, optional): The forecasting models to compare, at least two of "ewma",
+            "rolling" and the methods of `Risk.get_garch` (such as "garch" and "gjr"). Defaults to None, which
+            compares "ewma", "rolling", "garch" and "gjr".
+            loss (str, optional): The loss of a forecast, "qlike" or "squared". Defaults to "qlike". The squared
+            losses of daily variances are of the order of 1e-7, so they need a larger `rounding` to show.
+            statistic (str, optional): The test statistic, "max" or "range". Defaults to "max".
+            alpha (float, optional): The size of the test. Defaults to 0.1, the 90% model confidence set.
+            n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
+            block_size (int | None, optional): The average block length of the stationary bootstrap. Defaults to
+            None, which uses the cube root of the number of periods, rounded.
+            window_size (int, optional): The window of the "rolling" model. Defaults to 22 (about a month).
+            lambda_ (float, optional): The decay factor of the "ewma" model. Defaults to 0.94.
+            garch_window_size (int | None, optional): The number of returns of every GARCH fit. Defaults to None,
+            which uses two years of observations with a minimum of 100 (504 daily returns).
+            refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
+            random_state (int, optional): The seed of the bootstrap. Defaults to 42.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets. Defaults to
+            False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and model the Average Loss, the MCS P-Value, whether the model is In
+            Confidence Set and its Rank (1 for the last model standing).
+
+        Notes:
+        - Every forecast only uses the returns before it, and each asset uses its own return history.
+        - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "TLT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2019-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_model_confidence_set()
+        ```
+
+        Which returns:
+
+        |                    |   Average Loss |   MCS P-Value | In Confidence Set   |   Rank |
+        |:-------------------|---------------:|--------------:|:--------------------|-------:|
+        | ('QQQ', 'gjr')     |        -7.7142 |         1     | True                |      1 |
+        | ('QQQ', 'ewma')    |        -7.67   |         0.25  | True                |      2 |
+        | ('QQQ', 'garch')   |        -7.6562 |         0.25  | True                |      3 |
+        | ('QQQ', 'rolling') |        -7.6442 |         0.206 | True                |      4 |
+        | ('TLT', 'ewma')    |        -8.2518 |         1     | True                |      1 |
+        | ('TLT', 'garch')   |        -8.2407 |         0.576 | True                |      2 |
+        | ('TLT', 'gjr')     |        -8.2405 |         0.576 | True                |      3 |
+        | ('TLT', 'rolling') |        -8.2155 |         0.101 | True                |      4 |
+        """
+        period = period if period else "daily"
+        models = models if models else ["ewma", "rolling", "garch", "gjr"]
+        models = [models] if isinstance(models, str) else list(models)
+
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        if loss not in ("squared", "qlike"):
+            raise ValueError("The loss must be squared or qlike.")
+        if len(set(models)) < 2:  # noqa: PLR2004
+            raise ValueError(
+                "The model confidence set compares at least two different models."
+            )
+        unknown = [
+            model
+            for model in models
+            if model not in ("ewma", "rolling")
+            and model not in VOLATILITY_GARCH_METHODS
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown models {', '.join(unknown)}: use ewma, rolling or the methods of "
+                f"Risk.get_garch ({', '.join(VOLATILITY_GARCH_METHODS)})."
+            )
+
+        garch_window_size = (
+            garch_window_size if garch_window_size else _garch_window_size(period)
+        )
+        returns = self._filter_benchmark(
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all"),
+            include_benchmark=include_benchmark,
+        )
+
+        results = {}
+        for ticker in returns.columns:
+            ticker_returns = returns[ticker].dropna()
+            realized = ticker_returns**2
+            forecasts = {
+                model: forecast_evaluation_model.get_volatility_forecast(
+                    ticker_returns,
+                    model,
+                    window_size,
+                    lambda_,
+                    garch_window_size,
+                    refit_every,
+                )
+                for model in dict.fromkeys(models)
+            }
+            losses = pd.DataFrame(
+                {
+                    model: (
+                        (realized - forecast) ** 2
+                        if loss == "squared"
+                        else realized / forecast + np.log(forecast)
+                    )
+                    for model, forecast in forecasts.items()
+                }
+            ).dropna()
+
+            if len(losses) < 2:  # noqa: PLR2004
+                logger.warning(
+                    "%s has too few returns for the forecasts of every model, so it has no model confidence set.",
+                    ticker,
+                )
+                continue
+
+            results[ticker] = forecast_evaluation_model.get_model_confidence_set(
+                losses, alpha, statistic, n_bootstrap, block_size, random_state
+            )
+
+        if not results:
+            raise ValueError(
+                "None of the assets has enough returns for the forecasts of every model."
+            )
+
+        result = pd.concat(results, names=["Ticker", "Model"])
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

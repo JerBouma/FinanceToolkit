@@ -7,12 +7,13 @@ import itertools
 import numpy as np
 import pandas as pd
 from scipy import linalg, stats
-from scipy.optimize import minimize
+from scipy.optimize import brentq, minimize
 from scipy.spatial.distance import pdist, squareform
 from scipy.special import logsumexp
 
 from financetoolkit.portfolio.helpers import get_linear_regression, get_view_vector
 from financetoolkit.risk.dependence import copula_model
+from financetoolkit.risk.volatility import garch_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -25,7 +26,7 @@ MINIMUM_EIGENVALUE = 1e-13
 MINIMUM_TAIL_DEPENDENCE = 1e-8
 
 GERBER_STATISTICS = (0, 1, 2)
-COMOMENT_METHODS = ("sample", "exponential", "semi")
+COMOMENT_METHODS = ("sample", "exponential", "semi", "ccc_garch")
 BIN_METHODS = ("freedman", "hacine_gharbi")
 BOOTSTRAP_METHODS = ("stationary", "circular", "moving", "normal")
 
@@ -271,13 +272,20 @@ def get_gerber_covariance(
     )
 
 
-def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.DataFrame:
+def get_detoned_covariance(
+    returns: pd.DataFrame, components: int = 1, covariance: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """
-    The detoned covariance matrix: the sample covariance (ddof=1) with the first principal
-    components of its correlation matrix, the market, removed. With λ_k and v_k the
-    eigenvalues and eigenvectors of the correlation matrix C in descending order, the
-    detoned correlation is C - Σ_(k ≤ m) λ_k v_k v_k' for the m components, rescaled to a
-    unit diagonal and turned back into a covariance with the sample standard deviations.
+    The detoned covariance matrix: the sample covariance (ddof=1), or another estimate,
+    with the first principal components of its correlation matrix, the market, removed.
+    With λ_k and v_k the eigenvalues and eigenvectors of the correlation matrix C in
+    descending order, the detoned correlation is C - Σ_(k ≤ m) λ_k v_k v_k' for the m
+    components, rescaled to a unit diagonal and turned back into a covariance with the
+    standard deviations of the estimate.
+
+    López de Prado (2020, section 2.6) detones the denoised correlation matrix: pass the
+    denoised covariance (optimization_model.get_denoised_covariance) as the covariance, and
+    the eigenvalues and eigenvectors are those of its correlation matrix.
 
     The market component makes all assets look alike; without it, the clusters of assets
     that move together for other reasons stand out. The detoned matrix has rank N - m, so
@@ -297,6 +305,8 @@ def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.Dat
             missing values.
         components (int, optional): The number m of principal components removed.
             Defaults to 1.
+        covariance (pd.DataFrame | None, optional): The covariance matrix per period to
+            detone, in the order of the returns. Defaults to None, the sample covariance.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -306,7 +316,11 @@ def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.Dat
         raise ValueError(
             f"The number of components removed must lie between 1 and {assets - 1}."
         )
-    sample = returns.cov().to_numpy(dtype=float)
+    sample = (
+        returns.cov()
+        if covariance is None
+        else covariance.loc[returns.columns, returns.columns]
+    ).to_numpy(dtype=float)
     volatility = np.sqrt(np.diag(sample))
     correlation = sample / np.outer(volatility, volatility)
     eigenvalues, eigenvectors = np.linalg.eigh(correlation)
@@ -1089,7 +1103,8 @@ def get_fast_threshold_clusters(
 
 def get_comoment_weights(periods: int, method: str, span: int) -> np.ndarray:
     """
-    The weights of the periods in a co-moment: 1 / T each for "sample" and "semi", and
+    The weights of the periods in a co-moment: 1 / T each for "sample", "semi" and
+    "ccc_garch" (on its scenarios), and
     (1 - α)^age normalized to sum to one, with α = 2 / (span + 1), for "exponential".
 
     Args:
@@ -1135,6 +1150,10 @@ def get_coskewness_matrix(
     - "semi": the lower semi co-moment, with min(r_ti - μ_i, 0) in place of the
       deviations, so only returns below the average count, as defined by Cajas in
       Riskfolio-Lib.
+    - "ccc_garch": the next-period coskewness of the constant conditional correlation
+      GARCH(1, 1) model, the "sample" co-moment of its scenarios, the standardized
+      residuals at the next-period volatilities (see get_ccc_garch_covariance),
+      referenced against the m3 of PortfolioAnalytics' CCCgarch.MM.
 
     With standardize, every m_ijk is divided by σ_i σ_j σ_k, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iii is
@@ -1148,7 +1167,8 @@ def get_coskewness_matrix(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): "sample", "exponential" or "semi". Defaults to "sample".
+        method (str, optional): "sample", "exponential", "semi" or "ccc_garch". Defaults
+            to "sample".
         span (int, optional): The span in periods of the "exponential" weights.
             Defaults to 180.
         standardize (bool, optional): Whether to divide by the product of the standard
@@ -1158,6 +1178,8 @@ def get_coskewness_matrix(
         pd.DataFrame: The coskewness matrix, one row per asset i and one column per pair
             of assets (j, k).
     """
+    if method == "ccc_garch":
+        returns, method = get_ccc_garch_covariance(returns)[1], "sample"
     values = returns.to_numpy(dtype=float)
     periods, assets = values.shape
     weights = get_comoment_weights(periods, method, span)
@@ -1197,6 +1219,10 @@ def get_cokurtosis_matrix(
     - "semi": the lower semi cokurtosis, with min(r_ti - μ_i, 0) in place of the
       deviations (Cajas, 2022), referenced against Riskfolio-Lib's cokurt_matrix
       (method="semi") in its N² × N² arrangement.
+    - "ccc_garch": the next-period cokurtosis of the constant conditional correlation
+      GARCH(1, 1) model, the "sample" co-moment of its scenarios (see
+      get_ccc_garch_covariance), referenced against the m4 of PortfolioAnalytics'
+      CCCgarch.MM.
 
     With standardize, every m_ijkl is divided by σ_i σ_j σ_k σ_l, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iiii
@@ -1209,7 +1235,8 @@ def get_cokurtosis_matrix(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): "sample", "exponential" or "semi". Defaults to "sample".
+        method (str, optional): "sample", "exponential", "semi" or "ccc_garch". Defaults
+            to "sample".
         span (int, optional): The span in periods of the "exponential" weights.
             Defaults to 180.
         standardize (bool, optional): Whether to divide by the product of the standard
@@ -1219,6 +1246,8 @@ def get_cokurtosis_matrix(
         pd.DataFrame: The cokurtosis matrix, one row per asset i and one column per
             triple of assets (j, k, l).
     """
+    if method == "ccc_garch":
+        returns, method = get_ccc_garch_covariance(returns)[1], "sample"
     values = returns.to_numpy(dtype=float)
     periods, assets = values.shape
     weights = get_comoment_weights(periods, method, span)
@@ -1693,6 +1722,7 @@ def get_entropy_pooling(
     volatility_views: dict | None = None,
     correlation_views: dict | None = None,
     prior_probabilities: np.ndarray | None = None,
+    ranking: list[str] | None = None,
 ) -> pd.Series:
     """
     The posterior probabilities of the historical scenarios (periods) under views, by
@@ -1708,6 +1738,12 @@ def get_entropy_pooling(
     are then held at those values: the sequential treatment of views on higher moments of
     Meucci, Ardia and Keel (2011), in the order skfolio's EntropyPooling takes them. A
     view is an equality (a number) or an inequality, (">=", value) or ("<=", value).
+
+    A ranking is the ordering view of Meucci (2008), its "ranking" example: with the assets listed from
+    the highest expected return to the lowest, the inequalities E_p[r_(k+1)] ≤ E_p[r_(k)]
+    between every pair of neighbours, Σ p_t (r_(k+1),t - r_(k),t) ≤ 0, which are imposed
+    with the mean views. The posterior then agrees with the ordering while staying as close
+    to the prior as it can, so assets the history already ranks that way keep their means.
 
     The problem is solved through its dual (Csiszár, 1975; Boyd and Vandenberghe, 2004,
     5.2.3). With the constraints A'p = b and A'p ≤ b (every column of A scaled to unit
@@ -1733,6 +1769,8 @@ def get_entropy_pooling(
             ("AAPL-MSFT"), between -1 and 1. Defaults to None.
         prior_probabilities (np.ndarray | None, optional): The prior probability of every
             scenario. Defaults to None, equal probabilities.
+        ranking (list[str] | None, optional): Assets from the highest expected return to
+            the lowest, at least two. Defaults to None.
 
     Returns:
         pd.Series: The posterior probability of every scenario, summing to one.
@@ -1849,6 +1887,19 @@ def get_entropy_pooling(
 
     for view, value in (mean_views or {}).items():
         add_view(value, data @ get_view_vector(view, names))
+    if ranking is not None:
+        unknown = [str(name) for name in ranking if name not in names]
+        if unknown or len(set(ranking)) != len(ranking) or len(ranking) <= 1:
+            raise ValueError(
+                "The ranking lists at least two different assets of the returns, from the "
+                "highest expected return to the lowest"
+                + (f"; unknown: {', '.join(unknown)}." if unknown else ".")
+            )
+        for higher, lower in itertools.pairwise(ranking):
+            add_view(
+                ("<=", 0.0),
+                data[:, names.get_loc(lower)] - data[:, names.get_loc(higher)],
+            )
     probabilities = solve()
 
     if volatility_views:
@@ -1973,3 +2024,828 @@ def get_opinion_pooling(
         pooled = np.exp(logarithm - logarithm.max())
         pooled = pooled / pooled.sum()
     return pd.Series(pooled, index=probabilities.index)
+
+
+def get_silhouette_coefficients(
+    euclidean: np.ndarray, labels: np.ndarray
+) -> np.ndarray:
+    """
+    The silhouette coefficients of Rousseeuw (1987), S_i = (b_i - a_i) / max(a_i, b_i), with
+    a_i the average distance of asset i to the other assets of its cluster and b_i the
+    smallest average distance to the assets of another cluster (S_i = 0 for an asset alone
+    in its cluster).
+
+    See Rousseeuw, P. J. (1987), "Silhouettes: A Graphical Aid to the Interpretation and
+    Validation of Cluster Analysis", Journal of Computational and Applied Mathematics, 20,
+    53-65.
+
+    Args:
+        euclidean (np.ndarray): The N × N distances between the assets.
+        labels (np.ndarray): The cluster of every asset.
+
+    Returns:
+        np.ndarray: The silhouette coefficient of every asset.
+    """
+    clusters = np.unique(labels)
+    # The average distance of every asset to the assets of every cluster, itself left out.
+    members = labels[:, None] == clusters[None, :]
+    sizes = members.sum(axis=0) - members
+    average = np.divide(
+        euclidean @ members,
+        sizes,
+        out=np.full(members.shape, np.nan),
+        where=sizes > 0,
+    )
+    within = average[members]
+    between = np.where(members, np.inf, average).min(axis=1)
+    alone = sizes[members] == 0
+    with np.errstate(invalid="ignore"):
+        return np.where(alone, 0.0, (between - within) / np.maximum(between, within))
+
+
+# The k-means runs of every number of clusters that ONC tries, as in López de Prado (2020).
+ONC_RESTARTS = 10
+
+
+def get_optimal_number_of_clusters(
+    distance: pd.DataFrame,
+    maximum_clusters: int | None = None,
+    restarts: int = ONC_RESTARTS,
+    seed: int | None = 0,
+) -> np.ndarray:
+    """
+    The clusters of the Optimal Number of Clusters (ONC) algorithm of López de Prado and
+    Lewis (2019): k-means on the rows of the distance matrix, the number of clusters chosen
+    by the quality of their silhouettes, and the clusters of below-average quality
+    clustered again.
+
+    - Every asset is a point whose coordinates are its row of the distance matrix (for the
+      correlation distance d = √((1 - ρ) / 2)), so two assets are close when they have
+      similar distances to all assets.
+    - For k = 2 to K clusters, k-means (Lloyd's algorithm from k-means++ starting centres)
+      runs `restarts` times; the clustering kept is the one, over every k and run, with the
+      highest quality q = E[S] / √V[S] of the silhouette coefficients S of all assets (see
+      get_silhouette_coefficients, with the Euclidean distances between the rows).
+    - Every cluster gets its own quality, the mean over the standard deviation of the
+      silhouettes of its assets. The clusters below the average quality are clustered again
+      with the same steps, on the rows and columns of their assets. Their new clusters
+      replace them when the average quality of all clusters, with the silhouettes taken
+      again on all assets, is above the average quality of the clusters replaced.
+
+    The clustering is that of López de Prado (2020, snippets 4.1 and 4.2): K = N - 1 by
+    default, at most ten k-means runs per k, and the standard deviations without degrees of
+    freedom correction. A cluster whose silhouettes are all equal (an asset alone, for
+    instance) has no quality, so it is left as it is and not part of the averages; in the
+    book its quality is undefined and then stops any further split. With fewer than three
+    assets there is nothing to choose, so they form one cluster. The k-means starts are
+    drawn from numpy's default generator with the seed, so the same distances give the same
+    clusters, and the clusters are numbered in the order of their first asset.
+
+    Referenced against mlfinlab's get_onc_clusters and RiskLabAI's cluster_k_means_top
+    (https://github.com/hudson-and-thames/mlfinlab, https://github.com/RiskLabAI/RiskLabAI.py),
+    which cluster with scikit-learn's KMeans. mlfinlab re-clusters only when more than two
+    clusters are below the average and keeps the new clusters when their quality is below
+    that of the clusters replaced, the reverse of the book's comparison.
+
+    See López de Prado, M. and Lewis, M. J. (2019), "Detection of False Investment
+    Strategies Using Unsupervised Learning Methods", Quantitative Finance, 19(9), 1555-1565,
+    and López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge University
+    Press, chapter 4.
+
+    Args:
+        distance (pd.DataFrame): The N × N distance matrix of the assets.
+        maximum_clusters (int | None, optional): The largest number of clusters K tried.
+            Defaults to None, N - 1.
+        restarts (int, optional): The k-means runs per number of clusters. Defaults to 10.
+        seed (int | None, optional): The seed of the k-means starts (numpy's default
+            generator). Defaults to 0.
+
+    Returns:
+        np.ndarray: The cluster of every asset, numbered from 0 in the order of the assets.
+    """
+    matrix = distance.to_numpy(dtype=float)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:  # noqa: PLR2004
+        raise ValueError("The distance matrix must be square.")
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError(
+            "The distance matrix must not hold missing or infinite values."
+        )
+    if restarts < 1:
+        raise ValueError("The number of k-means runs must be at least 1.")
+    if maximum_clusters is not None and maximum_clusters < 2:  # noqa: PLR2004
+        raise ValueError("The largest number of clusters must be at least 2.")
+    rng = np.random.default_rng(seed)
+
+    def k_means(points: np.ndarray, count: int) -> np.ndarray:
+        # k-means++ starting centres: the first a random point, every next one a point
+        # drawn with a probability proportional to its squared distance to the nearest
+        # centre so far.
+        centres = [points[rng.integers(len(points))]]
+        for _ in range(1, count):
+            nearest = np.min(
+                ((points[:, None, :] - np.array(centres)[None]) ** 2).sum(axis=2),
+                axis=1,
+            )
+            total = nearest.sum()
+            if total <= 0:
+                # Fewer distinct points than clusters; another point is as good as any.
+                centres.append(points[rng.integers(len(points))])
+            else:
+                centres.append(points[rng.choice(len(points), p=nearest / total)])
+        centres = np.array(centres)
+        labels = np.full(len(points), -1)
+        for _ in range(300):
+            squared = ((points[:, None, :] - centres[None]) ** 2).sum(axis=2)
+            new_labels = np.argmin(squared, axis=1)
+            if np.array_equal(new_labels, labels):
+                break
+            labels = new_labels
+            for cluster in range(count):
+                members = labels == cluster
+                if members.any():
+                    centres[cluster] = points[members].mean(axis=0)
+                else:
+                    # An empty cluster takes the point farthest from its own centre.
+                    farthest = int(np.argmax(squared[np.arange(len(points)), labels]))
+                    centres[cluster] = points[farthest]
+                    labels[farthest] = cluster
+        return labels
+
+    def quality(silhouettes: np.ndarray) -> float:
+        spread = silhouettes.std()
+        if spread > 0:
+            return float(silhouettes.mean() / spread)
+        return np.inf if silhouettes.mean() > 0 else -np.inf
+
+    def cluster_qualities(silhouettes: np.ndarray, labels: np.ndarray) -> dict:
+        # The quality per cluster; one whose silhouettes are all equal has none.
+        return {
+            label: float(values.mean() / values.std())
+            for label in np.unique(labels)
+            if (values := silhouettes[labels == label]).std() > 0
+        }
+
+    def base(points: np.ndarray, largest: int) -> tuple[np.ndarray, np.ndarray]:
+        euclidean = squareform(pdist(points))
+        best, best_labels, best_silhouettes = -np.inf, None, None
+        for _ in range(restarts):
+            for count in range(2, largest + 1):
+                labels = k_means(points, count)
+                silhouettes = get_silhouette_coefficients(euclidean, labels)
+                score = quality(silhouettes)
+                if best_labels is None or score > best:
+                    best, best_labels, best_silhouettes = score, labels, silhouettes
+        return best_labels, best_silhouettes
+
+    def top(sub: np.ndarray, largest: int) -> np.ndarray:
+        count = len(sub)
+        largest = min(largest, count - 1)
+        if largest < 2:  # noqa: PLR2004
+            return np.zeros(count, dtype=int)
+        labels, silhouettes = base(sub, largest)
+        qualities = cluster_qualities(silhouettes, labels)
+        if not qualities:
+            return labels
+        average = np.mean(list(qualities.values()))
+        redo = [label for label, value in qualities.items() if value < average]
+        if len(redo) <= 1:
+            return labels
+        selected = np.isin(labels, redo)
+        inner = top(sub[np.ix_(selected, selected)], largest)
+        new_labels = labels.copy()
+        new_labels[selected] = labels.max() + 1 + inner
+        new_qualities = cluster_qualities(
+            get_silhouette_coefficients(squareform(pdist(sub)), new_labels), new_labels
+        )
+        redo_average = np.mean([qualities[label] for label in redo])
+        if new_qualities and np.mean(list(new_qualities.values())) > redo_average:
+            return new_labels
+        return labels
+
+    count = len(matrix)
+    labels = top(matrix, count - 1 if maximum_clusters is None else maximum_clusters)
+    # Numbered in the order of the first asset of every cluster.
+    _, first = np.unique(labels, return_index=True)
+    order = np.argsort(np.argsort(first))
+    return order[np.searchsorted(np.unique(labels), labels)]
+
+
+def get_gnpr_distance_matrix(
+    returns: pd.DataFrame, theta: float = 0.5, bandwidth: float = 0.01
+) -> pd.DataFrame:
+    """
+    The distance of the Generic Non-Parametric Representation (GNPR) of Marti, Andler,
+    Nielsen and Donnat (2016) between every pair of assets: a mix of how differently two
+    assets move (their copula) and how differently their returns are distributed (their
+    marginals), weighted by θ.
+
+    - d_θ² = θ d_1² + (1 - θ) d_0²
+    - d_1² = 3 / (T (T² - 1)) Σ_t (R_i,t - R_j,t)², with R the ranks of the returns (ties
+      averaged), which is (1 - ρ_S) / 2 without ties for the Spearman correlation ρ_S
+    - d_0² = ½ Σ_b (√g_i,b - √g_j,b)², the squared Hellinger distance between the
+      histograms g of the two assets' returns, with bins of width `bandwidth` from the lowest
+      to the highest return of the pair
+
+    θ = 1 compares only the co-movement, θ = 0 only the distributions; between them two assets
+    that move together but have different volatilities or fat tails stay apart. With θ
+    between 0 and 1 the distance lies between 0 and 1 and is a metric.
+
+    Referenced against mlfinlab's gnpr_distance
+    (https://github.com/hudson-and-thames/mlfinlab), whose histograms it matches;
+    mlfinlab applies its first term to the values it is given, so it matches d_1 when it is
+    given the ranks, where Marti et al. define it on the ranks (the empirical copula).
+
+    See Marti, G., Andler, S., Nielsen, F. and Donnat, P. (2016), "Clustering Financial Time
+    Series: How Long Is Enough?", Proceedings of the Twenty-Fifth International Joint
+    Conference on Artificial Intelligence (IJCAI-16), 2583-2589, and Marti, G. (2017), "Some
+    Contributions to the Clustering of Financial Time Series and Applications to Credit
+    Default Swaps", PhD thesis, École Polytechnique.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        theta (float, optional): The weight θ of the co-movement, between 0 and 1.
+            Defaults to 0.5.
+        bandwidth (float, optional): The width of the histogram bins, in the units of the
+            returns. Defaults to 0.01.
+
+    Returns:
+        pd.DataFrame: The distance matrix, with zeros on the diagonal.
+    """
+    if not 0 <= theta <= 1:
+        raise ValueError("The weight theta must lie between 0 and 1.")
+    if bandwidth <= 0:
+        raise ValueError("The bandwidth must be positive.")
+    values = returns.to_numpy(dtype=float)
+    periods, assets = values.shape
+    if periods < 2:  # noqa: PLR2004
+        raise ValueError("The GNPR distance needs at least two periods.")
+    ranks = returns.rank().to_numpy(dtype=float)
+    copula = (
+        3
+        / (periods * (periods**2 - 1))
+        * ((ranks[:, :, None] - ranks[:, None, :]) ** 2).sum(axis=0)
+    )
+    marginal = np.zeros((assets, assets))
+    for first, second in itertools.combinations(range(assets), 2):
+        pair = values[:, [first, second]]
+        edges = np.arange(pair.min(), pair.max() + bandwidth, bandwidth)
+        if len(edges) < 2:  # noqa: PLR2004
+            edges = np.array([pair.min(), pair.min() + bandwidth])
+        histograms = [np.histogram(column, edges)[0] / periods for column in pair.T]
+        marginal[first, second] = marginal[second, first] = 0.5 * np.sum(
+            (np.sqrt(histograms[0]) - np.sqrt(histograms[1])) ** 2
+        )
+    distance = np.sqrt(np.clip(theta * copula + (1 - theta) * marginal, 0, None))
+    np.fill_diagonal(distance, 0)
+    return pd.DataFrame(distance, index=returns.columns, columns=returns.columns)
+
+
+# The number of random splits NERCOME averages over, Lam's (2016) M = 50.
+NERCOME_SPLITS = 50
+
+
+def get_nercome_covariance(
+    returns: pd.DataFrame, splits: int = NERCOME_SPLITS, seed: int | None = 0
+) -> pd.DataFrame:
+    """
+    The Nonparametric Eigenvalue-Regularized COvariance Matrix Estimator (NERCOME) of Lam
+    (2016), which builds on the split-sample estimator of Abadir, Distaso and Žikeš (2014):
+    the eigenvectors come from one part of the periods and the eigenvalues from the other,
+    so the eigenvalues are not fitted to the noise in the eigenvectors that the sample
+    covariance overfits.
+
+    - The T periods are put in a random order and split into the first m and the other
+      T - m, with sample covariances S_1 and S_2 (ddof=1).
+    - Σ_m = P_1 diag(P_1' S_2 P_1) P_1', with P_1 the eigenvectors of S_1: the eigenvectors of
+      the first part with the variances the second part shows along them.
+    - The estimate is the average of Σ_m over M random splits.
+    - The split m is chosen from 2√T, 0.2T, 0.4T, 0.6T, 0.8T, T - 2.5√T and T - 1.5√T
+      (rounded) as the one with the smallest ‖(1 / M) Σ_s (Σ_m,s - S_2,s)‖² (Frobenius), the
+      practical choice of Lam (2016, section 4); splits of N periods or fewer, whose S_1 is
+      singular, are left out.
+
+    The estimate is positive semi-definite, and positive definite when the first part has more
+    periods than there are assets. The random orders are drawn from numpy's default
+    generator with the seed, the same orders for every candidate split, so the same returns
+    give the same estimate. Referenced against RiskLabAI's nercome_denoised_covariance
+    (https://github.com/RiskLabAI/RiskLabAI.py), which splits at 2T / 3 and estimates the
+    correlation matrix of the standardized returns, scaled back with the sample standard
+    deviations; here the covariance itself is estimated, as in Lam (2016), so the variances
+    are regularized as well.
+
+    See Abadir, K. M., Distaso, W. and Žikeš, F. (2014), "Design-Free Estimation of Variance
+    Matrices", Journal of Econometrics, 181(2), 165-180, and Lam, C. (2016), "Nonparametric
+    Eigenvalue-Regularized Precision or Covariance Matrix Estimator", The Annals of
+    Statistics, 44(3), 928-953.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        splits (int, optional): The number M of random splits averaged. Defaults to 50.
+        seed (int | None, optional): The seed of the random orders (numpy's default
+            generator). Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    if splits < 1:
+        raise ValueError("The number of splits must be at least 1.")
+    values = returns.to_numpy(dtype=float)
+    periods, assets = values.shape
+    candidates = sorted(
+        {
+            int(round(size))
+            for size in (
+                2 * np.sqrt(periods),
+                0.2 * periods,
+                0.4 * periods,
+                0.6 * periods,
+                0.8 * periods,
+                periods - 2.5 * np.sqrt(periods),
+                periods - 1.5 * np.sqrt(periods),
+            )
+            if assets < round(size) <= periods - 2
+        }
+    )
+    if not candidates:
+        raise ValueError(
+            "NERCOME needs a first part with more periods than assets and a second part "
+            f"of at least two periods; {periods} periods are too few for {assets} assets."
+        )
+    rng = np.random.default_rng(seed)
+    orders = [rng.permutation(periods) for _ in range(splits)]
+    results = []
+    for size in candidates:
+        estimates, differences = np.zeros((assets, assets)), np.zeros((assets, assets))
+        for order in orders:
+            first = np.cov(values[order[:size]], rowvar=False, ddof=1)
+            second = np.cov(values[order[size:]], rowvar=False, ddof=1)
+            vectors = np.linalg.eigh(first)[1]
+            estimate = (
+                vectors * np.einsum("ki,kl,li->i", vectors, second, vectors)
+            ) @ vectors.T
+            estimates += estimate / splits
+            differences += (estimate - second) / splits
+        results.append((float(np.sum(differences**2)), estimates))
+    # The first split size with the smallest error, as the sizes are tried in order.
+    best = min(results, key=lambda result: result[0])[1]
+    best = (best + best.T) / 2
+    return pd.DataFrame(best, index=returns.columns, columns=returns.columns)
+
+
+def get_ccc_garch_covariance(
+    returns: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    The next-period covariance matrix of the Constant Conditional Correlation (CCC) GARCH
+    model of Bollerslev (1990): every asset has its own GARCH(1, 1) volatility and the
+    correlations between the standardized residuals are constant.
+
+    - ε_t = r_t - r̄, the returns around their average
+    - σ²_i,t = ω_i + α_i ε²_i,t-1 + β_i σ²_i,t-1 per asset, fitted by Gaussian (quasi-)
+      maximum likelihood from the backcast (see risk.volatility.garch_model.get_garch_weights)
+    - R = the correlation matrix of the standardized residuals z_t = ε_t / σ_t
+    - Σ_T+1 = D_T+1 R D_T+1 with D_T+1 = diag(σ_i,T+1), σ²_i,T+1 = ω_i + α_i ε²_i,T + β_i σ²_i,T
+
+    With constant correlations the likelihood splits into a part per asset and the
+    correlations, so the two-step estimate is the maximum likelihood one for R given the
+    volatilities. The covariance follows the current volatility of every asset, which a
+    sample covariance averages away. The scenarios returned are the standardized residuals
+    rescaled to the next-period volatilities, z_i,t σ_i,T+1 / s(z_i) with s the sample
+    standard deviation (ddof=1), whose sample covariance is Σ_T+1 and whose co-moments are
+    the next-period coskewness and cokurtosis of the model.
+
+    Referenced against PortfolioAnalytics' CCCgarch.MM (Boudt, Peterson and Carl;
+    https://github.com/braverock/PortfolioAnalytics), which builds the same moments from
+    fGarch's GARCH(1, 1) fits and falls back on a constant volatility when a fitted α_i is
+    below 0.01; here the fitted volatility is kept. The GARCH(1, 1) legs are referenced
+    against the arch package (arch_model(mean="Zero", vol="GARCH") on the demeaned returns).
+
+    See Bollerslev, T. (1990), "Modelling the Coherence in Short-Run Nominal Exchange Rates:
+    A Multivariate Generalized ARCH Model", The Review of Economics and Statistics, 72(3),
+    498-505.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: The next-period covariance matrix and the
+            scenarios, the rescaled standardized residuals per period.
+    """
+    if len(returns) < 100:  # noqa: PLR2004
+        raise ValueError("The CCC-GARCH model needs at least 100 periods.")
+    residuals = (returns - returns.mean()).to_numpy(dtype=float)
+    standardized = np.empty_like(residuals)
+    volatility = np.empty(residuals.shape[1])
+    for column, name in enumerate(returns.columns):
+        omega, alpha, beta = garch_model.get_garch_weights(residuals[:, column])
+        if np.isnan([omega, alpha, beta]).any():
+            raise ValueError(f"The GARCH model of {name} did not converge.")
+        variance = garch_model.get_garch(residuals[:, column], [omega, alpha, beta])
+        standardized[:, column] = residuals[:, column] / np.sqrt(variance)
+        volatility[column] = np.sqrt(
+            omega + alpha * residuals[-1, column] ** 2 + beta * variance[-1]
+        )
+    correlation = np.corrcoef(standardized, rowvar=False)
+    covariance = correlation * np.outer(volatility, volatility)
+    scenarios = standardized * volatility / standardized.std(axis=0, ddof=1)
+    return (
+        pd.DataFrame(covariance, index=returns.columns, columns=returns.columns),
+        pd.DataFrame(scenarios, index=returns.index, columns=returns.columns),
+    )
+
+
+ROBUST_COVARIANCE_METHODS = ("mm", "rocke")
+
+# Rocke's translated biweight spans the squared distances within γ = min(χ²_N(1 - α) / N - 1,
+# 1) of their scale, with α = 0.005 as in Maronna, Martin, Yohai and Salibián-Barrera (2019).
+ROCKE_ALPHA = 0.005
+
+# The iterations stop once no location or shape entry moves by more than this, relative to
+# the scale, or after the maximum number of iterations.
+ROBUST_TOLERANCE = 1e-12
+ROBUST_ITERATIONS = 1000
+
+
+def get_bisquare_constants(
+    assets: int, delta: float, efficiency: float
+) -> tuple[float, float]:
+    """
+    The tuning constants of Tukey's bisquare, ρ(d) = 1 - (1 - (d / c)²)³ for d ≤ c and 1
+    above, for the S-estimator and the MM-estimator of the location and scatter of N
+    assets at the normal distribution.
+
+    - The S-estimator's c_0 makes it consistent at the normal distribution: E[ρ(√X)] = δ for
+      X ~ χ²_N, which in closed form is P(X > c²) + E[3 X / c² - 3 X² / c⁴ + X³ / c⁶; X ≤ c²]
+      with E[X^k; X ≤ a] = N (N + 2) ⋯ (N + 2k - 2) F_(N+2k)(a).
+    - The MM-estimator's c_1 gives the shape the asymptotic efficiency `efficiency` relative
+      to the sample covariance, 1 / σ_1 with σ_1 = N (N + 2) E[ψ(d)² d²] / E[ψ'(d) d² +
+      (N + 1) ψ(d) d]² for d ~ χ_N and ψ = ρ' (Lopuhaä, 1989, equation 5.5;
+      Salibián-Barrera, Van Aelst and Willems, 2006), integrated by Gauss-Legendre quadrature.
+
+    Referenced against statsmodels' robust.tools.eff_mvshape and its table of biweight
+    constants (https://github.com/statsmodels/statsmodels).
+
+    See Lopuhaä, H. P. (1989), "On the Relation between S-Estimators and M-Estimators of
+    Multivariate Location and Covariance", The Annals of Statistics, 17(4), 1662-1683, and
+    Salibián-Barrera, M., Van Aelst, S. and Willems, G. (2006), "Principal Components
+    Analysis Based on Multivariate MM Estimators with Fast and Robust Bootstrap", Journal of
+    the American Statistical Association, 101(475), 1198-1211.
+
+    Args:
+        assets (int): The number of assets N.
+        delta (float): The average ρ δ of the S-estimator, between 0 and 1.
+        efficiency (float): The shape efficiency of the MM-estimator, between 0 and 1.
+
+    Returns:
+        tuple[float, float]: The constants c_0 and c_1.
+    """
+
+    def average_rho(c: float) -> float:
+        square = c**2
+        moments = [
+            np.prod([assets + 2 * j for j in range(k)])
+            * stats.chi2.cdf(square, assets + 2 * k)
+            for k in (1, 2, 3)
+        ]
+        return float(
+            stats.chi2.sf(square, assets)
+            + 3 * moments[0] / square
+            - 3 * moments[1] / square**2
+            + moments[2] / square**3
+        )
+
+    # Gauss-Legendre nodes on [0, c]: the integrands are polynomials in d times the χ_N
+    # density, smooth on the interval, so 200 nodes integrate them to machine precision.
+    nodes, node_weights = np.polynomial.legendre.leggauss(200)
+
+    def shape_efficiency(c: float) -> float:
+        d = c * (nodes + 1) / 2
+        weights = node_weights * c / 2 * stats.chi.pdf(d, assets)
+        u = (d / c) ** 2
+        psi = d * (1 - u) ** 2
+        derivative = (1 - u) ** 2 - 4 * u * (1 - u)
+        numerator = weights @ (psi**2 * d**2)
+        denominator = weights @ (derivative * d**2 + (assets + 1) * psi * d)
+        return float(denominator**2 / (assets * (assets + 2) * numerator))
+
+    upper = np.sqrt(stats.chi2.ppf(1 - 1e-12, assets)) * 10
+    first = brentq(lambda c: average_rho(c) - delta, 1e-3, upper, xtol=1e-14)
+    # The S-estimator's own efficiency rises with the number of assets; when it already
+    # reaches the efficiency asked for, the MM step keeps its constant.
+    if shape_efficiency(first) >= efficiency:
+        return float(first), float(first)
+    second = brentq(
+        lambda c: shape_efficiency(c) - efficiency, first, upper, xtol=1e-12
+    )
+    return float(first), float(second)
+
+
+def get_robust_covariance(
+    returns: pd.DataFrame,
+    method: str = "mm",
+    efficiency: float = 0.95,
+    seed: int | None = 0,
+) -> tuple[pd.Series, pd.DataFrame]:
+    """
+    The robust location and covariance matrix of the returns by an MM-estimator or Rocke's
+    S-estimator, both iteratively reweighted means and covariances in which periods far from
+    the bulk of the returns (in Mahalanobis distance) get a weight that falls to zero, so
+    crashes, squeezes and data errors barely move them.
+
+    An S-estimator (Davies, 1987) is the location μ and scatter Σ = s V with det(V) = 1 that
+    give the smallest scale s solving (1 / T) Σ_t ρ(d²_t / s) = δ, with d²_t = (r_t - μ)'
+    V⁻¹ (r_t - μ) and δ = (1 - N / T) / 2, the largest breakdown point: the estimate
+    withstands almost half the periods being outliers (Lopuhaä and Rousseeuw, 1991). It is
+    found by iterating μ = Σ w_t r_t / Σ w_t and V ∝ Σ w_t (r_t - μ)(r_t - μ)' with the weights
+    w_t = ρ'(d²_t / s), halving the step whenever the scale would rise.
+
+    - "mm": the MM-estimator (Tatsuoka and Tyler, 2000; Salibián-Barrera, Van Aelst and
+      Willems, 2006). First an S-estimator with Tukey's bisquare, ρ(d) = 1 - (1 - (d / c_0)²)³
+      for d ≤ c_0, consistent at the normal distribution. Then, with its scale s held
+      fixed, the M-estimator with a bisquare of a larger c_1 that minimizes Σ_t ρ(d_t / √s)
+      over μ and V, by the same reweighting: Σ = s V. The second step brings the efficiency
+      of the shape at the normal distribution to `efficiency` (see get_bisquare_constants)
+      and keeps the breakdown point of the first.
+    - "rocke": the S-estimator with the translated biweight of Rocke (1996) on the squared
+      distances, ρ(x) = 0 for x < 1 - γ, ((x - 1) / (4γ)) (3 - ((x - 1) / γ)²) + ½ for
+      |x - 1| ≤ γ and 1 for x > 1 + γ, with γ = min(χ²_N(1 - α) / N - 1, 1) and α = 0.005
+      (Maronna, Martin, Yohai and Salibián-Barrera, 2019). Its weights vanish at both small
+      and large distances, which keeps its efficiency and robustness as the number of assets
+      grows, where the bisquare S-estimator becomes ever less robust. The scatter s V is
+      made consistent at the normal distribution by matching the median of the squared
+      distances to the median of χ²_N.
+
+    The S-iteration starts from the minimum covariance determinant estimate (see
+    get_minimum_covariance_determinant, with the seed) with the coordinatewise median as the
+    location, and from the sample mean and covariance; the one that ends at the smaller scale
+    is kept. The iterations stop when no entry of the location and shape moves by more than
+    1e-12 (relative to the scale), so the estimate is the fixed point rather than wherever a
+    looser stop leaves it, and the same returns with the same seed give the same estimate.
+
+    PortfolioAnalytics' custom.covRob.MM and custom.covRob.Rocke
+    (https://github.com/braverock/PortfolioAnalytics) call RobStatTM's covRobMM and
+    covRobRocke, which start from the kurtosis-based estimate of Peña and Prieto (2007);
+    from another start, the iterations can end in another local minimum of the scale on
+    small samples. They are referenced against the papers and against statsmodels' biweight
+    constants, and checked to recover the covariance of normal returns with outliers added.
+
+    See Davies, P. L. (1987), "Asymptotic Behaviour of S-Estimates of Multivariate Location
+    Parameters and Dispersion Matrices", The Annals of Statistics, 15(3), 1269-1292; Lopuhaä,
+    H. P. and Rousseeuw, P. J. (1991), "Breakdown Points of Affine Equivariant Estimators of
+    Multivariate Location and Covariance Matrices", The Annals of Statistics, 19(1), 229-248;
+    Rocke, D. M. (1996), "Robustness Properties of S-Estimators of Multivariate Location and
+    Shape in High Dimension", The Annals of Statistics, 24(3), 1327-1345; Tatsuoka, K. S. and
+    Tyler, D. E. (2000), "On the Uniqueness of S-Functionals and M-Functionals under
+    Nonelliptical Distributions", The Annals of Statistics, 28(4), 1219-1243; and Maronna, R.
+    A., Martin, R. D., Yohai, V. J. and Salibián-Barrera, M. (2019), Robust Statistics:
+    Theory and Methods (with R), 2nd edition, Wiley, chapter 6.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, at least two assets, without missing
+            values.
+        method (str, optional): "mm" or "rocke". Defaults to "mm".
+        efficiency (float, optional): The shape efficiency of "mm" at the normal
+            distribution, between 0.5 and 0.99. Defaults to 0.95.
+        seed (int | None, optional): The seed of the minimum covariance determinant start.
+            Defaults to 0.
+
+    Returns:
+        tuple[pd.Series, pd.DataFrame]: The location and the covariance matrix per period.
+    """
+    if method not in ROBUST_COVARIANCE_METHODS:
+        raise ValueError(
+            f"The robust covariance must be one of {', '.join(ROBUST_COVARIANCE_METHODS)}, "
+            f"not '{method}'."
+        )
+    if not 0.5 <= efficiency <= 0.99:  # noqa: PLR2004
+        raise ValueError("The efficiency must lie between 0.5 and 0.99.")
+    data = returns.to_numpy(dtype=float)
+    periods, assets = data.shape
+    if assets < 2:  # noqa: PLR2004
+        raise ValueError("The robust covariance needs at least two assets.")
+    if periods <= 2 * assets:
+        raise ValueError(
+            "The robust covariance needs more than twice as many periods as assets."
+        )
+    delta = 0.5 * (1 - assets / periods)
+    if method == "mm":
+        tuning, mm_tuning = get_bisquare_constants(assets, delta, efficiency)
+
+        def rho(x: np.ndarray) -> np.ndarray:
+            u = np.minimum(x / tuning**2, 1)
+            return 1 - (1 - u) ** 3
+
+        def weight(x: np.ndarray) -> np.ndarray:
+            return np.where(x < tuning**2, (1 - x / tuning**2) ** 2, 0.0)
+
+    else:
+        gamma = min(stats.chi2.ppf(1 - ROCKE_ALPHA, assets) / assets - 1, 1.0)
+
+        def rho(x: np.ndarray) -> np.ndarray:
+            z = np.clip((x - 1) / gamma, -1, 1)
+            return 0.5 + 0.25 * z * (3 - z**2)
+
+        def weight(x: np.ndarray) -> np.ndarray:
+            z = (x - 1) / gamma
+            return np.where(np.abs(z) < 1, 1 - z**2, 0.0)
+
+    def squared_distances(location: np.ndarray, shape: np.ndarray) -> np.ndarray:
+        deviations = data - location
+        return np.einsum("ti,ij,tj->t", deviations, np.linalg.inv(shape), deviations)
+
+    def scale_of(distances: np.ndarray) -> float:
+        # The scale s solving mean ρ(d² / s) = δ; the mean falls as s grows, from the share
+        # of positive distances (s near 0) to 0, so the root is bracketed in logarithms.
+        positive = distances[distances > 0]
+        if len(positive) == 0:
+            raise ValueError("Every period lies at the location; there is no scatter.")
+
+        def excess(logarithm: float) -> float:
+            return float(rho(distances / np.exp(logarithm)).mean() - delta)
+
+        low = np.log(positive.min()) - 10
+        high = np.log(positive.max()) + 10
+        return float(np.exp(brentq(excess, low, high, xtol=1e-15)))
+
+    def unit(scatter: np.ndarray) -> np.ndarray:
+        scatter = (scatter + scatter.T) / 2
+        sign, logarithm = np.linalg.slogdet(scatter)
+        if sign <= 0:
+            raise ValueError("The weighted covariance of the returns is singular.")
+        return scatter / np.exp(logarithm / assets)
+
+    def reweighted(location, shape, weights) -> tuple[np.ndarray, np.ndarray]:
+        if weights.sum() <= 0:
+            raise ValueError("Every period got a zero weight.")
+        new_location = weights @ data / weights.sum()
+        deviations = data - new_location
+        return new_location, unit((deviations * weights[:, None]).T @ deviations)
+
+    def iterate(location, shape, objective, weights_of, fixed_scale=None):
+        # Reweighting until the reweighted location and shape no longer move, with the step
+        # halved (up to ten times) whenever it would raise the objective by more than its
+        # numerical precision (1e-12 relative: near the fixed point the objective changes
+        # by the square of the step, below the precision of the scale's root, so a stricter
+        # test would stop short of it); when no halved step lowers it, the point is kept.
+        # The S objective is the scale itself; the MM step holds the scale fixed.
+        value = objective(location, shape)
+        for _ in range(ROBUST_ITERATIONS):
+            target = reweighted(location, shape, weights_of(location, shape))
+            # The move of the full step: the location in Mahalanobis units and the shape,
+            # which has a unit determinant, entry by entry.
+            step = target[0] - location
+            change = max(
+                np.sqrt(
+                    step
+                    @ np.linalg.solve(shape, step)
+                    / (value if fixed_scale is None else fixed_scale)
+                ),
+                np.abs(target[1] - shape).max(),
+            )
+            for _ in range(10):
+                new_value = objective(*target)
+                if new_value <= value * (1 + 1e-12):
+                    break
+                target = (
+                    (location + target[0]) / 2,
+                    unit((shape + target[1]) / 2),
+                )
+            else:
+                break
+            location, shape, value = target[0], target[1], new_value
+            if change <= ROBUST_TOLERANCE:
+                break
+        return location, shape, value
+
+    def s_objective(location, shape) -> float:
+        return scale_of(squared_distances(location, shape))
+
+    def s_weights(location, shape) -> np.ndarray:
+        distances = squared_distances(location, shape)
+        return weight(distances / scale_of(distances))
+
+    robust_start = get_minimum_covariance_determinant(returns, seed=seed).to_numpy()
+    starts = [
+        (np.median(data, axis=0), unit(robust_start)),
+        (data.mean(axis=0), unit(np.cov(data, rowvar=False))),
+    ]
+    location, shape, scale = min(
+        (iterate(start, scatter, s_objective, s_weights) for start, scatter in starts),
+        key=lambda fit: fit[2],
+    )
+    if method == "mm":
+
+        def mm_objective(location, shape) -> float:
+            u = np.minimum(
+                squared_distances(location, shape) / (scale * mm_tuning**2), 1
+            )
+            return float(np.sum(1 - (1 - u) ** 3))
+
+        def mm_weights(location, shape) -> np.ndarray:
+            x = squared_distances(location, shape) / (scale * mm_tuning**2)
+            return np.where(x < 1, (1 - x) ** 2, 0.0)
+
+        location, shape, _ = iterate(
+            location, shape, mm_objective, mm_weights, fixed_scale=scale
+        )
+        covariance = scale * shape
+    else:
+        covariance = scale * shape
+        covariance = covariance * (
+            np.median(squared_distances(location, covariance))
+            / stats.chi2.ppf(0.5, assets)
+        )
+    return (
+        pd.Series(location, index=returns.columns),
+        pd.DataFrame(covariance, index=returns.columns, columns=returns.columns),
+    )
+
+
+# The centroid of the expected normal order statistics of Almgren and Chriss (2006):
+# α = A - B n^(-β).
+CENTROID_CONSTANTS = (0.4424, 0.1185, 0.21)
+
+
+def get_centroid_expected_returns(
+    returns: pd.DataFrame,
+    ranking: list | dict | pd.Series,
+    periods_per_year: int,
+) -> pd.Series:
+    """
+    The expected returns implied by an ordering of the assets alone, by the centroid of
+    Almgren and Chriss (2006): the expected value of the risk-adjusted returns given only
+    that they fall in the stated order, which is the centre of mass of the cone of vectors in
+    that order.
+
+    - For a complete ordering of n assets, the centroid is the vector of expected order
+      statistics of n standard normal draws, approximated by
+      c_j = Φ⁻¹((n + 1 - j - α) / (n - 2α + 1)) with α = 0.4424 - 0.1185 n^(-0.21), for the
+      asset ranked j-th from the top.
+    - Assets ranked together (a bucket, or equal scores) share the average c of the
+      positions they occupy, the centroid when nothing orders them within the bucket.
+    - μ_i = c_i σ_i, with σ_i the annualized volatility (ddof=1): the centroid applies to
+      the risk-adjusted returns, so every asset's Sharpe ratio is its centroid score.
+
+    Only the ordering is used, never the size of the past returns, so the estimate carries
+    no estimation error of the means; the maximum Sharpe portfolio depends only on the
+    direction of μ, the other optimizers also on its scale.
+
+    Referenced against PortfolioAnalytics' ac.ranking and centroid.complete.mc
+    (https://github.com/braverock/PortfolioAnalytics), whose centroid values it matches,
+    and against the Monte Carlo mean of sorted normal draws. PortfolioAnalytics takes the
+    order from the lowest expected return to the highest and rescales the centroid to lie
+    between -0.05 and 0.05; its centroid.buckets gives every bucket the centroid of as many
+    draws as there are buckets, where here a bucket averages the positions it holds.
+
+    See Almgren, R. and Chriss, N. (2006), "Optimal Portfolios from Ordering Information",
+    Journal of Risk, 9(1), 1-47.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        ranking (list | dict | pd.Series): The ordering, from the highest expected return to
+            the lowest: a list of assets, a list whose entries can be lists of assets ranked
+            together, or scores per asset (a dict or Series, higher is better, equal scores
+            ranked together). Every asset must be ranked.
+        periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
+
+    Returns:
+        pd.Series: The annualized expected return per asset.
+    """
+    if isinstance(ranking, dict | pd.Series):
+        scores = pd.Series(ranking, dtype=float)
+        if scores.isna().any():
+            raise ValueError("Every score of the ranking must be a number.")
+        groups = [
+            list(scores.index[scores == value])
+            for value in sorted(scores.unique(), reverse=True)
+        ]
+    else:
+        groups = [
+            list(entry) if isinstance(entry, list | tuple) else [entry]
+            for entry in ranking
+        ]
+    ranked = [asset for group in groups for asset in group]
+    if sorted(map(str, ranked)) != sorted(map(str, returns.columns)) or len(
+        set(ranked)
+    ) != len(ranked):
+        raise ValueError(
+            "The ranking must hold every asset once: "
+            f"{', '.join(map(str, returns.columns))}."
+        )
+    count = len(ranked)
+    a, b, beta = CENTROID_CONSTANTS
+    alpha = a - b * count ** (-beta)
+    centroid = stats.norm.ppf(
+        (count + 1 - np.arange(1, count + 1) - alpha) / (count - 2 * alpha + 1)
+    )
+    scores, position = {}, 0
+    for group in groups:
+        value = centroid[position : position + len(group)].mean()
+        scores.update(dict.fromkeys(group, value))
+        position += len(group)
+    volatility = returns.std() * np.sqrt(periods_per_year)
+    return pd.Series(scores).reindex(returns.columns) * volatility

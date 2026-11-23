@@ -762,3 +762,17 @@ def test_the_choices_of_one_indicator_become_the_type_of_their_values():
     assert _simplify_annotation(Literal["garch", "gjr"]) is str
     assert _simplify_annotation(Literal["a"] | None) == (str | None)
     assert _simplify_annotation(Literal["a", "b"] | str | None) == (str | None)
+
+
+def test_a_ranking_takes_labels_in_order_or_scores():
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _simplify_annotation,
+    )
+
+    # The centroid expected returns take a list or a score per ticker, entropy pooling a
+    # list; the tool's ranking takes both forms.
+    labels = list[str] | dict[str, float]
+    assert _simplify_annotation(list | dict | None | list[str]) == (labels | None)
+    assert _simplify_annotation(list[str] | dict[str, float]) == labels
+    # A mapping alone stays a mapping.
+    assert _simplify_annotation(dict[str, float] | None) == (dict[str, float] | None)

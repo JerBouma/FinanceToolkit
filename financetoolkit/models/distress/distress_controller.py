@@ -1461,12 +1461,17 @@ class DistressModels:
             - σ_E E = N(d1) σ_V V
             - Distance to Default = (ln(V/D) + (r - σ_V²/2) T) / (σ_V √T)
             - Probability of Default = N(-Distance to Default)
+            - Debt Value = V - E
+            - Credit Spread = -ln(Debt Value / D) / T - r
 
         where E is the market capitalization, σ_E the volatility of the share price over the
         year before, D the default point (short-term debt plus half of the long-term debt,
         the KMV convention), r the risk free rate and T the time horizon. The distance to
         default is the number of standard deviations the asset value is above the default
         point; it reacts to the share price immediately, long before a rating changes.
+        The debt is a risk-free bond with face value D less a put on the assets, so its value
+        is what the assets are worth beyond the equity, and the credit spread is the yield it
+        pays over the risk free rate, continuously compounded like the rate the model takes.
 
         The market capitalization, the equity volatility and the risk free rate are measured
         on the last trading day of each fiscal period (the filing day with point_in_time), the
@@ -1487,7 +1492,10 @@ class DistressModels:
         - Bharath, S.T. and Shumway, T. (2008). "Forecasting Default with the Merton Distance
           to Default Model." The Review of Financial Studies, 21(3), 1339-1369.
 
-        Also known as: KMV model, structural credit model, expected default frequency.
+        The debt value and credit spread are referenced against FinancePy's MertonFirm.
+
+        Also known as: KMV model, structural credit model, expected default frequency, Merton
+        credit spread.
 
         Args:
             time_horizon (float, optional): The horizon in years over which default is
@@ -1501,14 +1509,17 @@ class DistressModels:
 
         Returns:
             pd.DataFrame: Per ticker and period the Equity Value, Equity Volatility, Default
-            Point, Asset Value, Asset Volatility, Distance to Default and Probability of
-            Default (a decimal).
+            Point, Asset Value, Asset Volatility, Debt Value, Credit Spread (a decimal),
+            Distance to Default and Probability of Default (a decimal).
 
         Notes:
         - The probability is the model's risk-neutral probability; it ranks companies by
           credit risk well but tends to understate the actual default rate of safe ones.
         - Financial companies, whose debt is their raw material, are outside the model's
           intended use.
+        - The credit spread of a one-year horizon is close to zero for all but the riskiest
+          companies, well below the spreads their bonds trade at, a known shortfall of the
+          model (Jones, Mason and Rosenfeld, 1984, The Journal of Finance, 39(3)).
 
         As an example:
 
@@ -1530,11 +1541,13 @@ class DistressModels:
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
         | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
-        | Equity Volatility      | 0.4163      | 0.4912      | 0.3552      | 0.3595      | 0.3312      |
+        | Equity Volatility      | 0.4163      | 0.4912      | 0.3551      | 0.3601      | 0.3313      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.76267e+11 | 1.37609e+11 | 1.44937e+11 | 1.42304e+11 | 1.58997e+11 |
-        | Asset Volatility       | 0.1979      | 0.1675      | 0.1208      | 0.1006      | 0.1088      |
-        | Distance to Default    | 3.1593      | 2.3871      | 3.379       | 3.2114      | 3.6053      |
+        | Asset Value            | 1.76267e+11 | 1.37609e+11 | 1.44934e+11 | 1.42307e+11 | 1.58997e+11 |
+        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1008      | 0.1088      |
+        | Debt Value             | 9.24811e+10 | 9.09266e+10 | 9.56738e+10 | 1.02499e+11 | 1.06793e+11 |
+        | Credit Spread          | 0           | 0.0005      | 0           | 0           | 0           |
+        | Distance to Default    | 3.1593      | 2.3871      | 3.3802      | 3.2057      | 3.604       |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         balance = self._balance_sheet_statement
@@ -1566,7 +1579,10 @@ class DistressModels:
             "Default Point",
             "Asset Value",
             "Asset Volatility",
+            "Debt Value",
+            "Credit Spread",
             "Distance to Default",
+            # The last row, the score the factor analysis ranks the companies on.
             "Probability of Default",
         ]
         results = {

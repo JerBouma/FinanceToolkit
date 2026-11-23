@@ -61,13 +61,14 @@ def test_cir_simulation_stays_at_or_above_zero():
 
 
 @pytest.mark.parametrize("steps_per_year", [1, 12])
-def test_hull_white_reprices_the_zero_curve(steps_per_year):
+@pytest.mark.parametrize("scheme", ["euler", "exact"])
+def test_hull_white_reprices_the_zero_curve(steps_per_year, scheme):
     continuous = np.log1p(ZERO_RATES)
     mean = short_rate_model.hull_white_mean(
-        ZERO_MATURITIES, continuous, 0.1, 0.01, 0.04, 10, steps_per_year
+        ZERO_MATURITIES, continuous, 0.1, 0.01, 0.04, 10, steps_per_year, scheme
     )
     paths = short_rate_model.simulate_short_rate(
-        "hull_white", 0.1, mean, 0.01, 0.04, 10, steps_per_year, 20000, 0
+        "hull_white", 0.1, mean, 0.01, 0.04, 10, steps_per_year, 20000, 0, scheme
     )
 
     dt = 1 / steps_per_year
@@ -331,3 +332,261 @@ def test_cir_yields_match_the_closed_form():
         expected,
         rtol=1e-12,
     )
+
+
+# QuantLib 1.44 references: Vasicek(r0=0.03, a=0.1, b=0.04, σ=0.01, λ=0),
+# CoxIngersollRoss(r0=0.035, θ=0.03, k=0.15, σ=0.05), HullWhite(a=0.08, σ=0.012) and
+# ExtendedCoxIngersollRoss(θ=0.03, k=0.15, σ=0.05, x0=0.035) on a flat 3.5% annually
+# compounded curve (SimpleDayCounter, so the times are whole years).
+FLAT_CURVE = pd.Series([0.035, 0.035], index=[0.0, 60.0])
+OPTION_MODELS = {
+    "vasicek": {"speed": 0.1, "mean": 0.04, "volatility": 0.01, "rate": 0.03},
+    "cir": {"speed": 0.15, "mean": 0.03, "volatility": 0.05, "rate": 0.035},
+    "hull_white": {"speed": 0.08, "volatility": 0.012, "zero_curve": FLAT_CURVE},
+    "cir++": {
+        "speed": 0.15,
+        "mean": 0.03,
+        "volatility": 0.05,
+        "rate": 0.035,
+        "zero_curve": FLAT_CURVE,
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "model, expiry, maturity, strike, call, put",
+    [
+        ("vasicek", 1, 5, 0.85, 0.030226802572760, 0.001890984377922),
+        ("vasicek", 2, 10, 0.7, 0.064351401313878, 0.002341758372779),
+        ("cir", 1, 5, 0.85, 0.027070974942089, 0.001555611745225),
+        ("cir", 2, 10, 0.72, 0.054997436202918, 0.001743764967735),
+        ("hull_white", 1, 5, 0.87, 0.013960519977186, 0.012567063263589),
+        ("hull_white", 0.5, 1, 0.98, 0.003424366634379, 0.000528238633813),
+        ("cir++", 1, 5, 0.87, 0.009389768713008, 0.007996311999411),
+        ("cir++", 2, 10, 0.72, 0.040295035043587, 0.003503925597625),
+    ],
+)
+def test_zero_coupon_bond_option_matches_quantlib(
+    model, expiry, maturity, strike, call, put
+):
+    parameters = OPTION_MODELS[model]
+    assert short_rate_model.get_zero_coupon_bond_option(
+        expiry, maturity, strike, model=model, **parameters
+    ) == pytest.approx(call, abs=1e-11)
+    assert short_rate_model.get_zero_coupon_bond_option(
+        expiry, maturity, strike, model=model, option_type="put", **parameters
+    ) == pytest.approx(put, abs=1e-11)
+
+
+@pytest.mark.parametrize(
+    "model, expiry, tenor, fixed_rate, frequency, payer, receiver",
+    [
+        ("vasicek", 1, 5, 0.035, 1, 0.009586798853611, 0.018806706951932),
+        ("vasicek", 2, 10, 0.04, 2, 0.009118178276158, 0.058681386258359),
+        ("cir", 1, 5, 0.035, 1, 0.007812742077058, 0.015318332955597),
+        ("cir", 5, 5, 0.03, 1, 0.018332726058618, 0.013089929001639),
+        ("hull_white", 1, 5, 0.035, 1, 0.017218056313670, 0.017218056313667),
+        ("hull_white", 2, 10, 0.04, 2, 0.018332736162563, 0.059844841530483),
+        ("cir++", 1, 5, 0.035, 1, 0.010930081539062, 0.010930081539062),
+        ("cir++", 2, 10, 0.04, 2, 0.006013328486922, 0.047525435065543),
+    ],
+)
+def test_swaption_matches_quantlib_jamshidian(
+    model, expiry, tenor, fixed_rate, frequency, payer, receiver
+):
+    # QuantLib solves for the critical rate to a looser tolerance, hence 1e-8.
+    parameters = OPTION_MODELS[model]
+    common = {"fixed_frequency": frequency, "model": model, **parameters}
+    assert short_rate_model.get_swaption(
+        expiry, tenor, fixed_rate, **common
+    ) == pytest.approx(payer, abs=1e-8)
+    assert short_rate_model.get_swaption(
+        expiry, tenor, fixed_rate, swaption_type="receiver", **common
+    ) == pytest.approx(receiver, abs=1e-8)
+
+
+def test_swaption_payer_less_receiver_is_the_forward_swap():
+    for model, parameters in OPTION_MODELS.items():
+        payer = short_rate_model.get_swaption(
+            2, 5, 0.04, model=model, fixed_frequency=2, **parameters
+        )
+        receiver = short_rate_model.get_swaption(
+            2,
+            5,
+            0.04,
+            model=model,
+            fixed_frequency=2,
+            swaption_type="receiver",
+            **parameters,
+        )
+        times = 2 + np.arange(1, 11) / 2
+        discount = short_rate_model._discount(
+            model,
+            parameters["speed"],
+            parameters.get("mean"),
+            parameters["volatility"],
+            parameters.get("rate"),
+            parameters.get("zero_curve"),
+            np.concatenate([[2.0], times]),
+        )
+        forward = discount[0] - discount[-1] - 0.04 / 2 * discount[1:].sum()
+        assert payer - receiver == pytest.approx(forward, abs=1e-12)
+
+
+def test_caps_and_floors_match_quantlib():
+    # QuantLib's AnalyticCapFloorEngine with HullWhite: quarterly caplets from 3 months to
+    # 3 years at 3.5%.
+    resets = np.arange(1, 12) * 0.25
+    common = {"model": "hull_white", **OPTION_MODELS["hull_white"]}
+    cap = short_rate_model.get_caplet(resets, resets + 0.25, 0.035, **common)
+    floor = short_rate_model.get_caplet(
+        resets, resets + 0.25, 0.035, option_type="floorlet", **common
+    )
+
+    assert cap.sum() == pytest.approx(0.012896276712935, abs=1e-12)
+    assert floor.sum() == pytest.approx(0.014062464849151, abs=1e-12)
+    # Cap - floor = the swap paying 3.5% against the floating rate.
+    discount = (1.035) ** -np.append(resets, resets[-1] + 0.25)
+    swap = discount[0] - discount[-1] - 0.035 * 0.25 * discount[1:].sum()
+    assert cap.sum() - floor.sum() == pytest.approx(swap, abs=1e-12)
+
+
+def test_option_models_check_their_inputs():
+    with pytest.raises(ValueError, match="fitted to a curve"):
+        short_rate_model.get_zero_coupon_bond_option(
+            1, 5, 0.9, 0.1, 0.01, model="hull_white"
+        )
+    with pytest.raises(ValueError, match="implies its own curve"):
+        short_rate_model.get_zero_coupon_bond_option(
+            1, 5, 0.9, 0.1, 0.01, 0.04, 0.03, FLAT_CURVE, model="vasicek"
+        )
+    with pytest.raises(ValueError, match="expire after today"):
+        short_rate_model.get_zero_coupon_bond_option(5, 5, 0.9, 0.1, 0.01, 0.04, 0.03)
+    with pytest.raises(ValueError, match="model must be one of"):
+        short_rate_model.get_swaption(1, 5, 0.03, 0.1, 0.01, 0.04, 0.03, model="g2++")
+
+
+def test_cir_swaption_without_a_critical_rate_is_the_forward_swap():
+    # A fixed rate so high that the coupon bond is worth more than 1 even at a zero rate
+    # is not possible; one so low that it stays below 1 at a zero rate makes the payer
+    # swaption a forward swap that is always exercised.
+    parameters = OPTION_MODELS["cir"]
+    payer = short_rate_model.get_swaption(1, 5, 0.0, model="cir", **parameters)
+    receiver = short_rate_model.get_swaption(
+        1, 5, 0.0, model="cir", swaption_type="receiver", **parameters
+    )
+    discount = short_rate_model._discount(
+        "cir", 0.15, 0.03, 0.05, 0.035, None, np.array([1.0, 6.0])
+    )
+
+    assert payer == pytest.approx(discount[0] - discount[1], abs=1e-14)
+    assert receiver == 0.0
+
+
+def test_cir_plus_plus_shift_fits_the_curve():
+    # The shift integrated over [0, t] is ln(P_CIR(0, t) / P(0, t)), so CIR++ reprices the
+    # market's discount factors.
+    parameters = OPTION_MODELS["cir"]
+    curve = pd.Series(ZERO_RATES, index=ZERO_MATURITIES)
+    times = np.linspace(0, 10, 20001)
+    shift = short_rate_model.get_cir_plus_plus_shift(times, curve, **parameters)
+    integral = np.concatenate(
+        [[0], np.cumsum((shift[1:] + shift[:-1]) / 2 * np.diff(times))]
+    )
+    cir = short_rate_model._discount("cir", 0.15, 0.03, 0.05, 0.035, None, times)
+    market = (1 + np.interp(times, ZERO_MATURITIES, ZERO_RATES)) ** -times
+
+    assert cir * np.exp(-integral) == pytest.approx(market, abs=1e-5)
+    assert short_rate_model.get_cir_plus_plus_shift(
+        0.0, FLAT_CURVE, **parameters
+    ) == pytest.approx(np.log(1.035) - 0.035, abs=1e-9)
+
+
+def test_feller_ratio():
+    assert short_rate_model.get_feller_ratio(0.15, 0.03, 0.05) == pytest.approx(3.6)
+    assert short_rate_model.get_feller_ratio(0.1, 0.01, 0.1) < 1
+
+
+@pytest.mark.parametrize("volatility", [0.05, 0.2])
+def test_exact_cir_scheme_has_the_moments_of_the_model(volatility):
+    # FinancePy's meanr and variancer of cir_montecarlo give the same moments; at
+    # σ = 0.2 the Feller condition fails (ratio 0.15) and the rate still stays at or above
+    # zero without being cut off.
+    paths = short_rate_model.simulate_short_rate(
+        "cir", 0.15, 0.03, volatility, 0.035, 5, 1, 200_000, 1, scheme="exact"
+    )
+    decay = np.exp(-0.15 * 5)
+    mean = 0.035 * decay + 0.03 * (1 - decay)
+    variance = 0.035 * volatility**2 * (
+        decay - decay**2
+    ) / 0.15 + 0.03 * volatility**2 * (1 - decay) ** 2 / (2 * 0.15)
+
+    assert (paths >= 0).all()
+    assert paths[:, -1].mean() == pytest.approx(
+        mean, abs=4 * np.sqrt(variance / 200_000)
+    )
+    assert paths[:, -1].var(ddof=1) == pytest.approx(variance, rel=0.02)
+
+
+def test_exact_vasicek_scheme_is_exact_at_any_step():
+    paths = short_rate_model.simulate_short_rate(
+        "vasicek", 0.1, 0.04, 0.01, 0.03, 10, 1, 200_000, 2, scheme="exact"
+    )
+    decay = np.exp(-0.1 * 10)
+    variance = 0.01**2 * (1 - decay**2) / 0.2
+
+    assert paths[:, -1].mean() == pytest.approx(
+        0.03 * decay + 0.04 * (1 - decay), abs=4 * np.sqrt(variance / 200_000)
+    )
+    assert paths[:, -1].var(ddof=1) == pytest.approx(variance, rel=0.02)
+    with pytest.raises(ValueError, match="scheme"):
+        short_rate_model.simulate_short_rate(
+            "vasicek", 0.1, 0.04, 0.01, 0.03, scheme="milstein"
+        )
+
+
+@pytest.mark.parametrize(
+    "volatility, coupon_rate, put_price, quantlib",
+    [(0.01, 0.04, 100.0, 108.1444956619319), (0.015, 0.03, 98.0, 103.63507325372478)],
+)
+def test_puttable_bond_matches_quantlib(volatility, coupon_rate, put_price, quantlib):
+    # QuantLib's TreeCallableFixedRateBondEngine (800 steps) on a HullWhite tree with
+    # a = 1e-6 (Ho-Lee) and a flat 3.5% curve: a 10-year semi-annual bond puttable at the
+    # put price on every coupon date from year 3. The trees differ (binomial against
+    # trinomial), so the prices agree within a cent per 100 of face value.
+    steps = short_rate_model.STEPS_PER_PERIOD
+    dt = 1 / (2 * steps)
+    times = np.arange(1, 20 * steps + 1) * dt
+    tree = short_rate_model._ho_lee_tree(1.035**-times, volatility, dt)
+    price = short_rate_model.price_callable_bond(
+        tree,
+        coupon_rate,
+        2,
+        put_price=put_price,
+        first_put_step=round(3 / dt),
+        steps_per_period=steps,
+    )
+
+    assert price == pytest.approx(quantlib, abs=0.01)
+
+
+def test_a_put_raises_the_spread_and_the_convexity():
+    common = {
+        "price": 104.0,
+        "coupon_rate": 0.04,
+        "years_to_maturity": 10,
+        "maturities": ZERO_MATURITIES,
+        "zero_rates": ZERO_RATES,
+        "call_price": None,
+    }
+    straight = short_rate_model.get_option_adjusted_spread(**common)
+    puttable = short_rate_model.get_option_adjusted_spread(
+        **common, put_price=100.0, years_to_first_put=3
+    )
+
+    # The investor pays for the put, so the spread over the curve is higher and the
+    # option value (the call less the put) negative.
+    assert puttable["Option-Adjusted Spread"] > straight["Option-Adjusted Spread"]
+    assert puttable["Option Value"] < 0
+    assert puttable["Effective Duration"] < straight["Effective Duration"]
+    assert puttable["Effective Convexity"] > straight["Effective Convexity"]

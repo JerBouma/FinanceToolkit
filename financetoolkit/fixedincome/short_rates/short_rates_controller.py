@@ -8,7 +8,9 @@ import pandas as pd
 from financetoolkit.economics.helpers import validate_period
 from financetoolkit.fixedincome.curves import curve_model
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
+from financetoolkit.fixedincome.helpers import parse_maturities
 from financetoolkit.fixedincome.short_rates import short_rate_model
+from financetoolkit.fixedincome.swaps import swap_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -34,6 +36,11 @@ SHORT_RATE_SIMULATION_MODELS = ("hull_white", "vasicek", "cir")
 
 SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 
+# The swaption models that fit today's curve, so that at-the-money strikes are consistent.
+SWAPTION_MODELS = ("hull_white", "cir++")
+DEFAULT_SWAPTION_EXPIRIES = (1, 2, 5, 10)
+DEFAULT_SWAPTION_TENORS = (1, 2, 5, 10, 30)
+
 # The most rates a simulation may hold (paths times steps), which bounds its memory use.
 MAX_SIMULATED_VALUES = 20_000_000
 
@@ -42,7 +49,8 @@ MAX_SIMULATED_VALUES = 20_000_000
 @track_sources
 class ShortRatesFixedIncome(CurvesFixedIncome):
     """
-    Short rate models: Vasicek, CIR and Hull-White fits and simulations.
+    Short rate models: Vasicek, CIR and Hull-White fits and simulations, and swaption prices
+    in the Hull-White and CIR++ models.
     """
 
     @handle_errors
@@ -64,7 +72,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             - CIR (1985): dr = a (b - r) dt + σ √r dW
 
         In CIR the volatility shrinks as the rate approaches zero, so the rate stays
-        positive when 2ab ≥ σ² (the Feller condition) and can otherwise touch zero; in
+        positive when 2ab ≥ σ² (the Feller condition, Feller 1951, reported as the Feller
+        Ratio 2ab / σ², which meets it at 1 or more) and can otherwise touch zero; in
         Vasicek it can turn negative. The models describe a continuously compounded short
         rate, so the yields are converted to continuous compounding first (US bill yields
         from their bond-equivalent quote). Both give bond prices, and so a full
@@ -102,8 +111,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
 
         Returns:
             pd.DataFrame: Per model (columns Vasicek and CIR) the Speed of Mean Reversion, the
-            Long-Run Mean, the Volatility, the Current Rate and the Half-Life in years, then
-            the zero-coupon rate per maturity (continuously compounded), with the market's
+            Long-Run Mean, the Volatility, the Current Rate, the Half-Life in years and (CIR
+            only) the Feller Ratio, then the zero-coupon rate per maturity (continuously compounded), with the market's
             zero-coupon rates in the Market column.
 
         As an example:
@@ -125,6 +134,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         | Volatility              |    0.0059 | 0.0558 | nan      |
         | Current Rate            |    0.0425 | 0.0425 |   0.0425 |
         | Half-Life               |    7.9398 | 4.6816 | nan      |
+        | Feller Ratio            |  nan      | 1.6148 | nan      |
         | Zero Rate 1M            |    0.0424 | 0.0424 |   0.041  |
         | Zero Rate 1.5M          |    0.0424 | 0.0423 |   0.041  |
         | Zero Rate 2M            |    0.0423 | 0.0422 |   0.0415 |
@@ -159,6 +169,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
 
         rows = [
             *SHORT_RATE_PARAMETERS,
+            "Feller Ratio",
             *(f"Zero Rate {label}" for label in zero_rates.index),
         ]
         result = pd.DataFrame(np.nan, index=rows, columns=["Vasicek", "CIR", "Market"])
@@ -181,7 +192,16 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 parameters["Volatility"],
                 parameters["Current Rate"],
             )
-            result[column] = [*parameters.values(), *model_yields]
+            feller_ratio = (
+                short_rate_model.get_feller_ratio(
+                    parameters["Speed of Mean Reversion"],
+                    parameters["Long-Run Mean"],
+                    parameters["Volatility"],
+                )
+                if model == "cir"
+                else np.nan
+            )
+            result[column] = [*parameters.values(), feller_ratio, *model_yields]
 
         result.loc["Current Rate", "Market"] = rates.iloc[-1]
         result.loc[[f"Zero Rate {label}" for label in zero_rates.index], "Market"] = (
@@ -204,6 +224,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         steps_per_year: int = 12,
         paths: int = 10000,
         seed: int | None = 0,
+        scheme: str = "euler",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
@@ -224,8 +245,16 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
 
             dr = [θ(t) - a r] dt + σ dW,  θ(t) = ∂f/∂t + a f(t) + σ² (1 - e^(-2at)) / (2a)
 
-        with f the instantaneous forward rate. The paths are simulated with an Euler scheme
-        starting at today's rate (CIR's are kept at or above zero).
+        with f the instantaneous forward rate. The paths start at today's rate and are
+        simulated with an Euler scheme (CIR's are kept at or above zero) or, with
+        scheme="exact", by drawing the rate at the end of every step from its exact
+        distribution given the rate at the start: normal for Vasicek and Hull-White
+        (r' = r e^(-aΔ) + m (1 - e^(-aΔ)) + σ √((1 - e^(-2aΔ)) / (2a)) Z, with m the mean of
+        the step) and a scaled non-central chi-squared for CIR (Glasserman, 2003, Monte Carlo
+        Methods in Financial Engineering, sections 3.3 and 3.4). The exact scheme has no
+        discretization error at any step size, and its CIR rate stays at or above zero
+        without being cut off, which matters most when the Feller ratio of
+        `get_short_rate_model` is below 1.
 
         The simulated short rates are continuously compounded, the rate these models describe:
         the quoted yield of the short_rate maturity is converted from its quote convention
@@ -253,6 +282,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             paths (int, optional): The number of simulated paths. Defaults to 10,000.
             seed (int | None, optional): The random seed, None for a different simulation
                 every time. Defaults to 0.
+            scheme (str, optional): "euler" or "exact". Defaults to "euler".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -296,6 +326,10 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             raise ValueError(
                 f"The model must be one of {', '.join(SHORT_RATE_SIMULATION_MODELS)}, not {model!r}."
             )
+        if scheme not in short_rate_model.SCHEMES:
+            raise ValueError(
+                f"The scheme must be one of {', '.join(short_rate_model.SCHEMES)}, not {scheme!r}."
+            )
         if paths * years * steps_per_year > MAX_SIMULATED_VALUES:
             raise ValueError(
                 f"The simulation of {paths:,} paths over {years * steps_per_year:,.0f} steps is "
@@ -335,6 +369,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 parameters["Current Rate"],
                 years,
                 steps_per_year,
+                scheme,
             )
 
         simulated = short_rate_model.simulate_short_rate(
@@ -347,6 +382,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             steps_per_year=steps_per_year,
             paths=paths,
             seed=seed,
+            scheme=scheme,
         )
 
         summary = pd.DataFrame(
@@ -365,4 +401,193 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
 
         return apply_rounding(
             summary, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_swaption_price(
+        self,
+        expiries: float | str | list | None = None,
+        tenors: float | str | list | None = None,
+        model: str = "hull_white",
+        swaption_type: str = "payer",
+        strike: float | None = None,
+        fixed_frequency: int = 1,
+        country: str = "United States",
+        short_rate: str = "3M",
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the prices of European swaptions, the right to enter an interest rate swap
+        at the option's expiry, for a grid of expiries and swap tenors in a one-factor
+        short-rate model fitted to today's government zero-coupon curve. A payer swaption is
+        the right to pay the fixed rate (it gains when rates rise), a receiver swaption the
+        right to receive it. Without a strike every swaption is at the money: struck at the
+        forward swap rate of its expiry and tenor on the same curve (`get_swap_rate` with
+        curve="government" and forward_start the expiry).
+
+        Two models reproduce the curve and so price at-the-money swaptions consistently:
+
+            - Hull-White (1990): dr = [θ(t) - a r] dt + σ dW, Vasicek with a time-varying
+              mean, so rates are normal and can turn negative
+            - CIR++ (Brigo and Mercurio, 2001): r = x + φ(t), with x a Cox-Ingersoll-Ross
+              process dx = a (b - x) dt + σ √x dW and φ the deterministic shift that fits the
+              curve, so the volatility grows with the level of rates
+
+        The speed of mean reversion a and the volatility σ (and for CIR++ the long-run mean
+        b) are calibrated to the history of the short_rate yield between the start and end
+        date, see `get_short_rate_model`; CIR++ starts its process at today's short rate.
+        The price follows from Jamshidian's (1989) decomposition: at expiry the payer
+        swaption is a put on a coupon bond paying the fixed rate, which in a one-factor model
+        splits into puts on its zero-coupon bonds, each priced in closed form (see
+        `short_rate_model.get_swaption` and `get_zero_coupon_bond_option`).
+
+        The formula is as follows:
+
+        - c_i = K τ_i, plus 1 on the last date T_n
+        - x* solves SUM(c_i P(T, T_i; x*)) = 1, X_i = P(T, T_i; x*)
+        - Payer Swaption = SUM(c_i ZBP(T, T_i, X_i))
+        - Receiver Swaption = SUM(c_i ZBC(T, T_i, X_i))
+
+        with T the expiry, T_i the fixed payment dates every 1 / fixed_frequency years after
+        it, τ_i = 1 / fixed_frequency, K the strike, P(T, T_i; x) the bond price at expiry
+        in state x of the model and ZBP and ZBC the zero-coupon bond puts and calls of the
+        model. The price is per 1 of notional (0.01 is 1% of the notional).
+
+        The short rate and the model parameters are continuously compounded (the yield is
+        converted from its quote convention, as in `get_short_rate_model`). The zero-coupon
+        curve is that of the end date, bootstrapped from the par yields and annually
+        compounded, and the strike is a nominal annual rate paid fixed_frequency times a year,
+        with no day count. The calibration uses the history up to the end date only.
+
+        For more information, see the following sources:
+
+        - Jamshidian, F. (1989). "An Exact Bond Option Formula." Journal of Finance, 44(1),
+          205-209.
+        - Hull, J. and White, A. (1990). "Pricing Interest-Rate-Derivative Securities." The
+          Review of Financial Studies, 3(4), 573-592.
+        - Brigo, D. and Mercurio, F. (2001). "A Deterministic-Shift Extension of Analytically
+          Tractable and Time-Homogeneous Short-Rate Models." Finance and Stochastics, 5(3),
+          369-387.
+
+        Referenced against QuantLib's `JamshidianSwaptionEngine` with `HullWhite` and
+        `ExtendedCoxIngersollRoss`.
+
+        Also known as: swaption price, Hull-White swaption, CIR++ swaption, Jamshidian
+        decomposition, interest rate option.
+
+        Args:
+            expiries (float | str | list | None, optional): The expiries of the swaptions, in
+                years or as labels such as '6M'. Defaults to None, 1, 2, 5 and 10 years.
+            tenors (float | str | list | None, optional): The tenors of the underlying swaps,
+                in years or as labels such as '10Y'. Defaults to None, 1, 2, 5, 10 and 30
+                years.
+            model (str, optional): "hull_white" or "cir++". Defaults to "hull_white".
+            swaption_type (str, optional): "payer" or "receiver". Defaults to "payer".
+            strike (float | None, optional): The fixed rate of the swaps (decimal). Defaults
+                to None, the at-the-money forward swap rate of each expiry and tenor.
+            fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
+            country (str, optional): The country, see `get_government_bond_yield_curve`.
+                Defaults to "United States".
+            short_rate (str, optional): The maturity of the yield used as the short rate,
+                such as "1M", "3M" or "6M". Defaults to "3M".
+            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The swaption price per 1 of notional, by expiry in years (rows) and
+            tenor in years (columns).
+
+        Notes:
+        - One factor moves the whole curve, so the model ties the volatilities of all
+          expiries and tenors to two parameters; fitted to the history of a short rate it
+          does not match the volatilities that swaption markets quote.
+        - CIR++ needs a rate above zero throughout the calibration period (see
+          `get_short_rate_model`), and the Feller Ratio there shows whether its process stays
+          away from zero.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2000-01-01', end_date='2026-10-23')
+
+        fixedincome.get_swaption_price(short_rate='6M')
+        ```
+
+        Which returns:
+
+        |   Expiry |      1 |      2 |      5 |     10 |     30 |
+        |---------:|-------:|-------:|-------:|-------:|-------:|
+        |        1 | 0.0021 | 0.0039 | 0.008  | 0.012  | 0.0154 |
+        |        2 | 0.0027 | 0.005  | 0.0103 | 0.0154 | 0.0198 |
+        |        5 | 0.0032 | 0.0061 | 0.0125 | 0.0185 | 0.024  |
+        |       10 | 0.003  | 0.0055 | 0.0114 | 0.0167 | 0.0221 |
+        """
+        period = validate_period(
+            period, ["daily", "weekly", "monthly"], "swaption price"
+        )
+        model = model.lower().replace("-", "_").replace(" ", "_")
+        if model not in SWAPTION_MODELS:
+            raise ValueError(
+                f"The model must be one of {', '.join(SWAPTION_MODELS)}, not {model!r}."
+            )
+
+        curve = self._yield_curves(country, period)[country]
+        if short_rate not in curve.columns:
+            raise ValueError(
+                f"The {country} yield curve has no {short_rate} maturity. Choose from "
+                f"{', '.join(curve.columns)}."
+            )
+        parameters = short_rate_model.calibrate_short_rate_model(
+            self._continuous_short_rate(curve[short_rate], country, short_rate),
+            "cir" if model == "cir++" else "vasicek",
+            PERIODS_PER_YEAR[period],
+        )
+        if not parameters["Speed of Mean Reversion"] > 0:
+            raise ValueError(
+                f"The {country} {short_rate} rate shows no mean reversion between "
+                f"{self._start_date} and {self._end_date}; choose a longer period."
+            )
+        zero_curve = self._latest_zero_curve(country)
+
+        expiry_years = parse_maturities(expiries, DEFAULT_SWAPTION_EXPIRIES)
+        tenor_years = parse_maturities(tenors, DEFAULT_SWAPTION_TENORS)
+        prices = pd.DataFrame(
+            np.nan,
+            index=pd.Index(expiry_years, name="Expiry"),
+            columns=pd.Index(tenor_years, name="Tenor"),
+        )
+        for expiry in expiry_years:
+            for tenor in tenor_years:
+                fixed_rate = (
+                    strike
+                    if strike is not None
+                    else swap_model.get_swap_rate(
+                        zero_curve, tenor, fixed_frequency, forward_start=expiry
+                    )[0]
+                )
+                prices.loc[expiry, tenor] = short_rate_model.get_swaption(
+                    expiry,
+                    tenor,
+                    fixed_rate,
+                    parameters["Speed of Mean Reversion"],
+                    parameters["Volatility"],
+                    parameters["Long-Run Mean"],
+                    parameters["Current Rate"],
+                    zero_curve,
+                    model,
+                    swaption_type,
+                    fixed_frequency,
+                )
+
+        return apply_rounding(
+            prices, rounding if rounding is not None else self._rounding
         )

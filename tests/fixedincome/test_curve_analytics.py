@@ -203,16 +203,24 @@ def test_short_rate_model(fixedincome, monkeypatch):
         4 * np.log1p(simulated_curves()["3M"].iloc[-1] / 4)
     )
     assert result.loc["Zero Rate 30Y", "Market"] > result.loc["Zero Rate 1M", "Market"]
+    assert np.isnan(result.loc["Feller Ratio", "Vasicek"])
+    assert result.loc["Feller Ratio", "CIR"] == pytest.approx(
+        2
+        * result.loc["Speed of Mean Reversion", "CIR"]
+        * result.loc["Long-Run Mean", "CIR"]
+        / result.loc["Volatility", "CIR"] ** 2
+    )
 
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="no 4M maturity"):
         fixedincome.get_short_rate_model(short_rate="4M")
 
 
+@pytest.mark.parametrize("scheme", ["euler", "exact"])
 @pytest.mark.parametrize("model", ["hull_white", "vasicek", "cir"])
-def test_short_rate_simulation(fixedincome, model):
+def test_short_rate_simulation(fixedincome, model, scheme):
     simulation = fixedincome.get_short_rate_simulation(
-        model=model, years=2, steps_per_year=4, paths=2000
+        model=model, years=2, steps_per_year=4, paths=2000, scheme=scheme
     )
 
     assert list(simulation.columns) == ["Mean", "5%", "25%", "50%", "75%", "95%"]
@@ -227,6 +235,39 @@ def test_short_rate_simulation_is_bounded(fixedincome, monkeypatch):
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
     with pytest.raises(ValueError, match="too large"):
         fixedincome.get_short_rate_simulation(paths=10_000_000, years=10)
+    with pytest.raises(ValueError, match="scheme must be one of"):
+        fixedincome.get_short_rate_simulation(scheme="milstein")
+
+
+def test_get_swaption_price(recorder, fixedincome):
+    recorder.capture(fixedincome.get_swaption_price())
+    recorder.capture(
+        fixedincome.get_swaption_price(
+            expiries="6M,1Y", tenors=[2, 10], model="cir++", swaption_type="receiver"
+        )
+    )
+    recorder.capture(
+        fixedincome.get_swaption_price(
+            expiries=1, tenors=5, strike=0.03, fixed_frequency=2
+        )
+    )
+
+
+def test_swaption_price_is_at_the_money(fixedincome, monkeypatch):
+    # At the money a payer and a receiver swaption are worth the same.
+    for model in ("hull_white", "cir++"):
+        payer = fixedincome.get_swaption_price(
+            expiries=[1, 5], tenors=[2, 10], model=model
+        )
+        receiver = fixedincome.get_swaption_price(
+            expiries=[1, 5], tenors=[2, 10], model=model, swaption_type="receiver"
+        )
+        assert payer.to_numpy() == pytest.approx(receiver.to_numpy(), abs=1e-12)
+        assert (payer.to_numpy() > 0).all()
+
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="model must be one of"):
+        fixedincome.get_swaption_price(model="vasicek")
 
 
 def test_implied_default_probability(fixedincome, monkeypatch):

@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.econometrics.dynamics import (
@@ -22,7 +23,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 @track_sources
 class DynamicsEconometrics:
     """
-    Regimes and changing relationships: Markov regime switching, structural breaks, the time-varying beta, DCC-GARCH and pairs trading.
+    Regimes and changing relationships: Markov regime switching, structural breaks, PELT change points, the time-varying beta, DCC-GARCH, pairs trading and optimal trading rules on an Ornstein-Uhlenbeck process.
     """
 
     @handle_errors
@@ -271,6 +272,139 @@ class DynamicsEconometrics:
                     max_breaks=max_breaks,
                     minimum_segment=minimum_segment,
                     breaks=breaks,
+                )
+                for ticker in data.columns
+            }
+        )
+        result.index = result.index.set_names(["Asset", "Segment"])
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_change_points(
+        self,
+        period: str | None = None,
+        column: str = "Return",
+        cost: str = "mean_variance",
+        penalty: float | None = None,
+        minimum_segment: int = 5,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Find the dates at which the mean, the volatility or both of every asset's series
+        change, with the PELT (Pruned Exact Linear Time) method of Killick, Fearnhead and
+        Eckley (2012). It finds the exact segmentation that minimizes the Gaussian cost of
+        every segment plus a penalty per change, with no upper limit on the number of
+        changes, and prunes the candidate dates that can no longer be the last change, so it
+        runs in about linear time.
+
+        Where `get_structural_breaks` (Bai and Perron) looks for shifts in the mean with a
+        common variance and at most a few breaks, PELT with the default cost="mean_variance"
+        also splits the series where the volatility changes, which for returns separates calm
+        and turbulent periods; cost="variance" keeps the mean fixed and only lets the
+        volatility change, cost="mean" only the mean. Every segment is dated after the fact
+        with the whole series, as a description of the past rather than a signal on the day.
+
+        The formula is as follows, with yₜ the `column` series (Return by default), n observations
+        and a segment s of nₛ observations:
+
+        - cost="mean_variance": C(s) = nₛ·ln(σ̂ₛ²), with σ̂ₛ² = Σ(t in s) (yₜ - ȳₛ)² / nₛ
+        - cost="variance": C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
+        - cost="mean": C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
+          standard deviation from the changes of the series
+        - The segmentation minimizes Σ C(s) + β·(number of changes), every segment at least
+          `minimum_segment` observations (5 by default)
+        - β = (p + 1)·ln(n), the BIC, with p = 2 parameters per segment for "mean_variance" and 1 for
+          "mean" and "variance" plus 1 for the date of the change, unless `penalty` is given
+        - Per segment: its Start, End, Observations, Mean and Standard Deviation (ddof=1)
+
+        For more information, see the following papers:
+
+        - Killick, R., Fearnhead, P. and Eckley, I.A. (2012). "Optimal Detection of
+        Changepoints With a Linear Computational Cost." Journal of the American Statistical
+        Association, 107(500), 1590-1598.
+        - Jackson, B. et al. (2005). "An Algorithm for Optimal Partitioning of Data on an
+        Interval." IEEE Signal Processing Letters, 12(2), 105-108.
+        - Referenced against ruptures' Pelt (https://github.com/deepcharles/ruptures) and
+        RiskLabAI's pelt_change_points (https://github.com/RiskLabAI/RiskLabAI.py), which
+        call ruptures; the change points equal those of an exhaustive search.
+
+        Also known as: PELT, change point detection, changepoints, variance change points,
+        volatility regimes, segmentation, multiple structural breaks.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly). Defaults to "daily".
+            column (str, optional): The historical data column to analyze. Defaults to
+                "Return"; use "Adj Close" (or "Level" with standalone data) for the series
+                itself, such as an inflation rate.
+            cost (str, optional): What may change between segments: "mean_variance" (both),
+                "variance" (the volatility around the mean of the series) or "mean" (the mean).
+                Defaults to "mean_variance".
+            penalty (float | None, optional): The penalty β per change; a larger one finds
+                fewer changes. Defaults to None, the BIC (p + 1)·ln(n).
+            minimum_segment (int, optional): The fewest observations of a segment. A segment of
+                two nearly equal values has a variance close to zero, which the Gaussian cost
+                rewards without bound, so the variance costs need a few more. Defaults to 5.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset and segment the Start, End, Observations, Mean and
+            Standard Deviation, with the Penalty used.
+
+        Notes:
+        - Daily returns have fat tails, so the Gaussian cost splits them more often than a
+          volatility model would: weekly or monthly returns, or a larger penalty, give fewer
+          and longer segments.
+        - A variance is floored at 1e-6 times that of the whole series, so a segment of
+          equal values has a finite cost; ruptures adds 1e-6 to it instead.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["QQQ", "TLT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_change_points(period="monthly", cost="variance")
+        ```
+
+        Which returns:
+
+        |            | Start   | End     |   Observations |    Mean |   Standard Deviation |   Penalty |
+        |:-----------|:--------|:--------|---------------:|--------:|---------------------:|----------:|
+        | ('QQQ', 1) | 2016-02 | 2018-09 |             32 |  0.0196 |               0.0319 |    9.5582 |
+        | ('QQQ', 2) | 2018-10 | 2025-12 |             87 |  0.0161 |               0.0587 |    9.5582 |
+        | ('TLT', 1) | 2016-02 | 2025-12 |            119 | -0.0002 |               0.0393 |    9.5582 |
+        """
+        period = period if period else "daily"
+        data = self._filter_benchmark(
+            self._get_series_column(period, column), include_benchmark=include_benchmark
+        )
+
+        result = pd.concat(
+            {
+                ticker: regime_model.get_change_points(
+                    data[ticker],
+                    cost=cost,
+                    penalty=penalty,
+                    minimum_segment=minimum_segment,
                 )
                 for ticker in data.columns
             }
@@ -667,6 +801,180 @@ class DynamicsEconometrics:
                 {pair: summary for pair, (_, summary) in fits.items()}
             ).T
             result.index = result.index.set_names(["Dependent", "Independent"])
+
+        return apply_rounding(
+            result, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_optimal_trading_rule(
+        self,
+        period: str | None = None,
+        column: str = "Adj Close",
+        maximum_threshold: float = 10.0,
+        grid_size: int = 20,
+        maximum_holding_period: int = 100,
+        paths: int = 10000,
+        seed: int = 0,
+        log_prices: bool = True,
+        grid: bool = False,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Find the profit-taking and stop-loss levels with the highest Sharpe ratio for a long
+        position in every asset, when its log price follows the mean-reverting
+        Ornstein-Uhlenbeck process fitted to it, with the Monte Carlo method of López de
+        Prado (2018, chapter 13).
+
+        The process is fitted to the log prices by a regression of each on the one before it,
+        which gives how persistent the price is (Phi), the level it reverts to (the Long-Run
+        Mean) and the size of its shocks (Sigma). Thousands of paths of that process are then
+        simulated from the last price, and every pair of a profit-taking and a stop-loss level
+        on a mesh, in units of Sigma, is tried on the same paths: a position is closed once
+        the price rises above the profit-taking level, falls below the stop-loss level or has
+        been held for the maximum holding period. The rule with the highest Sharpe ratio of
+        the gains is the optimal one. A price far below its long-run mean (a positive
+        Forecast) favours a wide profit-taking level, one above it a tight stop-loss; for a
+        price that hardly reverts (Phi close to 1, a long Half-Life) the Sharpe ratios are
+        close to zero and the rule matters little.
+
+        The formula is as follows, with pₜ the log of the `column` (Adj Close by default):
+
+        - pₜ = c + φ·pₜ₋₁ + σ·εₜ by OLS, with σ the standard deviation of the residuals (n - 2 degrees of
+          freedom), Long-Run Mean = c / (1 - φ), Half-Life = -ln(2) / ln(φ) and
+          Forecast = (Long-Run Mean - p₀) / σ, with p₀ the last log price
+        - yₜ = (pₜ - p₀) / σ = (1 - φ)·Forecast + φ·yₜ₋₁ + εₜ, y₀ = 0, εₜ ~ N(0, 1), for `paths` paths
+          (10,000 by default) of at most `maximum_holding_period` steps (100 by default)
+        - For every profit-taking π̄ and stop-loss π̲ in {h, 2h, ..., `maximum_threshold`},
+          h = `maximum_threshold` / `grid_size` (0.5 to 10 by default): the gain of a path is yₜ at the
+          first t with yₜ > π̄ or yₜ < -π̲, or at the maximum holding period
+        - Sharpe Ratio = mean / standard deviation (ddof=1) of the gains; the rule with the highest
+          is reported with its Mean and Standard Deviation (in σ) and Average Holding Period
+
+        For more information, see the following book:
+
+        - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter
+        13, "Backtesting on Synthetic Data".
+        - Referenced against RiskLabAI's ou_rule_metrics (https://github.com/RiskLabAI/RiskLabAI.py),
+        the closed-form gain and exit time of the continuous process, which the simulation
+        agrees with once the levels are moved out by 0.5826 Sigma for the discrete monitoring
+        (Broadie, Glasserman and Kou, 1997).
+
+        Also known as: optimal trading rule, OTR, profit-taking and stop-loss, Ornstein-Uhlenbeck
+        trading rule, mean reversion trading rule, synthetic backtest.
+
+        Args:
+            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly). Defaults to "daily".
+            column (str, optional): The price column. Defaults to "Adj Close".
+            maximum_threshold (float, optional): The widest profit-taking and stop-loss level,
+                in units of Sigma. Defaults to 10.0.
+            grid_size (int, optional): The number of levels on each side of the mesh, so the
+                mesh has grid_size² rules. Defaults to 20.
+            maximum_holding_period (int, optional): The most periods a position is held.
+                Defaults to 100.
+            paths (int, optional): The number of simulated paths. Defaults to 10000.
+            seed (int, optional): The seed of the simulation. Defaults to 0.
+            log_prices (bool, optional): Whether to fit the process to the log prices. Pass False
+                for a series that can be zero or negative, such as a spread. Defaults to True.
+            grid (bool, optional): Whether to return every rule of the mesh instead of the
+                optimal one. Defaults to False.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per asset the Phi, Half-Life (in periods), Sigma, Long-Run Mean (of the
+            log price), Forecast, the optimal Profit-Taking and Stop-Loss (in Sigma), and the
+            Mean and Standard Deviation of the gain (in Sigma), its Sharpe Ratio and the Average
+            Holding Period; with grid=True the Mean, Standard Deviation, Sharpe Ratio and
+            Average Holding Period of every rule, per asset, Profit-Taking and Stop-Loss.
+
+        Notes:
+        - Every rule is tried on the same paths, so the differences between neighbouring rules
+          are not simulation noise; the paths follow from the seed, so the result is the same
+          on every run. With a wide stop-loss a few large losses decide the standard deviation,
+          so the Sharpe ratio of such a rule can move by 0.1 or more with another seed at
+          10,000 paths; more paths narrow it.
+        - López de Prado draws new paths for every rule, closes a position one period after the
+          maximum holding period and takes the standard deviation with ddof=0.
+        - The rule is for a long position. For a short position, analyze the negative of the
+          log prices (`Econometrics(data=...)` with log_prices=False), whose rise is a fall
+          in the price.
+        - The simulation takes about a second per asset with the defaults.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["PFE", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.econometrics.get_optimal_trading_rule()
+        ```
+
+        Which returns:
+
+        |                        |      PFE |       KO |
+        |:-----------------------|---------:|---------:|
+        | Phi                    |   0.9977 |   0.9969 |
+        | Half-Life              | 303.568  | 222.457  |
+        | Sigma                  |   0.0158 |   0.01   |
+        | Long-Run Mean          |   3.3005 |   4.1335 |
+        | Forecast               |   9.5111 |  -9.4587 |
+        | Profit-Taking          |   6      |   0.5    |
+        | Stop-Loss              |  10      |   0.5    |
+        | Mean                   |   1.3971 |  -0.0498 |
+        | Standard Deviation     |   7.018  |   1.2679 |
+        | Sharpe Ratio           |   0.1991 |  -0.0393 |
+        | Average Holding Period |  55.5542 |   1.5936 |
+        """
+        period = period if period else "daily"
+        prices = self._filter_benchmark(
+            self._get_series_column(period, column), include_benchmark=include_benchmark
+        )
+
+        if log_prices:
+            if (prices <= 0).any().any():
+                raise ValueError(
+                    "The logarithm needs positive values; pass log_prices=False for a series "
+                    "that can be zero or negative, such as a spread."
+                )
+            prices = np.log(prices)
+
+        fits = {
+            ticker: pairs_trading_model.get_optimal_trading_rule(
+                prices[ticker],
+                maximum_threshold=maximum_threshold,
+                grid_size=grid_size,
+                maximum_holding_period=maximum_holding_period,
+                paths=paths,
+                seed=seed,
+            )
+            for ticker in prices.columns
+        }
+
+        if grid:
+            result = pd.concat({ticker: mesh for ticker, (_, mesh) in fits.items()})
+            result.index = result.index.set_names(
+                ["Asset", "Profit-Taking", "Stop-Loss"]
+            )
+        else:
+            result = pd.DataFrame(
+                {ticker: summary for ticker, (summary, _) in fits.items()}
+            )
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

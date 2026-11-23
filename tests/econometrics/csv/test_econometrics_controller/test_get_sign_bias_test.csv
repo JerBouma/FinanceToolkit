@@ -1,0 +1,10 @@
+,AAPL,MSFT
+Sign Bias t-Statistic,0.4392,-0.147
+Sign Bias P-Value,0.6606,0.8832
+Negative Size Bias t-Statistic,-0.0975,-1.5626
+Negative Size Bias P-Value,0.9223,0.1186
+Positive Size Bias t-Statistic,-0.2704,-0.0364
+Positive Size Bias P-Value,0.7869,0.971
+Joint Statistic,0.8892,3.2804
+Joint P-Value,0.828,0.3504
+Observations,756.0,756.0

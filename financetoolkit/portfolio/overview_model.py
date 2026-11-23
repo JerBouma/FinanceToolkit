@@ -6,6 +6,7 @@ import pandas as pd
 from financetoolkit.portfolio.helpers import (
     divide_by_capital,
     get_trading_day_locations,
+    get_transaction_order,
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
@@ -17,6 +18,9 @@ logger = logger_model.get_logger()
 TRADING_DAYS_PER_YEAR = 252
 # Units left to sell below this are floating point residue of the volumes, not an oversold position.
 OVERSOLD_TOLERANCE = 1e-9
+# Units left in a lot below this times the largest volume are the floating point residue of subtracting volumes
+# (0.1 + 0.2 - 0.3 leaves 5.6e-17), which would otherwise stay open as a lot of next to nothing.
+LOT_RESIDUE_TOLERANCE = 1e-12
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -1199,6 +1203,76 @@ def create_portfolio_performance(
     return positions_dataset_grouped
 
 
+def match_lots(
+    volumes: np.ndarray, method: str = "FIFO", short_selling: bool = False
+) -> tuple[list[tuple[int, int, float]], list[tuple[int, float]], bool]:
+    """
+    Match the transactions of one asset, in the order they are given, against the lots they
+    close: every purchase or sale opens a lot, and a transaction in the other direction closes
+    the oldest open lots first (FIFO) or the newest (LIFO). A transaction larger than the
+    lots it closes opens a lot in its own direction with the units left, so a sale of more
+    than is held opens a short lot (with `short_selling=True`) that later purchases close.
+
+    The matches are the round trips of the asset: each pairs the transaction that opened
+    units with the one that closed them, so the realized profit and loss of a sale and the
+    trade list both follow from them.
+
+    Args:
+        volumes (np.ndarray): The volume of every transaction, positive for a purchase and
+            negative for a sale, in the order they are matched in.
+        method (str, optional): "FIFO" closes the oldest lots first, "LIFO" the newest.
+            Defaults to "FIFO".
+        short_selling (bool, optional): Whether a sale of more units than are held opens a
+            short lot. Defaults to False, which leaves the units sold beyond those held out.
+
+    Returns:
+        tuple[list[tuple[int, int, float]], list[tuple[int, float]], bool]: The matches as
+        (opening row, closing row, units), the lots still open as (opening row, units), with
+        negative units for a short lot, and whether units were sold beyond those held while
+        short selling is off.
+
+    Notes:
+        - Units left by floating point residue of the volumes (0.1 + 0.2 - 0.3), on the scale
+          of the largest volume traded, neither stay open as a lot nor count as an excess.
+    """
+    finite = np.abs(volumes[np.isfinite(volumes)])
+    scale = max(1.0, finite.max() if finite.size else 0.0)
+    lots: list[list] = []  # [opening row, units] of the open lots, all in one direction
+    side = 0
+    matches: list[tuple[int, int, float]] = []
+    oversold = False
+
+    for row, volume in enumerate(volumes):
+        if not (volume > 0 or volume < 0):  # no units, or a missing volume
+            continue
+        direction = 1 if volume > 0 else -1
+        remaining = abs(volume)
+
+        if lots and direction != side:
+            while remaining > 0 and lots:
+                position = 0 if method == "FIFO" else -1
+                opening, units = lots[position]
+                closed = min(units, remaining)
+                matches.append((opening, row, closed))
+                remaining -= closed
+                if units - closed > LOT_RESIDUE_TOLERANCE * scale:
+                    lots[position][1] = units - closed
+                else:
+                    lots.pop(position)
+            # Units left beyond the lots on the scale of the oversold tolerance are residue, not a sale.
+            if remaining <= OVERSOLD_TOLERANCE * scale:
+                remaining = 0
+
+        if remaining > 0:
+            if direction > 0 or short_selling:
+                lots.append([row, remaining])
+                side = direction
+            else:
+                oversold = True
+
+    return matches, [(opening, side * units) for opening, units in lots], oversold
+
+
 def create_profit_and_loss_overview(
     transactions_overview: pd.DataFrame,
     ticker_column: str,
@@ -1250,93 +1324,46 @@ def create_profit_and_loss_overview(
           portfolio.
     """
 
-    def process_group(ticker: str, group: pd.DataFrame) -> list[float]:
-        inventory: list[tuple[float, float]] = []  # For FIFO or LIFO methods
-        avg_cost = 0.0  # For Average method
-        total_volume = 0.0  # For Average method
-        pnl: list[float] = []  # Store PnL for each row in the group
+    def process_group(group: pd.DataFrame) -> tuple[np.ndarray, bool]:
+        volumes = group[volume_column].to_numpy(dtype=float)
+        prices = group[price_column].to_numpy(dtype=float)
+        pnl = np.zeros(len(volumes))
 
-        largest_volume = group[volume_column].abs().max()
-        for volume, price in zip(
-            group[volume_column], group[price_column], strict=True
-        ):
-            if volume > 0:  # Buy order
-                if method == "AVERAGE":
-                    # Update average cost
-                    total_cost = avg_cost * total_volume
-                    total_cost += volume * price
-                    total_volume += volume
-                    avg_cost = total_cost / total_volume
-                else:
-                    # Add to inventory for FIFO or LIFO
-                    inventory.append((volume, price))
-                pnl.append(0.0)  # No PnL for buy orders
+        if method != "AVERAGE":
+            matches, _, group_oversold = match_lots(volumes, method=method)
+            # Every closed lot realizes its units times the difference between the sale and purchase price.
+            for opening, closing, units in matches:
+                pnl[closing] += units * (prices[closing] - prices[opening])
+            return pnl, group_oversold
 
-            elif volume < 0:  # Sell order
-                sell_volume = -volume
-                realized_pnl = 0.0
+        avg_cost = 0.0
+        total_volume = 0.0
+        group_oversold = False
+        tolerance = OVERSOLD_TOLERANCE * max(1.0, np.nanmax(np.abs(volumes)))
+        for row, (volume, price) in enumerate(zip(volumes, prices, strict=True)):
+            if volume > 0:
+                total_cost = avg_cost * total_volume + volume * price
+                total_volume += volume
+                avg_cost = total_cost / total_volume
+            elif volume < 0:
+                sell_volume = min(-volume, total_volume)
+                pnl[row] = sell_volume * (price - avg_cost)
+                total_volume -= sell_volume
+                # Units sold beyond those held have no purchase to realize a PnL against.
+                if -volume - sell_volume > tolerance:
+                    group_oversold = True
 
-                if method == "FIFO":
-                    # Process FIFO: Sell the earliest assets first
-                    while sell_volume > 0 and inventory:
-                        fifo_volume, fifo_price = inventory[0]
-                        if fifo_volume <= sell_volume:
-                            realized_pnl += fifo_volume * (price - fifo_price)
-                            sell_volume -= fifo_volume
-                            inventory.pop(0)
-                        else:
-                            realized_pnl += sell_volume * (price - fifo_price)
-                            inventory[0] = (fifo_volume - sell_volume, fifo_price)
-                            sell_volume = 0
-
-                elif method == "LIFO":
-                    # Process LIFO: Sell the most recently purchased assets first
-                    while sell_volume > 0 and inventory:
-                        lifo_volume, lifo_price = inventory.pop()
-                        if lifo_volume <= sell_volume:
-                            realized_pnl += lifo_volume * (price - lifo_price)
-                            sell_volume -= lifo_volume
-                        else:
-                            realized_pnl += sell_volume * (price - lifo_price)
-                            inventory.append((lifo_volume - sell_volume, lifo_price))
-                            sell_volume = 0
-
-                elif method == "AVERAGE":
-                    # Calculate PnL based on average cost
-                    if total_volume >= sell_volume:
-                        realized_pnl = sell_volume * (price - avg_cost)
-                        total_volume -= sell_volume
-                        sell_volume = 0
-                    else:
-                        realized_pnl = total_volume * (price - avg_cost)
-                        sell_volume -= total_volume
-                        total_volume = 0
-
-                pnl.append(realized_pnl)
-                # Units sold beyond those held have no purchase to realize a PnL against. A remainder from floating point residue (0.1 + 0.2 - 0.3), which grows with the largest volume traded, is not a sale.  # noqa: E501
-                if sell_volume > OVERSOLD_TOLERANCE * max(1.0, largest_volume):
-                    oversold.add(str(ticker))
-
-            else:
-                pnl.append(0.0)  # No action for zero volume
-
-        return pnl
+        return pnl, group_oversold
 
     # The rows are addressed by position rather than by label, since a groupby-apply returns the groups concatenated in group order whenever the index is not unique, which would attach every PnL figure to the wrong transaction once two trades share a date.  # noqa: E501
     ordered_transactions = transactions_overview.reset_index()
 
-    # Within a day the purchases come first, so a sale is matched against the units bought that day whatever the order of
-    # the rows in the file; transactions in the order they were made keep it.
-    ordered_transactions = ordered_transactions.loc[
-        pd.DataFrame(
-            {
-                "date": transactions_overview.index.get_level_values(0),
-                "sell": (ordered_transactions[volume_column] < 0).to_numpy()
-                & purchases_first,
-            }
+    ordered_transactions = ordered_transactions.iloc[
+        get_transaction_order(
+            transactions_overview.index.get_level_values(0),
+            ordered_transactions[volume_column],
+            purchases_first,
         )
-        .sort_values(["date", "sell"], kind="stable")
-        .index
     ]
 
     profit_and_loss = pd.DataFrame(
@@ -1348,7 +1375,9 @@ def create_profit_and_loss_overview(
     for ticker, group in ordered_transactions.groupby(
         ticker_column, observed=True, sort=False
     ):
-        group_pnl = process_group(str(ticker), group)
+        group_pnl, group_oversold = process_group(group)
+        if group_oversold:
+            oversold.add(str(ticker))
 
         profit_and_loss.loc[group.index, "PnL"] = group_pnl
         # Accumulated within the group so the running total restarts per ticker.

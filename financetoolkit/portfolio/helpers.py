@@ -516,3 +516,51 @@ def get_cutting_plane_solution(
     raise ValueError(
         f"The optimization did not converge within {iterations} cutting planes."
     )
+
+
+def get_transaction_order(
+    dates: pd.Index, volumes: pd.Series | np.ndarray, purchases_first: bool = True
+) -> np.ndarray:
+    """
+    The order in which transactions are matched against each other: by date and, within a
+    day, the purchases before the sales, so a sale is matched against the units bought that
+    day whatever the order of the rows in the file. With `purchases_first=False`, for
+    transactions in the order they were made (dated with a time of day), the rows of a day
+    keep their order.
+
+    Args:
+        dates (pd.Index): The date of every transaction.
+        volumes (pd.Series | np.ndarray): The volume of every transaction, negative for a sale.
+        purchases_first (bool, optional): Whether the purchases of a day come before its
+            sales. Defaults to True.
+
+    Returns:
+        np.ndarray: The positions of the transactions in the order they are matched in.
+    """
+    return (
+        pd.DataFrame(
+            {
+                "date": dates,
+                "sell": (np.asarray(volumes, dtype=float) < 0) & purchases_first,
+            }
+        )
+        .sort_values(["date", "sell"], kind="stable")
+        .index.to_numpy()
+    )
+
+
+def to_timestamps(dates: pd.Index | pd.Series) -> pd.DatetimeIndex:
+    """
+    The dates as timestamps, the start of each period for periods, so that dates of either
+    type give durations in calendar days.
+
+    Args:
+        dates (pd.Index | pd.Series): Dates as periods or timestamps.
+
+    Returns:
+        pd.DatetimeIndex: The dates as timestamps.
+    """
+    dates = pd.Index(dates)
+    if isinstance(dates, pd.PeriodIndex):
+        return dates.to_timestamp()
+    return pd.DatetimeIndex(dates)

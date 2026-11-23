@@ -13,6 +13,7 @@ from financetoolkit.options.pricing import (
     binomial_trees_model,
     black_scholes_model,
     exotics_model,
+    path_dependent_model,
 )
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -32,7 +33,7 @@ logger = logger_model.get_logger()
 @track_sources
 class PricingOptions:
     """
-    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier and Asian options, put-call parity and strategy payoffs.
+    Option pricing: Black-Scholes (also with cash dividends), binomial trees, Monte Carlo, Garman-Kohlhagen, American approximations (Bjerksund-Stensland, Barone-Adesi-Whaley, Ju-Zhong, QD+), binary, barrier (single, double, partial-time, soft and discretely watched), Asian (geometric and arithmetic), lookback and touch options, put-call parity and strategy payoffs.
     """
 
     @handle_errors
@@ -1994,6 +1995,11 @@ class PricingOptions:
         barrier_direction: str = "down",
         knock_type: str = "out",
         rebate: float = 0.0,
+        upper_barrier_percentage: float = 1.1,
+        barrier_window: str = "full",
+        window_share: float = 0.5,
+        soft_barrier_percentage: float | None = None,
+        monitoring: str = "continuous",
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
         expiration_time_range: int = 30,
@@ -2021,6 +2027,23 @@ class PricingOptions:
         ``barrier_percentage``, e.g. a value of 0.9 sets the barrier at 90% of the
         current stock price (a sensible default for a down barrier).
 
+        Besides the single barrier watched continuously over the whole life, the barrier can be:
+
+        - Double (barrier_direction="double"): a lower barrier at ``barrier_percentage`` and an upper barrier
+          at ``upper_barrier_percentage``; the knock-out pays only when the stock price stays between the two,
+          priced with the series of Ikeda and Kunitomo (1992) for flat barriers.
+        - Partial-time (barrier_window="start" or "end"): watched only during the first or the last
+          ``window_share`` of the life (Heynen & Kat, 1994). With an end window the option is also knocked out
+          (or in) when the stock price is beyond the barrier at the start of the window.
+        - Soft (soft_barrier_percentage): a band between ``barrier_percentage`` and
+          ``soft_barrier_percentage`` through which the option knocks out gradually (Hart & Ross, 1994): a soft
+          down-and-out pays the vanilla payoff times (min S - L) / (U - L), the share of the band the lowest price
+          did not reach, which is the average of the hard barrier prices over the band.
+        - Discretely watched (monitoring="daily", "weekly" or "monthly"): checked only at each close, which
+          is priced by moving the barriers away from the stock price by e^(0.5826 * σ * √Δt), with Δt = 1/252,
+          1/52 or 1/12 (Broadie, Glasserman & Kou, 1997). A daily barrier is crossed noticeably less often than
+          a continuous one, so it is worth setting for a knock-out with a barrier close to the stock price.
+
         The formula is as follows (Reiner & Rubinstein, 1991, in the notation of Haug, 2007):
 
         - H = Barrier Percentage * S, with Barrier Percentage defaulting to 0.9
@@ -2042,6 +2065,18 @@ class PricingOptions:
         - Down-and-In Put = B - C + D + E if K > H, else A + E
         - Up-and-Out Put = B - D + F if K > H, else A - C + F
         - Up-and-In Put = A - B + D + E if K > H, else C + E
+        - Double Knock-out Call = S * e^((b - r)T) * Σ_n [(U^n / L^n)^μ' * (N(d1) - N(d2)) - (L^(n+1) / (U^n * S))^μ' * (N(d3) - N(d4))]
+          - K * e^(-rT) * Σ_n [(U^n / L^n)^(μ' - 2) * (N(d1 - σ√T) - N(d2 - σ√T)) - (L^(n+1) / (U^n * S))^(μ' - 2) * (N(d3 - σ√T) - N(d4 - σ√T))],
+          with μ' = 2b / σ² + 1, d1 = (ln(S * U^2n / (K' * L^2n)) + (b + σ²/2)T) / (σ√T), d2 the same with U in place of K',
+          d3 = (ln(L^(2n+2) / (K' * S * U^2n)) + (b + σ²/2)T) / (σ√T), d4 the same with U in place of K', K' = max(K, L), and
+          the put the same way over the prices between L and min(K, U)
+        - Partial-time Knock-out, start window up to t1 = Window Share * T: e^(-r t1) * {E[BS(S(t1)) * 1{ηS(t1) > ηH}]
+          - (H / S)^(2μ) * E[BS(S(t1) * (H / S)²) * 1{ηS(t1) * (H / S)² > ηH}]}, with BS the Black-Scholes price over T - t1
+        - Partial-time Knock-out, end window from t1 = (1 - Window Share) * T: e^(-r t1) * E[KO(S(t1)) * 1{ηS(t1) > ηH}], with
+          KO the knock-out price above over T - t1; both expectations are closed form with the bivariate normal distribution
+        - Soft Knock-out = 1 / (U - L) * ∫_L^U Knock-out(H) dH over the band [L, U]
+        - Discrete monitoring: H → H * e^(0.5826 * σ * √Δt) for a barrier above and H * e^(-0.5826 * σ * √Δt) for one below S
+        - Every Knock-in of the double, partial-time and soft barriers = Black-Scholes price - Knock-out
 
         Where S is the stock price (the traded close on the pricing date), K is the strike
         price, H is the barrier, r is the continuously compounded risk-free rate, q is the
@@ -2057,8 +2092,19 @@ class PricingOptions:
         they do not exist, so the sum exceeds the vanilla price by the value of those
         rebates.
 
+        See: Reiner, E., & Rubinstein, M. (1991), "Breaking Down the Barriers", Risk, 4(8), 28-35; Ikeda, M., &
+        Kunitomo, N. (1992), "Pricing Options with Curved Boundaries", Mathematical Finance, 2(4), 275-298; Heynen,
+        R. C., & Kat, H. M. (1994), "Partial Barrier Options", The Journal of Financial Engineering, 3(3/4),
+        253-274; Hart, I., & Ross, M. (1994), "Striking Continuity", Risk, 7(6), 51-56; Broadie, M., Glasserman,
+        P., & Kou, S. (1997), "A Continuity Correction for Discrete Barrier Options", Mathematical Finance, 7(4),
+        325-349; Haug, E. G. (2007), The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.17.
+        Referenced against QuantLib's AnalyticBarrierEngine, AnalyticDoubleBarrierEngine,
+        AnalyticPartialTimeBarrierOptionEngine and AnalyticSoftBarrierEngine (https://www.quantlib.org) and
+        FinancePy's EquityBarrierOption with observations per year (https://github.com/domokane/FinancePy).
+
         Also known as: knock-in option, knock-out option, down-and-out, down-and-in,
-        up-and-out, up-and-in option.
+        up-and-out, up-and-in option, double barrier option, partial barrier option, window barrier option,
+        soft barrier option, discrete barrier option.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2070,10 +2116,21 @@ class PricingOptions:
             barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
             Defaults to 0.9 which equals 90% of the current stock price. A down barrier needs a value below 1
             and an up barrier a value above 1; otherwise the barrier is already breached.
-            barrier_direction (str, optional): Either "down" or "up". Defaults to "down".
+            barrier_direction (str, optional): "down", "up" or "double" (barrier_percentage is then the lower and
+            upper_barrier_percentage the upper barrier). Defaults to "down".
             knock_type (str, optional): Either "in" or "out". Defaults to "out".
             rebate (float, optional): The fixed cash amount paid out if the option knocks out (or fails to knock
-            in). Defaults to 0.0.
+            in), for a single barrier watched over the whole life only. Defaults to 0.0.
+            upper_barrier_percentage (float, optional): The upper barrier of barrier_direction="double" as a
+            percentage of the current stock price. Defaults to 1.1, 110% of the current stock price.
+            barrier_window (str, optional): When the barrier is watched: "full" (the whole life), "start" (the first
+            window_share of the life) or "end" (the last window_share of the life). Defaults to "full".
+            window_share (float, optional): The share of the life a "start" or "end" window covers, above 0 and at
+            most 1. Defaults to 0.5.
+            soft_barrier_percentage (float | None, optional): The other edge of a soft barrier band (the first is
+            barrier_percentage), on the same side of the stock price. Defaults to None, a hard barrier.
+            monitoring (str, optional): How often the barrier is checked: "continuous", "daily" (252 times a year),
+            "weekly" or "monthly". Defaults to "continuous".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -2104,9 +2161,10 @@ class PricingOptions:
 
         Raises:
             ValueError: If barrier_percentage puts the barrier at or beyond the current stock price for the
-                given barrier_direction (at or below 1 for "up", at or above 1 for "down"), since such a
-                barrier is breached at the start and every price would be the rebate (knock-out) or the
-                vanilla price (knock-in).
+                given barrier_direction (at or below 1 for "up", at or above 1 for "down", or outside the lower and
+                upper barrier for "double"), since such a barrier is breached at the start and every price would
+                be the rebate (knock-out) or the vanilla price (knock-in); or when a rebate is combined with a
+                double, partial-time or soft barrier, or two of those are combined.
 
         As an example:
 
@@ -2146,6 +2204,55 @@ class PricingOptions:
         |            710 |      11.6473 |      21.6308 |      28.5162 |
         |            720 |       9.4508 |      19.0403 |      25.9385 |
         """
+        if barrier_direction not in ("down", "up", "double"):
+            raise ValueError(
+                f"barrier_direction must be 'down', 'up' or 'double', received {barrier_direction!r}."
+            )
+        if barrier_window not in ("full", "start", "end"):
+            raise ValueError(
+                f"barrier_window must be 'full', 'start' or 'end', received {barrier_window!r}."
+            )
+        if (
+            monitoring != "continuous"
+            and monitoring not in path_dependent_model.MONITORING_INTERVALS
+        ):
+            raise ValueError(
+                f"monitoring must be 'continuous', 'daily', 'weekly' or 'monthly', received {monitoring!r}."
+            )
+        variants = [
+            name
+            for name, chosen in (
+                ("a double barrier", barrier_direction == "double"),
+                ("a partial-time barrier", barrier_window != "full"),
+                ("a soft barrier", soft_barrier_percentage is not None),
+            )
+            if chosen
+        ]
+        if len(variants) > 1:
+            raise ValueError(
+                f"Choose one of {' and '.join(variants)}; they cannot be combined."
+            )
+        if variants and rebate:
+            raise ValueError(
+                f"A rebate is only available for a single hard barrier, not for {variants[0]}."
+            )
+        if (
+            barrier_direction == "double"
+            and not barrier_percentage < 1 < upper_barrier_percentage
+        ):
+            raise ValueError(
+                f"A double barrier needs barrier_percentage below 1 and upper_barrier_percentage above 1 "
+                f"(received {barrier_percentage} and {upper_barrier_percentage})."
+            )
+        if (
+            soft_barrier_percentage is not None
+            and (soft_barrier_percentage - 1) * (barrier_percentage - 1) <= 0
+        ):
+            raise ValueError(
+                f"Both edges of a soft barrier must lie on the same side of the current stock price "
+                f"(received {barrier_percentage} and {soft_barrier_percentage})."
+            )
+
         # The barrier is set relative to the spot, so a barrier on the wrong side of it is breached
         # before the option starts. The prices would then be a flat rebate or the vanilla price,
         # which hides a mistaken barrier_percentage or barrier_direction instead of reporting it.
@@ -2191,17 +2298,72 @@ class PricingOptions:
                 if dividend_yield is not None
                 else self._dividend_yield_on(ticker, start_date)
             )
-            barrier = stock_price.loc[ticker] * barrier_percentage
+            ticker_price = float(stock_price.loc[ticker])
+            ticker_volatility = float(volatility.loc[ticker])
+            interval = path_dependent_model.MONITORING_INTERVALS.get(monitoring, 0.0)
+            # A discretely watched barrier prices as a continuous one moved away from the stock price.
+            barriers = [
+                path_dependent_model.get_discrete_monitoring_barrier(
+                    ticker_price * percentage, ticker_price, ticker_volatility, interval
+                )
+                for percentage in (
+                    barrier_percentage,
+                    upper_barrier_percentage,
+                    (
+                        soft_barrier_percentage
+                        if soft_barrier_percentage is not None
+                        else barrier_percentage
+                    ),
+                )
+            ]
+            inputs = {
+                "stock_price": ticker_price,
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": ticker_volatility,
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+                "knock_type": knock_type,
+            }
 
             for strike_price in strike_prices:
                 barrier_option[ticker][strike_price] = {}
 
                 for time_to_expiration in time_to_expiration_list:
-                    barrier_option[ticker][strike_price][time_to_expiration] = (
-                        exotics_model.get_barrier_option(
+                    arguments = {
+                        **inputs,
+                        "strike_price": float(strike_price),
+                        "time_to_expiration": time_to_expiration,
+                    }
+                    if barrier_direction == "double":
+                        value = path_dependent_model.get_double_barrier_option(
+                            **arguments,
+                            lower_barrier=barriers[0],
+                            upper_barrier=barriers[1],
+                        )
+                    elif barrier_window != "full":
+                        value = path_dependent_model.get_partial_time_barrier_option(
+                            **arguments,
+                            barrier=barriers[0],
+                            barrier_direction=barrier_direction,
+                            barrier_window=barrier_window,
+                            window_share=window_share,
+                        )
+                    elif soft_barrier_percentage is not None:
+                        value = path_dependent_model.get_soft_barrier_option(
+                            **arguments,
+                            first_barrier=barriers[0],
+                            second_barrier=barriers[2],
+                            barrier_direction=barrier_direction,
+                        )
+                    else:
+                        value = exotics_model.get_barrier_option(
                             stock_price=stock_price.loc[ticker],
                             strike_price=strike_price,
-                            barrier=barrier,
+                            barrier=(
+                                barriers[0]
+                                if interval
+                                else stock_price.loc[ticker] * barrier_percentage
+                            ),
                             risk_free_rate=risk_free_rate,
                             volatility=volatility.loc[ticker],
                             time_to_expiration=time_to_expiration,
@@ -2211,7 +2373,7 @@ class PricingOptions:
                             knock_type=knock_type,
                             rebate=rebate,
                         )
-                    )
+                    barrier_option[ticker][strike_price][time_to_expiration] = value
 
         barrier_option_df = helpers.create_greek_dataframe(
             greek_dictionary=barrier_option,
@@ -2246,45 +2408,98 @@ class PricingOptions:
         self,
         start_date: str | None = None,
         put_option: bool = False,
+        method: Literal[
+            "geometric", "turnbull_wakeman", "curran", "monte_carlo"
+        ] = "geometric",
+        fixings: int | None = None,
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
+        simulations: int = 10_000,
+        time_steps: int = 100,
+        seed: int | None = None,
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a geometric-average Asian option using the
-        Kemna & Vorst (1990) formula.
+        Calculate the price of an average price Asian option, of which the payoff depends on the average stock
+        price over the option's life: the geometric average in closed form (Kemna & Vorst, 1990) or the
+        arithmetic average, the kind that is traded, with the approximations of Turnbull and Wakeman (1991) or
+        Curran (1994), or a Monte Carlo simulation with the geometric option as control variate.
 
-        An Asian option's payoff depends on the average price of the underlying stock
-        over the option's life, rather than the price at a single point in time, which
-        typically makes it cheaper than the equivalent vanilla option (the averaging
-        reduces variance). This prices the continuously sampled geometric-average Asian
-        option only; the arithmetic-average version has no closed form and is not
-        offered. The geometric-average version has a closed-form solution based on an
-        adjusted volatility and cost of carry.
+        An Asian option's payoff, max(A - K, 0) for a call and max(K - A, 0) for a put, depends on the average
+        A of the stock price rather than its price at expiration, which typically makes it cheaper than the
+        equivalent vanilla option (the averaging reduces variance). The average is taken continuously, or over
+        a number of equally spaced fixings with ``fixings``, the first a 1/n-th of the life from now and the
+        last at expiration. The methods are:
+
+        - Geometric (method="geometric"): the geometric average of a lognormal price is lognormal, so this is
+          a Black-Scholes option on it. It never exceeds the arithmetic average, so it is a lower bound for
+          the arithmetic call and an upper bound for the arithmetic put.
+        - Turnbull-Wakeman (method="turnbull_wakeman"): takes the arithmetic average to be lognormal with its
+          exact first two moments. Fast and close at low volatilities and short maturities, but it loses
+          accuracy as both grow (off by up to 0.8 on a stock price of 100 at 60% volatility over two years).
+          For a continuous average that starts today, Levy (1992) matches the same two moments with a
+          lognormal and gives the same price; the two differ only for an average that has already started.
+        - Curran (method="curran"): conditions on the geometric average, which is exact for the paths on which
+          the geometric average ends above the strike (there A ≥ G ≥ K) and approximates the others. The most
+          accurate of the approximations: within 0.05 of a simulation with 200,000 paths on a stock price of 100
+          up to 60% volatility and two years, and within 0.002 at 15% volatility.
+        - Monte Carlo (method="monte_carlo"): simulates the arithmetic average along each path and corrects the
+          simulation error with the geometric option, whose price is known, which makes it about 50 to 100
+          times more precise than a plain simulation. A continuous average is approximated by ``time_steps``
+          fixings.
 
         The formula is as follows:
 
-        - σ_A = σ / √3
-        - b_A = 0.5 * (b - σ² / 6), where b = r - q is the cost of carry
-        - d1 = (ln(S / K) + (b_A + σ_A² / 2) * t) / (σ_A * √t)
-        - d2 = d1 - σ_A * √t
-        - Call Price = S * e^((b_A - r) * t) * N(d1) - K * e^(-r * t) * N(d2)
-        - Put Price = K * e^(-r * t) * N(-d2) - S * e^((b_A - r) * t) * N(-d1)
+        - Geometric: E[ln G] = ln S + (b - σ²/2) * T / 2 and Var[ln G] = σ² * T / 3 for a continuous average,
+          E[ln G] = ln S + (b - σ²/2) * T * (n + 1) / (2n) and Var[ln G] = σ² * T * (n + 1)(2n + 1) / (6n²) for
+          n fixings, Call = e^(-rT) * (e^(E[ln G] + Var[ln G] / 2) * N(d1) - K * N(d2)),
+          d1 = (E[ln G] - ln K + Var[ln G]) / √Var[ln G], d2 = d1 - √Var[ln G]
+        - Turnbull-Wakeman: M1 = E[A] / S, M2 = E[A²] / S², F_A = S * M1, v = ln(M2 / M1²),
+          Call = e^(-rT) * (F_A * N(d1) - K * N(d2)), d1 = (ln(F_A / K) + v / 2) / √v, d2 = d1 - √v,
+          with M1 = (e^(bT) - 1) / (bT) and M2 = 2 / T² * ∫_0^T e^(bt) * (e^((b + σ²)t) - 1) / (b + σ²) dt for a
+          continuous average and M1 = Σ e^(b t_i) / n, M2 = Σ_i Σ_j e^(b(t_i + t_j) + σ² min(t_i, t_j)) / n²
+          for fixings t_i = iT / n
+        - Curran: μ_i = ln S + (b - σ²/2) * t_i, σ_i² = σ² * t_i, μ_G = Σ μ_i / n,
+          σ_G² = σ² * Σ_i Σ_j min(t_i, t_j) / n², σ_iG = σ² * Σ_j min(t_i, t_j) / n,
+          K̂ = 2K - Σ e^(μ_i + σ_iG / σ_G² * (ln K - μ_G) + (σ_i² - σ_iG² / σ_G²) / 2) / n,
+          Call = e^(-rT) * [Σ e^(μ_i + σ_i² / 2) * N((μ_G - ln K̂) / σ_G + σ_iG / σ_G) / n - K * N((μ_G - ln K̂) / σ_G)],
+          with integrals over [0, T] in place of the sums for a continuous average
+        - Monte Carlo: S(t_i) = S(t_i-1) * e^((b - σ²/2) * Δt + σ * √Δt * Z) at n fixings (time_steps for a
+          continuous average), Y = e^(-rT) * max(A - K, 0) and X = e^(-rT) * max(G - K, 0) per path,
+          Call = MEAN(Y) - β * (MEAN(X) - Geometric Call), β = Cov(Y, X) / Var(X) (ddof=1)
+        - Put = Call - e^(-rT) * (E[A] - K) by put-call parity of the average (the geometric put and the
+          Monte Carlo put are priced directly)
 
-        Where S is the stock price (the traded close on the pricing date), K is the strike
-        price, r is the continuously compounded risk-free rate, q is the continuous dividend
-        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
-        of the daily returns over the trailing 252 trading days times √252), t is the time to
-        expiration in years (days / 365) and N is the cumulative standard normal distribution.
+        Where S is the stock price (the traded close on the pricing date), K is the strike price, r is the
+        continuously compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)),
+        b = r - q is the cost of carry, σ is the annualized volatility (the standard deviation of the daily
+        returns over the trailing 252 trading days times √252), T is the time to expiration in years
+        (days / 365), n is the number of fixings, G and A are the geometric and arithmetic average and N is
+        the cumulative standard normal distribution.
 
-        Also known as: geometric Asian option, average rate option, average price
-        option.
+        The Monte Carlo prices are reproducible with a ``seed``, and all strike prices of an expiry are priced
+        on the same paths. Its standard error is around 0.1% of the price with the defaults.
+
+        See: Kemna, A. G. Z., & Vorst, A. C. F. (1990), "A Pricing Method for Options Based on Average Asset
+        Values", Journal of Banking & Finance, 14(1), 113-129; Turnbull, S. M., & Wakeman, L. M. (1991), "A
+        Quick Algorithm for Pricing European Average Options", Journal of Financial and Quantitative Analysis,
+        26(3), 377-389; Levy, E. (1992), "Pricing European Average Rate Currency Options", Journal of
+        International Money and Finance, 11(5), 474-491; Curran, M. (1994), "Valuing Asian and Portfolio Options
+        by Conditioning on the Geometric Mean Price", Management Science, 40(12), 1705-1711; Haug, E. G. (2007),
+        The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.20. Referenced against QuantLib's
+        AnalyticContinuousGeometricAveragePriceAsianEngine, AnalyticDiscreteGeometricAveragePriceAsianEngine,
+        TurnbullWakemanAsianEngine, ContinuousArithmeticAsianLevyEngine and MCDiscreteArithmeticAPEngine
+        (https://www.quantlib.org) and FinancePy's EquityAsianOption (value_curran, value_turnbull_wakeman and
+        value_geometric, https://github.com/domokane/FinancePy).
+
+        Also known as: Asian option, average rate option, average price option, arithmetic Asian option,
+        geometric Asian option.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2293,6 +2508,10 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
+            method (str, optional): The pricing method: "geometric" (the geometric average), or for the arithmetic
+            average "turnbull_wakeman", "curran" or "monte_carlo". Defaults to "geometric".
+            fixings (int | None, optional): The number of equally spaced fixings of the average, the last on the
+            expiration date. Defaults to None, which averages continuously.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -2307,6 +2526,11 @@ class PricingOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            simulations (int, optional): The number of simulated paths of method="monte_carlo". Defaults to 10,000.
+            time_steps (int, optional): The fixings that approximate a continuous average with method="monte_carlo"
+            (fixings, when given, take their place). Defaults to 100.
+            seed (int | None, optional): The seed of the random number generator of method="monte_carlo", which makes
+            the results reproducible. Defaults to None, which draws new paths on every call.
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -2318,8 +2542,11 @@ class PricingOptions:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Geometric-average Asian option values containing the tickers and strike prices as the
-            index and the time to expiration as the columns.
+            pd.DataFrame: Asian option values containing the tickers and strike prices as the index and the time to
+            expiration as the columns.
+
+        Raises:
+            ValueError: If method is not one of the methods or fixings is not a whole number of at least 1.
 
         As an example:
 
@@ -2334,7 +2561,7 @@ class PricingOptions:
         )
 
         asian_option = toolkit.options.get_asian_option(
-            strike_price_range=0.1, strike_step_size=2, expiration_time_range=91
+            method="curran", fixings=21, strike_price_range=0.1, strike_step_size=2, expiration_time_range=91
         )
 
         asian_option.loc["XOM", ["2026-01-30", "2026-03-01", "2026-03-31"]]
@@ -2344,19 +2571,33 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            108 |      12.2984 |      12.3072 |      12.3784 |
-        |            110 |      10.3173 |      10.3976 |      10.549  |
-        |            112 |       8.365  |       8.5609 |       8.8115 |
-        |            114 |       6.4838 |       6.8383 |       7.197  |
-        |            116 |       4.7442 |       5.2755 |       5.7351 |
-        |            118 |       3.2336 |       3.9143 |       4.4501 |
-        |            120 |       2.0276 |       2.7831 |       3.3567 |
-        |            122 |       1.1573 |       1.8906 |       2.458  |
-        |            124 |       0.5964 |       1.2242 |       1.7457 |
-        |            126 |       0.2759 |       0.7544 |       1.2015 |
-        |            128 |       0.1143 |       0.442  |       0.8012 |
-        |            130 |       0.0423 |       0.2461 |       0.5176 |
+        |            108 |      12.3465 |      12.4086 |      12.5336 |
+        |            110 |      10.3676 |      10.5055 |      10.7123 |
+        |            112 |       8.4205 |       8.678  |       8.9842 |
+        |            114 |       6.5487 |       6.9662 |       7.3786 |
+        |            116 |       4.8214 |       5.4133 |       5.9236 |
+        |            118 |       3.3215 |       4.0579 |       4.6412 |
+        |            120 |       2.1184 |       2.9257 |       3.5445 |
+        |            122 |       1.2399 |       2.0242 |       2.6359 |
+        |            124 |       0.6617 |       1.3417 |       1.9077 |
+        |            126 |       0.3207 |       0.8511 |       1.3431 |
+        |            128 |       0.1408 |       0.5164 |       0.9198 |
+        |            130 |       0.056  |       0.2997 |       0.6128 |
+        |            132 |       0.0202 |       0.1665 |       0.3973 |
+        |            134 |       0.0066 |       0.0885 |       0.2507 |
         """
+        methods = ("geometric", "turnbull_wakeman", "curran", "monte_carlo")
+        if method not in methods:
+            raise ValueError(
+                f"method must be one of {', '.join(methods)}, received {method!r}."
+            )
+        if fixings is not None and (
+            isinstance(fixings, bool) or not isinstance(fixings, int) or fixings < 1
+        ):
+            raise ValueError(
+                f"fixings must be a whole number of at least 1 or None, received {fixings!r}."
+            )
+
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
@@ -2382,28 +2623,56 @@ class PricingOptions:
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            asian_option[ticker] = {}
+            asian_option[ticker] = {strike_price: {} for strike_price in strike_prices}
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
                 else self._dividend_yield_on(ticker, start_date)
             )
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+            }
 
-            for strike_price in strike_prices:
-                asian_option[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    asian_option[ticker][strike_price][time_to_expiration] = (
-                        exotics_model.get_asian_option(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                        )
+            for time_to_expiration in time_to_expiration_list:
+                if method == "monte_carlo":
+                    # Every strike is priced on the same simulated paths of an expiry.
+                    prices, _ = path_dependent_model.get_monte_carlo_asian_options(
+                        **inputs,
+                        strike_prices=np.asarray(strike_prices, dtype=float),
+                        time_to_expiration=time_to_expiration,
+                        fixings=fixings if fixings is not None else time_steps,
+                        simulations=simulations,
+                        seed=seed,
                     )
+                    for strike_price, price in zip(strike_prices, prices, strict=True):
+                        asian_option[ticker][strike_price][time_to_expiration] = float(
+                            price
+                        )
+                    continue
+
+                for strike_price in strike_prices:
+                    if method == "geometric" and fixings is None:
+                        value = exotics_model.get_asian_option(
+                            **inputs,
+                            strike_price=float(strike_price),
+                            time_to_expiration=time_to_expiration,
+                        )
+                    else:
+                        value = {
+                            "geometric": path_dependent_model.get_geometric_asian_option,
+                            "turnbull_wakeman": path_dependent_model.get_turnbull_wakeman,
+                            "curran": path_dependent_model.get_curran,
+                        }[method](
+                            **inputs,
+                            strike_price=float(strike_price),
+                            time_to_expiration=time_to_expiration,
+                            fixings=fixings,
+                        )
+                    asian_option[ticker][strike_price][time_to_expiration] = value
 
         asian_option_df = helpers.create_greek_dataframe(
             greek_dictionary=asian_option,
@@ -2432,6 +2701,527 @@ class PricingOptions:
             )
 
         return asian_option_df
+
+    @handle_errors
+    def get_lookback_option(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_type: str = "fixed",
+        lookback_period: float = 1.0,
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the closed-form price of a lookback option, of which the payoff depends on the highest or lowest
+        stock price over the option's life, with the formulas of Conze and Viswanathan (1991) for a fixed strike,
+        Goldman, Sosin and Gatto (1979) for a floating strike and Heynen and Kat (1994) for a partial-time
+        lookback.
+
+        - Fixed strike (strike_type="fixed"): the call pays max(S_max - K, 0) and the put max(K - S_min, 0), the
+          best price reached against the strike.
+        - Floating strike (strike_type="floating"): the call pays S(T) - S_min, buying at the lowest price, and the
+          put S_max - S(T), selling at the highest. It has no strike, so the result has a row per ticker.
+        - Partial-time (lookback_period below 1): the extreme is only watched during part of the life, the first
+          lookback_period of it for a floating strike and the last lookback_period for a fixed strike, which makes
+          the option cheaper.
+
+        The options start on the pricing date, so the highest and lowest price so far are the stock price.
+
+        The formula is as follows:
+
+        - x = (ln(S / E) + (b + σ² / 2) * T) / (σ√T), with E the extreme so far: E = max(S, K) for a fixed call,
+          min(S, K) for a fixed put and S for a floating strike
+        - Fixed Call = e^(-rT) * (E - K) + S * e^((b - r)T) * N(x) - E * e^(-rT) * N(x - σ√T)
+          + S * e^(-rT) * σ² / (2b) * [-(S / E)^(-2b / σ²) * N(x - 2b√T / σ) + e^(bT) * N(x)]
+        - Fixed Put = e^(-rT) * (K - E) - S * e^((b - r)T) * N(-x) + E * e^(-rT) * N(-x + σ√T)
+          + S * e^(-rT) * σ² / (2b) * [(S / E)^(-2b / σ²) * N(-x + 2b√T / σ) - e^(bT) * N(-x)]
+        - Floating Call = S * e^((b - r)T) * N(x) - E * e^(-rT) * N(x - σ√T)
+          + S * e^(-rT) * σ² / (2b) * [(S / E)^(-2b / σ²) * N(-x + 2b√T / σ) - e^(bT) * N(-x)]
+        - Floating Put = E * e^(-rT) * N(-x + σ√T) - S * e^((b - r)T) * N(-x)
+          + S * e^(-rT) * σ² / (2b) * [-(S / E)^(-2b / σ²) * N(x - 2b√T / σ) + e^(bT) * N(x)]
+        - Partial Fixed, watched from t1 = (1 - Lookback Period) * T: e^(-r t1) * E[Fixed(S(t1), T - t1)], in closed
+          form with the bivariate normal distribution
+        - Partial Floating, watched up to t1 = Lookback Period * T: S * e^((b - r) t1) * E'[c(e^(-X), T - t1)] for a call,
+          with c the Black-Scholes call on a unit stock price and X = ln(S(t1) / S_min(t1)), which is distributed as the
+          running maximum of a Brownian motion with drift b + σ² / 2 (time reversal), integrated over its density
+
+        Where S is the stock price (the traded close on the pricing date), K is the strike price, r is the
+        continuously compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)),
+        b = r - q is the cost of carry, σ is the annualized volatility (the standard deviation of the daily returns
+        over the trailing 252 trading days times √252), T is the time to expiration in years (days / 365) and N is
+        the cumulative standard normal distribution. Where b = 0 the formulas are taken at b = ±0.00001 and
+        averaged, which equals their limit to within O(b²).
+
+        See: Goldman, M. B., Sosin, H. B., & Gatto, M. A. (1979), "Path Dependent Options: Buy at the Low, Sell at
+        the High", The Journal of Finance, 34(5), 1111-1127; Conze, A., & Viswanathan (1991), "Path Dependent
+        Options: The Case of Lookback Options", The Journal of Finance, 46(5), 1893-1907; Heynen, R. C., & Kat, H.
+        M. (1994), "Selective Memory", Risk, 7(11), 73-76; Haug, E. G. (2007), The Complete Guide to Option Pricing
+        Formulas, 2nd ed., section 4.15. Referenced against QuantLib's AnalyticContinuousFloatingLookbackEngine,
+        AnalyticContinuousFixedLookbackEngine, AnalyticContinuousPartialFloatingLookbackEngine and
+        AnalyticContinuousPartialFixedLookbackEngine (https://www.quantlib.org).
+
+        Also known as: lookback option, fixed strike lookback, floating strike lookback, partial lookback, hindsight
+        option, no-regret option.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_type (str, optional): "fixed" or "floating". Defaults to "fixed".
+            lookback_period (float, optional): The share of the life over which the extreme is watched, above 0 and
+            at most 1: the start of the life for a floating strike and the end for a fixed strike. Defaults to 1,
+            the whole life.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
+            25% and thus results in strike prices from 75 to 125 if the current stock price is 100. Not used for a
+            floating strike.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100. Not used for a
+            floating strike.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker (and strike price). Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Lookback option values containing the tickers and strike prices (only the tickers for a
+            floating strike) as the index and the time to expiration as the columns.
+
+        Raises:
+            ValueError: If strike_type is not "fixed" or "floating" or lookback_period is not above 0 and at most 1.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        lookback_option = toolkit.options.get_lookback_option(
+            strike_price_range=0.1, strike_step_size=5, expiration_time_range=91
+        )
+
+        lookback_option.loc["NVDA", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            165 |      43.8427 |      53.7637 |      61.6312 |
+        |            170 |      38.8596 |      48.7974 |      56.6817 |
+        |            175 |      33.8765 |      43.8312 |      51.7322 |
+        |            180 |      28.8934 |      38.8649 |      46.7827 |
+        |            185 |      23.9103 |      33.8986 |      41.8332 |
+        |            190 |      19.1196 |      29.0713 |      36.9989 |
+        |            195 |      15.0553 |      24.7714 |      32.6025 |
+        |            200 |      11.6939 |      20.9915 |      28.6406 |
+        |            205 |       8.9622 |      17.694  |      25.0864 |
+        |            210 |       6.7797 |      14.8381 |      21.9116 |
+        TABLE_LOOKBACK
+        """
+        if strike_type not in ("fixed", "floating"):
+            raise ValueError(
+                f"strike_type must be 'fixed' or 'floating', received {strike_type!r}."
+            )
+        if not 0 < lookback_period <= 1:
+            raise ValueError(
+                f"lookback_period must be above 0 and at most 1, received {lookback_period!r}."
+            )
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=self._tickers,
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+
+        lookback_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+                "strike_type": strike_type,
+                "lookback_period": float(lookback_period),
+            }
+
+            # A floating strike has no strike price, so it is priced once per expiration.
+            lookback_option[ticker] = {
+                strike_price: {
+                    time_to_expiration: path_dependent_model.get_lookback_option(
+                        **inputs,
+                        strike_price=float(strike_price),
+                        time_to_expiration=time_to_expiration,
+                    )
+                    for time_to_expiration in time_to_expiration_list
+                }
+                for strike_price in (
+                    strike_prices if strike_type == "fixed" else [inputs["stock_price"]]
+                )
+            }
+
+        if strike_type == "fixed":
+            lookback_option_df = helpers.create_greek_dataframe(
+                greek_dictionary=lookback_option,
+                start_date=start_date,
+            )
+        else:
+            lookback_option_df = helpers.create_expiration_dataframe(
+                value_dictionary={
+                    ticker: next(iter(values.values()))
+                    for ticker, values in lookback_option.items()
+                },
+                start_date=start_date,
+            )
+
+        lookback_option_df = lookback_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            lookback_option_df = calculate_standardization(
+                dataset=lookback_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return lookback_option_df
+
+    @handle_errors
+    def get_touch_option(
+        self,
+        start_date: str | None = None,
+        touch_type: str = "one-touch",
+        barrier_percentage: float = 0.9,
+        upper_barrier_percentage: float = 1.1,
+        payment: str = "expiration",
+        cash_payout: float = 1.0,
+        monitoring: str = "continuous",
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the closed-form price of a one-touch, no-touch, double one-touch or double no-touch option with
+        the formulas of Reiner and Rubinstein (1991) for a single barrier and Hui (1996) for two barriers.
+
+        A touch option is a binary option on whether the stock price touches a barrier before expiration:
+
+        - One-touch (touch_type="one-touch"): pays the cash payout once the barrier at barrier_percentage of the
+          stock price is touched, at that moment (payment="hit") or at expiration (payment="expiration").
+        - No-touch (touch_type="no-touch"): pays the cash payout at expiration when the barrier is never touched.
+        - Double one-touch (touch_type="double-one-touch"): pays at expiration when either the lower barrier
+          (barrier_percentage) or the upper barrier (upper_barrier_percentage) is touched.
+        - Double no-touch (touch_type="double-no-touch"): pays at expiration when the stock price stays between
+          the two barriers.
+
+        A barrier below the stock price (barrier_percentage below 1) is touched when the price falls to it, one
+        above (barrier_percentage above 1) when the price rises to it. The price of a one-touch paid at expiration
+        is the discounted risk-neutral probability of touching the barrier, so with a cash payout of 1 and the
+        discounting removed it reads as that probability.
+
+        The formula is as follows:
+
+        - P(touch) = N(η(h - νT) / (σ√T)) + (H / S)^(2μ) * N(η(h + νT) / (σ√T))
+        - One-touch, paid at expiration = Cash * e^(-rT) * P(touch), with Cash defaulting to 1
+        - One-touch, paid at the hit = Cash * [(H / S)^(μ + λ) * N(ηz) + (H / S)^(μ - λ) * N(ηz - 2ηλσ√T)],
+          z = h / (σ√T) + λσ√T
+        - No-touch = Cash * e^(-rT) * (1 - P(touch))
+        - P(stay) = Σ_n [e^(2nZν / σ²) * (N((u - 2nZ - νT) / (σ√T)) - N((l - 2nZ - νT) / (σ√T)))
+          - e^(2ν(l - nZ) / σ²) * (N((u - 2l + 2nZ - νT) / (σ√T)) - N((-l + 2nZ - νT) / (σ√T)))]
+        - Double no-touch = Cash * e^(-rT) * P(stay)
+        - Double one-touch = Cash * e^(-rT) * (1 - P(stay))
+        - Discrete monitoring: H → H * e^(0.5826 * σ * √Δt) for a barrier above and H * e^(-0.5826 * σ * √Δt) for
+          one below the stock price, with Δt = 1/252, 1/52 or 1/12 (Broadie, Glasserman & Kou, 1997)
+
+        Where S is the stock price (the traded close on the pricing date), H is the barrier, h = ln(H / S),
+        l = ln(L / S) and u = ln(U / S) with L and U the lower and upper barrier, Z = u - l, r is the continuously
+        compounded risk-free rate, q is the continuous dividend yield (ln(1 + dividend yield)), ν = r - q - σ² / 2,
+        μ = ν / σ², λ = √(μ² + 2r / σ²), η = 1 for a barrier below and -1 for one above the stock price, σ is the
+        annualized volatility (the standard deviation of the daily returns over the trailing 252 trading days times
+        √252), T is the time to expiration in years (days / 365) and N is the cumulative standard normal
+        distribution. P(stay) is the probability of staying between the barriers from the method of images,
+        summed until its terms are below machine precision; Hui (1996) writes the same probability as a sine
+        series.
+
+        See: Reiner, E., & Rubinstein, M. (1991), "Unscrambling the Binary Code", Risk, 4(9), 75-83; Hui, C. H.
+        (1996), "One-Touch Double Barrier Binary Option Values", Applied Financial Economics, 6(4), 343-346;
+        Broadie, M., Glasserman, P., & Kou, S. (1997), "A Continuity Correction for Discrete Barrier Options",
+        Mathematical Finance, 7(4), 325-349; Haug, E. G. (2007), The Complete Guide to Option Pricing Formulas, 2nd
+        ed., section 4.19. Referenced against QuantLib's AnalyticDigitalAmericanEngine, AnalyticBinaryBarrierEngine
+        and AnalyticDoubleBarrierBinaryEngine (https://www.quantlib.org).
+
+        Also known as: one-touch option, no-touch option, double one-touch, double no-touch, American digital
+        option, barrier binary option, touch probability.
+
+        Args:
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
+            touch_type (str, optional): "one-touch", "no-touch", "double-one-touch" or "double-no-touch". Defaults to
+            "one-touch".
+            barrier_percentage (float, optional): The barrier (the lower barrier of a double touch option) as a
+            percentage of the current stock price. Defaults to 0.9, 90% of the current stock price.
+            upper_barrier_percentage (float, optional): The upper barrier of a double touch option as a percentage of
+            the current stock price. Defaults to 1.1, 110% of the current stock price.
+            payment (str, optional): When a one-touch option pays: "expiration" or "hit". The other touch options pay
+            at expiration. Defaults to "expiration".
+            cash_payout (float, optional): The cash amount paid. Defaults to 1.0.
+            monitoring (str, optional): How often the barrier is checked: "continuous", "daily" (252 times a year),
+            "weekly" or "monthly". Defaults to "continuous".
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
+            expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
+            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Touch option values containing the tickers as the index and the time to expiration as the
+            columns.
+
+        Raises:
+            ValueError: If touch_type, payment or monitoring is not one of its values, a touch option other than the
+                one-touch is asked to pay at the hit, the barrier is at the current stock price or a double touch
+                option's barriers do not lie on either side of it.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSLA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        touch_option = toolkit.options.get_touch_option(
+            touch_type="double-no-touch", barrier_percentage=0.9, upper_barrier_percentage=1.1,
+            expiration_time_range=91,
+        )
+
+        touch_option[["2026-01-07", "2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        | Ticker   |   2026-01-07 |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |:---------|-------------:|-------------:|-------------:|-------------:|
+        | TSLA     |       0.4951 |       0.0223 |       0.0004 |       0      |
+        | KO       |       0.9991 |       0.9028 |       0.6768 |       0.4958 |
+        TABLE_TOUCH
+        """
+        touch_types = ("one-touch", "no-touch", "double-one-touch", "double-no-touch")
+        if touch_type not in touch_types:
+            raise ValueError(
+                f"touch_type must be one of {', '.join(touch_types)}, received {touch_type!r}."
+            )
+        if payment not in ("expiration", "hit"):
+            raise ValueError(
+                f"payment must be 'expiration' or 'hit', received {payment!r}."
+            )
+        if payment == "hit" and touch_type != "one-touch":
+            raise ValueError(
+                f"Only a one-touch option pays at the hit; a {touch_type} option pays at expiration."
+            )
+        if (
+            monitoring != "continuous"
+            and monitoring not in path_dependent_model.MONITORING_INTERVALS
+        ):
+            raise ValueError(
+                f"monitoring must be 'continuous', 'daily', 'weekly' or 'monthly', received {monitoring!r}."
+            )
+        double = touch_type.startswith("double")
+        if double and not barrier_percentage < 1 < upper_barrier_percentage:
+            raise ValueError(
+                f"A double touch option needs barrier_percentage below 1 and upper_barrier_percentage above 1 "
+                f"(received {barrier_percentage} and {upper_barrier_percentage})."
+            )
+        if not double and barrier_percentage == 1:
+            raise ValueError(
+                "The barrier is at the current stock price, so it is touched already; use a barrier_percentage "
+                "below 1 for a barrier below the stock price or above 1 for one above it."
+            )
+
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+        volatility = self._volatility.loc[start_date]
+
+        risk_free_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        time_to_expiration_list = [
+            time / 365 for time in range(0, expiration_time_range)
+        ]
+        interval = path_dependent_model.MONITORING_INTERVALS.get(monitoring, 0.0)
+
+        touch_option: dict[str, dict[float, float]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker in self._tickers:
+            # A ticker without a price on the date is left out, as on the strike price grids.
+            if pd.isna(stock_price.get(ticker)):
+                logger.warning(
+                    "%s has no price on %s, so it is left out of the option values.",
+                    ticker,
+                    stock_price.name,
+                )
+                continue
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+            ticker_price = float(stock_price.loc[ticker])
+            ticker_volatility = float(volatility.loc[ticker])
+            lower_barrier, upper_barrier = (
+                path_dependent_model.get_discrete_monitoring_barrier(
+                    ticker_price * percentage, ticker_price, ticker_volatility, interval
+                )
+                for percentage in (barrier_percentage, upper_barrier_percentage)
+            )
+            inputs = {
+                "stock_price": ticker_price,
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": ticker_volatility,
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "touch_type": touch_type,
+                "cash_payout": float(cash_payout),
+            }
+
+            touch_option[ticker] = {
+                time_to_expiration: (
+                    path_dependent_model.get_double_touch_option(
+                        **inputs,
+                        lower_barrier=lower_barrier,
+                        upper_barrier=upper_barrier,
+                        time_to_expiration=time_to_expiration,
+                    )
+                    if double
+                    else path_dependent_model.get_touch_option(
+                        **inputs,
+                        barrier=lower_barrier,
+                        time_to_expiration=time_to_expiration,
+                        payment=payment,
+                    )
+                )
+                for time_to_expiration in time_to_expiration_list
+            }
+
+        touch_option_df = helpers.create_expiration_dataframe(
+            value_dictionary=touch_option,
+            start_date=start_date,
+        )
+
+        touch_option_df = touch_option_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            touch_option_df = calculate_standardization(
+                dataset=touch_option_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=volatility,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return touch_option_df
 
     @handle_errors
     def get_strategy_payoff(

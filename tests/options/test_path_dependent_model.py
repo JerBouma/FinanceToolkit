@@ -1,0 +1,424 @@
+"""Path-Dependent Option Model Tests"""
+
+import numpy as np
+import pytest
+
+from financetoolkit.options.helpers import bivariate_normal_cdf
+from financetoolkit.options.pricing import (
+    black_scholes_model,
+    exotics_model,
+    path_dependent_model,
+)
+
+# QuantLib 1.44 reference prices for S = 100, r = 5%, q = 2%, σ = 30% and 360 days to expiration
+# (Actual/365), from the analytic engines named in each test; the windows and fixings fall on
+# whole days (180 days, every 30 days), so the dates match exactly.
+QUANTLIB = {"stock_price": 100.0, "risk_free_rate": 0.05, "volatility": 0.3}
+QUANTLIB_TIME = {"time_to_expiration": 360 / 365, "dividend_yield": 0.02}
+
+# Strike, put, fixed, floating, partial fixed watched from 180 days and partial floating watched
+# up to 180 days (AnalyticContinuous(Partial)Fixed/FloatingLookbackEngine).
+QUANTLIB_LOOKBACKS = [
+    (90, False, 36.1813132597, 22.3745890631, 30.4223590475, 19.8610501691),
+    (110, False, 18.4318129214, 22.3745890631, 16.4795900866, 19.8610501691),
+    (90, True, 11.2369532632, 23.803893213, 10.0803573043, 19.3571990548),
+    (110, True, 29.03479251, 23.803893213, 24.4657758033, 19.3571990548),
+]
+
+# Strike, put, Turnbull-Wakeman and geometric with 12 fixings every 30 days, continuous Turnbull-Wakeman (the
+# Levy engine, which gives the same price for an average that starts today) and
+# the control variate Monte Carlo price with 1,000,000 paths and its standard error
+# (TurnbullWakemanAsianEngine, AnalyticDiscreteGeometricAveragePriceAsianEngine,
+# ContinuousArithmeticAsianLevyEngine and MCDiscreteArithmeticAPEngine).
+QUANTLIB_ASIANS = [
+    (90, False, 13.6119575787, 13.0301437188, 13.2133344229, 13.539468, 0.000731),
+    (100, False, 7.8285501929, 7.3824947877, 7.3567839098, 7.791521, 0.000743),
+    (110, True, 12.0408181263, 12.4536958421, 11.7323751379, 12.054475, 0.000462),
+]
+
+
+@pytest.mark.parametrize("case", QUANTLIB_LOOKBACKS)
+def test_the_lookbacks_match_quantlib(case):
+    strike, put, fixed, floating, partial_fixed, partial_floating = case
+    inputs = {
+        **QUANTLIB,
+        **QUANTLIB_TIME,
+        "strike_price": float(strike),
+        "put_option": put,
+    }
+
+    assert path_dependent_model.get_lookback_option(**inputs) == pytest.approx(
+        fixed, abs=1e-9
+    )
+    assert path_dependent_model.get_lookback_option(
+        **inputs, strike_type="floating"
+    ) == pytest.approx(floating, abs=1e-9)
+    assert path_dependent_model.get_lookback_option(
+        **inputs, lookback_period=0.5
+    ) == pytest.approx(partial_fixed, abs=1e-9)
+    assert path_dependent_model.get_lookback_option(
+        **inputs, strike_type="floating", lookback_period=0.5
+    ) == pytest.approx(partial_floating, abs=1e-9)
+
+
+@pytest.mark.parametrize("case", QUANTLIB_ASIANS)
+def test_the_asian_options_match_quantlib(case):
+    strike, put, turnbull_wakeman, geometric, continuous, monte_carlo, error = case
+    inputs = {
+        **QUANTLIB,
+        **QUANTLIB_TIME,
+        "strike_price": float(strike),
+        "put_option": put,
+    }
+
+    assert path_dependent_model.get_turnbull_wakeman(
+        **inputs, fixings=12
+    ) == pytest.approx(turnbull_wakeman, abs=1e-9)
+    assert path_dependent_model.get_geometric_asian_option(
+        **inputs, fixings=12
+    ) == pytest.approx(geometric, abs=1e-9)
+    assert path_dependent_model.get_turnbull_wakeman(**inputs) == pytest.approx(
+        continuous, abs=1e-6
+    )
+    # Curran is an approximation: within 0.01 of the simulated price at this volatility.
+    assert path_dependent_model.get_curran(**inputs, fixings=12) == pytest.approx(
+        monte_carlo, abs=0.01
+    )
+    prices, errors = path_dependent_model.get_monte_carlo_asian_options(
+        **{key: value for key, value in inputs.items() if key != "strike_price"},
+        strike_prices=np.array([float(strike)]),
+        fixings=12,
+        simulations=200_000,
+        seed=7,
+    )
+    assert abs(prices[0] - monte_carlo) < 4 * np.hypot(errors[0], error)
+
+
+def test_the_barriers_and_touches_match_quantlib():
+    inputs = {**QUANTLIB, **QUANTLIB_TIME}
+
+    # AnalyticDoubleBarrierEngine, barriers 80 and 120.
+    for strike, put, knock_out, knock_in in (
+        (95.0, False, 0.4501941933, 14.9240575135),
+        (105.0, True, 0.6652438496, 12.0327448148),
+    ):
+        for knock_type, expected in (("out", knock_out), ("in", knock_in)):
+            assert path_dependent_model.get_double_barrier_option(
+                **inputs,
+                strike_price=strike,
+                lower_barrier=80.0,
+                upper_barrier=120.0,
+                put_option=put,
+                knock_type=knock_type,
+            ) == pytest.approx(expected, abs=1e-9)
+
+    # AnalyticPartialTimeBarrierOptionEngine (calls, start window of 180 days), whose bivariate
+    # normal distribution is an approximation accurate to about 1e-5 of the price.
+    for strike, direction, knock_type, barrier, expected in (
+        (100.0, "down", "out", 90.0, 8.7456405597),
+        (95.0, "up", "in", 110.0, 13.6455870012),
+    ):
+        assert path_dependent_model.get_partial_time_barrier_option(
+            **inputs,
+            strike_price=strike,
+            barrier=barrier,
+            barrier_direction=direction,
+            knock_type=knock_type,
+            barrier_window="start",
+            window_share=0.5,
+        ) == pytest.approx(expected, abs=1e-4)
+
+    # AnalyticSoftBarrierEngine: a down-and-out call and an up-and-in put.
+    assert path_dependent_model.get_soft_barrier_option(
+        **inputs, strike_price=100.0, first_barrier=85.0, second_barrier=95.0
+    ) == pytest.approx(8.2733695224, abs=1e-9)
+    assert path_dependent_model.get_soft_barrier_option(
+        **inputs,
+        strike_price=100.0,
+        first_barrier=105.0,
+        second_barrier=115.0,
+        put_option=True,
+        barrier_direction="up",
+        knock_type="in",
+    ) == pytest.approx(4.2117638955, abs=1e-9)
+
+    # AnalyticDigitalAmericanEngine (at the hit and at expiration) and AnalyticBinaryBarrierEngine.
+    for barrier, at_hit, at_expiration, no_touch in (
+        (85.0, 0.5912019635, 0.5723125403, 0.3795686344),
+        (120.0, 0.514602198, 0.4989315387, 0.452949636),
+    ):
+        assert path_dependent_model.get_touch_option(
+            **inputs, barrier=barrier, payment="hit"
+        ) == pytest.approx(at_hit, abs=1e-9)
+        assert path_dependent_model.get_touch_option(
+            **inputs, barrier=barrier
+        ) == pytest.approx(at_expiration, abs=1e-9)
+        assert path_dependent_model.get_touch_option(
+            **inputs, barrier=barrier, touch_type="no-touch"
+        ) == pytest.approx(no_touch, abs=1e-9)
+
+    # AnalyticDoubleBarrierBinaryEngine, barriers 85 and 115.
+    for touch_type, expected in (
+        ("double-no-touch", 0.0099711082),
+        ("double-one-touch", 0.9419100665),
+    ):
+        assert path_dependent_model.get_double_touch_option(
+            **inputs, lower_barrier=85.0, upper_barrier=115.0, touch_type=touch_type
+        ) == pytest.approx(expected, abs=1e-9)
+
+
+def test_the_double_barrier_with_the_strike_outside_the_corridor():
+    """Only the prices between the barriers pay: a call struck below the lower barrier pays from
+    the lower barrier on. Checked against a Brownian-bridge simulation (200,000 paths of 400 steps,
+    12.9001 ± 0.0225), where the formula with the strike in place of the lower barrier gives 12.79.
+    """
+    assert path_dependent_model.get_double_barrier_option(
+        stock_price=100.0,
+        strike_price=80.0,
+        lower_barrier=85.0,
+        upper_barrier=115.0,
+        risk_free_rate=0.01,
+        volatility=0.15,
+        time_to_expiration=0.5,
+        dividend_yield=0.03,
+    ) == pytest.approx(12.9007, abs=1e-4)
+
+
+INPUTS = {
+    "stock_price": 100.0,
+    "risk_free_rate": 0.05,
+    "volatility": 0.3,
+    "time_to_expiration": 1.0,
+    "dividend_yield": 0.02,
+}
+
+
+def test_the_bivariate_normal_distribution_is_exact():
+    """Owen's T gives M(0, 0; ρ) = 1/4 + arcsin(ρ) / (2π) and the limits at infinity."""
+    for correlation in (-0.9, -0.3, 0.0, 0.5, 0.95):
+        assert bivariate_normal_cdf(0, 0, correlation) == pytest.approx(
+            0.25 + np.arcsin(correlation) / (2 * np.pi), abs=1e-15
+        )
+    assert bivariate_normal_cdf(np.inf, 0.3, 0.2) == pytest.approx(0.6179114221889526)
+    assert bivariate_normal_cdf(1.0, 1.0, 1.0) == pytest.approx(0.8413447460685429)
+    assert bivariate_normal_cdf(-np.inf, 1.0, 0.5) == 0.0
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+def test_a_continuous_geometric_average_is_kemna_vorst(put_option):
+    """Without fixings the geometric Asian option is the existing Kemna-Vorst price."""
+    for strike_price in (80.0, 100.0, 120.0):
+        assert path_dependent_model.get_geometric_asian_option(
+            **INPUTS, strike_price=strike_price, put_option=put_option
+        ) == pytest.approx(
+            exotics_model.get_asian_option(
+                **INPUTS, strike_price=strike_price, put_option=put_option
+            ),
+            rel=1e-12,
+        )
+
+
+def test_many_fixings_approach_the_continuous_average():
+    """With many fixings the discrete approximations approach the continuous ones."""
+    for function in (
+        path_dependent_model.get_geometric_asian_option,
+        path_dependent_model.get_turnbull_wakeman,
+        path_dependent_model.get_curran,
+    ):
+        continuous = function(**INPUTS, strike_price=100.0)
+        discrete = function(**INPUTS, strike_price=100.0, fixings=20_000)
+        assert discrete == pytest.approx(continuous, rel=1e-4)
+
+
+def test_the_arithmetic_average_lies_above_the_geometric_one():
+    """A ≥ G, so the arithmetic call is worth more and the arithmetic put less."""
+    for strike_price in (80.0, 100.0, 120.0):
+        for fixings in (None, 12):
+            geometric_call = path_dependent_model.get_geometric_asian_option(
+                **INPUTS, strike_price=strike_price, fixings=fixings
+            )
+            geometric_put = path_dependent_model.get_geometric_asian_option(
+                **INPUTS, strike_price=strike_price, fixings=fixings, put_option=True
+            )
+            curran_call = path_dependent_model.get_curran(
+                **INPUTS, strike_price=strike_price, fixings=fixings
+            )
+            curran_put = path_dependent_model.get_curran(
+                **INPUTS, strike_price=strike_price, fixings=fixings, put_option=True
+            )
+            assert curran_call > geometric_call
+            assert curran_put < geometric_put
+
+
+def test_the_monte_carlo_asian_option_is_seeded_and_near_curran():
+    """The control variate keeps the simulation within a few standard errors of Curran."""
+    strike_prices = np.array([90.0, 100.0, 110.0])
+    first = path_dependent_model.get_monte_carlo_asian_options(
+        **INPUTS, strike_prices=strike_prices, fixings=12, simulations=20_000, seed=3
+    )
+    second = path_dependent_model.get_monte_carlo_asian_options(
+        **INPUTS, strike_prices=strike_prices, fixings=12, simulations=20_000, seed=3
+    )
+    np.testing.assert_array_equal(first[0], second[0])
+
+    for strike_price, price, error in zip(strike_prices, *first, strict=True):
+        curran = path_dependent_model.get_curran(
+            **INPUTS, strike_price=float(strike_price), fixings=12
+        )
+        assert abs(price - curran) < max(5 * error, 0.01)
+
+    with pytest.raises(ValueError, match="too large"):
+        path_dependent_model.get_monte_carlo_asian_options(
+            **INPUTS, strike_prices=strike_prices, fixings=10_000, simulations=10_000
+        )
+
+
+def test_a_full_window_is_the_regular_barrier_option():
+    """A window over (almost) the whole life gives the Reiner-Rubinstein price."""
+    for put_option in (False, True):
+        for direction, barrier in (("down", 90.0), ("up", 110.0)):
+            regular = exotics_model.get_barrier_option(
+                **INPUTS,
+                strike_price=100.0,
+                barrier=barrier,
+                put_option=put_option,
+                barrier_direction=direction,
+            )
+            for window in ("start", "end"):
+                partial = path_dependent_model.get_partial_time_barrier_option(
+                    **INPUTS,
+                    strike_price=100.0,
+                    barrier=barrier,
+                    put_option=put_option,
+                    barrier_direction=direction,
+                    barrier_window=window,
+                    window_share=0.999999,
+                )
+                assert partial == pytest.approx(regular, abs=2e-3)
+
+
+def test_in_out_parity_of_the_new_barriers():
+    """Knock-in plus knock-out is the vanilla option for every new barrier."""
+    for put_option in (False, True):
+        vanilla = black_scholes_model.get_black_scholes(
+            100.0, 95.0, 0.05, 0.3, 1.0, 0.02, put_option
+        )
+        prices = {
+            knock_type: (
+                path_dependent_model.get_double_barrier_option(
+                    **INPUTS,
+                    strike_price=95.0,
+                    lower_barrier=80.0,
+                    upper_barrier=120.0,
+                    put_option=put_option,
+                    knock_type=knock_type,
+                ),
+                path_dependent_model.get_partial_time_barrier_option(
+                    **INPUTS,
+                    strike_price=95.0,
+                    barrier=110.0,
+                    put_option=put_option,
+                    barrier_direction="up",
+                    knock_type=knock_type,
+                    barrier_window="end",
+                ),
+                path_dependent_model.get_soft_barrier_option(
+                    **INPUTS,
+                    strike_price=95.0,
+                    first_barrier=85.0,
+                    second_barrier=92.0,
+                    put_option=put_option,
+                    knock_type=knock_type,
+                ),
+            )
+            for knock_type in ("in", "out")
+        }
+        for knock_in, knock_out in zip(prices["in"], prices["out"], strict=True):
+            assert knock_in + knock_out == pytest.approx(vanilla, rel=1e-10)
+
+
+def test_a_double_barrier_far_away_is_the_vanilla_option():
+    assert path_dependent_model.get_double_barrier_option(
+        **INPUTS, strike_price=100.0, lower_barrier=1.0, upper_barrier=1e5
+    ) == pytest.approx(
+        black_scholes_model.get_black_scholes(100.0, 100.0, 0.05, 0.3, 1.0, 0.02),
+        rel=1e-12,
+    )
+
+
+def test_one_touch_and_no_touch_add_up_to_the_discounted_cash():
+    for barrier in (80.0, 125.0):
+        one_touch = path_dependent_model.get_touch_option(**INPUTS, barrier=barrier)
+        no_touch = path_dependent_model.get_touch_option(
+            **INPUTS, barrier=barrier, touch_type="no-touch"
+        )
+        at_hit = path_dependent_model.get_touch_option(
+            **INPUTS, barrier=barrier, payment="hit"
+        )
+        assert one_touch + no_touch == pytest.approx(np.exp(-0.05))
+        # Being paid at the hit is paid sooner, so worth more.
+        assert at_hit > one_touch
+
+    double_one_touch = path_dependent_model.get_double_touch_option(
+        **INPUTS, lower_barrier=85.0, upper_barrier=115.0
+    )
+    double_no_touch = path_dependent_model.get_double_touch_option(
+        **INPUTS, lower_barrier=85.0, upper_barrier=115.0, touch_type="double-no-touch"
+    )
+    assert double_one_touch + double_no_touch == pytest.approx(np.exp(-0.05))
+
+
+def test_the_discrete_monitoring_shift_moves_the_barrier_away():
+    """Broadie-Glasserman-Kou: daily monitoring moves H by e^(±0.5826 σ √(1/252))."""
+    shift = np.exp(0.5826 * 0.3 * np.sqrt(1 / 252))
+    assert path_dependent_model.get_discrete_monitoring_barrier(
+        110.0, 100.0, 0.3, 1 / 252
+    ) == pytest.approx(110.0 * shift, rel=1e-4)
+    assert path_dependent_model.get_discrete_monitoring_barrier(
+        90.0, 100.0, 0.3, 1 / 252
+    ) == pytest.approx(90.0 / shift, rel=1e-4)
+    assert (
+        path_dependent_model.get_discrete_monitoring_barrier(90.0, 100.0, 0.3, 0)
+        == 90.0
+    )
+
+
+def test_lookbacks_at_a_zero_cost_of_carry_are_continuous():
+    """The formulas divide by b, so b = 0 is taken as the average around it."""
+    for strike_type in ("fixed", "floating"):
+        for put_option in (False, True):
+            at_zero = path_dependent_model.get_lookback_option(
+                **{**INPUTS, "dividend_yield": 0.05},
+                strike_price=100.0,
+                put_option=put_option,
+                strike_type=strike_type,
+            )
+            nearby = path_dependent_model.get_lookback_option(
+                **{**INPUTS, "dividend_yield": 0.0501},
+                strike_price=100.0,
+                put_option=put_option,
+                strike_type=strike_type,
+            )
+            assert at_zero == pytest.approx(nearby, rel=1e-3)
+
+
+def test_the_payoffs_at_expiration():
+    """At zero time to expiration every option is worth its payoff on today's price."""
+    expired = {**INPUTS, "time_to_expiration": 0.0}
+    assert path_dependent_model.get_curran(**expired, strike_price=90.0) == 10.0
+    assert (
+        path_dependent_model.get_lookback_option(**expired, strike_price=90.0) == 10.0
+    )
+    assert (
+        path_dependent_model.get_lookback_option(
+            **expired, strike_price=90.0, strike_type="floating"
+        )
+        == 0.0
+    )
+    assert path_dependent_model.get_touch_option(**expired, barrier=90.0) == 0.0
+    assert (
+        path_dependent_model.get_touch_option(
+            **expired, barrier=90.0, touch_type="no-touch"
+        )
+        == 1.0
+    )

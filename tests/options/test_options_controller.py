@@ -1561,3 +1561,151 @@ def test_get_implied_volatility_american(recorder, option_market):
     # reprices a put is lower when that right is counted, most for the deep in-the-money.
     common = american.index.intersection(european.index)
     assert (american.loc[common] <= european.loc[common] + 1e-4).all()
+
+
+def test_get_asian_option_methods(recorder, options_module):
+    for method in ("turnbull_wakeman", "curran"):
+        recorder.capture(
+            options_module.get_asian_option(method=method, expiration_time_range=10)
+        )
+    recorder.capture(
+        options_module.get_asian_option(
+            method="curran", fixings=12, put_option=True, expiration_time_range=10
+        )
+    )
+    recorder.capture(
+        options_module.get_asian_option(
+            fixings=12, strike_price_range=0.10, expiration_time_range=5
+        )
+    )
+    recorder.capture(
+        options_module.get_asian_option(
+            method="monte_carlo",
+            fixings=12,
+            simulations=2_000,
+            seed=42,
+            strike_price_range=0.10,
+            expiration_time_range=5,
+        )
+    )
+
+
+def test_get_barrier_option_variants(recorder, options_module):
+    recorder.capture(
+        options_module.get_barrier_option(
+            barrier_direction="double", expiration_time_range=10
+        )
+    )
+    recorder.capture(
+        options_module.get_barrier_option(
+            barrier_window="start", window_share=0.5, expiration_time_range=10
+        )
+    )
+    recorder.capture(
+        options_module.get_barrier_option(
+            put_option=True,
+            barrier_percentage=1.1,
+            barrier_direction="up",
+            knock_type="in",
+            barrier_window="end",
+            expiration_time_range=10,
+        )
+    )
+    recorder.capture(
+        options_module.get_barrier_option(
+            soft_barrier_percentage=0.85,
+            strike_price_range=0.10,
+            expiration_time_range=5,
+        )
+    )
+    recorder.capture(
+        options_module.get_barrier_option(monitoring="daily", expiration_time_range=10)
+    )
+
+
+def test_get_lookback_option(recorder, options_module):
+    recorder.capture(options_module.get_lookback_option())
+    recorder.capture(options_module.get_lookback_option(put_option=True))
+    recorder.capture(options_module.get_lookback_option(strike_type="floating"))
+    recorder.capture(
+        options_module.get_lookback_option(
+            strike_type="floating", put_option=True, lookback_period=0.5
+        )
+    )
+    recorder.capture(
+        options_module.get_lookback_option(
+            lookback_period=0.5,
+            strike_price_range=0.10,
+            expiration_time_range=5,
+            risk_free_rate=0.01,
+            rounding=2,
+        )
+    )
+
+
+def test_get_touch_option(recorder, options_module):
+    recorder.capture(options_module.get_touch_option())
+    recorder.capture(
+        options_module.get_touch_option(barrier_percentage=1.1, payment="hit")
+    )
+    recorder.capture(options_module.get_touch_option(touch_type="no-touch"))
+    recorder.capture(options_module.get_touch_option(touch_type="double-no-touch"))
+    recorder.capture(
+        options_module.get_touch_option(
+            touch_type="double-one-touch", monitoring="daily", cash_payout=100
+        )
+    )
+
+
+def test_path_dependent_options_refuse_invalid_choices(options_module, caplog):
+    # Each invalid combination is reported with an empty result.
+    for call, message in (
+        (lambda: options_module.get_asian_option(method="levy"), "method must"),
+        (
+            lambda: options_module.get_barrier_option(
+                barrier_direction="double", rebate=1
+            ),
+            "rebate",
+        ),
+        (
+            lambda: options_module.get_barrier_option(
+                barrier_direction="double", barrier_window="start"
+            ),
+            "cannot be combined",
+        ),
+        (
+            lambda: options_module.get_barrier_option(soft_barrier_percentage=1.05),
+            "same side",
+        ),
+        (
+            lambda: options_module.get_lookback_option(lookback_period=0),
+            "lookback_period",
+        ),
+        (
+            lambda: options_module.get_touch_option(
+                touch_type="no-touch", payment="hit"
+            ),
+            "pays at expiration",
+        ),
+        (
+            lambda: options_module.get_touch_option(barrier_percentage=1),
+            "touched already",
+        ),
+    ):
+        caplog.clear()
+        assert call().empty
+        assert message in caplog.text
+
+
+def test_monte_carlo_asian_option_is_reproducible_and_close_to_curran(options_module):
+    arguments = {"fixings": 12, "strike_price_range": 0.10, "expiration_time_range": 5}
+    first = options_module.get_asian_option(
+        method="monte_carlo", simulations=20_000, seed=1, **arguments
+    )
+    second = options_module.get_asian_option(
+        method="monte_carlo", simulations=20_000, seed=1, **arguments
+    )
+    curran = options_module.get_asian_option(method="curran", **arguments)
+
+    pd.testing.assert_frame_equal(first, second)
+    assert (first - curran).abs().max().max() < 0.05

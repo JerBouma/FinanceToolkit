@@ -199,3 +199,32 @@ def parse_maturities(
         maturities = [maturities]
 
     return [maturity_key(maturity) for maturity in maturities]
+
+
+def discount_factors(zero_curve: pd.Series, years: float | np.ndarray) -> np.ndarray:
+    """
+    The discount factors of a zero-coupon curve at any times, as the Toolkit's curves define them.
+
+    The curve holds annually compounded zero-coupon rates by maturity in years, as
+    `get_zero_coupon_curve` and `get_eiopa_risk_free_rate` return them, so a payment in t
+    years is discounted with P(t) = (1 + r(t))^(-t). The zero rate r(t) between two
+    maturities of the curve is interpolated linearly, and held at the first and last rate
+    outside them, as `get_forward_rate` and `get_par_yield` read the curve. P(0) is 1.
+
+    Args:
+        zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
+            indexed by maturity in years.
+        years (float | np.ndarray): The times of the payments, in years from today.
+
+    Returns:
+        np.ndarray: The discount factor of each time.
+    """
+    zero_curve = zero_curve.dropna().sort_index()
+    years = np.asarray(years, dtype=float)
+    zero_rates = np.interp(
+        years,
+        zero_curve.index.to_numpy(dtype=float),
+        zero_curve.to_numpy(dtype=float),
+    )
+
+    return (1 + zero_rates) ** -years

@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.special import ndtr, owens_t
 
 from financetoolkit.utilities import logger_model
 
@@ -143,6 +144,38 @@ def create_greek_dataframe(
     greek_dataframe.index.names = ["Ticker", "Strike Price"]
 
     return greek_dataframe
+
+
+def create_expiration_dataframe(
+    value_dictionary: dict[str, dict[float, float]], start_date: str
+) -> pd.DataFrame:
+    """
+    Creates the DataFrame of an option without a strike price (such as a floating strike
+    lookback or a touch option), with the tickers as the index and the expiration dates as
+    the columns.
+
+    Args:
+        value_dictionary (dict[str, dict[float, float]]): The value per ticker and time to
+            expiration.
+        start_date (str): The start date, which is left out of the DataFrame.
+
+    Returns:
+        pd.DataFrame: The values with the tickers as the index and the expiration dates as the
+        columns.
+    """
+    dataframe = pd.DataFrame.from_dict(value_dictionary, orient="index")
+
+    dataframe.columns = pd.period_range(
+        start=start_date,
+        periods=len(dataframe.columns),
+        freq="D",
+    )
+
+    dataframe = dataframe.drop(start_date, axis=1)
+
+    dataframe.index.name = "Ticker"
+
+    return dataframe
 
 
 def create_binomial_tree_dataframe(
@@ -366,6 +399,57 @@ def evaluate_on_grid(
         strike: {time: float(values[row, column]) for column, time in enumerate(times)}
         for row, strike in enumerate(strikes)
     }
+
+
+def bivariate_normal_cdf(first, second, correlation):
+    """
+    The bivariate standard normal distribution function M(h, k; ρ) = P(X ≤ h, Y ≤ k) of two
+    standard normal variables with correlation ρ, from Owen's T function (Owen, 1956):
+
+    - M(h, k; ρ) = N(h) / 2 + N(k) / 2 - T(h, (k - ρh) / (h√(1 - ρ²))) - T(k, (h - ρk) / (k√(1 - ρ²))) - β
+    - β = 0 when hk > 0, or hk = 0 and h + k ≥ 0, and 1/2 otherwise
+
+    This is exact to machine precision, where a numerical integration of the density (such
+    as scipy's multivariate normal distribution function) stops at about 1e-6.
+
+    Args:
+        first (float | np.ndarray): The upper limit h of the first variable.
+        second (float | np.ndarray): The upper limit k of the second variable.
+        correlation (float | np.ndarray): The correlation ρ, between -1 and 1.
+
+    Returns:
+        float | np.ndarray: The probability M(h, k; ρ).
+    """
+    h, k, rho = np.broadcast_arrays(
+        np.asarray(first, dtype=float),
+        np.asarray(second, dtype=float),
+        np.asarray(correlation, dtype=float),
+    )
+    # T(0, a) has a limit as a goes to infinity, so a limit of zero is moved off zero by an
+    # amount far below the precision of the result.
+    h = np.where(h == 0, 1e-15, h)
+    k = np.where(k == 0, 1e-15, k)
+    root = np.sqrt(np.maximum(1 - rho**2, 1e-300))
+
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        value = (
+            0.5 * ndtr(h)
+            + 0.5 * ndtr(k)
+            - owens_t(h, (k - rho * h) / (h * root))
+            - owens_t(k, (h - rho * k) / (k * root))
+            - np.where(h * k > 0, 0.0, 0.5)
+        )
+
+    # A limit at infinity leaves the distribution of the other variable, and a correlation of
+    # one or minus one makes the two variables the same or opposite.
+    value = np.where(np.isposinf(h), ndtr(k), value)
+    value = np.where(np.isposinf(k), ndtr(h), value)
+    value = np.where(np.isneginf(h) | np.isneginf(k), 0.0, value)
+    value = np.where(rho >= 1, ndtr(np.minimum(h, k)), value)
+    value = np.where(rho <= -1, np.maximum(ndtr(h) + ndtr(k) - 1, 0.0), value)
+    value = np.clip(value, 0.0, 1.0)
+
+    return value if value.ndim else float(value)
 
 
 def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:

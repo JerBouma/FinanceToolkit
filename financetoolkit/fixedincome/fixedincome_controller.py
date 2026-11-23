@@ -30,6 +30,7 @@ from financetoolkit.fixedincome.sources import (
     rba_model,
     riksbank_model,
 )
+from financetoolkit.fixedincome.swaps.swaps_controller import SwapsFixedIncome
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
@@ -216,6 +217,7 @@ class FixedIncomeBase:
 @track_sources
 class FixedIncome(
     BondsFixedIncome,
+    SwapsFixedIncome,
     MarketsFixedIncome,
     ShortRatesFixedIncome,
     CurvesFixedIncome,
@@ -228,5 +230,6 @@ class FixedIncome(
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
     spreads and individual bonds, and calculates bond measures from their market prices. The formulas for
     terms of your own (bond pricing, swaptions with the Black and Bachelier models, the option-adjusted
-    spread of a callable bond) are in bond_model, yieldcurve_model, derivative_model and short_rate_model.
+    spread of a callable bond, swaps and forwards) are in bond_model, yieldcurve_model,
+    derivative_model, short_rate_model, swap_model and forward_model.
     """

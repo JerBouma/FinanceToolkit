@@ -7,7 +7,10 @@ Bachelier (normal) model. Caps, floors and bond options are not implemented.
 import math
 
 import numpy as np
+import pandas as pd
 from scipy.special import ndtr
+
+from financetoolkit.fixedincome.helpers import discount_factors
 
 # The standard normal distribution, computed as scipy.stats.norm computes it, without
 # importing scipy.stats, which takes around a second and is only needed elsewhere.
@@ -116,10 +119,11 @@ def _convert_volatility(
 
 
 def _get_annuity_factor(
-    risk_free_rate: float,
+    risk_free_rate: float | None,
     years_to_maturity: float,
     tenor: float,
     payment_frequency: int,
+    discount_curve: pd.Series | None = None,
 ) -> float:
     """
     Calculate the annuity factor (present value of a basis point, PVBP) of the swap
@@ -139,20 +143,30 @@ def _get_annuity_factor(
     Where accrual = 1 / payment_frequency and n = tenor * payment_frequency, rounded up, is
     the number of payments made over the life of the underlying swap. A tenor that is not a
     whole number of periods ends with a short period: its last payment falls at the end of the
-    tenor and accrues tenor - (n - 1) * accrual. The discount factors are continuously
-    compounded, DiscountFactor(t) = exp(-risk_free_rate * t), on a flat curve.
+    tenor and accrues tenor - (n - 1) * accrual. With a discount curve, the discount factors
+    are those of its annually compounded zero rates, DiscountFactor(t) = (1 + r(t))^(-t) with
+    r(t) interpolated linearly between its maturities (as `swap_model.get_swap_rate` discounts
+    the fixed leg); without one they are continuously compounded on a flat curve,
+    DiscountFactor(t) = exp(-risk_free_rate * t).
 
     Args:
-        risk_free_rate (float): The risk-free interest rate used to discount each
-        payment date, continuously compounded and assumed flat across the curve.
+        risk_free_rate (float | None): The risk-free interest rate used to discount each
+        payment date, continuously compounded and assumed flat across the curve. Not used
+        when a discount curve is given.
         years_to_maturity (float): Years to expiration of the swaption, i.e. the time
         at which the underlying swap would start if exercised.
         tenor (float): The tenor (length in years) of the underlying swap.
         payment_frequency (int): The number of fixed-leg payments per year on the
         underlying swap (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly).
+        discount_curve (pd.Series | None): The annually compounded zero-coupon rates by
+        maturity in years to discount with, such as a curve of `get_zero_coupon_curve` or
+        `get_eiopa_risk_free_rate`. Defaults to None, which discounts at the flat risk-free rate.
 
     Returns:
         float: The annuity factor (PVBP) of the underlying swap.
+
+    Raises:
+        ValueError: If neither a risk-free rate nor a discount curve is given.
     """
     # A whole number of periods in floating point noise (2.9999999999999996) is not a short period.  # noqa: E501
     periods = tenor * payment_frequency
@@ -166,6 +180,14 @@ def _get_annuity_factor(
     accruals = np.full(number_of_payments, accrual)
     accruals[-1] = tenor - (number_of_payments - 1) * accrual
     payment_times = years_to_maturity + np.cumsum(accruals)
+
+    if discount_curve is not None:
+        return float(np.sum(accruals * discount_factors(discount_curve, payment_times)))
+    if risk_free_rate is None:
+        raise ValueError(
+            "A swaption's annuity is discounted with a risk-free rate or a discount curve; "
+            "give either one."
+        )
 
     return float(np.sum(accruals * np.exp(-risk_free_rate * payment_times)))
 
@@ -184,12 +206,13 @@ def get_black_price(
     strike_rate: float,
     volatility: float,
     years_to_maturity: float,
-    risk_free_rate: float,
+    risk_free_rate: float | None = None,
     notional: float = 10_000_000,
     tenor: float | None = None,
     payment_frequency: int = 2,
     is_receiver: bool = True,
     volatility_type: str = "lognormal",
+    discount_curve: pd.Series | None = None,
 ) -> tuple[float, float]:
     """
     Black's Model for pricing financial derivatives.
@@ -229,8 +252,9 @@ def get_black_price(
         `volatility_type` and defaulting to the lognormal (relative) convention this model
         is defined in.
         years_to_maturity (float): years to maturity of the swaption.
-        risk_free_rate (float): The risk-free interest rate, continuously compounded and
-            assumed flat over the swap's payment dates, which it discounts.
+        risk_free_rate (float | None, optional): The risk-free interest rate, continuously
+            compounded and assumed flat over the swap's payment dates, which it discounts.
+            Defaults to None, which requires a discount curve.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
         tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
             maturity.
@@ -240,6 +264,11 @@ def get_black_price(
         volatility_type (str, optional): The convention `volatility` is quoted on, either
         'lognormal' (relative, this model's native basis) or 'normal' (absolute, in rate
         units), in which case it is converted before use. Defaults to 'lognormal'.
+        discount_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
+        by maturity in years that discount the swap's payment dates instead of the flat
+        risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
+        annuity on such a curve follow from `swap_model.get_swap_rate` with a forward start.
+        Defaults to None, which discounts at the risk-free rate.
 
     Returns:
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
@@ -284,6 +313,7 @@ def get_black_price(
         years_to_maturity=years_to_maturity,
         tenor=tenor,
         payment_frequency=payment_frequency,
+        discount_curve=discount_curve,
     )
     swaption_price = notional * annuity * payoff
 
@@ -295,12 +325,13 @@ def get_bachelier_price(
     strike_rate: float,
     volatility: float,
     years_to_maturity: float,
-    risk_free_rate: float,
+    risk_free_rate: float | None = None,
     notional: float = 10_000_000,
     tenor: float | None = None,
     payment_frequency: int = 2,
     is_receiver: bool = True,
     volatility_type: str = "normal",
+    discount_curve: pd.Series | None = None,
 ) -> tuple[float, float]:
     """
     Bachelier Model for pricing swaptions.
@@ -339,8 +370,9 @@ def get_bachelier_price(
         `volatility_type` and defaulting to the normal (absolute, basis point) convention
         this model is defined in.
         years_to_maturity (float): years to maturity of the swaption.
-        risk_free_rate (float): The risk-free interest rate, continuously compounded and
-            assumed flat over the swap's payment dates, which it discounts.
+        risk_free_rate (float | None, optional): The risk-free interest rate, continuously
+            compounded and assumed flat over the swap's payment dates, which it discounts.
+            Defaults to None, which requires a discount curve.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
         tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
             maturity.
@@ -350,6 +382,11 @@ def get_bachelier_price(
         volatility_type (str, optional): The convention `volatility` is quoted on, either
         'normal' (absolute, this model's native basis) or 'lognormal' (relative to the
         forward rate), in which case it is converted before use. Defaults to 'normal'.
+        discount_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
+        by maturity in years that discount the swap's payment dates instead of the flat
+        risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
+        annuity on such a curve follow from `swap_model.get_swap_rate` with a forward start.
+        Defaults to None, which discounts at the risk-free rate.
 
     Returns:
         tuple[float, float]: A tuple containing the price of the swaption and the payoff of the underlying option.
@@ -387,6 +424,7 @@ def get_bachelier_price(
         years_to_maturity=years_to_maturity,
         tenor=tenor,
         payment_frequency=payment_frequency,
+        discount_curve=discount_curve,
     )
     swaption_price = notional * annuity * payoff
 

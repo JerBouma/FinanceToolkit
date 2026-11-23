@@ -223,3 +223,43 @@ def test_greeks_without_uncertainty_are_their_limits_off_the_strike():
     assert gamma[1] == pytest.approx(
         float(greeks_model.get_gamma(110.0, 100.0, 0.5, rate, volatility, dividend))
     )
+
+
+def test_black_76_matches_quantlib():
+    # QuantLib 1.44 blackFormula with the standard deviation σ√t and discount e^(-rt).
+    assert black_scholes_model.get_black_76(
+        70.0, 75.0, 0.04, 0.3, 0.5, put_option=True
+    ) == pytest.approx(8.766689044573, abs=1e-11)
+    assert black_scholes_model.get_black_76(
+        2000.0, 2100.0, 0.03, 0.18, 0.25
+    ) == pytest.approx(33.870178357681, abs=1e-9)
+
+
+def test_black_76_is_black_scholes_on_the_forward_and_handles_arrays():
+    forward = 100 * np.exp((0.05 - 0.02) * 1.5)
+    for put in (False, True):
+        assert black_scholes_model.get_black_76(
+            forward, 105.0, 0.05, 0.25, 1.5, put
+        ) == pytest.approx(
+            black_scholes_model.get_black_scholes(
+                100.0, 105.0, 0.05, 0.25, 1.5, 0.02, put
+            ),
+            abs=1e-12,
+        )
+
+    strikes = np.array([90.0, 100.0, 110.0])
+    values = black_scholes_model.get_black_76(100.0, strikes, 0.03, 0.2, 0.0)
+    np.testing.assert_allclose(values, [10.0, 0.0, 0.0])
+
+
+def test_the_black_76_implied_volatility_reprices_the_option():
+    for put in (False, True):
+        price = black_scholes_model.get_black_76(70.0, 75.0, 0.04, 0.3, 0.5, put)
+        assert black_scholes_model.get_black_76_implied_volatility(
+            price, 70.0, 75.0, 0.04, 0.5, put
+        ) == pytest.approx(0.3, abs=1e-8)
+
+    # Above the discounted futures price no volatility can give a call's price.
+    assert np.isnan(
+        black_scholes_model.get_black_76_implied_volatility(70.0, 70.0, 75.0, 0.04, 0.5)
+    )

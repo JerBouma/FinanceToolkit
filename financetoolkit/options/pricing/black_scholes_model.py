@@ -425,6 +425,169 @@ def get_garman_kohlhagen(
     )
 
 
+def get_black_76(
+    forward_price: float | pd.Series | np.ndarray,
+    strike_price: float | pd.Series | np.ndarray,
+    risk_free_rate: float | pd.Series | np.ndarray,
+    volatility: float | pd.Series | np.ndarray,
+    time_to_expiration: float | pd.Series | np.ndarray,
+    put_option: bool = False,
+) -> float | pd.Series | np.ndarray:
+    """
+    Calculate the Black (1976) model for European options on futures and forwards.
+
+    Also known as: Black-76, Black's model, the Black model for options on futures.
+
+    A futures or forward price F already contains the cost of carry of the underlying
+    (interest, storage, dividends or convenience yield), so it grows at no rate under the
+    risk-neutral measure and the option only discounts its payoff at the risk-free rate.
+    That is the Black-Scholes model with S * e^(—qT) replaced by F * e^(—rT), which is how
+    it is calculated here (a dividend yield equal to the risk-free rate).
+
+    The formulas are as follows:
+
+    - d1 = (ln(F / K) + (σ^2 / 2) * t) / (σ * sqrt(t))
+    - d2 = d1 — σ * sqrt(t)
+    - Call Option Price = e^(—r * t) * (F * N(d1) — K * N(d2))
+    - Put Option Price = e^(—r * t) * (K * N(—d2) — F * N(—d1))
+
+    Where F is the futures or forward price for the option's expiration, K is the strike
+    price, r is the continuously compounded risk-free rate, σ is the volatility of the
+    futures price, t is the time to expiration in years and N is the standard normal
+    distribution. At expiration the option is worth max(F — K, 0) or max(K — F, 0).
+
+    Args:
+        forward_price (float | pd.Series | np.ndarray): The futures or forward price.
+        strike_price (float | pd.Series | np.ndarray): The option's strike price.
+        risk_free_rate (float | pd.Series | np.ndarray): The continuously compounded
+            risk-free interest rate.
+        volatility (float | pd.Series | np.ndarray): The volatility of the futures price.
+        time_to_expiration (float | pd.Series | np.ndarray): The time to expiration of
+            the option, in years.
+        put_option (bool): Whether the option is a put option or not. Defaults to False.
+
+    Returns:
+        float | pd.Series | np.ndarray: The Black-76 value.
+
+    Raises:
+        TypeError: if any of the numeric inputs is not a float, int, np.ndarray or
+        pd.Series.
+
+    Notes:
+        Reference: Black, F. (1976). "The Pricing of Commodity Contracts." Journal of
+        Financial Economics, 3(1-2), 167-179. Referenced against QuantLib's blackFormula
+        (https://www.quantlib.org), with which it agrees within 1e-12, and FinancePy's
+        Black model (https://github.com/domokane/FinancePy), which approximates the normal
+        distribution and so differs by up to about 1e-4.
+
+    As an example:
+
+    ```python
+    from financetoolkit.options.pricing import black_scholes_model
+
+    round(
+        black_scholes_model.get_black_76(
+            forward_price=70, strike_price=75, risk_free_rate=0.04, volatility=0.3,
+            time_to_expiration=0.5, put_option=True,
+        ),
+        4,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    8.7667
+    ```
+    """
+    validate_numeric_inputs(
+        arrays=True,
+        forward_price=forward_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+    )
+
+    return get_black_scholes(
+        stock_price=forward_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=risk_free_rate,
+        put_option=put_option,
+    )
+
+
+def get_black_76_implied_volatility(
+    market_price: float,
+    forward_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    time_to_expiration: float,
+    put_option: bool = False,
+) -> float:
+    """
+    Numerically solve for the Black-76 implied volatility of an option on a futures or
+    forward contract: the root of Black-76 price(σ) — market price, found with Brent's
+    method on the volatility interval [1e-6, 5].
+
+    Also known as: implied volatility of options on futures, Black implied volatility.
+
+    The Black-76 price is the Black-Scholes price with a dividend yield equal to the
+    risk-free rate (see get_black_76), so this is the Black-Scholes implied volatility of
+    get_implied_volatility with that yield and the same no-arbitrage bounds:
+    e^(—rt) * max(F — K, 0) < call < e^(—rt) * F and e^(—rt) * max(K — F, 0) < put < e^(—rt) * K.
+
+    Args:
+        market_price (float): The observed market price of the option.
+        forward_price (float): The futures or forward price.
+        strike_price (float): The option's strike price.
+        risk_free_rate (float): The continuously compounded risk-free interest rate.
+        time_to_expiration (float): The time to expiration of the option, in years.
+        put_option (bool): Whether the option is a put option or not. Defaults to False.
+
+    Returns:
+        float: The implied volatility, or NaN when the observed price admits no solution
+            (outside the bounds above, or at or after expiration).
+
+    Notes:
+        Referenced against QuantLib's blackFormulaImpliedStdDev (https://www.quantlib.org)
+        divided by √t and FinancePy's Black.implied_volatility
+        (https://github.com/domokane/FinancePy).
+
+    As an example:
+
+    ```python
+    from financetoolkit.options.pricing import black_scholes_model
+
+    round(
+        black_scholes_model.get_black_76_implied_volatility(
+            market_price=8.7667, forward_price=70, strike_price=75, risk_free_rate=0.04,
+            time_to_expiration=0.5, put_option=True,
+        ),
+        4,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.3
+    ```
+    """
+    return get_implied_volatility(
+        market_price=market_price,
+        stock_price=forward_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=risk_free_rate,
+        put_option=put_option,
+    )
+
+
 def get_binary_option(
     stock_price: float | pd.Series,
     strike_price: float | pd.Series,

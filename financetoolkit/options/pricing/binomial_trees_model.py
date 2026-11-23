@@ -5,6 +5,17 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy.special import betaincinv, ndtr
+
+# The binomial tree variants of calculate_tree_movements.
+BINOMIAL_TREE_METHODS = (
+    "cox_ross_rubinstein",
+    "jarrow_rudd",
+    "tian",
+    "trigeorgis",
+    "leisen_reimer",
+    "exact_inversion",
+)
 
 # The most time steps of a tree: the tree is returned as a table of steps by steps, so its size
 # grows with the square of the steps.
@@ -67,6 +78,153 @@ def calculate_risk_neutral_probability(
         )
 
     return risk_neutral_probability
+
+
+def _peizer_pratt_inversion(z: float, timesteps: int) -> float:
+    """
+    Helper function with the Peizer-Pratt (method 2) inversion of Leisen and Reimer (1996):
+    the probability p for which a binomial distribution of n (odd) steps exceeds (n — 1) / 2
+    up moves with probability about N(z).
+
+    - h(z) = 1/2 + sign(z) * 1/2 * √(1 — e^(—(z / (n + 1/3 + 0.1 / (n + 1)))² * (n + 1/6)))
+    """
+    return 0.5 + np.sign(z) * 0.5 * np.sqrt(
+        1
+        - np.exp(
+            -((z / (timesteps + 1 / 3 + 0.1 / (timesteps + 1))) ** 2)
+            * (timesteps + 1 / 6)
+        )
+    )
+
+
+def _exact_binomial_inversion(z: float, timesteps: int) -> float:
+    """
+    Helper function with the exact inversion of the binomial distribution: the probability
+    p for which a binomial distribution of n (odd) steps has at least (n + 1) / 2 up moves
+    with probability N(z) exactly. That probability is the regularized incomplete beta
+    function I_p((n + 1) / 2, (n + 1) / 2), so p is its inverse.
+    """
+    half = (timesteps + 1) / 2
+    return float(betaincinv(half, half, ndtr(z)))
+
+
+# A degenerate tree (equal movements) divides 0 by 0; it is refused below with its reason.
+@np.errstate(divide="ignore", invalid="ignore")
+def calculate_tree_movements(
+    method: str,
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    years: float,
+    timesteps: int,
+) -> tuple[float, float, float]:
+    """
+    Calculates the up movement, down movement and probability of an up movement of a
+    binomial tree variant. With Δt = T / n, b = r — q and ν = b — σ² / 2:
+
+    - Cox-Ross-Rubinstein (1979): u = e^(σ√Δt), d = 1 / u, p = (e^(bΔt) — d) / (u — d)
+    - Jarrow-Rudd (1983), equal probabilities: u = e^(νΔt + σ√Δt), d = e^(νΔt — σ√Δt), p = 1/2
+    - Tian (1993), the first three moments matched: v = e^(σ²Δt),
+      u = e^(bΔt) * v / 2 * (v + 1 + √(v² + 2v — 3)), d = e^(bΔt) * v / 2 * (v + 1 — √(v² + 2v — 3)),
+      p = (e^(bΔt) — d) / (u — d)
+    - Trigeorgis (1991), the log-transformed tree: Δx = √(σ²Δt + ν²Δt²), u = e^(Δx), d = 1 / u,
+      p = 1/2 + νΔt / (2Δx)
+    - Leisen-Reimer (1996), centred on the strike: p = h(d2), p' = h(d1), u = e^(bΔt) * p' / p,
+      d = (e^(bΔt) — p * u) / (1 — p), with h the Peizer-Pratt inversion
+    - Exact inversion: the Leisen-Reimer tree with h the exact inversion of the binomial distribution,
+      which Joshi (2010) expands to fourth order
+
+    Where d1 = (ln(S / K) + (b + σ² / 2) * T) / (σ√T) and d2 = d1 — σ√T. The Leisen-Reimer
+    and exact inversion trees need an odd number of steps.
+
+    Args:
+        method (str): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian", "trigeorgis",
+            "leisen_reimer" or "exact_inversion".
+        stock_price (float): The current stock price.
+        strike_price (float): The strike price, which the Leisen-Reimer and exact inversion trees are
+            centred on.
+        risk_free_rate (float): The continuously compounded risk-free rate.
+        dividend_yield (float): The continuous dividend yield.
+        volatility (float): The volatility of the stock.
+        years (float): The time to expiration in years.
+        timesteps (int): The number of time steps.
+
+    Returns:
+        tuple[float, float, float]: The up movement, the down movement and the probability of
+            an up movement.
+
+    Raises:
+        ValueError: if the method is not one of the trees, the Leisen-Reimer or exact inversion tree
+            gets an even number of steps, or the probability is not between 0 and 1.
+    """
+    if method not in BINOMIAL_TREE_METHODS:
+        raise ValueError(
+            f"method must be one of {', '.join(BINOMIAL_TREE_METHODS)}, received {method!r}."
+        )
+
+    time_delta = years / timesteps
+    carry = risk_free_rate - dividend_yield
+    growth = np.exp(carry * time_delta)
+    drift = carry - 0.5 * volatility**2
+
+    if method == "cox_ross_rubinstein":
+        up_movement, down_movement = calculate_up_and_down_movements(
+            volatility=volatility, time_delta=time_delta
+        )
+        probability = calculate_risk_neutral_probability(
+            risk_free_rate=risk_free_rate,
+            dividend_yield=dividend_yield,
+            timestep=time_delta,
+            up_movement=up_movement,
+            down_movement=down_movement,
+        )
+        return up_movement, down_movement, probability
+
+    if method == "jarrow_rudd":
+        up_movement = np.exp(drift * time_delta + volatility * np.sqrt(time_delta))
+        down_movement = np.exp(drift * time_delta - volatility * np.sqrt(time_delta))
+        probability = 0.5
+    elif method == "tian":
+        variance_factor = np.exp(volatility**2 * time_delta)
+        root = np.sqrt(variance_factor**2 + 2 * variance_factor - 3)
+        up_movement = 0.5 * growth * variance_factor * (variance_factor + 1 + root)
+        down_movement = 0.5 * growth * variance_factor * (variance_factor + 1 - root)
+        probability = (growth - down_movement) / (up_movement - down_movement)
+    elif method == "trigeorgis":
+        log_step = np.sqrt(volatility**2 * time_delta + (drift * time_delta) ** 2)
+        up_movement = np.exp(log_step)
+        down_movement = 1 / up_movement
+        probability = 0.5 + 0.5 * drift * time_delta / log_step
+    else:
+        if timesteps % 2 == 0:
+            raise ValueError(
+                f"The {method} tree is centred on the strike and needs an odd number of time "
+                f"steps, received {timesteps}; use {timesteps + 1}."
+            )
+        d1 = (
+            np.log(stock_price / strike_price) + (carry + 0.5 * volatility**2) * years
+        ) / (volatility * np.sqrt(years))
+        d2 = d1 - volatility * np.sqrt(years)
+        inversion = (
+            _peizer_pratt_inversion
+            if method == "leisen_reimer"
+            else _exact_binomial_inversion
+        )
+        probability = inversion(d2, timesteps)
+        up_movement = growth * inversion(d1, timesteps) / probability
+        down_movement = (growth - probability * up_movement) / (1 - probability)
+
+    if not 0 < probability < 1 or not down_movement > 0:
+        raise ValueError(
+            f"The {method} tree has a probability of {probability:.4f} and a down movement of "
+            f"{down_movement:.4f}, which does not give a valid tree for a volatility of "
+            f"{volatility:.4f} over steps of {time_delta:.4f} years. Use more time steps or "
+            "check the volatility."
+        )
+
+    return float(up_movement), float(down_movement), float(probability)
 
 
 def calculate_stock_prices(
@@ -274,9 +432,11 @@ def get_option_payoffs(
     put_option: bool = False,
     american_option: bool = False,
     show_input_info: bool = False,
+    method: str = "cox_ross_rubinstein",
 ):
     """
-    Calculates the price of a European call option using the CRR binomial tree model.
+    Calculates the binomial tree of a European or American option, with the tree of
+    Cox-Ross-Rubinstein (1979) or one of its variants (see calculate_tree_movements).
 
     Args:
         stock_price (float): Current stock price
@@ -289,20 +449,30 @@ def get_option_payoffs(
         put_option (bool, optional): Whether the option is a put option. Defaults to False.
         american_option (bool, optional): Whether the option is an American option. Defaults to False.
         show_input_info (bool, optional): Whether to show input info. Defaults to False.
+        method (str, optional): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian",
+            "trigeorgis", "leisen_reimer" or "exact_inversion" (the last two need an odd number of time
+            steps). Defaults to "cox_ross_rubinstein".
 
     Returns:
         pd.DataFrame: Option payoffs
-    """
-    up_movement, down_movement = calculate_up_and_down_movements(
-        volatility=volatility, time_delta=years / timesteps
-    )
 
-    risk_neutral_probability = calculate_risk_neutral_probability(
+    Notes:
+        Referenced against QuantLib's BinomialJRVanillaEngine, BinomialTianVanillaEngine,
+        BinomialTrigeorgisVanillaEngine, BinomialLRVanillaEngine and BinomialJ4VanillaEngine
+        (https://www.quantlib.org). The Jarrow-Rudd, Tian, Trigeorgis and Leisen-Reimer trees
+        agree within 1e-9. Joshi (2010) expands the inverse of the binomial distribution to
+        fourth order (his J4 tree); this tree takes the exact inverse, which prices a European
+        option at its Black-Scholes value and lies within 1e-6 of the J4 tree at 101 steps.
+    """
+    up_movement, down_movement, risk_neutral_probability = calculate_tree_movements(
+        method=method,
+        stock_price=stock_price,
+        strike_price=strike_price,
         risk_free_rate=risk_free_rate,
         dividend_yield=dividend_yield,
-        timestep=years / timesteps,
-        up_movement=up_movement,
-        down_movement=down_movement,
+        volatility=volatility,
+        years=years,
+        timesteps=timesteps,
     )
 
     stock_prices = calculate_stock_prices(

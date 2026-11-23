@@ -229,7 +229,8 @@ class FixedIncome(
     """
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
     spreads and individual bonds, and calculates bond measures from their market prices. The formulas for
-    terms of your own (bond pricing, swaptions with the Black and Bachelier models, the option-adjusted
-    spread of a callable bond, swaps and forwards) are in bond_model, yieldcurve_model,
+    terms of your own (bond pricing, swaptions with the Black and Bachelier models, bond options, caplets,
+    swaptions and CIR++ shifts in the Vasicek, Hull-White, CIR and CIR++ models, the option-adjusted
+    spread of a callable or puttable bond, swaps and forwards) are in bond_model, yieldcurve_model,
     derivative_model, short_rate_model, swap_model and forward_model.
     """

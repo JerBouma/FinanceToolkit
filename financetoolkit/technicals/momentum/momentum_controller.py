@@ -28,7 +28,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class MomentumTechnicals:
     """
-    Momentum indicators: oscillators such as the RSI, ConnorsRSI, MACD (also volume weighted), stochastic, Williams %R, Aroon, ADX and the directional movement system, CCI, money flow index, Ichimoku Cloud, rate of change, momentum, Know Sure Thing, the Coppock curve, the indicators built on a linear regression (the Correlation Trend Indicator and the Forecast and Projection Oscillators) and trend flags such as the TTM Trend.
+    Momentum indicators: oscillators such as the RSI, ConnorsRSI, MACD (also volume weighted), stochastic, Williams %R, Aroon, ADX and the directional movement system, CCI, money flow index, Ichimoku Cloud, rate of change, momentum, Know Sure Thing, the Coppock curve, the indicators built on a linear regression (the Correlation Trend Indicator and the Forecast and Projection Oscillators), Pee's Trend Detection Index, Varadi's DV Intermediate Oscillator and trend flags such as the TTM Trend.
     """
 
     @handle_errors
@@ -491,6 +491,20 @@ class MomentumTechnicals:
         )
         momentum_indicators["Projection Oscillator"] = self.get_projection_oscillator(
             period=period, close_column=close_column, window=window
+        )
+
+        trend_detection_index = self.get_trend_detection_index(
+            period=period, close_column=close_column
+        )
+
+        momentum_indicators["Trend Detection Index"] = trend_detection_index["TDI"]
+        momentum_indicators["TDI Direction Indicator"] = trend_detection_index[
+            "Direction Indicator"
+        ]
+        momentum_indicators["DV Intermediate Oscillator"] = (
+            self.get_dv_intermediate_oscillator(
+                period=period, close_column=close_column
+            )["DVI"]
         )
 
         self._momentum_indicators = pd.concat(momentum_indicators, axis=1)
@@ -8358,6 +8372,307 @@ class MomentumTechnicals:
 
         return finalize_dataset(
             dataset=projection_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_trend_detection_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 20,
+        multiple: int = 2,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate M.H. Pee's Trend Detection Index (TDI) and its Direction Indicator for a given
+        price series.
+
+        The Trend Detection Index tells a trending market from a consolidating one. It compares
+        the net momentum over the window with how much the momentum moved over a longer window:
+        when the momentum keeps one sign, its sum outweighs the absolute momentum of the earlier
+        periods and the TDI is positive (a trend); when it changes sign, the sum cancels out and
+        the TDI is negative (a consolidation). The Direction Indicator, the sum of the momentum,
+        says which way the trend goes.
+
+        The formula is as follows:
+
+        - Momentum = Close(t) — Close(t — window)
+        - Direction Indicator = Sum(Momentum, window)
+        - TDI = |Direction Indicator| — (Sum(|Momentum|, multiple * window) — Sum(|Momentum|, window))
+
+        Pee buys when both the TDI and the Direction Indicator are positive, and sells when the
+        TDI is positive and the Direction Indicator negative. A negative TDI says to stay out, or
+        to trade the range. Both are in price units, so they compare over time but not across
+        stocks with different prices.
+
+        For more information, see the following sources:
+
+        - Pee, M.H. (2001). "Trend Detection Index." Technical Analysis of Stocks & Commodities,
+          19(10).
+        - Referenced against TTR's TDI (https://cran.r-project.org/package=TTR).
+
+        Also known as: TDI, trend detection index, Pee's trend detection index.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods of the momentum and of the Direction
+                Indicator. Defaults to 20, as in TTR's TDI.
+            multiple (int, optional): The longer window of the absolute momentum, as a multiple of
+                `window`. Defaults to 2, Pee's own.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: The TDI and the Direction Indicator, in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Trend Detection Index for each asset in the Toolkit instance.
+        - Every sum covers momentum values only, so the TDI starts on period
+          (`multiple` + 1) * `window` — 1 and the Direction Indicator on period 2 * `window` — 1.
+          TTR's TDI sets the first `window` momentum values, which have no earlier price, to 0, so
+          both start `window` periods earlier there, with sums that include those zeros; from
+          then on the two agree.
+        - If `growth` is set to True, the method calculates the growth of the Trend Detection
+          Index using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_trend_detection_index().xs("AAPL", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Direction Indicator |      TDI |
+        |:-----------|----------------------:|---------:|
+        | 2025-12-24 |              128.144  | -160.945 |
+        | 2025-12-26 |              115.926  | -167.06  |
+        | 2025-12-29 |              103.167  | -173.298 |
+        | 2025-12-30 |               80.2354 | -196.881 |
+        | 2025-12-31 |               48.615  | -233.537 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        trend_detection_index = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_trend_detection_index,
+            window,
+            multiple,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=trend_detection_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_dv_intermediate_oscillator(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 252,
+        magnitude_weight: float = 0.8,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate David Varadi's DV Intermediate Oscillator (DVI) for a given price series.
+
+        The DVI is a smooth oscillator between 0 and 1 that combines two rankings over the last
+        `window` periods. The magnitude ranks how far the price stands above or below its
+        3-period average, smoothed over a short and a long window; the stretch ranks the number
+        of up days against down days over a short and a long window. Varadi weights the magnitude
+        0.8 and the stretch 0.2.
+
+        The formula is as follows:
+
+        - Return = Close(t) / SMA(Close, 3) — 1
+        - Magnitude = SMA((SMA(Return, 5) + SMA(Return, 100) / 10) / 2, 5)
+        - Direction = +1 if Close(t) > Close(t — 1), else —1
+        - Stretch = SMA((Sum(Direction, 10) + Sum(Direction, 100) / 10) / 2, 2)
+        - DVI Magnitude = Percent Rank(Magnitude, window)
+        - DVI Stretch = Percent Rank(Stretch, window)
+        - DVI = magnitude_weight * DVI Magnitude + (1 — magnitude_weight) * DVI Stretch
+
+        The Percent Rank is the share of the previous `window` values that are lower than the
+        latest one, as in `get_percent_rank`. A DVI above 0.5 marks a price stretched upwards
+        relative to the past year and one below 0.5 a price stretched downwards. Varadi uses it
+        for short-term mean reversion: buy below 0.5 and sell above it, preferably in the
+        direction of the longer trend.
+
+        For more information, see the following sources:
+
+        - Varadi, D. (2009). "What is the DVI?" CSS Analytics, December 13, 2009
+          (https://cssanalytics.wordpress.com/2009/12/13/what-is-the-dvi/).
+        - Referenced against TTR's DVI (https://cran.r-project.org/package=TTR).
+
+        Also known as: DVI, DV Intermediate, DV indicator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of previous periods of the Percent Ranks. Defaults to
+                252, a year of trading days.
+            magnitude_weight (float, optional): The weight of the magnitude in the DVI, between 0 and
+                1; the stretch gets the rest. Defaults to 0.8, Varadi's own.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: The DVI Magnitude, the DVI Stretch and the DVI, as decimals
+            between 0 and 1.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          DVI for each asset in the Toolkit instance. The first DVI needs `window` + 106 periods,
+          so with the default window a Toolkit needs about a year and a half of daily data before
+          its start date for a DVI on every date.
+        - The Percent Rank lies between 0 (a new low of the window) and 1 (a new high). TTR's DVI
+          ranks within a window of `n` values that includes the latest one and counts it, and
+          equal values, as lower, so its rank lies between 1/n and 1. Without equal values, TTR's
+          magnitude rank with n = `window` + 1 equals (`window` * DVI Magnitude + 1) / (`window` + 1);
+          the stretch takes few distinct values, which TTR counts as lower when equal.
+        - An unchanged close counts as a down day, as in TTR's DVI.
+        - If `growth` is set to True, the method calculates the growth of the DVI using the
+          specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_dv_intermediate_oscillator().xs("AAPL", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    DVI |   DVI Magnitude |   DVI Stretch |
+        |:-----------|-------:|----------------:|--------------:|
+        | 2025-12-24 | 0.3921 |          0.3175 |        0.6905 |
+        | 2025-12-26 | 0.4524 |          0.3929 |        0.6905 |
+        | 2025-12-29 | 0.4778 |          0.4246 |        0.6905 |
+        | 2025-12-30 | 0.5198 |          0.4802 |        0.6786 |
+        | 2025-12-31 | 0.5111 |          0.5079 |        0.5238 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        dv_intermediate_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_dv_intermediate_oscillator,
+            window,
+            magnitude_weight,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=dv_intermediate_oscillator,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -459,3 +459,81 @@ def test_standard_deviation_channel_takes_one_width():
         "Upper Band 1.5",
     ]
     assert result.notna().all().all()
+
+
+def test_signal_to_noise_ratio_of_a_steady_trend():
+    """A close that rises 1 a day with a high and low 0.5 around it has a True Range of 1.5
+    after the first day, so the 5-day move of 5 is 5 / 1.5 ATRs once the seed is gone.
+    """
+    close = pd.Series(100.0 + np.arange(80))
+    result = volatility_model.get_signal_to_noise_ratio(
+        close + 0.5, close - 0.5, close, 5
+    )
+
+    assert result.first_valid_index() == 5
+    # The ATR seeds on the first five True Ranges: (1 + 4 * 1.5) / 5 = 1.4 on period 4, and
+    # on period 5 it is 1.4 + (1.5 - 1.4) / 5 = 1.42.
+    assert result.iloc[5] == pytest.approx(5 / 1.42)
+    assert result.iloc[-1] == pytest.approx(5 / 1.5)
+
+
+def test_get_signal_to_noise_ratio(recorder):
+    prices = random_prices()
+    result = volatility_model.get_signal_to_noise_ratio(
+        prices["High"], prices["Low"], prices["Close"], 14
+    )
+    atr = volatility_model.get_average_true_range(
+        prices["High"], prices["Low"], prices["Close"], 14
+    )
+
+    pd.testing.assert_series_equal(
+        result, (prices["Close"] - prices["Close"].shift(14)).abs() / atr
+    )
+    recorder.capture(result.round(6))
+
+
+def test_signal_to_noise_ratio_without_a_range_is_missing():
+    flat = pd.Series(10.0, index=range(30))
+
+    assert volatility_model.get_signal_to_noise_ratio(flat, flat, flat, 5).isna().all()
+
+
+def test_price_bands_of_a_straight_line_have_no_width():
+    """On a price that rises by the same step every period, the 20 and 2-period averages
+    stay 9 apart, so the deviation has no spread and the bands lie on the middle band.
+    """
+    close = pd.Series(np.arange(60, dtype=float))
+    result = volatility_model.get_price_bands(close, 20, 2, 2)
+
+    assert result["Middle Band"].first_valid_index() == 19
+    assert result["Upper Band"].first_valid_index() == 38
+    pd.testing.assert_series_equal(
+        result["Upper Band"].dropna(),
+        result["Middle Band"].iloc[38:],
+        check_names=False,
+        atol=1e-9,
+    )
+
+
+def test_get_price_bands(recorder):
+    closes = random_prices()["Close"]
+    result = volatility_model.get_price_bands(closes, 10, 2, 3)
+
+    middle = closes.rolling(10).mean()
+    deviation = middle - closes.rolling(3).mean()
+    # The population standard deviation of the last 10 deviations, window by window.
+    expected_width = deviation.rolling(10).apply(lambda values: values.std(ddof=0))
+    assert result["Upper Band"].first_valid_index() == 18
+    pd.testing.assert_series_equal(
+        result["Upper Band"], middle + 2 * expected_width, check_names=False
+    )
+    pd.testing.assert_series_equal(
+        result["Lower Band"], middle - 2 * expected_width, check_names=False
+    )
+    assert list(result.columns) == ["Upper Band", "Middle Band", "Lower Band"]
+    recorder.capture(result.round(6))
+
+
+def test_price_bands_reject_an_unknown_moving_average():
+    with pytest.raises(ValueError, match="moving_average must be one of"):
+        volatility_model.get_price_bands(random_prices()["Close"], moving_average="x")

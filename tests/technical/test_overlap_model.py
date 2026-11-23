@@ -787,3 +787,51 @@ def test_new_overlap_indicators_stop_where_the_prices_stop():
     ):
         assert result.iloc[-3:].isna().all(axis=None)
         assert result.iloc[[40]].isna().all(axis=None)
+
+
+def test_guppy_multiple_moving_averages_are_guppys_exponential_averages(recorder):
+    prices = sample_prices()["Close"]
+    result = overlap_model.get_guppy_multiple_moving_averages(prices)
+
+    windows = [3, 5, 8, 10, 12, 15, 30, 35, 40, 45, 50, 60]
+    assert list(result.columns) == [
+        *[f"Short EMA {window}" for window in windows[:6]],
+        *[f"Long EMA {window}" for window in windows[6:]],
+        "Short Group Spread",
+        "Long Group Spread",
+        "Group Spread",
+    ]
+    for window in windows:
+        group = "Short" if window < 30 else "Long"
+        pd.testing.assert_series_equal(
+            result[f"{group} EMA {window}"],
+            overlap_model.get_exponential_moving_average(prices, window),
+            check_names=False,
+        )
+
+    short = result.iloc[:, :6]
+    pd.testing.assert_series_equal(
+        result["Short Group Spread"].iloc[14:],
+        short.max(axis=1).iloc[14:] - short.min(axis=1).iloc[14:],
+        check_names=False,
+    )
+    # The 60-period average of 60 prices starts on the last one, as do the long spreads.
+    assert result["Short Group Spread"].first_valid_index() == prices.index[14]
+    assert result["Long Group Spread"].first_valid_index() == prices.index[59]
+    assert result["Group Spread"].iloc[-1] == pytest.approx(
+        result.iloc[-1, :6].mean() - result.iloc[-1, 6:12].mean()
+    )
+    recorder.capture(result.round(3))
+
+
+def test_guppy_multiple_moving_averages_take_their_own_windows():
+    prices = sample_prices()["Close"]
+    result = overlap_model.get_guppy_multiple_moving_averages(prices, [2, 4], [10, 20])
+
+    assert list(result.columns[:4]) == [
+        "Short EMA 2",
+        "Short EMA 4",
+        "Long EMA 10",
+        "Long EMA 20",
+    ]
+    assert result["Group Spread"].first_valid_index() == prices.index[19]

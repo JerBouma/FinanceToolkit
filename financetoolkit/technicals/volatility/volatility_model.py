@@ -1696,3 +1696,131 @@ def get_standard_deviation_channel(
         channel[f"Upper Band {deviations:g}"] = line + deviations * standard_deviation
 
     return channel
+
+
+def get_signal_to_noise_ratio(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int,
+) -> pd.Series:
+    """
+    Calculate the Signal-to-Noise Ratio (SNR) of a given price series.
+
+    The Signal-to-Noise Ratio divides the net move of the close over the window (the signal)
+    by the Average True Range over the same window (the noise). A ratio of 5 means the price
+    moved five times its average range in `window` periods: a market that trends cleanly,
+    where a ratio near 0 is one that moved a lot but went nowhere. Skeggs and Hill use it to
+    measure how much trend there is for a trend follower to capture.
+
+    The formula is as follows:
+
+    - Signal = |Close(t) - Close(t - window)|
+    - Noise = ATR(window), Wilder's Smoothed Moving Average of the True Range
+    - SNR = Signal / Noise
+
+    Also known as: SNR, signal to noise ratio, trend strength ratio.
+
+    Reference: Skeggs, J. and Hill, A. (2015). "Back in Black Part 2: The Opportunity Set for
+    Trend Following." Man AHL.
+
+    Referenced against TTR's SNR (https://cran.r-project.org/package=TTR), by Peter Carl.
+
+    Notes:
+        - The ATR is `get_average_true_range`, whose first True Range is High - Low (the
+          StockCharts convention). TTR's ATR leaves the first True Range missing and starts
+          one period later, so the two ratios differ until the seeds of the averages have
+          converged (within 0.01% after about 100 periods with a 14-period window).
+        - A window without any range (an ATR of 0) has no ratio.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods of the move and of the Average True Range.
+
+    Returns:
+        pd.Series: Signal-to-Noise Ratio values, in multiples of the Average True Range.
+    """
+    average_true_range = get_average_true_range(
+        prices_high, prices_low, prices_close, window
+    )
+    signal = (prices_close - prices_close.shift(window)).abs()
+
+    return signal / average_true_range.where(average_true_range != 0)
+
+
+def get_price_bands(
+    prices: pd.Series,
+    window: int = 20,
+    num_std_dev: float = 2,
+    fast_window: int = 2,
+    moving_average: str = "simple",
+) -> pd.DataFrame:
+    """
+    Calculate the Price Bands of a given price series.
+
+    Price Bands are a variant of the Bollinger Bands whose width comes from the distance between
+    the moving average and a fast moving average of the price, rather than from the distance
+    between the price and the moving average. The fast average filters out the noise of single
+    periods, so a spike widens the bands less than it widens the Bollinger Bands, and the bands
+    react to sustained moves away from the average.
+
+    The formula is as follows:
+
+    - Middle Band = SMA(Close, window), or another moving average of `moving_average`
+    - Deviation = Middle Band - SMA(Close, fast_window)
+    - Width = Population Standard Deviation(Deviation, window)
+    - Upper Band = Middle Band + num_std_dev * Width
+    - Lower Band = Middle Band - num_std_dev * Width
+
+    Also known as: PBands, price bands, smoothed Bollinger Bands.
+
+    Reference: the measure is defined by Brian G. Peterson in TTR's PBands, after the bands of
+    Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
+
+    Referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
+
+    Notes:
+        - The standard deviation is the population one (dividing by `window`), as in TTR's
+          PBands and in the Bollinger Bands.
+        - With `fast_window` = 1 the fast average is the price itself, and the width is the
+          standard deviation of the price around a moving average, not around its own mean.
+        - TTR's PBands can also centre the bands (`centered=TRUE`), which adds the moving
+          average of the deviation divided by the width to the middle band. That adds a number
+          of standard deviations to a price, so the shift does not scale with the price, and
+          the Toolkit leaves it out.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the moving average and the standard deviation.
+            Defaults to 20.
+        num_std_dev (float): Number of standard deviations of the bands. Defaults to 2.
+        fast_window (int): Number of periods of the fast moving average. Defaults to 2.
+        moving_average (str): The moving average of both averages, one of `MOVING_AVERAGES`
+            (the window-only methods of `get_moving_average`). Defaults to "simple".
+
+    Returns:
+        pd.DataFrame: Price Bands (upper, middle, lower).
+
+    Raises:
+        ValueError: If `moving_average` is not one of `MOVING_AVERAGES`.
+    """
+    if moving_average not in MOVING_AVERAGES:
+        raise ValueError(
+            f"moving_average must be one of {', '.join(MOVING_AVERAGES)}, not {moving_average}."
+        )
+
+    middle_band = MOVING_AVERAGES[moving_average](prices, window)
+    fast_average = MOVING_AVERAGES[moving_average](prices, fast_window)
+    width = (middle_band - fast_average).rolling(window=window).std(ddof=0)
+
+    return pd.concat(
+        [
+            middle_band + num_std_dev * width,
+            middle_band,
+            middle_band - num_std_dev * width,
+        ],
+        axis=1,
+        keys=["Upper Band", "Middle Band", "Lower Band"],
+    )

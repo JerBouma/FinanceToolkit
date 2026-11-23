@@ -1529,6 +1529,88 @@ def test_regression_indicator_default_windows():
         assert inspect.signature(method).parameters["window"].default == window
 
 
+def test_get_signal_to_noise_ratio(recorder, technical_module):
+    recorder.capture(technical_module.get_signal_to_noise_ratio())
+    recorder.capture(technical_module.get_signal_to_noise_ratio(window=50))
+    recorder.capture(
+        technical_module.get_signal_to_noise_ratio(growth=True, lag=[1, 2])
+    )
+
+
+def test_get_price_bands(recorder, technical_module):
+    recorder.capture(technical_module.get_price_bands())
+    recorder.capture(
+        technical_module.get_price_bands(window=10, num_std_dev=1.5, fast_window=3)
+    )
+    recorder.capture(technical_module.get_price_bands(growth=True, lag=[1, 2]))
+
+
+def test_get_trend_detection_index(recorder, technical_module):
+    recorder.capture(technical_module.get_trend_detection_index())
+    recorder.capture(technical_module.get_trend_detection_index(window=10, multiple=3))
+    recorder.capture(
+        technical_module.get_trend_detection_index(growth=True, lag=[1, 2])
+    )
+
+
+def test_get_dv_intermediate_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_dv_intermediate_oscillator())
+    recorder.capture(
+        technical_module.get_dv_intermediate_oscillator(
+            window=100, magnitude_weight=0.5
+        )
+    )
+    recorder.capture(
+        technical_module.get_dv_intermediate_oscillator(period="weekly", window=26)
+    )
+
+
+def test_get_guppy_multiple_moving_averages(recorder, technical_module):
+    recorder.capture(technical_module.get_guppy_multiple_moving_averages())
+    recorder.capture(
+        technical_module.get_guppy_multiple_moving_averages(
+            short_windows=[5, 10], long_windows=[50, 100]
+        )
+    )
+    recorder.capture(
+        technical_module.get_guppy_multiple_moving_averages(growth=True, lag=[1, 2])
+    )
+
+
+def test_guppy_multiple_moving_averages_keep_the_order_of_their_windows(
+    technical_module,
+):
+    result = technical_module.get_guppy_multiple_moving_averages()
+    names = list(dict.fromkeys(result.columns.get_level_values(0)))
+
+    assert names[:6] == [f"Short EMA {window}" for window in [3, 5, 8, 10, 12, 15]]
+    assert names[6:12] == [f"Long EMA {window}" for window in [30, 35, 40, 45, 50, 60]]
+    assert names[12:] == ["Short Group Spread", "Long Group Spread", "Group Spread"]
+
+
+def test_ttr_indicator_defaults():
+    import inspect  # noqa: PLC0415
+
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    def defaults(method):
+        return {
+            name: parameter.default
+            for name, parameter in inspect.signature(method).parameters.items()
+        }
+
+    # TTR's defaults: Pee's 20 periods with a long window twice as long, Varadi's year of
+    # trading days with a weight of 0.8 on the magnitude and PBands' 20 and 2 periods.
+    assert defaults(Technicals.get_trend_detection_index)["multiple"] == 2
+    assert defaults(Technicals.get_trend_detection_index)["window"] == 20
+    dvi = defaults(Technicals.get_dv_intermediate_oscillator)
+    assert (dvi["window"], dvi["magnitude_weight"]) == (252, 0.8)
+    bands = defaults(Technicals.get_price_bands)
+    assert (bands["window"], bands["num_std_dev"], bands["fast_window"]) == (20, 2, 2)
+
+
 def test_get_moving_average_triple_exponential(recorder, technical_module):
     recorder.capture(technical_module.get_moving_average(method="triple_exponential"))
     recorder.capture(

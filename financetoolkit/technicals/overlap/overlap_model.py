@@ -2119,3 +2119,82 @@ def get_fibonacci_retracement_levels(
     return pd.concat(
         retracement_levels.values(), keys=retracement_levels.keys(), axis=1
     )
+
+
+# Guppy's windows of the short-term (traders) and long-term (investors) groups.
+GUPPY_SHORT_WINDOWS = [3, 5, 8, 10, 12, 15]
+GUPPY_LONG_WINDOWS = [30, 35, 40, 45, 50, 60]
+
+
+def get_guppy_multiple_moving_averages(
+    prices: pd.Series,
+    short_windows: list[int] | None = None,
+    long_windows: list[int] | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate Daryl Guppy's Multiple Moving Averages (GMMA) of a given price series.
+
+    The Guppy Multiple Moving Averages are two groups of Exponential Moving Averages: a short
+    group of 3 to 15 periods that follows the traders, and a long group of 30 to 60 periods
+    that follows the investors. A trend is up when the short group lies above the long group
+    and down when it lies below, and a change of trend shows where the groups cross. How far
+    the averages of a group spread apart says how strong the conviction of that group is: a
+    long group that widens confirms the trend, one that compresses warns that the investors
+    are changing their minds.
+
+    The formula is as follows:
+
+    - Short EMA(n) = EMA(Close, n), for n in 3, 5, 8, 10, 12 and 15
+    - Long EMA(n) = EMA(Close, n), for n in 30, 35, 40, 45, 50 and 60
+    - Short Group Spread = Max(Short EMAs) - Min(Short EMAs)
+    - Long Group Spread = Max(Long EMAs) - Min(Long EMAs)
+    - Group Spread = Mean(Short EMAs) - Mean(Long EMAs)
+
+    Also known as: GMMA, Guppy multiple moving average, Guppy ribbons.
+
+    Reference: Guppy, D. (2004). "Trend Trading: A Seven-Step Approach to Success." Wiley.
+
+    Referenced against TTR's GMMA (https://cran.r-project.org/package=TTR).
+
+    Notes:
+        - The averages are `get_exponential_moving_average`, seeded with the simple average
+          of their first `n` prices and missing before it, as TTR's EMA is.
+        - The spreads are in price units and start once every average of their groups has
+          started. TTR's GMMA returns the averages only.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        short_windows (list[int] | None): The windows of the short group. Defaults to None,
+            which uses Guppy's 3, 5, 8, 10, 12 and 15 (as does an empty list).
+        long_windows (list[int] | None): The windows of the long group. Defaults to None,
+            which uses Guppy's 30, 35, 40, 45, 50 and 60 (as does an empty list).
+
+    Returns:
+        pd.DataFrame: The short and long EMAs and the group spreads, in price units.
+    """
+    short_windows = short_windows or GUPPY_SHORT_WINDOWS
+    long_windows = long_windows or GUPPY_LONG_WINDOWS
+
+    short_group = pd.concat(
+        [get_exponential_moving_average(prices, window) for window in short_windows],
+        axis=1,
+        keys=[f"Short EMA {window}" for window in short_windows],
+    )
+    long_group = pd.concat(
+        [get_exponential_moving_average(prices, window) for window in long_windows],
+        axis=1,
+        keys=[f"Long EMA {window}" for window in long_windows],
+    )
+
+    spreads = pd.DataFrame(
+        {
+            "Short Group Spread": short_group.max(axis=1, skipna=False)
+            - short_group.min(axis=1, skipna=False),
+            "Long Group Spread": long_group.max(axis=1, skipna=False)
+            - long_group.min(axis=1, skipna=False),
+            "Group Spread": short_group.mean(axis=1, skipna=False)
+            - long_group.mean(axis=1, skipna=False),
+        }
+    )
+
+    return pd.concat([short_group, long_group, spreads], axis=1)

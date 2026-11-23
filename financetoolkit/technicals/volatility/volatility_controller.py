@@ -31,7 +31,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class VolatilityTechnicals:
     """
-    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range (also normalized, and the average day range), Chaikin's volatility, the relative volatility index, the mass index, the Supertrend and the Profit Maximizer, the Chandelier Exit, the Chande Kroll Stop, the Keltner channels and aberration bands, the Donchian channels, the acceleration bands, the adaptive price zone, the price distance, Elder's market thermometer, the squeeze momentum, the volatility cone and the standard deviation channel.
+    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range (also normalized, and the average day range), Chaikin's volatility, the relative volatility index, the mass index, the Supertrend and the Profit Maximizer, the Chandelier Exit, the Chande Kroll Stop, the Keltner channels and aberration bands, the Donchian channels, the acceleration bands, the adaptive price zone, the price distance, Elder's market thermometer, the squeeze momentum, the signal-to-noise ratio, the price bands, the volatility cone and the standard deviation channel.
     """
 
     @handle_errors
@@ -56,8 +56,8 @@ class VolatilityTechnicals:
                 Defaults to 14. The Bollinger Bands and their %B and BandWidth keep their own
                 window of 20 periods (with 2 standard deviations), as defined by Bollinger, and
                 the Supertrend, Chaikin Volatility, acceleration bands, Chande Kroll Stop,
-                adaptive price zone, aberration bands, Profit Maximizer, market thermometer and
-                squeeze momentum their own defaults.
+                adaptive price zone, aberration bands, Profit Maximizer, market thermometer,
+                squeeze momentum and Price Bands their own defaults.
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -272,6 +272,14 @@ class VolatilityTechnicals:
         )
         volatility_indicators["Squeeze Momentum"] = squeeze_momentum["Momentum"]
         volatility_indicators["Squeeze"] = squeeze_momentum["Squeeze"]
+
+        volatility_indicators["Signal-to-Noise Ratio"] = self.get_signal_to_noise_ratio(
+            period=period, close_column=close_column, window=window
+        )
+
+        price_bands = self.get_price_bands(period=period, close_column=close_column)
+        for band in ["Upper", "Middle", "Lower"]:
+            volatility_indicators[f"Price Band {band}"] = price_bands[f"{band} Band"]
 
         self._volatility_indicators = pd.concat(volatility_indicators, axis=1)
 
@@ -3160,6 +3168,306 @@ class VolatilityTechnicals:
 
         return finalize_dataset(
             dataset=standard_deviation_channel,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_signal_to_noise_ratio(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Signal-to-Noise Ratio (SNR) for a given price series.
+
+        The Signal-to-Noise Ratio divides the net move of the close over the window (the signal)
+        by the Average True Range over the same window (the noise). A ratio of 5 means the price
+        moved five times its average range in `window` periods, a market that trends cleanly,
+        while a ratio near 0 means the price moved a lot but went nowhere. Skeggs and Hill use it
+        to measure how much trend a market offers a trend follower.
+
+        The formula is as follows:
+
+        - Signal = |Close(t) — Close(t — window)|
+        - Noise = ATR(window), Wilder's Smoothed Moving Average of the True Range
+        - SNR = Signal / Noise
+
+        Because the ATR includes the gaps between periods, the noise covers the overnight moves a
+        close-to-close measure would miss. The ratio says how far the price trended, not in
+        which direction.
+
+        For more information, see the following sources:
+
+        - Skeggs, J. and Hill, A. (2015). "Back in Black Part 2: The Opportunity Set for Trend
+          Following." Man AHL.
+        - Referenced against TTR's SNR (https://cran.r-project.org/package=TTR), by Peter Carl.
+
+        Also known as: SNR, signal to noise ratio, trend strength ratio.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the high and low prices are adjusted for
+                dividends in the same way.
+            window (int, optional): The number of periods of the move and of the Average True
+                Range. Defaults to 14, the default window of the Average True Range.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Signal-to-Noise Ratio values, in multiples of the Average
+            True Range.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Signal-to-Noise Ratio for each asset in the Toolkit instance.
+        - The ATR is that of `get_average_true_range`, whose first True Range is High — Low (the
+          StockCharts convention). TTR's ATR starts one period later, so the ratio equals TTR's
+          SNR once the seeds of the averages have converged (within 0.01% after about 100
+          periods with the default window).
+        - A window without any range (an ATR of 0) has no ratio.
+        - If `growth` is set to True, the method calculates the growth of the Signal-to-Noise
+          Ratio using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_signal_to_noise_ratio().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-24 | 1.4877 | 0.8712 |      1.1787 |
+        | 2025-12-26 | 1.201  | 0.5828 |      1.025  |
+        | 2025-12-29 | 0.9597 | 0.5194 |      0.9867 |
+        | 2025-12-30 | 0.994  | 0.6213 |      0.9957 |
+        | 2025-12-31 | 1.744  | 0.7096 |      0.6057 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        signal_to_noise_ratio = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_signal_to_noise_ratio,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=signal_to_noise_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_price_bands(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 20,
+        num_std_dev: float = 2,
+        fast_window: int = 2,
+        moving_average: str = "simple",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Price Bands for a given price series.
+
+        Price Bands are a variant of the Bollinger Bands whose width comes from the distance
+        between the moving average and a fast moving average of the price, rather than from the
+        distance between the price and the moving average. The fast average filters out the noise
+        of single periods, so a spike widens the bands less than it widens the Bollinger Bands,
+        and the bands react to sustained moves away from the average instead.
+
+        The formula is as follows:
+
+        - Middle Band = SMA(Close, window), or another moving average with `moving_average`
+        - Deviation = Middle Band — SMA(Close, fast_window)
+        - Width = Population Standard Deviation(Deviation, window)
+        - Upper Band = Middle Band + num_std_dev * Width
+        - Lower Band = Middle Band — num_std_dev * Width
+
+        The bands are read like the Bollinger Bands: narrow bands mark a quiet market and a close
+        beyond a band a move that stands out from the recent ones. Since the width follows the
+        smoothed price, the bands are narrower than the Bollinger Bands of the same window and
+        a close outside them is more common.
+
+        For more information, see the following sources:
+
+        - The measure is defined by Brian G. Peterson in TTR's PBands, after the bands of
+          Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
+        - Referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
+
+        Also known as: PBands, price bands, smoothed Bollinger Bands.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods of the moving average and the standard
+                deviation. Defaults to 20, as in TTR's PBands.
+            num_std_dev (float, optional): The number of standard deviations of the bands.
+                Defaults to 2.
+            fast_window (int, optional): The number of periods of the fast moving average.
+                Defaults to 2.
+            moving_average (str, optional): The moving average of both averages, one of the
+                window-only methods of `get_moving_average`: "simple", "exponential", "double_exponential",
+                "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
+                "fibonacci" or "pascal". Defaults to "simple".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the bands.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Price Bands (upper, middle, lower), in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Price Bands for each asset in the Toolkit instance.
+        - The standard deviation is the population one (dividing by `window`), as in TTR's PBands
+          and in the Bollinger Bands. The bands start on period 2 * `window` — 2.
+        - TTR's PBands can also centre the bands (`centered=TRUE`), which adds the moving average
+          of the deviation divided by the width to the middle band. That adds a number of standard
+          deviations to a price, so the shift does not scale with the price, and the Toolkit
+          leaves it out.
+        - If `growth` is set to True, the method calculates the growth of the Price Bands using
+          the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_price_bands().xs("AAPL", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Lower Band |   Middle Band |   Upper Band |
+        |:-----------|-------------:|--------------:|-------------:|
+        | 2025-12-24 |      265.165 |       276.19  |      287.214 |
+        | 2025-12-26 |      264.91  |       275.983 |      287.056 |
+        | 2025-12-29 |      264.762 |       275.729 |      286.697 |
+        | 2025-12-30 |      264.769 |       275.23  |      285.691 |
+        | 2025-12-31 |      265.325 |       274.516 |      283.708 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        price_bands = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            volatility_model.get_price_bands,
+            window,
+            num_std_dev,
+            fast_window,
+            moving_average,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=price_bands,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

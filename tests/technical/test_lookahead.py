@@ -576,6 +576,29 @@ PER_SECURITY_INDICATORS = {
     "get_williams_fractal": lambda high, low, close, opening, volume: pattern.get_williams_fractal(
         high, low, 2, 2
     ),
+    "get_signal_to_noise_ratio": (
+        lambda high, low, close, opening, volume: volatility.get_signal_to_noise_ratio(
+            high, low, close, WINDOW
+        )
+    ),
+    "get_price_bands": lambda high, low, close, opening, volume: volatility.get_price_bands(
+        close, 20, 2, 2
+    ),
+    "get_trend_detection_index": (
+        lambda high, low, close, opening, volume: momentum.get_trend_detection_index(
+            close, 20, 2
+        )
+    ),
+    "get_dv_intermediate_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_dv_intermediate_oscillator(
+            close, 252, 0.8
+        )
+    ),
+    "get_guppy_multiple_moving_averages": (
+        lambda high, low, close, opening, volume: overlap.get_guppy_multiple_moving_averages(
+            close
+        )
+    ),
 }
 
 # Breadth indicators measured across a universe rather than one security.

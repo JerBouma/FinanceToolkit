@@ -80,23 +80,38 @@ def get_two_sample_t_test(
     sample_b_values = sample_b_values[~np.isnan(sample_b_values)]
 
     n_a, n_b = len(sample_a_values), len(sample_b_values)
+    # A sample variance needs two observations; without them there is no test to report.
+    if min(n_a, n_b) < 2:  # noqa: PLR2004
+        return pd.Series(
+            {
+                "t-Statistic": np.nan,
+                "Degrees of Freedom": np.nan,
+                "P-Value": np.nan,
+                "Mean A": float(sample_a_values.mean()) if n_a else np.nan,
+                "Mean B": float(sample_b_values.mean()) if n_b else np.nan,
+            }
+        )
     variance_a = np.var(sample_a_values, ddof=1)
     variance_b = np.var(sample_b_values, ddof=1)
 
-    if equal_variance:
-        degrees_of_freedom = n_a + n_b - 2
-        pooled_variance = (
-            (n_a - 1) * variance_a + (n_b - 1) * variance_b
-        ) / degrees_of_freedom
-        standard_error = np.sqrt(pooled_variance * (1 / n_a + 1 / n_b))
-    else:
-        squared_error_a, squared_error_b = variance_a / n_a, variance_b / n_b
-        standard_error = np.sqrt(squared_error_a + squared_error_b)
-        degrees_of_freedom = (squared_error_a + squared_error_b) ** 2 / (
-            squared_error_a**2 / (n_a - 1) + squared_error_b**2 / (n_b - 1)
-        )
+    # Two constant samples have no standard error, which leaves the statistic NaN or infinite.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if equal_variance:
+            degrees_of_freedom = n_a + n_b - 2
+            pooled_variance = (
+                (n_a - 1) * variance_a + (n_b - 1) * variance_b
+            ) / degrees_of_freedom
+            standard_error = np.sqrt(pooled_variance * (1 / n_a + 1 / n_b))
+        else:
+            squared_error_a, squared_error_b = variance_a / n_a, variance_b / n_b
+            standard_error = np.sqrt(squared_error_a + squared_error_b)
+            degrees_of_freedom = (squared_error_a + squared_error_b) ** 2 / (
+                squared_error_a**2 / (n_a - 1) + squared_error_b**2 / (n_b - 1)
+            )
 
-    t_statistic = (np.mean(sample_a_values) - np.mean(sample_b_values)) / standard_error
+        t_statistic = (
+            np.mean(sample_a_values) - np.mean(sample_b_values)
+        ) / standard_error
     p_value = 2 * stats.t.sf(np.abs(t_statistic), degrees_of_freedom)
 
     return pd.Series(

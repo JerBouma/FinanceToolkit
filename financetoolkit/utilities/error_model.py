@@ -6,6 +6,7 @@ import inspect
 import os
 import threading
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
@@ -82,6 +83,32 @@ def validate_alpha(alpha: float) -> None:
         raise InvalidArgumentError(
             f"alpha is a tail probability between 0 and 1, e.g. 0.05 for the 95% "
             f"confidence level, not {alpha!r}. Please pass a value between 0 and 1 as alpha."
+        )
+
+
+def validate_window(name: str, value: int | None, minimum: int = 1) -> None:
+    """
+    Check that a window (window, rolling, lags and the like) is a whole number of at least
+    minimum observations. None, for the whole sample or the default, is always accepted.
+
+    Args:
+        name (str): The name of the parameter, used in the message.
+        value (int | None): The window.
+        minimum (int, optional): The smallest window the calculation can use. Defaults to 1.
+
+    Raises:
+        InvalidArgumentError: If the window is not a whole number of at least minimum (a ValueError).
+    """
+    if value is None:
+        return
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, np.integer))
+        or value < minimum
+    ):
+        raise InvalidArgumentError(
+            f"{name} is a number of observations of at least {minimum}, not {value!r}. "
+            f"Please pass a whole number of {minimum} or more as {name}, or None."
         )
 
 

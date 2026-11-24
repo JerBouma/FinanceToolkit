@@ -387,3 +387,21 @@ def test_get_ar1_covariance_gives_the_prais_winsten_estimate():
     expected = np.linalg.lstsq(transform @ design, transform @ y, rcond=None)[0]
     result = regression_model.get_gls(y, x, omega)
     assert np.allclose(result["coefficients"], expected)
+
+
+def test_perfect_separation_is_reported_once(caplog):
+    # The outcome follows the sign of x exactly: statsmodels warns on every iteration and its
+    # logistic function overflows, which is collected into one message.
+    x = np.linspace(-1, 1, 20)
+    y = (x > 0).astype(float)
+
+    for regression in (
+        regression_model.get_logistic_regression,
+        regression_model.get_probit_regression,
+    ):
+        caplog.clear()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with caplog.at_level("WARNING", logger="financetoolkit"):
+                regression(y, x)
+        assert caplog.text.count("separates the outcomes perfectly") == 1

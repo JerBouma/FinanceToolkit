@@ -1030,7 +1030,7 @@ def select_metrics(
                 names.append(name)
 
     if not names:
-        raise ValueError("Please name a metric or a collection to analyse.")
+        raise InvalidArgumentError("Please name a metric or a collection to analyse.")
 
     return names
 
@@ -1081,8 +1081,9 @@ def get_daily_factors(
             or not name.startswith("get_")
             or name in ("get_factor_analysis", "get_indicator_summary")
         ):
-            raise ValueError(
-                f"{name} is not a metric of the {type(module).__name__} module."
+            raise InvalidArgumentError(
+                f"{name} is not a metric of the {type(module).__name__} module. Please pass "
+                "the name of one of its get_ methods or a collection."
             )
         accepted = inspect.signature(method).parameters
         for key, value in variant.items():
@@ -1097,7 +1098,7 @@ def get_daily_factors(
                 for option in typing.get_args(member)
             ]
             if options and value not in options:
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"{key}={value!r} is not an option of {name}, which takes "
                     f"{', '.join(map(repr, options))}."
                 )
@@ -1563,9 +1564,15 @@ def get_factor_analysis(
         name: analysis for name, analysis in analyses.items() if analysis is not None
     }
 
+    # A collection can leave dozens of metrics without a ranking; a few names say enough.
+    thin_names = (
+        ", ".join(thin)
+        if len(thin) <= 3  # noqa: PLR2004
+        else f"{len(thin)} metrics ({', '.join(thin[:3])} and others)"
+    )
     if not analyses:
         raise ValueError(
-            f"{', '.join(thin)} {'has' if len(thin) == 1 else 'have'} a value for fewer than "
+            f"{thin_names} {'has' if len(thin) == 1 else 'have'} a value for fewer than "
             f"{MINIMUM_TICKERS} tickers in every period, so there is nothing to rank; twenty "
             "or more tickers give meaningful quantiles."
         )
@@ -1573,7 +1580,7 @@ def get_factor_analysis(
         logger.warning(
             "%s left out of the factor analysis: fewer than %s tickers have a value in any "
             "period.",
-            ", ".join(thin),
+            thin_names,
             MINIMUM_TICKERS,
         )
 

@@ -13,6 +13,7 @@ from financetoolkit.utilities.error_model import (
     InvalidArgumentError,
     handle_errors,
     validate_alpha,
+    validate_window,
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -377,10 +378,8 @@ class SignificanceEconometrics:
         validate_alpha(alpha)
         period = period if period else "daily"
 
-        if window is not None and window < 2:  # noqa: PLR2004
-            raise ValueError(
-                "The window needs at least 2 changes to measure a volatility."
-            )
+        # A volatility needs at least 2 changes.
+        validate_window("window", window, 2)
         if not 0 < alpha < 1:
             raise InvalidArgumentError(
                 "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
@@ -407,7 +406,11 @@ class SignificanceEconometrics:
             {
                 series: risk_model.get_move_significance(
                     changes[series].dropna(),
-                    window if window else default_window(changes[series].dropna()),
+                    (
+                        window
+                        if window is not None
+                        else default_window(changes[series].dropna())
+                    ),
                     alpha,
                 )
                 for series in changes.columns

@@ -592,3 +592,23 @@ def test_a_put_raises_the_spread_and_the_convexity():
     assert puttable["Option Value"] < 0
     assert puttable["Effective Duration"] < straight["Effective Duration"]
     assert puttable["Effective Convexity"] > straight["Effective Convexity"]
+
+
+@pytest.mark.parametrize("model", ["black_karasinski", "black_derman_toy"])
+def test_lognormal_option_adjusted_spread_on_a_low_curve(model):
+    # Shifted down by 100 basis points a flat 0.8% curve has negative forward rates, which the
+    # lognormal models cannot fit: the duration then shifts by half the lowest forward rate.
+    result = short_rate_model.get_option_adjusted_spread(
+        101,
+        0.04,
+        10,
+        np.array([0.5, 30]),
+        np.array([0.008, 0.008]),
+        0.2,
+        call_price=100,
+        years_to_first_call=2,
+        model=model,
+        speed=0.05 if model == "black_karasinski" else 0.0,
+    )
+    assert all(np.isfinite(value) for value in result.values())
+    assert 0 < result["Effective Duration"] < 10

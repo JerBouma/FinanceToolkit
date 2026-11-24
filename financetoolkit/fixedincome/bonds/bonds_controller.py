@@ -1305,8 +1305,9 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Args:
             shifts (list[float] | str | None, optional): The parallel shifts (decimals), e.g.
-                [-0.01, 0.01]. Defaults to None, -200, -100, -50, -25, 25, 50, 100 and 200 basis
-                points.
+                [-0.01, 0.01]; a shift of 0 (today's curve, the P&L of which is 0) and repeated
+                shifts are left out. Defaults to None, -200, -100, -50, -25, 25, 50, 100 and 200
+                basis points.
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
                 `collect_bond_statistics`. Defaults to None.
             issuer (list[str] | str | None, optional): Part of an issuer's name, such as
@@ -1355,10 +1356,18 @@ class BondsFixedIncome(MarketsFixedIncome):
         | 912810RU4 | 2046-11-15 |  22.4745 |  4.8882 | -4.4764 | -15.7994 |  -935.114 | 16459.8   |
         | 912810UW6 | 2056-08-15 |  35.7437 |  7.4714 | -6.6913 | -22.9696 | -1412.9   | 31157.5   |
         """
-        shift_values = (
-            [shift for shift in curve_risk_model.DEFAULT_SHIFTS if shift != 0]
-            if shifts is None
-            else [float(shift) for shift in helpers.split_values(shifts)]
+        # The ladder is keyed by shift and always holds 0 (the delta and gamma of today's curve),
+        # so a 0 or a repeated shift given here would otherwise collide with it.
+        shift_values = list(
+            dict.fromkeys(
+                shift
+                for shift in (
+                    curve_risk_model.DEFAULT_SHIFTS
+                    if shifts is None
+                    else [float(value) for value in helpers.split_values(shifts)]
+                )
+                if shift != 0
+            )
         )
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date

@@ -1,8 +1,9 @@
 """Binomial Trees Model Tests"""
 
 import pytest
+from scipy.special import betainc, ndtr
 
-from financetoolkit.options.pricing import binomial_trees_model
+from financetoolkit.options.pricing import binomial_trees_model, black_scholes_model
 
 
 def test_a_risk_neutral_probability_outside_zero_and_one_is_refused():
@@ -151,3 +152,49 @@ def test_a_tree_without_a_valid_probability_is_refused():
     # equal and the probability is 0 / 0.
     with pytest.raises(ValueError, match="does not give a valid tree"):
         _tree_price("tian", timesteps=11, volatility=1e-10)
+
+
+@pytest.mark.parametrize("method", ["leisen_reimer", "exact_inversion"])
+@pytest.mark.parametrize(
+    "strike, years, volatility, put_option",
+    [
+        (50, 0.004, 0.3, False),
+        (150, 0.004, 0.3, True),
+        (150, 0.004, 0.3, False),
+        (60, 0.004, 0.01, False),
+        (90, 1.0, 0.01, True),
+    ],
+)
+def test_a_strike_with_a_certain_outcome_gets_its_value(
+    method, strike, years, volatility, put_option
+):
+    # N(d2) rounds to 1 (or 0) here, which put p at 1 and gave the tree no down movement.
+    value = binomial_trees_model.get_option_payoffs(
+        stock_price=100,
+        strike_price=strike,
+        years=years,
+        timesteps=11,
+        risk_free_rate=0.04,
+        volatility=volatility,
+        put_option=put_option,
+        method=method,
+    ).iloc[0, 0]
+    expected = black_scholes_model.get_black_scholes(
+        100, strike, 0.04, volatility, years, put_option=put_option
+    )
+    assert value == pytest.approx(expected, abs=1e-9)
+
+
+def test_the_strike_centred_trees_need_a_positive_strike():
+    with pytest.raises(ValueError, match="must be positive"):
+        binomial_trees_model.calculate_tree_movements(
+            "exact_inversion", 100, 0, 0.04, 0, 0.2, 1, 11
+        )
+
+
+def test_the_exact_inversion_of_a_tail_far_below_double_precision():
+    # N(—25) is about 3e-138, where scipy's inverse of the incomplete beta function with three
+    # up moves gives NaN.
+    probability, complement = binomial_trees_model._exact_binomial_inversion(25, 5)
+    assert probability == 1
+    assert betainc(3, 3, complement) == pytest.approx(ndtr(-25), rel=1e-12)

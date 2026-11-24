@@ -15,7 +15,7 @@ from financetoolkit.options.options_model import (
     MAX_SIMULATED_VALUES,
     SIMULATION_CHUNK_SIZE,
 )
-from financetoolkit.options.pricing.black_scholes_model import get_bjerksund_stensland
+from financetoolkit.options.pricing.american_model import get_qd_plus
 
 # Below this volatility (of the ratio of two prices, or of a spread) the two-asset formulas, which
 # divide by it, have no meaning: the prices move as one.
@@ -97,10 +97,11 @@ def get_exchange_option(
 
     An American exchange option may be exercised at any time. In units of the second asset it
     is an American call on S1 with strike S2, a risk-free rate of q2 and a dividend yield of
-    q1 (Bjerksund and Stensland, 1993), which is priced with the Bjerksund-Stensland (1993)
-    approximation (black_scholes_model.get_bjerksund_stensland with method="1993"). Without a
-    dividend yield on the first asset early exercise is never optimal and the American option
-    is worth the European one.
+    q1 (Bjerksund and Stensland, 1993), which is priced with the QD+ exercise boundary and
+    its integral (american_model.get_qd_plus), within about 0.1% of a 999-step Leisen-Reimer
+    tree, where the Bjerksund-Stensland approximations, lower bounds, lie about 0.6% (2002)
+    and 1% (1993) below it. Without a dividend yield on the first asset early exercise is
+    never optimal and the American option is worth the European one.
 
     Where S1 and S2 are the prices of the asset received and the asset delivered (times their
     quantities, for an option on Q1 units against Q2 units), σ1 and σ2 their volatilities, ρ
@@ -139,8 +140,10 @@ def get_exchange_option(
         "American Exchange Options and a Put-Call Transformation: A Note." Journal of
         Business Finance & Accounting, 20(5), 761-764. Haug, E. G. (2007). The Complete Guide
         to Option Pricing Formulas, 2nd ed., chapter 5. Referenced against QuantLib's
-        AnalyticEuropeanMargrabeEngine and AnalyticAmericanMargrabeEngine
-        (https://www.quantlib.org).
+        AnalyticEuropeanMargrabeEngine (https://www.quantlib.org), and the American value
+        against a Leisen-Reimer tree of 999 steps on the call it equals. QuantLib's
+        AnalyticAmericanMargrabeEngine takes the Bjerksund-Stensland (1993) approximation,
+        a lower bound about 1% below that value.
 
     As an example:
 
@@ -175,7 +178,7 @@ def get_exchange_option(
     Which returns:
 
     ```
-    (2.2827, 2.2902)
+    (2.2827, 2.2939)
     ```
     """
     validate_numeric_inputs(
@@ -199,16 +202,13 @@ def get_exchange_option(
     if american_option:
         # In units of the second asset the option is an American call on S1 with strike S2,
         # where holding the second asset earns its yield q2 as the "risk-free rate".
-        return float(
-            get_bjerksund_stensland(
-                stock_price=float(first_stock_price),
-                strike_price=float(second_stock_price),
-                risk_free_rate=float(second_dividend_yield),
-                volatility=volatility,
-                time_to_expiration=float(time_to_expiration),
-                dividend_yield=float(first_dividend_yield),
-                method="1993",
-            )
+        return get_qd_plus(
+            stock_price=float(first_stock_price),
+            strike_price=float(second_stock_price),
+            risk_free_rate=float(second_dividend_yield),
+            volatility=float(volatility),
+            time_to_expiration=float(time_to_expiration),
+            dividend_yield=float(first_dividend_yield),
         )
 
     deviation = volatility * np.sqrt(time_to_expiration)
@@ -271,7 +271,10 @@ def get_spread_option(
     dividend yields (for futures, q = r makes F the futures price), σ1 and σ2 the
     volatilities, ρ the correlation of the returns, T the time to expiration in years and N
     the standard normal distribution function. At a strike of 0 both are Margrabe's exact
-    exchange option.
+    exchange option. Both approximations lose accuracy as F2 + K approaches zero (a strike
+    near -F2), where F2 + K is far from lognormal: Kirk's put can then be worth several
+    tenths where the exact value is close to 0 (0.42 against 0.00001 by Monte Carlo at
+    F2 = 96.4 and K = -96), while Bjerksund and Stensland stay close (0.0).
 
     Args:
         first_stock_price (float): The price of the first asset, S1.

@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from functools import lru_cache
+
 import numpy as np
 from scipy.optimize import brentq
 from scipy.special import ndtr
@@ -9,6 +11,7 @@ from scipy.special import ndtr
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.options.pricing.black_scholes_model import (
     MAXIMUM_IMPLIED_VOLATILITY,
+    _american_call_binomial_value,
     get_black_scholes,
 )
 
@@ -48,6 +51,11 @@ _QD_FIXED_POINT_WEIGHTS = (
 )
 _QD_FIXED_POINT_ITERATIONS = 100
 _QD_FIXED_POINT_TOLERANCE = 1e-12
+
+# The binomial tree of an option with two exercise boundaries is averaged over this many steps
+# and one more, which cancels most of its odd-even swing: within about 1e-3 of a Crank-Nicolson
+# grid of 4,000 by 4,000 points, in about 0.06 seconds.
+_TWO_BOUNDARY_TREE_STEPS = 1000
 
 
 def _european_and_derivatives(
@@ -113,14 +121,61 @@ def _early_exercise_is_optimal(
     risk_free_rate: float, dividend_yield: float, put_option: bool
 ) -> bool:
     """
-    Whether exercising before expiration can be optimal: for a call only when the dividend
-    yield exceeds the risk-free rate's share of the carry (q > 0 with b = r — q < r), for a
-    put only with a positive risk-free rate. Otherwise the American option is worth its
-    European value (floored at the exercise value).
+    Whether exercising before expiration can be optimal with a single exercise boundary: for
+    a call when the dividend yield is positive, for a put when the risk-free rate is. A put
+    at r ≤ 0 with q < r and a call at q ≤ 0 with r < q have two boundaries instead (see
+    _has_two_exercise_boundaries); otherwise the American option is worth its European
+    value (floored at the exercise value).
     """
     if put_option:
         return risk_free_rate > 0
     return dividend_yield > 0
+
+
+def _has_two_exercise_boundaries(
+    risk_free_rate: float, dividend_yield: float, put_option: bool
+) -> bool:
+    """
+    Whether the early exercise region lies between two boundaries (Battauz, De Donno and
+    Sbuelz, 2015). Exercising a put early earns r * K — q * S per unit of time, which at
+    r ≤ 0 is positive only for a stock price above (r / q) * K, below the strike when q < r.
+    The put is then exercised between a lower and an upper boundary, which the single
+    boundary methods do not describe, and a call at q ≤ 0 with r < q likewise (put-call
+    symmetry). See Battauz, A., De Donno, M., & Sbuelz, A. (2015). "Real Options and American
+    Derivatives: The Double Continuation Region." Management Science, 61(5), 1094-1107.
+    """
+    if put_option:
+        return risk_free_rate <= 0 and dividend_yield < risk_free_rate
+    return dividend_yield <= 0 and risk_free_rate < dividend_yield
+
+
+def _two_boundary_put(
+    stock_price: float,
+    strike_price: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: float,
+    dividend_yield: float,
+) -> float:
+    """
+    Helper function with the value of an American put with two exercise boundaries (r ≤ 0
+    and q < r), as the American call C(K, S, q, r) it equals under the put-call symmetry of
+    McDonald and Schroder (1998), on the binomial tree of
+    black_scholes_model._american_call_binomial_value averaged over 1,000 and 1,001 steps.
+    The tree finds both boundaries itself, as it compares the exercise value at every node.
+    """
+    return 0.5 * sum(
+        _american_call_binomial_value(
+            stock_price=strike_price,
+            strike_price=stock_price,
+            risk_free_rate=dividend_yield,
+            cost_of_carry=dividend_yield - risk_free_rate,
+            volatility=volatility,
+            time_to_expiration=time_to_expiration,
+            steps=steps,
+        )
+        for steps in (_TWO_BOUNDARY_TREE_STEPS, _TWO_BOUNDARY_TREE_STEPS + 1)
+    )
 
 
 def _quadratic_exponent(
@@ -219,7 +274,11 @@ def _validate(
     time_to_expiration,
     dividend_yield,
 ) -> None:
-    """Rejects inputs that are not numbers and a volatility that is not positive."""
+    """
+    Rejects inputs that are not numbers, a stock or strike price that is not positive (the
+    approximations divide by both, and the put-call symmetry swaps them) and a volatility
+    that is not positive.
+    """
     validate_numeric_inputs(
         stock_price=stock_price,
         strike_price=strike_price,
@@ -228,6 +287,11 @@ def _validate(
         time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
     )
+    if stock_price <= 0 or strike_price <= 0:
+        raise ValueError(
+            "The stock price and the strike price must be positive, received "
+            f"{stock_price!r} and {strike_price!r}."
+        )
     # The approximations divide by the variance, which a constant price does not have.
     if volatility <= 0:
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
@@ -264,6 +328,30 @@ def _quadratic_approximation(
             put_option=put_option,
         )
     )
+
+    if _has_two_exercise_boundaries(risk_free_rate, dividend_yield, put_option):
+        return max(
+            (
+                _two_boundary_put(
+                    stock_price,
+                    strike_price,
+                    risk_free_rate,
+                    volatility,
+                    time_to_expiration,
+                    dividend_yield,
+                )
+                if put_option
+                else _two_boundary_put(
+                    strike_price,
+                    stock_price,
+                    dividend_yield,
+                    volatility,
+                    time_to_expiration,
+                    risk_free_rate,
+                )
+            ),
+            european_value,
+        )
 
     if not _early_exercise_is_optimal(risk_free_rate, dividend_yield, put_option):
         return max(european_value, exercise_value)
@@ -386,10 +474,14 @@ def get_barone_adesi_whaley(
     Where V_E is the generalized Black-Scholes price of the European option with the same
     inputs and d1(S*) its d1 at the stock price S*.
 
-    A call on a stock without dividends (q ≤ 0) is never exercised early, and neither is a
-    put at a non-positive rate; these are worth their European price, floored at the
-    exercise value. A call at a non-positive rate with a positive dividend yield is priced
-    as the put it equals under the put-call symmetry of McDonald and Schroder (1998).
+    A call on a stock without dividends (q ≤ 0 with r ≥ q) is never exercised early, and
+    neither is a put at a non-positive rate with q ≥ r; these are worth their European
+    price, floored at the exercise value. A call at a non-positive rate with a positive
+    dividend yield is priced as the put it equals under the put-call symmetry of McDonald
+    and Schroder (1998). A put at r ≤ 0 with q < r (and a call at q ≤ 0 with r < q) is
+    exercised between two boundaries (Battauz, De Donno and Sbuelz, 2015), which the
+    approximation does not describe: it is priced on a binomial tree instead, averaged over
+    1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
     Args:
         stock_price (float): The current stock price.
@@ -406,7 +498,7 @@ def get_barone_adesi_whaley(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if volatility is not positive.
+        ValueError: if the stock price, strike price or volatility is not positive.
 
     Notes:
         Reference: Barone-Adesi, G., & Whaley, R. E. (1987). "Efficient Analytic
@@ -467,10 +559,14 @@ def get_ju_zhong(
     Where V_E is the generalized Black-Scholes price of the European option and
     ∂V_E/∂h = (∂V_E/∂T) / (r * e^(—rT)) its derivative to h at S*.
 
-    A call on a stock without dividends (q ≤ 0) is never exercised early, and neither is a
-    put at a non-positive rate; these are worth their European price, floored at the
-    exercise value. A call at a non-positive rate with a positive dividend yield is priced
-    as the put it equals under the put-call symmetry of McDonald and Schroder (1998).
+    A call on a stock without dividends (q ≤ 0 with r ≥ q) is never exercised early, and
+    neither is a put at a non-positive rate with q ≥ r; these are worth their European
+    price, floored at the exercise value. A call at a non-positive rate with a positive
+    dividend yield is priced as the put it equals under the put-call symmetry of McDonald
+    and Schroder (1998). A put at r ≤ 0 with q < r (and a call at q ≤ 0 with r < q) is
+    exercised between two boundaries (Battauz, De Donno and Sbuelz, 2015), which the
+    approximation does not describe: it is priced on a binomial tree instead, averaged over
+    1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
     Args:
         stock_price (float): The current stock price.
@@ -487,7 +583,7 @@ def get_ju_zhong(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if volatility is not positive.
+        ValueError: if the stock price, strike price or volatility is not positive.
 
     Notes:
         Reference: Ju, N., & Zhong, R. (1999). "An Approximate Formula for Pricing
@@ -628,6 +724,32 @@ def _qd_plus_put_boundary(
     return strike_price * np.exp(middle)
 
 
+@lru_cache(maxsize=4096)
+def _qd_plus_unit_boundary(
+    risk_free_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    time_to_expiration: float,
+) -> np.ndarray:
+    """
+    Helper function with the QD+ boundary of a put with a strike of 1 at the quadrature
+    times of _qd_plus_put and, last, today. The put is homogeneous of degree one in the
+    stock and strike price, so the boundary of a strike K is K times this one: a grid of
+    strikes with the same expiration solves it once (and a grid of calls, whose put-call
+    symmetry swaps the stock and strike price, needs no scaling at all).
+    """
+    roots = 0.5 * np.sqrt(time_to_expiration) * (_QD_PLUS_NODES + 1)
+    boundary = _qd_plus_put_boundary(
+        1.0,
+        risk_free_rate,
+        dividend_yield,
+        volatility,
+        np.append(time_to_expiration - roots**2, time_to_expiration),
+    )
+    boundary.flags.writeable = False
+    return boundary
+
+
 @np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
 def _qd_plus_put(
     stock_price: float,
@@ -654,12 +776,11 @@ def _qd_plus_put(
 
     # The boundary at the quadrature times and, last, today's boundary B(T): at or below it
     # the put is exercised right away.
-    boundary = _qd_plus_put_boundary(
-        strike_price,
-        risk_free_rate,
-        dividend_yield,
-        volatility,
-        np.append(time_to_expiration - times_from_now, time_to_expiration),
+    boundary = strike_price * _qd_plus_unit_boundary(
+        float(risk_free_rate),
+        float(dividend_yield),
+        float(volatility),
+        float(time_to_expiration),
     )
     if stock_price <= boundary[-1]:
         return strike_price - stock_price
@@ -682,16 +803,18 @@ def _qd_plus_put(
     # dt = 2u du.
     premium = float(np.sum(weights * integrand * 2 * roots))
 
+    # The European put with scipy's ndtr directly: scipy.stats' norm.cdf of get_black_scholes
+    # costs about half a millisecond a call, most of the time of a grid of QD+ prices.
     european_value = float(
-        get_black_scholes(
-            stock_price=stock_price,
-            strike_price=strike_price,
-            risk_free_rate=risk_free_rate,
-            volatility=volatility,
-            time_to_expiration=time_to_expiration,
-            dividend_yield=dividend_yield,
-            put_option=True,
-        )
+        _european_and_derivatives(
+            stock_price,
+            strike_price,
+            risk_free_rate,
+            dividend_yield,
+            volatility,
+            time_to_expiration,
+            -1,
+        )[0]
     )
 
     return max(european_value + premium, strike_price - stock_price)
@@ -729,8 +852,12 @@ def get_qd_plus(
     d2 = d1 — σ√t and ∂p/∂h = (∂p/∂τ) / (r * e^(—rτ)). The boundary is solved at each of the
     64 Gauss-Legendre points of the integral, taken over √t, so it is not interpolated.
 
-    A put at a non-positive rate is never exercised early and a call without dividends
-    neither; these are worth their European price, floored at the exercise value.
+    A put at a non-positive rate with q ≥ r is never exercised early and a call without
+    dividends (q ≤ 0 with r ≥ q) neither; these are worth their European price, floored at
+    the exercise value. A put at r ≤ 0 with q < r (and a call at q ≤ 0 with r < q) is
+    exercised between two boundaries (Battauz, De Donno and Sbuelz, 2015), which the single
+    boundary of this method does not describe: it is priced on a binomial tree instead,
+    averaged over 1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
     Args:
         stock_price (float): The current stock price.
@@ -747,7 +874,7 @@ def get_qd_plus(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if volatility is not positive.
+        ValueError: if the stock price, strike price or volatility is not positive.
 
     Notes:
         References: Li, M. (2010). "Analytical Approximations for the Critical Stock Prices
@@ -788,6 +915,16 @@ def get_qd_plus(
             time_to_expiration=time_to_expiration,
             dividend_yield=risk_free_rate,
             put_option=True,
+        )
+
+    if _has_two_exercise_boundaries(risk_free_rate, dividend_yield, put_option=True):
+        return _two_boundary_put(
+            stock_price,
+            strike_price,
+            risk_free_rate,
+            volatility,
+            time_to_expiration,
+            dividend_yield,
         )
 
     if risk_free_rate <= 0:
@@ -1044,8 +1181,12 @@ def get_qd_fixed_point(
     square root of the time, whose points crowd at the ends where the boundary near
     expiration changes fastest.
 
-    A put at a non-positive rate is never exercised early and a call without dividends
-    neither; these are worth their European price, floored at the exercise value.
+    A put at a non-positive rate with q ≥ r is never exercised early and a call without
+    dividends (q ≤ 0 with r ≥ q) neither; these are worth their European price, floored at
+    the exercise value. A put at r ≤ 0 with q < r (and a call at q ≤ 0 with r < q) is
+    exercised between two boundaries (Battauz, De Donno and Sbuelz, 2015), which the single
+    boundary of this method does not describe: it is priced on a binomial tree instead,
+    averaged over 1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
     Args:
         stock_price (float): The current stock price.
@@ -1062,7 +1203,7 @@ def get_qd_fixed_point(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if volatility is not positive.
+        ValueError: if the stock price, strike price or volatility is not positive.
 
     Notes:
         References: Andersen, L., Lake, M., & Offengenden, D. (2016). "High-Performance
@@ -1100,6 +1241,16 @@ def get_qd_fixed_point(
             time_to_expiration=time_to_expiration,
             dividend_yield=risk_free_rate,
             put_option=True,
+        )
+
+    if _has_two_exercise_boundaries(risk_free_rate, dividend_yield, put_option=True):
+        return _two_boundary_put(
+            stock_price,
+            strike_price,
+            risk_free_rate,
+            volatility,
+            time_to_expiration,
+            dividend_yield,
         )
 
     if risk_free_rate <= 0:
@@ -1157,8 +1308,8 @@ def get_american_option(
         float: The value of the American option.
 
     Raises:
-        ValueError: if method is not one of the approximations or volatility is not
-            positive.
+        ValueError: if method is not one of the approximations or the stock price, strike
+            price or volatility is not positive.
     """
     functions = {
         "qd_plus": get_qd_plus,

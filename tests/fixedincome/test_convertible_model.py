@@ -10,14 +10,14 @@ from financetoolkit.fixedincome.bonds.convertible_model import (
 
 # QuantLib 1.44 ConvertibleZeroCouponBond / ConvertibleFixedCouponBond with the
 # BinomialCRRConvertibleEngine without a credit spread (where it and the Tsiveriotis-Fernandes
-# split are the same tree), flat continuously compounded curves on Actual/365, par 100 and a
+# split value the same bond), flat continuously compounded curves on Actual/365, par 100 and a
 # conversion ratio of 2: (stock price, coupon, years, rate, volatility, dividend yield,
-# frequency, call price, steps, QuantLib value). The call is callable every day.
+# frequency, call price, steps, QuantLib value). QuantLib calls on call dates only, so a
+# callable bond is compared with a binomial tree called on every step instead (below).
 QUANTLIB_REFERENCES = [
     (50, 0.0, 5, 0.04, 0.3, 0.0, 1, None, 2000, 115.83383685650512),
     (40, 0.0, 5, 0.04, 0.3, 0.02, 1, None, 2000, 98.67440353638807),
     (30, 0.05, 7, 0.03, 0.25, 0.01, 2, None, 2100, 119.88692366221281),
-    (50, 0.0, 5, 0.04, 0.3, 0.0, 1, 110, 2000, 104.9807683668034),
 ]
 
 
@@ -111,3 +111,29 @@ def test_credit_spread_puts_and_calls_move_the_value():
 
     with pytest.raises(ValueError):
         get_convertible_bond_value(40, 2, 100, 0.03, 5, 0.04, 0.0, 0.02)
+
+
+def test_callable_convertible_is_stable_in_the_steps():
+    """The call caps the value at max(Call Price, κS); with that stock price on a node of the
+    tree the value no longer swings with the steps. On a Cox-Ross-Rubinstein tree it swings
+    between 102.85 and 103.65 from 200 to 1,000 steps for this bond.
+    """
+    values = [
+        get_convertible_bond_value(
+            100, 1, 100, 0.03, 5, 0.04, 0.3, 0.02, call_price=105, steps=steps
+        )["Convertible Value"]
+        for steps in (200, 300, 500, 700, 800, 1000)
+    ]
+    assert max(values) - min(values) < 0.01
+
+    # A Cox-Ross-Rubinstein tree with the same call on every step converges slowly to the
+    # same value: 104.9762 at 2,000 steps, 104.7119 at 16,000 and 104.7077 at 24,000.
+    callable_bond = get_convertible_bond_value(
+        50, 2, 100, 0.0, 5, 0.04, 0.3, 0.0, 0.0, 1, call_price=110
+    )
+    assert callable_bond["Convertible Value"] == pytest.approx(104.7077, abs=0.01)
+
+
+def test_convertible_refuses_a_bond_that_has_matured():
+    with pytest.raises(ValueError, match="years_to_maturity must be positive"):
+        get_convertible_bond_value(40, 2, 100, 0.03, 0, 0.04, 0.3, 0.02)

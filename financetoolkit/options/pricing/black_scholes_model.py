@@ -49,10 +49,13 @@ def get_d1(
     Returns:
         float | pd.Series: The d1 value.
     """
-    log_forward_moneyness = (
-        np.log(stock_price / strike_price)
-        + (risk_free_rate - dividend_yield) * time_to_expiration
-    )
+    # A zero strike gives ln(S / 0) = +inf and so d1 = d2 = +inf: the call is worth the
+    # discounted forward and the put nothing, rather than a division by zero.
+    with np.errstate(divide="ignore"):
+        log_forward_moneyness = (
+            np.log(np.divide(stock_price, strike_price))
+            + (risk_free_rate - dividend_yield) * time_to_expiration
+        )
     spread = volatility * np.sqrt(time_to_expiration)
     d1 = (log_forward_moneyness + spread**2 / 2) / spread
 

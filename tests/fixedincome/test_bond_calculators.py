@@ -530,3 +530,15 @@ def test_yield_curve_butterfly(fixedincome):
     assert several.loc["15Y", "3Y/10Y"] != several.loc["15Y", "3Y/10Y"]
     assert several.loc["5Y", "7Y/10Y"] != several.loc["5Y", "7Y/10Y"]
     assert several.loc["5Y", "3Y/10Y"] == pytest.approx(2 * 0.046 - 0.0452 - 0.0484)
+
+
+def test_rate_shift_ladder_leaves_out_a_zero_and_repeated_shifts(fixedincome):
+    # The ladder always prices today's curve (a shift of 0) for the delta and gamma, so a 0 or
+    # a repeated shift given here collided with it and emptied the result.
+    ladder = fixedincome.get_rate_shift_ladder(
+        shifts="-0.01,0,0.01,0.01", bonds="91282CRT0"
+    )
+    plain = fixedincome.get_rate_shift_ladder(shifts="-0.01,0.01", bonds="91282CRT0")
+
+    assert ladder.columns[6:].tolist() == ["-100bp", "+100bp", "Delta", "Gamma"]
+    pd.testing.assert_frame_equal(ladder, plain)

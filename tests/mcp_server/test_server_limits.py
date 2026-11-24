@@ -340,3 +340,38 @@ def test_a_switch_is_refused_by_its_value():
         "get_a", {"american_option": True}, limits
     )
     assert refused_value_problem("get_a", {"american_option": False}, limits) is None
+
+
+def test_option_grids_are_limited_in_strikes_and_american_expirations(captured):
+    # A strike step below the 0.5 of listed options multiplies the strikes of every option
+    # grid, and QD+ prices every strike and expiration of the American grid.
+    answer = call(
+        "options",
+        indicator="get_black_scholes_model",
+        tickers="AAPL",
+        strike_step_size=0.01,
+    )
+    assert "`strike_step_size` must be at least 0.5" in answer
+    answer = call(
+        "options",
+        indicator="get_american_option",
+        tickers="AAPL",
+        expiration_time_range=366,
+    )
+    assert "`expiration_time_range` may be at most 91" in answer
+    assert not captured
+
+    call(
+        "options",
+        indicator="get_american_option",
+        tickers="AAPL",
+        expiration_time_range=91,
+        strike_step_size=0.5,
+    )
+    call(
+        "options", indicator="get_cev_model", tickers="AAPL", expiration_time_range=366
+    )
+    assert [method for method, _ in captured] == [
+        "get_american_option",
+        "get_cev_model",
+    ]

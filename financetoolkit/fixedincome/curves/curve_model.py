@@ -463,9 +463,7 @@ def bootstrap_zero_rates(
 
     Referenced against:
     - QuantLib, PiecewiseYieldCurve (PiecewiseLogLinearDiscount): https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
-        Test: tests/fixedincome/test_curve_model.py::test_bootstrap_grid_matches_quantlib_and_reprices_par_bonds
     - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
-        Test: tests/fixedincome/test_curve_model.py::test_bootstrap_grid_matches_quantlib_and_reprices_par_bonds
 
     Args:
         maturities (np.ndarray): The maturities in years, ascending.

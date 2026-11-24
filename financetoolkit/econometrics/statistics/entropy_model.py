@@ -95,9 +95,7 @@ def get_sample_entropy(
 
     Referenced against:
     - nolds, sampen: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L699
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
     - antropy, sample_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L740
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Notes:
         - The tolerance uses the sample standard deviation (ddof=1) and the matches include a
@@ -161,7 +159,6 @@ def get_approximate_entropy(
 
     Referenced against:
     - antropy, app_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L638
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Notes:
         - The tolerance uses the sample standard deviation (ddof=1); antropy uses the population
@@ -492,7 +489,6 @@ def get_permutation_entropy(
 
     Referenced against:
     - antropy, perm_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L143
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -546,7 +542,6 @@ def get_spectral_entropy(
 
     Referenced against:
     - antropy, spectral_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L315
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -611,7 +606,6 @@ def get_svd_entropy(
 
     Referenced against:
     - antropy, svd_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L437
-        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -856,7 +850,6 @@ def get_lempel_ziv_complexity(
 
     Referenced against:
     - antropy, lziv_complexity: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L915
-        Test: tests/econometrics/test_entropy_model.py::test_lempel_ziv_complexity_equals_antropy
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.

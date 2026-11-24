@@ -489,15 +489,10 @@ class CurvesFixedIncome:
 
         Referenced against:
         - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
         - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
         - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
         - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
         - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
-            Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
 
         Also known as: instantaneous forward rate, forward curve, short forward curve.
 
@@ -631,7 +626,6 @@ class CurvesFixedIncome:
 
         Referenced against:
         - rateslib, SmithWilsonCurve: https://rateslib.com/py/en/3.0.x/api/rateslib.curves.SmithWilsonCurve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_smith_wilson_against_rateslib
 
         Also known as: Smith-Wilson extrapolation, UFR curve, Solvency II curve extrapolation,
         ultimate forward rate.
@@ -1775,13 +1769,9 @@ class CurvesFixedIncome:
 
         Referenced against:
         - QuantLib, PiecewiseYieldCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
-            Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
         - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
-            Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
         - QuantLib, DepositRateHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_deposit_rate_helper.html
-            Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
         - QuantLib, PiecewiseYieldCurve (linear_par): https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
-            Test: tests/fixedincome/test_curve_model.py::test_bootstrap_grid_matches_quantlib_and_reprices_par_bonds
 
         Args:
             countries (list[str] | str, optional): The countries, see

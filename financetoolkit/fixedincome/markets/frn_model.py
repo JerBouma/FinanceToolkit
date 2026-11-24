@@ -180,7 +180,6 @@ def get_frn_price(
 
     Referenced against:
     - FinancePy, BondFRN.dirty_price_from_dm: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L107
-        Test: tests/fixedincome/test_treasury_markets_model.py::test_frn_price_and_durations_against_financepy
 
     Args:
         index_rate (float): The index rate that applies to the settlement date (decimal).
@@ -276,7 +275,6 @@ def get_frn_durations(
 
     Referenced against:
     - FinancePy, BondFRN.modified_credit_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L283
-        Test: tests/fixedincome/test_treasury_markets_model.py::test_frn_price_and_durations_against_financepy
 
     Shares similar logic:
     - FinancePy, BondFRN.dollar_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L178

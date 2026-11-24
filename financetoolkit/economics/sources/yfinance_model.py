@@ -47,10 +47,11 @@ def get_commodity_forward_curve(
     contracts: int = 12,
 ) -> pd.DataFrame:
     """
-    Retrieves the forward/futures curve for a commodity from Yahoo Finance -- the
-    historical daily closing price of each dated futures contract over the next
-    `contracts` calendar months (e.g. Crude Oil's December 2026, January 2027, ...
-    contracts), rather than a single flat continuous/spot price such as `CL=F`.
+    Retrieve the futures curve of a commodity from Yahoo Finance: the daily closing price of each dated futures
+    contract over the coming calendar months.
+
+    These are the contracts of the coming calendar months, such as Crude Oil's December 2026 and January 2027
+    contracts, rather than a single continuous or spot price.
 
     This is what a Schwartz-Smith (2000) two-factor commodity price model needs to
     back out the convenience-yield term structure under the risk-neutral (Q)
@@ -59,19 +60,20 @@ def get_commodity_forward_curve(
 
     Not every commodity has a listed contract for every calendar month (grains in
     particular only trade specific delivery months), so months with no listed (or an
-    expired) contract are skipped and later months are tried instead, until `contracts`
-    contracts are found.
+    expired) contract are skipped and later months are tried instead, until the requested
+    number of contracts is found.
 
     Args:
-        commodity (str): The commodity to retrieve the curve for. One of "Crude Oil",
-            "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or "Soybeans".
+        commodity (str): The commodity to retrieve the curve for. Options are: "Crude Oil" (WTI crude oil), "Natural
+            Gas" (Henry Hub natural gas), "Gold" (gold), "Silver" (silver), "Copper" (copper), "Corn" (corn), "Wheat"
+            (wheat), "Soybeans" (soybeans).
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         contracts (int, optional): The number of contracts to return, the nearest
             listed ones from the current month on. Defaults to 12.
 
     Raises:
-        ValueError: If `commodity` is not one of the supported names.
+        ValueError: If the commodity is not one of the supported names.
 
     Returns:
         pd.DataFrame: A DataFrame indexed by date, with one column per contract

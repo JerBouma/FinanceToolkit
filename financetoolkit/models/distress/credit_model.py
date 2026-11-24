@@ -20,9 +20,12 @@ def get_merton_model(
     time_horizon: float = 1.0,
 ) -> pd.Series:
     """
-    The Merton (1974) structural credit model. Equity is a call option on the company's
-    assets with the debt as strike price, so the market value and volatility of the assets,
-    which cannot be observed, follow from those of the equity by solving
+    The default risk of a company by the Merton (1974) structural credit model: its asset
+    value, distance to default, probability of default and credit spread.
+
+    Equity is a call option on the company's assets with the debt as strike price, so the
+    market value and volatility of the assets, which cannot be observed, follow from those
+    of the equity by solving
 
         E = V N(d1) - D e^(-rT) N(d2)  and  σ_E E = N(d1) σ_V V,
 
@@ -43,14 +46,16 @@ def get_merton_model(
     KMV convention of Crosbie and Bohn, 2003), as long-term debt need not be repaid within
     the horizon.
 
+    Referenced against:
+    - FinancePy, MertonFirm.credit_spread: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L124
+    - FinancePy, MertonFirm.debt_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/merton_firm.py#L109
+
     Args:
         equity_value (float): The market value of the equity (market capitalization).
         equity_volatility (float): The annualized volatility of the equity returns.
         default_point (float): The value of the debt at which the company defaults.
         risk_free_rate (float): The annualized risk free rate.
         time_horizon (float, optional): The positive, finite horizon in years. Defaults to 1.
-
-    Referenced against FinancePy's MertonFirm (credit_spread, debt_value).
 
     Returns:
         pd.Series: The Asset Value, Asset Volatility, Default Point, Debt Value, Credit

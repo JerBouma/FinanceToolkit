@@ -243,7 +243,8 @@ def get_nigem_scenario(
         variable (str): A key of NIGEM_VARIABLES, e.g. "long_term_interest_rate".
         scenario (str): The scenario, e.g. "Net Zero 2050", or "Baseline".
         model (str): A key of MODELS, the integrated assessment model behind the scenario.
-        risk (str): "combined", "transition" or "physical".
+        risk (str): The climate risk. Options are: "combined" (transition and physical risk), "transition" (the
+            transition to a low-carbon economy), "physical" (the damage of climate change).
         deviation (bool): Whether to return the deviation from the baseline instead of the
             level.
 

@@ -168,7 +168,6 @@ class VolatilityOptions:
 
         Referenced against:
         - QuantLib, QdPlusAmericanEngine (American): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_implied_volatility_reprices_the_option
 
         Args:
             expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None,
@@ -774,9 +773,7 @@ class VolatilityOptions:
 
         Referenced against:
         - QuantLib, sabrVolatility (SABR): https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L163
-            Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
         - FinancePy, volatility_fns.g (butterfly arbitrage): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L247
-            Test: tests/options/test_smile_models.py::test_butterfly_function_matches_financepy
 
         Shares similar logic:
         - QuantLib, SABRInterpolation (SABR): https://www.quantlib.org/reference/class_quant_lib_1_1_s_a_b_r_interpolation.html
@@ -1027,9 +1024,7 @@ class VolatilityOptions:
 
         Referenced against:
         - QuantLib, LocalVolSurface: https://www.quantlib.org/reference/class_quant_lib_1_1_local_vol_surface.html
-            Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
         - FinancePy, volatility_fns.ssvi_local_varg: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L318
-            Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
 
         Also known as: Dupire local volatility, local vol surface.
 
@@ -1551,10 +1546,7 @@ class VolatilityOptions:
 
         Referenced against:
         - QuantLib, HestonModelHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_heston_model_helper.html
-            Test:
-                tests/options/test_stochastic_volatility_models.py::test_the_heston_calibration_recovers_the_parameters_of_a_heston_surface
         - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
-            Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_quantlib
 
         Shares similar logic:
         - QuantLib, COSHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_c_o_s_heston_engine.html

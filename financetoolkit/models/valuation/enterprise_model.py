@@ -18,19 +18,20 @@ def get_enterprise_value_breakdown(
     short_term_investments: pd.Series | pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    The Enterprise Value breakdown corresponds to the following components:
-        - Share Price: given for each quarter or year.
-        - Market cap: The total value of a company's outstanding *common* shares, i.e. the share
-        price multiplied by the shares outstanding. Preferred shares are deliberately excluded here
-        and enter the Enterprise Value as their own component below, so that they are counted once
-        rather than twice.
-        - Debt: The sum of long-term and short-term debt
-        - Preferred equity: The value of preferred shares
-        - Minority interest: The equity value of a subsidiary with less than 50% ownership.
-        - Cash and cash equivalents: The cash and the investments that are readily convertible
-        to cash within three months, such as money market funds and Treasury bills.
-        - Short term investments: The marketable securities that are not cash equivalents, such
-        as certificates of deposit and commercial paper with a longer maturity.
+    The Enterprise Value breakdown corresponds to the following components.
+
+    - Share Price: given for each quarter or year. - Market cap: The total value of a
+      company's outstanding *common* shares, i.e. the share price multiplied by the shares
+      outstanding.
+
+    Preferred shares are deliberately excluded here and enter the Enterprise Value as their
+    own component below, so that they are counted once rather than twice. - Debt: The sum of
+    long-term and short-term debt - Preferred equity: The value of preferred shares -
+    Minority interest: The equity value of a subsidiary with less than 50% ownership. - Cash
+    and cash equivalents: The cash and the investments that are readily convertible to cash
+    within three months, such as money market funds and Treasury bills. - Short term
+    investments: The marketable securities that are not cash equivalents, such as
+    certificates of deposit and commercial paper with a longer maturity.
 
     The formula is as follows:
 
@@ -111,11 +112,12 @@ def get_tobins_q_ratio(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Tobin's Q Ratio is a financial metric, developed by economist James Tobin, that compares
-    the market value of a company to the cost of replacing its assets. It is used as a
-    valuation gauge for the company as a whole as well as an indicator of management's
-    incentive to invest: a high Q suggests the market values the firm well above the cost of
-    replacing its assets (making new investment attractive), while a low Q suggests the
-    opposite.
+    the market value of a company to the cost of replacing its assets.
+
+    It is used as a valuation gauge for the company as a whole as well as an indicator of
+    management's incentive to invest: a high Q suggests the market values the firm well
+    above the cost of replacing its assets (making new investment attractive), while a low Q
+    suggests the opposite.
 
     The formula is as follows:
 

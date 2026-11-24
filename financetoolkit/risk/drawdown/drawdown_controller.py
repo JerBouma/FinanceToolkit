@@ -519,11 +519,8 @@ class DrawdownRisk:
 
         Referenced against:
         - skfolio, edar: https://skfolio.org/generated/skfolio.measures.edar.html
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, EDaR_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Rel
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, EDaR_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Abs
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
         Args:
             period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
@@ -658,11 +655,8 @@ class DrawdownRisk:
 
         Referenced against:
         - skfolio, max_drawdown: https://skfolio.org/generated/skfolio.measures.max_drawdown.html
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, MDD_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Rel
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, MDD_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Abs
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
         Shares similar logic:
         - empyrical, max_drawdown: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L352
@@ -1488,9 +1482,7 @@ class DrawdownRisk:
 
         Referenced against:
         - Riskfolio-Lib, UCI_Rel (compounded, no window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Rel
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, UCI_Abs (uncompounded, no window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Abs
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
         Shares similar logic:
         - PerformanceAnalytics (R), UlcerIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UlcerIndex.R#L31
@@ -1762,11 +1754,8 @@ class DrawdownRisk:
 
         Referenced against:
         - skfolio, average_drawdown (observation): https://skfolio.org/generated/skfolio.measures.average_drawdown.html
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, ADD_Rel (observation, compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Rel
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
         - Riskfolio-Lib, ADD_Abs (observation, uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Abs
-            Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
         Shares similar logic:
         - PerformanceAnalytics (R), AverageDrawdown (episode): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L178

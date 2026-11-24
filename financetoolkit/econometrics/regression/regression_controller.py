@@ -95,7 +95,6 @@ class RegressionEconometrics:
 
         Referenced against:
         - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
-            Test: tests/econometrics/test_reference_validation.py::test_ols_inference_and_robust_covariances
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -247,7 +246,6 @@ class RegressionEconometrics:
 
         Referenced against:
         - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
-            Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
         Args:
             weights (pd.Series | str, optional): The (positive) weight of each observation,
@@ -403,7 +401,6 @@ class RegressionEconometrics:
 
         Referenced against:
         - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
-            Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
         Args:
             omega (pd.DataFrame | str, optional): The (symmetric, positive-definite) error

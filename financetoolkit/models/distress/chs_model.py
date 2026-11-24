@@ -53,9 +53,10 @@ SMALL_BOOK_EQUITY = 1.0
 
 def get_winsorized_variable(values: pd.DataFrame, variable: str) -> pd.DataFrame:
     """
-    Clips a Campbell, Hilscher and Szilagyi (2008) variable to the range the winsorized
-    variable spans in the paper's sample (Table II, minimum and maximum of the entire
-    dataset).
+    Clips a Campbell, Hilscher and Szilagyi (2008) variable to the range it spans in the
+    paper's sample.
+
+    The range is the minimum and maximum of the entire dataset (Table II).
 
     Args:
         values (pd.DataFrame): The variable per ticker (rows) and period (columns).
@@ -90,10 +91,11 @@ def get_adjusted_book_equity(
     book_equity: pd.DataFrame, market_equity: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    Book equity moved 10% of the way toward the market value of the equity, following
-    Cohen, Polk and Vuolteenaho (2003), which Campbell, Hilscher and Szilagyi (2008) use so
-    that very small, probably mismeasured book values do not create outliers. A book equity
-    that is still not positive becomes a small positive value (1).
+    Book equity moved 10% of the way toward the market value of the equity.
+
+    It follows Cohen, Polk and Vuolteenaho (2003), which Campbell, Hilscher and Szilagyi
+    (2008) use so that very small, probably mismeasured book values do not create outliers.
+    A book equity that is still not positive becomes a small positive value (1).
 
     The formula is as follows:
 
@@ -317,9 +319,10 @@ def get_chs_score(
 
 def get_chs_failure_probability(chs_score: pd.DataFrame) -> pd.DataFrame:
     """
-    The probability of failure from the logit: 1 / (1 + e^(-LPFD)). With the 12-month
-    coefficients it is the probability of failing in the month 12 months ahead, given
-    that the company survives until then; it is a monthly probability, not the
+    The probability of failure from the logit: 1 / (1 + e^(-LPFD)).
+
+    With the 12-month coefficients it is the probability of failing in the month 12 months
+    ahead, given that the company survives until then; it is a monthly probability, not the
     probability of failing within the next 12 months.
 
     Args:

@@ -1085,7 +1085,6 @@ class DistributionRisk:
 
         Referenced against:
         - statsmodels, acf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.acf.html
-            Test: tests/risk/test_risk_model.py::test_get_autocorrelation_is_missing_at_lags_without_pairs
 
         Args:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
@@ -1215,9 +1214,7 @@ class DistributionRisk:
 
         Referenced against:
         - nolds, hurst_rs (rescaled range): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1203
-            Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
         - nolds, dfa (detrended fluctuation): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1997
-            Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
         Shares similar logic:
         - nolds, mfhurst_dm (generalized): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1695
@@ -1396,11 +1393,8 @@ class DistributionRisk:
 
         Referenced against:
         - antropy, higuchi_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L232
-            Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
         - antropy, katz_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L104
-            Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
         - antropy, petrosian_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L14
-            Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
         Args:
             method (str, optional): The fractal dimension. Options are: "higuchi" (Higuchi), "katz" (Katz),
@@ -1618,9 +1612,7 @@ class DistributionRisk:
 
         Referenced against:
         - nolds, lyap_r (Rosenstein): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L117
-            Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
         - nolds, lyap_e (Eckmann): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L400
-            Test: tests/risk/test_fractal_model.py::test_lyapunov_spectrum_equals_nolds_with_a_step_of_one
 
         Args:
             method (str, optional): The algorithm. Options are: "rosenstein" (Rosenstein, Collins and De
@@ -1776,13 +1768,9 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, LPM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.LPM
-            Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
         - Riskfolio-Lib, SemiKurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiKurtosis
-            Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
         - skfolio, first_lower_partial_moment: https://skfolio.org/generated/skfolio.measures.first_lower_partial_moment.html
-            Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
         - skfolio, fourth_lower_partial_moment: https://skfolio.org/generated/skfolio.measures.fourth_lower_partial_moment.html
-            Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
 
         Shares similar logic:
         - PerformanceAnalytics (R), DownsideFrequency: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideFrequency.R#L35
@@ -1926,11 +1914,8 @@ class DistributionRisk:
 
         Referenced against:
         - skfolio, third_central_moment: https://skfolio.org/generated/skfolio.measures.third_central_moment.html
-            Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
         - skfolio, fourth_central_moment: https://skfolio.org/generated/skfolio.measures.fourth_central_moment.html
-            Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
         - Riskfolio-Lib, Kurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Kurtosis
-            Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
 
         Shares similar logic:
         - Riskfolio-Lib, EvenMoment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EvenMoment
@@ -2057,9 +2042,7 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, WR: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.WR
-            Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
         - skfolio, worst_realization: https://skfolio.org/generated/skfolio.measures.worst_realization.html
-            Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
 
         Args:
             period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
@@ -2179,9 +2162,7 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, GMD: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.GMD
-            Test: tests/risk/test_dispersion_model.py::test_gini_mean_difference_matches_references
         - skfolio, gini_mean_difference: https://skfolio.org/generated/skfolio.measures.gini_mean_difference.html
-            Test: tests/risk/test_dispersion_model.py::test_gini_mean_difference_matches_references
 
         Shares similar logic:
         - Riskfolio-Lib, owa_gmd: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_gmd
@@ -2308,7 +2289,6 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, TG: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TG
-            Test: tests/risk/test_dispersion_model.py::test_tail_gini_matches_riskfolio
 
         Shares similar logic:
         - Riskfolio-Lib, owa_tg: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_tg
@@ -2449,11 +2429,8 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, RG (Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.RG
-            Test: tests/risk/test_dispersion_model.py::test_risk_range_matches_riskfolio_and_the_toolkit_var
         - Riskfolio-Lib, TGRG (Tail Gini Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TGRG
-            Test: tests/risk/test_dispersion_model.py::test_risk_range_matches_riskfolio_and_the_toolkit_var
         - Riskfolio-Lib, EVRG (EVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVRG
-            Test: tests/risk/test_dispersion_model.py::test_get_risk_range_evar
 
         Shares similar logic:
         - Riskfolio-Lib, VRG (VaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.VRG
@@ -2604,9 +2581,7 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, L_Moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment
-            Test: tests/risk/test_dispersion_model.py::test_l_moments_match_riskfolio_and_scipy
         - scipy, lmoment: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lmoment.html
-            Test: tests/risk/test_dispersion_model.py::test_l_moments_match_riskfolio_and_scipy
 
         Shares similar logic:
         - Riskfolio-Lib, owa_l_moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment
@@ -2744,7 +2719,6 @@ class DistributionRisk:
 
         Referenced against:
         - Riskfolio-Lib, L_Moment_CRM (constant relative risk aversion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment_CRM
-            Test: tests/risk/test_dispersion_model.py::test_l_moment_risk_measure
 
         Shares similar logic:
         - Riskfolio-Lib, owa_l_moment_crm: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment_crm

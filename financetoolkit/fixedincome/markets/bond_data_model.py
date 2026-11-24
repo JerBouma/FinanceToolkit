@@ -160,8 +160,6 @@ def get_years_to_maturity(
 
     Referenced against:
     - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
-        Test: tests/fixedincome/test_bond_data.py::test_get_years_to_maturity_end_of_month_against_quantlib
-        Test: tests/fixedincome/test_bond_data.py::test_get_years_to_maturity_30_360_against_quantlib
 
     Args:
         settlement (date): The date the price applies to.
@@ -310,7 +308,6 @@ def get_bill_price(years_to_maturity: float, yield_to_maturity: float) -> float:
 
     Referenced against:
     - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
-        Test: tests/fixedincome/test_bond_data.py::test_get_bill_measures_against_quantlib
 
     Args:
         years_to_maturity (float): The days to maturity divided by 365.
@@ -353,7 +350,6 @@ def get_bill_measures(years_to_maturity: float, yield_to_maturity: float) -> dic
 
     Referenced against:
     - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
-        Test: tests/fixedincome/test_bond_data.py::test_get_bill_measures_against_quantlib
 
     Args:
         years_to_maturity (float): The days to maturity divided by 365.

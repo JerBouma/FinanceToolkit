@@ -17,9 +17,11 @@ def get_present_value_of_growth_opportunities(
     period_end_dates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    The Present Value of Growth Opportunities (PVGO) is the net present value of all future investments a company is
-    expected to make. It is calculated as the difference between the Close Price and the Earnings Per Share divided by
-    the Cost of Equity.
+    The Present Value of Growth Opportunities (PVGO) is the net present value of all future
+    investments a company is expected to make.
+
+    It is calculated as the difference between the Close Price and the Earnings Per Share
+    divided by the Cost of Equity.
 
     It is meant to be used as relative valuation metric and therefore doesn't necessarily have a meaning when used
     for one company.
@@ -86,8 +88,9 @@ def get_sustainable_growth_rate(
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
-    revenue, using internally generated funds only, without having to raise additional equity
-    or increase its financial leverage.
+    revenue without new equity or more leverage.
+
+    It uses internally generated funds only.
 
     The formula is as follows:
 
@@ -118,8 +121,9 @@ def get_internal_growth_rate(
 ) -> float | pd.Series | pd.DataFrame:
     """
     The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
-    revenue using only its retained earnings, without raising any external financing
-    (neither debt nor equity).
+    revenue using only its retained earnings.
+
+    It raises no external financing, neither debt nor equity.
 
     The formula is as follows:
 
@@ -155,9 +159,10 @@ def get_return_decomposition(
     logarithmic: bool = False,
 ) -> pd.DataFrame:
     """
-    Splits the share price return over a window into the growth of the Earnings per Share and
-    the change of the Price-to-Earnings ratio, and adds the dividends paid over the window for
-    the total return.
+    Splits the share price return over a window into the growth of the Earnings per Share
+    and the change of the Price-to-Earnings ratio.
+
+    It adds the dividends paid over the window for the total return.
 
     Since the share price equals the Earnings per Share times the P/E ratio, the price relative
     over a window is the product of the earnings relative and the multiple relative:
@@ -240,9 +245,10 @@ def get_reinvestment_rate(
     net_operating_profit_after_taxes: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Damodaran's reinvestment rate: the share of the after-tax operating income that a company
-    reinvests in its operations, in capital expenditure beyond its depreciation and in working
-    capital.
+    Damodaran's reinvestment rate.
+
+    It is the share of the after-tax operating income that a company reinvests in its
+    operations, in capital expenditure beyond its depreciation and in working capital.
 
     The formula is as follows:
 
@@ -299,9 +305,10 @@ def get_sales_to_capital_ratio(
     invested_capital: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Damodaran's sales-to-capital ratio: the revenue every unit of invested capital generates,
-    which turns revenue growth into the reinvestment it requires (Reinvestment = Change in
-    Revenue / Sales to Capital).
+    Damodaran's sales-to-capital ratio.
+
+    It is the revenue every unit of invested capital generates, which turns revenue growth
+    into the reinvestment it requires (Reinvestment = Change in Revenue / Sales to Capital).
 
     The formula is as follows:
 
@@ -327,8 +334,10 @@ def get_rule_of_40(
 ) -> pd.Series | pd.DataFrame:
     """
     The Rule of 40 score of software and other subscription companies: the revenue growth
-    plus a profit margin (the free cash flow margin or the EBITDA margin). A score of 0.40
-    (40%) or more is seen as a healthy balance between growth and profitability.
+    plus a profit margin (the free cash flow margin or the EBITDA margin).
+
+    A score of 0.40 (40%) or more is seen as a healthy balance between growth and
+    profitability.
 
     The formula is as follows:
 

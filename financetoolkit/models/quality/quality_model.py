@@ -102,10 +102,12 @@ def get_magic_formula(
     net_fixed_assets: pd.DataFrame,
 ) -> dict[str, pd.DataFrame]:
     """
-    Greenblatt's Magic Formula: companies are ranked on their earnings yield (EBIT divided by
-    enterprise value: how cheap they are) and their return on capital (EBIT divided by net
-    working capital plus net fixed assets: how good they are), and the two ranks are added.
-    The best combined rank buys good businesses at low prices.
+    Greenblatt's Magic Formula.
+
+    Companies are ranked on their earnings yield (EBIT divided by enterprise value: how
+    cheap they are) and their return on capital (EBIT divided by net working capital plus
+    net fixed assets: how good they are), and the two ranks are added. The best combined
+    rank buys good businesses at low prices.
 
     Args:
         operating_income (pd.DataFrame): EBIT per ticker (rows) and period (columns).
@@ -259,10 +261,11 @@ def get_dechow_f_score(
 ) -> dict[str, pd.DataFrame]:
     """
     The Dechow F-Score (Model 1 of Dechow, Ge, Larson and Sloan, 2011), the probability of
-    an accounting misstatement relative to the average firm. It combines accrual quality
-    (RSST accruals, changes in receivables and inventory, the share of soft assets),
-    performance (the change in cash sales and in return on assets) and the market incentive
-    to look good (issuing debt or equity):
+    an accounting misstatement relative to the average firm.
+
+    It combines accrual quality (RSST accruals, changes in receivables and inventory, the
+    share of soft assets), performance (the change in cash sales and in return on assets)
+    and the market incentive to look good (issuing debt or equity):
 
         Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables +
                           1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales -
@@ -450,9 +453,10 @@ def get_accruals_ratios(
 ) -> dict[str, pd.DataFrame]:
     """
     The accruals ratios: the part of earnings that is not backed by cash, scaled by the
-    average of the total assets at the start and the end of the period. Sloan (1996)
-    showed that companies with high accruals have less persistent earnings and lower
-    future returns.
+    average of the total assets at the start and the end of the period.
+
+    Sloan (1996) showed that companies with high accruals have less persistent earnings and
+    lower future returns.
 
     - Balance Sheet Accruals Ratio (Sloan, 1996): [(ΔCurrent Assets - ΔCash) - (ΔCurrent
       Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average Total
@@ -517,8 +521,12 @@ def get_modified_jones_accruals(
 ) -> dict[str, pd.DataFrame]:
     """
     The discretionary accruals of the modified Jones model (Dechow, Sloan and Sweeney,
-    1995): the part of the total accruals that the change in revenues and the fixed assets
-    do not explain. Every term is scaled by the total assets at the start of the period:
+    1995).
+
+    It is the part of the total accruals that the change in revenues and the fixed assets do
+    not explain.
+
+    Every term is scaled by the total assets at the start of the period:
 
     - Total Accruals = (Net Income - Cash Flow from Operations) / Total Assets(t-1)
     - Estimation (Jones, 1991): Total Accruals = a1 × 1 / A(t-1) + a2 × ΔREV / A(t-1) +
@@ -527,16 +535,20 @@ def get_modified_jones_accruals(
       a3 × PPE / A(t-1)
     - Discretionary Accruals = Total Accruals - Non-Discretionary Accruals
 
-    With intercept=True a constant a0 is added to the estimation and to the non-discretionary
+    With an intercept a constant a0 is added to the estimation and to the non-discretionary
     accruals (Kothari, Leone and Wasley, 2005).
 
-    With method="time_series" the coefficients of every period are estimated on the
+    In the time series method the coefficients of every period are estimated on the
     ticker's own earlier periods (`lag` periods apart, so that quarterly trailing twelve
     months do not overlap), with the change in revenues as in Jones (1991), and the change in
     receivables is subtracted only for the period itself, as in Dechow, Sloan and Sweeney
-    (1995). With method="cross_section" they are estimated per period across the tickers,
+    (1995). In the cross-section method they are estimated per period across the tickers,
     with the change in revenues minus the change in receivables in the estimation as well,
     as in the cross-sectional modified Jones model of the later literature.
+
+    Referenced against:
+    - statsmodels, OLS (time series): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+    - statsmodels, OLS (with an intercept): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
     Args:
         net_income (pd.DataFrame): Net income per ticker (rows) and period (columns).
@@ -549,7 +561,7 @@ def get_modified_jones_accruals(
         lag (int, optional): The number of periods back that the changes and the beginning
             assets are taken, one year: 1 for yearly statements and 4 for quarterly flows
             summed over the trailing twelve months. Defaults to 1.
-        method (str, optional): "time_series" (each ticker's earlier periods) or
+        method (str, optional): Options are: "time_series" (each ticker's earlier periods),
             "cross_section" (the tickers of each period). Defaults to "time_series".
         min_observations (int, optional): The fewest observations a regression is estimated
             on, earlier periods or tickers. Defaults to 10.
@@ -645,10 +657,12 @@ def get_modified_jones_accruals(
 
 def get_rank_z_score(frame: pd.DataFrame) -> pd.DataFrame:
     """
-    The cross-sectional z-score of the ranks of a ticker by period frame: in every period the
-    tickers are ranked (the average rank for ties) and the ranks are standardized to a mean
-    of 0 and a standard deviation of 1 (ddof=1) across the tickers with a value. Ranks make
-    the score robust to outliers, as in Asness, Frazzini and Pedersen (2019).
+    The cross-sectional z-score of the ranks of a ticker by period frame.
+
+    In every period the tickers are ranked (the average rank for ties) and the ranks are
+    standardized to a mean of 0 and a standard deviation of 1 (ddof=1) across the tickers
+    with a value. Ranks make the score robust to outliers, as in Asness, Frazzini and
+    Pedersen (2019).
 
     Args:
         frame (pd.DataFrame): the values with the tickers as the index and the periods as the columns.
@@ -701,11 +715,13 @@ def get_accrual_quality(
     property_plant_and_equipment: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    The accrual quality of Dechow and Dichev (2002): the standard deviation of the residuals of
-    a regression of each company's working capital accruals on its past, present and future
-    operating cash flows. Accruals that do not map into cash flows (large residuals) are of low
-    quality, so a higher value means lower quality. With the change in revenue and the property,
-    plant and equipment it is the model of McNichols (2002).
+    The accrual quality of Dechow and Dichev (2002).
+
+    It is the standard deviation of the residuals of a regression of each company's working
+    capital accruals on its past, present and future operating cash flows. Accruals that do
+    not map into cash flows (large residuals) are of low quality, so a higher value means
+    lower quality. With the change in revenue and the property, plant and equipment it is
+    the model of McNichols (2002).
 
     The regression, estimated per company over the `window` years before the period:
 
@@ -886,9 +902,11 @@ def get_graham_criteria(
     lag: int = 1,
 ) -> dict[str, pd.DataFrame]:
     """
-    The seven criteria Benjamin Graham sets for the stocks of the defensive investor (The
-    Intelligent Investor, 1973, chapter 14), each 1 when met, 0 when not and NaN when the data
-    does not reach back far enough:
+    The seven criteria Benjamin Graham sets for the stocks of the defensive investor,
+    whether each is met.
+
+    The criteria come from The Intelligent Investor (1973, chapter 14), each 1 when met, 0
+    when not and NaN when the data does not reach back far enough:
 
         - Adequate Size: Revenue >= minimum_revenue
         - Strong Financial Condition: Current Assets >= 2 * Current Liabilities and Long Term

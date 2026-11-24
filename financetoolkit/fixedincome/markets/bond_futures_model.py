@@ -53,7 +53,6 @@ def get_bond_forward_price(
 
     Referenced against:
     - QuantLib, BondForward: https://www.quantlib.org/reference/class_quant_lib_1_1_bond_forward.html
-        Test: tests/fixedincome/test_treasury_markets_model.py::test_bond_forward_price_against_quantlib
 
     Shares similar logic:
     - rateslib, FixedRateBond.fwd_from_repo: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FixedRateBond.html#rateslib.instruments.FixedRateBond.fwd_from_repo
@@ -166,7 +165,6 @@ def get_conversion_factor(
 
     Referenced against:
     - rateslib, BondFuture.cfs: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.cfs
-        Test: tests/fixedincome/test_treasury_markets_model.py::test_conversion_factor_against_rateslib
 
     Shares similar logic:
     - FinancePy, BondFuture.conversion_factor: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L68

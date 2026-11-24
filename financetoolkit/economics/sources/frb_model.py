@@ -105,10 +105,11 @@ def get_industrial_production_index() -> pd.DataFrame:
 
 def get_capacity_utilization() -> pd.DataFrame:
     """
-    Retrieves the monthly capacity utilisation of total industry (manufacturing, mining and
-    electric and gas utilities), seasonally adjusted, from the Federal Reserve's G.17
-    release, from 1967: the industrial production index as a share of the Federal
-    Reserve's index of sustainable maximum output (capacity).
+    Retrieve the monthly capacity utilisation of total industry from the Federal Reserve's G.17 release, from 1967:
+    how much of industry's capacity is in use.
+
+    It covers manufacturing, mining and electric and gas utilities, seasonally adjusted: the industrial production
+    index as a share of the Federal Reserve's index of sustainable maximum output (capacity).
 
     Returns:
         pd.DataFrame: The capacity utilisation as a decimal (0.764 for 76.4%), a single
@@ -153,10 +154,11 @@ EXCESS_BOND_PREMIUM_COLUMNS = {
 
 def get_excess_bond_premium() -> pd.DataFrame:
     """
-    Retrieves the Gilchrist-Zakrajšek credit spread, the average spread of US corporate
-    bonds over Treasuries with the same cash flows, its excess bond premium, the part of
-    that spread not explained by expected defaults, and the probability of a recession over
-    the next twelve months the premium implies, monthly from 1973.
+    Retrieve the Gilchrist-Zakrajšek credit spread and its excess bond premium: the part of US corporate bond spreads
+    that expected defaults do not explain, a gauge of credit conditions.
+
+    The credit spread is the average spread of US corporate bonds over Treasuries with the same cash flows; the
+    probability of a recession over the next twelve months the premium implies comes with it, monthly from 1973.
 
     Returns:
         pd.DataFrame: The spread and premium as decimals and the probability as a fraction,
@@ -280,12 +282,13 @@ def _parse_supervisory_scenario(
 
 def get_supervisory_scenario(scenario: str, year: int | None = None) -> pd.DataFrame:
     """
-    Retrieves a scenario of the Federal Reserve's supervisory stress test: the baseline,
-    the severely adverse scenario, or the history of the same variables from 1976, for the
-    United States (GDP, income, unemployment, inflation, Treasury, BBB corporate and
-    mortgage rates, equity, house and commercial property prices and the VIX) and for the
-    euro area, developing Asia, Japan and the United Kingdom (GDP, inflation and exchange
-    rates).
+    Retrieve a scenario of the Federal Reserve's supervisory stress test: the paths of US and international economic
+    and market variables under the baseline or the severely adverse scenario.
+
+    Next to the baseline and the severely adverse scenario it gives the history of the same variables from 1976: for
+    the United States GDP, income, unemployment, inflation, Treasury, BBB corporate and mortgage rates, equity, house
+    and commercial property prices and the VIX, and for the euro area, developing Asia, Japan and the United Kingdom
+    GDP, inflation and exchange rates.
 
     As the Federal Reserve publishes them, the growth and inflation variables (GDP,
     disposable income, CPI and the international GDP growth and inflation) are
@@ -293,7 +296,8 @@ def get_supervisory_scenario(scenario: str, year: int | None = None) -> pd.DataF
     earlier.
 
     Args:
-        scenario (str): "baseline", "adverse" (severely adverse) or "historic".
+        scenario (str): The scenario. Options are: "baseline" (the baseline scenario), "adverse" (the severely adverse
+            scenario), "historic" (the history of the variables).
         year (int | None): The year of the stress test. Defaults to None, which takes the
             latest published.
 

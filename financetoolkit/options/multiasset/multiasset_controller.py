@@ -187,7 +187,6 @@ class MultiAssetOptions:
 
         Referenced against:
         - QuantLib, AnalyticEuropeanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_european_margrabe_engine.html
-            Test: tests/options/test_multi_asset_model.py::test_the_exchange_option_matches_quantlib_and_the_tree
 
         Shares similar logic:
         - QuantLib, AnalyticAmericanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_american_margrabe_engine.html
@@ -344,9 +343,7 @@ class MultiAssetOptions:
 
         Referenced against:
         - QuantLib, BjerksundStenslandSpreadEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_spread_engine.html
-            Test: tests/options/test_multi_asset_model.py::test_the_spread_option_matches_quantlib
         - QuantLib, KirkEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_kirk_engine.html
-            Test: tests/options/test_multi_asset_model.py::test_the_spread_option_matches_quantlib
 
         Args:
             start_date (str | None, optional): The date whose prices, volatilities, correlation and rates the values

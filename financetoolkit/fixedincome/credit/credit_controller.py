@@ -1397,9 +1397,7 @@ class CreditFixedIncome:
 
         Referenced against:
         - QuantLib, HazardRateCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_hazard_rate_curve.html
-            Test: tests/fixedincome/test_credit_model.py::test_survival_probability_matches_quantlib
         - QuantLib, RiskyBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_risky_bond_engine.html
-            Test: tests/fixedincome/test_credit_model.py::test_risky_bond_price_matches_quantlib
 
         Shares similar logic:
         - QuantLib, PiecewiseFlatHazardRate: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_default_curve.html
@@ -1545,9 +1543,7 @@ class CreditFixedIncome:
 
         Referenced against:
         - QuantLib, CreditDefaultSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_credit_default_swap.html
-            Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
         - QuantLib, IsdaCdsEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_isda_cds_engine.html
-            Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
 
         Shares similar logic:
         - FinancePy, CDS: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds.py#L262

@@ -23,12 +23,13 @@ def get_intrinsic_value(
     preferred_stock: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Intrinsic value is a fundamental concept in finance and investing that represents the true
-    worth of an asset, independent of its current market price. This function estimates the
-    intrinsic value of a company using a Discounted Cash Flow (DCF) model: it projects a base
-    cash flow forward at a constant growth rate, discounts a terminal value off the final
-    projection, and discounts every projected cash flow back to the present at the weighted
-    average cost of capital.
+    Intrinsic value is a fundamental concept in finance and investing that represents the
+    true worth of an asset, independent of its current market price.
+
+    This function estimates the intrinsic value of a company using a Discounted Cash Flow
+    (DCF) model: it projects a base cash flow forward at a constant growth rate, discounts a
+    terminal value off the final projection, and discounts every projected cash flow back to
+    the present at the weighted average cost of capital.
 
     The formula is as follows:
 
@@ -283,13 +284,15 @@ def get_free_cash_flow_to_firm(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
-    capital, both debt and equity holders, after the company has paid all of its operating
-    expenses and invested in the assets (fixed assets and working capital) needed to sustain
-    its operations. Because it is measured before any financing cash flows (interest, debt
-    repayments or issuances, dividends), FCFF is capital-structure neutral, which makes it
-    the appropriate cash flow to discount at the Weighted Average Cost of Capital (WACC) when
-    valuing the Enterprise Value of a company directly (as opposed to FCFE, which values
-    equity directly and should be discounted at the Cost of Equity).
+    capital, both debt and equity holders.
+
+    It is what is left after the company has paid all of its operating expenses and invested
+    in the assets (fixed assets and working capital) needed to sustain its operations.
+    Because it is measured before any financing cash flows (interest, debt repayments or
+    issuances, dividends), FCFF is capital-structure neutral, which makes it the appropriate
+    cash flow to discount at the Weighted Average Cost of Capital (WACC) when valuing the
+    Enterprise Value of a company directly (as opposed to FCFE, which values equity directly
+    and should be discounted at the Cost of Equity).
 
     The formula is as follows:
 
@@ -350,10 +353,12 @@ def get_free_cash_flow_to_equity(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common equity
-    holders after all operating expenses, reinvestment needs (capital expenditure and working
-    capital), and net payments to (or from) debt holders have been accounted for. Unlike
-    FCFF, FCFE is a levered cash flow measure, so it should be discounted at the Cost of
-    Equity, not the Weighted Average Cost of Capital, when used in a valuation.
+    holders.
+
+    It is what is left after all operating expenses, reinvestment needs (capital expenditure
+    and working capital), and net payments to (or from) debt holders have been accounted
+    for. Unlike FCFF, FCFE is a levered cash flow measure, so it should be discounted at the
+    Cost of Equity, not the Weighted Average Cost of Capital, when used in a valuation.
 
     The formula is as follows:
 
@@ -418,11 +423,12 @@ def get_two_stage_dividend_discount_model(
 ) -> pd.DataFrame:
     """
     The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model to
-    companies that are not expected to grow at a constant rate forever. It explicitly
-    projects and discounts dividends over an initial "high-growth" phase (e.g. a young,
-    fast-growing company), and then, from the end of that phase onward, assumes dividends
-    settle into perpetual growth at a lower, more sustainable "stable" rate — valued with the
-    Gordon Growth Model as a terminal value.
+    companies that are not expected to grow at a constant rate forever.
+
+    It explicitly projects and discounts dividends over an initial "high-growth" phase (e.g.
+    a young, fast-growing company), and then, from the end of that phase onward, assumes
+    dividends settle into perpetual growth at a lower, more sustainable "stable" rate —
+    valued with the Gordon Growth Model as a terminal value.
 
     The formula is as follows:
 
@@ -566,11 +572,13 @@ def get_h_model(
     high_growth_periods: int = 10,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at a high
-    rate and declines linearly to a stable rate over a number of periods, after which it grows
-    at the stable rate forever. It approximates the three-stage dividend discount model in one
-    closed-form expression: the Gordon Growth Model at the stable rate, plus the value of the
-    extra growth during the decline.
+    The H-Model of Fuller and Hsia (1984) shows the value of a stock whose dividend growth
+    declines linearly to a stable rate.
+
+    The growth starts at a high rate and declines over a number of periods, after which it
+    grows at the stable rate forever. It approximates the three-stage dividend discount
+    model in one closed-form expression: the Gordon Growth Model at the stable rate, plus
+    the value of the extra growth during the decline.
 
     The formula is as follows:
 
@@ -692,13 +700,15 @@ def get_residual_income(
 ) -> float | pd.Series | pd.DataFrame:
     """
     Residual Income is a measure of the profit a company generates in excess of the return
-    required by its equity holders. It is the equity-side counterpart to Economic Value Added
-    (EVA): where EVA nets the cost of both debt and equity capital off of NOPAT, Residual
-    Income nets only the cost of equity capital off of Net Income, since equity holders'
-    claim is on Net Income (a profit already net of interest paid to debt holders). It
-    underpins the Residual Income Model, an alternative equity valuation lens to a
-    traditional Discounted Cash Flow (DCF) that is particularly useful when a company's free
-    cash flows are negative or unpredictable but its accounting earnings are more stable.
+    required by its equity holders.
+
+    It is the equity-side counterpart to Economic Value Added (EVA): where EVA nets the cost
+    of both debt and equity capital off of NOPAT, Residual Income nets only the cost of
+    equity capital off of Net Income, since equity holders' claim is on Net Income (a profit
+    already net of interest paid to debt holders). It underpins the Residual Income Model,
+    an alternative equity valuation lens to a traditional Discounted Cash Flow (DCF) that is
+    particularly useful when a company's free cash flows are negative or unpredictable but
+    its accounting earnings are more stable.
 
     The formula is as follows:
 
@@ -781,11 +791,12 @@ def get_implied_growth_rate(
     preferred_stock: float = 0.0,
 ) -> float:
     """
-    The growth rate the share price implies (a reverse DCF): the yearly growth of the cash
-    flow over the projection periods at which the Discounted Cash Flow value per share of
-    `get_intrinsic_value` equals the share price. Rather than asking what a company is
-    worth, it asks what the market expects, which can then be judged against the company's
-    history and prospects.
+    The growth rate the share price implies (a reverse DCF).
+
+    It is the yearly growth of the cash flow over the projection periods at which the
+    Discounted Cash Flow value per share of `get_intrinsic_value` equals the share price.
+    Rather than asking what a company is worth, it asks what the market expects, which can
+    then be judged against the company's history and prospects.
 
     For more information, see the following book:
 
@@ -864,12 +875,13 @@ def get_earnings_power_value(
 ) -> pd.Series:
     """
     The Earnings Power Value (Greenwald): the value of the company's current, sustainable
-    earnings if they never grew, NOPAT / WACC. Earnings are normalized by applying the
-    average operating margin over the given periods to the latest revenue, which smooths out
-    a single good or bad year. Comparing it with the market value shows how much of the
-    price rests on growth: a price far above the EPV requires growth that creates value.
-    The NOPAT is capitalized as a yearly amount, so every period should cover a year (for
-    quarterly statements, the sum of four quarters).
+    earnings if they never grew, NOPAT / WACC.
+
+    Earnings are normalized by applying the average operating margin over the given periods
+    to the latest revenue, which smooths out a single good or bad year. Comparing it with
+    the market value shows how much of the price rests on growth: a price far above the EPV
+    requires growth that creates value. The NOPAT is capitalized as a yearly amount, so
+    every period should cover a year (for quarterly statements, the sum of four quarters).
 
     For more information, see the following book:
 
@@ -950,10 +962,12 @@ def get_monte_carlo_intrinsic_value(
 ) -> np.ndarray:
     """
     The distribution of the Discounted Cash Flow value per share when the growth rate, the
-    perpetual growth rate and the discount rate are uncertain. Each simulation draws the
-    three rates from normal distributions around their expected values and calculates the
-    value as in `get_intrinsic_value`. Draws in which the discount rate does not exceed the
-    perpetual growth rate are redrawn, as the terminal value is undefined there.
+    perpetual growth rate and the discount rate are uncertain.
+
+    Each simulation draws the three rates from normal distributions around their expected
+    values and calculates the value as in `get_intrinsic_value`. Draws in which the discount
+    rate does not exceed the perpetual growth rate are redrawn, as the terminal value is
+    undefined there.
 
     Args:
         cash_flow (float): The base cash flow, e.g. the latest Free Cash Flow.
@@ -1068,9 +1082,10 @@ def get_greenwald_maintenance_capital_expenditure(
     change_in_revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Greenwald's estimate of the maintenance capital expenditure: the capital expenditure minus
-    the investment that the growth in revenue required at the company's ratio of fixed assets to
-    revenue (the growth capital expenditure).
+    Greenwald's estimate of the maintenance capital expenditure.
+
+    It is the capital expenditure minus the investment that the growth in revenue required
+    at the company's ratio of fixed assets to revenue (the growth capital expenditure).
 
     The formula is as follows:
 

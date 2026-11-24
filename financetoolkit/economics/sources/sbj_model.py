@@ -115,9 +115,8 @@ def _chain(indices: list[pd.Series]) -> pd.Series:
 
 def get_consumer_price_index() -> pd.DataFrame:
     """
-    Retrieves the monthly Japanese Consumer Price Index for all items, chained across the
-    base years from 2015 onwards and expressed on the latest base (2025 = 100 since the
-    2026 rebase).
+    Retrieves the monthly Japanese Consumer Price Index for all items, chained across the base years from 2015 onwards
+    and expressed on the latest base (2025 = 100 since the 2026 rebase).
 
     Returns:
         pd.DataFrame: A single "Japan" column indexed by month.

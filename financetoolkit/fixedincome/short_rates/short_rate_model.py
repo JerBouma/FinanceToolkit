@@ -681,13 +681,9 @@ def get_zero_coupon_bond_option(
 
     Referenced against:
     - QuantLib, Vasicek.discountBondOption (vasicek): https://www.quantlib.org/reference/class_quant_lib_1_1_vasicek.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_zero_coupon_bond_option_matches_quantlib
     - QuantLib, HullWhite.discountBondOption (hull_white): https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_zero_coupon_bond_option_matches_quantlib
     - QuantLib, CoxIngersollRoss.discountBondOption (cir): https://www.quantlib.org/reference/class_quant_lib_1_1_cox_ingersoll_ross.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_zero_coupon_bond_option_matches_quantlib
     - QuantLib, ExtendedCoxIngersollRoss.discountBondOption (cir++): https://www.quantlib.org/reference/class_quant_lib_1_1_extended_cox_ingersoll_ross.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_zero_coupon_bond_option_matches_quantlib
 
     Shares similar logic:
     - FinancePy, HWTree.option_on_zcb (hull_white): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L946
@@ -816,7 +812,6 @@ def get_caplet(
 
     Referenced against:
     - QuantLib, AnalyticCapFloorEngine (hull_white): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cap_floor_engine.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_caps_and_floors_match_quantlib
 
     Args:
         reset_time (float | np.ndarray): The time T at which the rate is fixed, in years.
@@ -936,7 +931,6 @@ def get_swaption(
 
     Referenced against:
     - QuantLib, JamshidianSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_jamshidian_swaption_engine.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_swaption_matches_quantlib_jamshidian
 
     Args:
         option_expiry (float): The expiry T of the swaption, the start of the swap, in years.
@@ -1213,7 +1207,6 @@ def get_option_adjusted_spread(
 
     Referenced against:
     - QuantLib, TreeCallableFixedRateBondEngine (ho_lee): https://www.quantlib.org/reference/class_quant_lib_1_1_tree_callable_fixed_rate_bond_engine.html
-        Test: tests/fixedincome/test_short_rate_model.py::test_option_adjusted_spread_matches_a_fine_tree
 
     Shares similar logic:
     - QuantLib, CallableFixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_callable_fixed_rate_bond.html

@@ -581,7 +581,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, PERCENTB: https://ta-lib.org/functions/percentb.html
-            Test: tests/technical/test_volatility_model.py::test_bollinger_percent_b_and_bandwidth_match_talib
         - TA-Lib, BBW: https://ta-lib.org/functions/bbw.html
 
         Args:
@@ -854,11 +853,8 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, ATR: https://ta-lib.org/functions/atr.html
-            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
         - TA-Lib, NATR: https://ta-lib.org/functions/natr.html
-            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
         - TA-Lib, ADR: https://ta-lib.org/functions/adr.html
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Shares similar logic:
         - pandas-ta-classic, natr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/natr.py#L20
@@ -1509,9 +1505,7 @@ class VolatilityTechnicals:
         Referenced against:
         - TA-Lib, KC: https://ta-lib.org/functions/kc.html
         - ta, KeltnerChannel: https://github.com/bukosabino/ta/blob/0.11.0/ta/volatility.py#L183
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
         - pandas-ta-classic, aberration (Aberration): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/aberration.py#L14
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: Keltner Channels, KC, ATR-based bands, volatility channels, ABER, Aberration, Aberration bands.
 
@@ -1682,7 +1676,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, DONCHIAN: https://ta-lib.org/functions/donchian.html
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: Donchian Channels, price channel breakout.
 
@@ -1972,7 +1965,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, CVI: https://ta-lib.org/functions/cvi.html
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Shares similar logic:
         - pandas-ta-classic, cvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/cvi.py#L12
@@ -2116,7 +2108,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, RVI: https://ta-lib.org/functions/rvi.html
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
         - TA-Lib, RVIR: https://ta-lib.org/functions/rvir.html
 
         Shares similar logic:
@@ -2268,7 +2259,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, ACCBANDS: https://ta-lib.org/functions/accbands.html
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
         - pandas-ta-classic, accbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/accbands.py#L17
 
         Also known as: ACCBANDS, Price Headley's Acceleration Bands.
@@ -2402,7 +2392,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, CKSP: https://ta-lib.org/functions/cksp.html
-            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
 
         Shares similar logic:
         - pandas-ta-classic, cksp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cksp.py#L12
@@ -2672,7 +2661,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - pandas-ta-classic, pdist: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/pdist.py#L17
-            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: PDIST, price distance volatility.
 
@@ -2936,7 +2924,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - TA-Lib, SQZMOM: https://ta-lib.org/functions/sqzmom.html
-            Test: tests/technical/test_volatility_model.py::test_squeeze_momentum_matches_talib
         - pandas-ta-classic, squeeze: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze.py#L94
 
         Shares similar logic:
@@ -3087,7 +3074,6 @@ class VolatilityTechnicals:
 
         Referenced against:
         - pandas-ta-classic, tos_stdevall: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/tos_stdevall.py#L15
-            Test: tests/technical/test_volatility_model.py::test_standard_deviation_channel_matches_pandas_ta_classic
 
         Also known as: standard deviation channel, StDevAll, linear regression channel, regression bands.
 

@@ -455,7 +455,6 @@ def get_black_76(
 
     Referenced against:
     - QuantLib, blackFormula: https://www.quantlib.org/reference/namespace_quant_lib.html#adfe71f9b0b157cae6e4bd53faaa676af
-        Test: tests/options/test_black_scholes_model.py::test_black_76_matches_quantlib
 
     Shares similar logic:
     - FinancePy, Black: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black.py#L18
@@ -1481,10 +1480,7 @@ def get_bjerksund_stensland(
 
     Referenced against:
     - QuantLib, BjerksundStenslandApproximationEngine (1993): https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_approximation_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
     - QuantLib, FdBlackScholesVanillaEngine (2002): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
-        Test:
-            tests/options/test_black_scholes_model.py::test_bjerksund_stensland_2002_against_a_finite_difference_american_price
 
     Args:
         stock_price (float | np.ndarray): The current stock price.
@@ -1762,9 +1758,7 @@ def get_black_scholes_cash_dividends(
 
     Referenced against:
     - QuantLib, AnalyticDividendEuropeanEngine (escrowed): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_dividend_european_engine.html
-        Test: tests/options/test_american_model.py::test_the_cash_dividend_prices_match_quantlib
     - QuantLib, CashDividendEuropeanEngine (Haug-Haug-Lewis): https://www.quantlib.org/reference/class_quant_lib_1_1_cash_dividend_european_engine.html
-        Test: tests/options/test_american_model.py::test_the_cash_dividend_prices_match_quantlib
 
     Args:
         stock_price (float | np.ndarray): The current stock price.

@@ -960,9 +960,7 @@ def get_variance_swap_fair_strike(
 
     Referenced against:
     - QuantLib, ReplicatingVarianceSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_replicating_variance_swap_engine.html
-        Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_quantlib
     - FinancePy, EquityVarianceSwap.fair_strike: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L102
-        Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_financepy
 
     Args:
         strike_prices (np.ndarray): The strikes.
@@ -1079,7 +1077,6 @@ def get_variance_swap_value(
 
     Referenced against:
     - FinancePy, EquityVarianceSwap.value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L61
-        Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_value_matches_financepy
 
     Args:
         realized_variance (float): The annualized realized variance since the start.

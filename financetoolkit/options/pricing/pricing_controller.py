@@ -122,9 +122,7 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticDividendEuropeanEngine (escrowed): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_dividend_european_engine.html
-            Test: tests/options/test_american_model.py::test_the_cash_dividend_prices_match_quantlib
         - QuantLib, CashDividendEuropeanEngine (Haug-Haug-Lewis): https://www.quantlib.org/reference/class_quant_lib_1_1_cash_dividend_european_engine.html
-            Test: tests/options/test_american_model.py::test_the_cash_dividend_prices_match_quantlib
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -430,16 +428,10 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-            Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
         - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-            Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
         - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-            Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
         - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-            Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
         - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-            Test:
-                tests/options/test_binomial_trees_model.py::test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -1516,20 +1508,12 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, QdPlusAmericanEngine (QD+): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
         - QuantLib, BaroneAdesiWhaleyApproximationEngine (Barone-Adesi-Whaley): https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
         - QuantLib, JuQuadraticApproximationEngine (Ju-Zhong): https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
         - QuantLib, QdFpAmericanEngine (QD fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
         - QuantLib, FdBlackScholesVanillaEngine (QD fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
-            Test: tests/options/test_american_model.py::test_the_qd_fixed_point_matches_a_finite_difference_grid
         - QuantLib, FdBlackScholesVanillaEngine (Bjerksund-Stensland 2002): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
-            Test:
-                tests/options/test_black_scholes_model.py::test_bjerksund_stensland_2002_against_a_finite_difference_american_price
         - QuantLib, BjerksundStenslandApproximationEngine (Bjerksund-Stensland 1993): https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_approximation_engine.html
-            Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
 
         Shares similar logic:
         - QuantLib, FdBlackScholesVanillaEngine (finite differences): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
@@ -1828,7 +1812,6 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticCEVEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/analyticcevengine.hpp#L62
-            Test: tests/options/test_cev_model.py::test_the_cev_price_matches_quantlib
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2025,7 +2008,6 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, blackFormula: https://www.quantlib.org/reference/namespace_quant_lib.html#adfe71f9b0b157cae6e4bd53faaa676af
-            Test: tests/options/test_black_scholes_model.py::test_black_76_matches_quantlib
 
         Shares similar logic:
         - FinancePy, Black: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black.py#L18
@@ -2611,11 +2593,8 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticDoubleBarrierEngine (double): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
         - QuantLib, AnalyticPartialTimeBarrierOptionEngine (partial-time): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_partial_time_barrier_option_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
         - QuantLib, AnalyticSoftBarrierEngine (soft): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_soft_barrier_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
         Shares similar logic:
         - QuantLib, AnalyticBarrierEngine (single): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_barrier_engine.html
@@ -3010,13 +2989,9 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticDiscreteGeometricAveragePriceAsianEngine (geometric, fixings): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_discrete_geometric_average_price_asian_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
         - QuantLib, TurnbullWakemanAsianEngine (Turnbull-Wakeman): https://www.quantlib.org/reference/class_quant_lib_1_1_turnbull_wakeman_asian_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
         - QuantLib, ContinuousArithmeticAsianLevyEngine (Turnbull-Wakeman, continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_continuous_arithmetic_asian_levy_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
         - QuantLib, MCDiscreteArithmeticAPEngine (Curran, Monte Carlo): https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
 
         Shares similar logic:
         - QuantLib, AnalyticContinuousGeometricAveragePriceAsianEngine (geometric, continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_geometric_average_price_asian_engine.html
@@ -3316,13 +3291,9 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticContinuousFixedLookbackEngine (fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_fixed_lookback_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
         - QuantLib, AnalyticContinuousFloatingLookbackEngine (floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_floating_lookback_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
         - QuantLib, AnalyticContinuousPartialFixedLookbackEngine (partial fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_fixed_lookback_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
         - QuantLib, AnalyticContinuousPartialFloatingLookbackEngine (partial floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_floating_lookback_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -3571,11 +3542,8 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticDigitalAmericanEngine (one-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_digital_american_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
         - QuantLib, AnalyticBinaryBarrierEngine (no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_binary_barrier_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
         - QuantLib, AnalyticDoubleBarrierBinaryEngine (double one-touch, double no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_binary_engine.html
-            Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -3826,7 +3794,6 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticSimpleChooserEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_simple_chooser_engine.html
-            Test: tests/options/test_compound_model.py::test_the_simple_chooser_matches_quantlib
 
         Shares similar logic:
         - FinancePy, EquityChooserOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_chooser_option.py#L67
@@ -4039,9 +4006,7 @@ class PricingOptions:
 
         Referenced against:
         - QuantLib, AnalyticCliquetEngine (cliquet): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cliquet_engine.html
-            Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
         - QuantLib, AnalyticPerformanceEngine (performance): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_performance_engine.html
-            Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
 
         Shares similar logic:
         - QuantLib, ForwardEuropeanEngine (forward-start): https://www.quantlib.org/reference/class_quant_lib_1_1_forward_vanilla_engine.html

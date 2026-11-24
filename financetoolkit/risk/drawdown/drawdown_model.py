@@ -72,11 +72,8 @@ def get_maximum_drawdown(
 
     Referenced against:
     - skfolio, max_drawdown: https://skfolio.org/generated/skfolio.measures.max_drawdown.html
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
     - Riskfolio-Lib, MDD_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Rel
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
     - Riskfolio-Lib, MDD_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Abs
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), maxDrawdown: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L44
@@ -191,9 +188,7 @@ def get_average_drawdown(
 
     Referenced against:
     - skfolio, average_drawdown (observation): https://skfolio.org/generated/skfolio.measures.average_drawdown.html
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
     - Riskfolio-Lib, ADD_Rel (observation): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Rel
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), AverageDrawdown (episode): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L178
@@ -247,9 +242,7 @@ def get_entropic_drawdown_at_risk(
 
     Referenced against:
     - skfolio, edar: https://skfolio.org/generated/skfolio.measures.edar.html
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
     - Riskfolio-Lib, EDaR_Rel: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Rel
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with

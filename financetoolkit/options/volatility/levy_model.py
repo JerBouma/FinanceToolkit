@@ -134,8 +134,6 @@ def get_merton_jump_diffusion_price(
 
     Referenced against:
     - QuantLib, BatesEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
-        Test:
-            tests/options/test_stochastic_volatility_models.py::test_merton_series_matches_the_fourier_methods_and_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -363,8 +361,6 @@ def get_variance_gamma_price(
 
     Referenced against:
     - QuantLib, VarianceGammaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_variance_gamma_engine.html
-        Test:
-            tests/options/test_stochastic_volatility_models.py::test_variance_gamma_matches_the_gamma_clock_integral_and_quantlib
 
     Args:
         stock_price (float): The current stock price.

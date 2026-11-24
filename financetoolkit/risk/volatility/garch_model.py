@@ -460,7 +460,6 @@ def get_garch_weights(
 
     Referenced against:
     - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -537,7 +536,6 @@ def get_garch(
 
     Referenced against:
     - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -790,7 +788,6 @@ def get_gjr_garch_weights(
 
     Referenced against:
     - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -897,7 +894,6 @@ def get_gjr_garch(
 
     Referenced against:
     - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1016,7 +1012,6 @@ def get_gjr_garch_forecast(
 
     Referenced against:
     - arch, GARCH (GJR-GARCH forecast): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_risk_controller.py::test_get_garch_forecast_gjr_monthly_matches_the_arch_package
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1157,7 +1152,6 @@ def get_egarch_weights(
 
     Referenced against:
     - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -1225,7 +1219,6 @@ def get_egarch(
 
     Referenced against:
     - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1674,17 +1667,11 @@ def get_standardized_log_density(
 
     Referenced against:
     - arch, Normal: https://bashtage.github.io/arch/univariate/generated/arch.univariate.Normal.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
     - arch, StudentsT: https://bashtage.github.io/arch/univariate/generated/arch.univariate.StudentsT.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
     - arch, SkewStudent: https://bashtage.github.io/arch/univariate/generated/arch.univariate.SkewStudent.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
     - arch, GeneralizedError: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GeneralizedError.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
     - scipy, johnsonsu: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.johnsonsu.html
-        Test: tests/risk/test_garch_fit.py::test_johnson_su_and_ged_densities_match_scipy
     - scipy, gennorm: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gennorm.html
-        Test: tests/risk/test_garch_fit.py::test_johnson_su_and_ged_densities_match_scipy
 
     Shares similar logic:
     - rugarch (R), ddist (sstd, jsu): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1715
@@ -2941,9 +2928,7 @@ def get_garch_family_log_likelihood(
 
     Referenced against:
     - arch, GARCH, EGARCH, APARCH and ARCHInMean (with ZeroMean, ConstantMean and ARX): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
     - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
 
     Args:
         returns (np.ndarray): The returns.
@@ -3097,9 +3082,7 @@ def get_garch_family_weights(
 
     Referenced against:
     - arch, APARCH and GARCH (with other distributions and means): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_fit_matches_the_arch_package
     - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
 
     Shares similar logic:
     - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
@@ -3362,17 +3345,11 @@ def get_garch_family(
 
     Referenced against:
     - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
     - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
     - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
     - arch, APARCH (APARCH, TGARCH, NGARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_fit_matches_the_arch_package
     - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-        Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
     - arch, ARCHInMean (GARCH-in-mean): https://bashtage.github.io/arch/univariate/generated/arch.univariate.ARCHInMean.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
 
     Shares similar logic:
     - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
@@ -3513,7 +3490,6 @@ def get_garch_family_forecast(
 
     Referenced against:
     - arch, GARCH (GJR-GARCH forecast): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_risk_controller.py::test_get_garch_forecast_gjr_monthly_matches_the_arch_package
 
     Shares similar logic:
     - rugarch (R), ugarchforecast: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1071
@@ -3921,7 +3897,6 @@ def get_garch_family_diagnostics(
 
     Referenced against:
     - arch, GARCH (classic and robust standard errors, log-likelihood, information criteria): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_garch_fit.py::test_garch_family_standard_errors_match_the_arch_package
 
     Shares similar logic:
     - rugarch (R), persistence: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2529
@@ -4575,7 +4550,6 @@ def get_standardized_quantile(
 
     Referenced against:
     - arch, Normal, StudentsT, SkewStudent and GeneralizedError (ppf): https://bashtage.github.io/arch/univariate/generated/arch.univariate.SkewStudent.html
-        Test: tests/risk/test_garch_fit.py::test_standardized_quantile_matches_the_arch_package
 
     Shares similar logic:
     - rugarch (R), qdist: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1757

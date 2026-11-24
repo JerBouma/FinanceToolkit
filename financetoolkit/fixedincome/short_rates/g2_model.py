@@ -138,7 +138,6 @@ def get_g2_bond_price(
 
     Referenced against:
     - QuantLib, G2.discountBond: https://www.quantlib.org/reference/class_quant_lib_1_1_g2.html
-        Test: tests/fixedincome/test_g2_model.py::test_bond_price_matches_quantlib
 
     Args:
         maturities (float | np.ndarray): The maturities T of the bonds in years from today,
@@ -250,7 +249,6 @@ def get_g2_zero_coupon_bond_option(
 
     Referenced against:
     - QuantLib, G2.discountBondOption: https://www.quantlib.org/reference/class_quant_lib_1_1_g2.html
-        Test: tests/fixedincome/test_g2_model.py::test_zero_coupon_bond_option_matches_quantlib
 
     Args:
         option_expiry (float | np.ndarray): The expiry T of the option in years.
@@ -382,7 +380,6 @@ def get_g2_swaption(
 
     Referenced against:
     - QuantLib, G2SwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_g2_swaption_engine.html
-        Test: tests/fixedincome/test_g2_model.py::test_swaption_matches_quantlib
 
     Args:
         option_expiry (float): The expiry T of the swaption, the start of the swap, in years.

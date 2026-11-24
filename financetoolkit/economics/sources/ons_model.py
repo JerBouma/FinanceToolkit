@@ -33,7 +33,8 @@ def collect_ons_series(
         series (str): The path of the series page, e.g.
             "economy/inflationandpriceindices/timeseries/d7g7/mm23".
         description (str): What is retrieved, used in the log and error messages.
-        frequency (str): "monthly" or "quarterly". Defaults to "monthly".
+        frequency (str): The frequency of the data. Options are: "monthly" (monthly data), "quarterly" (quarterly
+            data). Defaults to "monthly".
 
     Returns:
         pd.DataFrame: A single "United Kingdom" column indexed by month or quarter.
@@ -107,9 +108,9 @@ def get_consumer_price_index() -> pd.DataFrame:
 
 def get_unemployment_rate() -> pd.DataFrame:
     """
-    Retrieves the UK unemployment rate for people aged 16 and over, seasonally adjusted
-    (series MGSX). Each month is the average of the three months ending in it, as the
-    Labour Force Survey reports it.
+    Retrieves the UK unemployment rate for people aged 16 and over, seasonally adjusted (series MGSX).
+
+    Each month is the average of the three months ending in it, as the Labour Force Survey reports it.
 
     Returns:
         pd.DataFrame: The unemployment rate as a decimal fraction of the labour force

@@ -98,9 +98,7 @@ def get_evar_samples(samples: np.ndarray, alpha: float) -> np.ndarray:
 
     Referenced against:
     - skfolio, evar: https://skfolio.org/generated/skfolio.measures.evar.html
-        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
     - Riskfolio-Lib, EVaR_Hist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
-        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
 
     Args:
         samples (np.ndarray): The returns, one sample per row.
@@ -167,9 +165,7 @@ def get_evar_historic(
 
     Referenced against:
     - skfolio, evar: https://skfolio.org/generated/skfolio.measures.evar.html
-        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
     - Riskfolio-Lib, EVaR_Hist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
-        Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -212,9 +208,7 @@ def get_entropic_risk_measure(
 
     Referenced against:
     - skfolio, entropic_risk_measure: https://skfolio.org/generated/skfolio.measures.entropic_risk_measure.html
-        Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
     - Riskfolio-Lib, Entropic_RM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Entropic_RM
-        Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with

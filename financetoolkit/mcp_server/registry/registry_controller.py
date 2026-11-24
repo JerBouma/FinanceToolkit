@@ -482,6 +482,13 @@ def _annotate_with_description(
 
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
+# The description search_metrics gives for an indicator's name, in characters.
+MAXIMUM_DESCRIPTION_CHARACTERS = 2500
+# The sections that end a docstring's description.
+DESCRIPTION_SECTION = re.compile(
+    r"(Args|Returns|Notes|Raises|Examples?|Referenced against|Shares similar logic|Also known as"
+    r"|For more information|Which returns|As an example)\b"
+)
 
 
 # A window of at most this many days can be empty for lack of trading days alone.
@@ -840,13 +847,31 @@ def _describe_docstring(docstring: str) -> dict[str, Any]:
         dict[str, Any]: The ``description`` (the first paragraph) and the ``parameters``
             (per argument, its description).
     """
-    paragraphs = docstring.split("\n\n")
-    description = " ".join(paragraphs[0].split())
-    # A paragraph that introduces a formula or list ends with a colon; it goes with it.
-    if description.endswith(":") and len(paragraphs) > 1:
-        description += "\n\n" + paragraphs[1].strip()
+    # The description runs from the summary sentence up to the first section (the
+    # references, the aliases or Args), so the explanation and the formula come along
+    # with it; a paragraph that would take it past the limit is left out.
+    paragraphs = []
+    length = 0
+    for paragraph in docstring.split("\n\n"):
+        stripped = paragraph.strip()
+        if not stripped:
+            continue
+        if paragraphs and DESCRIPTION_SECTION.match(stripped):
+            break
+        text = (
+            stripped
+            if stripped.startswith("-") or "\n-" in stripped
+            else " ".join(stripped.split())
+        )
+        if paragraphs and length + len(text) > MAXIMUM_DESCRIPTION_CHARACTERS:
+            break
+        paragraphs.append(text)
+        length += len(text)
 
-    return {"description": description, "parameters": _docstring_arguments(docstring)}
+    return {
+        "description": "\n\n".join(paragraphs),
+        "parameters": _docstring_arguments(docstring),
+    }
 
 
 def _rank_result(

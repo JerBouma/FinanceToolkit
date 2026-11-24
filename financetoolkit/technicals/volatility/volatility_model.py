@@ -196,7 +196,6 @@ def get_average_true_range(
 
     Referenced against:
     - TA-Lib, ATR: https://ta-lib.org/functions/atr.html
-        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
 
     Notes:
         - This follows the StockCharts convention: the first period, which has no previous
@@ -558,7 +557,6 @@ def get_keltner_channels(
     Referenced against:
     - TA-Lib, KC: https://ta-lib.org/functions/kc.html
     - ta, KeltnerChannel: https://github.com/bukosabino/ta/blob/0.11.0/ta/volatility.py#L183
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
@@ -638,7 +636,6 @@ def get_donchian_channels(
 
     Referenced against:
     - TA-Lib, DONCHIAN: https://ta-lib.org/functions/donchian.html
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The current period is deliberately excluded from the lookback. StockCharts states
@@ -863,7 +860,6 @@ def get_bollinger_percent_b_and_bandwidth(
 
     Referenced against:
     - TA-Lib, PERCENTB: https://ta-lib.org/functions/percentb.html
-        Test: tests/technical/test_volatility_model.py::test_bollinger_percent_b_and_bandwidth_match_talib
     - TA-Lib, BBW: https://ta-lib.org/functions/bbw.html
 
     Notes:
@@ -917,7 +913,6 @@ def get_normalized_average_true_range(
 
     Referenced against:
     - TA-Lib, NATR: https://ta-lib.org/functions/natr.html
-        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
 
     Shares similar logic:
     - pandas-ta-classic, natr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/natr.py#L20
@@ -967,7 +962,6 @@ def get_average_day_range(
 
     Referenced against:
     - TA-Lib, ADR: https://ta-lib.org/functions/adr.html
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - Equals TA-Lib's ADR.
@@ -1010,7 +1004,6 @@ def get_chaikin_volatility(
 
     Referenced against:
     - TA-Lib, CVI: https://ta-lib.org/functions/cvi.html
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Shares similar logic:
     - pandas-ta-classic, cvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/cvi.py#L12
@@ -1069,7 +1062,6 @@ def get_relative_volatility_index(
 
     Referenced against:
     - TA-Lib, RVI: https://ta-lib.org/functions/rvi.html
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
     - TA-Lib, RVIR: https://ta-lib.org/functions/rvir.html
 
     Shares similar logic:
@@ -1136,7 +1128,6 @@ def get_acceleration_bands(
 
     Referenced against:
     - TA-Lib, ACCBANDS: https://ta-lib.org/functions/accbands.html
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
     - pandas-ta-classic, accbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/accbands.py#L17
 
     Notes:
@@ -1200,7 +1191,6 @@ def get_chande_kroll_stop(
 
     Referenced against:
     - TA-Lib, CKSP: https://ta-lib.org/functions/cksp.html
-        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
 
     Shares similar logic:
     - pandas-ta-classic, cksp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cksp.py#L12
@@ -1364,7 +1354,6 @@ def get_aberration(
 
     Referenced against:
     - pandas-ta-classic, aberration: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/aberration.py#L14
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The ATR is `get_average_true_range` (Wilder's smoothing with the StockCharts
@@ -1531,7 +1520,6 @@ def get_price_distance(
 
     Referenced against:
     - pandas-ta-classic, pdist: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/pdist.py#L17
-        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - Equals pandas-ta-classic's pdist; the first period has no previous close and no
@@ -1651,7 +1639,6 @@ def get_squeeze_momentum(
 
     Referenced against:
     - TA-Lib, SQZMOM: https://ta-lib.org/functions/sqzmom.html
-        Test: tests/technical/test_volatility_model.py::test_squeeze_momentum_matches_talib
     - pandas-ta-classic, squeeze: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze.py#L94
 
     Shares similar logic:
@@ -1737,7 +1724,6 @@ def get_standard_deviation_channel(
 
     Referenced against:
     - pandas-ta-classic, tos_stdevall: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/tos_stdevall.py#L15
-        Test: tests/technical/test_volatility_model.py::test_standard_deviation_channel_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's tos_stdevall, with the sample standard deviation of

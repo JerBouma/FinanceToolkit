@@ -9,6 +9,7 @@ import pandas as pd
 from scipy import signal
 
 from financetoolkit.helpers import delay_embedding
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # The most pairwise comparisons made at once when templates are compared with every other
 # template. Blocks of half a megabyte of float64 stay in the processor's cache, which makes
@@ -545,7 +546,10 @@ def get_spectral_entropy(
     elif estimator == "welch":
         power = signal.welch(values, nperseg=min(256, len(values)))[1]
     else:
-        raise ValueError("The estimator should be 'periodogram' or 'welch'.")
+        raise InvalidArgumentError(
+            f"estimator must be one of 'periodogram' or 'welch', "
+            f"not {estimator!r}. Please pass one of these as estimator."
+        )
 
     if power.sum() <= 0:
         return np.nan
@@ -656,7 +660,10 @@ def encode_series(
             return np.zeros(len(values), dtype=np.int64)
         return np.floor((values - values.min()) / deviation).astype(np.int64)
 
-    raise ValueError("The encoding should be 'binary', 'quantile' or 'sigma'.")
+    raise InvalidArgumentError(
+        f"encoding must be one of 'binary', 'quantile' or 'sigma', "
+        f"not {encoding!r}. Please pass one of these as encoding."
+    )
 
 
 def get_shannon_entropy(symbols: np.ndarray, word_length: int = 1) -> float:

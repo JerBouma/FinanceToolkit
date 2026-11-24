@@ -117,7 +117,7 @@ def test_rolling_percentile_matches_talib_and_pandas_ta_classic():
 def test_rolling_percentile_rejects_an_unknown_method_and_a_percentage():
     closes = random_prices()["Close"]
 
-    with pytest.raises(ValueError, match="Method must be one of"):
+    with pytest.raises(ValueError, match="method must be one of"):
         statistics_model.get_rolling_percentile(closes, 30, 0.5, "midpoint")
     with pytest.raises(ValueError, match="between 0 and 1"):
         statistics_model.get_rolling_percentile(closes, 30, 50)

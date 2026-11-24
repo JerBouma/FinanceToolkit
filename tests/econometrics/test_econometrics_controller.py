@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.econometrics.statistics import entropy_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_get_arch_lm_test(recorder, econometrics_module):
@@ -53,11 +54,9 @@ def test_default_period_is_daily(econometrics_module):
 
 def test_within_period_daily_requires_intraday(econometrics_module):
     # Nesting observations inside a single day needs intraday data, which this Toolkit
-    # instance does not have. @handle_errors returns an empty Series rather than
-    # propagating the ValueError.
-    assert econometrics_module.get_jarque_bera_test(
-        period="daily", within_period=True
-    ).empty
+    # instance does not have, so the call raises and says what to pass instead.
+    with pytest.raises(InvalidArgumentError, match="within_period=False"):
+        econometrics_module.get_jarque_bera_test(period="daily", within_period=True)
 
 
 def test_get_unit_root_test(recorder, econometrics_module):
@@ -151,9 +150,8 @@ def test_get_diebold_mariano_test(recorder, econometrics_module):
 
 
 def test_get_diebold_mariano_test_invalid_method(econometrics_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    result = econometrics_module.get_diebold_mariano_test(method_a="bad")
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'ewma' or 'rolling'"):
+        econometrics_module.get_diebold_mariano_test(method_a="bad")
 
 
 def test_get_ols(recorder, econometrics_module):
@@ -193,7 +191,7 @@ def test_get_ols_explicit_dependent_ticker(recorder, econometrics_module):
 
 def test_get_ols_hac(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_ols(period="weekly", cov_type="HAC", maxlags=4)
+        econometrics_module.get_ols(period="weekly", cov_type="HAC", lags=4)
     )
 
 
@@ -201,7 +199,7 @@ def test_get_wls_hac(recorder, econometrics_module):
     returns = econometrics_module._get_series_column("weekly", "Return")
     weights = pd.Series(1.0, index=returns.index)
     recorder.capture(
-        econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", maxlags=4)
+        econometrics_module.get_wls(weights, period="weekly", cov_type="HAC", lags=4)
     )
 
 
@@ -503,11 +501,10 @@ def test_get_regression_discontinuity_triangular_kernel(recorder, econometrics_m
 
 
 def test_get_regression_discontinuity_invalid_kernel(econometrics_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    result = econometrics_module.get_regression_discontinuity(
-        "AAPL", "MSFT", cutoff=0.0, period="weekly", kernel="gaussian"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'uniform' or 'triangular'"):
+        econometrics_module.get_regression_discontinuity(
+            "AAPL", "MSFT", cutoff=0.0, period="weekly", kernel="gaussian"
+        )
 
 
 def test_get_propensity_score_matching(recorder, econometrics_module):
@@ -571,9 +568,7 @@ def test_get_arima_forecast(recorder, econometrics_module):
 
 def test_get_arima_forecast_no_constant(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_arima_forecast(
-            period="quarterly", include_constant=False
-        )
+        econometrics_module.get_arima_forecast(period="quarterly", add_constant=False)
     )
 
 
@@ -636,8 +631,8 @@ def test_get_vecm_forecast_not_cointegrated_returns_empty(econometrics_module):
     assert result.empty
 
 
-def test_get_vecm_forecast_invalid_k_ar_diff(econometrics_module):
-    result = econometrics_module.get_vecm_forecast(period="weekly", k_ar_diff=0)
+def test_get_vecm_forecast_invalid_lags(econometrics_module):
+    result = econometrics_module.get_vecm_forecast(period="weekly", lags=0)
     assert result.empty
 
 
@@ -667,17 +662,15 @@ def test_get_out_of_sample_validation_var(recorder, econometrics_module):
 
 def test_get_out_of_sample_validation_var_missing_other_tickers(econometrics_module):
     # An explicit empty other_tickers exercises the 'nothing to model jointly' error.
-    result = econometrics_module.get_out_of_sample_validation(
-        period="weekly", model="var", other_tickers=[]
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="other_tickers must be provided"):
+        econometrics_module.get_out_of_sample_validation(
+            period="weekly", model="var", other_tickers=[]
+        )
 
 
 def test_get_out_of_sample_validation_invalid_model(econometrics_module):
-    result = econometrics_module.get_out_of_sample_validation(
-        period="weekly", model="bad"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="'arima' or 'var'"):
+        econometrics_module.get_out_of_sample_validation(period="weekly", model="bad")
 
 
 def test_get_fixed_effects_broadcast_factor(recorder, econometrics_module):
@@ -708,17 +701,17 @@ def test_get_fixed_effects_time_effects(recorder, econometrics_module):
 
 
 def test_get_fixed_effects_missing_regressor_args(econometrics_module):
-    # @handle_errors returns an empty result rather than propagating the ValueError.
-    result = econometrics_module.get_fixed_effects(period="weekly")
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="Provide exactly one"):
+        econometrics_module.get_fixed_effects(period="weekly")
 
 
 def test_get_fixed_effects_both_regressor_args(econometrics_module):
-    # @handle_errors returns an empty result rather than propagating the ValueError.
-    result = econometrics_module.get_fixed_effects(
-        independent_tickers="Benchmark", independent_column="Volume", period="weekly"
-    )
-    assert result.empty
+    with pytest.raises(InvalidArgumentError, match="Provide exactly one"):
+        econometrics_module.get_fixed_effects(
+            independent_tickers="Benchmark",
+            independent_column="Volume",
+            period="weekly",
+        )
 
 
 def test_get_random_effects(recorder, econometrics_module):
@@ -978,7 +971,8 @@ def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
         econometrics_module.get_wls(period="weekly"),
         econometrics_module.get_wls(weights, period="weekly"),
     )
-    assert econometrics_module.get_wls("unknown", period="weekly").empty
+    with pytest.raises(InvalidArgumentError, match="'feasible'"):
+        econometrics_module.get_wls("unknown", period="weekly")
 
 
 def test_get_gls_estimates_an_ar1_structure_by_default(econometrics_module):
@@ -1173,8 +1167,9 @@ def test_get_rolling_entropy(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_rolling_entropy(period="weekly"))
 
 
-def test_rolling_correlation_with_an_unknown_series_is_empty(econometrics_module):
-    assert econometrics_module.get_rolling_correlation(against="UNKNOWN").empty
+def test_rolling_correlation_with_an_unknown_series_raises(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="choose from AAPL, MSFT"):
+        econometrics_module.get_rolling_correlation(against="UNKNOWN")
 
 
 def test_rolling_correlation_leaves_out_the_series_it_is_correlated_with(
@@ -1271,29 +1266,29 @@ def test_get_minimum_fractional_difference(recorder, econometrics_module):
 
 def test_get_bubble_test(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_bubble_test(period="weekly", replications=100)
+        econometrics_module.get_bubble_test(period="weekly", simulations=100)
     )
     recorder.capture(
         econometrics_module.get_bubble_test(
-            period="weekly", method="sadf", lag_order=1, replications=100
+            period="weekly", method="sadf", lag_order=1, simulations=100
         )
     )
 
 
 def test_get_bubble_episodes(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_bubble_episodes(period="weekly", replications=100)
+        econometrics_module.get_bubble_episodes(period="weekly", simulations=100)
     )
     recorder.capture(
         econometrics_module.get_bubble_episodes(
-            period="weekly", replications=100, time_series=True
+            period="weekly", simulations=100, time_series=True
         )
     )
     # The runs above the critical value in the test data are shorter than the default
     # minimum duration (round(log(157)) = 5 weeks), so these episodes only appear with 1.
     recorder.capture(
         econometrics_module.get_bubble_episodes(
-            period="weekly", replications=100, minimum_duration=1
+            period="weekly", simulations=100, minimum_duration=1
         )
     )
 
@@ -1301,7 +1296,7 @@ def test_get_bubble_episodes(recorder, econometrics_module):
 def test_get_chow_dickey_fuller_test(recorder, econometrics_module):
     recorder.capture(
         econometrics_module.get_chow_dickey_fuller_test(
-            period="weekly", replications=200
+            period="weekly", simulations=200
         )
     )
     recorder.capture(
@@ -1358,8 +1353,9 @@ def test_entropy_of_each_series_over_its_own_dates(econometrics_module):
         )
 
 
-def test_entropy_with_an_unknown_method_is_empty(econometrics_module):
-    assert econometrics_module.get_entropy(method="unknown").empty
+def test_entropy_with_an_unknown_method_raises(econometrics_module):
+    with pytest.raises(InvalidArgumentError, match="method must be one of 'sample'"):
+        econometrics_module.get_entropy(method="unknown")
 
 
 def test_get_berkowitz_test(recorder, econometrics_module):
@@ -1379,7 +1375,7 @@ def test_get_directional_accuracy_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_directional_accuracy_test())
     recorder.capture(
         econometrics_module.get_directional_accuracy_test(
-            method="anatolyev_gerko", forecast="autoregressive", window_size=60
+            method="anatolyev_gerko", forecast="autoregressive", window=60
         )
     )
 
@@ -1426,8 +1422,8 @@ def test_get_cusum_test_methods(recorder, econometrics_module):
 
 
 def test_get_cusum_test_time_series_needs_chu_stinchcombe_white(econometrics_module):
-    # @handle_errors returns an empty Series rather than propagating the ValueError.
-    assert econometrics_module.get_cusum_test(time_series=True).empty
+    with pytest.raises(InvalidArgumentError, match="chu_stinchcombe_white"):
+        econometrics_module.get_cusum_test(time_series=True)
 
 
 def test_get_sign_bias_test(recorder, econometrics_module):
@@ -1477,7 +1473,7 @@ def test_get_optimal_trading_rule(recorder, econometrics_module):
     # (profit-taking + stop-loss) / paths, and the simulation error is larger still.
     recorder.capture(
         econometrics_module.get_optimal_trading_rule(
-            grid_size=5, paths=2000, rounding=2
+            grid_size=5, simulations=2000, rounding=2
         )
     )
     recorder.capture(
@@ -1485,7 +1481,7 @@ def test_get_optimal_trading_rule(recorder, econometrics_module):
             period="weekly",
             grid_size=3,
             maximum_holding_period=20,
-            paths=1000,
+            simulations=1000,
             grid=True,
             rounding=2,
         )

@@ -585,3 +585,54 @@ def test_a_missing_key_outside_the_statements_keeps_its_traceback_at_debug_level
     assert "is missing from the data" in mock_logger.error.call_args[0][0]
     assert "exc_info" not in mock_logger.error.call_args[1]
     assert mock_logger.debug.call_args[1] == {"exc_info": True}
+
+
+def test_handle_errors_raises_an_invalid_argument():
+    """An unknown option raises through the decorator, naming the valid options."""
+
+    @error_model.handle_errors
+    def test_function(method="historic"):
+        error_model.check_option("method", method, ["historic", "gaussian"])
+        return pd.Series([1.0])
+
+    with pytest.raises(
+        error_model.InvalidArgumentError,
+        match="method must be one of 'historic' or 'gaussian', not 'normal'. "
+        "Please pass one of these as method.",
+    ):
+        test_function(method="normal")
+
+    # It stays a ValueError for callers that catch those.
+    assert issubclass(error_model.InvalidArgumentError, ValueError)
+    assert test_function().iloc[0] == 1.0
+
+
+def test_handle_errors_still_returns_empty_on_missing_data():
+    """Missing data is not an argument error: it is logged and returns empty."""
+
+    @error_model.handle_errors
+    def test_function():
+        return pd.DataFrame({"A": [1.0]})["Missing"]
+
+    with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
+        result = test_function()
+
+    assert result.empty
+    mock_logger.error.assert_called_once()
+
+
+def test_check_period_and_validate_alpha_name_what_to_pass():
+    """Unknown periods and alphas outside (0, 1) raise with the values to pass."""
+    error_model.check_period("weekly", ["weekly", "monthly"])
+    error_model.validate_alpha(0.05)
+
+    with pytest.raises(
+        error_model.InvalidArgumentError, match="period must be one of 'weekly'"
+    ):
+        error_model.check_period("daily", ["weekly", "monthly"])
+
+    for alpha in (0, 1, 1.5, -0.1):
+        with pytest.raises(
+            error_model.InvalidArgumentError, match="between 0 and 1 as alpha"
+        ):
+            error_model.validate_alpha(alpha)

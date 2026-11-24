@@ -93,7 +93,7 @@ def test_get_acerbi_szekely_test_well_calibrated(recorder):
         pd.Series(np.full(1000, true_cvar)),
         alpha=alpha,
         n_bootstrap=200,
-        random_state=1,
+        seed=1,
     )
     assert abs(result["Acerbi-Szekely Statistic"]) < 1
     assert result["P-Value"] > SIGNIFICANCE_LEVEL
@@ -115,7 +115,7 @@ def test_get_acerbi_szekely_test_underestimated_risk(recorder):
         pd.Series(np.full(1000, understated_cvar)),
         alpha=alpha,
         n_bootstrap=200,
-        random_state=1,
+        seed=1,
     )
     assert result["Acerbi-Szekely Statistic"] > 0
     assert result["P-Value"] < SIGNIFICANCE_LEVEL
@@ -146,7 +146,7 @@ def test_get_acerbi_szekely_test_dataframe(recorder):
     )
     recorder.capture(
         backtesting_model.get_acerbi_szekely_test(
-            returns_df, var_df, cvar_df, alpha=0.05, n_bootstrap=100, random_state=1
+            returns_df, var_df, cvar_df, alpha=0.05, n_bootstrap=100, seed=1
         ).round(4)
     )
 
@@ -357,7 +357,7 @@ def test_new_backtests_dataframe(recorder):
 def test_get_duration_test_has_a_monte_carlo_p_value():
     returns, var_estimates = _breach_sample()
     result = backtesting_model.get_duration_test(
-        returns, var_estimates, replications=199, random_state=1
+        returns, var_estimates, simulations=199, seed=1
     )
 
     # The p-value counts the random orderings of the same breaches with a statistic at least
@@ -366,7 +366,7 @@ def test_get_duration_test_has_a_monte_carlo_p_value():
     pd.testing.assert_series_equal(
         result,
         backtesting_model.get_duration_test(
-            returns, var_estimates, replications=199, random_state=1
+            returns, var_estimates, simulations=199, seed=1
         ),
     )
     ordered = backtesting_model._duration_statistics(
@@ -380,7 +380,7 @@ def test_get_duration_test_keeps_its_size_under_the_null():
     var_estimates = pd.Series(np.full(500, spstats.norm.ppf(0.05)))
     p_values = [
         backtesting_model.get_duration_test(
-            pd.Series(rng.standard_normal(500)), var_estimates, replications=99
+            pd.Series(rng.standard_normal(500)), var_estimates, simulations=99
         )["P-Value"]
         for _ in range(120)
     ]

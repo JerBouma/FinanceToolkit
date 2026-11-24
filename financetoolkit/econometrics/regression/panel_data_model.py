@@ -8,6 +8,7 @@ from scipy import sparse, stats
 from scipy.sparse.linalg import lsmr
 
 from financetoolkit.econometrics.helpers import import_optional
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 from financetoolkit.utilities.statistics_model import to_multi_index
 
 # (entity, time) levels are simultaneously meaningful, unlike the nested case.
@@ -372,12 +373,14 @@ def get_fixed_effects(
 
     Which returns:
 
-    |    |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |    |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:---|--------------:|-------------:|--------------:|----------:|
     | X  |        1.9916 |       0.0072 |         278.2 |         0 |
     """
     if not entity_effects and not time_effects:
-        raise ValueError("At least one of entity_effects or time_effects must be True.")
+        raise InvalidArgumentError(
+            "At least one of entity_effects or time_effects must be True."
+        )
 
     y_panel = _to_panel_series(y, "y")
     x_panel = _to_panel_frame(x, "x")
@@ -546,7 +549,7 @@ def get_random_effects(
 
     Which returns:
 
-    |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:----------|--------------:|-------------:|--------------:|----------:|
     | Intercept |        1.4022 |       1.1402 |        1.2298 |      0.22 |
     | X         |        1.9916 |       0.0072 |      277.178  |      0    |
@@ -707,10 +710,7 @@ def get_hausman_test(
     0.4871: comfortably fails to reject, correctly preferring the more efficient
     Random Effects estimator in that case.
     """
-    if variance not in HAUSMAN_VARIANCES:
-        raise ValueError(
-            f"variance must be one of {', '.join(HAUSMAN_VARIANCES)}, not {variance}."
-        )
+    check_option("variance", variance, HAUSMAN_VARIANCES)
 
     fe_result = get_fixed_effects(y, x, entity_effects=True, time_effects=False)
     re_result = get_random_effects(y, x)

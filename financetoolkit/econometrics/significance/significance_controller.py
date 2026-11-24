@@ -9,7 +9,11 @@ from financetoolkit.econometrics.diagnostics import diagnostics_model
 from financetoolkit.econometrics.helpers import get_observations_per_year
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
@@ -40,7 +44,7 @@ class SignificanceEconometrics:
 
         names = {str(name).lower(): name for name in levels.columns}
         if str(spread_over).lower() not in names:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The spread_over series '{spread_over}' is not one of the series: "
                 f"{', '.join(str(name) for name in levels.columns)}."
             )
@@ -362,6 +366,7 @@ class SignificanceEconometrics:
         | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
         | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9633 | 2026-09-23      |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
 
         if window is not None and window < 2:  # noqa: PLR2004
@@ -369,7 +374,7 @@ class SignificanceEconometrics:
                 "The window needs at least 2 changes to measure a volatility."
             )
         if not 0 < alpha < 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
             )
 

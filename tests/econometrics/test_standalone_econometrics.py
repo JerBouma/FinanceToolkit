@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Econometrics
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 @pytest.fixture(scope="module")
@@ -216,7 +217,8 @@ def test_spreads_and_streaks_on_any_data():
     assert rises.loc["Producer Price Index YoY", "Run Length"] == 3  # noqa: PLR2004
 
     # An unknown series or a spread without a second series is explained.
-    assert econometrics.get_streaks(spread_over="Unemployment").empty
+    with pytest.raises(InvalidArgumentError, match="not one of the series"):
+        econometrics.get_streaks(spread_over="Unemployment")
     assert (
         Econometrics(data=prices[["Inflation Rate YoY"]])
         .get_level_significance(spread_over="Inflation Rate YoY")

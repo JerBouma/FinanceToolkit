@@ -7,6 +7,7 @@ import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.risk.helpers import get_days_per_period, get_observed_span
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     by_own_trading_days,
@@ -277,8 +278,7 @@ def get_max_drawdown(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if (
         isinstance(returns, pd.DataFrame)
@@ -366,8 +366,7 @@ def get_ui(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if (
         isinstance(returns, pd.DataFrame)
@@ -834,8 +833,7 @@ def get_conditional_drawdown_at_risk(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if (
         isinstance(returns, pd.DataFrame)
@@ -846,7 +844,10 @@ def get_conditional_drawdown_at_risk(
 
         for sub_period in periods:
             period_data = get_conditional_drawdown_at_risk(
-                returns.loc[sub_period], alpha, method=method, compounded=compounded
+                returns.loc[sub_period],
+                alpha,
+                method=method,
+                compounded=compounded,
             )
             period_data.name = sub_period
 
@@ -963,8 +964,7 @@ def get_rolling_conditional_drawdown_at_risk(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     def _cdar(windows):
         if method == "level":
@@ -1055,8 +1055,7 @@ def get_max_drawdown_duration(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1149,8 +1148,7 @@ def get_max_drawdown_recovery_time(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -1645,8 +1643,7 @@ def get_partial_moment(
     Returns:
         pd.Series | pd.DataFrame | float: The partial moment, see `apply_to_observations`.
     """
-    if side not in ["lower", "upper"]:
-        raise ValueError("Side must be lower or upper.")
+    check_option("side", side, ["lower", "upper"])
     if order < 0 or (root and order == 0):
         raise ValueError(
             "The order must be 0 or higher, and higher than 0 to take its root."
@@ -1700,8 +1697,7 @@ def get_volatility_skewness(
     Returns:
         pd.Series | pd.DataFrame | float: The ratio, NaN without a return below the MAR.
     """
-    if method not in ["volatility", "variability"]:
-        raise ValueError("Method must be volatility or variability.")
+    check_option("method", method, ["volatility", "variability"])
 
     def volatility_skewness(samples: np.ndarray) -> np.ndarray:
         deviations = samples - minimum_acceptable_return
@@ -2017,8 +2013,7 @@ def get_hill_estimator(
     Raises:
         ValueError: If `tail` is not one of "left" or "right".
     """
-    if tail not in ("left", "right"):
-        raise ValueError("tail must be 'left' (loss tail) or 'right' (gain tail).")
+    check_option("tail", tail, ("left", "right"))
 
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:

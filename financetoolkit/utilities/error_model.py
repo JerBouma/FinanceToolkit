@@ -19,6 +19,72 @@ STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 # AttributeError and TypeError cannot be produced by financial data that is merely incomplete; they mean the code asked an object for something it does not have, and there is no value that can be returned for them that is not a lie, so they always raise.  # noqa: E501
 ALWAYS_RAISED_ERRORS = (AttributeError, TypeError)
 
+
+# An argument outside its options or range (an unknown method, an alpha of 5) is a mistake in the call, not missing data: answering it with an empty result reads as "no data" and hides the typo, so it always raises, with the valid values in its message.  # noqa: E501
+class InvalidArgumentError(ValueError):
+    """An argument the method does not accept, raised with the values it does accept."""
+
+
+def join_options(options) -> str:
+    """Write the options as 'a', 'b' or 'c'."""
+    names = [repr(option) for option in options]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+
+
+def check_option(name: str, value, options) -> None:
+    """
+    Check that an argument is one of the values a method accepts.
+
+    Args:
+        name (str): The name of the argument, such as "method".
+        value: The value it was given.
+        options: The values it accepts.
+
+    Raises:
+        InvalidArgumentError: If the value is not one of the options, naming them.
+    """
+    if value not in options:
+        raise InvalidArgumentError(
+            f"{name} must be one of {join_options(options)}, not {value!r}. "
+            f"Please pass one of these as {name}."
+        )
+
+
+def check_period(period: str, periods) -> None:
+    """
+    Check that a period is one of the periods a method accepts.
+
+    Args:
+        period (str): The period it was given.
+        periods: The periods it accepts, such as ("daily", "weekly", "monthly").
+
+    Raises:
+        InvalidArgumentError: If the period is not one of them, naming them.
+    """
+    if period not in periods:
+        raise InvalidArgumentError(
+            f"period must be one of {join_options(periods)}, not {period!r}. "
+            f"Please pass one of these as period."
+        )
+
+
+def validate_alpha(alpha: float) -> None:
+    """
+    Check that a tail probability lies strictly between 0 and 1.
+
+    Args:
+        alpha (float): The tail probability.
+
+    Raises:
+        InvalidArgumentError: If alpha is not between 0 and 1 (a ValueError).
+    """
+    if not 0 < alpha < 1:
+        raise InvalidArgumentError(
+            f"alpha is a tail probability between 0 and 1, e.g. 0.05 for the 95% "
+            f"confidence level, not {alpha!r}. Please pass a value between 0 and 1 as alpha."
+        )
+
+
 # Errors that say the data is missing or unusable, reported as an empty result.
 REPORTED_ERRORS = (KeyError, IndexError, ZeroDivisionError, ValueError)
 
@@ -187,6 +253,10 @@ def handle_errors(func):
           the failing line is identifiable, and an empty Series is returned.
         - AttributeError and TypeError cannot be caused by incomplete financial data at
           all; they mean the code is wrong. These are always raised.
+        - InvalidArgumentError (a ValueError) means the call passed an argument outside
+          its options or range, such as an unknown method or an alpha of 5. It is always
+          raised, with the valid values in its message, so a typo is not mistaken for
+          missing data.
 
     Setting the FINANCETOOLKIT_STRICT_ERRORS environment variable to 1 raises every
     exception instead, which is the appropriate setting for a test suite or a scheduled
@@ -202,12 +272,15 @@ def handle_errors(func):
     Raises:
         AttributeError: If the calculation asks an object for an attribute it lacks.
         TypeError: If the calculation is performed on an unsupported type.
+        InvalidArgumentError: If an argument is outside its options or range.
         Exception: Any exception at all when strict error handling is enabled.
     """
 
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except InvalidArgumentError:
+            raise
         except (KeyError, ValueError) as error:
             # Metrics relative to a benchmark fail on its absence (a KeyError on the
             # Benchmark column or a ValueError naming it), which is a setting rather than

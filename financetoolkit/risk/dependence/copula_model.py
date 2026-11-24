@@ -9,6 +9,8 @@ import pandas as pd
 from scipy import optimize, stats
 from scipy.special import gammaln
 
+from financetoolkit.utilities.error_model import check_option
+
 MINIMUM_TAIL_OBSERVATIONS = 2
 MEDIAN_QUANTILE = 0.5
 MINIMUM_OBSERVATIONS_FOR_COPULA_FIT = 10
@@ -99,8 +101,7 @@ def get_tail_dependence_coefficient(
     """
     if not isinstance(series_a, pd.Series) or not isinstance(series_b, pd.Series):
         raise TypeError("Expects pd.Series, no other value.")
-    if method not in ("empirical", "gaussian", "student-t"):
-        raise ValueError("method must be 'empirical', 'gaussian' or 'student-t'.")
+    check_option("method", method, ("empirical", "gaussian", "student-t"))
     if q <= MEDIAN_QUANTILE or q >= 1:
         raise ValueError("q must be in the range (0.5, 1).")
 
@@ -339,7 +340,7 @@ def get_gaussian_copula_parameters(
 
 
 def get_gaussian_copula_simulation(
-    rho: float, n_simulations: int = 10_000, random_state: int = 42
+    rho: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from a bivariate gaussian copula.
@@ -351,20 +352,18 @@ def get_gaussian_copula_simulation(
     Args:
         rho (float): The correlation parameter, in (-1, 1), see
             `get_gaussian_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    z = rng.multivariate_normal(
-        mean=[0, 0], cov=[[1, rho], [rho, 1]], size=n_simulations
-    )
+    z = rng.multivariate_normal(mean=[0, 0], cov=[[1, rho], [rho, 1]], size=simulations)
 
     return pd.DataFrame({"U": stats.norm.cdf(z[:, 0]), "V": stats.norm.cdf(z[:, 1])})
 
@@ -492,7 +491,7 @@ def get_student_t_copula_parameters(
 
 
 def get_student_t_copula_simulation(
-    rho: float, dof: float, n_simulations: int = 10_000, random_state: int = 42
+    rho: float, dof: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from a bivariate Student-T copula, via the
@@ -510,21 +509,19 @@ def get_student_t_copula_simulation(
             `get_student_t_copula_parameters`.
         dof (float): The degrees of freedom, see
             `get_student_t_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    z = rng.multivariate_normal(
-        mean=[0, 0], cov=[[1, rho], [rho, 1]], size=n_simulations
-    )
-    chi_squared_shock = rng.chisquare(dof, size=n_simulations)
+    z = rng.multivariate_normal(mean=[0, 0], cov=[[1, rho], [rho, 1]], size=simulations)
+    chi_squared_shock = rng.chisquare(dof, size=simulations)
     t = z * np.sqrt(dof / chi_squared_shock)[:, None]
 
     return pd.DataFrame(
@@ -534,8 +531,8 @@ def get_student_t_copula_simulation(
 
 def _simulate_archimedean_copula(
     conditional_cdf: Callable[[float, float], float],
-    n_simulations: int,
-    random_state: int,
+    simulations: int,
+    seed: int,
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from any Archimedean copula, via the standard
@@ -549,17 +546,17 @@ def _simulate_archimedean_copula(
         conditional_cdf (Callable[[float, float], float]): A function
             `h(u, v)` returning the family's h-function (dC(u, v) / du) at a
             given (u, v) pair.
-        n_simulations (int): The number of joint draws to simulate.
-        random_state (int): The seed for the random number generator.
+        simulations (int): The number of joint draws to simulate.
+        seed (int): The seed for the random number generator.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
 
-    u = rng.uniform(size=n_simulations)
-    t = rng.uniform(size=n_simulations)
+    u = rng.uniform(size=simulations)
+    t = rng.uniform(size=simulations)
 
     v = np.array(
         [
@@ -669,7 +666,7 @@ def get_clayton_copula_parameters(
 
 
 def get_clayton_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from a bivariate Clayton copula, via
@@ -682,19 +679,19 @@ def get_clayton_copula_simulation(
     Args:
         theta (float): The dependence parameter, > 0, see
             `get_clayton_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_clayton_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )
 
 
@@ -805,7 +802,7 @@ def get_gumbel_copula_parameters(
 
 
 def get_gumbel_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from a bivariate Gumbel copula, via conditional
@@ -818,19 +815,19 @@ def get_gumbel_copula_simulation(
     Args:
         theta (float): The dependence parameter, >= 1, see
             `get_gumbel_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_gumbel_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )
 
 
@@ -932,7 +929,7 @@ def get_frank_copula_parameters(
 
 
 def get_frank_copula_simulation(
-    theta: float, n_simulations: int = 10_000, random_state: int = 42
+    theta: float, simulations: int = 10_000, seed: int = 0
 ) -> pd.DataFrame:
     """
     Simulate pseudo-observations from a bivariate Frank copula, via conditional
@@ -945,17 +942,17 @@ def get_frank_copula_simulation(
     Args:
         theta (float): The dependence parameter, nonzero, see
             `get_frank_copula_parameters`.
-        n_simulations (int, optional): The number of joint draws to simulate.
+        simulations (int, optional): The number of joint draws to simulate.
             Defaults to 10,000.
-        random_state (int, optional): The seed for the random number generator.
-            Defaults to 42.
+        seed (int, optional): The seed for the random number generator.
+            Defaults to 0.
 
     Returns:
-        pd.DataFrame: `n_simulations` simulated ("U", "V") pseudo-observation
+        pd.DataFrame: `simulations` simulated ("U", "V") pseudo-observation
         pairs.
     """
     return _simulate_archimedean_copula(
         lambda u, v: _get_frank_conditional_cdf(u, v, theta),
-        n_simulations,
-        random_state,
+        simulations,
+        seed,
     )

@@ -34,7 +34,13 @@ from financetoolkit.risk.risk_model import (
 )
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -525,7 +531,7 @@ class Performance:
         read the regular historical data, free to use period="daily".
         """
         if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. "
                 "Initialise the Toolkit with an intraday_period to use period='daily' here."
             )
@@ -1486,7 +1492,7 @@ class Performance:
 
         for factor in factors_to_calculate:
             if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
                 )
 
@@ -1638,7 +1644,7 @@ class Performance:
 
         for factor in factors_to_calculate:
             if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
                 )
 
@@ -1832,12 +1838,7 @@ class Performance:
         | 2024 |      0      |         1.0396 |      0.8723 |      0.1568 |     -0.0685 |      0.0143 |      0.9838 |
         | 2025 |      0      |         0.9702 |      0.8649 |      0.1317 |     -0.1871 |     -0.0235 |      0.9826 |
         """
-        if method not in ["simple", "multi"]:
-            raise ValueError(
-                f"Method {method} is not a valid method. Please select from: simple or multi (default). "
-                "This refers to a simple linear regression (regression of each factor on each asset return series) "
-                "or a multi linear regression (regression of all factors on each asset return series) respectively"
-            )
+        check_option("method", method, ["simple", "multi"])
 
         factors_to_calculate = (
             factors_to_calculate
@@ -1847,13 +1848,15 @@ class Performance:
 
         for factor in factors_to_calculate:
             if factor not in ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]:
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
                 )
 
         if rolling:
             if method != "multi":
-                raise ValueError("A rolling regression requires method='multi'.")
+                raise InvalidArgumentError(
+                    "A rolling regression requires method='multi'. Please pass method='multi' or leave out rolling."
+                )
 
             return self._get_rolling_factor_model(
                 self._get_fama_and_french_dataset(region),
@@ -2371,10 +2374,7 @@ class Performance:
         | ARKK  | 0      | 0.0091 |     0 | 0.9909 |     0 | 0      |      0.6123 |             0.0638 |           0.2632 |
         | BRK-B | 0.8793 | 0      |     0 | 0      |     0 | 0.1207 |      0.5662 |             0.0425 |           0.1304 |
         """
-        if period not in PERIODS_PER_YEAR:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly or yearly."
-            )
+        check_period(period, PERIODS_PER_YEAR)
         # A comma-separated string (as the MCP server passes a list) is split.
         style_tickers = (
             STYLE_TICKERS
@@ -2572,8 +2572,7 @@ class Performance:
         | 2024   |  0.1474 |  0.4911 | -0.2715 |
         | 2025   | -0.2311 |  0.0677 | -0.4221 |
         """
-        if method not in ("standard", "annualized", "jensen"):
-            raise ValueError("Method must be standard, annualized or jensen.")
+        check_option("method", method, ("standard", "annualized", "jensen"))
 
         if method == "jensen":
             period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -3101,17 +3100,18 @@ class Performance:
         | 2024   |  1.5037 | -0.811  |  1.3751 |   1.666  |
         | 2025   |  0.7247 |  0.0591 |  2.3919 |  -0.0457 |
         """
-        if method not in (
-            "standard",
-            "smart",
-            "lo",
-            "adjusted",
-            "probabilistic",
-            "deflated",
-        ):
-            raise ValueError(
-                "Method must be standard, smart, lo, adjusted, probabilistic, or deflated."
-            )
+        check_option(
+            "method",
+            method,
+            (
+                "standard",
+                "smart",
+                "lo",
+                "adjusted",
+                "probabilistic",
+                "deflated",
+            ),
+        )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3435,17 +3435,17 @@ class Performance:
         | 2024   |  0.0911 |  0.1066 |  0.1909 |
         | 2025   |  0.0374 |  0.0273 |  0.0726 |
         """
-        if method not in (
-            "standard",
-            "smart",
-            "adjusted",
-            "probabilistic",
-            "probabilistic_adjusted",
-        ):
-            raise ValueError(
-                "Method must be standard, smart, adjusted, probabilistic, or "
-                "probabilistic_adjusted."
-            )
+        check_option(
+            "method",
+            method,
+            (
+                "standard",
+                "smart",
+                "adjusted",
+                "probabilistic",
+                "probabilistic_adjusted",
+            ),
+        )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3519,7 +3519,7 @@ class Performance:
     def get_safety_first_ratio(
         self,
         period: str | None = None,
-        threshold: float = 0.0,
+        minimum_acceptable_return: float = 0.0,
         rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -3538,10 +3538,10 @@ class Performance:
 
         The formula is as follows:
 
-        - Safety-First Ratio = (Mean(Return) - Threshold per Observation) / Standard Deviation(Return)
-        - Threshold per Observation = (1 + Threshold)^(1 / Observations per Year) - 1
+        - Safety-First Ratio = (Mean(Return) - MAR per Observation) / Standard Deviation(Return)
+        - MAR per Observation = (1 + MAR)^(1 / Observations per Year) - 1
 
-        The threshold is an annual return, compounded down to the returns the ratio is computed
+        Where MAR is the minimum acceptable return, the threshold. It is an annual return, compounded down to the returns the ratio is computed
         from: by default the **daily** returns falling inside each `period`, 252 a year for a
         ticker that trades on trading days and 365 for one that also trades on weekends (such
         as a cryptocurrency). With `rolling`, `period` instead sets the frequency of the returns
@@ -3565,8 +3565,8 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            threshold (float, optional): The minimum acceptable (shortfall) return as an annual decimal return,
-                e.g. 0.02 for 2% a year. Defaults to 0.0.
+            minimum_acceptable_return (float, optional): The minimum acceptable (shortfall) return as an annual
+                decimal return, e.g. 0.02 for 2% a year. Defaults to 0.0.
             rolling (int | None, optional): The rolling window size to use for the calculation. If set, the
                 ratio is calculated over a rolling window of this many periods across the full return history
                 instead of per `period`. Defaults to None.
@@ -3604,7 +3604,7 @@ class Performance:
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_safety_first_ratio(threshold=0.02)
+        toolkit.performance.get_safety_first_ratio(minimum_acceptable_return=0.02)
         ```
 
         Which returns:
@@ -3636,7 +3636,9 @@ class Performance:
         observations_per_year = observations_per_year.reindex(returns.columns).fillna(
             float(PERIODS_PER_YEAR["daily"])
         )
-        threshold_per_observation = (1 + threshold) ** (1 / observations_per_year) - 1
+        threshold_per_observation = (1 + minimum_acceptable_return) ** (
+            1 / observations_per_year
+        ) - 1
 
         safety_first_ratio = (
             performance_model.get_rolling_safety_first_ratio(
@@ -4023,8 +4025,7 @@ class Performance:
         | 2024   |  2.7771 |  0.3321 |  1.1734 |
         | 2025   |  0.8851 |  2.6195 |  1.7646 |
         """
-        if method not in ("standard", "annualized"):
-            raise ValueError("Method must be standard or annualized.")
+        check_option("method", method, ("standard", "annualized"))
 
         if method == "annualized":
             daily_returns, annualized_return = self._get_whole_sample_returns()
@@ -4191,8 +4192,7 @@ class Performance:
         | 2024   |  0.8937 |  0.8331 | 1.1689 |
         | 2025   |  0.7371 |  0.7028 | 0.4876 |
         """
-        if method not in ("standard", "annualized"):
-            raise ValueError("Method must be standard or annualized.")
+        check_option("method", method, ("standard", "annualized"))
 
         if method == "annualized":
             daily_returns, annualized_return = self._get_whole_sample_returns()
@@ -4634,10 +4634,8 @@ class Performance:
         | 2024   |  0.1084 |  0.0923 |
         | 2025   | -0.0718 |  0.0056 |
         """
-        if method not in ("standard", "sortino"):
-            raise ValueError("Method must be standard or sortino.")
-        if excess not in (None, "arithmetic", "geometric"):
-            raise ValueError("Excess must be None, arithmetic or geometric.")
+        check_option("method", method, ("standard", "sortino"))
+        check_option("excess", excess, (None, "arithmetic", "geometric"))
         if rolling and method == "sortino":
             raise ValueError(
                 "The M2 for Sortino is calculated per period, not rolling."
@@ -5740,8 +5738,7 @@ class Performance:
         | 2024 |      -0.0049 |      1.5541 |      -0.2769 |      1.5097 |         1.0294 |
         | 2025 |       0.3724 |      1.2526 |      -0.1605 |      1.3238 |         0.9462 |
         """
-        if market not in ("excess_return", "return"):
-            raise ValueError("The market must be excess_return or return.")
+        check_option("market", market, ("excess_return", "return"))
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
@@ -6766,7 +6763,7 @@ class Performance:
         returns, per period, over the whole range or over a rolling window of months.
         """
         if period not in ("yearly", "quarterly"):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The Morningstar Risk-Adjusted Return groups monthly returns, so the period "
                 "must be yearly or quarterly."
             )
@@ -7595,8 +7592,7 @@ class Performance:
         | 2024 |  0.1135 |  0.0601 |  0.0606 |
         | 2025 |  0.0434 |  0.0697 |  0.0716 |
         """
-        if method not in ("discrete", "continuous"):
-            raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
+        check_option("method", method, ("discrete", "continuous"))
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -7931,7 +7927,7 @@ class Performance:
         self,
         period: str | None = None,
         cumulative: bool = False,
-        log: bool = False,
+        logarithmic: bool = False,
         unsmoothed: bool = False,
         rounding: int | None = None,
         growth: bool = False,
@@ -7965,7 +7961,7 @@ class Performance:
         history) is NaN rather than 0, and the cumulative return carries the previous value
         past such a period.
 
-        With log=True the returns are log (continuously compounded) returns, which add up over
+        Logarithmic returns are log (continuously compounded) returns, which add up over
         time where simple returns compound:
 
         - Log Return = ln(1 + Period Return)
@@ -7999,7 +7995,7 @@ class Performance:
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             cumulative (bool, optional): Whether to return the cumulative return over time
             instead of the discrete return per period. Defaults to False.
-            log (bool, optional): Whether to return log returns, ln(1 + return), or with
+            logarithmic (bool, optional): Whether to return log returns, ln(1 + return), or with
             cumulative=True the cumulative log return. Defaults to False.
             unsmoothed (bool, optional): Whether to unsmooth the period returns with Geltner's
             first order autocorrelation filter. Defaults to False.
@@ -8052,10 +8048,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data["daily"]["Return"]
 
@@ -8073,7 +8066,7 @@ class Performance:
         if cumulative:
             period_returns = (1 + period_returns).cumprod()
 
-        if log:
+        if logarithmic:
             period_returns = (
                 np.log(period_returns)
                 if cumulative
@@ -8191,8 +8184,7 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data["daily"]["Return"]
         period_returns = performance_model.get_returns(returns, period)
@@ -8491,8 +8483,7 @@ class Performance:
         | 2024   | -1.6888 | -0.1942 |  0.9947 |
         | 2025   | -1.415  | -1.4877 | -0.1032 |
         """
-        if method not in ("appraisal", "modified", "alternative"):
-            raise ValueError("Method must be appraisal, modified, or alternative.")
+        check_option("method", method, ("appraisal", "modified", "alternative"))
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -8858,6 +8849,7 @@ class Performance:
         | 2024   | 0.3589 |  0.0623 |  0.1468 |
         | 2025   | 0.8327 |  0.1244 | -0.1883 |
         """
+        validate_alpha(alpha)
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = self._get_column(period, "Return", within_period=within_period)
@@ -8969,6 +8961,7 @@ class Performance:
         | 2024 | 1.3081 | 0.8908 | 2.0305 |
         | 2025 | 1.0925 | 1.4024 | 1.0683 |
         """
+        validate_alpha(alpha)
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = self._get_column(period, "Return", within_period=within_period)
@@ -9124,8 +9117,7 @@ class Performance:
         | 2024 |  0      | 1.4674 |           0.0496 |      0.8536 |
         | 2025 |  0.0002 | 1.3907 |          -0.0759 |      0.8893 |
         """
-        if method not in ("treynor_mazuy", "henriksson_merton"):
-            raise ValueError("Method must be treynor_mazuy or henriksson_merton.")
+        check_option("method", method, ("treynor_mazuy", "henriksson_merton"))
 
         timing_model = (
             performance_model.get_treynor_mazuy_model
@@ -9351,10 +9343,10 @@ class Performance:
 
         Which returns:
 
-        |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   P-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|-------:|--------------------:|-----------------------:|
-        | ('Custom Factor', '1 Month')   |    0.0175 |                  0.3747 |                 0.0467 |        0.4834 |    0.6298 |       -0.2827 |       -0.6356 |           0.4953 |            107 |             0.004  |             0.0649 | 0.0264 |              0.2391 |                 0.8823 |
-        | ('Custom Factor', '12 Months') |    0.1118 |                  0.4188 |                 0.2669 |        2.6147 |    0.0104 |       -0.4185 |       -0.2819 |           0.5729 |             96 |             0.0193 |             0.0152 | 0.1642 |              0.2391 |                 0.8823 |
+        | ('Custom Factor', '1 Month')   |    0.018  |                  0.374  |                 0.0481 |        0.4979 |    0.6196 |       -0.2886 |       -0.6254 |           0.4953 |            107 |             0.004  |             0.0648 | 0.0264 |              0.2391 |                 0.8821 |
+        | ('Custom Factor', '12 Months') |    0.1119 |                  0.4193 |                 0.2668 |        2.6144 |    0.0104 |       -0.4186 |       -0.2835 |           0.5729 |             96 |             0.0194 |             0.0152 | 0.1641 |              0.2391 |                 0.8821 |
         """
         if isinstance(metrics, pd.DataFrame):
             factors = {
@@ -10118,6 +10110,7 @@ class Performance:
         | 2024   |  6.842  |  1.8838 |  0.7925 |
         | 2025   |  0.5514 |  2.0173 |  4.7907 |
         """
+        validate_alpha(alpha)
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         returns = self._get_column(period, "Return", within_period=True)
@@ -10272,6 +10265,7 @@ class Performance:
         | 2024 |  0.0073 |  0.003  |  0.0015 |
         | 2025 |  0.0017 |  0.0031 |  0.0052 |
         """
+        validate_alpha(alpha)
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
         if within_period:
@@ -10614,7 +10608,7 @@ class Performance:
     @handle_errors
     def get_bootstrap_statistics(
         self,
-        simulations: int = 1000,
+        n_bootstrap: int = 1000,
         method: str = "resample",
         seed: int | None = 0,
         rounding: int | None = None,
@@ -10628,7 +10622,7 @@ class Performance:
         Every simulation draws a history of as many daily returns as the date range holds:
 
         - method="resample" draws the returns with replacement (Efron's bootstrap), so a day can appear
-          several times or not at all and every statistic varies across simulations, as pyfolio does.
+          several times or not at all and every statistic varies across resamples, as pyfolio does.
         - method="shuffle" puts the same returns in a random order (a permutation), as quantstats' Monte Carlo
           does: the cumulative return, the volatility and the Sharpe ratio stay those of the history and only
           the path, so the maximum drawdown, varies. It shows how much of a drawdown was the order of the
@@ -10645,7 +10639,7 @@ class Performance:
         Where N is the number of daily returns and P the daily returns in a year (252, or 365 for a ticker that
         trades on weekends such as a cryptocurrency). The excess return of each day (the return minus the
         daily risk-free rate) is drawn together with the return. Each statistic is summarized by the mean, the
-        median, the standard deviation and the 5th, 25th, 75th and 95th percentiles over the simulations; the
+        median, the standard deviation and the 5th, 25th, 75th and 95th percentiles over the resamples; the
         5th to 95th percentile is a 90% bootstrap interval.
 
         For more information, see the following sources:
@@ -10661,7 +10655,7 @@ class Performance:
         Also known as: Monte Carlo simulation, bootstrapped performance statistics, resampled returns.
 
         Args:
-            simulations (int, optional): The number of simulated histories. Defaults to 1000.
+            n_bootstrap (int, optional): The number of bootstrap resamples (simulated histories). Defaults to 1000.
             method (str, optional): "resample" (with replacement) or "shuffle" (without replacement). Defaults
                 to "resample".
             seed (int | None, optional): The seed of the random numbers, so that results can be reproduced;
@@ -10727,7 +10721,7 @@ class Performance:
                     returns[ticker],
                     excess_returns[ticker],
                     float(observations_per_year[ticker]),
-                    simulations=simulations,
+                    n_bootstrap=n_bootstrap,
                     method=method,
                     seed=seed,
                 )

@@ -318,7 +318,7 @@ def test_get_marginal_var_gaussian(recorder):
 
     recorder.capture(
         var_model.get_marginal_var(
-            returns=returns, weights=weights, alpha=0.05, distribution="gaussian"
+            returns=returns, weights=weights, alpha=0.05, method="gaussian"
         ).round(6)
     )
 
@@ -329,7 +329,7 @@ def test_get_marginal_var_invalid_distribution():
 
     try:
         var_model.get_marginal_var(
-            returns=returns, weights=weights, alpha=0.05, distribution="unknown"
+            returns=returns, weights=weights, alpha=0.05, method="unknown"
         )
         raise AssertionError("Expected a ValueError to be raised.")
     except ValueError:

@@ -6,6 +6,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.value_at_risk import evar_model
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 
 AVERAGE_DRAWDOWN_METHODS = ["episode", "observation"]
@@ -163,8 +164,7 @@ def get_average_drawdown(
     Returns:
         pd.Series | pd.DataFrame | float: The Average Drawdown, negative (0 without a decline).
     """
-    if method not in AVERAGE_DRAWDOWN_METHODS:
-        raise ValueError("Method must be episode or observation.")
+    check_option("method", method, AVERAGE_DRAWDOWN_METHODS)
 
     def average_drawdown(samples: np.ndarray) -> np.ndarray:
         drawdowns = get_drawdown_samples(samples, compounded)

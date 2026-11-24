@@ -74,7 +74,7 @@ def test_get_johansen_cointegration_bivariate(recorder):
     recorder.capture(result)
 
 
-def test_get_johansen_cointegration_k_ar_diff(recorder):
+def test_get_johansen_cointegration_lags(recorder):
     rng = np.random.default_rng(7)
     common_trend = np.cumsum(rng.standard_normal(500))
     series_a = common_trend + rng.standard_normal(500) * 0.1
@@ -83,7 +83,7 @@ def test_get_johansen_cointegration_k_ar_diff(recorder):
     data = pd.DataFrame({"A": series_a, "B": series_b, "C": series_c})
 
     recorder.capture(
-        cointegration_model.get_johansen_cointegration(data, k_ar_diff=2).round(4)
+        cointegration_model.get_johansen_cointegration(data, lags=2).round(4)
     )
 
 
@@ -112,12 +112,12 @@ def test_get_johansen_cointegration_invalid_number_of_series():
         pass
 
 
-def test_get_johansen_cointegration_invalid_k_ar_diff():
+def test_get_johansen_cointegration_invalid_lags():
     data = pd.DataFrame(
         {"A": np.arange(20, dtype=float), "B": np.arange(20, dtype=float) * 2}
     )
     try:
-        cointegration_model.get_johansen_cointegration(data, k_ar_diff=-1)
+        cointegration_model.get_johansen_cointegration(data, lags=-1)
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass

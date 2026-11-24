@@ -12,7 +12,12 @@ from financetoolkit.performance import performance_model
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.risk.liquidity import market_liquidity_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -141,21 +146,18 @@ class LiquidityRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -339,13 +341,11 @@ class LiquidityRisk:
         | 2025-05 | 0.006  | 0.2008 | 0.0263 |      0.0672 |
         | 2025-06 | 0.0061 | 0.1986 | 0.0166 |      0.0462 |
         """
-        if method not in ("kyle", "amihud", "hasbrouck", "roll"):
-            raise ValueError("Method must be kyle, amihud, hasbrouck or roll.")
+        check_option("method", method, ("kyle", "amihud", "hasbrouck", "roll"))
 
         period = period if period else "monthly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         scale = (
             scale
@@ -481,16 +481,13 @@ class LiquidityRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -682,13 +679,11 @@ class LiquidityRisk:
         | 2025-05 | 0.0173 | 0.0134 | 0      |      0.007  |
         | 2025-06 | 0      | 0      | 0.0061 |      0.0017 |
         """
-        if method not in ("edge", "corwin_schultz", "abdi_ranaldo"):
-            raise ValueError("Method must be edge, corwin_schultz or abdi_ranaldo.")
+        check_option("method", method, ("edge", "corwin_schultz", "abdi_ranaldo"))
 
         period = period if period else "monthly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         high, low, close = (
             self._get_prices("High"),
@@ -831,8 +826,7 @@ class LiquidityRisk:
         """
         period = period if period else "monthly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         volatility = market_liquidity_model.get_bekker_parkinson_volatility(
             self._get_prices("High"),
@@ -961,8 +955,7 @@ class LiquidityRisk:
         """
         period = period if period else "monthly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
         if self._shares_outstanding_function is None:
             raise ValueError(
                 "The Share Turnover needs the shares outstanding of the financial statements, "
@@ -1120,10 +1113,8 @@ class LiquidityRisk:
         """
         period = period if period else "monthly"
 
-        if period not in ["monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be monthly, quarterly, or yearly.")
-        if model not in ["fama_french", "capm"]:
-            raise ValueError("Model must be fama_french or capm.")
+        check_period(period, ["monthly", "quarterly", "yearly"])
+        check_option("model", model, ["fama_french", "capm"])
 
         returns = self._historical_data["daily"]["Return"]
 

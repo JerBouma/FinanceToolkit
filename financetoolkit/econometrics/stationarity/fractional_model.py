@@ -9,6 +9,7 @@ from financetoolkit.econometrics.stationarity.unitroot_model import (
     MINIMUM_TEST_OBSERVATIONS,
     get_augmented_dickey_fuller,
 )
+from financetoolkit.utilities.error_model import check_option
 
 # The weight thresholds of López de Prado (2018): the expanding window skips the first values
 # until the relative weight loss is at most 1%, the fixed-width window drops the weights
@@ -113,8 +114,7 @@ def get_fractional_difference(
     Raises:
         ValueError: If the method is unknown or d is negative.
     """
-    if method not in ("fixed_width", "expanding"):
-        raise ValueError("method must be 'fixed_width' or 'expanding'.")
+    check_option("method", method, ("fixed_width", "expanding"))
 
     values = series.dropna()
     x = values.to_numpy(dtype=float)

@@ -58,7 +58,7 @@ class CausalEconometrics:
         The formula is as follows:
 
         - Z = [1, exogenous tickers, instruments] and X = [1, exogenous tickers, endogenous tickers], all
-          in `column` (Return by default), the constant only with add_constant=True
+          in `column` (Return by default), the constant only when one is added
         - Stage 1: X̂ = Z(Z'Z)⁻¹Z'X, the fitted values of each endogenous ticker regressed on Z
         - Stage 2: β̂ = (X̂'X)⁻¹X̂'y
         - Cov(β̂) = σ̂²·(X̂'X̂)⁻¹, with σ̂² = Σ(yₜ - xₜ'β̂)² / (n - k) (linearmodels IV2SLS with
@@ -86,7 +86,7 @@ class CausalEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, CORRECTED Std. Error, t-Statistic,
+            pd.DataFrame: A coefficient table (Coefficient, CORRECTED Standard Error, t-Statistic,
             P-Value), indexed by regressor name -- see `causal_inference_model.get_iv_2sls` for
             why these standard errors differ from (and correct) what a naive two-OLS-calls
             approach would report.
@@ -113,10 +113,10 @@ class CausalEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0008 |       0.0027 |       -0.2931 |    0.7697 |
-        | NVDA      |        1.2518 |       0.1094 |       11.441  |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |       -0.0008 |           0.0027 |       -0.2929 |    0.7699 |
+        | NVDA      |        1.2516 |           0.1094 |       11.4393 |    0      |
         """
         period = period if period else "daily"
         endogenous_ticker = (
@@ -231,7 +231,7 @@ class CausalEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value)
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value)
             with rows `Intercept`, `Treated`, `Post` and `Treated x Post` -- the last of
             which is the DiD treatment-effect estimate.
 
@@ -257,12 +257,12 @@ class CausalEconometrics:
 
         Which returns:
 
-        |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:---------------|--------------:|-------------:|--------------:|----------:|
-        | Intercept      |       -0.0126 |       0.0262 |       -0.4796 |    0.6324 |
-        | Treated        |        0.0669 |       0.0371 |        1.8059 |    0.0736 |
-        | Post           |        0.0291 |       0.0362 |        0.8043 |    0.4229 |
-        | Treated x Post |       -0.0246 |       0.0511 |       -0.4813 |    0.6312 |
+        |                |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:---------------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept      |       -0.0126 |           0.0262 |       -0.4796 |    0.6324 |
+        | Treated        |        0.0669 |           0.0371 |        1.8059 |    0.0736 |
+        | Post           |        0.0291 |           0.0362 |        0.8043 |    0.4229 |
+        | Treated x Post |       -0.0246 |           0.0511 |       -0.4813 |    0.6312 |
         """
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -423,14 +423,13 @@ class CausalEconometrics:
 
         |               |    Value |
         |:--------------|---------:|
-        | Discontinuity |   0.0031 |
-        | Std. Error    |   0.0027 |
-        | t-Statistic   |   1.1191 |
-        | P-Value       |   0.2633 |
+        | Discontinuity |   0.0086 |
+        | t-Statistic   |   2.0056 |
+        | P-Value       |   0.0452 |
         | Cutoff        |   0      |
         | Bandwidth     |   0.1497 |
-        | N Left        | 729      |
-        | N Right       | 728      |
+        | N Left        | 512      |
+        | N Right       | 489      |
         """
         period = period if period else "daily"
         returns = self._get_series_column(
@@ -551,13 +550,12 @@ class CausalEconometrics:
 
         |               |     Value |
         |:--------------|----------:|
-        | ATT           |    0.0163 |
-        | Std. Error    |    0.0016 |
-        | t-Statistic   |    9.9366 |
+        | ATT           |    0.016  |
+        | t-Statistic   |   10.9445 |
         | P-Value       |    0      |
-        | Matched Pairs |  181      |
-        | N Treated     |  185      |
-        | N Control     | 1069      |
+        | Matched Pairs |  182      |
+        | N Treated     |  186      |
+        | N Control     | 1068      |
         """
         period = period if period else "daily"
         covariate_tickers = (

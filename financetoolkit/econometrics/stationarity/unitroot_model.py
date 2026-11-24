@@ -9,6 +9,7 @@ import pandas as pd
 
 from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.least_squares_model import fit_least_squares
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
 
 # The conventional 5% significance level used for the boolean "reject" flags.
@@ -198,7 +199,7 @@ def get_augmented_dickey_fuller(
         ValueError: If `regression` is not one of "n", "c" or "ct".
     """
     if regression not in ["n", "c", "ct"]:
-        raise ValueError(
+        raise InvalidArgumentError(
             "regression must be 'n' (no constant), 'c' (constant), or 'ct' (constant and trend)."
         )
 
@@ -323,7 +324,7 @@ def get_kpss_test(
         ValueError: If `regression` is not one of "c" or "ct".
     """
     if regression not in ["c", "ct"]:
-        raise ValueError(
+        raise InvalidArgumentError(
             "regression must be 'c' (constant, level stationarity) or 'ct' (constant "
             "and trend, trend stationarity)."
         )
@@ -454,7 +455,7 @@ def get_phillips_perron_test(
         ValueError: If `regression` is not one of "c" or "ct".
     """
     if regression not in ["c", "ct"]:
-        raise ValueError(
+        raise InvalidArgumentError(
             "regression must be 'c' (constant) or 'ct' (constant and trend). 'n' (no "
             "constant) is not supported -- see the function docstring Notes."
         )
@@ -587,7 +588,7 @@ def get_zivot_andrews_test(
     if not isinstance(series, pd.Series):
         raise TypeError("Expects pd.Series, no other value.")
     if regression not in ["c", "t", "ct"]:
-        raise ValueError(
+        raise InvalidArgumentError(
             "regression must be 'c' (level break), 't' (trend break), or 'ct' "
             "(both)."
         )

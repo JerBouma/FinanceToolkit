@@ -190,7 +190,7 @@ def test_garch_family_runs_each_column_on_its_own_returns(
     returns.iloc[[220, 300], 1] = np.nan
 
     variance = variance_function(returns, weights)
-    forecast = forecast_function(returns, weights, time_steps=5)
+    forecast = forecast_function(returns, weights, forecast_steps=5)
 
     # The full column is untouched by the other column's missing days.
     np.testing.assert_allclose(
@@ -615,7 +615,7 @@ def test_garch_family_forecast_is_the_expected_simulated_variance(
 ):
     returns = simulate_garch_family_returns()
     forecast = garch_model.get_garch_family_forecast(
-        returns, weights, method, distribution, mean, time_steps=10
+        returns, weights, method, distribution, mean, forecast_steps=10
     )
 
     variance_weights, _, distribution_weights = garch_model._split_weights(
@@ -672,10 +672,10 @@ def test_garch_simulation_is_reproducible_with_a_seed():
     weights = [0.02, 0.08, 0.88, 6.0]
 
     first = garch_model.get_garch_simulation(
-        returns, weights, distribution="t", paths=2000, seed=7
+        returns, weights, distribution="t", simulations=2000, seed=7
     )
     second = garch_model.get_garch_simulation(
-        returns, weights, distribution="t", paths=2000, seed=7
+        returns, weights, distribution="t", simulations=2000, seed=7
     )
 
     pd.testing.assert_frame_equal(first, second)
@@ -902,7 +902,7 @@ def test_figarch_matches_the_arch_package():
     np.testing.assert_allclose(weights, expected, rtol=1e-3, atol=1e-6)
 
     forecast = garch_model.get_garch_family_forecast(
-        returns, expected, "figarch", time_steps=5
+        returns, expected, "figarch", forecast_steps=5
     )
     np.testing.assert_allclose(
         forecast,
@@ -916,10 +916,15 @@ def test_figarch_simulation_starts_from_the_forecast():
     weights = [1e-6, 0.1, 0.45, 0.35]
 
     simulation = garch_model.get_garch_simulation(
-        returns, weights, "figarch", time_steps=3, paths=20000, output="volatility"
+        returns,
+        weights,
+        "figarch",
+        forecast_steps=3,
+        simulations=20000,
+        output="volatility",
     )
     forecast = garch_model.get_garch_family_forecast(
-        returns, weights, "figarch", time_steps=3
+        returns, weights, "figarch", forecast_steps=3
     )
 
     # The first volatility is the forecast itself; later the mean simulated variance is the forecast.
@@ -1010,7 +1015,7 @@ def test_realized_garch_log_likelihood_and_fit():
 
     # The forecast of the log variance is linear with the persistence Beta + Gamma * Phi.
     forecast = garch_model.get_garch_family_forecast(
-        returns, weights, "realized", time_steps=3, realized_measure=measure
+        returns, weights, "realized", forecast_steps=3, realized_measure=measure
     )
     omega, beta, gamma, xi, phi = weights[:5]
     assert np.log(forecast[1]) == pytest.approx(
@@ -1085,10 +1090,10 @@ def test_garch_bootstrap_is_reproducible_and_adds_parameter_uncertainty():
     weights = garch_model.get_garch_weights(returns)
 
     partial = garch_model.get_garch_simulation(
-        returns, weights, output="volatility", paths=2000, bootstrap_fits=0
+        returns, weights, output="volatility", simulations=2000, bootstrap_fits=0
     )
     full = garch_model.get_garch_simulation(
-        returns, weights, output="volatility", paths=2000, bootstrap_fits=5
+        returns, weights, output="volatility", simulations=2000, bootstrap_fits=5
     )
 
     # Without refits the first volatility is the fitted one on every path; the refits spread it.
@@ -1097,7 +1102,7 @@ def test_garch_bootstrap_is_reproducible_and_adds_parameter_uncertainty():
     pd.testing.assert_frame_equal(
         full,
         garch_model.get_garch_simulation(
-            returns, weights, output="volatility", paths=2000, bootstrap_fits=5
+            returns, weights, output="volatility", simulations=2000, bootstrap_fits=5
         ),
     )
     with pytest.raises(ValueError, match="bootstrap_fits"):

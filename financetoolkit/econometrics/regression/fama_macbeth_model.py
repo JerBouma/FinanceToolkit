@@ -18,7 +18,7 @@ MINIMUM_PERIODS = 2
 
 def fama_macbeth_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Risk Premium, Std. Error, t-Statistic, P-Value)
+    Builds the coefficient table (Risk Premium, Standard Error, t-Statistic, P-Value)
     from a `get_fama_macbeth_regression` result dict, indexed by factor name (plus
     "Intercept" if present).
 
@@ -32,7 +32,7 @@ def fama_macbeth_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Risk Premium": result["risk_premia"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "t-Statistic": result["t_statistics"],
             "P-Value": result["p_values"],
         }
@@ -108,7 +108,7 @@ def get_fama_macbeth_regression(
         ValueError: If `returns` and `factors` share no overlapping periods, there are
         fewer than 2 overlapping periods, or there are not enough assets (columns of
         `returns`) to identify the cross-sectional regression (strictly more assets
-        than factors, plus an intercept if `add_constant=True`).
+        than factors, plus an intercept when a constant is added).
 
     Notes:
     - This implements the standard, simplified textbook variant using a SINGLE,

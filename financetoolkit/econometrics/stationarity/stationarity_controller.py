@@ -17,7 +17,7 @@ from financetoolkit.econometrics.stationarity import (
 )
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
@@ -239,14 +239,15 @@ class StationarityEconometrics:
         | Critical Value 10%    |   -2.5679 |   -2.5679 |   -2.5679 |
         | Reject Unit Root (5%) |    0      |    0      |    0      |
         """
-        if method not in (
-            "augmented_dickey_fuller",
-            "phillips_perron",
-            "zivot_andrews",
-        ):
-            raise ValueError(
-                "Method must be augmented_dickey_fuller, phillips_perron or zivot_andrews."
-            )
+        check_option(
+            "method",
+            method,
+            (
+                "augmented_dickey_fuller",
+                "phillips_perron",
+                "zivot_andrews",
+            ),
+        )
 
         period = period if period else "daily"
         prices = self._filter_benchmark(
@@ -525,7 +526,7 @@ class StationarityEconometrics:
         period: str | None = None,
         column: str = "Adj Close",
         det_order: int = 0,
-        k_ar_diff: int = 1,
+        lags: int = 1,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -547,7 +548,7 @@ class StationarityEconometrics:
         The formula is as follows:
 
         - ΔYₜ = Π·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + μ + εₜ, with Yₜ the vector of `column` levels (Adj Close by
-          default), k = `k_ar_diff` (1 by default) and the deterministic term μ set by `det_order`: none
+          default), k = `lags` (1 by default) and the deterministic term μ set by `det_order`: none
           (-1, Johansen's case 1), an unrestricted constant μ₀ (0, the default, case 3) or a linear trend
           (1: the levels are linearly detrended before the test, evaluated against the case 5 critical
           values)
@@ -577,7 +578,7 @@ class StationarityEconometrics:
             Johansen's case 1), 0 (an unrestricted constant, case 3) or 1 (a linear trend,
             evaluated against the case 5 critical values). The critical values are those of
             MacKinnon, Haug & Michelis (1999). Defaults to 0.
-            k_ar_diff (int, optional): The number of lagged first differences to include as
+            lags (int, optional): The number of lagged first differences to include as
             short-run dynamics. Defaults to 1.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             tickers tested jointly. Defaults to False.
@@ -593,7 +594,7 @@ class StationarityEconometrics:
             corresponding eigenvalue, trace statistic, max-eigenvalue statistic, their 90%/95%/99%
             critical values, and whether each is rejected at the 5% level. The estimated rank is the
             first row (in rank order) that is NOT rejected. With fewer observations than the
-            VECM needs (the tickers times k_ar_diff + 1, plus the tickers, plus 3) every row
+            VECM needs (the tickers times lags + 1, plus the tickers, plus 3) every row
             is NaN.
 
         Notes:
@@ -616,22 +617,22 @@ class StationarityEconometrics:
         johansen = toolkit.econometrics.get_johansen_cointegration()
 
         # The maximum eigenvalue statistic columns follow the same pattern as the trace ones.
-        johansen[["Eigenvalue", "Trace Statistic", "Trace Critical Value 95%", "Reject (Trace, 5%)"]]
+        johansen[["Eigenvalue", "Trace Statistic", "Trace Critical Value 5%", "Reject (Trace, 5%)"]]
         ```
 
         Which returns:
 
-        |        |   Eigenvalue |   Trace Statistic |   Trace Critical Value 95% | Reject (Trace, 5%)   |
-        |:-------|-------------:|------------------:|---------------------------:|:---------------------|
-        | r <= 0 |       0.0107 |           13.9015 |                    15.4943 | False                |
-        | r <= 1 |       0.0003 |            0.3612 |                     3.8415 | False                |
+        |        |   Eigenvalue |   Trace Statistic |   Trace Critical Value 5% | Reject (Trace, 5%)   |
+        |:-------|-------------:|------------------:|--------------------------:|:---------------------|
+        | r <= 0 |       0.0107 |           13.8983 |                   15.4943 | False                |
+        | r <= 1 |       0.0003 |            0.3614 |                    3.8415 | False                |
         """
         period = period if period else "daily"
         tickers = self._get_tickers(include_benchmark=include_benchmark)
         prices = self._get_series_column(period, column, tickers)
 
         result = cointegration_model.get_johansen_cointegration(
-            prices[tickers], det_order=det_order, k_ar_diff=k_ar_diff
+            prices[tickers], det_order=det_order, lags=lags
         )
 
         return apply_rounding(
@@ -1036,7 +1037,7 @@ class StationarityEconometrics:
         method: Literal["gsadf", "sadf"] = "gsadf",
         lag_order: int = 0,
         minimum_window: int | None = None,
-        replications: int = 2000,
+        simulations: int = 2000,
         seed: int = 0,
         log_prices: bool = True,
         include_benchmark: bool = False,
@@ -1064,7 +1065,7 @@ class StationarityEconometrics:
         - w = floor((0.01 + 1.8 / √T)·T), the minimum window of PSY (2015)
         - SADF = max over r₂ ≥ w - 1 of ADF(0, r₂)
         - GSADF = max over r₂ of BSADF(r₂), with BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂)
-        - Critical values and the p-value from `replications` random walks yₜ = yₜ₋₁ + 1 / T + εₜ,
+        - Critical values and the p-value from `simulations` random walks yₜ = yₜ₋₁ + 1 / T + εₜ,
           εₜ ~ N(0, 1), with the same T, w and k: the 90%, 95% and 99% quantiles of the simulated
           statistic and the share of simulated statistics at least as large
 
@@ -1095,7 +1096,7 @@ class StationarityEconometrics:
                 Defaults to 0, as PSY (2015) use.
             minimum_window (int | None, optional): The smallest window in observations. Defaults to
                 None, floor((0.01 + 1.8 / √T)·T).
-            replications (int, optional): The number of simulated random walks for the critical
+            simulations (int, optional): The number of simulated random walks for the critical
                 values. Defaults to 2,000, as in PSY (2015): the critical values serve every series of
                 the same length, so with 500 random walks the size of the test at 5% ranges from about
                 3.5% to 7% depending on the seed.
@@ -1114,16 +1115,16 @@ class StationarityEconometrics:
         Returns:
             pd.DataFrame: The GSADF (or SADF) statistic, its simulated p-value, the 10%, 5% and 1%
             critical values (the 90%, 95% and 99% quantiles), the observations, minimum window,
-            lag order and replications, and whether the series is explosive at the 5% level, per
+            lag order and replications (the number of simulations), and whether the series is explosive at the 5% level, per
             asset.
 
         Notes:
         - The test fits about (T - w)² / 2 regressions per series and as many per simulated path,
           each from window sums of prefix sums: about 0.14 seconds per path for ten years of daily
-          data and 0.04 for five, so 2,000 replications take about 5 minutes and 80 seconds, and
+          data and 0.04 for five, so 2,000 simulations take about 5 minutes and 80 seconds, and
           with lag_order=2 about 60% longer. Ten years of weekly data take about 16 seconds;
           monthly data, as in PSY (2015), a few. The critical values depend
-          only on T, w, the lag order, the replications and the seed, so assets with the same
+          only on T, w, the lag order, the simulations and the seed, so assets with the same
           number of observations share one simulation, which is kept for the session.
         - Each asset is tested over the dates it has a value.
 
@@ -1167,7 +1168,7 @@ class StationarityEconometrics:
                     method=method,
                     lags=lag_order,
                     minimum_window=minimum_window,
-                    replications=replications,
+                    simulations=simulations,
                     seed=seed,
                 )
                 for ticker in levels.columns
@@ -1189,7 +1190,7 @@ class StationarityEconometrics:
         minimum_window: int | None = None,
         confidence: float = 0.95,
         minimum_duration: int | None = None,
-        replications: int = 2000,
+        simulations: int = 2000,
         seed: int = 0,
         log_prices: bool = True,
         time_series: bool = False,
@@ -1215,7 +1216,7 @@ class StationarityEconometrics:
         - BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂) (method="gsadf"), or ADF(0, r₂)
           (method="sadf")
         - cv(r₂) = the `confidence` quantile (95% by default) of the same statistic at r₂ over
-          `replications` simulated random walks yₜ = yₜ₋₁ + 1 / T + εₜ
+          `simulations` random walks yₜ = yₜ₋₁ + 1 / T + εₜ
         - Bubble on r₂ when the statistic is above cv(r₂); an episode is a run of such dates of at
           least `minimum_duration` observations, by default round(log(T)) (δ·log(T) with δ = 1 in
           PSY, 2015)
@@ -1247,7 +1248,7 @@ class StationarityEconometrics:
                 0.95.
             minimum_duration (int | None, optional): The fewest observations an episode lasts.
                 Defaults to None, round(log(T)).
-            replications (int, optional): The number of simulated random walks for the critical
+            simulations (int, optional): The number of simulated random walks for the critical
                 values. Defaults to 2,000, as in PSY (2015).
             seed (int, optional): The seed of the simulation. Defaults to 0.
             log_prices (bool, optional): Whether to take the natural logarithm of the series first.
@@ -1314,7 +1315,7 @@ class StationarityEconometrics:
                 minimum_window=minimum_window,
                 confidence=confidence,
                 minimum_duration=minimum_duration,
-                replications=replications,
+                simulations=simulations,
                 seed=seed,
             )
             for ticker in levels.columns
@@ -1346,7 +1347,7 @@ class StationarityEconometrics:
         period: str | None = None,
         column: str = "Adj Close",
         trim: float = 0.15,
-        replications: int = 1000,
+        simulations: int = 1000,
         seed: int = 0,
         log_prices: bool = True,
         time_series: bool = False,
@@ -1374,7 +1375,7 @@ class StationarityEconometrics:
         - DFC(τ) = δ̂ / SE(δ̂), with SE from the residuals of all T - 1 changes
         - SDFC = max over τ from floor(trim·T) to T - 1 - floor(trim·T) of DFC(τ), the supremum over
           the break dates of Andrews (1993)
-        - Critical values and the p-value from `replications` Gaussian random walks of the same
+        - Critical values and the p-value from `simulations` Gaussian random walks of the same
           length started at zero
 
         For more information, see the following sources:
@@ -1397,7 +1398,7 @@ class StationarityEconometrics:
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
             trim (float, optional): The share of observations at either end that is not tried as the
                 break date. Defaults to 0.15.
-            replications (int, optional): The number of simulated random walks for the critical
+            simulations (int, optional): The number of simulated random walks for the critical
                 values. Defaults to 1000.
             seed (int, optional): The seed of the simulation. Defaults to 0.
             log_prices (bool, optional): Whether to take the natural logarithm of the series first.
@@ -1415,7 +1416,7 @@ class StationarityEconometrics:
 
         Returns:
             pd.DataFrame: The SDFC statistic, the break date, the simulated p-value, the 10%, 5% and 1%
-            critical values (the 90%, 95% and 99% quantiles), the observations and replications, and
+            critical values (the 90%, 95% and 99% quantiles), the observations and replications (the number of simulations), and
             whether the series turns explosive at the 5% level, per asset; with time_series=True
             DFC(τ) per date and asset.
 
@@ -1471,7 +1472,7 @@ class StationarityEconometrics:
                     ticker: bubble_model.get_chow_dickey_fuller_test(
                         levels[ticker],
                         trim=trim,
-                        replications=replications,
+                        simulations=simulations,
                         seed=seed,
                     )
                     for ticker in levels.columns

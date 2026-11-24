@@ -95,8 +95,8 @@ def test_simulated_critical_values_are_near_the_published_ones():
 
 
 def test_bubble_test_finds_the_explosive_stretch(bubble_prices):
-    gsadf = bubble_model.get_bubble_test(bubble_prices, replications=200)
-    sadf = bubble_model.get_bubble_test(bubble_prices, method="sadf", replications=200)
+    gsadf = bubble_model.get_bubble_test(bubble_prices, simulations=200)
+    sadf = bubble_model.get_bubble_test(bubble_prices, method="sadf", simulations=200)
 
     assert gsadf["Explosive (5%)"]
     assert gsadf["P-Value"] < 0.05
@@ -107,14 +107,14 @@ def test_bubble_test_finds_the_explosive_stretch(bubble_prices):
 
 def test_bubble_test_of_a_random_walk():
     walk = pd.Series(np.cumsum(np.random.default_rng(11).standard_normal(150)))
-    result = bubble_model.get_bubble_test(walk, replications=200)
+    result = bubble_model.get_bubble_test(walk, simulations=200)
 
     assert not result["Explosive (5%)"]
 
 
 def test_bubble_episodes_date_the_stretch(bubble_prices):
     episodes, sequence = bubble_model.get_bubble_episodes(
-        bubble_prices, replications=200
+        bubble_prices, simulations=200
     )
 
     assert len(episodes) == 1
@@ -146,7 +146,7 @@ def test_chow_statistics_match_the_regression(bubble_prices):
 
 
 def test_chow_test_dates_the_break(bubble_prices):
-    result = bubble_model.get_chow_dickey_fuller_test(bubble_prices, replications=500)
+    result = bubble_model.get_chow_dickey_fuller_test(bubble_prices, simulations=500)
 
     assert result["Explosive (5%)"]
     assert bubble_prices.index[90] <= result["Break Date"] <= bubble_prices.index[139]
@@ -156,12 +156,12 @@ def test_bubble_tests_give_no_p_value_without_a_statistic():
     # A constant level series has no ADF statistic in any window; its p-value is not 0
     # ("significant") but NaN, and the series is not explosive.
     constant = pd.Series(np.full(120, 4.0))
-    result = bubble_model.get_bubble_test(constant, replications=50)
+    result = bubble_model.get_bubble_test(constant, simulations=50)
 
     assert np.isnan(result["GSADF Statistic"]) and np.isnan(result["P-Value"])
     assert not result["Explosive (5%)"]
 
-    chow = bubble_model.get_chow_dickey_fuller_test(constant, replications=50)
+    chow = bubble_model.get_chow_dickey_fuller_test(constant, simulations=50)
     assert np.isnan(chow["SDFC Statistic"]) and np.isnan(chow["P-Value"])
     assert not chow["Explosive (5%)"]
 

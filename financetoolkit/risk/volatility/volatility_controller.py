@@ -11,7 +11,12 @@ from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.volatility import garch_model, realized_volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
@@ -64,7 +69,7 @@ class VolatilityRisk:
         if method != "realized":
             return None
         if period != "daily" or within_period:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "method='realized' takes the daily Parkinson variance of the High and Low "
                 "prices as its realized measure, so it needs period='daily' and "
                 "within_period=False."
@@ -329,16 +334,13 @@ class VolatilityRisk:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -377,7 +379,7 @@ class VolatilityRisk:
     def get_garch_forecast(
         self,
         period: str | None = None,
-        time_steps: int = 10,
+        forecast_steps: int = 10,
         within_period: bool = False,
         method: Literal[
             "garch",
@@ -413,24 +415,24 @@ class VolatilityRisk:
 
         The formula is as follows:
 
-        - method="garch": sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Beta)^(h - 1), with
+        - GARCH: sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Beta)^(h - 1), with
         sigma_L^2 = Omega / (1 - Alpha - Beta)
-        - method="gjr": sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Gamma / 2 + Beta)^(h - 1),
+        - GJR-GARCH: sigma_(n+h)^2 = sigma_L^2 + (sigma_(n+1)^2 - sigma_L^2) * (Alpha + Gamma / 2 + Beta)^(h - 1),
         with sigma_L^2 = Omega / (1 - Alpha - Gamma / 2 - Beta)
-        - method="egarch": ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L), with L = Omega / (1 - Beta)
+        - EGARCH: ln sigma_(n+h)^2 = L + Beta^(h - 1) * (ln sigma_(n+1)^2 - L), with L = Omega / (1 - Beta)
         and sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
-        - method="igarch": sigma_(n+h)^2 = sigma_(n+1)^2 + (h - 1) * Omega
-        - method="aparch", "tgarch", "ngarch", "avgarch" and "nagarch": s_(n+h) = Omega + P * s_(n+h-1), with
+        - IGARCH: sigma_(n+h)^2 = sigma_(n+1)^2 + (h - 1) * Omega
+        - APARCH, TGARCH, NGARCH, AVGARCH and NAGARCH: s_(n+h) = Omega + P * s_(n+h-1), with
         s = sigma^d the power of the model (Delta, 1 for TGARCH and AVGARCH, 2 for NAGARCH), P the persistence (see
         `get_garch_parameters`) and sigma_(n+h)^2 = s_(n+h)^(2 / d)
-        - method="component": sigma_(n+h)^2 = q_(n+h) + (Alpha + Beta)^(h - 1) * (sigma_(n+1)^2 - q_(n+1)), with
+        - Component GARCH: sigma_(n+h)^2 = q_(n+h) + (Alpha + Beta)^(h - 1) * (sigma_(n+1)^2 - q_(n+1)), with
         q_(n+h) = Omega + Rho * q_(n+h-1)
-        - method="figarch": sigma_(n+h)^2 = Omega / (1 - Beta) + Σ_(k=1..1000) lambda_k * E[e_(n+h-k)^2], with the squared
+        - FIGARCH: sigma_(n+h)^2 = Omega / (1 - Beta) + Σ_(k=1..1000) lambda_k * E[e_(n+h-k)^2], with the squared
         residuals up to the last return and the forecast variance sigma_(n+j)^2 in place of e_(n+j)^2 after it
-        - method="realized": ln sigma_(n+h)^2 = Omega + Gamma * Xi + (Beta + Gamma * Phi) * ln sigma_(n+h-1)^2 and
+        - Realized GARCH: ln sigma_(n+h)^2 = Omega + Gamma * Xi + (Beta + Gamma * Phi) * ln sigma_(n+h-1)^2 and
         sigma_(n+h)^2 = exp(ln sigma_(n+h)^2), the expected realized measure in place of the measure
 
-        Where n is the last observation, h = 1, ..., `time_steps` (10 by default) the forecast step,
+        Where n is the last observation, h = 1, ..., `forecast_steps` (10 by default) the forecast step,
         sigma_(n+1)^2 the one-step-ahead variance of the fitted recursion (see `get_garch`) and sigma_L^2 the
         long-run variance. The leverage term of GJR-GARCH enters at its expectation, Gamma / 2, as a negative
         shock is as likely as a positive one; the shock terms of EGARCH drop out at their expectation of zero,
@@ -461,7 +463,7 @@ class VolatilityRisk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for. Defaults to 10.
+            forecast_steps (int, optional): Time steps to calculate GARCH and to forecast sigma_2 values for. Defaults to 10.
             within_period (bool, optional): Whether to calculate GARCH within each specified period or all
             at once. Thus whether to look at the GARCH within each specific year (if period = 'yearly') or
             look at the entirety of all years. Defaults to False.
@@ -542,16 +544,13 @@ class VolatilityRisk:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -564,10 +563,10 @@ class VolatilityRisk:
             method=method,
             distribution=distribution,
             mean=mean,
-            time_steps=time_steps,
+            forecast_steps=forecast_steps,
             realized_measure=self._get_realized_measure(method, period, within_period),
         )
-        sigma_2_forecast.index = _forecast_index(returns.index, period, time_steps)
+        sigma_2_forecast.index = _forecast_index(returns.index, period, forecast_steps)
 
         return finalize_dataset(
             dataset=sigma_2_forecast,
@@ -797,10 +796,7 @@ class VolatilityRisk:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data[period]["Return"]
         names = garch_model.get_garch_family_parameter_names(method, distribution, mean)
@@ -976,10 +972,7 @@ class VolatilityRisk:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data[period]["Return"]
         measure = self._get_realized_measure(method, period)
@@ -1018,8 +1011,8 @@ class VolatilityRisk:
     def get_garch_simulation(
         self,
         period: str | None = None,
-        time_steps: int = 10,
-        paths: int = 10000,
+        forecast_steps: int = 10,
+        simulations: int = 10000,
         seed: int | None = 0,
         output: str = "returns",
         method: Literal[
@@ -1052,7 +1045,7 @@ class VolatilityRisk:
         way a large shock raises the volatility of the periods after it. The percentiles of the cumulative return
         give a GARCH-based Value at Risk over the horizon.
 
-        The formula is as follows, for h = 1, ..., `time_steps`:
+        The formula is as follows, for h = 1, ..., `forecast_steps`:
 
         - e_(n+h) = sigma_(n+h) * z_(n+h)
         - r_(n+h) = Mean_(n+h) + e_(n+h)
@@ -1074,9 +1067,9 @@ class VolatilityRisk:
           GARCH, the measurement error of the same day)
         - a series r*_1, ..., r*_n as long as the returns simulated from the fitted parameters with those draws,
           starting after the last return, and the model fitted to it again, `bootstrap_fits` times
-        - every refitted model filters the actual returns to its own sigma_(n+1)^2 and simulates paths /
+        - every refitted model filters the actual returns to its own sigma_(n+1)^2 and simulates `simulations` /
           `bootstrap_fits` of the paths from there with the resampled z*
-        - bootstrap_fits=0 keeps the fitted parameters and only resamples the residuals (the partial bootstrap)
+        - no bootstrap fits (0) keeps the fitted parameters and only resamples the residuals (the partial bootstrap)
 
         The spread of the first period's volatility then shows the parameter uncertainty, which a simulation
         from the fitted parameters does not have.
@@ -1095,8 +1088,8 @@ class VolatilityRisk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            time_steps (int, optional): The number of periods to simulate. Defaults to 10.
-            paths (int, optional): The number of simulated paths per asset. Defaults to 10,000.
+            forecast_steps (int, optional): The number of periods to simulate. Defaults to 10.
+            simulations (int, optional): The number of simulated paths per asset. Defaults to 10,000.
             seed (int | None, optional): The seed of the random draws, None for a different simulation every
                 time. Defaults to 0.
             output (str, optional): "returns" for the return of each period, "cumulative_returns" for the
@@ -1168,10 +1161,7 @@ class VolatilityRisk:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data[period]["Return"].dropna(how="all")
         measure = self._get_realized_measure(method, period)
@@ -1184,8 +1174,8 @@ class VolatilityRisk:
                     method=method,
                     distribution=distribution,
                     mean=mean,
-                    time_steps=time_steps,
-                    paths=paths,
+                    forecast_steps=forecast_steps,
+                    simulations=simulations,
                     seed=seed,
                     output=output,
                     bootstrap_fits=bootstrap_fits,
@@ -1201,7 +1191,7 @@ class VolatilityRisk:
             },
             axis=1,
         )
-        simulation.index = _forecast_index(returns.index, period, time_steps)
+        simulation.index = _forecast_index(returns.index, period, forecast_steps)
 
         return apply_rounding(
             simulation, rounding if rounding is not None else self._rounding
@@ -1373,27 +1363,26 @@ class VolatilityRisk:
         | 2024   |   0.0708 |   0.5345 |  0.1265 |  0.185  |      0.1257 |
         | 2025   |   0.089  |   0.4194 |  0.1875 |  0.2421 |      0.1949 |
         """
-        if method not in (
-            "close_to_close",
-            "parkinson",
-            "garman_klass",
-            "rogers_satchell",
-            "yang_zhang",
-            "garman_klass_yang_zhang",
-            "compounded",
-        ):
-            raise ValueError(
-                "Method must be close_to_close, parkinson, garman_klass, "
-                "rogers_satchell, yang_zhang, garman_klass_yang_zhang or compounded."
-            )
+        check_option(
+            "method",
+            method,
+            (
+                "close_to_close",
+                "parkinson",
+                "garman_klass",
+                "rogers_satchell",
+                "yang_zhang",
+                "garman_klass_yang_zhang",
+                "compounded",
+            ),
+        )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         if rolling and method != "close_to_close":
-            raise ValueError(
+            raise InvalidArgumentError(
                 "The rolling parameter is only available for method='close_to_close'."
             )
 
@@ -1555,16 +1544,16 @@ class VolatilityRisk:
         | 2025-12-30 | 0.0001 | 0.0001 |
         | 2025-12-31 | 0.0001 | 0.0001 |
         """
-        if estimator not in (
-            "squared_return",
-            "parkinson",
-            "garman_klass",
-            "rogers_satchell",
-        ):
-            raise ValueError(
-                "estimator must be 'squared_return', 'parkinson', 'garman_klass', "
-                "or 'rogers_satchell'."
-            )
+        check_option(
+            "estimator",
+            estimator,
+            (
+                "squared_return",
+                "parkinson",
+                "garman_klass",
+                "rogers_satchell",
+            ),
+        )
 
         if estimator == "squared_return":
             # The forecast drops missing values per ticker, so only rows without any return go.
@@ -1705,8 +1694,7 @@ class VolatilityRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
@@ -1858,21 +1846,18 @@ class VolatilityRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."

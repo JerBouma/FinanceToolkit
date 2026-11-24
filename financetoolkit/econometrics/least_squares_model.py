@@ -5,6 +5,8 @@ __docformat__ = "google"
 import numpy as np
 from scipy import linalg, stats
 
+from financetoolkit.utilities.error_model import check_option
+
 # The relative cutoff below which a singular value of the design counts as zero in the
 # pseudo-inverse, the LAPACK-style default for a numerically exact least squares solution.
 PSEUDO_INVERSE_CUTOFF = 1e-15
@@ -105,7 +107,7 @@ def _get_coefficient_covariance(
     residual_degrees_of_freedom: int,
     cov_type: str,
     clusters: np.ndarray | None,
-    maxlags: int | None,
+    lags: int | None,
 ) -> np.ndarray:
     """
     The covariance matrix of least squares coefficients, see `fit_least_squares`.
@@ -139,13 +141,13 @@ def _get_coefficient_covariance(
     scores = whitened_x * whitened_residuals[:, None]
 
     if cov_type == "HAC":
-        maxlags = int(maxlags) if maxlags is not None else 0
+        lags = int(lags) if lags is not None else 0
         meat = scores.T @ scores
 
-        for lag in range(1, maxlags + 1):
+        for lag in range(1, lags + 1):
             # Bartlett weight of Newey-West (1987), which keeps the estimate positive semi-definite.  # noqa: E501
             autocovariance = scores[lag:].T @ scores[:-lag]
-            meat += (1 - lag / (maxlags + 1)) * (autocovariance + autocovariance.T)
+            meat += (1 - lag / (lags + 1)) * (autocovariance + autocovariance.T)
 
         return (bread @ meat) @ bread.T
 
@@ -196,7 +198,7 @@ def fit_least_squares(
     omega: np.ndarray | None = None,
     cov_type: str = "nonrobust",
     clusters: np.ndarray | None = None,
-    maxlags: int | None = None,
+    lags: int | None = None,
 ) -> dict:
     """
     Fit a least squares regression of `y` on the design matrix `x`: Ordinary Least Squares,
@@ -222,7 +224,7 @@ def fit_least_squares(
     - "HC0": B (Σ ẽₜ² x̃ₜx̃ₜ') B, White (1980)
     - "HC1": HC0 · n / (n - k), "HC2": ẽₜ² / (1 - hₜ), "HC3": ẽₜ² / (1 - hₜ)², with the leverage
       hₜ = x̃ₜ'Bx̃ₜ, MacKinnon and White (1985)
-    - "HAC": B (Σₜ gₜgₜ' + Σⱼ₌₁ᴸ (1 - j / (L + 1)) Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ')) B with L = `maxlags`,
+    - "HAC": B (Σₜ gₜgₜ' + Σⱼ₌₁ᴸ (1 - j / (L + 1)) Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ')) B with L = `lags`,
       Newey and West (1987), without a small-sample correction
     - "cluster": G / (G - 1) · (n - 1) / (n - k) · B (Σ_g (Σ_{t∈g} gₜ)(Σ_{t∈g} gₜ)') B, with G
       the number of clusters
@@ -245,7 +247,7 @@ def fit_least_squares(
             "HC1", "HC2", "HC3", "cluster" and "HAC". Defaults to "nonrobust".
         clusters (np.ndarray | None, optional): The cluster label of each observation,
             used by "cluster". Defaults to None.
-        maxlags (int | None, optional): The truncation lag L of "HAC". Defaults to None,
+        lags (int | None, optional): The truncation lag L of "HAC". Defaults to None,
             meaning 0.
 
     Returns:
@@ -270,10 +272,7 @@ def fit_least_squares(
         Data Analysis Using Generalized Linear Models." Biometrika, 73(1), 13-22.
         Referenced against statsmodels' `OLS`, `WLS` and `GLS` with `fit(cov_type=...)`.
     """
-    if cov_type not in COVARIANCE_TYPES:
-        raise ValueError(
-            f"cov_type must be one of {COVARIANCE_TYPES}, received {cov_type!r}."
-        )
+    check_option("cov_type", cov_type, COVARIANCE_TYPES)
 
     observations = len(y)
     log_likelihood_adjustment = 0.0
@@ -333,7 +332,7 @@ def fit_least_squares(
         degrees_of_freedom,
         cov_type,
         clusters,
-        maxlags,
+        lags,
     )
     standard_errors = np.sqrt(np.diag(covariance))
     # A perfect fit has zero standard errors, which leaves the t-statistics undefined (NaN).

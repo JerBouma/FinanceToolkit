@@ -15,6 +15,7 @@ from financetoolkit.econometrics.regression.regression_model import (
     get_ols,
     get_wls,
 )
+from financetoolkit.utilities.error_model import check_option
 
 MINIMUM_LOCAL_OBSERVATIONS = 3
 MINIMUM_DONORS = 2
@@ -122,7 +123,7 @@ def get_iv_2sls(
     Which returns (recovering the true slope of 2.0, unlike naive OLS which would be
     biased upward by the shared confounder):
 
-    |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:----------|--------------:|-------------:|--------------:|----------:|
     | Intercept |        0.9465 |       0.0211 |       44.9292 |         0 |
     | X         |        2.0243 |       0.0259 |       78.2066 |         0 |
@@ -302,7 +303,7 @@ def get_difference_in_differences(
 
     Which returns (recovering the true treatment effect of 3.0 in the `Treated x Post` row):
 
-    |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |                |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:---------------|--------------:|-------------:|--------------:|----------:|
     | Intercept      |        0.9645 |       0.0263 |       36.663  |         0 |
     | Treated        |        0.5413 |       0.0372 |       14.5482 |         0 |
@@ -375,7 +376,7 @@ def regression_discontinuity_summary_table(result: dict) -> pd.DataFrame:
         },
         index=[
             "Discontinuity",
-            "Std. Error",
+            "Standard Error",
             "t-Statistic",
             "P-Value",
             "Cutoff",
@@ -479,7 +480,7 @@ def get_regression_discontinuity(
     |               |     Value |
     |:--------------|----------:|
     | Discontinuity |    4.0129 |
-    | Std. Error    |    0.0449 |
+    | Standard Error    |    0.0449 |
     | t-Statistic   |   89.2815 |
     | P-Value       |    0      |
     | Cutoff        |    0      |
@@ -487,10 +488,7 @@ def get_regression_discontinuity(
     | N Left        | 1013      |
     | N Right       |  986      |
     """
-    if kernel not in ("uniform", "triangular"):
-        raise ValueError(
-            f"kernel must be 'uniform' or 'triangular', received {kernel!r}."
-        )
+    check_option("kernel", kernel, ("uniform", "triangular"))
 
     y_values = _to_target_vector(y)
     running_values = _to_target_vector(running_variable)
@@ -579,7 +577,7 @@ def propensity_score_matching_summary(result: dict) -> pd.Series:
     return pd.Series(
         {
             "ATT": result["att"],
-            "Std. Error": result["standard_error"],
+            "Standard Error": result["standard_error"],
             "t-Statistic": result["t_statistic"],
             "P-Value": result["p_value"],
             "Matched Pairs": result["n_matched_pairs"],
@@ -713,7 +711,7 @@ def get_propensity_score_matching(
     |               |         0 |
     |:--------------|----------:|
     | ATT           |    2.0647 |
-    | Std. Error    |    0.0302 |
+    | Standard Error    |    0.0302 |
     | t-Statistic   |   68.2821 |
     | P-Value       |    0      |
     | Matched Pairs |  562      |

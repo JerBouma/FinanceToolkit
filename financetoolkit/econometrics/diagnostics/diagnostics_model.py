@@ -15,6 +15,7 @@ from financetoolkit.econometrics.least_squares_model import (
     get_lagged_values,
 )
 from financetoolkit.risk.volatility import garch_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -703,12 +704,9 @@ def get_cusum_test(
         Machine Learning", Wiley, section 17.3.2): it divides by sigma_t, with sigma_t^2 the
         mean of the t - 1 squared changes, and compares with sqrt(4.6 + ln(t - n)) at 5%.
     """
-    if method not in CUSUM_METHODS:
-        raise ValueError(
-            f"The method must be one of {', '.join(CUSUM_METHODS)}, not {method!r}."
-        )
+    check_option("method", method, CUSUM_METHODS)
     if time_series and method != "chu_stinchcombe_white":
-        raise ValueError(
+        raise InvalidArgumentError(
             "time_series=True needs method='chu_stinchcombe_white': the OLS and recursive "
             "CUSUM paths are scaled with the variance of the whole sample, so a date's value "
             "would use returns after it."

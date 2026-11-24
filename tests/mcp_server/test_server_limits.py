@@ -46,19 +46,19 @@ def test_a_simulation_larger_than_the_server_allows_is_refused(captured):
         "risk",
         indicator="get_copula_simulation",
         tickers="AAPL,MSFT",
-        n_simulations=3_000_000,
+        simulations=50_000,
     )
 
-    assert "`n_simulations` may be at most 10,000" in answer
+    assert "`simulations` may be at most 10,000" in answer
     assert not captured
 
     call(
         "risk",
         indicator="get_copula_simulation",
         tickers="AAPL,MSFT",
-        n_simulations=500,
+        simulations=500,
     )
-    assert captured[-1][1]["n_simulations"] == 500  # noqa: PLR2004
+    assert captured[-1][1]["simulations"] == 500  # noqa: PLR2004
 
 
 def test_parameters_computed_together_are_limited_with_the_indicator_defaults(captured):
@@ -205,9 +205,9 @@ def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
     answer = call(
         "econometrics",
         indicator="get_rolling_median",
-        series="risk:get_garch_forecast:AAPL:time_steps=999999",
+        series="risk:get_garch_forecast:AAPL:forecast_steps=999999",
     )
-    assert "`time_steps` may be at most 1,000 on this server" in answer
+    assert "`forecast_steps` may be at most 1,000 on this server" in answer
 
     # Within the limits of one reference but not the other: neither is collected.
     answer = call(
@@ -221,10 +221,10 @@ def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
     call(
         "econometrics",
         indicator="get_rolling_median",
-        series="risk:get_garch_forecast:AAPL:method=gjr:time_steps=10",
+        series="risk:get_garch_forecast:AAPL:method=gjr:forecast_steps=10",
     )
     assert captured[-1][1]["method"] == "gjr"
-    assert captured[-1][1]["time_steps"] == 10  # noqa: PLR2004
+    assert captured[-1][1]["forecast_steps"] == 10  # noqa: PLR2004
 
 
 def test_a_large_table_is_cut_before_its_records_are_built(monkeypatch):
@@ -429,7 +429,7 @@ def test_the_years_of_the_range_count_in_the_limits_only(captured):
         "risk",
         indicator="get_var_backtest",
         tickers="AAPL",
-        distribution="garch",
+        method="garch",
         start_date="2000-01-01",
         end_date="2025-01-01",
     )
@@ -452,7 +452,7 @@ def test_the_years_of_the_range_count_in_the_limits_only(captured):
         tickers="AAPL",
         start_date="2000-01-01",
         end_date="2025-01-01",
-        distribution="garch",
+        method="garch",
         refit_every=63,
     )
     assert "range_years" not in captured[-1][1]

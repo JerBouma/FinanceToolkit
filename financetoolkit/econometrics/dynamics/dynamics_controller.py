@@ -12,7 +12,7 @@ from financetoolkit.econometrics.dynamics import (
 )
 from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -522,7 +522,7 @@ class DynamicsEconometrics:
                 else tickers[1] if len(tickers) > 1 else None
             )
         if independent_ticker is None or independent_ticker not in tickers:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"The independent ticker {independent_ticker} is not available; choose from "
                 f"{', '.join(tickers)}."
             )
@@ -814,7 +814,7 @@ class DynamicsEconometrics:
         maximum_threshold: float = 10.0,
         grid_size: int = 20,
         maximum_holding_period: int = 100,
-        paths: int = 10000,
+        simulations: int = 10000,
         seed: int = 0,
         log_prices: bool = True,
         grid: bool = False,
@@ -845,7 +845,7 @@ class DynamicsEconometrics:
         - pₜ = c + φ·pₜ₋₁ + σ·εₜ by OLS, with σ the standard deviation of the residuals (n - 2 degrees of
           freedom), Long-Run Mean = c / (1 - φ), Half-Life = -ln(2) / ln(φ) and
           Forecast = (Long-Run Mean - p₀) / σ, with p₀ the last log price
-        - yₜ = (pₜ - p₀) / σ = (1 - φ)·Forecast + φ·yₜ₋₁ + εₜ, y₀ = 0, εₜ ~ N(0, 1), for `paths` paths
+        - yₜ = (pₜ - p₀) / σ = (1 - φ)·Forecast + φ·yₜ₋₁ + εₜ, y₀ = 0, εₜ ~ N(0, 1), for `simulations` paths
           (10,000 by default) of at most `maximum_holding_period` steps (100 by default)
         - For every profit-taking π̄ and stop-loss π̲ in {h, 2h, ..., `maximum_threshold`},
           h = `maximum_threshold` / `grid_size` (0.5 to 10 by default): the gain of a path is yₜ at the
@@ -875,7 +875,7 @@ class DynamicsEconometrics:
                 mesh has grid_size² rules. Defaults to 20.
             maximum_holding_period (int, optional): The most periods a position is held.
                 Defaults to 100.
-            paths (int, optional): The number of simulated paths. Defaults to 10000.
+            simulations (int, optional): The number of simulated paths. Defaults to 10000.
             seed (int, optional): The seed of the simulation. Defaults to 0.
             log_prices (bool, optional): Whether to fit the process to the log prices. Pass False
                 for a series that can be zero or negative, such as a spread. Defaults to True.
@@ -960,7 +960,7 @@ class DynamicsEconometrics:
                 maximum_threshold=maximum_threshold,
                 grid_size=grid_size,
                 maximum_holding_period=maximum_holding_period,
-                paths=paths,
+                simulations=simulations,
                 seed=seed,
             )
             for ticker in prices.columns

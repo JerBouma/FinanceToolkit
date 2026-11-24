@@ -8,6 +8,7 @@ from scipy.optimize import brentq
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
 from financetoolkit.risk.volatility import garch_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 
@@ -622,7 +623,7 @@ def get_var_cornish_fisher(
 
 
 def _get_portfolio_var(
-    portfolio_returns: pd.Series, alpha: float, distribution: str
+    portfolio_returns: pd.Series, alpha: float, method: str
 ) -> float:
     """
     Dispatch to the requested single-asset VaR calculation for a portfolio return
@@ -631,26 +632,27 @@ def _get_portfolio_var(
     Args:
         portfolio_returns (pd.Series): The weighted portfolio return series.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        distribution (str): One of "historic", "gaussian", "cornish-fisher" or
+        method (str): One of "historic", "gaussian", "cornish-fisher" or
             "studentt".
 
     Returns:
         float: The portfolio VaR.
 
     Raises:
-        ValueError: If `distribution` is not one of the supported options.
+        ValueError: If `method` is not one of the supported options.
     """
-    if distribution == "historic":
+    if method == "historic":
         return get_var_historic(portfolio_returns, alpha)
-    if distribution == "gaussian":
+    if method == "gaussian":
         return get_var_gaussian(portfolio_returns, alpha)
-    if distribution == "cornish-fisher":
+    if method == "cornish-fisher":
         return get_var_cornish_fisher(portfolio_returns, alpha)
-    if distribution == "studentt":
+    if method == "studentt":
         return get_var_studentt(portfolio_returns, alpha)
 
-    raise ValueError(
-        "distribution must be historic, gaussian, cornish-fisher or studentt."
+    raise InvalidArgumentError(
+        f"method must be one of 'historic', 'gaussian', 'cornish-fisher' or 'studentt', "
+        f"not {method!r}. Please pass one of these as method."
     )
 
 
@@ -658,7 +660,7 @@ def get_marginal_var(
     returns: pd.DataFrame,
     weights: pd.Series,
     alpha: float,
-    distribution: str = "historic",
+    method: str = "historic",
 ) -> pd.Series:
     """
     Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a portfolio.
@@ -705,8 +707,8 @@ def get_marginal_var(
         weights (pd.Series): Portfolio weights, indexed by the same asset labels as
             `returns`'s columns. Normalized internally to sum to 1.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        distribution (str): The distribution to use for the underlying portfolio VaR
-            calculation (historic, gaussian, cornish-fisher or studentt). The gaussian
+        method (str, optional): The estimator of the underlying portfolio VaR. Options
+            are: "historic", "gaussian", "cornish-fisher" or "studentt". The gaussian
             decomposition is exact; the Beta-based decomposition of the others is an
             approximation. Defaults to "historic".
 
@@ -717,7 +719,7 @@ def get_marginal_var(
     Raises:
         TypeError: If `returns` is not a pd.DataFrame or `weights` is not a pd.Series.
         ValueError: If `weights` does not cover every column in `returns`, or if
-            `distribution` is not one of the supported options.
+            `method` is not one of the supported options.
     """
     if not isinstance(returns, pd.DataFrame) or not isinstance(weights, pd.Series):
         raise TypeError(
@@ -735,7 +737,7 @@ def get_marginal_var(
     returns = returns.dropna()
 
     portfolio_returns = returns.mul(weights, axis=1).sum(axis=1)
-    portfolio_var = as_float(_get_portfolio_var(portfolio_returns, alpha, distribution))
+    portfolio_var = as_float(_get_portfolio_var(portfolio_returns, alpha, method))
     portfolio_variance = portfolio_returns.var(ddof=1)
 
     if portfolio_variance == 0 or np.isnan(portfolio_variance):
@@ -745,7 +747,7 @@ def get_marginal_var(
         lambda column: column.cov(portfolio_returns, ddof=1)
     )
 
-    if distribution == "gaussian":
+    if method == "gaussian":
         # The exact derivative of mean_p + z * std_p with respect to weight_i; the weighted sum of these is the portfolio VaR again, also with a non-zero mean (the beta form drops the mean).  # noqa: E501
         return returns.mean() + stats.norm.ppf(
             alpha
@@ -760,7 +762,7 @@ def get_component_var(
     returns: pd.DataFrame,
     weights: pd.Series,
     alpha: float,
-    distribution: str = "historic",
+    method: str = "historic",
 ) -> pd.Series:
     """
     Calculate the Component Value at Risk (Component VaR) of each asset in a portfolio.
@@ -794,8 +796,8 @@ def get_component_var(
         weights (pd.Series): Portfolio weights, indexed by the same asset labels as
             `returns`'s columns. Normalized internally to sum to 1.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        distribution (str): The distribution to use for the underlying portfolio VaR
-            calculation (historic, gaussian, cornish-fisher or studentt). Defaults to
+        method (str, optional): The estimator of the underlying portfolio VaR. Options
+            are: "historic", "gaussian", "cornish-fisher" or "studentt". Defaults to
             "historic".
 
     Returns:
@@ -805,9 +807,9 @@ def get_component_var(
     Raises:
         TypeError: If `returns` is not a pd.DataFrame or `weights` is not a pd.Series.
         ValueError: If `weights` does not cover every column in `returns`, or if
-            `distribution` is not one of the supported options.
+            `method` is not one of the supported options.
     """
-    marginal_var = get_marginal_var(returns, weights, alpha, distribution)
+    marginal_var = get_marginal_var(returns, weights, alpha, method)
 
     weights = weights.reindex(returns.columns)
     weights = weights / weights.sum()

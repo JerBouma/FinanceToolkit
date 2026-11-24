@@ -1331,7 +1331,7 @@ def test_sharpe_ratio_standard_error_methods():
         rel=0.01,
     )
 
-    with pytest.raises(ValueError, match="iid, non_normal or gmm"):
+    with pytest.raises(ValueError, match="'iid', 'non_normal' or 'gmm'"):
         performance_model.get_sharpe_ratio_standard_error(normal, "other")
 
 
@@ -1592,7 +1592,9 @@ def test_sharpe_ratio_series_keeps_within_period_groups():
     # The Safety-First Ratio is the Sharpe ratio above the threshold: means of -0.02 and
     # 0.02 over a standard deviation of 0.02.
     pd.testing.assert_series_equal(
-        performance_model.get_safety_first_ratio(returns, threshold=0.02),
+        performance_model.get_safety_first_ratio(
+            returns, minimum_acceptable_return=0.02
+        ),
         pd.Series([-1.0, 1.0], index=expected.index, name="AAPL"),
     )
 
@@ -1838,7 +1840,9 @@ def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates
 def test_the_safety_first_ratio_is_the_sharpe_ratio_above_the_threshold():
     returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
 
-    result = performance_model.get_safety_first_ratio(returns, threshold=0.005)
+    result = performance_model.get_safety_first_ratio(
+        returns, minimum_acceptable_return=0.005
+    )
 
     assert result == pytest.approx((returns.mean() - 0.005) / returns.std(ddof=1))
     assert performance_model.get_safety_first_ratio(returns) == pytest.approx(
@@ -2273,7 +2277,7 @@ def test_capture_ratio_methods_match_empyrical_and_performance_analytics():
         portfolio, benchmark, market="down"
     ) == pytest.approx(1.0)
 
-    with pytest.raises(ValueError, match="geometric, annualized or arithmetic"):
+    with pytest.raises(ValueError, match="'geometric', 'annualized' or 'arithmetic'"):
         performance_model.get_capture_ratio(portfolio, benchmark, method="median")
 
 
@@ -2506,7 +2510,7 @@ def test_risk_measure_ratio_matches_skfolio():
         expected["mad"],
     )
 
-    with pytest.raises(ValueError, match="risk measure"):
+    with pytest.raises(ValueError, match="risk_measure must be one of"):
         performance_model.get_risk_measure(QUANTSTATS_RETURNS, "other")
 
 
@@ -2561,7 +2565,7 @@ def test_bootstrap_statistics_summarize_the_simulated_histories():
     excess_returns = QUANTSTATS_RETURNS - 0.0001
 
     statistics = performance_model.get_bootstrap_statistics(
-        returns, excess_returns, 252, simulations=500, seed=3
+        returns, excess_returns, 252, n_bootstrap=500, seed=3
     )
 
     positions = performance_model.get_bootstrap_samples(20, 500, "resample", seed=3)
@@ -2580,13 +2584,13 @@ def test_bootstrap_statistics_summarize_the_simulated_histories():
 
     # Shuffling keeps the returns, so only the order (and the drawdown) changes.
     shuffled = performance_model.get_bootstrap_statistics(
-        returns, excess_returns, 252, simulations=500, method="shuffle"
+        returns, excess_returns, 252, n_bootstrap=500, method="shuffle"
     )
     assert shuffled.loc["Cumulative Return", "Std"] == pytest.approx(0, abs=1e-15)
     assert shuffled.loc["Sharpe Ratio", "Std"] == pytest.approx(0, abs=1e-12)
     assert shuffled.loc["Maximum Drawdown", "Std"] > 0
 
-    with pytest.raises(ValueError, match="resample or shuffle"):
+    with pytest.raises(ValueError, match="'resample' or 'shuffle'"):
         performance_model.get_bootstrap_samples(20, 10, "other")
 
 
@@ -2893,7 +2897,7 @@ def test_sharpe_difference_test_per_period():
         .all()
     )
 
-    with pytest.raises(ValueError, match="memmel or ledoit_wolf"):
+    with pytest.raises(ValueError, match="'memmel' or 'ledoit_wolf'"):
         performance_model.get_sharpe_ratio_difference_test(returns, benchmark, "jk")
 
 

@@ -214,7 +214,10 @@ def test_style_analysis_keeps_the_funds_with_enough_data(performance_module):
     weekly = module._historical_data["weekly"].copy()
     # MSFT lists a week before the end: one return is too few for even one style.
     weekly.loc[weekly.index[:-1], ("Return", "MSFT")] = np.nan
-    module._historical_data = {**module._historical_data, "weekly": weekly}
+    # A copy of the lazily loaded periods, so the daily data still loads when no test read it yet.
+    historical_data = copy.copy(module._historical_data)
+    historical_data["weekly"] = weekly
+    module._historical_data = historical_data
 
     result = module.get_style_analysis("Benchmark", period="weekly")
 

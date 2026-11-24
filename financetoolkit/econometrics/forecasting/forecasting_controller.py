@@ -14,7 +14,13 @@ from financetoolkit.econometrics.forecasting import (
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk.volatility import garch_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -55,7 +61,7 @@ class ForecastingEconometrics:
         period: str | None = None,
         method_a: str = "ewma",
         method_b: str = "rolling",
-        window_size: int = 22,
+        window: int = 22,
         lambda_: float = 0.94,
         loss: str = "squared",
         include_benchmark: bool = False,
@@ -83,7 +89,7 @@ class ForecastingEconometrics:
         - Realized Variance: rₜ²
         - EWMA forecast ("ewma"): σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², with λ = `lambda_` (0.94 by default), so
           the forecast for t uses returns up to t - 1
-        - Rolling forecast ("rolling"): the sample variance (ddof=1) of the `window_size` (22 by default)
+        - Rolling forecast ("rolling"): the sample variance (ddof=1) of the `window` (22 by default)
           returns up to t - 1
         - dₜ = L(rₜ² - f_a,ₜ) - L(rₜ² - f_b,ₜ), with L(e) = e² (loss="squared") or |e| (loss="absolute")
         - DM = mean(d) / √(γ₀ / n)·√((n - 1) / n), with γ₀ = (1 / n)·Σ(dₜ - mean(d))² and the Harvey,
@@ -101,13 +107,13 @@ class ForecastingEconometrics:
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "daily", since `window_size` is expressed in return observations of this
+            Defaults to "daily", since `window` is expressed in return observations of this
             frequency.
             method_a (str, optional): The first volatility forecasting method, one of "ewma" or "rolling".
             Defaults to "ewma".
             method_b (str, optional): The second (competing) volatility forecasting method, one of "ewma"
             or "rolling". Defaults to "rolling".
-            window_size (int, optional): The rolling window size used by the "rolling" method. Defaults to
+            window (int, optional): The rolling window size used by the "rolling" method. Defaults to
             22 (approximately one trading month).
             lambda_ (float, optional): The decay factor used by the "ewma" method. Defaults to 0.94.
             loss (str, optional): The loss function to compare forecast errors with, one of "squared" or
@@ -159,14 +165,13 @@ class ForecastingEconometrics:
         | Observations              | 1232      | 1232      | 1232      | 1232      |
         """
         if method_a not in ("ewma", "rolling") or method_b not in ("ewma", "rolling"):
-            raise ValueError("method_a and method_b must be 'ewma' or 'rolling'.")
+            raise InvalidArgumentError(
+                "method_a and method_b must be 'ewma' or 'rolling'."
+            )
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._filter_benchmark(
             self._historical_data[period]["Return"]
@@ -177,10 +182,10 @@ class ForecastingEconometrics:
 
         actual = returns**2
         forecast_a = forecast_evaluation_model.get_volatility_forecast(
-            returns, method_a, window_size, lambda_
+            returns, method_a, window, lambda_
         )
         forecast_b = forecast_evaluation_model.get_volatility_forecast(
-            returns, method_b, window_size, lambda_
+            returns, method_b, window, lambda_
         )
 
         result = forecast_evaluation_model.get_diebold_mariano_test(
@@ -200,7 +205,7 @@ class ForecastingEconometrics:
         d: int = 1,
         q: int = 1,
         forecast_steps: int = 5,
-        include_constant: bool = True,
+        add_constant: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -221,7 +226,7 @@ class ForecastingEconometrics:
 
         - y'ₜ = ΔᵈYₜ, the `column` level (Adj Close by default) differenced d times (d = 1 by default)
         - y'ₜ - μ = Σ(i=1..p) φᵢ·(y'ₜ₋ᵢ - μ) + εₜ + Σ(j=1..q) θⱼ·εₜ₋ⱼ, with p = q = 1 by default and μ the
-          mean (d = 0) or drift (d ≥ 1) of y'ₜ when include_constant=True, and μ = 0 otherwise
+          mean (d = 0) or drift (d ≥ 1) of y'ₜ when a constant is added, and μ = 0 otherwise
         - Fitted by exact Maximum Likelihood via the Kalman filter (statsmodels ARIMA)
         - Forecast: the conditional mean E[Y_T+h | Y_1..Y_T] for h = 1..`forecast_steps`, in levels
 
@@ -236,7 +241,7 @@ class ForecastingEconometrics:
             q (int, optional): The moving-average order. Defaults to 1.
             forecast_steps (int, optional): The number of periods ahead to forecast.
             Defaults to 5.
-            include_constant (bool, optional): Whether to estimate the mean of the
+            add_constant (bool, optional): Whether to estimate the mean of the
             differenced series (its drift for `d >= 1`). Defaults to True -- see
             `time_series_model.get_arima_forecast` for when to set this to False.
             include_benchmark (bool, optional): Whether to include "Benchmark" among
@@ -309,7 +314,7 @@ class ForecastingEconometrics:
                     d=d,
                     q=q,
                     forecast_steps=forecast_steps,
-                    include_constant=include_constant,
+                    add_constant=add_constant,
                 )["forecast"]
             except ValueError as error:
                 logger.warning("No ARIMA forecast for %s: %s", ticker, error)
@@ -695,7 +700,7 @@ class ForecastingEconometrics:
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        k_ar_diff: int = 1,
+        lags: int = 1,
         forecast_steps: int = 5,
         significance: float = 0.05,
         include_benchmark: bool = False,
@@ -718,10 +723,10 @@ class ForecastingEconometrics:
 
         The formula is as follows:
 
-        - Rank r = the number of leading Johansen trace statistics (det_order=0, `k_ar_diff` lags) that
+        - Rank r = the number of leading Johansen trace statistics (with a constant and `lags` lagged differences) that
           exceed their critical value at `significance` (5% by default); r = 0 raises an error
         - ΔYₜ = α·β'·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + c + εₜ, with Yₜ every ticker's `column` level (Adj Close by
-          default), k = `k_ar_diff` (1 by default) and c a constant outside the cointegrating relation
+          default), k = `lags` (1 by default) and c a constant outside the cointegrating relation
           (statsmodels VECM with deterministic="co"), fitted by Maximum Likelihood
         - Forecast: the fitted recursion run forward `forecast_steps` periods, in levels
 
@@ -731,7 +736,7 @@ class ForecastingEconometrics:
             column (str, optional): The historical data column to model. Defaults to
             "Adj Close" -- a VECM needs price LEVELS (non-stationary, cointegrated
             series), not returns, the same input `get_johansen_cointegration` expects.
-            k_ar_diff (int, optional): The number of lagged first differences to
+            lags (int, optional): The number of lagged first differences to
             include as short-run dynamics. Defaults to 1.
             forecast_steps (int, optional): The number of periods ahead to forecast.
             Defaults to 5.
@@ -796,7 +801,7 @@ class ForecastingEconometrics:
 
         result = time_series_model.get_vecm_forecast(
             prices[tickers],
-            k_ar_diff=k_ar_diff,
+            lags=lags,
             forecast_steps=forecast_steps,
             significance=significance,
         )
@@ -896,8 +901,7 @@ class ForecastingEconometrics:
         | ('IVV', 'Benchmark') | 0.0009 |
         | ('VOO', 'Benchmark') | 0.001  |
         """
-        if method not in ("rmse", "mae"):
-            raise ValueError("Method must be rmse or mae.")
+        check_option("method", method, ("rmse", "mae"))
 
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -939,7 +943,7 @@ class ForecastingEconometrics:
         p: int = 1,
         d: int = 1,
         q: int = 1,
-        include_constant: bool = True,
+        add_constant: bool = True,
         lags: int = 1,
         other_tickers: list[str] | None = None,
         include_benchmark: bool = False,
@@ -961,7 +965,7 @@ class ForecastingEconometrics:
         `model` string:
 
         - `model="arima"`: `time_series_model.get_arima_forecast` is fit on each
-          ticker's own training-period series (`p`, `d`, `q`, `include_constant`
+          ticker's own training-period series (`p`, `d`, `q`, `add_constant`
           control the model, same as `get_arima_forecast`).
         - `model="var"`: `time_series_model.get_var_forecast` is fit on the
           training-period series of each ticker together with `other_tickers`
@@ -992,7 +996,7 @@ class ForecastingEconometrics:
             Defaults to 1.
             q (int, optional): The ARIMA moving-average order (`model="arima"` only).
             Defaults to 1.
-            include_constant (bool, optional): Whether the ARIMA model estimates a
+            add_constant (bool, optional): Whether the ARIMA model estimates a
             free intercept (`model="arima"` only). Defaults to True.
             lags (int, optional): The VAR order (`model="var"` only). Defaults to 1.
             other_tickers (list[str] | None, optional): The other assets to include in
@@ -1051,8 +1055,7 @@ class ForecastingEconometrics:
 
         tickers = self._get_tickers(include_benchmark=include_benchmark)
 
-        if model not in ("arima", "var"):
-            raise ValueError(f"model must be 'arima' or 'var', received '{model}'.")
+        check_option("model", model, ("arima", "var"))
 
         columns = {}
         for ticker in tickers:
@@ -1068,7 +1071,7 @@ class ForecastingEconometrics:
                             p=p,
                             d=d,
                             q=q,
-                            include_constant=include_constant,
+                            add_constant=add_constant,
                         )
                     )
                 except ValueError as error:
@@ -1084,7 +1087,7 @@ class ForecastingEconometrics:
             )
 
             if not ticker_other_tickers:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "other_tickers must be provided (and non-empty) when model='var' "
                     "-- a VAR needs at least one other series to model jointly with "
                     "each ticker."
@@ -1127,7 +1130,7 @@ class ForecastingEconometrics:
         period: str | None = None,
         model: str = "garch",
         alpha: float | None = None,
-        window_size: int | None = None,
+        window: int | None = None,
         lambda_: float = 0.94,
         refit_every: int = 21,
         garch_method: str = "garch",
@@ -1160,7 +1163,7 @@ class ForecastingEconometrics:
         Where L is the exact Gaussian AR(1) likelihood (see `forecast_evaluation_model.get_berkowitz_test`) and F
         the distribution function of the standardized innovations with their fitted Shape and Skew.
         model="gaussian" uses a normal distribution with the mean and standard deviation (ddof=1) of the
-        `window_size` returns before t and model="ewma" a normal distribution with mean zero and the RiskMetrics
+        `window` returns before t and the EWMA model a normal distribution with mean zero and the RiskMetrics
         variance with decay `lambda_`.
 
         For more information about the method, see the following papers:
@@ -1179,7 +1182,7 @@ class ForecastingEconometrics:
             model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
             alpha (float | None, optional): The tail probability of the tail test. Defaults to None, which tests
             the whole density.
-            window_size (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
+            window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
             None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
@@ -1234,18 +1237,16 @@ class ForecastingEconometrics:
         | Autocorrelation     |   -0.0028 |   -0.0176 |    0.002  |
         | Observations        | 1255      | 1255      | 1255      |
         """
+        if alpha is not None:
+            validate_alpha(alpha)
         period = period if period else "daily"
 
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if model not in ("garch", "gaussian", "ewma"):
-            raise ValueError("The model must be garch, gaussian or ewma.")
+        check_period(period, PERIODS)
+        check_option("model", model, ("garch", "gaussian", "ewma"))
 
-        window_size = (
-            window_size
-            if window_size
+        window = (
+            window
+            if window
             else (
                 _garch_window_size(period)
                 if model == "garch"
@@ -1261,7 +1262,7 @@ class ForecastingEconometrics:
         pit = forecast_evaluation_model.get_probability_integral_transform(
             returns,
             model,
-            window_size,
+            window,
             lambda_,
             refit_every,
             garch_method,
@@ -1283,7 +1284,7 @@ class ForecastingEconometrics:
         period: str | None = None,
         model: str = "garch",
         lags: int = 4,
-        window_size: int | None = None,
+        window: int | None = None,
         lambda_: float = 0.94,
         refit_every: int = 21,
         garch_method: str = "garch",
@@ -1337,7 +1338,7 @@ class ForecastingEconometrics:
             Defaults to "daily".
             model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
             lags (int, optional): The number of lags of the portmanteau statistic. Defaults to 4.
-            window_size (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
+            window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
             None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
@@ -1404,16 +1405,12 @@ class ForecastingEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if model not in ("garch", "gaussian", "ewma"):
-            raise ValueError("The model must be garch, gaussian or ewma.")
+        check_period(period, PERIODS)
+        check_option("model", model, ("garch", "gaussian", "ewma"))
 
-        window_size = (
-            window_size
-            if window_size
+        window = (
+            window
+            if window
             else (
                 _garch_window_size(period)
                 if model == "garch"
@@ -1429,7 +1426,7 @@ class ForecastingEconometrics:
         pit = forecast_evaluation_model.get_probability_integral_transform(
             returns,
             model,
-            window_size,
+            window,
             lambda_,
             refit_every,
             garch_method,
@@ -1448,7 +1445,7 @@ class ForecastingEconometrics:
         period: str | None = None,
         method: Literal["pesaran_timmermann", "anatolyev_gerko"] = "pesaran_timmermann",
         forecast: str = "momentum",
-        window_size: int | None = None,
+        window: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1477,7 +1474,7 @@ class ForecastingEconometrics:
         V(P*) = (2 P_y - 1)^2 P_x (1 - P_x) / n + (2 P_x - 1)^2 P_y (1 - P_y) / n + 4 P_y P_x (1 - P_y) (1 - P_x) / n^2
         and V = 4 p (1 - p) Σ (Return_t - mean(Return))^2 / n^2 with p = (1 + mean(sign(Forecast))) / 2.
         forecast="autoregressive" forecasts each return with a + b · Return_(t-1), the least-squares AR(1) over the
-        `window_size` pairs of returns before it. Both statistics are standard normal under the null hypothesis of
+        `window` pairs of returns before it. Both statistics are standard normal under the null hypothesis of
         no directional predictability; the p-value is one-sided.
 
         For more information about the methods, see the following papers:
@@ -1497,9 +1494,9 @@ class ForecastingEconometrics:
             Defaults to "daily".
             method (str, optional): The test, "pesaran_timmermann" or "anatolyev_gerko". Defaults to
             "pesaran_timmermann".
-            forecast (str, optional): The return forecast, "momentum" (the mean of the previous `window_size`
+            forecast (str, optional): The return forecast, "momentum" (the mean of the previous `window`
             returns) or "autoregressive" (the rolling AR(1)). Defaults to "momentum".
-            window_size (int | None, optional): The number of returns of every forecast window. Defaults to None,
+            window (int | None, optional): The number of returns of every forecast window. Defaults to None,
             which uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly,
             quarterly or yearly returns).
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
@@ -1530,7 +1527,7 @@ class ForecastingEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_directional_accuracy_test(period="monthly", window_size=12)
+        toolkit.econometrics.get_directional_accuracy_test(period="monthly", window=12)
         ```
 
         Which returns:
@@ -1544,12 +1541,9 @@ class ForecastingEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, PERIODS)
 
-        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
+        window = window if window else max(PERIODS_PER_YEAR[period], 20)
         returns = self._filter_benchmark(
             self._historical_data[period]["Return"]
             .loc[self._start_date : self._end_date]
@@ -1557,7 +1551,7 @@ class ForecastingEconometrics:
             include_benchmark=include_benchmark,
         )
         forecasts = forecast_evaluation_model.get_return_forecast(
-            returns, forecast, window_size
+            returns, forecast, window
         )
         result = forecast_evaluation_model.get_directional_accuracy_test(
             returns, forecasts, method
@@ -1578,11 +1572,11 @@ class ForecastingEconometrics:
         alpha: float = 0.1,
         n_bootstrap: int = 1000,
         block_size: int | None = None,
-        window_size: int = 22,
+        window: int = 22,
         lambda_: float = 0.94,
-        garch_window_size: int | None = None,
+        garch_window: int | None = None,
         refit_every: int = 21,
-        random_state: int = 42,
+        seed: int = 0,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -1612,10 +1606,10 @@ class ForecastingEconometrics:
         all pairs). The forecasts of the models are:
 
         - "ewma": the RiskMetrics variance λ·σₜ₋₁² + (1 - λ)·rₜ₋₁² with λ = `lambda_`
-        - "rolling": the sample variance (ddof=1) of the `window_size` returns before t
+        - "rolling": the sample variance (ddof=1) of the `window` returns before t
         - "garch", "gjr" and the other methods of `Risk.get_garch`: the one-step variance of the GARCH-family model
           with a constant mean and normal innovations (quasi-maximum likelihood), refitted every `refit_every`
-          returns on the `garch_window_size` returns before t
+          returns on the `garch_window` returns before t
 
         Every model is compared on the dates all of them have a forecast. The squared-error loss and QLIKE rank
         volatility forecasts correctly with the squared return as a noisy proxy of the true variance (Patton
@@ -1645,12 +1639,12 @@ class ForecastingEconometrics:
             n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
             block_size (int | None, optional): The average block length of the stationary bootstrap. Defaults to
             None, which uses the cube root of the number of periods, rounded.
-            window_size (int, optional): The window of the "rolling" model. Defaults to 22 (about a month).
+            window (int, optional): The window of the "rolling" model. Defaults to 22 (about a month).
             lambda_ (float, optional): The decay factor of the "ewma" model. Defaults to 0.94.
-            garch_window_size (int | None, optional): The number of returns of every GARCH fit. Defaults to None,
+            garch_window (int | None, optional): The number of returns of every GARCH fit. Defaults to None,
             which uses two years of observations with a minimum of 100 (504 daily returns).
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
-            random_state (int, optional): The seed of the bootstrap. Defaults to 42.
+            seed (int, optional): The seed of the bootstrap. Defaults to 0.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets. Defaults to
             False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1691,24 +1685,21 @@ class ForecastingEconometrics:
         |                    |   Average Loss |   MCS P-Value | In Confidence Set   |   Rank |
         |:-------------------|---------------:|--------------:|:--------------------|-------:|
         | ('QQQ', 'gjr')     |        -7.7142 |         1     | True                |      1 |
-        | ('QQQ', 'ewma')    |        -7.67   |         0.25  | True                |      2 |
-        | ('QQQ', 'garch')   |        -7.6562 |         0.25  | True                |      3 |
-        | ('QQQ', 'rolling') |        -7.6442 |         0.206 | True                |      4 |
+        | ('QQQ', 'garch')   |        -7.68   |         0.115 | True                |      2 |
+        | ('QQQ', 'ewma')    |        -7.67   |         0.115 | True                |      3 |
+        | ('QQQ', 'rolling') |        -7.6442 |         0.088 | False               |      4 |
         | ('TLT', 'ewma')    |        -8.2518 |         1     | True                |      1 |
-        | ('TLT', 'garch')   |        -8.2407 |         0.576 | True                |      2 |
-        | ('TLT', 'gjr')     |        -8.2405 |         0.576 | True                |      3 |
-        | ('TLT', 'rolling') |        -8.2155 |         0.101 | True                |      4 |
+        | ('TLT', 'gjr')     |        -8.2426 |         0.598 | True                |      2 |
+        | ('TLT', 'garch')   |        -8.2414 |         0.598 | True                |      3 |
+        | ('TLT', 'rolling') |        -8.2155 |         0.095 | False               |      4 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         models = models if models else ["ewma", "rolling", "garch", "gjr"]
         models = [models] if isinstance(models, str) else list(models)
 
-        if period not in PERIODS:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
-        if loss not in ("squared", "qlike"):
-            raise ValueError("The loss must be squared or qlike.")
+        check_period(period, PERIODS)
+        check_option("loss", loss, ("squared", "qlike"))
         if len(set(models)) < 2:  # noqa: PLR2004
             raise ValueError(
                 "The model confidence set compares at least two different models."
@@ -1720,14 +1711,12 @@ class ForecastingEconometrics:
             and model not in VOLATILITY_GARCH_METHODS
         ]
         if unknown:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"Unknown models {', '.join(unknown)}: use ewma, rolling or the methods of "
                 f"Risk.get_garch ({', '.join(VOLATILITY_GARCH_METHODS)})."
             )
 
-        garch_window_size = (
-            garch_window_size if garch_window_size else _garch_window_size(period)
-        )
+        garch_window = garch_window if garch_window else _garch_window_size(period)
         returns = self._filter_benchmark(
             self._historical_data[period]["Return"]
             .loc[self._start_date : self._end_date]
@@ -1743,9 +1732,9 @@ class ForecastingEconometrics:
                 model: forecast_evaluation_model.get_volatility_forecast(
                     ticker_returns,
                     model,
-                    window_size,
+                    window,
                     lambda_,
-                    garch_window_size,
+                    garch_window,
                     refit_every,
                 )
                 for model in dict.fromkeys(models)
@@ -1769,7 +1758,7 @@ class ForecastingEconometrics:
                 continue
 
             results[ticker] = forecast_evaluation_model.get_model_confidence_set(
-                losses, alpha, statistic, n_bootstrap, block_size, random_state
+                losses, alpha, statistic, n_bootstrap, block_size, seed
             )
 
         if not results:

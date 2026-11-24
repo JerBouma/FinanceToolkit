@@ -13,7 +13,7 @@ from financetoolkit.econometrics.testing import (
     specification_tests_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import check_option, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -145,11 +145,11 @@ class TestingEconometrics:
 
         Which returns:
 
-        |                  |   T-Statistic |   Degrees of Freedom |   P-Value |   Mean A |   Mean B |
+        |                  |   t-Statistic |   Degrees of Freedom |   P-Value |   Mean A |   Mean B |
         |:-----------------|--------------:|---------------------:|----------:|---------:|---------:|
-        | ('MSFT', 'ORCL') |       -0.528  |              2176.24 |    0.5975 |   0.0008 |   0.0012 |
-        | ('MSFT', 'SAP')  |        0.1389 |              2504.05 |    0.8895 |   0.0008 |   0.0007 |
-        | ('ORCL', 'SAP')  |        0.6326 |              2210.92 |    0.5271 |   0.0012 |   0.0007 |
+        | ('MSFT', 'ORCL') |       -0.5252 |              2176.18 |    0.5995 |   0.0008 |   0.0012 |
+        | ('MSFT', 'SAP')  |        0.141  |              2504.08 |    0.8879 |   0.0008 |   0.0007 |
+        | ('ORCL', 'SAP')  |        0.6315 |              2210.58 |    0.5278 |   0.0012 |   0.0007 |
         """
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -199,7 +199,7 @@ class TestingEconometrics:
 
         - F = ((RSS_restricted - RSS_unrestricted) / q) / (RSS_unrestricted / (n - k_unrestricted))
         - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
-          with a constant when add_constant=True
+          with a constant when one is added
 
         Where `q = k_unrestricted - k_restricted` is the number of added regressors, `n` the
         number of observations and `k_unrestricted` the number of parameters of the larger
@@ -310,7 +310,7 @@ class TestingEconometrics:
 
         - LR = -2·(ln L_restricted - ln L_unrestricted) = n * ln(RSS_restricted / RSS_unrestricted)
         - Both models are OLS regressions of the dependent ticker's `column` (Return by default),
-          with a constant when add_constant=True
+          with a constant when one is added
 
         Under the null this is asymptotically chi-squared distributed with `q` degrees of
         freedom. Where the F-test is exact in small samples under the classical assumptions,
@@ -427,7 +427,7 @@ class TestingEconometrics:
         - W = (R @ beta_hat - r)' @ (R @ Cov(beta_hat) @ R')^-1 @ (R @ beta_hat - r)
         - F = W / q, F-distributed with (q, n - k) degrees of freedom
         - beta_hat and the classical Cov(beta_hat) = σ̂²·(X'X)⁻¹ come from the OLS regression of the
-          dependent ticker's `column` (Return by default), with a constant when add_constant=True
+          dependent ticker's `column` (Return by default), with a constant when one is added
 
         Which is asymptotically chi-squared distributed with `q` degrees of freedom. `W / q`
         is reported alongside it as an F-statistic for small samples; for a single
@@ -635,10 +635,9 @@ class TestingEconometrics:
 
         |                    |    Value |
         |:-------------------|---------:|
-        | V-Hat Coefficient  |  -0.4021 |
-        | T-Statistic        |  -2.3377 |
+        | V-Hat Coefficient  |  -0.4013 |
         | Degrees of Freedom | 246      |
-        | P-Value            |   0.0202 |
+        | P-Value            |   0.0204 |
         | Endogenous (5%)    |   1      |
         """
         period = period if period else "daily"
@@ -826,8 +825,7 @@ class TestingEconometrics:
         | P-Value                      |  0.9096 |
         | Reject Homoskedasticity (5%) |  0      |
         """
-        if method not in ("breusch_pagan", "white"):
-            raise ValueError("Method must be breusch_pagan or white.")
+        check_option("method", method, ("breusch_pagan", "white"))
 
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -1196,7 +1194,7 @@ class TestingEconometrics:
         - F = ((RSS_pooled - (RSS_1 + RSS_2)) / k) / ((RSS_1 + RSS_2) / (n - 2k))
         - The second sub-period starts at the first period that ends on or after `break_date` (the
           date itself with daily data, the month that contains it with period="monthly"), and `k`
-          includes the constant when add_constant=True
+          includes the constant when one is added
 
         Where `RSS_pooled` is the residual sum of squares of the full-sample regression,
         `RSS_1` and `RSS_2` those of the two sub-periods, `k` the number of parameters and `n`

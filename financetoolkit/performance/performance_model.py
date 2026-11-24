@@ -32,6 +32,7 @@ from financetoolkit.risk.risk_model import (
     get_wealth_and_peak,
 )
 from financetoolkit.risk.value_at_risk import cvar_model, evar_model, var_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
@@ -533,10 +534,7 @@ def get_beta_estimate(
         'within period' index or a rolling window, otherwise a Series of betas per asset.
         Assets with fewer than three shared observations get NaN.
     """
-    if method not in BETA_METHODS:
-        raise ValueError(
-            f"The method must be one of {', '.join(BETA_METHODS)}, not {method}."
-        )
+    check_option("method", method, BETA_METHODS)
 
     if lags < 1:
         raise ValueError("The number of lags must be at least 1.")
@@ -718,11 +716,7 @@ def factor_url(region: str = "United States", kind: str = "five") -> str:
     Raises:
         ValueError: When the region is not published.
     """
-    if region not in FACTOR_REGIONS:
-        raise ValueError(
-            f"The factors of {region!r} are not published. Choose from "
-            f"{', '.join(FACTOR_REGIONS)}."
-        )
+    check_option("region", region, FACTOR_REGIONS)
     return f"{KEN_FRENCH_URL}{FACTOR_REGIONS[region][kind]}"
 
 
@@ -1171,7 +1165,7 @@ def get_fama_and_french_model_single(
             "Intercept": np.nan,
             "Slope": np.nan,
             "R Squared": np.nan,
-            "P Value": np.nan,
+            "P-Value": np.nan,
             "Standard Error": np.nan,
         }
         return regression_results, excess_returns * np.nan
@@ -1182,7 +1176,7 @@ def get_fama_and_french_model_single(
         "Intercept": result.intercept,
         "Slope": result.slope,
         "R Squared": result.rvalue**2,
-        "P Value": result.pvalue,
+        "P-Value": result.pvalue,
         "Standard Error": result.stderr,
     }
 
@@ -1903,18 +1897,18 @@ def get_annualized_return(
 
 def get_safety_first_ratio(
     returns: pd.Series | pd.DataFrame,
-    threshold: float | pd.Series = 0.0,
+    minimum_acceptable_return: float | pd.Series = 0.0,
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate Roy's Safety-First Ratio of returns, i.e. the mean return in excess of a
-    threshold (shortfall) return per unit of total volatility.
+    minimum_acceptable_return (shortfall) return per unit of total volatility.
 
     The formula is as follows:
 
         - Safety-First Ratio = (Mean(Return) - Threshold) / Standard Deviation(Return)
 
     Roy (1952) chooses the portfolio that minimizes the probability of a return below the
-    threshold (the "disaster level"); for normally distributed returns that is the
+    minimum_acceptable_return (the "disaster level"); for normally distributed returns that is the
     portfolio with the highest Safety-First Ratio, as the probability is N(-Ratio). With
     the risk-free rate as the threshold the ratio is the Sharpe Ratio (see
     `get_sharpe_ratio`). The standard deviation is the sample one (ddof=1), and the
@@ -1928,7 +1922,7 @@ def get_safety_first_ratio(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
-        threshold (float | pd.Series, optional): The threshold return per observation, a
+        minimum_acceptable_return (float | pd.Series, optional): The threshold return per observation, a
         number or one per column. Defaults to 0.0.
 
     Returns:
@@ -1938,13 +1932,13 @@ def get_safety_first_ratio(
     """
     # Subtracting a constant leaves the standard deviation as it is, so this is the
     # Sharpe ratio of the returns in excess of the threshold.
-    return get_sharpe_ratio(returns - threshold)
+    return get_sharpe_ratio(returns - minimum_acceptable_return)
 
 
 def get_rolling_safety_first_ratio(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
-    threshold: float | pd.Series = 0.0,
+    minimum_acceptable_return: float | pd.Series = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the rolling Safety-First Ratio of returns, see `get_safety_first_ratio`,
@@ -1953,13 +1947,13 @@ def get_rolling_safety_first_ratio(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
         window_size (int): The size of the rolling window.
-        threshold (float | pd.Series, optional): The threshold return per observation, a
+        minimum_acceptable_return (float | pd.Series, optional): The threshold return per observation, a
         number or one per column. Defaults to 0.0.
 
     Returns:
         pd.Series | pd.DataFrame: Rolling Safety-First Ratio values with time as index.
     """
-    return get_rolling_sharpe_ratio(returns - threshold, window_size)
+    return get_rolling_sharpe_ratio(returns - minimum_acceptable_return, window_size)
 
 
 def get_upside_potential_ratio(
@@ -2246,7 +2240,10 @@ def get_m2_excess_return(
             else (1 + m2_ratio) / (1 + benchmark_returns)
         ) - 1
 
-    raise ValueError("method must be 'arithmetic' or 'geometric'.")
+    raise InvalidArgumentError(
+        f"method must be one of 'arithmetic' or 'geometric', "
+        f"not {method!r}. Please pass one of these as method."
+    )
 
 
 @by_own_trading_days(compound=True)
@@ -2483,8 +2480,7 @@ def get_average_largest_drawdown(
         ValueError: If `method` is not one of "return" or "level", or `largest_drawdowns` is
         below 1.
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
     if largest_drawdowns < 1:
         raise ValueError(
             f"largest_drawdowns must be at least 1, received {largest_drawdowns}."
@@ -2598,8 +2594,7 @@ def get_burke_drawdown_measure(
     Raises:
         ValueError: If `method` is not one of "return" or "level".
     """
-    if method not in ("return", "level"):
-        raise ValueError("method must be 'return' or 'level'.")
+    check_option("method", method, ("return", "level"))
 
     if (
         isinstance(returns, pd.DataFrame)
@@ -2765,8 +2760,7 @@ def _get_capture_ratio(
     Returns:
         pd.Series | pd.DataFrame: Capture Ratio values.
     """
-    if method not in ("geometric", "annualized", "arithmetic"):
-        raise ValueError("The method must be geometric, annualized or arithmetic.")
+    check_option("method", method, ("geometric", "annualized", "arithmetic"))
 
     def _capture(assets: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
         # The overall ratio takes every date, the upside (downside) one those the
@@ -2959,8 +2953,7 @@ def get_rolling_capture_ratio(
     """
     sides = {"up": [True], "down": [False], "all": [None], "up_down": [True, False]}
 
-    if side not in sides:
-        raise ValueError("The side must be up, down, up_down or all.")
+    check_option("side", side, sides)
 
     def window_capture(end: int) -> pd.Series:
         ratios = [
@@ -3020,8 +3013,7 @@ def get_up_down_number(
     Returns:
         pd.Series | pd.DataFrame: The Up or Down Number.
     """
-    if market not in ("up", "down"):
-        raise ValueError("The market must be up or down.")
+    check_option("market", market, ("up", "down"))
 
     def share(asset: pd.Series | pd.DataFrame, benchmark: pd.Series):
         counted = benchmark > 0 if market == "up" else benchmark < 0
@@ -3075,8 +3067,7 @@ def get_win_rate(
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
     """
-    if market not in ("all", "up", "down"):
-        raise ValueError("The market must be all, up or down.")
+    check_option("market", market, ("all", "up", "down"))
 
     def win_share(
         asset: pd.Series | pd.DataFrame, benchmark: pd.Series, by_period: bool = False
@@ -3750,8 +3741,7 @@ def get_kelly_criterion(
         when it is undefined: the discrete form without wins or losses, the continuous form
         without variance.
     """
-    if method not in ("discrete", "continuous"):
-        raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
+    check_option("method", method, ("discrete", "continuous"))
 
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -3794,8 +3784,7 @@ def get_rolling_kelly_criterion(
     Returns:
         pd.Series | pd.DataFrame: Rolling Kelly Criterion values with time as index.
     """
-    if method not in ("discrete", "continuous"):
-        raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
+    check_option("method", method, ("discrete", "continuous"))
 
     return (
         apply_to_stacked_windows(
@@ -5426,8 +5415,7 @@ def get_sharpe_ratio_standard_error(
         pd.Series | pd.DataFrame | float: The standard error, on the scale of the Sharpe
         ratio of one period (not annualized).
     """
-    if method not in ("iid", "non_normal", "gmm"):
-        raise ValueError("Method must be iid, non_normal or gmm.")
+    check_option("method", method, ("iid", "non_normal", "gmm"))
 
     if isinstance(excess_returns, pd.DataFrame):
         aggregate = excess_returns
@@ -5520,8 +5508,7 @@ def get_sharpe_ratio_difference(
         pd.Series: The Sharpe Difference (SR_a − SR_b, of one period), its Standard Error, the
             Z-Statistic and the P-Value, NaN with fewer than five paired observations.
     """
-    if method not in SHARPE_RATIO_DIFFERENCE_METHODS:
-        raise ValueError("Method must be memmel or ledoit_wolf.")
+    check_option("method", method, SHARPE_RATIO_DIFFERENCE_METHODS)
 
     paired = pd.concat([excess_returns, benchmark_excess_returns], axis=1).dropna()
     values = paired.to_numpy(dtype=float)
@@ -5615,8 +5602,7 @@ def get_sharpe_ratio_difference_test(
             asset (columns), per period (rows) with a within period index and as a single
             row otherwise.
     """
-    if method not in SHARPE_RATIO_DIFFERENCE_METHODS:
-        raise ValueError("Method must be memmel or ledoit_wolf.")
+    check_option("method", method, SHARPE_RATIO_DIFFERENCE_METHODS)
 
     def test(returns: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
         return pd.concat(
@@ -5733,8 +5719,7 @@ def get_co_moment(
         pd.Series | pd.DataFrame | float: The co-moment per period (Multi Index), per
         column (DataFrame) or a single value (Series).
     """
-    if method not in ("standardized", "residual"):
-        raise ValueError("Method must be standardized or residual.")
+    check_option("method", method, ("standardized", "residual"))
 
     if not isinstance(returns, pd.DataFrame | pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -6681,8 +6666,7 @@ def get_risk_measure(
         pd.Series | pd.DataFrame | float: The risk measure as a positive number, one per
         column, or per period and column for a (period, date) index.
     """
-    if risk_measure not in RISK_MEASURES:
-        raise ValueError(f"The risk measure must be one of {', '.join(RISK_MEASURES)}.")
+    check_option("risk_measure", risk_measure, RISK_MEASURES)
 
     if risk_measure == "mad":
         groups = (
@@ -7002,8 +6986,7 @@ def get_bootstrap_samples(
     Returns:
         np.ndarray: The positions, one simulation per row.
     """
-    if method not in BOOTSTRAP_METHODS:
-        raise ValueError("The method must be resample or shuffle.")
+    check_option("method", method, BOOTSTRAP_METHODS)
     if simulations < 1:
         raise ValueError("The number of simulations must be at least 1.")
 
@@ -7033,8 +7016,7 @@ def _get_bootstrap_chunks(
     the same rows as drawing all simulations at once (numpy draws the rows of `integers` and
     `permuted` in order), so the results do not depend on the block size.
     """
-    if method not in BOOTSTRAP_METHODS:
-        raise ValueError("The method must be resample or shuffle.")
+    check_option("method", method, BOOTSTRAP_METHODS)
     if simulations < 1:
         raise ValueError("The number of simulations must be at least 1.")
 
@@ -7056,7 +7038,7 @@ def get_bootstrap_statistics(
     returns: pd.Series,
     excess_returns: pd.Series,
     observations_per_year: float,
-    simulations: int = 1000,
+    n_bootstrap: int = 1000,
     method: str = "resample",
     seed: int | None = 0,
 ) -> pd.DataFrame:
@@ -7076,7 +7058,7 @@ def get_bootstrap_statistics(
 
     Where N is the number of returns and P the returns in a year. Each statistic is summarized
     by the mean, the median, the standard deviation (ddof=1) and the 5th, 25th, 75th and 95th
-    percentiles over the simulations.
+    percentiles over the resamples.
 
     For more information, see the following sources:
 
@@ -7092,7 +7074,7 @@ def get_bootstrap_statistics(
         returns (pd.Series): The returns (missing returns are left out).
         excess_returns (pd.Series): The excess returns on the same index.
         observations_per_year (float): The number of returns in a year, such as 252.
-        simulations (int, optional): The number of simulations. Defaults to 1000.
+        n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
         method (str, optional): "resample" or "shuffle", see `get_bootstrap_samples`.
             Defaults to "resample".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
@@ -7119,9 +7101,9 @@ def get_bootstrap_statistics(
     excess_values = pairs.iloc[:, 1].to_numpy()
     chunks: dict[str, list[np.ndarray]] = {statistic: [] for statistic in statistics}
 
-    # Every statistic is one number per simulation, so the simulations are calculated a
+    # Every statistic is one number per simulation, so the resamples are calculated a
     # block at a time and only those numbers are kept.
-    for positions in _get_bootstrap_chunks(len(pairs), simulations, method, seed=seed):
+    for positions in _get_bootstrap_chunks(len(pairs), n_bootstrap, method, seed=seed):
         samples = return_values[positions]
         excess_samples = excess_values[positions]
 

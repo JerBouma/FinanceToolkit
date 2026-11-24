@@ -6,6 +6,7 @@ from scipy.optimize import brentq
 from scipy.special import logsumexp
 
 from financetoolkit.risk import risk_model
+from financetoolkit.utilities.error_model import validate_alpha
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -75,20 +76,6 @@ def get_evar_gaussian(
 
     # The entropic bound is expressed on losses; subtracting it keeps the result a negative return, consistent with the VaR and CVaR functions in this module.  # noqa: E501
     return returns.mean() - returns.std(ddof=1) * np.sqrt(-2 * np.log(alpha))
-
-
-def validate_alpha(alpha: float) -> None:
-    """
-    Check that the tail probability of an entropic measure lies strictly between 0 and 1.
-
-    Args:
-        alpha (float): The tail probability.
-
-    Raises:
-        ValueError: If alpha is not between 0 and 1.
-    """
-    if not 0 < alpha < 1:
-        raise ValueError("Alpha must lie between 0 and 1.")
 
 
 def get_evar_samples(samples: np.ndarray, alpha: float) -> np.ndarray:

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.utilities.error_model import check_option
+
 
 def get_linear_regression(prices: pd.Series, window: int = 14) -> pd.DataFrame:
     """
@@ -233,8 +235,7 @@ def get_rolling_percentile(
         pd.Series: Percentile values.
     """
     methods = {"nearest_rank": "inverted_cdf", "linear": "linear"}
-    if method not in methods:
-        raise ValueError(f"Method must be one of {', '.join(methods)}, not {method}.")
+    check_option("method", method, methods)
     if not 0 <= percentile <= 1:
         raise ValueError("The percentile is a decimal between 0 and 1.")
 

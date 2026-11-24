@@ -11,6 +11,11 @@ import pandas as pd
 from scipy import stats
 
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR
 
@@ -326,7 +331,7 @@ def summarize_information_coefficient(
             "IC Standard Deviation": standard_deviation,
             "IC Information Ratio": mean / standard_deviation,
             "t-Statistic": t_statistic,
-            "p-Value": p_value,
+            "P-Value": p_value,
             "IC Skewness": skewness,
             "IC Kurtosis": kurtosis,
             "Positive Share": positive_share,
@@ -510,7 +515,7 @@ def get_groups(
             )
         items = {str(item).lower(): item for item in profile.index}
         if group.lower() not in items:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"group must be a company profile item such as 'sector' or 'industry', or "
                 f"the group of each ticker as a dictionary, not '{group}'."
             )
@@ -920,8 +925,7 @@ def get_horizons(period: str, horizons: list[int] | int | None) -> list[int]:
     Returns:
         list[int]: The horizons.
     """
-    if period not in DEFAULT_HORIZONS:
-        raise ValueError("Period must be daily, weekly, monthly, quarterly or yearly.")
+    check_period(period, DEFAULT_HORIZONS)
 
     if horizons is None:
         return DEFAULT_HORIZONS[period]
@@ -1083,7 +1087,7 @@ def get_daily_factors(
         accepted = inspect.signature(method).parameters
         for key, value in variant.items():
             if key not in accepted:
-                raise ValueError(f"{key} is not a parameter of {name}.")
+                raise InvalidArgumentError(f"{key} is not a parameter of {name}.")
             # The options of a parameter typed as a Literal (or a Literal or None).
             annotation = accepted[key].annotation
             options = [
@@ -1101,7 +1105,7 @@ def get_daily_factors(
         unused -= set(accepted)
 
     if unused:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"{', '.join(sorted(unused))} is not a parameter of {', '.join(methods)}."
         )
 
@@ -1160,7 +1164,7 @@ def to_daily_factor(
         pd.DataFrame: The factor per day and ticker.
     """
     if isinstance(values, pd.Series):
-        raise ValueError(
+        raise InvalidArgumentError(
             "The metric gives one value per ticker for the whole range, which cannot be "
             "followed over time; choose a metric with a value per period."
         )
@@ -1173,13 +1177,17 @@ def to_daily_factor(
             candidates[0] if candidates else outputs[0],
         )
         if choice not in outputs:
-            raise ValueError(f"column must be one of {', '.join(map(str, outputs))}.")
+            raise InvalidArgumentError(
+                f"column must be one of {', '.join(map(str, outputs))}."
+            )
         values = values[choice]
     elif values.index.nlevels > 1:
         outputs = list(dict.fromkeys(values.index.get_level_values(1)))
         choice = column or outputs[-1]
         if choice not in outputs:
-            raise ValueError(f"column must be one of {', '.join(map(str, outputs))}.")
+            raise InvalidArgumentError(
+                f"column must be one of {', '.join(map(str, outputs))}."
+            )
         values = values.xs(choice, level=1)
 
     tickers = [ticker for ticker in tickers if ticker not in ("Benchmark", "Portfolio")]
@@ -1306,7 +1314,7 @@ def analyse_factor(
     if detail in CALENDAR_PERIODS:
         frequency, name, fitting_periods = CALENDAR_PERIODS[detail]
         if period not in fitting_periods:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"{detail} averages the IC per {name.lower()}, which needs a period of a "
                 f"{name.lower()} or shorter instead of {period}."
             )
@@ -1510,9 +1518,8 @@ def get_factor_analysis(
         prices = mask_non_trading_days(prices, returns)
 
     if detail is not None and detail not in DETAILS:
-        raise ValueError(f"detail must be one of {', '.join(DETAILS)}.")
-    if binning not in BINNINGS:
-        raise ValueError(f"binning must be one of {', '.join(BINNINGS)}.")
+        raise InvalidArgumentError(f"detail must be one of {', '.join(DETAILS)}.")
+    check_option("binning", binning, BINNINGS)
     if binning == "zero_aware" and (not quantiles or quantiles % 2):
         raise ValueError(
             "binning='zero_aware' splits the quantiles evenly over the negative and the "

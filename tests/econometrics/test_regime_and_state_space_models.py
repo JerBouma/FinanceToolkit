@@ -358,7 +358,7 @@ def test_trading_rule_mesh_of_independent_gains_has_a_closed_form():
         maximum_threshold=2.0,
         grid_size=2,
         maximum_holding_period=horizon,
-        paths=paths,
+        simulations=paths,
         seed=3,
     )
     for (profit_taking, stop_loss), row in mesh.iterrows():
@@ -387,10 +387,10 @@ def test_trading_rule_mesh_of_independent_gains_has_a_closed_form():
 
 def test_trading_rule_mesh_is_deterministic_and_uses_common_paths():
     first = pairs_trading_model.get_trading_rule_mesh(
-        0.97, 0.05, grid_size=4, paths=2000
+        0.97, 0.05, grid_size=4, simulations=2000
     )
     second = pairs_trading_model.get_trading_rule_mesh(
-        0.97, 0.05, grid_size=4, paths=2000
+        0.97, 0.05, grid_size=4, simulations=2000
     )
     pd.testing.assert_frame_equal(first, second)
     # A wider stop-loss keeps a position at least as long on the same paths.
@@ -411,7 +411,7 @@ def test_optimal_trading_rule_of_a_mean_reverting_price(recorder):
         pd.Series(levels, index=INDEX[:1000]),
         grid_size=8,
         maximum_holding_period=50,
-        paths=4000,
+        simulations=4000,
     )
 
     assert summary["Forecast"] > 5

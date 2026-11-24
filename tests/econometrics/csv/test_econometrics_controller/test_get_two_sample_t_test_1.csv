@@ -1,2 +1,2 @@
-Ticker A,Ticker B,T-Statistic,Degrees of Freedom,P-Value,Mean A,Mean B
+Ticker A,Ticker B,t-Statistic,Degrees of Freedom,P-Value,Mean A,Mean B
 AAPL,MSFT,0.2329,310.0,0.816,0.0048,0.0036

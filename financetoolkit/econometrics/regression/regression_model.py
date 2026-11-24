@@ -12,6 +12,7 @@ from financetoolkit.econometrics.least_squares_model import (
     COVARIANCE_TYPES,
     fit_least_squares,
 )
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 TWO_DIMENSIONAL = 2
 
@@ -103,32 +104,29 @@ def default_hac_maxlags(observations: int) -> int:
 def _validate_cov_type(
     cov_type: str,
     clusters: np.ndarray | None,
-    maxlags: int | None = None,
+    lags: int | None = None,
     observations: int | None = None,
 ) -> int | None:
     """
     Validates the covariance options and returns the HAC truncation lag (None for the other
-    estimators), the Newey & West (1994) rule of thumb when `maxlags` is not given.
+    estimators), the Newey & West (1994) rule of thumb when `lags` is not given.
     """
-    if cov_type not in COVARIANCE_TYPES:
-        raise ValueError(
-            f"cov_type must be one of {COVARIANCE_TYPES}, received {cov_type!r}."
-        )
+    check_option("cov_type", cov_type, COVARIANCE_TYPES)
 
     if cov_type == "HAC":
-        if maxlags is None:
+        if lags is None:
             if observations is None:
-                raise ValueError("maxlags must be provided when cov_type='HAC'.")
-            maxlags = default_hac_maxlags(observations)
-        if maxlags < 0:
-            raise ValueError(f"maxlags must be non-negative, received {maxlags}.")
-        return maxlags
+                raise InvalidArgumentError("lags must be provided when cov_type='HAC'.")
+            lags = default_hac_maxlags(observations)
+        if lags < 0:
+            raise ValueError(f"lags must be non-negative, received {lags}.")
+        return lags
 
     if cov_type != "cluster":
         return None
 
     if clusters is None:
-        raise ValueError("clusters must be provided when cov_type='cluster'.")
+        raise InvalidArgumentError("clusters must be provided when cov_type='cluster'.")
 
     unique_clusters = np.unique(clusters)
     if len(unique_clusters) < MINIMUM_CLUSTERS:
@@ -141,7 +139,7 @@ def _validate_cov_type(
 
 def regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Std. Error, t-Statistic,
+    Builds the standard coefficient table (Coefficient, Standard Error, t-Statistic,
     P-Value) from a `get_ols`/`get_wls`/`get_gls` result dict, indexed by
     `result["feature_names"]`.
 
@@ -155,7 +153,7 @@ def regression_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Coefficient": result["coefficients"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "t-Statistic": result["t_statistics"],
             "P-Value": result["p_values"],
         },
@@ -254,7 +252,7 @@ def get_ols(
     add_constant: bool = True,
     cov_type: str = "nonrobust",
     clusters: pd.Series | np.ndarray | None = None,
-    maxlags: int | None = None,
+    lags: int | None = None,
 ) -> dict:
     """
     Fit an Ordinary Least Squares (OLS) linear regression of `y` on `x`, with
@@ -299,7 +297,7 @@ def get_ols(
           standard errors -- valid under both heteroskedastic AND
           serially-correlated errors, the standard choice for time-series
           regressions in finance (HC-robust alone corrects for heteroskedasticity
-          but assumes no autocorrelation). Uses `maxlags`, with Bartlett weights and
+          but assumes no autocorrelation). Uses `lags`, with Bartlett weights and
           without a small-sample degrees-of-freedom correction (statsmodels' default,
           which the values are referenced against).
 
@@ -310,7 +308,7 @@ def get_ols(
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required (and only used) when `cov_type="cluster"`. Defaults to
         None.
-        maxlags (int | None, optional): The maximum lag to include when estimating the
+        lags (int | None, optional): The maximum lag to include when estimating the
         HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
         to None, meaning the Newey & West (1994) rule of thumb
         `floor(4 * (n / 100)^(2/9))` with `n` the number of observations.
@@ -326,7 +324,7 @@ def get_ols(
         ValueError: If there are not more observations than parameters, `x` is
         rank-deficient (perfectly collinear regressors), `cov_type` is not a
         recognized value, `cov_type="cluster"` without `clusters` (or with fewer
-        than 2 distinct clusters), or `cov_type="HAC"` with a negative `maxlags`.
+        than 2 distinct clusters), or HAC standard errors with a negative `lags`.
 
     Notes:
         Reference: Newey, W.K. & West, K.D. (1987). "A Simple, Positive
@@ -352,7 +350,7 @@ def get_ols(
 
     Which returns:
 
-    |               |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
+    |               |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
     |:--------------|--------------:|-------------:|--------------:|----------:|
     | Intercept     |        0.0198 |       0.0049 |        4.0254 |    0.0001 |
     | Market Return |        1.206  |       0.0063 |      190.175  |    0      |
@@ -365,7 +363,7 @@ def get_ols(
 
     _validate_design(x_values, y_values)
     hac_maxlags = _validate_cov_type(
-        cov_type, cluster_values, maxlags, observations=len(y_values)
+        cov_type, cluster_values, lags, observations=len(y_values)
     )
 
     fit = fit_least_squares(
@@ -373,7 +371,7 @@ def get_ols(
         x_values,
         cov_type=cov_type,
         clusters=cluster_values,
-        maxlags=hac_maxlags,
+        lags=hac_maxlags,
     )
 
     return _to_regression_result(fit, feature_names, x_values, cov_type)
@@ -386,7 +384,7 @@ def get_wls(
     add_constant: bool = True,
     cov_type: str = "nonrobust",
     clusters: pd.Series | np.ndarray | None = None,
-    maxlags: int | None = None,
+    lags: int | None = None,
 ) -> dict:
     """
     Fit a Weighted Least Squares (WLS) regression of `y` on `x`, with
@@ -414,7 +412,7 @@ def get_wls(
         the HAC estimator without a small-sample correction. Defaults to "nonrobust".
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required when `cov_type="cluster"`. Defaults to None.
-        maxlags (int | None, optional): The maximum lag to include when estimating the
+        lags (int | None, optional): The maximum lag to include when estimating the
         HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults
         to None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
 
@@ -445,7 +443,7 @@ def get_wls(
 
     _validate_design(x_values, y_values)
     hac_maxlags = _validate_cov_type(
-        cov_type, cluster_values, maxlags, observations=len(y_values)
+        cov_type, cluster_values, lags, observations=len(y_values)
     )
 
     fit = fit_least_squares(
@@ -454,7 +452,7 @@ def get_wls(
         weights=weight_values,
         cov_type=cov_type,
         clusters=cluster_values,
-        maxlags=hac_maxlags,
+        lags=hac_maxlags,
     )
 
     return _to_regression_result(fit, feature_names, x_values, cov_type)
@@ -628,7 +626,7 @@ def get_gls(
 
 def binary_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Std. Error, z-Statistic,
+    Builds the standard coefficient table (Coefficient, Standard Error, z-Statistic,
     P-Value) from a `get_logistic_regression`/`get_probit_regression` result dict,
     indexed by `result["feature_names"]`.
 
@@ -642,7 +640,7 @@ def binary_regression_summary_table(result: dict) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Coefficient": result["coefficients"],
-            "Std. Error": result["standard_errors"],
+            "Standard Error": result["standard_errors"],
             "z-Statistic": result["z_statistics"],
             "P-Value": result["p_values"],
         },
@@ -834,7 +832,7 @@ def get_probit_regression(
 
 def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Std. Error) from a
+    Builds the coefficient table (Coefficient, Standard Error) from a
     `get_quantile_regression` result dict, indexed by `result["feature_names"]`. The
     standard errors are `statsmodels`' analytic (kernel density-based) ones unless
     the fit requested bootstrap replicates, in which case they are the bootstrap
@@ -849,7 +847,7 @@ def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
     data = {"Coefficient": result["coefficients"]}
     if result["standard_errors"] is not None:
-        data["Std. Error"] = result["standard_errors"]
+        data["Standard Error"] = result["standard_errors"]
     return pd.DataFrame(data, index=result["feature_names"])
 
 

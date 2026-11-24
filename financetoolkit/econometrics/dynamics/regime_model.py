@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.econometrics.helpers import import_optional
+from financetoolkit.utilities.error_model import check_option
 
 # Returns are scaled up before the Markov model is fitted, as the optimizer handles a
 # daily variance of 1e-4 poorly, and scaled back afterwards.
@@ -313,10 +314,7 @@ def get_change_points(
         segment's variance; here a variance is floored at 1e-6 times that of the whole series,
         which keeps the cost independent of the units.
     """
-    if cost not in CHANGE_POINT_COST_PARAMETERS:
-        raise ValueError(
-            f"The cost must be one of {', '.join(CHANGE_POINT_COST_PARAMETERS)}, not {cost!r}."
-        )
+    check_option("cost", cost, CHANGE_POINT_COST_PARAMETERS)
     if minimum_segment < 1 or (cost != "mean" and minimum_segment < 2):  # noqa: PLR2004
         raise ValueError(
             "A segment needs at least 1 observation for a mean and 2 for a variance."

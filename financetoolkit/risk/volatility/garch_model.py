@@ -10,6 +10,11 @@ import pandas as pd
 from scipy import optimize, special
 from scipy.stats import qmc
 
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    join_options,
+)
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
@@ -534,7 +539,7 @@ def get_garch(
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     if p != 1 or q != 1:
-        raise ValueError(
+        raise InvalidArgumentError(
             "Invalid input for p or/and q, currently only GARCH(1, 1) is implemented."
         )
 
@@ -610,7 +615,7 @@ def get_garch(
 def get_garch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
     weights: list | np.ndarray | None = None,
-    time_steps: int = 10,
+    forecast_steps: int = 10,
     p: int = 1,
     q: int = 1,
 ):
@@ -635,7 +640,7 @@ def get_garch_forecast(
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
         weights (list): List with the values for omega, alpha and beta
-        time_steps (int): Time steps to calculate GARCH for
+        forecast_steps (int): Time steps to calculate GARCH for
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
@@ -653,7 +658,7 @@ def get_garch_forecast(
                     get_garch_forecast,
                     forecast=True,
                     weights=weights,
-                    time_steps=time_steps,
+                    forecast_steps=forecast_steps,
                     p=p,
                     q=q,
                 )
@@ -673,13 +678,17 @@ def get_garch_forecast(
             get_garch_forecast,
             forecast=True,
             weights=weights,
-            time_steps=time_steps,
+            forecast_steps=forecast_steps,
             p=p,
             q=q,
         )
     if isinstance(returns, pd.Series):
         return get_garch_forecast(
-            returns=returns.values, weights=weights, time_steps=time_steps, p=p, q=q
+            returns=returns.values,
+            weights=weights,
+            forecast_steps=forecast_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, np.ndarray):
         if weights is None:
@@ -693,8 +702,8 @@ def get_garch_forecast(
         current_variance = garch_values[-1]
         persistence = weights[1] + weights[2]
 
-        sigma_2 = np.zeros(time_steps)
-        for i in range(time_steps):
+        sigma_2 = np.zeros(forecast_steps)
+        for i in range(forecast_steps):
             sigma_2[i] = (
                 long_run_variance
                 + (current_variance - long_run_variance) * persistence**i
@@ -871,7 +880,7 @@ def get_gjr_garch(
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     if p != 1 or q != 1:
-        raise ValueError(
+        raise InvalidArgumentError(
             "Invalid input for p or/and q, currently only GJR-GARCH(1, 1, 1) is implemented."
         )
 
@@ -946,7 +955,7 @@ def get_gjr_garch(
 def get_gjr_garch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
     weights: list | np.ndarray | None = None,
-    time_steps: int = 10,
+    forecast_steps: int = 10,
     p: int = 1,
     q: int = 1,
 ):
@@ -972,7 +981,7 @@ def get_gjr_garch_forecast(
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
         weights (list): List with the values for omega, alpha, gamma and beta.
-        time_steps (int): Time steps to calculate GJR-GARCH for.
+        forecast_steps (int): Time steps to calculate GJR-GARCH for.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
@@ -990,7 +999,7 @@ def get_gjr_garch_forecast(
                     get_gjr_garch_forecast,
                     forecast=True,
                     weights=weights,
-                    time_steps=time_steps,
+                    forecast_steps=forecast_steps,
                     p=p,
                     q=q,
                 )
@@ -1010,13 +1019,17 @@ def get_gjr_garch_forecast(
             get_gjr_garch_forecast,
             forecast=True,
             weights=weights,
-            time_steps=time_steps,
+            forecast_steps=forecast_steps,
             p=p,
             q=q,
         )
     if isinstance(returns, pd.Series):
         return get_gjr_garch_forecast(
-            returns=returns.values, weights=weights, time_steps=time_steps, p=p, q=q
+            returns=returns.values,
+            weights=weights,
+            forecast_steps=forecast_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, np.ndarray):
         if weights is None:
@@ -1031,8 +1044,8 @@ def get_gjr_garch_forecast(
         long_run_variance = omega / (1 - persistence)
         current_variance = garch_values[-1]
 
-        sigma_2 = np.zeros(time_steps)
-        for i in range(time_steps):
+        sigma_2 = np.zeros(forecast_steps)
+        for i in range(forecast_steps):
             sigma_2[i] = (
                 long_run_variance
                 + (current_variance - long_run_variance) * persistence**i
@@ -1176,7 +1189,7 @@ def get_egarch(
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
     if p != 1 or q != 1:
-        raise ValueError(
+        raise InvalidArgumentError(
             "Invalid input for p or/and q, currently only EGARCH(1, 1) is implemented."
         )
 
@@ -1265,7 +1278,7 @@ def get_egarch(
 def get_egarch_forecast(
     returns: pd.Series | pd.DataFrame | np.ndarray,
     weights: list | np.ndarray | None = None,
-    time_steps: int = 10,
+    forecast_steps: int = 10,
     p: int = 1,
     q: int = 1,
 ):
@@ -1294,7 +1307,7 @@ def get_egarch_forecast(
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
         weights (list): List with the values for omega, alpha, gamma and beta.
-        time_steps (int): Time steps to calculate EGARCH for.
+        forecast_steps (int): Time steps to calculate EGARCH for.
         p (int): Number of u_t datapoints to use. Note that currently only p=1 is supported.
         q: (int): Number of sigma_t datapoints to use. Note that currently only q=1 is supported.
 
@@ -1312,7 +1325,7 @@ def get_egarch_forecast(
                     get_egarch_forecast,
                     forecast=True,
                     weights=weights,
-                    time_steps=time_steps,
+                    forecast_steps=forecast_steps,
                     p=p,
                     q=q,
                 )
@@ -1332,13 +1345,17 @@ def get_egarch_forecast(
             get_egarch_forecast,
             forecast=True,
             weights=weights,
-            time_steps=time_steps,
+            forecast_steps=forecast_steps,
             p=p,
             q=q,
         )
     if isinstance(returns, pd.Series):
         return get_egarch_forecast(
-            returns=returns.values, weights=weights, time_steps=time_steps, p=p, q=q
+            returns=returns.values,
+            weights=weights,
+            forecast_steps=forecast_steps,
+            p=p,
+            q=q,
         )
     if isinstance(returns, np.ndarray):
         if weights is None:
@@ -1351,8 +1368,8 @@ def get_egarch_forecast(
         current_log_variance = np.log(garch_values[-1])
         long_run_log_variance = omega / (1 - beta)
 
-        sigma_2 = np.zeros(time_steps)
-        for i in range(time_steps):
+        sigma_2 = np.zeros(forecast_steps)
+        for i in range(forecast_steps):
             log_forecast = long_run_log_variance + (beta**i) * (
                 current_log_variance - long_run_log_variance
             )
@@ -1489,7 +1506,7 @@ def validate_garch_family(method: str, distribution: str, mean: str) -> None:
         mean (str): The mean model, a key of GARCH_FAMILY_MEAN_PARAMETERS.
 
     Raises:
-        ValueError: When one of them is not known.
+        InvalidArgumentError: When one of them is not known.
     """
     for value, options, name in (
         (method, GARCH_FAMILY_VARIANCE_PARAMETERS, "method"),
@@ -1497,12 +1514,13 @@ def validate_garch_family(method: str, distribution: str, mean: str) -> None:
         (mean, GARCH_FAMILY_MEAN_PARAMETERS, "mean"),
     ):
         if value not in options:
-            raise ValueError(
-                f"The {name} must be one of {', '.join(options)}, not {value!r}."
+            raise InvalidArgumentError(
+                f"{name} must be one of {join_options(options)}, not {value!r}. "
+                f"Please pass one of these as {name}."
             )
 
     if method in HISTORY_METHODS and mean == "in_mean":
-        raise ValueError(
+        raise InvalidArgumentError(
             f"GARCH-in-mean runs the variance one step at a time, which method={method!r} "
             "does not have. Please use mean='zero', 'constant', 'arma' or 'arfima'."
         )
@@ -1660,7 +1678,10 @@ def get_standardized_log_density(
             - 0.5 * (skew + shape * np.arcsinh(x)) ** 2
         )
 
-    raise ValueError(f"Unknown distribution {distribution!r}.")
+    raise InvalidArgumentError(
+        f"distribution must be one of {join_options(GARCH_FAMILY_DISTRIBUTION_PARAMETERS)}, "
+        f"not {distribution!r}. Please pass one of these as distribution."
+    )
 
 
 def _fernandez_steel_moments(shape: float, skew: float) -> tuple[float, float]:
@@ -3160,7 +3181,7 @@ def _garch_family_path(
     elif output == "standardized_residuals":
         values = residuals / np.sqrt(sigma2[: len(residuals)])
     elif long_run is None:
-        raise ValueError(
+        raise InvalidArgumentError(
             "The long-run variance is only defined for method='component'."
         )
     else:
@@ -3215,12 +3236,13 @@ def get_garch_family(
     """
     validate_garch_family(method, distribution, mean)
 
-    if output not in ("variance", "standardized_residuals", "long_run_variance"):
-        raise ValueError(
-            "The output must be variance, standardized_residuals or long_run_variance."
-        )
+    check_option(
+        "output", output, ("variance", "standardized_residuals", "long_run_variance")
+    )
     if output == "long_run_variance" and method != "component":
-        raise ValueError("Only method='component' has a long-run variance component.")
+        raise InvalidArgumentError(
+            "Only method='component' has a long-run variance component."
+        )
 
     arguments = {
         "weights": weights,
@@ -3284,11 +3306,11 @@ def get_garch_family_forecast(
     method: str = "garch",
     distribution: str = "normal",
     mean: str = "zero",
-    time_steps: int = 10,
+    forecast_steps: int = 10,
     realized_measure: np.ndarray | pd.Series | pd.DataFrame | None = None,
 ) -> np.ndarray | pd.DataFrame:
     """
-    Forecasts the conditional variance of a GARCH-family model for h = 1, ..., time_steps
+    Forecasts the conditional variance of a GARCH-family model for h = 1, ..., forecast_steps
     periods after the last return.
 
     The first value is the one-step-ahead variance of the fitted recursion, which consumes the
@@ -3323,7 +3345,7 @@ def get_garch_family_forecast(
         method (str, optional): The variance model. Defaults to "garch".
         distribution (str, optional): The innovation distribution. Defaults to "normal".
         mean (str, optional): The mean model. Defaults to "zero".
-        time_steps (int, optional): The number of periods to forecast. Defaults to 10.
+        forecast_steps (int, optional): The number of periods to forecast. Defaults to 10.
         realized_measure (np.ndarray | pd.Series | pd.DataFrame | None, optional): The realized
             measure of every return, which method="realized" needs. Defaults to None.
 
@@ -3337,7 +3359,7 @@ def get_garch_family_forecast(
         "method": method,
         "distribution": distribution,
         "mean": mean,
-        "time_steps": time_steps,
+        "forecast_steps": forecast_steps,
         "realized_measure": realized_measure,
     }
 
@@ -3385,7 +3407,7 @@ def get_garch_family_forecast(
             "gjr": get_gjr_garch_forecast,
             "egarch": get_egarch_forecast,
         }[method]
-        return forecast(returns, weights, time_steps)
+        return forecast(returns, weights, forecast_steps)
 
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
     backcast = get_backcast(_starting_residuals(returns, mean))
@@ -3393,7 +3415,7 @@ def get_garch_family_forecast(
         returns, weights, method, mean, backcast, realized_measure
     )
 
-    forecast = np.empty(time_steps)
+    forecast = np.empty(forecast_steps)
 
     if method == "figarch":
         omega, phi, d, beta = variance_weights
@@ -3403,7 +3425,7 @@ def get_garch_family_forecast(
             [np.full(FIGARCH_TRUNCATION, backcast), residuals * residuals]
         )[::-1][:FIGARCH_TRUNCATION]
         variance = sigma2[-1]
-        for step in range(time_steps):
+        for step in range(forecast_steps):
             forecast[step] = variance
             history = np.concatenate([[variance], history[:-1]])
             variance = omega / (1 - beta) + float(arch_weights @ history)
@@ -3412,7 +3434,7 @@ def get_garch_family_forecast(
     if method == "realized":
         omega, beta, gamma, xi, phi = variance_weights[:5]
         log_variance = math.log(sigma2[-1])
-        for step in range(time_steps):
+        for step in range(forecast_steps):
             forecast[step] = math.exp(log_variance)
             log_variance = omega + gamma * xi + (beta + gamma * phi) * log_variance
         return forecast
@@ -3420,7 +3442,7 @@ def get_garch_family_forecast(
     if method == "component" and long_run is not None:
         _, alpha, beta, rho, _ = variance_weights
         level, short_run = long_run[-1], sigma2[-1] - long_run[-1]
-        for step in range(time_steps):
+        for step in range(forecast_steps):
             forecast[step] = level + short_run
             level = variance_weights[0] + rho * level
             short_run = (alpha + beta) * short_run
@@ -3432,7 +3454,7 @@ def get_garch_family_forecast(
             np.abs(EXPECTATION_GRID), distribution, distribution_weights
         )
         log_variance = math.log(sigma2[-1])
-        for step in range(time_steps):
+        for step in range(forecast_steps):
             forecast[step] = math.exp(log_variance)
             log_variance = (
                 omega
@@ -3450,7 +3472,7 @@ def get_garch_family_forecast(
         variance_weights, method, distribution, distribution_weights
     )
     powered = sigma2[-1] ** (power / 2)
-    for step in range(time_steps):
+    for step in range(forecast_steps):
         forecast[step] = powered ** (2 / power)
         powered = variance_weights[0] + persistence * powered
 
@@ -4028,8 +4050,8 @@ def get_garch_simulation(
     method: str = "garch",
     distribution: str = "normal",
     mean: str = "zero",
-    time_steps: int = 10,
-    paths: int = 10000,
+    forecast_steps: int = 10,
+    simulations: int = 10000,
     seed: int | None = 0,
     output: str = "returns",
     bootstrap_fits: int | None = None,
@@ -4061,7 +4083,7 @@ def get_garch_simulation(
       last return as rugarch's ugarchboot does, and the model is fitted to it again (a local
       search from the fitted weights, see `get_garch_family_weights`)
     - Each of these weights filters the original returns to the state after the last
-      return and simulates paths / bootstrap_fits of the paths from it
+      return and simulates simulations / bootstrap_fits of the paths from it
     - bootstrap_fits=0 keeps the fitted weights and only resamples the residuals (the
       partial bootstrap)
 
@@ -4080,8 +4102,8 @@ def get_garch_simulation(
         method (str, optional): The variance model. Defaults to "garch".
         distribution (str, optional): The innovation distribution. Defaults to "normal".
         mean (str, optional): The mean model. Defaults to "zero".
-        time_steps (int, optional): The number of periods to simulate. Defaults to 10.
-        paths (int, optional): The number of paths. Defaults to 10,000.
+        forecast_steps (int, optional): The number of periods to simulate. Defaults to 10.
+        simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The seed of the random draws, None for a different
             simulation every time. Defaults to 0.
         output (str, optional): "returns" for the return of each step, "cumulative_returns"
@@ -4094,14 +4116,11 @@ def get_garch_simulation(
             which method="realized" needs. Defaults to None.
 
     Returns:
-        pd.DataFrame: The Mean and the percentiles per step (1 to time_steps).
+        pd.DataFrame: The Mean and the percentiles per step (1 to forecast_steps).
     """
     validate_garch_family(method, distribution, mean)
 
-    if output not in ("returns", "cumulative_returns", "volatility"):
-        raise ValueError(
-            "The output must be returns, cumulative_returns or volatility."
-        )
+    check_option("output", output, ("returns", "cumulative_returns", "volatility"))
     if bootstrap_fits is not None and bootstrap_fits < 0:
         raise ValueError("bootstrap_fits must be 0 or more.")
 
@@ -4174,15 +4193,15 @@ def get_garch_simulation(
         if not fits:
             raise ValueError("The model could not be fitted to any bootstrap series.")
 
-    paths_per_fit = -(-paths // len(fits))
+    paths_per_fit = -(-simulations // len(fits))
     simulated = []
     for fit_weights in fits:
         state = _simulation_state(
-            returns, fit_weights, method, mean, time_steps, realized_measure
+            returns, fit_weights, method, mean, forecast_steps, realized_measure
         )
         simulated.append(
             _simulate_paths(
-                fit_weights, method, mean, state, draw, time_steps, paths_per_fit
+                fit_weights, method, mean, state, draw, forecast_steps, paths_per_fit
             )
         )
 
@@ -4196,7 +4215,7 @@ def get_garch_simulation(
             for path in simulated
         ],
         axis=1,
-    )[:, :paths]
+    )[:, :simulations]
 
     return pd.DataFrame(
         {
@@ -4206,7 +4225,7 @@ def get_garch_simulation(
                 for quantile in SIMULATION_QUANTILES
             },
         },
-        index=pd.Index(np.arange(1, time_steps + 1), name="Step"),
+        index=pd.Index(np.arange(1, forecast_steps + 1), name="Step"),
     )
 
 
@@ -4287,7 +4306,10 @@ def get_standardized_cdf(
             1 / (1 + skew**2) + weight * skew * (student_t(x / skew) - 0.5),
         )
 
-    raise ValueError(f"Unknown distribution {distribution!r}.")
+    raise InvalidArgumentError(
+        f"distribution must be one of {join_options(GARCH_FAMILY_DISTRIBUTION_PARAMETERS)}, "
+        f"not {distribution!r}. Please pass one of these as distribution."
+    )
 
 
 def get_standardized_quantile(
@@ -4373,7 +4395,10 @@ def get_standardized_quantile(
         )
         return (x - location) / scale
 
-    raise ValueError(f"Unknown distribution {distribution!r}.")
+    raise InvalidArgumentError(
+        f"distribution must be one of {join_options(GARCH_FAMILY_DISTRIBUTION_PARAMETERS)}, "
+        f"not {distribution!r}. Please pass one of these as distribution."
+    )
 
 
 def get_standardized_expected_shortfall(
@@ -4512,14 +4537,14 @@ def get_garch_family_rolling_forecast(
     validate_garch_family(method, distribution, mean)
 
     if mean not in ("zero", "constant"):
-        raise ValueError(
+        raise InvalidArgumentError(
             "The rolling forecast takes mean='zero' or mean='constant', whose next mean "
             "is known without the next return."
         )
     if refit_every < 1:
         raise ValueError("refit_every must be at least 1.")
     if method == "realized":
-        raise ValueError(
+        raise InvalidArgumentError(
             "The rolling forecast takes the models of the returns alone; method='realized' "
             "also needs a realized measure."
         )

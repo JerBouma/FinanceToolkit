@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.regression import regression_model
 from financetoolkit.econometrics.stationarity import cointegration_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 # A margin beyond the estimated parameters, guarding against a degenerate fit.
 MINIMUM_ARIMA_OBSERVATIONS_BUFFER = 5
@@ -18,15 +19,15 @@ MINIMUM_VAR_SERIES = 2
 
 # The only levels get_johansen_cointegration tabulates, so the only usable ones.
 JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS: dict[float, str] = {
-    0.10: "Trace Critical Value 90%",
-    0.05: "Trace Critical Value 95%",
-    0.01: "Trace Critical Value 99%",
+    0.10: "Trace Critical Value 10%",
+    0.05: "Trace Critical Value 5%",
+    0.01: "Trace Critical Value 1%",
 }
 
 
 def arima_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Std. Error) of the mean, AR and MA
+    Builds the coefficient table (Coefficient, Standard Error) of the mean, AR and MA
     coefficients from a `get_arima_forecast` result dict. The first row is labelled
     "Mean" for `d = 0` (the mean of the series) and "Drift" for `d >= 1` (the mean of the
     `d`-times differenced series).
@@ -54,7 +55,7 @@ def arima_summary_table(result: dict) -> pd.DataFrame:
         *result["ma_std_errors"],
     ]
     return pd.DataFrame(
-        {"Coefficient": coefficients, "Std. Error": standard_errors}, index=names
+        {"Coefficient": coefficients, "Standard Error": standard_errors}, index=names
     )
 
 
@@ -64,7 +65,7 @@ def get_arima_forecast(
     d: int,
     q: int,
     forecast_steps: int = 1,
-    include_constant: bool = True,
+    add_constant: bool = True,
     max_iterations: int = 1000,
 ) -> dict:
     """
@@ -102,11 +103,11 @@ def get_arima_forecast(
         q (int): The moving-average order.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
-        include_constant (bool, optional): Whether to estimate the mean `mu` of the
+        add_constant (bool, optional): Whether to estimate the mean `mu` of the
         differenced series (the mean of the series for `d = 0`, its drift for
         `d >= 1`). When False, `mu` is fixed at 0 rather than estimated -- appropriate
         when the differenced series is not expected to have a nonzero mean/drift
-        (leaving `include_constant=True` on a truly zero-drift differenced series lets
+        (leaving the constant on a truly zero-drift differenced series lets
         small-sample noise in the estimated drift compound into a spuriously trending
         multi-step forecast, since each step's drift accumulates). Defaults to True.
         max_iterations (int, optional): The maximum number of Maximum Likelihood
@@ -175,7 +176,7 @@ def get_arima_forecast(
             f"{d}, {q}) model -- need more than {minimum_observations}."
         )
 
-    if not include_constant:
+    if not add_constant:
         trend = "n"
     elif d == 0:
         trend = "c"
@@ -839,7 +840,7 @@ def vecm_summary_table(result: dict) -> pd.DataFrame:
 
 def get_vecm_forecast(
     data: pd.DataFrame,
-    k_ar_diff: int = 1,
+    lags: int = 1,
     forecast_steps: int = 1,
     significance: float = 0.05,
 ) -> dict:
@@ -857,7 +858,7 @@ def get_vecm_forecast(
     currently sits from its long-run equilibrium/equilibria (the "error correction"
     term) and partly to recent short-run dynamics:
 
-    - Delta_Y_t = Pi * Y_(t-1) + SUM_{i=1}^{k_ar_diff}(Gamma_i * Delta_Y_(t-i)) + c + e_t
+    - Delta_Y_t = Pi * Y_(t-1) + SUM_{i=1}^{lags}(Gamma_i * Delta_Y_(t-i)) + c + e_t
     - Pi = alpha * beta'
 
     Where `beta` (the cointegrating vector(s)) and the cointegrating rank are taken
@@ -881,7 +882,7 @@ def get_vecm_forecast(
         data (pd.DataFrame): One column per series, in LEVELS (e.g. price levels, not
         returns) -- a VECM only makes sense for non-stationary, cointegrated series,
         the same input `get_johansen_cointegration` expects.
-        k_ar_diff (int, optional): The number of lagged first differences to include
+        lags (int, optional): The number of lagged first differences to include
         as short-run dynamics. Defaults to 1.
         forecast_steps (int, optional): The number of periods ahead to forecast.
         Defaults to 1.
@@ -893,7 +894,7 @@ def get_vecm_forecast(
         dict: The fitted cointegrating vector(s), adjustment speeds, short-run
         coefficient matrices, in-sample fitted values/residuals (differenced scale),
         and the `forecast_steps`-ahead forecast (levels scale) -- keys `rank`,
-        `k_ar_diff`, `cointegrating_vectors` (`beta`, shape `(k, rank)`),
+        `lags`, `cointegrating_vectors` (`beta`, shape `(k, rank)`),
         `adjustment_speeds` (`alpha`, shape `(k, rank)`), `short_run_coefficients`
         (`{lag: (k, k) DataFrame}` of the `Gamma_l` matrices, same layout as
         `get_var_forecast`'s `coefficient_matrices`), `intercept`, `fitted_values`,
@@ -903,7 +904,7 @@ def get_vecm_forecast(
 
     Raises:
         TypeError: If `data` is not a `pd.DataFrame`.
-        ValueError: If `k_ar_diff` or `forecast_steps` is not a positive integer,
+        ValueError: If `lags` or `forecast_steps` is not a positive integer,
         `significance` is not one of 0.01/0.05/0.10, there are not enough
         observations, or -- most importantly -- the Johansen test does not reject a
         cointegrating rank of 0 at `significance`, in which case a VECM is not an
@@ -923,22 +924,22 @@ def get_vecm_forecast(
     series_b = common_trend * 1.5 + 3 + rng.standard_normal(n) * 0.2
 
     data = pd.DataFrame({"A": series_a, "B": series_b})
-    result = time_series_model.get_vecm_forecast(data, k_ar_diff=1, forecast_steps=5)
+    result = time_series_model.get_vecm_forecast(data, lags=1, forecast_steps=5)
     print(result["cointegrating_vectors"].round(4))
     print(result["forecast"].round(4))
     ```
     """
     if not isinstance(data, pd.DataFrame):
         raise TypeError(f"data must be a pd.DataFrame, received {type(data).__name__}.")
-    if k_ar_diff < 1:
+    if lags < 1:
         raise ValueError(
-            "k_ar_diff must be a positive integer -- k_ar_diff=0 leaves no short-run "
+            "lags must be a positive integer -- with 0 lags there is no short-run "
             "dynamics term to estimate."
         )
     if forecast_steps < 1:
         raise ValueError("forecast_steps must be a positive integer.")
     if significance not in JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS:
-        raise ValueError(
+        raise InvalidArgumentError(
             "significance must be one of 0.01, 0.05 or 0.10 -- the only levels "
             "tabulated by cointegration_model.get_johansen_cointegration."
         )
@@ -948,13 +949,13 @@ def get_vecm_forecast(
     k = len(variable_names)
 
     johansen_result = cointegration_model.get_johansen_cointegration(
-        aligned, det_order=0, k_ar_diff=k_ar_diff
+        aligned, det_order=0, lags=lags
     )
 
     if johansen_result["Trace Statistic"].isna().all():
         raise ValueError(
             f"Not enough observations to fit a Johansen/VECM model with "
-            f"k_ar_diff={k_ar_diff} across {k} series."
+            f"lags={lags} across {k} series."
         )
 
     critical_value_column = JOHANSEN_TRACE_CRITICAL_VALUE_COLUMNS[significance]
@@ -980,11 +981,11 @@ def get_vecm_forecast(
 
     try:
         sm_result = vecm.VECM(
-            aligned, k_ar_diff=k_ar_diff, coint_rank=rank, deterministic="co"
+            aligned, k_ar_diff=lags, coint_rank=rank, deterministic="co"
         ).fit()
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
-            f"Could not fit a VECM with rank {rank} and k_ar_diff={k_ar_diff} across "
+            f"Could not fit a VECM with rank {rank} and lags={lags} across "
             f"{k} series."
         ) from error
 
@@ -999,7 +1000,7 @@ def get_vecm_forecast(
     intercept = pd.Series(sm_result.const.ravel(), index=variable_names)
 
     short_run_coefficients = {}
-    for lag in range(1, k_ar_diff + 1):
+    for lag in range(1, lags + 1):
         block = sm_result.gamma[:, (lag - 1) * k : lag * k]
         matrix = pd.DataFrame(block, index=variable_names, columns=variable_names)
         matrix.index.name = "Equation"
@@ -1021,7 +1022,7 @@ def get_vecm_forecast(
 
     return {
         "rank": rank,
-        "k_ar_diff": k_ar_diff,
+        "lags": lags,
         "cointegrating_vectors": cointegrating_vectors,
         "adjustment_speeds": adjustment_speeds,
         "short_run_coefficients": short_run_coefficients,

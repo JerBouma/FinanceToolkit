@@ -217,7 +217,7 @@ def get_trading_rule_mesh(
     maximum_threshold: float = 10.0,
     grid_size: int = 20,
     maximum_holding_period: int = 100,
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int = 0,
 ) -> pd.DataFrame:
     """
@@ -225,7 +225,7 @@ def get_trading_rule_mesh(
     of profit-taking and stop-loss thresholds, as López de Prado (2018, Snippet 13.2) does, in
     units of the standard deviation σ of the shocks:
 
-    - y_t = drift + φ·y_(t-1) + ε_t, y_0 = 0, ε_t ~ N(0, 1), for `paths` paths of at most
+    - y_t = drift + φ·y_(t-1) + ε_t, y_0 = 0, ε_t ~ N(0, 1), for `simulations` paths of at most
       `maximum_holding_period` steps; with E[p] the long-run mean and p_0 the level at entry,
       drift = (1 - φ)·(E[p] - p_0) / σ
     - For every profit-taking π̄ and stop-loss π̲ on the mesh {h, 2h, ..., `maximum_threshold`} with
@@ -251,7 +251,7 @@ def get_trading_rule_mesh(
             Defaults to 20.
         maximum_holding_period (int, optional): The most steps a position is held. Defaults
             to 100.
-        paths (int, optional): The number of simulated paths. Defaults to 10000.
+        simulations (int, optional): The number of simulated paths. Defaults to 10000.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -267,11 +267,13 @@ def get_trading_rule_mesh(
         raise ValueError(
             "The mesh needs a grid_size of at least 1 and a positive maximum."
         )
-    if maximum_holding_period < 1 or paths < 2:  # noqa: PLR2004
+    if maximum_holding_period < 1 or simulations < 2:  # noqa: PLR2004
         raise ValueError("The simulation needs at least one step and two paths.")
 
     # The shocks are turned into the path in place, step by step, to hold one array.
-    gains = np.random.default_rng(seed).standard_normal((paths, maximum_holding_period))
+    gains = np.random.default_rng(seed).standard_normal(
+        (simulations, maximum_holding_period)
+    )
     gains[:, 0] += drift
     for step in range(1, maximum_holding_period):
         gains[:, step] += drift + phi * gains[:, step - 1]
@@ -287,7 +289,7 @@ def get_trading_rule_mesh(
 
     profit_steps = np.stack([first_crossings(gains > level) for level in thresholds])
     loss_steps = np.stack([first_crossings(gains < -level) for level in thresholds])
-    rows = np.arange(paths)
+    rows = np.arange(simulations)
 
     mesh = []
     for profit_taking, profit_step in zip(thresholds, profit_steps, strict=True):
@@ -324,7 +326,7 @@ def get_optimal_trading_rule(
     maximum_threshold: float = 10.0,
     grid_size: int = 20,
     maximum_holding_period: int = 100,
-    paths: int = 10000,
+    simulations: int = 10000,
     seed: int = 0,
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """
@@ -349,7 +351,7 @@ def get_optimal_trading_rule(
             Defaults to 20.
         maximum_holding_period (int, optional): The most steps a position is held. Defaults
             to 100.
-        paths (int, optional): The number of simulated paths. Defaults to 10000.
+        simulations (int, optional): The number of simulated paths. Defaults to 10000.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -374,7 +376,7 @@ def get_optimal_trading_rule(
         maximum_threshold=maximum_threshold,
         grid_size=grid_size,
         maximum_holding_period=maximum_holding_period,
-        paths=paths,
+        simulations=simulations,
         seed=seed,
     )
     if grid["Sharpe Ratio"].isna().all():

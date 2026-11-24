@@ -11,7 +11,11 @@ from financetoolkit.econometrics.diagnostics import diagnostics_model
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk.volatility import garch_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -122,16 +126,13 @@ class DiagnosticsEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -228,16 +229,13 @@ class DiagnosticsEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -351,16 +349,13 @@ class DiagnosticsEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -474,16 +469,13 @@ class DiagnosticsEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -641,16 +633,13 @@ class DiagnosticsEconometrics:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )

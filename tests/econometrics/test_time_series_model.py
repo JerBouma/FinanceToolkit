@@ -45,7 +45,7 @@ def test_get_arima_forecast_recovers_arma11_coefficients():
         y[t] = phi_true * y[t - 1] + theta_true * e[t - 1] + e[t]
 
     result = time_series_model.get_arima_forecast(
-        pd.Series(y), p=1, d=0, q=1, forecast_steps=5, include_constant=False
+        pd.Series(y), p=1, d=0, q=1, forecast_steps=5, add_constant=False
     )
 
     assert abs(result["ar_coefficients"][0] - phi_true) < 0.1
@@ -60,7 +60,7 @@ def test_get_arima_forecast_differencing_undoes_correctly():
     y = np.cumsum(rng.standard_normal(n)) + 50
 
     result = time_series_model.get_arima_forecast(
-        pd.Series(y), p=1, d=1, q=0, forecast_steps=10, include_constant=False
+        pd.Series(y), p=1, d=1, q=0, forecast_steps=10, add_constant=False
     )
 
     assert abs(result["ar_coefficients"][0]) < 0.15
@@ -320,7 +320,7 @@ def test_get_vecm_forecast_identifies_rank_one_and_mean_reverts(recorder):
     series_b = common_trend * 1.5 + 3 + rng.standard_normal(n) * 0.2
     data = pd.DataFrame({"A": series_a, "B": series_b})
 
-    result = time_series_model.get_vecm_forecast(data, k_ar_diff=1, forecast_steps=20)
+    result = time_series_model.get_vecm_forecast(data, lags=1, forecast_steps=20)
 
     assert result["rank"] == 1
     assert result["cointegrating_vectors"].shape == (2, 1)
@@ -348,9 +348,7 @@ def test_get_vecm_forecast_mean_reverts_more_than_naive_var_in_differences():
     series_b = common_trend * 1.5 + 3 + rng.standard_normal(n) * 0.2
     data = pd.DataFrame({"A": series_a, "B": series_b})
 
-    vecm_result = time_series_model.get_vecm_forecast(
-        data, k_ar_diff=1, forecast_steps=20
-    )
+    vecm_result = time_series_model.get_vecm_forecast(data, lags=1, forecast_steps=20)
     beta = vecm_result["cointegrating_vectors"].to_numpy()
 
     differences = data.diff().dropna()
@@ -380,7 +378,7 @@ def test_get_vecm_forecast_no_cointegration_raises():
         }
     )
     try:
-        time_series_model.get_vecm_forecast(data, k_ar_diff=1)
+        time_series_model.get_vecm_forecast(data, lags=1)
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
@@ -394,10 +392,10 @@ def test_get_vecm_forecast_invalid_type():
         pass
 
 
-def test_get_vecm_forecast_invalid_k_ar_diff():
+def test_get_vecm_forecast_invalid_lags():
     data = pd.DataFrame({"A": np.arange(20.0), "B": np.arange(20.0) * 2})
     try:
-        time_series_model.get_vecm_forecast(data, k_ar_diff=0)
+        time_series_model.get_vecm_forecast(data, lags=0)
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass

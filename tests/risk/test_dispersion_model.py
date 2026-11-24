@@ -98,7 +98,7 @@ def test_l_moment_risk_measure():
     # Twenty returns leave no weights that meet the constraints.
     with pytest.raises(ValueError, match="constraints"):
         dispersion_model.get_l_moment_risk_measure(RETURNS)
-    with pytest.raises(ValueError, match="msd, mss or crra"):
+    with pytest.raises(ValueError, match="'msd', 'mss' or 'crra'"):
         dispersion_model.get_l_moment_risk_measure(RETURNS, method="me")
 
 

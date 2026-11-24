@@ -11,6 +11,7 @@ from scipy import stats
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.performance_controller import Performance
 from financetoolkit.risk import risk_model
+from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
 def test_collect_all_metrics(recorder, performance_module):
@@ -152,7 +153,8 @@ def test_get_alpha(recorder, performance_module):
     recorder.capture(
         performance_module.get_alpha(method="jensen", period="monthly", rolling=6)
     )
-    assert performance_module.get_alpha(method="capm").empty
+    with pytest.raises(InvalidArgumentError, match="'jensen'"):
+        performance_module.get_alpha(method="capm")
 
 
 def test_get_treynor_ratio(recorder, performance_module):
@@ -226,7 +228,8 @@ def test_get_sharpe_ratio_standard_error(recorder, performance_module):
             period="quarterly", method="gmm"
         )
     )
-    assert performance_module.get_sharpe_ratio_standard_error(method="other").empty
+    with pytest.raises(InvalidArgumentError, match="'non_normal'"):
+        performance_module.get_sharpe_ratio_standard_error(method="other")
 
 
 def test_get_minimum_track_record_length(recorder, performance_module):
@@ -274,12 +277,14 @@ def test_get_ulcer_performance_index(recorder, performance_module):
 
 def test_get_safety_first_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_safety_first_ratio())
-    recorder.capture(performance_module.get_safety_first_ratio(threshold=0.02))
+    recorder.capture(
+        performance_module.get_safety_first_ratio(minimum_acceptable_return=0.02)
+    )
     recorder.capture(performance_module.get_safety_first_ratio(period="quarterly"))
     recorder.capture(performance_module.get_safety_first_ratio(growth=True))
     recorder.capture(
         performance_module.get_safety_first_ratio(
-            period="monthly", rolling=6, threshold=0.02
+            period="monthly", rolling=6, minimum_acceptable_return=0.02
         )
     )
 
@@ -1330,7 +1335,9 @@ def test_the_rolling_measures_of_a_ticker_ignore_a_later_listing_before_it():
 
 
 def test_get_safety_first_ratio_compounds_the_threshold_per_return(performance_module):
-    result = performance_module.get_safety_first_ratio(threshold=0.02, rounding=10)
+    result = performance_module.get_safety_first_ratio(
+        minimum_acceptable_return=0.02, rounding=10
+    )
     returns = _daily_returns_in(performance_module, "AAPL", "2021").dropna()
 
     # Roy (1952) on the daily returns of the year, with the annual threshold compounded
@@ -1343,7 +1350,7 @@ def test_get_safety_first_ratio_compounds_the_threshold_per_return(performance_m
 
 def test_get_safety_first_ratio_compounds_the_threshold_per_calendar_day():
     performance = _weekend_performance()
-    result = performance.get_safety_first_ratio(threshold=0.05)
+    result = performance.get_safety_first_ratio(minimum_acceptable_return=0.05)
     returns = performance._get_column("yearly", "Return", True)["BTC"].loc["2022"]
     returns = returns.dropna()
 
@@ -1435,7 +1442,8 @@ def test_get_sortino_ratio_variants(recorder, performance_module):
         sortino_ratio(method="adjusted", rounding=10),
         (sortino_ratio(rounding=12) / np.sqrt(2)).round(10),
     )
-    assert sortino_ratio(method="other").empty
+    with pytest.raises(InvalidArgumentError, match="'smart'"):
+        sortino_ratio(method="other")
 
 
 def test_get_calmar_and_sterling_ratio_annualized(recorder, performance_module):
@@ -1656,16 +1664,18 @@ def test_get_capital_market_line(recorder, performance_module):
 
 
 def test_get_returns_log_and_unsmoothed(recorder, performance_module):
-    recorder.capture(performance_module.get_returns(log=True))
-    recorder.capture(performance_module.get_returns(period="daily", log=True).iloc[:20])
+    recorder.capture(performance_module.get_returns(logarithmic=True))
+    recorder.capture(
+        performance_module.get_returns(period="daily", logarithmic=True).iloc[:20]
+    )
     recorder.capture(performance_module.get_returns(period="monthly", unsmoothed=True))
 
     # The cumulative log return is the sum of the log returns.
     log_returns = performance_module.get_returns(
-        period="monthly", log=True, rounding=12
+        period="monthly", logarithmic=True, rounding=12
     )
     cumulative = performance_module.get_returns(
-        period="monthly", log=True, cumulative=True, rounding=12
+        period="monthly", logarithmic=True, cumulative=True, rounding=12
     )
     pd.testing.assert_frame_equal(
         log_returns.cumsum().round(8), cumulative.round(8), check_freq=False
@@ -1692,8 +1702,9 @@ def test_get_risk_measure_ratio(recorder, performance_module):
             risk_measure=risk_measure
         ).empty
 
-    # An unknown risk measure gives an empty result through handle_errors.
-    assert performance_module.get_risk_measure_ratio(risk_measure="other").empty
+    # An unknown risk measure raises, naming the risk measures.
+    with pytest.raises(InvalidArgumentError, match="risk_measure must be one of"):
+        performance_module.get_risk_measure_ratio(risk_measure="other")
 
 
 def test_get_probabilistic_momentum(recorder, performance_module):
@@ -1734,9 +1745,9 @@ def test_get_calendar_returns(recorder, performance_module):
 
 
 def test_get_bootstrap_statistics(recorder, performance_module):
-    recorder.capture(performance_module.get_bootstrap_statistics(simulations=200))
+    recorder.capture(performance_module.get_bootstrap_statistics(n_bootstrap=200))
     shuffled = performance_module.get_bootstrap_statistics(
-        simulations=200, method="shuffle"
+        n_bootstrap=200, method="shuffle"
     )
     recorder.capture(shuffled)
 
@@ -1746,12 +1757,12 @@ def test_get_bootstrap_statistics(recorder, performance_module):
 
     # The same seed gives the same result, another seed another one.
     pd.testing.assert_frame_equal(
-        performance_module.get_bootstrap_statistics(simulations=50, seed=1),
-        performance_module.get_bootstrap_statistics(simulations=50, seed=1),
+        performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=1),
+        performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=1),
     )
     assert not performance_module.get_bootstrap_statistics(
-        simulations=50, seed=1
-    ).equals(performance_module.get_bootstrap_statistics(simulations=50, seed=2))
+        n_bootstrap=50, seed=1
+    ).equals(performance_module.get_bootstrap_statistics(n_bootstrap=50, seed=2))
 
 
 def test_get_forecast_cone(recorder, performance_module):
@@ -1818,7 +1829,8 @@ def test_rolling_factor_models(recorder, performance_module, monkeypatch):
         atol=1e-4,
     )
 
-    assert performance.get_fama_and_french_model(rolling=126, method="simple").empty
+    with pytest.raises(InvalidArgumentError, match="method='multi'"):
+        performance.get_fama_and_french_model(rolling=126, method="simple")
 
 
 def _hedged_performance(with_portfolio_returns=True, excess_return_block=False):
@@ -1960,4 +1972,5 @@ def test_get_sharpe_ratio_difference_test(recorder, performance_module):
             method="ledoit_wolf", lags=0
         )
     )
-    assert performance_module.get_sharpe_ratio_difference_test(method="other").empty
+    with pytest.raises(InvalidArgumentError, match="'memmel' or 'ledoit_wolf'"):
+        performance_module.get_sharpe_ratio_difference_test(method="other")

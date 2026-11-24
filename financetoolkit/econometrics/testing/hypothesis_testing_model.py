@@ -99,7 +99,7 @@ def get_two_sample_t_test(
 
     return pd.Series(
         {
-            "T-Statistic": float(t_statistic),
+            "t-Statistic": float(t_statistic),
             "Degrees of Freedom": float(degrees_of_freedom),
             "P-Value": float(p_value),
             "Mean A": float(np.mean(sample_a_values)),
@@ -526,7 +526,7 @@ def get_hausman_wu_test(
     return pd.Series(
         {
             "V-Hat Coefficient": v_hat_coefficient,
-            "T-Statistic": t_statistic,
+            "t-Statistic": t_statistic,
             "Degrees of Freedom": stage_two["degrees_of_freedom"],
             "P-Value": p_value,
             "Endogenous (5%)": bool(p_value < SIGNIFICANCE_LEVEL),

@@ -448,7 +448,7 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
         raise ValueError(
             f"get_ramsey_reset_test cannot honour a {cov_type!r} covariance "
             "estimator -- the regression result does not keep the "
-            "clusters/maxlags it needs. Refit with an 'HC0'..'HC3' covariance (or "
+            "clusters/lags it needs. Refit with an 'HC0'..'HC3' covariance (or "
             "'nonrobust') to run RESET on it."
         )
 

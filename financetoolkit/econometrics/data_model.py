@@ -7,6 +7,7 @@ import datetime
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import check_option
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
 # The periods the Econometrics methods take, with the pandas frequency of each.
@@ -192,11 +193,7 @@ def get_changes(levels: pd.DataFrame, changes: str | None) -> pd.DataFrame:
         pd.DataFrame: The changes at the dates of the levels; the first observation of each
         series, and every date it is not observed, is NaN.
     """
-    if changes not in CHANGES:
-        raise ValueError(
-            "The changes must be 'percentage', 'log', 'difference' or None, "
-            f"not {changes!r}."
-        )
+    check_option("changes", changes, CHANGES)
     if changes is None:
         return levels
 
@@ -246,10 +243,7 @@ def build_historical_data(
     changes = (
         None if isinstance(changes, str) and changes.lower() == "none" else changes
     )
-    if changes not in CHANGES:
-        raise ValueError(
-            f"The changes must be one of 'percentage', 'log', 'difference' or None, not {changes!r}."
-        )
+    check_option("changes", changes, CHANGES)
 
     levels = to_series_frame(data)
     if start_date:

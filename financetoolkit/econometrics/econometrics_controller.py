@@ -39,6 +39,7 @@ from financetoolkit.risk.helpers import (
     mask_non_trading_days,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_period
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 
@@ -143,7 +144,7 @@ class EconometricsBase:
 
         if data is not None:
             if historical_data is not None:
-                raise ValueError(
+                raise InvalidArgumentError(
                     "Pass either data (any metric) or historical_data (from a Toolkit), not both."
                 )
             historical_data, series = data_model.build_historical_data(
@@ -216,10 +217,7 @@ class EconometricsBase:
         holiday next to a benchmark that traded), see `helpers.mask_non_trading_days`: the
         carried-forward price is not an observation.
         """
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # Deduplicated so a ticker named twice (e.g. as dependent and independent)
         # still selects a single column.

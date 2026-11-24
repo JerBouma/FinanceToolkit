@@ -12,6 +12,7 @@ from scipy import integrate, optimize, special, stats
 from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.volatility import garch_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
 
 MINIMUM_OBSERVATIONS_FOR_DM_TEST = 3
@@ -153,8 +154,7 @@ def get_diebold_mariano_test(
     Raises:
         ValueError: If `loss` is not one of "squared" or "absolute".
     """
-    if loss not in ("squared", "absolute"):
-        raise ValueError("loss must be 'squared' or 'absolute'.")
+    check_option("loss", loss, ("squared", "absolute"))
 
     if isinstance(actual, pd.DataFrame):
         return pd.DataFrame(
@@ -666,7 +666,10 @@ def get_probability_integral_transform(
             index=clean_returns.index,
         )
     if model != "garch":
-        raise ValueError("The model must be gaussian, ewma or garch.")
+        raise InvalidArgumentError(
+            f"model must be one of 'gaussian', 'ewma' or 'garch', "
+            f"not {model!r}. Please pass one of these as model."
+        )
 
     if len(clean_returns) < window_size:
         return pd.Series(np.nan, index=clean_returns.index)
@@ -1168,7 +1171,10 @@ def get_return_forecast(
     if method == "momentum":
         return clean_returns.rolling(window=window_size).mean().shift(1)
     if method != "autoregressive":
-        raise ValueError("The method must be momentum or autoregressive.")
+        raise InvalidArgumentError(
+            f"method must be one of 'momentum' or 'autoregressive', "
+            f"not {method!r}. Please pass one of these as method."
+        )
 
     previous = clean_returns.shift(1)
     slope = (
@@ -1247,8 +1253,7 @@ def get_directional_accuracy_test(
         )
     if not isinstance(actual, pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-    if method not in ("pesaran_timmermann", "anatolyev_gerko"):
-        raise ValueError("The method must be pesaran_timmermann or anatolyev_gerko.")
+    check_option("method", method, ("pesaran_timmermann", "anatolyev_gerko"))
 
     name = (
         "Pesaran-Timmermann Statistic"
@@ -1316,7 +1321,7 @@ def get_model_confidence_set(
     statistic: str = "max",
     n_bootstrap: int = 1000,
     block_size: int | None = None,
-    random_state: int = 42,
+    seed: int = 0,
 ) -> pd.DataFrame:
     """
     Calculate the Model Confidence Set (MCS) of Hansen, Lunde and Nason: the set of models that
@@ -1371,14 +1376,13 @@ def get_model_confidence_set(
         block_size (int | None, optional): The average block length of the stationary
             bootstrap. Defaults to None, which uses the cube root of the number of periods,
             rounded.
-        random_state (int, optional): The seed of the bootstrap. Defaults to 42.
+        seed (int, optional): The seed of the bootstrap. Defaults to 0.
 
     Returns:
         pd.DataFrame: Per model the Average Loss, the MCS P-Value, whether it is In Confidence
         Set and its Rank (1 for the last model standing, m for the first eliminated).
     """
-    if statistic not in ("max", "range"):
-        raise ValueError("The statistic must be max or range.")
+    check_option("statistic", statistic, ("max", "range"))
 
     losses = losses.dropna()
     values = losses.to_numpy(dtype=float)
@@ -1390,7 +1394,7 @@ def get_model_confidence_set(
         )
 
     block_size = block_size if block_size else max(int(round(n ** (1 / 3))), 1)
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(seed)
     counts = np.array(
         [
             np.bincount(

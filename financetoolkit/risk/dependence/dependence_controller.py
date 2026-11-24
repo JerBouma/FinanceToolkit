@@ -13,7 +13,13 @@ from financetoolkit.ratios import valuation_model
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.risk.dependence import copula_model, covar_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -61,7 +67,7 @@ class DependenceRisk:
             return list(itertools.combinations(self._tickers, 2))
 
         if ticker_a is None or ticker_b is None:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Either provide both ticker_a and ticker_b, or neither (to use "
                 "every pair of tickers in the Toolkit instance)."
             )
@@ -399,8 +405,7 @@ class DependenceRisk:
             "frank": copula_model.get_frank_copula_parameters,
         }
 
-        if copula not in fit_functions:
-            raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
+        check_option("copula", copula, fit_functions)
 
         ticker_pairs = self._resolve_ticker_pairs(ticker_a, ticker_b)
 
@@ -434,8 +439,8 @@ class DependenceRisk:
         copula: str = "gaussian",
         period: str | None = None,
         column: str = "Return",
-        n_simulations: int = 10_000,
-        random_state: int = 42,
+        simulations: int = 10_000,
+        seed: int = 0,
         empirical_margins: bool = True,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -479,8 +484,8 @@ class DependenceRisk:
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
-            n_simulations (int, optional): The number of joint draws to simulate. Defaults to 10,000.
-            random_state (int, optional): The seed for the random number generator. Defaults to 42.
+            simulations (int, optional): The number of joint draws to simulate. Defaults to 10,000.
+            seed (int, optional): The seed for the random number generator. Defaults to 0.
             empirical_margins (bool, optional): Whether to map the simulated pseudo-observations back
             to realistic returns via each asset's own empirical (historical) quantile function.
             Defaults to True. When False, the raw pseudo-observations (each in (0, 1)) are returned
@@ -498,7 +503,7 @@ class DependenceRisk:
             up when neither is given, or if fewer than 10 paired, non-missing observations are available.
 
         Returns:
-            pd.DataFrame: `n_simulations` simulated joint draws, one column per asset (or "U"/"V" when
+            pd.DataFrame: `simulations` simulated joint draws, one column per asset (or "U"/"V" when
             `empirical_margins=False`) for a single given pair, or with columns grouped by
             (Ticker A, Ticker B) pair when neither ticker is given.
 
@@ -518,7 +523,7 @@ class DependenceRisk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_copula_simulation("HD", "LOW", n_simulations=30).head(5)
+        toolkit.risk.get_copula_simulation("HD", "LOW", simulations=30).head(5)
         ```
 
         Which returns:
@@ -543,27 +548,26 @@ class DependenceRisk:
         }
         simulate_functions = {
             "gaussian": lambda parameters: copula_model.get_gaussian_copula_simulation(
-                parameters["Rho"], n_simulations, random_state
+                parameters["Rho"], simulations, seed
             ),
             "student-t": lambda parameters: copula_model.get_student_t_copula_simulation(
                 parameters["Rho"],
                 parameters["Degrees of Freedom"],
-                n_simulations,
-                random_state,
+                simulations,
+                seed,
             ),
             "clayton": lambda parameters: copula_model.get_clayton_copula_simulation(
-                parameters["Theta"], n_simulations, random_state
+                parameters["Theta"], simulations, seed
             ),
             "gumbel": lambda parameters: copula_model.get_gumbel_copula_simulation(
-                parameters["Theta"], n_simulations, random_state
+                parameters["Theta"], simulations, seed
             ),
             "frank": lambda parameters: copula_model.get_frank_copula_simulation(
-                parameters["Theta"], n_simulations, random_state
+                parameters["Theta"], simulations, seed
             ),
         }
 
-        if copula not in fit_functions:
-            raise ValueError(f"copula must be one of {', '.join(fit_functions)}.")
+        check_option("copula", copula, fit_functions)
 
         ticker_pairs = self._resolve_ticker_pairs(ticker_a, ticker_b)
 
@@ -889,6 +893,7 @@ class DependenceRisk:
         | GS  | -0.0232 |       -0.0104 |
         | JPM | -0.0247 |       -0.012  |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
         # The conditioning ticker varies and the system (`ticker`) defaults to the benchmark.
@@ -1037,10 +1042,10 @@ class DependenceRisk:
         | 2024   | -0.02   | -0.0196 | -0.0232 | -0.0233 |
         | 2025   | -0.029  | -0.0339 | -0.0393 | -0.0394 |
         """
+        validate_alpha(alpha)
         period = period if period else "yearly"
 
-        if period not in ["monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be monthly, quarterly, or yearly.")
+        check_period(period, ["monthly", "quarterly", "yearly"])
 
         tickers, market = self._market_pairs(ticker, market_ticker)
         returns = self._add_other_returns(
@@ -1206,8 +1211,7 @@ class DependenceRisk:
         """
         period = period if period else "yearly"
 
-        if period not in ["monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be monthly, quarterly, or yearly.")
+        check_period(period, ["monthly", "quarterly", "yearly"])
         if self._capital_shortfall_function is None:
             raise ValueError(
                 "SRISK needs the Total Liabilities and share count of the financial statements, "

@@ -86,7 +86,7 @@ def test_ols_covariances_match_the_reference(cov_type):
 def test_ols_newey_west_and_cluster_covariances_match_the_reference():
     y, x = _data()
 
-    newey_west = regression_model.get_ols(y, x, cov_type="HAC", maxlags=3)
+    newey_west = regression_model.get_ols(y, x, cov_type="HAC", lags=3)
     np.testing.assert_allclose(
         newey_west["standard_errors"],
         [0.18941833812769732, 0.2771781719737447, 0.14091563585041475],
@@ -296,7 +296,7 @@ def test_two_sample_t_tests_match_the_reference():
 
     welch = hypothesis_testing_model.get_two_sample_t_test(y[:50], x[:70, 0])
     np.testing.assert_allclose(
-        welch[["T-Statistic", "P-Value", "Degrees of Freedom"]].to_numpy(dtype=float),
+        welch[["t-Statistic", "P-Value", "Degrees of Freedom"]].to_numpy(dtype=float),
         [-0.6331740956722862, 0.5291498413378317, 57.055333576625614],
         rtol=RTOL,
     )
@@ -305,7 +305,7 @@ def test_two_sample_t_tests_match_the_reference():
         y[:50], x[:70, 0], equal_variance=True
     )
     np.testing.assert_allclose(
-        pooled[["T-Statistic", "P-Value", "Degrees of Freedom"]].to_numpy(dtype=float),
+        pooled[["t-Statistic", "P-Value", "Degrees of Freedom"]].to_numpy(dtype=float),
         [-0.7243739804330513, 0.47026997412953503, 118.0],
         rtol=RTOL,
     )

@@ -57,7 +57,7 @@ def test_factor_urls_per_region():
     assert performance_model.factor_url("Europe", "momentum").endswith(
         "Europe_Mom_Factor_Daily_CSV.zip"
     )
-    with pytest.raises(ValueError, match="not published"):
+    with pytest.raises(ValueError, match="region must be one of 'United States'"):
         performance_model.factor_url("Mars")
 
 

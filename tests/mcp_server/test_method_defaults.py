@@ -158,12 +158,12 @@ def test_a_method_default_replaces_the_indicators_own_default(captured):
                 {"indicator": "get_copula_simulation", "tickers": "AAPL", **arguments},
             )
         )
-        return captured[-1]["n_simulations"]
+        return captured[-1]["simulations"]
 
     # The tool schema must not carry the indicator's 10,000, or the MCP default of 100
     # could never apply; an explicit value still wins.
     assert simulations() == 100  # noqa: PLR2004
-    assert simulations(n_simulations=5000) == 5000  # noqa: PLR2004
+    assert simulations(simulations=5000) == 5000  # noqa: PLR2004
 
 
 def test_a_transcript_is_one_full_call_of_one_ticker(monkeypatch):

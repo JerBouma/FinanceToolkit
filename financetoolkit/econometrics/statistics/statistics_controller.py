@@ -10,7 +10,7 @@ from financetoolkit.econometrics.helpers import BENCHMARK_TICKER, calculate_per_
 from financetoolkit.econometrics.statistics import entropy_model, statistics_model
 from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import InvalidArgumentError, handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -361,7 +361,7 @@ class StatisticsEconometrics:
             other_data = self._get_series_column(period, against)
             others = {name: other_data[name] for name in series}
         else:
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"{against} is neither a series of the data nor one of its columns; choose "
                 f"from {', '.join(series)}."
             )
@@ -1308,9 +1308,9 @@ class StatisticsEconometrics:
 
             options = {}
         else:
-            raise ValueError(
-                "Method should be 'sample', 'approximate', 'permutation', 'spectral', 'svd', "
-                "'shannon', 'lempel_ziv' or 'kontoyiannis'."
+            raise InvalidArgumentError(
+                f"method must be one of 'sample', 'approximate', 'permutation', 'spectral', 'svd', 'shannon', 'lempel_ziv' or 'kontoyiannis', "
+                f"not {method!r}. Please pass one of these as method."
             )
 
         entropy = calculate_per_window(

@@ -163,7 +163,7 @@ def test_ols_inference_and_robust_covariances(longley):
         rtol=1e-9,
     )
 
-    newey_west = regression_model.get_ols(y, x, cov_type="HAC", maxlags=2)
+    newey_west = regression_model.get_ols(y, x, cov_type="HAC", lags=2)
     np.testing.assert_allclose(
         newey_west["standard_errors"],
         sm.OLS(y, design).fit(cov_type="HAC", cov_kwds={"maxlags": 2}).bse.to_numpy(),
@@ -355,7 +355,7 @@ def test_durbin_wu_hausman_endogeneity_test():
     ).fit()
 
     np.testing.assert_allclose(
-        result["T-Statistic"], augmented.tvalues["v_hat"], rtol=1e-9
+        result["t-Statistic"], augmented.tvalues["v_hat"], rtol=1e-9
     )
     np.testing.assert_allclose(result["P-Value"], augmented.pvalues["v_hat"], rtol=1e-9)
 
@@ -433,7 +433,7 @@ def test_cointegration_tests(macro):
 
     frame = pd.concat([first, second], axis=1)
     johansen = cointegration_model.get_johansen_cointegration(
-        frame, det_order=0, k_ar_diff=1
+        frame, det_order=0, lags=1
     )
     with warnings.catch_warnings():
         # statsmodels' Johansen routine discards the imaginary part of its eigenvalues,
@@ -674,7 +674,7 @@ def test_two_sample_t_test():
     )
     reference = st.ttest_ind(sample_a, sample_b, equal_var=False)
 
-    np.testing.assert_allclose(result["T-Statistic"], reference.statistic, rtol=1e-9)
+    np.testing.assert_allclose(result["t-Statistic"], reference.statistic, rtol=1e-9)
     np.testing.assert_allclose(result["P-Value"], reference.pvalue, rtol=1e-9)
 
 
@@ -748,7 +748,7 @@ def test_vecm_forecast():
         }
     )
 
-    result = time_series_model.get_vecm_forecast(frame, k_ar_diff=1, forecast_steps=4)
+    result = time_series_model.get_vecm_forecast(frame, lags=1, forecast_steps=4)
     reference = VECM(
         frame, k_ar_diff=1, coint_rank=int(result["rank"]), deterministic="co"
     ).fit()
@@ -765,7 +765,7 @@ def test_vecm_refuses_series_that_are_not_cointegrated():
     )
 
     with pytest.raises(ValueError, match="cointegrating rank"):
-        time_series_model.get_vecm_forecast(frame, k_ar_diff=1, forecast_steps=3)
+        time_series_model.get_vecm_forecast(frame, lags=1, forecast_steps=3)
 
 
 # ── Asset pricing and event studies ───────────────────────────────────────────

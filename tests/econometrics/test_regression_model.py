@@ -99,7 +99,7 @@ def test_get_ols_hac_matches_nonrobust_coefficients():
     y = 1 + 2 * x + rng.standard_normal(200) * 0.1
 
     nonrobust_result = regression_model.get_ols(y, x)
-    hac_result = regression_model.get_ols(y, x, cov_type="HAC", maxlags=4)
+    hac_result = regression_model.get_ols(y, x, cov_type="HAC", lags=4)
 
     assert np.allclose(
         nonrobust_result["coefficients"], hac_result["coefficients"], atol=1e-8
@@ -119,7 +119,7 @@ def test_get_ols_hac_reweights_standard_errors():
     y = 1 + 0.5 * x + errors
 
     nonrobust_result = regression_model.get_ols(y, x)
-    hac_result = regression_model.get_ols(y, x, cov_type="HAC", maxlags=10)
+    hac_result = regression_model.get_ols(y, x, cov_type="HAC", lags=10)
 
     assert not np.allclose(
         hac_result["standard_errors"], nonrobust_result["standard_errors"]
@@ -153,7 +153,7 @@ def test_get_ols_hac_negative_maxlags():
     x = pd.Series([1.0, 2.0, 3.0, 4.0])
     y = pd.Series([2.0, 4.0, 6.0, 8.0])
     try:
-        regression_model.get_ols(y, x, cov_type="HAC", maxlags=-1)
+        regression_model.get_ols(y, x, cov_type="HAC", lags=-1)
         raise AssertionError("Expected ValueError")
     except ValueError:
         pass
@@ -166,7 +166,7 @@ def test_get_wls_hac_matches_nonrobust_coefficients():
     weights = pd.Series(np.ones(200))
 
     nonrobust_result = regression_model.get_wls(y, x, weights)
-    hac_result = regression_model.get_wls(y, x, weights, cov_type="HAC", maxlags=4)
+    hac_result = regression_model.get_wls(y, x, weights, cov_type="HAC", lags=4)
 
     assert np.allclose(
         nonrobust_result["coefficients"], hac_result["coefficients"], atol=1e-8

@@ -13,7 +13,12 @@ from financetoolkit.econometrics.regression import (
     regression_model,
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
@@ -38,7 +43,7 @@ class RegressionEconometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
-        maxlags: int | None = None,
+        lags: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -52,12 +57,12 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - β̂ = (X'X)⁻¹X'y, with y the dependent ticker's `column` (Return by default) and X the
-          independent tickers' `column` plus a constant column (add_constant=True)
+          independent tickers' `column` plus a constant column (when a constant is added)
         - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust")
         - Cov(β̂) = (X'X)⁻¹·(Σ ωₜ·xₜxₜ')·(X'X)⁻¹ for "HC0" to "HC3", with ωₜ = eₜ² (HC0),
           eₜ²·n / (n - k) (HC1), eₜ² / (1 - hₜ) (HC2) or eₜ² / (1 - hₜ)² (HC3) and hₜ = xₜ'(X'X)⁻¹xₜ
         - Cov(β̂) = (X'X)⁻¹·(Σₜ gₜgₜ' + Σⱼ (1 - j / (L + 1))·Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ'))·(X'X)⁻¹ for "HAC",
-          with gₜ = xₜeₜ and L = `maxlags`; "cluster" sums gₜ within each cluster and scales the
+          with gₜ = xₜeₜ and L = `lags`; "cluster" sums gₜ within each cluster and scales the
           sandwich by G / (G - 1)·(n - 1) / (n - k), with G the number of clusters
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
           for cov_type="nonrobust" and from the standard normal distribution for the robust
@@ -104,7 +109,7 @@ class RegressionEconometrics:
             cov_type (str, optional): Which covariance estimator to use for the standard errors --
             one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
             (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
-            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `maxlags`).
+            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `lags`).
             Use `get_heteroskedasticity_test` to check for heteroskedasticity and
             `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
@@ -113,7 +118,7 @@ class RegressionEconometrics:
             regression's own index before use, so it may be indexed by the full period
             index even though the regression drops periods with missing data. Defaults
             to None.
-            maxlags (int | None, optional): The maximum lag to include when estimating the
+            lags (int | None, optional): The maximum lag to include when estimating the
             HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
             None, meaning the Newey & West (1994) rule of thumb `floor(4 * (n / 100)^(2/9))`
             with `n` the number of observations.
@@ -125,7 +130,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -142,17 +147,17 @@ class RegressionEconometrics:
 
         # XOM (the first ticker) is dependent; USO and the Benchmark are independent.
         # dependent_ticker and independent_tickers choose others, cov_type='HC1' gives
-        # heteroskedasticity-robust and cov_type='HAC' (with maxlags) Newey-West standard errors.
+        # heteroskedasticity-robust and cov_type='HAC' (with lags) Newey-West standard errors.
         toolkit.econometrics.get_ols(include_benchmark=True)
         ```
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0005 |       0.0004 |        1.5047 |    0.1327 |
-        | USO       |        0.4878 |       0.0172 |       28.4214 |    0      |
-        | Benchmark |        0.366  |       0.0333 |       10.9991 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0005 |           0.0004 |        1.5073 |     0.132 |
+        | USO       |        0.4877 |           0.0172 |       28.4182 |     0     |
+        | Benchmark |        0.3659 |           0.0333 |       10.9953 |     0     |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -175,7 +180,7 @@ class RegressionEconometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
-            maxlags=maxlags,
+            lags=lags,
         )
 
         return apply_rounding(
@@ -195,7 +200,7 @@ class RegressionEconometrics:
         add_constant: bool = True,
         cov_type: str = "nonrobust",
         clusters: pd.Series | None = None,
-        maxlags: int | None = None,
+        lags: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -257,7 +262,7 @@ class RegressionEconometrics:
             Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation,
             required when `cov_type="cluster"`. Defaults to None.
-            maxlags (int | None, optional): The maximum lag to include when estimating the
+            lags (int | None, optional): The maximum lag to include when estimating the
             HAC (Newey-West) covariance matrix, only used when `cov_type="HAC"`. Defaults to
             None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -268,7 +273,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -289,10 +294,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0019 |        0.6263 |    0.5317 |
-        | MSFT      |        0.6356 |       0.0596 |       10.6643 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0012 |           0.0019 |        0.6252 |    0.5324 |
+        | MSFT      |        0.636  |           0.0597 |       10.6573 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -306,7 +311,7 @@ class RegressionEconometrics:
 
         estimate_weights = isinstance(weights, str)
         if estimate_weights and weights != "feasible":
-            raise ValueError(
+            raise InvalidArgumentError(
                 f"weights must be a Series of weights or 'feasible', received '{weights}'."
             )
 
@@ -334,7 +339,7 @@ class RegressionEconometrics:
             add_constant=add_constant,
             cov_type=cov_type,
             clusters=aligned_clusters,
-            maxlags=maxlags,
+            lags=lags,
         )
 
         return apply_rounding(
@@ -369,7 +374,7 @@ class RegressionEconometrics:
         - β̂ = (X'Ω⁻¹X)⁻¹X'Ω⁻¹y
         - Cov(β̂) = σ̂²·(X'Ω⁻¹X)⁻¹, with σ̂² = e'Ω⁻¹e / (n - k)
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
-          `column` plus a constant (add_constant=True)
+          `column` plus a constant (when a constant is added)
 
         Under a correctly specified `Omega` this is the most efficient linear unbiased
         estimator. By default (omega="ar1") `Omega` is estimated from the regression itself
@@ -412,7 +417,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, t-Statistic, P-Value),
             indexed by regressor name.
 
         As an example:
@@ -433,10 +438,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0012 |       0.0017 |        0.7282 |    0.4671 |
-        | MSFT      |        0.6312 |       0.0576 |       10.9557 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0012 |           0.0017 |        0.7273 |    0.4677 |
+        | MSFT      |        0.6313 |           0.0576 |       10.9572 |    0      |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -450,7 +455,7 @@ class RegressionEconometrics:
 
         if isinstance(omega, str):
             if omega != "ar1":
-                raise ValueError(
+                raise InvalidArgumentError(
                     f"omega must be a DataFrame or 'ar1', received '{omega}'."
                 )
             omega_values = regression_model.get_ar1_covariance(
@@ -561,7 +566,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error, z-Statistic, P-Value),
             indexed by regressor name.
 
         Notes:
@@ -588,13 +593,12 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0275 |       0.15   |       -0.1836 |    0.8543 |
-        | Benchmark |      164.846  |      25.4127 |        6.4868 |    0      |
+        |           |   Coefficient |   Standard Error |   z-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |       -0.0273 |           0.15   |       -0.1819 |    0.8556 |
+        | Benchmark |      164.812  |          25.4105 |        6.486  |    0      |
         """
-        if method not in ("logit", "probit"):
-            raise ValueError("Method must be logit or probit.")
+        check_option("method", method, ("logit", "probit"))
 
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -650,7 +654,7 @@ class RegressionEconometrics:
         - β̂(τ) = argmin Σ(τ·max(uₜ, 0) + (1 - τ)·max(-uₜ, 0)), with uₜ = yₜ - xₜ'β and τ = `tau` (0.5
           by default)
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
-          `column` plus a constant (add_constant=True)
+          `column` plus a constant (when a constant is added)
         - SE(β̂): statsmodels' kernel sandwich estimator (Epanechnikov kernel, Hall-Sheather bandwidth),
           or, when `n_bootstrap` > 0, the standard deviation (ddof=1) of β̂ over `n_bootstrap`
           resampled-pairs fits
@@ -698,7 +702,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error), indexed by regressor name.
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error), indexed by regressor name.
 
         Notes:
         - Requires statsmodels (`pip install financetoolkit[econometrics]`).
@@ -722,11 +726,11 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |
-        |:----------|--------------:|-------------:|
-        | Intercept |       -0.0146 |       0.0006 |
-        | KRE       |        0.5271 |       0.0484 |
-        | Benchmark |        0.3965 |       0.1133 |
+        |           |   Coefficient |   Standard Error |
+        |:----------|--------------:|-----------------:|
+        | Intercept |       -0.0146 |           0.0006 |
+        | KRE       |        0.5291 |           0.0485 |
+        | Benchmark |        0.3949 |           0.1133 |
         """
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -779,7 +783,7 @@ class RegressionEconometrics:
 
         - First pass: R_i,t = alpha_i + beta_i' * F_t + e_i,t, for each asset i, over the full sample
         - Second pass: R_i,t = gamma_0,t + gamma_t' * beta_i + u_i,t, for each period t (gamma_0,t only
-          with add_constant=True)
+          when a constant is added)
         - Risk premium: gamma_hat = mean_t(gamma_t)
         - Standard error: SE(gamma_hat) = std_t(gamma_t) / sqrt(T), with ddof=1
         - t = gamma_hat / SE(gamma_hat), with p-values from a Student-t distribution with T - 1 degrees
@@ -829,12 +833,12 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Risk Premium, Std. Error, t-Statistic,
+            pd.DataFrame: A coefficient table (Risk Premium, Standard Error, t-Statistic,
             P-Value), indexed by factor name (plus "Intercept" if present).
 
         Notes:
         - The cross-sectional second pass needs strictly more assets than factors
-        (plus an intercept, if `add_constant=True`) to be identified -- with only a
+        (plus an intercept, when a constant is added) to be identified -- with only a
         couple of Toolkit tickers loaded, either pass `add_constant=False` or (better)
         construct the Toolkit with many tickers, since Fama-MacBeth is fundamentally a
         many-asset cross-sectional technique (dozens of assets is typical in practice),
@@ -859,10 +863,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Risk Premium |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|---------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.0066 |       0.0058 |        1.1514 |    0.2543 |
-        | Benchmark |         0.0101 |       0.008  |        1.2661 |    0.2105 |
+        |           |   Risk Premium |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|---------------:|-----------------:|--------------:|----------:|
+        | Intercept |         0.0066 |           0.0058 |        1.1514 |    0.2543 |
+        | Benchmark |         0.0101 |           0.008  |        1.2661 |    0.2105 |
         """
         period = period if period else "daily"
         factor_tickers = (
@@ -960,7 +964,7 @@ class RegressionEconometrics:
             (entity) tickers remain.
         """
         if (independent_tickers is None) == (independent_column is None):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Provide exactly one of independent_tickers (a common factor "
                 "broadcast to every entity) or independent_column (a per-entity "
                 "regressor taken from each dependent ticker's own data)."
@@ -968,10 +972,7 @@ class RegressionEconometrics:
 
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # The raw slice: panel methods need each entity's own NaN pattern on the full date index.
         prices = self._historical_data[period][column].loc[
@@ -1104,10 +1105,10 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`.
+            entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
             independent_column (str | None, optional): A different historical data
             column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`.
+            use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1129,7 +1130,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error,
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error,
             t-Statistic, P-Value) for the regressor(s), indexed by name, with the
             recovered entity (and/or time) fixed-effect intercepts appended as
             additional rows (only the Coefficient column is populated for those).
@@ -1162,14 +1163,14 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |                     |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:--------------------|--------------:|-------------:|--------------:|----------:|
-        | Benchmark           |        0.5795 |       0.0183 |       31.7272 |         0 |
-        | Entity Effect: BP   |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: CVX  |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: SHEL |        0.0005 |     nan      |      nan      |       nan |
-        | Entity Effect: TTE  |        0.0004 |     nan      |      nan      |       nan |
-        | Entity Effect: XOM  |        0.0008 |     nan      |      nan      |       nan |
+        |                     |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:--------------------|--------------:|-----------------:|--------------:|----------:|
+        | Benchmark           |        0.5798 |           0.0183 |       31.6869 |         0 |
+        | Entity Effect: BP   |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: CVX  |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: SHEL |        0.0005 |         nan      |      nan      |       nan |
+        | Entity Effect: TTE  |        0.0004 |         nan      |      nan      |       nan |
+        | Entity Effect: XOM  |        0.0008 |         nan      |      nan      |       nan |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
@@ -1240,7 +1241,7 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
                 ticker(s), whose `column` values are broadcast identically to every
-                entity at each date. Mutually exclusive with `independent_column`.
+                entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
                 Since this `Toolkit` instance's historical data is aligned onto a
                 common calendar across tickers, a broadcast factor's entity mean is
                 identical for every entity, leaving no between-entity variation to
@@ -1249,7 +1250,7 @@ class RegressionEconometrics:
                 in their date coverage (e.g. different listing histories).
             independent_column (str | None, optional): A different historical data
                 column, taken per-entity from each of `dependent_tickers`' own data, to
-                use as the regressor. Mutually exclusive with `independent_tickers`.
+                use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
                 entity tickers to explain. Defaults to None, meaning every ticker in
                 the `Toolkit` instance (other than `independent_tickers`, if given).
@@ -1267,7 +1268,7 @@ class RegressionEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error,
+            pd.DataFrame: A coefficient table (Coefficient, Standard Error,
             t-Statistic, P-Value), indexed by regressor name plus "Intercept".
 
         Raises:
@@ -1296,10 +1297,10 @@ class RegressionEconometrics:
 
         Which returns:
 
-        |           |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |        0.0003 |       0.0002 |        1.7192 |    0.0856 |
-        | Benchmark |        0.9788 |       0.0183 |       53.4931 |    0      |
+        |           |   Coefficient |   Standard Error |   t-Statistic |   P-Value |
+        |:----------|--------------:|-----------------:|--------------:|----------:|
+        | Intercept |        0.0003 |           0.0002 |        1.7193 |    0.0856 |
+        | Benchmark |        0.9788 |           0.0183 |       53.4928 |    0      |
         """
         y_panel, x_panel, dependent_tickers = self._get_panel_data(
             independent_tickers,
@@ -1363,10 +1364,10 @@ class RegressionEconometrics:
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
             ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`.
+            entity at each date. Mutually exclusive with `independent_column`, one of the two is required. Defaults to None.
             independent_column (str | None, optional): A different historical data
             column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`.
+            use as the regressor. Mutually exclusive with `independent_tickers`, one of the two is required. Defaults to None.
             dependent_tickers (str | list[str] | None, optional): The panel of
             entity tickers to explain. Defaults to None, meaning every ticker in
             the `Toolkit` instance (other than `independent_tickers`, if given).

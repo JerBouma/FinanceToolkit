@@ -7,6 +7,8 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.error_model import check_option
+
 # The critical value levels every test reports, as confidence levels (right-tailed tests).
 CONFIDENCE_LEVELS = (0.90, 0.95, 0.99)
 
@@ -264,7 +266,7 @@ def simulate_bubble_critical_values(
     observations: int,
     minimum_window: int,
     lags: int = 0,
-    replications: int = 2000,
+    simulations: int = 2000,
     seed: int = 0,
     levels: tuple[float, ...] = CONFIDENCE_LEVELS,
 ) -> dict[str, np.ndarray]:
@@ -275,7 +277,7 @@ def simulate_bubble_critical_values(
 
     - yₜ = yₜ₋₁ + T⁻¹ + εₜ, εₜ ~ N(0, 1), y₀ = 0
     - SADF = max forward ADF, GSADF = max BSADF; the critical value at confidence c is the c
-      quantile over the replications, per observation for the sequences
+      quantile over the simulations, per observation for the sequences
 
     The statistics do not depend on the level or the scale of the series, so one simulation
     serves every series of the same length, window and lags; the results are kept for the
@@ -285,7 +287,7 @@ def simulate_bubble_critical_values(
         observations (int): The number of observations T.
         minimum_window (int): The smallest window in observations.
         lags (int, optional): The number of lagged differences. Defaults to 0.
-        replications (int, optional): The number of simulated paths. Defaults to 2,000.
+        simulations (int, optional): The number of simulated paths. Defaults to 2,000.
         seed (int, optional): The seed of the random numbers. Defaults to 0.
         levels (tuple[float, ...], optional): The confidence levels. Defaults to (0.90, 0.95, 0.99).
 
@@ -295,10 +297,10 @@ def simulate_bubble_critical_values(
         Sequence" (levels × observations).
     """
     generator = np.random.default_rng(seed)
-    forward = np.empty((replications, observations))
-    backward = np.empty((replications, observations))
+    forward = np.empty((simulations, observations))
+    backward = np.empty((simulations, observations))
 
-    for path in range(replications):
+    for path in range(simulations):
         levels_path = np.cumsum(
             1 / observations + generator.standard_normal(observations)
         )
@@ -325,7 +327,7 @@ def get_bubble_test(
     method: str = "gsadf",
     lags: int = 0,
     minimum_window: int | None = None,
-    replications: int = 2000,
+    simulations: int = 2000,
     seed: int = 0,
 ) -> pd.Series:
     """
@@ -348,7 +350,7 @@ def get_bubble_test(
             to 0.
         minimum_window (int | None, optional): The smallest window in observations. Defaults to
             None, floor((0.01 + 1.8 / √T)·T).
-        replications (int, optional): The number of simulated paths for the critical values.
+        simulations (int, optional): The number of simulated paths for the critical values.
             Defaults to 2,000, as in Phillips, Shi and Yu (2015): the simulated critical values
             serve every series of the same length, so with 500 paths the size of the test at 5%
             ranges from about 3.5% to 7% depending on the seed.
@@ -356,14 +358,13 @@ def get_bubble_test(
 
     Returns:
         pd.Series: The statistic, its simulated p-value, the 90%, 95% and 99% critical values,
-        the observations, minimum window, lags and replications, and whether the series is
+        the observations, minimum window, lags and replications (the number of simulations), and whether the series is
         explosive at the 5% level.
 
     Raises:
         ValueError: If the method is unknown or the series too short for the window.
     """
-    if method not in ("gsadf", "sadf"):
-        raise ValueError("method must be 'gsadf' or 'sadf'.")
+    check_option("method", method, ("gsadf", "sadf"))
 
     values = series.dropna().to_numpy(dtype=float)
     window = (
@@ -374,7 +375,7 @@ def get_bubble_test(
     forward, backward = get_recursive_adf_statistics(values, lags, window)
     statistic = float(np.nanmax(forward if method == "sadf" else backward))
     simulated = simulate_bubble_critical_values(
-        len(values), window, lags, replications, seed, CONFIDENCE_LEVELS
+        len(values), window, lags, simulations, seed, CONFIDENCE_LEVELS
     )
     name = method.upper()
     critical_values = simulated[f"{name} Critical Values"]
@@ -395,7 +396,7 @@ def get_bubble_test(
             "Observations": len(values),
             "Minimum Window": window,
             "Lags": lags,
-            "Replications": replications,
+            "Replications": simulations,
             "Explosive (5%)": bool(statistic > critical_values[1]),
         }
     )
@@ -408,7 +409,7 @@ def get_bubble_episodes(
     minimum_window: int | None = None,
     confidence: float = 0.95,
     minimum_duration: int | None = None,
-    replications: int = 2000,
+    simulations: int = 2000,
     seed: int = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -432,7 +433,7 @@ def get_bubble_episodes(
         confidence (float, optional): The confidence of the critical values. Defaults to 0.95.
         minimum_duration (int | None, optional): The fewest observations of an episode. Defaults
             to None, round(log(T)).
-        replications (int, optional): The number of simulated paths. Defaults to 2,000.
+        simulations (int, optional): The number of simulated paths. Defaults to 2,000.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -444,8 +445,7 @@ def get_bubble_episodes(
         ValueError: If the method is unknown, the confidence not between 0 and 1 or the series
         too short for the window.
     """
-    if method not in ("gsadf", "sadf"):
-        raise ValueError("method must be 'gsadf' or 'sadf'.")
+    check_option("method", method, ("gsadf", "sadf"))
     if not 0 < confidence < 1:
         raise ValueError("confidence must be between 0 and 1, e.g. 0.95.")
 
@@ -459,7 +459,7 @@ def get_bubble_episodes(
     forward, backward = get_recursive_adf_statistics(values, lags, window)
     levels = tuple(sorted({*CONFIDENCE_LEVELS, confidence}))
     simulated = simulate_bubble_critical_values(
-        len(values), window, lags, replications, seed, levels
+        len(values), window, lags, simulations, seed, levels
     )
 
     statistic = backward if method == "gsadf" else forward
@@ -574,7 +574,7 @@ def _chow_dickey_fuller(paths: np.ndarray, trim: float) -> np.ndarray:
 
 @lru_cache(maxsize=8)
 def simulate_chow_dickey_fuller_critical_values(
-    observations: int, trim: float = 0.15, replications: int = 1000, seed: int = 0
+    observations: int, trim: float = 0.15, simulations: int = 1000, seed: int = 0
 ) -> np.ndarray:
     """
     Simulate the maximum Chow-type Dickey-Fuller statistic (SDFC) under a Gaussian random walk
@@ -583,18 +583,18 @@ def simulate_chow_dickey_fuller_critical_values(
     Args:
         observations (int): The number of observations T.
         trim (float, optional): The share of observations left out at either end. Defaults to 0.15.
-        replications (int, optional): The number of simulated paths. Defaults to 1000.
+        simulations (int, optional): The number of simulated paths. Defaults to 1000.
         seed (int, optional): The seed of the random numbers. Defaults to 0.
 
     Returns:
         np.ndarray: The simulated SDFC statistics, sorted.
     """
     generator = np.random.default_rng(seed)
-    maxima = np.empty(replications)
+    maxima = np.empty(simulations)
     # Blocks of paths keep the arrays to a few megabytes.
     block = max(1, 500_000 // observations)
-    for first in range(0, replications, block):
-        count = min(block, replications - first)
+    for first in range(0, simulations, block):
+        count = min(block, simulations - first)
         paths = np.cumsum(generator.standard_normal((count, observations)), axis=1)
         with np.errstate(invalid="ignore"):
             maxima[first : first + count] = np.nanmax(
@@ -605,7 +605,7 @@ def simulate_chow_dickey_fuller_critical_values(
 
 
 def get_chow_dickey_fuller_test(
-    series: pd.Series, trim: float = 0.15, replications: int = 1000, seed: int = 0
+    series: pd.Series, trim: float = 0.15, simulations: int = 1000, seed: int = 0
 ) -> pd.Series:
     """
     Calculate the supremum Chow-type Dickey-Fuller test (SDFC) for a switch from a random walk to
@@ -622,7 +622,7 @@ def get_chow_dickey_fuller_test(
     Args:
         series (pd.Series): The levels of the series, such as log prices.
         trim (float, optional): The share of observations left out at either end. Defaults to 0.15.
-        replications (int, optional): The number of simulated paths. Defaults to 1000.
+        simulations (int, optional): The number of simulated paths. Defaults to 1000.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -641,7 +641,7 @@ def get_chow_dickey_fuller_test(
     statistics = get_chow_dickey_fuller_statistics(series, trim).dropna()
 
     simulated = simulate_chow_dickey_fuller_critical_values(
-        len(data), trim, replications, seed
+        len(data), trim, simulations, seed
     )
     critical_values = np.quantile(simulated, CONFIDENCE_LEVELS)
     # A series without variation has no statistic on any break date, and no p-value.
@@ -660,7 +660,7 @@ def get_chow_dickey_fuller_test(
             "Critical Value 5%": critical_values[1],
             "Critical Value 1%": critical_values[2],
             "Observations": len(data),
-            "Replications": replications,
+            "Replications": simulations,
             "Explosive (5%)": bool(statistic > critical_values[1]),
         }
     )

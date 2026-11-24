@@ -10,7 +10,12 @@ from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.drawdown import drawdown_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import finalize_dataset
 
@@ -36,7 +41,7 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        compounded: bool = True,
+        compound_returns: bool = True,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -57,7 +62,7 @@ class DrawdownRisk:
 
         Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), the
         quantile interpolates linearly, and Wealth starts at 1, so a decline from the start of the window counts.
-        With compounded=False the drawdowns are measured on the summed returns instead, as an absolute decline
+        Without compounding the drawdowns are measured on the summed returns instead, as an absolute decline
         from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)), the
         uncompounded drawdown of Chekhlov, Uryasev and Zabarankin (2005).
 
@@ -89,7 +94,7 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -133,23 +138,21 @@ class DrawdownRisk:
         | 2024 |     -0.0826 | -0.1616 | -0.0585 |     -0.0576 |
         | 2025 |     -0.1185 | -0.1602 | -0.1445 |     -0.1432 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -159,14 +162,14 @@ class DrawdownRisk:
             returns = self._historical_data[period]["Return"]
             conditional_drawdown_at_risk = (
                 risk_model.get_rolling_conditional_drawdown_at_risk(
-                    returns, alpha, rolling, compounded=compounded
+                    returns, alpha, rolling, compounded=compound_returns
                 )
             )
         else:
             returns = self._get_returns(period, within_period)
 
             conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
-                returns, alpha, compounded=compounded
+                returns, alpha, compounded=compound_returns
             )
 
         if rolling or within_period:
@@ -200,7 +203,7 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        compounded: bool = True,
+        compound_returns: bool = True,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -226,7 +229,7 @@ class DrawdownRisk:
         average is the exact one of Rockafellar and Uryasev (2002), the average of the deepest m · alpha paths
         with the one at the boundary counted with its fraction. Overlapping paths often share their Maximum
         Drawdown, so a cut at an interpolated quantile, as the Toolkit's CDaR and historic CVaR make, would take
-        or leave such ties on the last digit of the rounding. With compounded=False the drawdowns are measured on the summed returns instead, as an absolute
+        or leave such ties on the last digit of the rounding. Without compounding the drawdowns are measured on the summed returns instead, as an absolute
         decline from their peak.
 
         For more information, see the following sources:
@@ -258,7 +261,7 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -304,6 +307,7 @@ class DrawdownRisk:
         | 2024 |     -0.0844 | -0.242  | -0.0799 |     -0.0792 |
         | 2025 |     -0.1587 | -0.1812 | -0.1374 |     -0.1372 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
@@ -312,7 +316,7 @@ class DrawdownRisk:
                 returns,
                 window=window,
                 alpha=alpha,
-                compounded=compounded,
+                compounded=compound_returns,
                 window_size=rolling,
             )
         )
@@ -332,7 +336,7 @@ class DrawdownRisk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        compounded: bool = True,
+        compound_returns: bool = True,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -360,7 +364,7 @@ class DrawdownRisk:
 
         Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), the
         quantile interpolates linearly, and Wealth starts at 1, so a decline from the start of the window
-        counts. With compounded=False the drawdowns are measured on the summed returns instead, as an absolute
+        counts. Without compounding the drawdowns are measured on the summed returns instead, as an absolute
         decline from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ
         Return(s)). The result is a negative decimal (0 when the asset was at a high in more than 1 - alpha of
         the periods).
@@ -379,7 +383,7 @@ class DrawdownRisk:
                 Defaults to "daily".
             alpha (float, optional): The tail probability for the DaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             within_period (bool, optional): Whether to calculate the DaR within the specified period or for the
             entire period. Thus whether to look at the DaR within a specific year (if period = 'yearly') or look at
@@ -436,11 +440,12 @@ class DrawdownRisk:
         | 2024 |     -0.07   | -0.1379 | -0.0445 |     -0.0433 |
         | 2025 |     -0.077  | -0.1335 | -0.1164 |     -0.1122 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         drawdown_at_risk = drawdown_model.get_drawdown_at_risk(
-            returns, alpha=alpha, compounded=compounded, window_size=rolling
+            returns, alpha=alpha, compounded=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -458,7 +463,7 @@ class DrawdownRisk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        compounded: bool = True,
+        compound_returns: bool = True,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -486,7 +491,7 @@ class DrawdownRisk:
 
         Every period counts towards the drawdown distribution, including those at a high (a drawdown of 0), and
         Wealth starts at 1, so a decline from the start of the window counts. The bound is minimized over the
-        risk aversion z numerically (on the logarithm of 1 / z, with scipy's brentq). With compounded=False
+        risk aversion z numerically (on the logarithm of 1 / z, with scipy's brentq). Without compounding
         the drawdowns are measured on the summed returns instead, as an absolute decline from their peak
         (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)). The result is a
         negative decimal.
@@ -507,7 +512,7 @@ class DrawdownRisk:
                 Defaults to "daily".
             alpha (float, optional): The tail probability for the EDaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             within_period (bool, optional): Whether to calculate the EDaR within the specified period or for the
             entire period. Thus whether to look at the EDaR within a specific year (if period = 'yearly') or look
@@ -563,11 +568,12 @@ class DrawdownRisk:
         | 2024 |     -0.0911 | -0.2002 | -0.0702 |     -0.0695 |
         | 2025 |     -0.1374 | -0.184  | -0.1606 |     -0.1592 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         entropic_drawdown_at_risk = drawdown_model.get_entropic_drawdown_at_risk(
-            returns, alpha=alpha, compounded=compounded, window_size=rolling
+            returns, alpha=alpha, compounded=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -589,7 +595,7 @@ class DrawdownRisk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        compounded: bool = True,
+        compound_returns: bool = True,
         rolling: int | None = None,
         show_columns: str | list[str] | None = None,
     ):
@@ -615,7 +621,7 @@ class DrawdownRisk:
         - Maximum Drawdown = min(Drawdown(t))
 
         Wealth starts at 1, so a decline from the start of the window counts as well, and the result is a
-        negative decimal (0 when the value never fell below a previous high). With compounded=False the
+        negative decimal (0 when the value never fell below a previous high). Without compounding the
         drawdowns are measured on the summed returns, as an absolute decline from their peak
         (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)), which is the
         Maximum Drawdown of Chekhlov, Uryasev and Zabarankin (2005) and Riskfolio-Lib's MDD_Abs. With
@@ -650,7 +656,7 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             rolling (int, optional): The rolling window size to use for the calculation. If set, the Maximum
             Drawdown is calculated over a rolling window of this many periods across the full return history
@@ -703,7 +709,7 @@ class DrawdownRisk:
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         maximum_drawdown = drawdown_model.get_maximum_drawdown(
-            returns, compounded=compounded, window_size=rolling
+            returns, compounded=compound_returns, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -798,21 +804,18 @@ class DrawdownRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -925,21 +928,18 @@ class DrawdownRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -1079,10 +1079,7 @@ class DrawdownRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # The first row holds the first close of the window (its return is NaN), the wealth of 1
         # the drawdowns are measured from; _get_returns would drop it.
@@ -1222,10 +1219,7 @@ class DrawdownRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if top < 1:
             raise ValueError("top must be at least 1.")
 
@@ -1371,10 +1365,7 @@ class DrawdownRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # The first row holds the first close of the window, see get_drawdown_series.
         returns = self._historical_data[period]["Return"]
@@ -1393,12 +1384,12 @@ class DrawdownRisk:
     def get_ulcer_index(
         self,
         period: str | None = None,
-        rolling: int | None = 14,
+        window: int | None = 14,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        compounded: bool = True,
+        compound_returns: bool = True,
         show_columns: str | list[str] | None = None,
     ):
         """
@@ -1410,7 +1401,7 @@ class DrawdownRisk:
         because it focuses on the depth and duration of drawdowns rather than the dispersion of
         returns.
 
-        The formula is as follows (with the default rolling=14):
+        The formula is as follows (with the default window of 14):
 
         - Ulcer Index = √(Σ ((Wealth(t) - Highest High(t)) / Highest High(t))^2 / n)
 
@@ -1418,8 +1409,8 @@ class DrawdownRisk:
         High(t) is the highest Wealth over the trailing 14 observations (the starting value of 1 included
         while fewer are available) and n is the number of daily returns in the period.
 
-        Martin measures every drawdown from the highest value so far (`rolling=None`); the default
-        trailing 14-period high is the variant StockCharts popularised. While fewer than `rolling`
+        Martin measures every drawdown from the highest value so far (no window); the default
+        trailing 14-period high is the variant StockCharts popularised. While fewer than `window`
         observations are available, the high is taken over the observations so far, so periods shorter
         than the window still have a value. The result is a decimal (0.05 is a root mean squared
         drawdown of 5%), where Martin quotes percentages.
@@ -1430,9 +1421,9 @@ class DrawdownRisk:
         divided by the Ulcer Index) and is read best relative to peers over the same window, since the
         default 14-period lookback gives lower values than a since-inception high-water mark.
 
-        With compounded=False the drawdowns are the absolute declines of 1 plus the summed returns from their
-        high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; with
-        rolling=None it agrees with Riskfolio-Lib's UCI_Abs.
+        Without compounding the drawdowns are the absolute declines of 1 plus the summed returns from their
+        high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; without
+        a window it agrees with Riskfolio-Lib's UCI_Abs.
 
         For more information, see the following sources:
 
@@ -1444,7 +1435,7 @@ class DrawdownRisk:
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
-            rolling (int | None, optional): The trailing lookback window used as the high-water
+            window (int | None, optional): The trailing lookback window used as the high-water
                 mark reference for each day's drawdown. Pass None for an expanding
                 (since-inception) high-water mark instead -- Martin's "Highest High"; a fixed
                 int window is the common trailing-high variant (e.g. a 14-day trailing high).
@@ -1456,7 +1447,7 @@ class DrawdownRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns
                 are measured on, or to sum them (absolute drawdowns). Defaults to True.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1498,16 +1489,16 @@ class DrawdownRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+            raise InvalidArgumentError(
+                "Intraday data is required for daily calculations. Please initialise the "
+                "Toolkit with an intraday_period or use a weekly or longer period."
+            )
 
         returns = self._within_historical_data[period]["Return"]
 
-        ulcer_index = risk_model.get_ui(returns, rolling, compounded=compounded)
+        ulcer_index = risk_model.get_ui(returns, window, compounded=compound_returns)
 
         ulcer_index = ulcer_index.loc[self._start_date : self._end_date]
 
@@ -1620,12 +1611,12 @@ class DrawdownRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+            raise InvalidArgumentError(
+                "Intraday data is required for daily calculations. Please initialise the "
+                "Toolkit with an intraday_period or use a weekly or longer period."
+            )
 
         returns = self._within_historical_data[period]["Return"]
 
@@ -1652,7 +1643,7 @@ class DrawdownRisk:
         self,
         period: str | None = None,
         method: Literal["episode", "observation"] = "episode",
-        compounded: bool = True,
+        compound_returns: bool = True,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -1684,7 +1675,7 @@ class DrawdownRisk:
         - Average Drawdown = Σ Drawdown(t) / n
 
         Where n is the number of returns. Wealth starts at 1, so a decline from the start of the window counts.
-        With compounded=False the drawdowns are measured on the summed returns instead, as an absolute decline
+        Without compounding the drawdowns are measured on the summed returns instead, as an absolute decline
         from their peak (Drawdown(t) = Sum(t) - max(0, max(Sum(s) for s <= t)), with Sum(t) = Σ Return(s)).
         The result is a negative decimal (0 when the value never fell below a previous high).
 
@@ -1706,7 +1697,7 @@ class DrawdownRisk:
                 Defaults to "daily".
             method (str, optional): "episode" for the average depth of the drawdown episodes or "observation"
             for the average drawdown of every period. Defaults to "episode".
-            compounded (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
+            compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             within_period (bool, optional): Whether to calculate the Average Drawdown within the specified period
             or for the entire period. Thus whether to look at the Average Drawdown within a specific year (if
@@ -1740,7 +1731,7 @@ class DrawdownRisk:
         - method="episode" agrees with PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
         Riskfolio-Lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
         libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
-        geometric=FALSE divides the decline of 1 + the summed returns by its peak, where compounded=False here
+        geometric=FALSE divides the decline of 1 + the summed returns by its peak, where the uncompounded drawdown here
         (and in Riskfolio-Lib and skfolio) takes the absolute decline.
         - The Sterling Ratio of `toolkit.performance` averages the depths of the 3 deepest episodes only (Bacon's
         Average Largest Drawdown); with at least as many as there are episodes it is method="episode".
@@ -1774,7 +1765,10 @@ class DrawdownRisk:
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         average_drawdown = drawdown_model.get_average_drawdown(
-            returns, method=method, compounded=compounded, window_size=rolling
+            returns,
+            method=method,
+            compounded=compound_returns,
+            window_size=rolling,
         )
 
         return self._finalize_measure(

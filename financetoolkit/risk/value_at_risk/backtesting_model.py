@@ -21,7 +21,7 @@ WEIBULL_SHAPE_BOUNDS = (0.001, 10.0)
 
 # The random orderings of the breaches behind the Monte Carlo p-value of the duration test:
 # 999 make (R + 1) * 5% a whole number, so the test at 5% has exactly its size (Dufour, 2006).
-DURATION_REPLICATIONS = 999
+DURATION_SIMULATIONS = 999
 GOLDEN_SECTION_STEPS = 40
 
 
@@ -187,7 +187,7 @@ def get_acerbi_szekely_test(
     cvar_estimates: pd.Series | pd.DataFrame,
     alpha: float,
     n_bootstrap: int = 1000,
-    random_state: int = 42,
+    seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Acerbi-Szekely (2014) "Z2" Expected Shortfall backtest.
@@ -247,8 +247,8 @@ def get_acerbi_szekely_test(
         (e.g., 0.05 for the 95% confidence level).
         n_bootstrap (int, optional): The number of bootstrap resamples used to estimate
         the Standard Error of Z2. Defaults to 1000.
-        random_state (int, optional): The seed for the bootstrap random number
-        generator, for reproducibility. Defaults to 42.
+        seed (int, optional): The seed for the bootstrap random number
+        generator, for reproducibility. Defaults to 0.
 
     Returns:
         pd.Series | pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its
@@ -263,7 +263,7 @@ def get_acerbi_szekely_test(
                     cvar_estimates[column],
                     alpha,
                     n_bootstrap,
-                    random_state,
+                    seed,
                 )
                 for column in returns.columns
             }
@@ -296,7 +296,7 @@ def get_acerbi_szekely_test(
 
         z2_statistic = _z2(breach, r, cvar)
 
-        rng = np.random.default_rng(random_state)
+        rng = np.random.default_rng(seed)
         bootstrap_indices = rng.integers(0, n, size=(n_bootstrap, n))
         bootstrap_z2 = np.array(
             [_z2(breach[idx], r[idx], cvar[idx]) for idx in bootstrap_indices]
@@ -474,8 +474,8 @@ def _duration_statistics(breaches: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def get_duration_test(
     returns: pd.Series | pd.DataFrame,
     var_estimates: pd.Series | pd.DataFrame,
-    replications: int = DURATION_REPLICATIONS,
-    random_state: int = 42,
+    simulations: int = DURATION_SIMULATIONS,
+    seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate Christoffersen and Pelletier's duration-based test of independence for a Value
@@ -492,7 +492,7 @@ def get_duration_test(
     - ln L(a, b) = C_1 * ln S(D_1) + (1 - C_1) * ln f(D_1) + Σ_(i=2)^(N-1) ln f(D_i) + C_N * ln S(D_N)
       + (1 - C_N) * ln f(D_N)
     - LR = 2 * (ln L(a_hat, b_hat) - ln L(a_tilde, 1))
-    - P-Value = (1 + #{LR_r >= LR}) / (R + 1), with LR_r the statistic of the r-th of R = `replications`
+    - P-Value = (1 + #{LR_r >= LR}) / (R + 1), with LR_r the statistic of the r-th of R = `simulations`
       random orderings of the same breaches
 
     Where D_i = t_i - t_(i-1) are the periods between consecutive breaches at t_1 < ... < t_N.
@@ -526,9 +526,9 @@ def get_duration_test(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
         var_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Value at Risk
             estimates, aligned to the same index as `returns`.
-        replications (int, optional): The number of random orderings of the breaches.
+        simulations (int, optional): The number of random orderings of the breaches.
             Defaults to 999.
-        random_state (int, optional): The seed of the random orderings. Defaults to 42.
+        seed (int, optional): The seed of the random orderings. Defaults to 0.
 
     Returns:
         pd.Series | pd.DataFrame: The duration statistic, its p-value and the fitted Weibull
@@ -538,7 +538,7 @@ def get_duration_test(
         return pd.DataFrame(
             {
                 column: get_duration_test(
-                    returns[column], var_estimates[column], replications, random_state
+                    returns[column], var_estimates[column], simulations, seed
                 )
                 for column in returns.columns
             }
@@ -548,19 +548,19 @@ def get_duration_test(
             raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breach = (aligned["returns"] < aligned["var"]).to_numpy()
-        generator = np.random.default_rng(random_state)
+        generator = np.random.default_rng(seed)
         orderings = np.array(
-            [generator.permutation(breach) for _ in range(replications)]
+            [generator.permutation(breach) for _ in range(simulations)]
         )
         statistics, shapes = _duration_statistics(
-            np.vstack([breach[None, :], orderings.reshape(replications, len(breach))])
+            np.vstack([breach[None, :], orderings.reshape(simulations, len(breach))])
         )
         lr_statistic, shape = float(statistics[0]), float(shapes[0])
 
         # An ordering with fewer than two durations (all breaches in a row at an end) has no
         # statistic and counts as one that is not as large.
         p_value = (
-            (1 + np.sum(statistics[1:] >= lr_statistic)) / (replications + 1)
+            (1 + np.sum(statistics[1:] >= lr_statistic)) / (simulations + 1)
             if np.isfinite(lr_statistic)
             else np.nan
         )
@@ -582,7 +582,7 @@ def get_mcneil_frey_test(
     cvar_estimates: pd.Series | pd.DataFrame,
     volatility_estimates: pd.Series | pd.DataFrame,
     n_bootstrap: int = 1000,
-    random_state: int = 42,
+    seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate McNeil and Frey's exceedance residual test for an Expected Shortfall (CVaR)
@@ -624,7 +624,7 @@ def get_mcneil_frey_test(
         volatility_estimates (pd.Series | pd.DataFrame): The volatility forecasts, aligned to
             the same index.
         n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
-        random_state (int, optional): The seed of the bootstrap. Defaults to 42.
+        seed (int, optional): The seed of the bootstrap. Defaults to 0.
 
     Returns:
         pd.Series | pd.DataFrame: The McNeil-Frey statistic, its bootstrap p-value and the
@@ -639,7 +639,7 @@ def get_mcneil_frey_test(
                     cvar_estimates[column],
                     volatility_estimates[column],
                     n_bootstrap,
-                    random_state,
+                    seed,
                 )
                 for column in returns.columns
             }
@@ -670,7 +670,7 @@ def get_mcneil_frey_test(
             )
 
         statistic = float(t_statistic(residuals))
-        rng = np.random.default_rng(random_state)
+        rng = np.random.default_rng(seed)
         centered = residuals - residuals.mean()
         resamples = centered[rng.integers(0, k, size=(n_bootstrap, k))]
 

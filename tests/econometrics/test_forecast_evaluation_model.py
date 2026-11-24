@@ -578,7 +578,7 @@ def test_get_model_confidence_set_keeps_the_best_models(recorder):
     assert not result.loc["M5", "In Confidence Set"]
     recorder.capture(result.round(4))
 
-    with pytest.raises(ValueError, match="max or range"):
+    with pytest.raises(ValueError, match="'max' or 'range'"):
         forecast_evaluation_model.get_model_confidence_set(
             _mcs_losses(), statistic="sum"
         )

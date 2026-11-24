@@ -11,7 +11,13 @@ from financetoolkit.helpers import calculate_per_window, handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.distribution import dispersion_model, fractal_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_option,
+    check_period,
+    handle_errors,
+    validate_alpha,
+)
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
@@ -117,23 +123,21 @@ class DistributionRisk:
         | 2024 | 0.9029 | 0.8128 | 1.072  |      0.9091 |
         | 2025 | 0.8622 | 1.104  | 1.2495 |      0.93   |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -256,21 +260,18 @@ class DistributionRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -408,21 +409,18 @@ class DistributionRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -550,16 +548,13 @@ class DistributionRisk:
         """
         period = period if period else "daily"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
@@ -658,8 +653,7 @@ class DistributionRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
@@ -758,8 +752,7 @@ class DistributionRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data["daily"]["Return"]
         mean_absolute_deviation = risk_model.get_mean_absolute_deviation(
@@ -866,8 +859,7 @@ class DistributionRisk:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        check_period(period, ["weekly", "monthly", "quarterly", "yearly"])
 
         returns = self._historical_data["daily"]["Return"]
         coefficient_of_variation = risk_model.get_coefficient_of_variation(
@@ -995,10 +987,8 @@ class DistributionRisk:
         | KO        |   0.0315 |                3.8515 |         2.3126 |       0.981  | 2022-11-10      |
         | Benchmark |  -0.0141 |               -1.76   |        -1.026  |       0.8632 | 2025-01-10      |
         """
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        validate_alpha(alpha)
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         window = window if window else max(PERIODS_PER_YEAR[period], 20)
 
@@ -1007,7 +997,7 @@ class DistributionRisk:
                 "The window needs at least 2 returns to measure a volatility."
             )
         if not 0 < alpha < 1:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
             )
 
@@ -1304,8 +1294,9 @@ class DistributionRisk:
                 ),
             )
         else:
-            raise ValueError(
-                "Method should be 'generalized', 'rescaled_range' or 'detrended_fluctuation'."
+            raise InvalidArgumentError(
+                f"method must be one of 'generalized', 'rescaled_range' or 'detrended_fluctuation', "
+                f"not {method!r}. Please pass one of these as method."
             )
 
         return apply_rounding(
@@ -1320,10 +1311,7 @@ class DistributionRisk:
         `returns` their differences, the log returns, each ticker over its own trading days.
         """
         period = period if period else "daily"
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         log_prices = np.log(self._get_prices("Adj Close", period))
         if not returns:
@@ -1428,8 +1416,7 @@ class DistributionRisk:
             "katz": fractal_model.get_katz_fractal_dimension,
             "petrosian": fractal_model.get_petrosian_fractal_dimension,
         }
-        if method not in functions:
-            raise ValueError("Method should be 'higuchi', 'katz' or 'petrosian'.")
+        check_option("method", method, functions)
 
         fractal_dimension = calculate_per_window(
             self._get_log_prices(period),
@@ -1677,7 +1664,10 @@ class DistributionRisk:
                 min_separation=min_separation if min_separation is not None else 0,
             )
         else:
-            raise ValueError("Method should be 'rosenstein' or 'eckmann'.")
+            raise InvalidArgumentError(
+                f"method must be one of 'rosenstein' or 'eckmann', "
+                f"not {method!r}. Please pass one of these as method."
+            )
 
         return apply_rounding(
             lyapunov_exponent, rounding if rounding is not None else self._rounding
@@ -2201,7 +2191,7 @@ class DistributionRisk:
         self,
         period: str | None = None,
         alpha: float = 0.05,
-        simulations: int = 100,
+        points: int = 100,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -2220,13 +2210,13 @@ class DistributionRisk:
         return in the tail equally. It is therefore always at or below the Conditional Value at Risk and
         above the Worst Realization.
 
-        The formula is as follows (with the default alpha=0.05 and simulations=100):
+        The formula is as follows (with the default alpha of 0.05 and 100 points):
 
         - Tail Gini = Σ_j c_j * CVaR(alpha_j)
         - c_1 = alpha_2 * alpha_1 / alpha^2, c_j = (alpha_(j+1) - alpha_(j-1)) * alpha_j / alpha^2 and
           c_m = (alpha_m - alpha_(m-1)) / alpha
 
-        Where alpha_1 < ... < alpha_m = alpha are m = `simulations` evenly spaced tail probabilities from
+        Where alpha_1 < ... < alpha_m = alpha are m = `points` evenly spaced tail probabilities from
         0.0001 to alpha and CVaR(alpha_j) is the average of the alpha_j share of the lowest returns, the
         return at the boundary counting with its fraction (the ordered weighted average of Cajas 2021).
         The result is a return, negative for a loss, as the Conditional Value at Risk of the Toolkit is.
@@ -2245,7 +2235,7 @@ class DistributionRisk:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             alpha (float, optional): The tail probability, between 0.0001 and 1. Defaults to 0.05.
-            simulations (int, optional): The number of tail probabilities the Conditional Value at Risk
+            points (int, optional): The number of tail probabilities the Conditional Value at Risk
             is averaged over. Defaults to 100.
             within_period (bool, optional): Whether to calculate the Tail Gini within the specified period or
             for the entire period. Thus whether to look at the Tail Gini within a specific year (if period =
@@ -2307,11 +2297,12 @@ class DistributionRisk:
         | 2024 | -0.0902 | -0.0719 | -0.0542 |     -0.0218 |
         | 2025 | -0.099  | -0.0526 | -0.0582 |     -0.0348 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
         result = dispersion_model.get_tail_gini(
-            returns, alpha=alpha, simulations=simulations, window_size=rolling
+            returns, alpha=alpha, points=points, window_size=rolling
         )
 
         return self._finalize_measure(
@@ -2331,7 +2322,7 @@ class DistributionRisk:
         measure: str = "range",
         alpha: float = 0.05,
         beta: float | None = None,
-        simulations: int = 100,
+        points: int = 100,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -2385,7 +2376,7 @@ class DistributionRisk:
             and 1 for the Tail Gini). Defaults to 0.05.
             beta (float | None, optional): The tail probability of the gains. Defaults to None, which uses
             alpha.
-            simulations (int, optional): The number of tail probabilities of the Tail Gini Range.
+            points (int, optional): The number of tail probabilities of the Tail Gini Range.
             Defaults to 100.
             within_period (bool, optional): Whether to calculate the Risk Range within the specified period or
             for the entire period. Thus whether to look at the Risk Range within a specific year (if period =
@@ -2448,6 +2439,7 @@ class DistributionRisk:
         | 2024 | 0.0772 | 0.0485 | 0.0499 |      0.0352 |
         | 2025 | 0.0975 | 0.0728 | 0.0631 |      0.0538 |
         """
+        validate_alpha(alpha)
         period = period if period else "daily"
         returns = self._get_measure_returns(period, within_period, rolling, growth)
 
@@ -2456,7 +2448,7 @@ class DistributionRisk:
             measure=measure,
             alpha=alpha,
             beta=beta,
-            simulations=simulations,
+            points=points,
             window_size=rolling,
         )
 

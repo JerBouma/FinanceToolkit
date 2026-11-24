@@ -21,7 +21,11 @@ from financetoolkit.risk.value_at_risk.value_at_risk_controller import ValueAtRi
 from financetoolkit.risk.volatility.volatility_controller import VolatilityRisk
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
-from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.error_model import (
+    InvalidArgumentError,
+    check_period,
+    handle_errors,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
@@ -194,21 +198,18 @@ class RiskBase:
         parameters it shares with the other distribution measures: the `period` returns of
         the full history for a rolling window, else those of `_get_returns`.
         """
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if (
             period == "daily"
             and within_period
             and self._historical_data["intraday"].empty
         ):
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Intraday data is required for within-period daily calculations. Either set "
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
         if growth and not within_period and not rolling:
-            raise ValueError(
+            raise InvalidArgumentError(
                 "Growth calculations need one value per period, while "
                 "within_period=False produces a single value for the entire period. "
                 "Set within_period=True to calculate growth."
@@ -266,10 +267,7 @@ class RiskBase:
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
 
         # Only rows without any value are dropped: the pairwise calculations (copulas, tail dependence, CoVaR) align each pair themselves, so a joint dropna would cut every ticker's sample down to the shortest history.  # noqa: E501
         return self._historical_data[period][column].dropna(how="all")
@@ -383,12 +381,12 @@ class Risk(
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError(
-                "Period must be daily, weekly, monthly, quarterly, or yearly."
-            )
+        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
         if period == "daily" and self._historical_data["intraday"].empty:
-            raise ValueError("Intraday data is required for daily calculations.")
+            raise InvalidArgumentError(
+                "Intraday data is required for daily calculations. Please initialise the "
+                "Toolkit with an intraday_period or use a weekly or longer period."
+            )
 
         rounding = rounding if rounding is not None else self._rounding
 
@@ -722,16 +720,16 @@ class Risk(
 
         Which returns:
 
-        |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |    Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |                                         |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   P-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |    Beta |   Quantile Turnover |   Rank Autocorrelation |
         |:----------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|--------:|--------------------:|-----------------------:|
-        | ('get_volatility', '1 Month')           |    0.0961 |                  0.3682 |                 0.261  |        2.8469 |    0.0052 |       -0.2042 |       -0.4179 |           0.6218 |            119 |             0.0185 |             0.0332 |  0.4071 |              0.4688 |                 0.5854 |
-        | ('get_volatility', '12 Months')         |    0.2758 |                  0.371  |                 0.7434 |        7.7259 |    0      |       -0.7578 |       -0.279  |           0.7685 |            108 |             0.3155 |            -0.0758 |  1.0964 |              0.4688 |                 0.5854 |
-        | ('get_maximum_drawdown', '1 Month')     |   -0.0249 |                  0.3321 |                -0.075  |       -0.8185 |    0.4147 |       -0.0309 |       -0.4493 |           0.4622 |            119 |            -0.0041 |             0.0122 | -0.3115 |              0.6275 |                 0.2721 |
-        | ('get_maximum_drawdown', '12 Months')   |   -0.1751 |                  0.3545 |                -0.494  |       -5.1338 |    0      |        0.4906 |       -0.4254 |           0.3241 |            108 |            -0.2094 |             0.0476 | -0.6251 |              0.6275 |                 0.2721 |
-        | ('get_skewness', '1 Month')             |    0.0148 |                  0.2938 |                 0.0505 |        0.5506 |    0.583  |       -0.079  |        0.1069 |           0.5462 |            119 |            -0.0007 |            -0.0046 |  0.0592 |              0.7521 |                 0.0608 |
-        | ('get_skewness', '12 Months')           |    0.0115 |                  0.2983 |                 0.0387 |        0.4023 |    0.6883 |        0.1009 |       -0.5614 |           0.5185 |            108 |             0.0178 |            -0.0111 |  0.0953 |              0.7521 |                 0.0608 |
-        | ('get_amihud_illiquidity', '1 Month')   |   -0.028  |                  0.3893 |                -0.0719 |       -0.7847 |    0.4342 |       -0.0857 |       -0.9274 |           0.479  |            119 |            -0.0056 |             0.0215 | -0.1897 |              0.1894 |                 0.9    |
-        | ('get_amihud_illiquidity', '12 Months') |   -0.1169 |                  0.3796 |                -0.3079 |       -3.1993 |    0.0018 |        0.6751 |       -0.2988 |           0.3611 |            108 |            -0.0816 |             0.1035 | -0.4575 |              0.1894 |                 0.9    |
+        | ('get_volatility', '1 Month')           |    0.0963 |                  0.3676 |                 0.262  |        2.8586 |    0.005  |       -0.2056 |       -0.405  |           0.6218 |            119 |             0.0185 |             0.0337 |  0.407  |              0.4688 |                 0.5848 |
+        | ('get_volatility', '12 Months')         |    0.2759 |                  0.3703 |                 0.7451 |        7.7428 |    0      |       -0.7586 |       -0.2658 |           0.7685 |            108 |             0.3154 |            -0.0757 |  1.0993 |              0.4688 |                 0.5848 |
+        | ('get_maximum_drawdown', '1 Month')     |   -0.0257 |                  0.3315 |                -0.0774 |       -0.8443 |    0.4002 |       -0.0332 |       -0.4476 |           0.4622 |            119 |            -0.0041 |             0.0118 | -0.3113 |              0.6275 |                 0.2719 |
+        | ('get_maximum_drawdown', '12 Months')   |   -0.1759 |                  0.3542 |                -0.4965 |       -5.1603 |    0      |        0.496  |       -0.4167 |           0.3241 |            108 |            -0.2094 |             0.0475 | -0.6263 |              0.6275 |                 0.2719 |
+        | ('get_skewness', '1 Month')             |    0.0136 |                  0.2943 |                 0.0464 |        0.5056 |    0.6141 |       -0.0773 |        0.1094 |           0.5462 |            119 |            -0.0007 |            -0.0055 |  0.0598 |              0.7521 |                 0.0593 |
+        | ('get_skewness', '12 Months')           |    0.0081 |                  0.2996 |                 0.0271 |        0.2815 |    0.7789 |        0.1058 |       -0.547  |           0.5093 |            108 |             0.0142 |            -0.0111 |  0.0936 |              0.7521 |                 0.0593 |
+        | ('get_amihud_illiquidity', '1 Month')   |   -0.0285 |                  0.3896 |                -0.0731 |       -0.7971 |    0.427  |       -0.0875 |       -0.9255 |           0.479  |            119 |            -0.0059 |             0.0216 | -0.1902 |              0.1905 |                 0.8996 |
+        | ('get_amihud_illiquidity', '12 Months') |   -0.1164 |                  0.3789 |                -0.3072 |       -3.1927 |    0.0019 |        0.68   |       -0.2884 |           0.3611 |            108 |            -0.0796 |             0.1036 | -0.457  |              0.1905 |                 0.8996 |
         """
         factors = factor_model.get_daily_factors(
             self,

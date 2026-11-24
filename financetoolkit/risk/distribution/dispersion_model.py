@@ -9,6 +9,7 @@ from scipy.special import binom
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.value_at_risk import evar_model
+from financetoolkit.utilities.error_model import InvalidArgumentError, check_option
 
 # The smallest tail probability of the Tail Gini's discretization, the same as Riskfolio-Lib's (Cajas, 2021).
 TAIL_GINI_SMALLEST_ALPHA = 0.0001
@@ -70,11 +71,11 @@ def get_owa_cvar_weights(observations: int, alpha: float) -> np.ndarray:
 
 
 def get_owa_tail_gini_weights(
-    observations: int, alpha: float = 0.05, simulations: int = 100
+    observations: int, alpha: float = 0.05, points: int = 100
 ) -> np.ndarray:
     """
     The ordered weighted average (OWA) weights of the Tail Gini: a weighted sum of the
-    Conditional Value at Risk at `simulations` tail probabilities from 0.0001 up to alpha,
+    Conditional Value at Risk at `points` tail probabilities from 0.0001 up to alpha,
     which approximates the Tail Gini of Furman, Wang and Zitikis (2017) as in Cajas (2021).
     Applied to the returns sorted from low to high they give a return, negative for a loss.
 
@@ -90,17 +91,17 @@ def get_owa_tail_gini_weights(
     Args:
         observations (int): The number of returns N.
         alpha (float, optional): The tail probability. Defaults to 0.05.
-        simulations (int, optional): The number of tail probabilities m. Defaults to 100.
+        points (int, optional): The number of tail probabilities m. Defaults to 100.
 
     Returns:
         np.ndarray: The N weights.
     """
     if not TAIL_GINI_SMALLEST_ALPHA < alpha < 1:
-        raise ValueError(
+        raise InvalidArgumentError(
             f"Alpha must be between {TAIL_GINI_SMALLEST_ALPHA} and 1 for the Tail Gini."
         )
 
-    alphas = np.linspace(alpha, TAIL_GINI_SMALLEST_ALPHA, int(simulations))[::-1]
+    alphas = np.linspace(alpha, TAIL_GINI_SMALLEST_ALPHA, int(points))[::-1]
     factors = np.empty(len(alphas))
     factors[0] = alphas[1] * alphas[0] / alphas[-1] ** 2
     factors[1:-1] = (alphas[2:] - alphas[:-2]) * alphas[1:-1] / alphas[-1] ** 2
@@ -183,8 +184,7 @@ def get_owa_l_moment_crm_weights(
     Returns:
         np.ndarray: The N weights.
     """
-    if method not in L_MOMENT_RISK_METHODS:
-        raise ValueError("Method must be msd, mss or crra.")
+    check_option("method", method, L_MOMENT_RISK_METHODS)
     if order < 2 or int(order) != order:  # noqa: PLR2004
         raise ValueError("The order must be an integer of 2 or higher.")
     if not 0 < risk_aversion < 1 or not 0 < max_weight < 1:
@@ -339,7 +339,7 @@ def get_gini_mean_difference(
 def get_tail_gini(
     returns: pd.Series | pd.DataFrame,
     alpha: float = 0.05,
-    simulations: int = 100,
+    points: int = 100,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -352,18 +352,18 @@ def get_tail_gini(
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
         alpha (float, optional): The tail probability. Defaults to 0.05.
-        simulations (int, optional): The number of tail probabilities. Defaults to 100.
+        points (int, optional): The number of tail probabilities. Defaults to 100.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame | float: The Tail Gini as a return, negative for a loss.
     """
-    get_owa_tail_gini_weights(2, alpha, simulations)  # Validates alpha up front.
+    get_owa_tail_gini_weights(2, alpha, points)  # Validates alpha up front.
 
     return risk_model.apply_to_observations(
         returns,
         lambda samples: np.sort(samples, axis=1)
-        @ get_owa_tail_gini_weights(samples.shape[1], alpha, simulations),
+        @ get_owa_tail_gini_weights(samples.shape[1], alpha, points),
         window_size,
     )
 
@@ -449,8 +449,7 @@ def get_l_moment_risk_measure(
         pd.Series | pd.DataFrame | float: The risk measure, a positive decimal.
     """
     # The parameters are validated up front, as a period fails on them only when it is calculated.
-    if method not in L_MOMENT_RISK_METHODS:
-        raise ValueError("Method must be msd, mss or crra.")
+    check_option("method", method, L_MOMENT_RISK_METHODS)
     if order < 2 or int(order) != order:  # noqa: PLR2004
         raise ValueError("The order must be an integer of 2 or higher.")
     if method != "crra" and max_weight * (order - 1) < 1:
@@ -474,7 +473,7 @@ def get_risk_range(
     measure: str = "range",
     alpha: float = 0.05,
     beta: float | None = None,
-    simulations: int = 100,
+    points: int = 100,
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -502,21 +501,20 @@ def get_risk_range(
         alpha (float, optional): The tail probability of the losses. Defaults to 0.05.
         beta (float | None, optional): The tail probability of the gains. Defaults to None,
             which uses alpha.
-        simulations (int, optional): The number of tail probabilities of the Tail Gini.
+        points (int, optional): The number of tail probabilities of the Tail Gini.
             Defaults to 100.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame | float: The range, a positive decimal.
     """
-    if measure not in RANGE_MEASURES:
-        raise ValueError("Measure must be range, var, cvar, tail_gini or evar.")
+    check_option("measure", measure, RANGE_MEASURES)
 
     beta = alpha if beta is None else beta
 
     if measure == "tail_gini":
-        get_owa_tail_gini_weights(2, alpha, simulations)
-        get_owa_tail_gini_weights(2, beta, simulations)
+        get_owa_tail_gini_weights(2, alpha, points)
+        get_owa_tail_gini_weights(2, beta, points)
     elif measure != "range" and not (0 < alpha < 1 and 0 < beta < 1):
         raise ValueError("Alpha and beta lie between 0 and 1.")
 
@@ -532,11 +530,9 @@ def get_risk_range(
         if measure == "tail_gini":
             ordered = np.sort(samples, axis=1)
             observations = samples.shape[1]
-            losses = ordered @ get_owa_tail_gini_weights(
-                observations, alpha, simulations
-            )
+            losses = ordered @ get_owa_tail_gini_weights(observations, alpha, points)
             gains = ordered[:, ::-1] @ get_owa_tail_gini_weights(
-                observations, beta, simulations
+                observations, beta, points
             )
 
             return gains - losses

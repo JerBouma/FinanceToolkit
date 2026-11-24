@@ -19433,11 +19433,11 @@ class Ratios:
 
         Which returns:
 
-        |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
+        |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   P-Value |   IC Skewness |   IC Kurtosis |   Positive Share |   Observations |   Top Minus Bottom |   Annualized Alpha |   Beta |   Quantile Turnover |   Rank Autocorrelation |
         |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|--------------:|--------------:|-----------------:|---------------:|-------------------:|-------------------:|-------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.051  |                  0.2917 |                 0.1748 |        1.817  |    0.072  |       -0.6608 |        0.1215 |           0.5741 |            108 |             0.0852 |            -0.0921 | 0.5704 |              0.0872 |                 0.9499 |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1232 |                  0.3142 |                 0.392  |        4.0741 |    0.0001 |       -0.2513 |       -0.4526 |           0.6759 |            108 |             0.1688 |            -0.0322 | 0.2882 |              0.0301 |                 0.989  |
-        | ('get_return_on_equity', '12 Months')        |    0.0359 |                  0.3528 |                 0.1018 |        1.0178 |    0.3113 |        0.314  |       -0.1457 |           0.49   |            100 |             0.0194 |            -0.0313 | 0.1369 |              0.0494 |                 0.9665 |
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0513 |                  0.2917 |                 0.1758 |        1.8271 |    0.0705 |       -0.6639 |        0.1266 |           0.5741 |            108 |             0.0852 |            -0.0921 | 0.5705 |              0.0872 |                 0.9499 |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.123  |                  0.3142 |                 0.3916 |        4.0697 |    0.0001 |       -0.25   |       -0.4529 |           0.6759 |            108 |             0.1688 |            -0.0322 | 0.2882 |              0.0301 |                 0.989  |
+        | ('get_return_on_equity', '12 Months')        |    0.0356 |                  0.3525 |                 0.1009 |        1.0093 |    0.3153 |        0.3158 |       -0.1381 |           0.49   |            100 |             0.0194 |            -0.0313 | 0.1369 |              0.0494 |                 0.9665 |
         """
         factors = factor_model.get_daily_factors(
             self,

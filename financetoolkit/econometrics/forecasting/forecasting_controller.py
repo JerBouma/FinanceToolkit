@@ -375,7 +375,6 @@ class ForecastingEconometrics:
 
         Referenced against:
         - statsmodels, VAR: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VAR.html
-            Test: tests/econometrics/test_reference_validation.py::test_var_forecast
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -498,7 +497,6 @@ class ForecastingEconometrics:
 
         Referenced against:
         - statsmodels, VARResults.irf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.irf.html
-            Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -625,7 +623,6 @@ class ForecastingEconometrics:
 
         Referenced against:
         - statsmodels, VARResults.fevd: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.fevd.html
-            Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to

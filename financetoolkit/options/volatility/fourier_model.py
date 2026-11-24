@@ -116,12 +116,8 @@ def get_fourier_price(
 
     Referenced against:
     - QuantLib, AnalyticHestonEngine (Heston): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
-        Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_quantlib
     - QuantLib, BatesEngine (Bates): https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
-        Test: tests/options/test_stochastic_volatility_models.py::test_bates_matches_quantlib
     - QuantLib, VarianceGammaEngine (Variance Gamma): https://www.quantlib.org/reference/class_quant_lib_1_1_variance_gamma_engine.html
-        Test:
-            tests/options/test_stochastic_volatility_models.py::test_variance_gamma_matches_the_gamma_clock_integral_and_quantlib
 
     Args:
         characteristic_function (Callable): The characteristic function φ(u) of

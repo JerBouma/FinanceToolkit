@@ -188,10 +188,6 @@ class PatternTechnicals:
 
         Referenced against:
         - TA-Lib, CDL2CROWS: https://ta-lib.org/functions/cdl2crows.html
-            Test: tests/technical/test_pattern_model.py::test_single_candle_patterns_match_ta_lib_on_the_test_data
-            Test: tests/technical/test_pattern_model.py::test_two_and_three_candle_patterns_match_ta_lib_on_the_test_data
-            Test: tests/technical/test_pattern_model.py::test_three_candle_patterns_match_ta_lib_on_the_test_data
-            Test: tests/technical/test_pattern_model.py::test_four_and_five_candle_patterns_match_ta_lib_on_the_test_data
         - TA-Lib, CDL3BLACKCROWS: https://ta-lib.org/functions/cdl3blackcrows.html
         - TA-Lib, CDL3INSIDE: https://ta-lib.org/functions/cdl3inside.html
         - TA-Lib, CDL3LINESTRIKE: https://ta-lib.org/functions/cdl3linestrike.html
@@ -439,7 +435,6 @@ class PatternTechnicals:
 
         Referenced against:
         - TA-Lib, HA: https://ta-lib.org/functions/ha.html
-            Test: tests/technical/test_pattern_model.py::test_heikin_ashi_matches_ta_lib
 
         Shares similar logic:
         - pandas-ta-classic, ha: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/candles/ha.py#L25
@@ -578,7 +573,6 @@ class PatternTechnicals:
 
         Referenced against:
         - TA-Lib, FRACTAL: https://ta-lib.org/functions/fractal.html
-            Test: tests/technical/test_pattern_model.py::test_williams_fractal_matches_ta_lib_on_the_test_data
 
         Shares similar logic:
         - finta, WILLIAMS_FRACTAL: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2205
@@ -713,7 +707,6 @@ class PatternTechnicals:
 
         Referenced against:
         - pandas-ta-classic, td_seq: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/td_seq.py#L31
-            Test: tests/technical/test_pattern_model.py::test_td_sequential_matches_pandas_ta_classic_on_the_test_data
 
         TD Sequential, TD Setup, TD Countdown and TDST are Tom DeMark's names for his indicator
         and its parts.
@@ -844,7 +837,6 @@ class PatternTechnicals:
 
         Referenced against:
         - pandas-ta-classic, smc_sweep: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smc_sweep.py#L12
-            Test: tests/technical/test_pattern_model.py::test_liquidity_sweep_matches_pandas_ta_classic_on_the_test_data
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:

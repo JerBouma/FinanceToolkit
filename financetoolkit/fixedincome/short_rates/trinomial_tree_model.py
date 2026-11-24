@@ -508,13 +508,8 @@ def get_callable_bond_price(
 
     Referenced against:
     - QuantLib, CallableFixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_callable_fixed_rate_bond.html
-        Test: tests/fixedincome/test_trinomial_tree_model.py::test_callable_and_puttable_bonds_match_quantlib
-        Test: tests/fixedincome/test_short_rate_model.py::test_puttable_bond_matches_quantlib
     - QuantLib, TreeCallableFixedRateBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_tree_callable_fixed_rate_bond_engine.html
-        Test: tests/fixedincome/test_trinomial_tree_model.py::test_callable_and_puttable_bonds_match_quantlib
-        Test: tests/fixedincome/test_short_rate_model.py::test_puttable_bond_matches_quantlib
     - FinancePy, BDTTree.callable_puttable_bond_tree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L831
-        Test: tests/fixedincome/test_trinomial_tree_model.py::test_black_derman_toy_puttable_bond_matches_financepy
 
     Shares similar logic:
     - FinancePy, HWTree.callable_puttable_bond_tree: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1366
@@ -651,7 +646,6 @@ def get_bermudan_swaption(
 
     Referenced against:
     - QuantLib, TreeSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_tree_swaption_engine.html
-        Test: tests/fixedincome/test_trinomial_tree_model.py::test_bermudan_swaption_matches_quantlib
 
     Shares similar logic:
     - FinancePy, HWTree.bermudan_swaption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1225
@@ -853,7 +847,6 @@ def get_bond_option(
 
     Referenced against:
     - FinancePy, HWTree.bond_option: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L1273
-        Test: tests/fixedincome/test_trinomial_tree_model.py::test_bond_option_matches_financepy
 
     Shares similar logic:
     - FinancePy, BKTree.bond_option: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bk_tree.py#L1042

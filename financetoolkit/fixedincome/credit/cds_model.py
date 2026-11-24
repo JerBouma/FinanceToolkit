@@ -91,13 +91,9 @@ def get_credit_default_swap(
 
     Referenced against:
     - QuantLib, CreditDefaultSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_credit_default_swap.html
-        Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
     - QuantLib, IsdaCdsEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_isda_cds_engine.html
-        Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
     - QuantLib, MidPointCdsEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/credit/midpointcdsengine.hpp#L34
-        Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
     - QuantLib, IntegralCdsEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/credit/integralcdsengine.hpp#L33
-        Test: tests/fixedincome/test_credit_model.py::test_credit_default_swap_matches_quantlib
 
     Shares similar logic:
     - FinancePy, CDS: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds.py#L262
@@ -201,11 +197,8 @@ def get_cds_implied_hazard_rates(
 
     Referenced against:
     - QuantLib, PiecewiseFlatHazardRate: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_default_curve.html
-        Test: tests/fixedincome/test_credit_model.py::test_cds_implied_hazard_rates_reprice_the_quotes
     - QuantLib, SpreadCdsHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_spread_cds_helper.html
-        Test: tests/fixedincome/test_credit_model.py::test_cds_implied_hazard_rates_reprice_the_quotes
     - FinancePy, CDSCurve: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/cds_curve.py#L45
-        Test: tests/fixedincome/test_credit_model.py::test_cds_implied_hazard_rates_match_financepy
 
     Args:
         maturities (np.ndarray | list): The CDS maturities in years, increasing.
@@ -337,9 +330,7 @@ def get_cds_option(
 
     Referenced against:
     - QuantLib, CdsOption: https://www.quantlib.org/reference/class_quant_lib_1_1_cds_option.html
-        Test: tests/fixedincome/test_credit_model.py::test_cds_option_matches_quantlib
     - QuantLib, BlackCdsOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_cds_option_engine.html
-        Test: tests/fixedincome/test_credit_model.py::test_cds_option_matches_quantlib
 
     Shares similar logic:
     - FinancePy, CDSOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds_option.py#L41

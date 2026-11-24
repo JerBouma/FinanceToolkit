@@ -199,7 +199,6 @@ def get_delta_hedging_simulation(
 
     Referenced against:
     - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
-        Test: tests/options/test_hedging_model.py::test_the_simulation_matches_financepy
 
     Args:
         stock_price (float): The stock price at the sale.

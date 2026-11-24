@@ -100,7 +100,6 @@ def get_vasicek_loss_distribution(
 
     Referenced against:
     - FinancePy, portfolio_cdf_lhp: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L60
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_vasicek_distribution_matches_financepy
 
     Args:
         loss (float | np.ndarray): The loss level(s) x, as a share of the notional.
@@ -171,7 +170,6 @@ def get_vasicek_loss_density(
 
     Referenced against:
     - FinancePy, lhp_analytical_density: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L219
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_vasicek_distribution_matches_financepy
 
     Shares similar logic:
     - FinancePy, lhp_density: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L137
@@ -257,7 +255,6 @@ def get_vasicek_tranche_loss(
 
     Referenced against:
     - FinancePy, tr_surv_prob_lhp: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L17
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_tranche_survival_matches_financepy
 
     Shares similar logic:
     - FinancePy, exp_min_lk: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L257
@@ -462,7 +459,6 @@ def get_portfolio_loss_distribution(
 
     Referenced against:
     - FinancePy, loss_dbn_recursion_gcd: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L29
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_recursion_matches_financepy
 
     Shares similar logic:
     - FinancePy, homog_basket_loss_dbn: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L95
@@ -586,7 +582,6 @@ def get_tranche_expected_loss(
 
     Referenced against:
     - FinancePy, tranche_surv_prob_recursion: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L150
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_tranche_survival_matches_financepy
 
     Args:
         loss_distribution (pd.Series): The probability of every loss, indexed by the loss as
@@ -759,7 +754,6 @@ def get_nth_to_default_swap(
 
     Referenced against:
     - FinancePy, CDSBasket.value_1f_gaussian_homo: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds_basket.py#L354
-        Test: tests/fixedincome/test_portfolio_credit_model.py::test_nth_to_default_swap_matches_financepy
 
     Args:
         n (int): The default that triggers the protection, between 1 and the number of

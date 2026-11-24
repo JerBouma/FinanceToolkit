@@ -101,11 +101,8 @@ def get_convertible_bond_value(
 
     Referenced against:
     - QuantLib, ConvertibleFixedCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_convertible_fixed_coupon_bond.html
-        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
     - QuantLib, ConvertibleZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_convertible_zero_coupon_bond.html
-        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
     - QuantLib, BinomialConvertibleEngine (CRR): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_convertible_engine.html
-        Test: tests/fixedincome/test_convertible_model.py::test_convertible_matches_quantlib_without_a_credit_spread
 
     Args:
         stock_price (float): The price of the stock today.

@@ -59,7 +59,6 @@ def get_survival_probability(
 
     Referenced against:
     - QuantLib, HazardRateCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_hazard_rate_curve.html
-        Test: tests/fixedincome/test_credit_model.py::test_survival_probability_matches_quantlib
 
     Args:
         hazard_rates (np.ndarray | list | pd.Series): The hazard rates λ_i, continuous and
@@ -219,7 +218,6 @@ def get_risky_bond_price(
 
     Referenced against:
     - QuantLib, RiskyBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_risky_bond_engine.html
-        Test: tests/fixedincome/test_credit_model.py::test_risky_bond_price_matches_quantlib
 
     Args:
         coupon_rate (float): The annual coupon rate, as a decimal.

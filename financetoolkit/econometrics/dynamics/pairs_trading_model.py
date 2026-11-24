@@ -117,7 +117,6 @@ def get_pairs_trading(
 
     Referenced against:
     - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
-        Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
     Args:
         dependent (pd.Series): The price of the first asset.

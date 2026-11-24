@@ -160,9 +160,7 @@ class InflationFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, ZeroCouponInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
-            Test: tests/fixedincome/test_inflation_swap_model.py::test_zero_coupon_inflation_swap_rate_matches_quantlib
         - QuantLib, YearOnYearInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
-            Test: tests/fixedincome/test_inflation_swap_model.py::test_year_on_year_inflation_swap_rate_matches_quantlib
 
         Also known as: ZCIS rate, YoY swap rate, zero-coupon breakeven inflation, inflation
         swap curve.
@@ -313,11 +311,7 @@ class InflationFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, ZeroInflationIndex: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_inflation_index.html
-            Test:
-                tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
         - QuantLib, MultiplicativePriceSeasonality: https://www.quantlib.org/reference/class_quant_lib_1_1_multiplicative_price_seasonality.html
-            Test:
-                tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
 
         Also known as: forward CPI, CPI fixing curve, inflation index curve, seasonal
         adjustment of inflation swaps.

@@ -63,7 +63,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
-            Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
         - Tulip Indicators, linreg: https://tulipindicators.org/linreg
         - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
@@ -168,7 +167,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
         Also known as: slope, rise over run, average change per period, angle.
 
@@ -278,7 +276,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
         - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
         Also known as: CORREL, Pearson correlation coefficient, rolling correlation, correlation with the benchmark.
@@ -415,7 +412,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
         - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
         - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
@@ -518,9 +514,7 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
         - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
 
         Also known as: PERCENTILE, quantile, rolling quantile, moving percentile.
 
@@ -626,7 +620,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
-            Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
         Also known as: PERCENTRANK, percentile rank, percent rank.
 
@@ -725,7 +718,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
         Also known as: z-score, standard score, ZSCORE, normalized price.
 
@@ -829,7 +821,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
         - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
         - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
         - Tulip Indicators, md: https://tulipindicators.org/md
@@ -936,7 +927,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
 
         Shares similar logic:
         - Tulip Indicators, stderr: https://tulipindicators.org/stderr
@@ -1041,7 +1031,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
 
         Also known as: ENTP, Shannon entropy, information entropy.
 
@@ -1202,17 +1191,11 @@ class StatisticsEconometrics:
 
         Referenced against:
         - nolds, sampen: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L699
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, sample_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L740
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, app_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L638
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, perm_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L143
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, spectral_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L315
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, svd_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L437
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
         Shares similar logic:
         - RiskLabAI, plug_in_entropy_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/plug_in.py#L10
@@ -1413,7 +1396,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - antropy, lziv_complexity: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L915
-            Test: tests/econometrics/test_entropy_model.py::test_lempel_ziv_complexity_equals_antropy
 
         Also known as: LZ complexity, LZ76, Lempel-Ziv-Welch complexity, LZC.
 

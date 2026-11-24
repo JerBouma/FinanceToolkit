@@ -156,7 +156,6 @@ def get_var_kernel_samples(samples: np.ndarray, alpha: float) -> np.ndarray:
 
     Referenced against:
     - scipy, gaussian_kde: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
-        Test: tests/risk/test_var_model.py::test_get_var_kernel_reference_value
 
     Args:
         samples (np.ndarray): The returns, one sample per row.
@@ -209,7 +208,6 @@ def get_var_kernel(
 
     Referenced against:
     - scipy, gaussian_kde: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
-        Test: tests/risk/test_var_model.py::test_get_var_kernel_reference_value
 
     Shares similar logic:
     - PerformanceAnalytics (R), VaR: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
@@ -1016,7 +1014,6 @@ def get_var_garch(
 
     Referenced against:
     - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-        Test: tests/risk/test_var_model.py::test_get_var_garch_matches_the_arch_package
 
     Shares similar logic:
     - rugarch (R), ugarchroll: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1141

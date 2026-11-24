@@ -156,9 +156,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, VanillaSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
-            Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
         - rateslib, IRS.rate: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.rate
-            Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
 
         Shares similar logic:
         - FinancePy, IborSwap.swap_rate: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L280
@@ -284,7 +282,6 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, ForwardRateAgreement: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_rate_agreement.html
-            Test: tests/fixedincome/test_swap_model.py::test_forward_rate_agreement_matches_quantlib
 
         Shares similar logic:
         - FinancePy, IborFRA: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_fra.py#L23
@@ -477,7 +474,6 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, AssetSwap.fairSpread: https://www.quantlib.org/reference/class_quant_lib_1_1_asset_swap.html
-            Test: tests/fixedincome/test_swap_model.py::test_asset_swap_spread_matches_quantlib
 
         Also known as: ASW, asset swap spread, par-par asset swap, proceeds asset swap, market
         value asset swap.
@@ -738,7 +734,6 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - rateslib, forward_fx: https://rateslib.com/py/en/3.0.x/api/rateslib.fx.forward_fx.html
-            Test: tests/fixedincome/test_swap_model.py::test_fx_forward_rate_matches_rateslib
 
         Shares similar logic:
         - QuantLib, FxForward: https://www.quantlib.org/reference/class_quant_lib_1_1_fx_forward.html

@@ -134,7 +134,6 @@ def get_cev(
 
     Referenced against:
     - QuantLib, AnalyticCEVEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/analyticcevengine.hpp#L62
-        Test: tests/options/test_cev_model.py::test_the_cev_price_matches_quantlib
 
     Args:
         stock_price (float): The current stock price.

@@ -78,7 +78,6 @@ def get_adf_regression(
 
     Referenced against:
     - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
-        Test: tests/econometrics/test_unitroot_model.py::test_get_adf_regression_matches_statsmodels_adfuller
 
     Args:
         values (np.ndarray): The series, without missing values.
@@ -192,7 +191,6 @@ def get_augmented_dickey_fuller(
 
     Referenced against:
     - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
-        Test: tests/econometrics/test_reference_validation.py::test_augmented_dickey_fuller_and_kpss
 
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
@@ -444,7 +442,6 @@ def get_phillips_perron_test(
 
     Referenced against:
     - arch, PhillipsPerron: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.PhillipsPerron.html
-        Test: tests/econometrics/test_reference_validation.py::test_phillips_perron_matches_arch
 
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).

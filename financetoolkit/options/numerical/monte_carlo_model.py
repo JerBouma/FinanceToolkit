@@ -262,7 +262,6 @@ def simulate_heston_paths(
 
     Referenced against:
     - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
-        Test: tests/options/test_monte_carlo_model.py::test_heston_quadratic_exponential_paths_price_the_analytic_value
 
     Shares similar logic:
     - FinancePy, get_heston_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/process_simulator.py#L126
@@ -1042,7 +1041,6 @@ def get_longstaff_schwartz_basket_option(
 
     Referenced against:
     - QuantLib, MCAmericanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_american_basket_engine.html
-        Test: tests/options/test_monte_carlo_model.py::test_american_basket_put
 
     Args:
         stock_prices (np.ndarray | list[float]): The current price of each stock.

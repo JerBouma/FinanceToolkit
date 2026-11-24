@@ -103,9 +103,7 @@ def get_arch_lm_test(
 
     Referenced against:
     - statsmodels, het_arch: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_arch.html
-        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
     - rugarch (R), Weighted.LM.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1172
-        Test: tests/econometrics/test_diagnostics_model.py::test_get_arch_lm_test_weighted_gamma_of_rugarch
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, or of the
@@ -246,7 +244,6 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
 
     Referenced against:
     - statsmodels, jarque_bera: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.jarque_bera.html
-        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -349,7 +346,6 @@ def get_ljung_box_test(
 
     Referenced against:
     - statsmodels, acorr_ljungbox: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.acorr_ljungbox.html
-        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
     - rugarch (R), Weighted.Box.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1056
 
     Args:
@@ -519,7 +515,6 @@ def get_variance_ratio_test(
 
     Referenced against:
     - arch, VarianceRatio: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.VarianceRatio.html
-        Test: tests/econometrics/test_reference_validation.py::test_variance_ratio_matches_arch
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -694,7 +689,6 @@ def get_cusum_test(
 
     Referenced against:
     - statsmodels, breaks_cusumolsresid (CUSUM of the OLS residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.breaks_cusumolsresid.html
-        Test: tests/econometrics/test_reference_validation.py::test_cusum_stability_test
 
     Shares similar logic:
     - statsmodels, recursive_olsresiduals (CUSUM of the recursive residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.recursive_olsresiduals.html

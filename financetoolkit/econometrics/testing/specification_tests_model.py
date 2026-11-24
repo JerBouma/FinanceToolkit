@@ -126,7 +126,6 @@ def get_breusch_pagan_test(result: dict) -> pd.Series:
 
     Referenced against:
     - statsmodels, het_breuschpagan: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_breuschpagan.html
-        Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.
@@ -200,7 +199,6 @@ def get_white_test(result: dict) -> pd.Series:
 
     Referenced against:
     - statsmodels, het_white: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_white.html
-        Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.
@@ -260,7 +258,6 @@ def get_durbin_watson_test(result: dict) -> pd.Series:
 
     Referenced against:
     - statsmodels, durbin_watson: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.durbin_watson.html
-        Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.
@@ -334,7 +331,6 @@ def get_vif(x: pd.DataFrame) -> pd.Series:
 
     Referenced against:
     - statsmodels, variance_inflation_factor: https://www.statsmodels.org/stable/generated/statsmodels.stats.outliers_influence.variance_inflation_factor.html
-        Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
     Args:
         x (pd.DataFrame): The regressor matrix, one column per regressor. A column
@@ -420,7 +416,6 @@ def get_ramsey_reset_test(result: dict, power: int = 3) -> pd.Series:
 
     Referenced against:
     - statsmodels, linear_reset: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.linear_reset.html
-        Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
     Args:
         result (dict): A fitted OLS regression, from `regression_model.get_ols`.

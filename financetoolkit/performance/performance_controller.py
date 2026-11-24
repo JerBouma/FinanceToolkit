@@ -1788,7 +1788,6 @@ class Performance:
 
         Referenced against:
         - pyfolio, rolling_regression: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.10.2/src/pyfolio/timeseries.py#L550
-            Test: tests/performance/test_performance_model.py::test_rolling_factor_regression_matches_pyfolio
 
         Shares similar logic:
         - statsmodels, RollingOLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.rolling.RollingOLS.html
@@ -2146,7 +2145,6 @@ class Performance:
 
         Referenced against:
         - pyfolio, rolling_regression: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.10.2/src/pyfolio/timeseries.py#L550
-            Test: tests/performance/test_performance_model.py::test_rolling_factor_regression_matches_pyfolio
 
         Shares similar logic:
         - statsmodels, RollingOLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.rolling.RollingOLS.html
@@ -2545,7 +2543,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), Return.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.annualized.R#L39
-            Test: tests/performance/test_performance_model.py::test_annualized_return_matches_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), CAPM.jensenAlpha: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.jensenAlpha.R#L34
@@ -2800,8 +2797,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), TreynorRatio (modified): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TreynorRatio.R#L47
-            Test:
-                tests/performance/test_performance_model.py::test_modified_and_alternative_jensens_alpha_match_performance_analytics
 
         Shares similar logic:
         - quantstats, treynor_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1469
@@ -3064,14 +3059,9 @@ class Performance:
 
         Referenced against:
         - quantstats, smart_sharpe (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1000
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
         - quantstats, autocorr_penalty: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L875
-            Test: tests/performance/test_performance_model.py::test_autocorrelation_penalty_per_period_and_rolling
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
         - quantstats, probabilistic_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1404
-            Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
         - quantstats, probabilistic_adjusted_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1434
-            Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
 
         Shares similar logic:
         - PerformanceAnalytics (R), Return.excess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.excess.R#L42
@@ -3457,16 +3447,10 @@ class Performance:
 
         Referenced against:
         - quantstats, smart_sortino (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1158
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
         - quantstats, adjusted_sortino: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1258
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
         - quantstats, probabilistic_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1404
-            Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
         - quantstats, probabilistic_adjusted_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1434
-            Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
         - quantstats, autocorr_penalty: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L875
-            Test: tests/performance/test_performance_model.py::test_autocorrelation_penalty_per_period_and_rolling
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
 
         Shares similar logic:
         - PerformanceAnalytics (R), Return.excess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.excess.R#L42
@@ -4094,7 +4078,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), Return.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.annualized.R#L39
-            Test: tests/performance/test_performance_model.py::test_annualized_return_matches_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), CalmarRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CalmarRatio.R#L50
@@ -4270,7 +4253,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), Return.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.annualized.R#L39
-            Test: tests/performance/test_performance_model.py::test_annualized_return_matches_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), SterlingRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CalmarRatio.R#L85
@@ -4728,9 +4710,7 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), MSquared: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MSquared.R#L33
-            Test: tests/performance/test_performance_model.py::test_m2_excess_return_matches_performance_analytics
         - PerformanceAnalytics (R), MSquaredExcess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MSquaredExcess.R#L35
-            Test: tests/performance/test_performance_model.py::test_m2_excess_return_matches_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), Modigliani: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Modigliani.R#L36
@@ -5160,11 +5140,7 @@ class Performance:
 
         Referenced against:
         - empyrical, up_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1887
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
 
         Shares similar logic:
         - empyrical, roll_up_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2020
@@ -5318,8 +5294,6 @@ class Performance:
 
         Referenced against:
         - empyrical, down_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1921
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
 
         Shares similar logic:
         - empyrical, roll_up_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2020
@@ -5483,23 +5457,11 @@ class Performance:
 
         Referenced against:
         - empyrical, up_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1887
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - empyrical, down_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1921
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - empyrical, capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1531
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - PerformanceAnalytics (R), UpDownRatios (Up Number, Down Number): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-            Test:
-                tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
         - PerformanceAnalytics (R), UpDownRatios (Up Percent, Down Percent): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-            Test:
-                tests/performance/test_performance_model.py::test_up_and_down_market_win_rates_match_performance_analytics
 
         Shares similar logic:
         - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
@@ -5668,8 +5630,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), UpDownRatios (Up Percent, Down Percent): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-            Test:
-                tests/performance/test_performance_model.py::test_up_and_down_market_win_rates_match_performance_analytics
 
         Shares similar logic:
         - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
@@ -5786,8 +5746,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), table.ProbOutPerformance: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.ProbOutperformance.R#L32
-            Test:
-                tests/performance/test_performance_model.py::test_outperformance_probability_matches_performance_analytics
 
         Shares similar logic:
         - ffn, PerformanceStats (twelve_month_win_perc): https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
@@ -5908,20 +5866,10 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), CAPM.beta.bull: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L133
-            Test:
-                tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
         - PerformanceAnalytics (R), CAPM.beta.bear: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L184
-            Test:
-                tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
         - PerformanceAnalytics (R), TimingRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L236
-            Test:
-                tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
         - empyrical, up_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1986
-            Test:
-                tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
         - empyrical, down_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2004
-            Test:
-                tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -6070,7 +6018,6 @@ class Performance:
 
         Referenced against:
         - empyrical, beta_fragility_heuristic: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1565
-            Test: tests/performance/test_performance_model.py::test_beta_fragility_heuristic_matches_empyrical
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -6181,7 +6128,6 @@ class Performance:
 
         Referenced against:
         - empyrical, stability_of_timeseries: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1471
-            Test: tests/performance/test_performance_model.py::test_stability_and_r_squared_match_empyrical_and_quantstats
 
         Shares similar logic:
         - pyfolio, stability_of_timeseries: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L368
@@ -6294,7 +6240,6 @@ class Performance:
 
         Referenced against:
         - quantstats, r_squared: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2828
-            Test: tests/performance/test_performance_model.py::test_stability_and_r_squared_match_empyrical_and_quantstats
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -6412,7 +6357,6 @@ class Performance:
 
         Referenced against:
         - quantstats, smart_sharpe (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1000
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
 
         Shares similar logic:
         - quantstats, rolling_sharpe: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1030
@@ -6545,9 +6489,7 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), SystematicRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SystematicRisk.R#L36
-            Test: tests/performance/test_performance_model.py::test_risk_decomposition_matches_performance_analytics
         - PerformanceAnalytics (R), SpecificRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SpecificRisk.R#L27
-            Test: tests/performance/test_performance_model.py::test_risk_decomposition_matches_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), TotalRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TotalRisk.R#L30
@@ -6693,14 +6635,8 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), CAPM.CML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L6
-            Test:
-                tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
         - PerformanceAnalytics (R), CAPM.SML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L152
-            Test:
-                tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
         - PerformanceAnalytics (R), CAPM.epsilon: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.epsilon.R#L33
-            Test:
-                tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -7373,11 +7309,7 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), OmegaSharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaSharpeRatio.R#L37
-            Test:
-                tests/performance/test_performance_model.py::test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references
         - quantstats, gain_to_pain_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1584
-            Test:
-                tests/performance/test_performance_model.py::test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -7493,7 +7425,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), DRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DRatio.R#L38
-            Test: tests/performance/test_performance_model.py::test_d_ratio_matches_performance_analytics
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -7609,7 +7540,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), ProspectRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ProspectRatio.R#L32
-            Test: tests/performance/test_performance_model.py::test_prospect_ratio_matches_performance_analytics
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -7729,7 +7659,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), OmegaExcessReturn: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaExcessReturn.R#L36
-            Test: tests/performance/test_performance_model.py::test_omega_excess_return_matches_performance_analytics
 
         Args:
             period (str, optional): The period to use for the calculation. Options are: "daily", "weekly",
@@ -8026,41 +7955,17 @@ class Performance:
 
         Referenced against:
         - quantstats, avg_return (Expectancy): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L640
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, best: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L362
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, worst: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L395
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, exposure: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L514
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, cpc_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2417
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, profit_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2312
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, outlier_win_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2484
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, outlier_loss_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2523
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - quantstats, risk_of_ruin: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1968
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - PerformanceAnalytics (R), mean.stderr: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L137
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - PerformanceAnalytics (R), mean.LCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L169
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
         - PerformanceAnalytics (R), mean.UCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L208
-            Test:
-                tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
 
         Shares similar logic:
         - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
@@ -8367,7 +8272,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), Return.Geltner: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.Geltner.R#L43
-            Test: tests/performance/test_performance_model.py::test_geltner_returns_match_performance_analytics
 
         Shares similar logic:
         - ffn, to_log_returns: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1223
@@ -8816,8 +8720,6 @@ class Performance:
 
         Referenced against:
         - PerformanceAnalytics (R), AppraisalRatio (modified, alternative): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/AppraisalRatio.R#L45
-            Test:
-                tests/performance/test_performance_model.py::test_modified_and_alternative_jensens_alpha_match_performance_analytics
 
         Shares similar logic:
         - PerformanceAnalytics (R), CAPM.jensenAlpha: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.jensenAlpha.R#L34
@@ -10124,7 +10026,6 @@ class Performance:
 
         Referenced against:
         - quantstats, smart_sharpe (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1000
-            Test: tests/performance/test_performance_model.py::test_smart_sharpe_and_sortino_ratios_match_quantstats
 
         Shares similar logic:
         - PerformanceAnalytics (R), MinTrackRecord: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MinTRL.R#L49
@@ -10662,7 +10563,6 @@ class Performance:
 
         Referenced against:
         - skfolio, RatioMeasure: https://skfolio.org/generated/skfolio.measures.RatioMeasure.html
-            Test: tests/performance/test_performance_model.py::test_risk_measure_ratio_matches_skfolio
 
         Shares similar logic:
         - Riskfolio-Lib, Sharpe: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Sharpe
@@ -10810,7 +10710,6 @@ class Performance:
 
         Referenced against:
         - ffn, calc_prob_mom: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1739
-            Test: tests/performance/test_performance_model.py::test_probabilistic_momentum_matches_ffn
 
         Shares similar logic:
         - PerformanceAnalytics (R), InformationRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/InformationRatio.R#L32
@@ -10934,7 +10833,6 @@ class Performance:
 
         Referenced against:
         - ffn, PerformanceStats: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
-            Test: tests/performance/test_performance_model.py::test_trailing_returns_match_ffn
 
         Shares similar logic:
         - ffn, calc_mtd: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1426
@@ -11256,7 +11154,6 @@ class Performance:
 
         Referenced against:
         - pyfolio, summarize_paths: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1111
-            Test: tests/performance/test_performance_model.py::test_forecast_cone_matches_pyfolio_on_the_same_paths
 
         Shares similar logic:
         - pyfolio, forecast_cone_bootstrap: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1147
@@ -11373,7 +11270,6 @@ class Performance:
 
         Referenced against:
         - ffn, calc_prob_backtest_overfitting: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3165
-            Test: tests/performance/test_performance_model.py::test_probability_of_backtest_overfitting_matches_ffn
 
         Shares similar logic:
         - RiskLabAI, probability_of_backtest_overfitting: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/probability_of_backtest_overfitting.py#L80
@@ -11480,8 +11376,6 @@ class Performance:
 
         Referenced against:
         - statsmodels, ARIMA (order (0, 0, k), without a mean): https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
-            Test:
-                tests/performance/test_performance_model.py::test_smoothing_index_matches_the_maximum_likelihood_of_statsmodels
 
         Shares similar logic:
         - PerformanceAnalytics (R), SmoothingIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SmoothingIndex.R#L96

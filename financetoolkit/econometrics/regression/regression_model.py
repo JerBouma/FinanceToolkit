@@ -282,7 +282,6 @@ def get_ols(
 
     Referenced against:
     - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
-        Test: tests/econometrics/test_reference_validation.py::test_ols_inference_and_robust_covariances
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -413,7 +412,6 @@ def get_wls(
 
     Referenced against:
     - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
-        Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -604,7 +602,6 @@ def get_gls(
 
     Referenced against:
     - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
-        Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.

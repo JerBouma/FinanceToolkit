@@ -271,9 +271,7 @@ def get_heston_price(
 
     Referenced against:
     - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
-        Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_quantlib
     - FinancePy, Heston.value_weber: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/heston.py#L363
-        Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_financepy
 
     Args:
         stock_price (float): The current stock price.
@@ -423,7 +421,6 @@ def get_bates_price(
 
     Referenced against:
     - QuantLib, BatesEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
-        Test: tests/options/test_stochastic_volatility_models.py::test_bates_matches_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -578,8 +575,6 @@ def get_heston_parameters(
 
     Referenced against:
     - QuantLib, HestonModelHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_heston_model_helper.html
-        Test:
-            tests/options/test_stochastic_volatility_models.py::test_the_heston_calibration_recovers_the_parameters_of_a_heston_surface
 
     Args:
         stock_price (float): The current stock price.

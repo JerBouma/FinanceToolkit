@@ -447,10 +447,7 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
         - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
         Shares similar logic:
         - QuantLib, BondFunctions.zSpread: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
@@ -707,8 +704,6 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, BondFunctions.duration (modified, macaulay): https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
         Args:
             method (str, optional): The duration measure. Options are: "modified" (Modified Duration),
@@ -1489,9 +1484,7 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Referenced against:
         - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
         - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-            Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
         Args:
             yield_change (float | None, optional): The change in the yield to maturity (decimal),

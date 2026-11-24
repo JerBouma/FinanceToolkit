@@ -644,7 +644,6 @@ def get_barone_adesi_whaley(
 
     Referenced against:
     - QuantLib, BaroneAdesiWhaleyApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
 
     Shares similar logic:
     - FinancePy, baw_value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_analytic.py#L682
@@ -737,7 +736,6 @@ def get_ju_zhong(
 
     Referenced against:
     - QuantLib, JuQuadraticApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -1078,7 +1076,6 @@ def get_qd_plus(
 
     Referenced against:
     - QuantLib, QdPlusAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
 
     Args:
         stock_price (float | np.ndarray): The current stock price.
@@ -1461,9 +1458,7 @@ def get_qd_fixed_point(
 
     Referenced against:
     - QuantLib, QdFpAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
     - QuantLib, FdBlackScholesVanillaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
-        Test: tests/options/test_american_model.py::test_the_qd_fixed_point_matches_a_finite_difference_grid
 
     Args:
         stock_price (float): The current stock price.
@@ -1574,13 +1569,9 @@ def get_american_option(
 
     Referenced against:
     - QuantLib, QdPlusAmericanEngine (QD+): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
     - QuantLib, BaroneAdesiWhaleyApproximationEngine (Barone-Adesi-Whaley): https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
     - QuantLib, JuQuadraticApproximationEngine (Ju-Zhong): https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
     - QuantLib, QdFpAmericanEngine (fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_approximations_match_quantlib
 
     Shares similar logic:
     - FinancePy, baw_value (Barone-Adesi-Whaley): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_analytic.py#L682
@@ -1646,7 +1637,6 @@ def get_american_implied_volatility(
 
     Referenced against:
     - QuantLib, QdPlusAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
-        Test: tests/options/test_american_model.py::test_the_american_implied_volatility_reprices_the_option
 
     Shares similar logic:
     - QuantLib, BaroneAdesiWhaleyApproximationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html

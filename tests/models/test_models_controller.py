@@ -1863,9 +1863,13 @@ def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
         assert merton.loc[(ticker, "Equity Volatility"), period] == pytest.approx(
             volatility[ticker].loc[:date].dropna().iloc[-1]
         )
-    # The model is solved with the rate of the fiscal period end: the same inputs give the
-    # same distance to default.
+    # The model is solved with the rate of the fiscal period end, converted from its
+    # semi-annual quote to continuous compounding: the same inputs give the same distance to
+    # default.
     from financetoolkit.models.distress import credit_model  # noqa: PLC0415
+    from financetoolkit.options.options_model import (  # noqa: PLC0415
+        get_continuously_compounded_rate,
+    )
 
     date = dates.loc["AAPL", period]
     balance = models_module._balance_sheet_statement
@@ -1876,7 +1880,9 @@ def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
             balance.loc[("AAPL", "Short Term Debt"), period]
             + 0.5 * balance.loc[("AAPL", "Long Term Debt"), period]
         ),
-        risk_free_rate=float(risk_free.loc[:date].dropna().iloc[-1]),
+        risk_free_rate=get_continuously_compounded_rate(
+            float(risk_free.loc[:date].dropna().iloc[-1])
+        ),
     )
     assert merton.loc[("AAPL", "Distance to Default"), period] == pytest.approx(
         expected["Distance to Default"]

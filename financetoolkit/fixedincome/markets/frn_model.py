@@ -73,9 +73,11 @@ def get_daily_index_rates(
 
     Each day accrues at the index rate of the most recent 13-week bill auction held before
     that day, so a Monday auction applies from Tuesday (31 CFR 356, Appendix B, I.C.3).
-    An auction held in the two business days before a settlement date or an interest
-    payment date is left out of the accrual up to and including that date, and applies
-    from the day after it (the lockout).
+    An auction held in the two business days before an issue date or an interest payment
+    date is left out of the accrual up to and including that date, and applies from the day
+    after it (the lockout). The lockout "applies only to the issue date and interest payment
+    dates" (31 CFR 356, Appendix B, IV), so a secondary-market settlement between them takes
+    the latest auction.
 
     Args:
         index_rates (pd.Series): The index rate of each 13-week bill auction (see
@@ -83,9 +85,10 @@ def get_daily_index_rates(
         start (date): The first day of the accrual (the dated date or the last interest
             payment date), included.
         end (date): The day the accrual runs up to, excluded (the settlement date).
-        lockout_dates (list[date] | None, optional): The settlement and interest payment
-            dates whose two business days before them are locked out. Defaults to None,
-            which locks out the days before start and end.
+        lockout_dates (list[date] | None, optional): The issue and interest payment dates
+            whose two business days before them are locked out. Defaults to None, which
+            locks out the days before start and end, as for an accrual from an interest
+            payment date to the issue date of a reopening.
 
     Returns:
         pd.Series: The index rate of each day from start up to end, indexed by date.

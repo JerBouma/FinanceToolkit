@@ -346,8 +346,11 @@ def fit_bond_curve(
     instrument per maturity, a fitted curve takes every bond there is and smooths out the
     noise of the individual prices, so the residuals show which bonds trade rich (above the
     curve) or cheap (below it). The fit minimizes the weighted squared price errors, with
-    weights inversely proportional to duration so the errors count about equally in yield,
-    as Gürkaynak, Sack and Wright (2007) fit the Federal Reserve's Treasury curve.
+    weights inversely proportional to duration, as Gürkaynak, Sack and Wright (2007) fit the
+    Federal Reserve's Treasury curve. A price error is about the duration times the price
+    times the yield error, so the weights reduce the weight of the long bonds' larger price
+    errors, while still giving a basis point of a long bond more weight than one of a short
+    bond (equal weight in yield would need 1 / D²).
 
     The formula is as follows:
 

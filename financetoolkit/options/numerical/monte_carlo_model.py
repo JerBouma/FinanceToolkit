@@ -73,7 +73,9 @@ def simulate_gbm_paths(
 ) -> np.ndarray:
     """
     Simulate Geometric Brownian Motion paths of one or more correlated stocks under the
-    risk-neutral measure, exactly at every time step:
+    risk-neutral measure, exactly at every time step.
+
+    The formula is as follows:
 
     - S_i(t + Δt) = S_i(t) * e^((r - q_i - σ_i² / 2) * Δt + σ_i * √Δt * X_i), X = L * Z
 
@@ -221,7 +223,9 @@ def simulate_heston_paths(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Simulate stock price and variance paths of the Heston (1993) stochastic volatility
-    model under the risk-neutral measure:
+    model under the risk-neutral measure.
+
+    The formulas are as follows:
 
     - dS = (r - q) * S * dt + √v * S * dW_S
     - dv = κ * (θ - v) * dt + ξ * √v * dW_v, dW_S * dW_v = ρ * dt
@@ -454,7 +458,9 @@ def get_monte_carlo_barrier_option(
     at expiration, which is how most barrier contracts are written (at the daily close).
 
     The stock price is simulated exactly at the monitoring dates (simulate_gbm_paths), and
-    with t_h the first monitoring date at which the price is at or beyond the barrier:
+    with t_h the first monitoring date at which the price is at or beyond the barrier.
+
+    The formulas are as follows:
 
     - Knock-out = e^(-r * t_h) * R if the barrier is hit, else e^(-rT) * max(φ * (S_T - K), 0)
     - Knock-in = e^(-rT) * max(φ * (S_T - K), 0) if the barrier is hit, else e^(-rT) * R
@@ -622,19 +628,24 @@ def _longstaff_schwartz(
     payoffs: np.ndarray,
     regressors,
     discount: float,
+    european=None,
 ) -> np.ndarray:
     """
     Values the cash flows of every path of an option that can be exercised at every time
     step by least-squares Monte Carlo (Longstaff and Schwartz, 2001): stepping back from
     expiration, the discounted cash flows of the paths in the money are regressed on the
     basis functions of the prices, and a path is exercised where its exercise value is
-    above the fitted continuation value.
+    above the fitted continuation value, and above the European value of the remaining life
+    where that is known, as holding the option is worth at least that.
 
     Args:
         payoffs (np.ndarray): The exercise value of every path at every exercise date,
             paths by dates (the last date is expiration).
         regressors (Callable): The basis functions of the paths given at a date.
         discount (float): The discount factor of one time step.
+        european (Callable | None, optional): The European value of the remaining life of
+            the paths given at a date, a lower bound of the continuation value. Defaults to
+            None, which uses the fitted continuation value alone.
 
     Returns:
         np.ndarray: The cash flow of every path discounted to today.
@@ -649,7 +660,10 @@ def _longstaff_schwartz(
         if in_the_money.size <= basis.shape[1]:
             continue
         coefficients = np.linalg.lstsq(basis, cash_flows[in_the_money], rcond=None)[0]
-        exercised = in_the_money[exercise[in_the_money] > basis @ coefficients]
+        continuation = basis @ coefficients
+        if european is not None:
+            continuation = np.maximum(continuation, european(date, in_the_money))
+        exercised = in_the_money[exercise[in_the_money] > continuation]
         cash_flows[exercised] = exercise[exercised]
 
     return cash_flows * discount
@@ -673,7 +687,20 @@ def get_longstaff_schwartz_option_prices(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculate the least-squares Monte Carlo price of American options with several strike
-    prices on the same paths, see get_longstaff_schwartz_option.
+    prices on the same paths, see get_longstaff_schwartz_option. The paths are simulated
+    once and the exercise rule is fitted per strike price, so the prices of the strikes share
+    their random numbers and a difference between two of them is far more precise than
+    either price.
+
+    The formulas are as follows:
+
+    - C(t) = max(Σ_j β_j * f_j(S(t) / K), BS(S(t), K, T - t)), β fitted by least squares on the in-the-money paths
+    - Cash flow(t) = φ * (S(t) - K) if φ * (S(t) - K) > C(t), else e^(-rΔt) * Cash flow(t + Δt)
+    - Price = max(φ * (S - K), MEAN(e^(-rΔt) * Cash flow(Δt)))
+
+    Where f_j are the basis functions of x = S / K (see get_longstaff_schwartz_option), K is
+    each strike price, r the continuously compounded risk-free rate, Δt = T / time_steps,
+    BS the Black-Scholes value of the same type and φ = 1 for a call and -1 for a put.
 
     Args:
         stock_price (float): The current stock price.
@@ -695,6 +722,45 @@ def get_longstaff_schwartz_option_prices(
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
+
+    Raises:
+        ValueError: If the basis, variance reduction or sequence is unknown, the degree is
+            not a positive integer or the paths are too large to hold (MAX_PATH_VALUES).
+
+    Notes:
+        A price at the exercise value (exercising today is better than any rule) has a
+        standard error of 0. References: Longstaff, F. A., & Schwartz, E. S. (2001).
+        "Valuing American Options by Simulation: A Simple Least-Squares Approach." The Review
+        of Financial Studies, 14(1), 113-147. Rasmussen, N. S. (2005). "Control Variates for
+        Monte Carlo Valuation of American Options." Journal of Computational Finance, 9(1),
+        83-118. Referenced against QuantLib's MCAmericanEngine (https://www.quantlib.org) and
+        FinancePy's equity_lsmc (https://github.com/domokane/FinancePy), and the prices of
+        Table 1 of Longstaff and Schwartz (2001), which lie within two standard errors.
+
+    As an example:
+
+    ```python
+    from financetoolkit.options.numerical import monte_carlo_model
+
+    prices, standard_errors = monte_carlo_model.get_longstaff_schwartz_option_prices(
+        stock_price=40,
+        strike_prices=[36, 40, 44],
+        risk_free_rate=0.06,
+        volatility=0.2,
+        time_to_expiration=1,
+        put_option=True,
+        simulations=100_000,
+        variance_reduction="antithetic",
+    )
+
+    prices.round(4).tolist(), standard_errors.round(4).tolist()
+    ```
+
+    Which returns:
+
+    ```
+    ([0.9065, 2.3185, 4.6572], [0.0047, 0.0053, 0.0063])
+    ```
     """
     validate_numeric_inputs(
         stock_price=stock_price,
@@ -743,6 +809,18 @@ def get_longstaff_schwartz_option_prices(
                 paths[rows, date + 1] / strike, basis, degree
             ),
             discount,
+            # The Black-Scholes value of the option for the life left after the date.
+            lambda date, rows, strike=strike: np.asarray(
+                get_black_scholes(
+                    paths[rows, date + 1],
+                    float(strike),
+                    risk_free_rate,
+                    volatility,
+                    time_to_expiration * (1 - (date + 1) / time_steps),
+                    dividend_yield,
+                    put_option,
+                )
+            ),
         )
         if variance_reduction == "control_variate":
             values = control_variate(
@@ -794,19 +872,31 @@ def get_longstaff_schwartz_option(
     Geometric Brownian Motion paths are simulated at time_steps equally spaced exercise
     dates (simulate_gbm_paths). Stepping back from expiration, the cash flows of the paths
     in the money are discounted to the date and regressed on basis functions of x = S / K,
-    and a path is exercised where the exercise value beats the fitted continuation value:
+    and a path is exercised where the exercise value beats the continuation value: the
+    fitted one, or the Black-Scholes value of the European option for the remaining life
+    where that is higher, as holding the option is worth at least that.
 
-    - C(t) = Σ_j β_j * f_j(S(t) / K), fitted by least squares on the in-the-money paths
+    The formulas are as follows:
+
+    - C(t) = max(Σ_j β_j * f_j(S(t) / K), BS(S(t), K, T - t)), β fitted by least squares on the in-the-money paths
     - Cash flow(t) = φ * (S(t) - K) if φ * (S(t) - K) > C(t), else e^(-rΔt) * Cash flow(t + Δt)
     - Price = max(φ * (S - K), MEAN(e^(-rΔt) * Cash flow(Δt)))
 
     Where f_j are a constant with the weighted Laguerre polynomials e^(-x/2) * L_n(x),
     n = 0, ..., degree - 1 (basis="laguerre", as in the paper) or the powers x^0, ...,
     x^degree (basis="monomial"), K is the strike price, r the continuously compounded
-    risk-free rate, Δt = T / time_steps and φ = 1 for a call and -1 for a put. The exercise
-    rule is fitted on the paths it values, as in the paper, which biases the price slightly
-    upwards, while exercising only at the time steps (a Bermudan option) biases it
-    downwards. With variance_reduction="control_variate" the European payoff on the same
+    risk-free rate, Δt = T / time_steps, BS the Black-Scholes value of the same type and
+    φ = 1 for a call and -1 for a put.
+
+    The estimate carries two biases of opposite sign. The exercise rule is fitted on the
+    paths it values, as in the paper, which biases the price upwards, while a fitted rule is
+    never quite the optimal one, and exercising only at the time steps (a Bermudan option)
+    is worth less than at any time, which bias it downwards. Which one wins depends on the
+    case: in Longstaff and Schwartz's own puts (S = 36 to 44, K = 40, r = 6%) the price lies
+    within two standard errors of the finite difference value, and where early exercise is
+    never optimal (a put with r ≤ 0 ≤ q, a call with q = 0) every exercise of the fitted rule
+    alone would be an error, which the European floor of the continuation value rules out.
+    With variance_reduction="control_variate" the European payoff on the same
     paths, whose Black-Scholes price is known, is the control (Rasmussen, 2005).
 
     Args:
@@ -912,7 +1002,9 @@ def get_longstaff_schwartz_basket_option(
     of the weighted prices B = max(w_i * S_i) (basket_type="maximum"), and the option pays
     φ * (B - K) when exercised. The correlated paths come from simulate_gbm_paths, and the
     continuation value is regressed on a constant, x_i, x_i * x_j (i ≤ j) and the exercise
-    value, with x_i = w_i * S_i / K:
+    value, with x_i = w_i * S_i / K.
+
+    The formulas are as follows:
 
     - C(t) = β_0 + Σ β_i * x_i + Σ β_ij * x_i * x_j + β_P * max(φ * (B - K), 0) / K
 

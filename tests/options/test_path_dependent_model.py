@@ -422,3 +422,41 @@ def test_the_payoffs_at_expiration():
         )
         == 1.0
     )
+
+
+def test_touch_options_tend_to_the_deterministic_path_at_a_low_volatility():
+    # The powers (H / S)^(μ ± λ) overflowed from a volatility of 0.1%. Without volatility the
+    # price follows S * e^((r - q)t), which reaches 103 at t = ln(1.03) / 0.04 and never 110.
+    hit_time = np.log(1.03) / 0.04
+    for volatility in (1e-6, 1e-8, 1e-12):
+        assert path_dependent_model.get_touch_option(
+            100, 103, 0.05, volatility, 1, 0.01, payment="hit"
+        ) == pytest.approx(np.exp(-0.05 * hit_time), rel=1e-9)
+        assert path_dependent_model.get_touch_option(
+            100, 103, 0.05, volatility, 1, 0.01
+        ) == pytest.approx(np.exp(-0.05), rel=1e-9)
+        assert path_dependent_model.get_touch_option(
+            100, 103, 0.05, volatility, 1, 0.01, touch_type="no-touch"
+        ) == pytest.approx(0.0, abs=1e-12)
+        assert path_dependent_model.get_touch_option(
+            100, 110, 0.05, volatility, 1, 0.01, payment="hit"
+        ) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_lookback_options_tend_to_the_deterministic_path_at_a_low_volatility():
+    # The term in (S / E)^(-2b/σ²) gave NaN from a volatility of 1%. Without volatility the
+    # maximum is S * e^(bT) and the minimum S.
+    forward = 100 * np.exp(0.04)
+    discount = np.exp(-0.05)
+    for volatility in (1e-6, 1e-10):
+        assert path_dependent_model.get_lookback_option(
+            100, 95, 0.05, volatility, 1, 0.01
+        ) == pytest.approx(discount * (forward - 95), rel=1e-9)
+        assert path_dependent_model.get_lookback_option(
+            100, 95, 0.05, volatility, 1, 0.01, strike_type="floating"
+        ) == pytest.approx(discount * (forward - 100), rel=1e-9)
+
+    with pytest.raises(ValueError, match="partial-time lookback can not be evaluated"):
+        path_dependent_model.get_lookback_option(
+            100, 95, 0.05, 1e-3, 1, 0.01, lookback_period=0.5
+        )

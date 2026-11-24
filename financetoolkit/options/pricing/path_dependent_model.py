@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import numpy as np
-from scipy.special import exprel, ndtr
+from scipy.special import exprel, log_ndtr, ndtr
 
 from financetoolkit.options.helpers import (
     bivariate_normal_cdf,
@@ -36,6 +36,11 @@ _LEGENDRE_NODES, _LEGENDRE_WEIGHTS = np.polynomial.legendre.leggauss(64)
 # Below this cost of carry the lookback formulas, which divide by b, are evaluated at
 # b = ±_SMALL_CARRY and averaged, which differs from the limit at b = 0 by O(b²).
 _SMALL_CARRY = 1e-5
+
+# Below this σ√T a touch option is valued on the deterministic forward path: the powers of
+# its formulas grow like 1/σ², so their logarithms lose all precision near σ√T = 1e-12, while
+# at 1e-7 the formulas agree with the deterministic value to 1e-9.
+SMALL_DEVIATION = 1e-7
 
 
 def _validate_volatility(volatility: float) -> None:
@@ -832,13 +837,21 @@ def _lookback_terms(
 def _evaluate_terms(
     terms: list[tuple[float, float, float, float]], stock_price: float
 ) -> float:
-    """The value of a sum of terms coefficient * S^a * N(α + β ln S) at a stock price."""
+    """
+    The value of a sum of terms coefficient * S^a * N(α + β ln S) at a stock price. S^a and
+    N(α + β ln S) are multiplied as e^(a ln S + ln N(α + β ln S)): at a low volatility the power
+    a = 1 - 2b/σ² is in the hundreds or more, so S^a overflows (or underflows) where N is 0
+    (or huge), while their product is finite.
+    """
     log_price = np.log(stock_price)
     return float(
         sum(
             coefficient
-            * stock_price**power
-            * (1.0 if np.isposinf(intercept) else ndtr(intercept + slope * log_price))
+            * (
+                stock_price**power
+                if np.isposinf(intercept)
+                else np.exp(power * log_price + log_ndtr(intercept + slope * log_price))
+            )
             for coefficient, power, intercept, slope in terms
         )
     )
@@ -868,18 +881,21 @@ def _lookback_value(
                 if put_option
                 else max(stock_price, strike_price)
             )
-        return _evaluate_terms(
+        # The value is homogeneous of degree one in S, E and K, so it is taken for an extreme
+        # of 1 and scaled back: the term in E^(2b/σ²) then needs no power of the extreme,
+        # which overflows at a low volatility.
+        return extreme * _evaluate_terms(
             _lookback_terms(
                 cost_of_carry,
                 volatility,
                 time_to_expiration,
                 risk_free_rate,
-                np.log(extreme),
-                strike_price,
+                0.0,
+                strike_price / extreme,
                 fixed,
                 sign,
             ),
-            stock_price,
+            stock_price / extreme,
         )
 
     if fixed:
@@ -1110,13 +1126,27 @@ def get_lookback_option(
         lookback_period,
     )
 
-    if abs(cost_of_carry) < _SMALL_CARRY:
-        return 0.5 * (
-            _lookback_value(*arguments[:3], _SMALL_CARRY, *arguments[3:])
-            + _lookback_value(*arguments[:3], -_SMALL_CARRY, *arguments[3:])
+    # An overflow of the partial-time formulas is reported below, not as a warning.
+    with np.errstate(over="ignore", invalid="ignore"):
+        if abs(cost_of_carry) < _SMALL_CARRY:
+            value = 0.5 * (
+                _lookback_value(*arguments[:3], _SMALL_CARRY, *arguments[3:])
+                + _lookback_value(*arguments[:3], -_SMALL_CARRY, *arguments[3:])
+            )
+        else:
+            value = _lookback_value(*arguments[:3], cost_of_carry, *arguments[3:])
+
+    # The partial-time formulas integrate powers e^(2bx/σ²) over the lognormal price at t1,
+    # which overflow once 2|b|/σ² reaches the hundreds (a volatility of about 1% at b = 4%).
+    if not np.isfinite(value):
+        raise ValueError(
+            f"The partial-time lookback can not be evaluated at a volatility of {volatility!r}: "
+            f"2|r - q| / σ² = {2 * abs(cost_of_carry) / volatility**2:,.0f} overflows its "
+            "formulas. The price path is then close to deterministic; a lookback_period of 1 "
+            "takes any volatility."
         )
 
-    return _lookback_value(*arguments[:3], cost_of_carry, *arguments[3:])
+    return value
 
 
 def _double_barrier_integral(
@@ -1858,22 +1888,45 @@ def get_touch_option(
     mu = drift / volatility**2
     log_barrier = np.log(barrier / stock_price)
 
+    # Below this deviation even the logarithms of the powers lose their precision, and the
+    # price path is the forward path S * e^((r - q)t), which touches H at t_h = ln(H / S) /
+    # (r - q) when that lies within the life.
+    if deviation < SMALL_DEVIATION:
+        carry = risk_free_rate - dividend_yield
+        hit_time = log_barrier / carry if carry else np.inf
+        touched = 0 < hit_time <= time_to_expiration
+        if touch_type == "no-touch":
+            return 0.0 if touched else float(cash_payout * discount)
+        if not touched:
+            return 0.0
+        return float(
+            cash_payout * np.exp(-risk_free_rate * hit_time)
+            if payment == "hit"
+            else cash_payout * discount
+        )
+
+    # (H / S)^p * N(y) is taken as e^(p * h + ln N(y)): at a low volatility the powers
+    # μ ± λ and 2μ grow like 1/σ², so the power overflows where N is 0, while the product
+    # tends to the deterministic answer (the forward path S * e^((r - q)t) reaches H or not).
     if touch_type == "one-touch" and payment == "hit":
         lambda_ = np.sqrt(mu**2 + 2 * risk_free_rate / volatility**2)
         z = log_barrier / deviation + lambda_ * deviation
         return float(
             cash_payout
             * (
-                (barrier / stock_price) ** (mu + lambda_) * ndtr(direction * z)
-                + (barrier / stock_price) ** (mu - lambda_)
-                * ndtr(direction * z - 2 * direction * lambda_ * deviation)
+                np.exp((mu + lambda_) * log_barrier + log_ndtr(direction * z))
+                + np.exp(
+                    (mu - lambda_) * log_barrier
+                    + log_ndtr(direction * z - 2 * direction * lambda_ * deviation)
+                )
             )
         )
 
     touch_probability = ndtr(
         direction * (log_barrier - drift * time_to_expiration) / deviation
-    ) + (barrier / stock_price) ** (2 * mu) * ndtr(
-        direction * (log_barrier + drift * time_to_expiration) / deviation
+    ) + np.exp(
+        2 * mu * log_barrier
+        + log_ndtr(direction * (log_barrier + drift * time_to_expiration) / deviation)
     )
     touch_probability = min(max(float(touch_probability), 0.0), 1.0)
 

@@ -36,7 +36,8 @@ def get_merton_model(
 
         Debt Value = V - E  and  Credit Spread = -ln(Debt Value / D) / T - r,
 
-    both continuously compounded like the risk free rate the model takes (Merton, 1974).
+    both continuously compounded, like the risk free rate the model takes (Merton, 1974); a
+    rate quoted with periodic compounding, such as a Treasury yield, is converted first.
 
     The default point is usually set at short-term debt plus half of long-term debt (the
     KMV convention of Crosbie and Bohn, 2003), as long-term debt need not be repaid within

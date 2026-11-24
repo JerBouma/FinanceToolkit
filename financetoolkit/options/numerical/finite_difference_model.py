@@ -21,6 +21,14 @@ EXERCISE_METHODS = ("brennan_schwartz", "psor")
 # far less than the error of the scheme.
 GRID_STANDARD_DEVIATIONS = 5.0
 
+# The largest ratio of the longest to the shortest time to expiration solved on one grid by
+# get_finite_difference_option_values: the grid spacing of the shortest expiration, in its
+# own standard deviations, then stays within a factor of two of that of the longest. With
+# 1,000 price steps that keeps every European value from a day to a quarter within 7.3e-4
+# of Black-Scholes (stock price 100, volatility up to 100%), where one grid for the whole
+# range is 2.6e-2 off a day from expiration.
+EXPIRATION_RATIO_PER_SOLVE = 4
+
 # Projected successive over-relaxation (Cryer, 1971) stops once a sweep changes the values
 # by less than the tolerance (in units of the strike price), within the most sweeps.
 PSOR_RELAXATION = 1.2
@@ -479,6 +487,24 @@ def get_finite_difference_option_values(
     today passes every time to expiration on the way. The value of each strike is read off
     the grid at ln(S / K) with a cubic spline.
 
+    A grid sized for the longest expiration is too coarse for one a day away, so the times
+    to expiration are solved in groups whose longest is at most four times their shortest,
+    each on a grid that reaches five standard deviations of its own longest expiration and
+    with all time_steps. The values of a day to a quarter so stay within about 7e-4 of the
+    exact European value for a stock price of 100 and a volatility up to 100%, where one
+    grid for the whole range is off by up to 2.6e-2 a day from expiration.
+
+    The formulas are as follows:
+
+    - V(S, K, τ) = K * v(ln(S / K), τ), v solving v_τ = a * v_xx + b * v_x - r * v, a = σ² / 2, b = r - q - σ² / 2
+    - (I - θ * Δτ * L) * v(τ + Δτ) = (I + (1 - θ) * Δτ * L) * v(τ), with L as in get_finite_difference_option
+    - American: v(τ + Δτ) ≥ φ * (e^x - 1) at every step
+    - Groups of times to expiration with T_max / T_min ≤ 4, each solved on its own grid
+
+    Where τ is the time to expiration, x = ln(S / K), r the continuously compounded risk-free
+    rate, q the continuous dividend yield, σ the volatility, φ = 1 for a call and -1 for a
+    put and θ = 0, 1 or 1/2 for the explicit, implicit and Crank-Nicolson schemes.
+
     Args:
         stock_price (float): The current stock price.
         strike_prices (np.ndarray | list[float]): The strike prices.
@@ -495,7 +521,8 @@ def get_finite_difference_option_values(
             which spans every strike price plus five standard deviations on either side.
             Defaults to 1,000.
         time_steps (int, optional): The number of time steps up to the longest time to
-            expiration, with at least one between two times. Defaults to 200.
+            expiration of each group solved together, with at least one between two times.
+            Defaults to 200.
         rannacher_steps (int, optional): The number of Crank-Nicolson steps taken as two
             implicit half steps at the start. Defaults to 2.
         exercise_method (str, optional): "brennan_schwartz" or "psor". Defaults to
@@ -503,6 +530,41 @@ def get_finite_difference_option_values(
 
     Returns:
         np.ndarray: The values, strike prices by times to expiration.
+
+    Raises:
+        ValueError: If a price or the volatility is not above zero, the scheme or the
+            exercise method is unknown, or the explicit scheme is unstable at the steps.
+
+    Notes:
+        References: Crank, J., & Nicolson, P. (1947). "A Practical Method for Numerical
+        Evaluation of Solutions of Partial Differential Equations of the Heat-Conduction
+        Type." Mathematical Proceedings of the Cambridge Philosophical Society, 43(1),
+        50-67. Brennan, M. J., & Schwartz, E. S. (1977). "The Valuation of American Put
+        Options." The Journal of Finance, 32(2), 449-462. Referenced against QuantLib's
+        FdBlackScholesVanillaEngine (https://www.quantlib.org) on a 4,000 by 4,000 grid.
+
+    As an example:
+
+    ```python
+    from financetoolkit.options.numerical import finite_difference_model
+
+    finite_difference_model.get_finite_difference_option_values(
+        stock_price=100,
+        strike_prices=[90, 100, 110],
+        times_to_expiration=[1 / 365, 1 / 12, 1],
+        risk_free_rate=0.04,
+        volatility=0.3,
+        dividend_yield=0.01,
+        put_option=True,
+        american_option=True,
+    ).round(4).tolist()
+    ```
+
+    Which returns:
+
+    ```
+    [[0.0, 0.4196, 6.0368], [0.6226, 3.3391, 10.5385], [10.0, 10.4574, 16.4085]]
+    ```
     """
     strikes = np.asarray(strike_prices, dtype=float)
     times = np.asarray(times_to_expiration, dtype=float)
@@ -528,35 +590,48 @@ def get_finite_difference_option_values(
     if positive.size == 0 or strikes.size == 0:
         return values
 
-    width = _grid_width(risk_free_rate, volatility, positive[-1], dividend_yield)
-    grid = _log_grid(
-        min(moneyness.min(), 0.0) - width,
-        max(moneyness.max(), 0.0) + width,
-        price_steps,
-    )
-    payoff = np.maximum(sign * (np.exp(grid) - 1), 0.0)
-    levels = _theta_scheme(
-        grid,
-        payoff,
-        positive,
-        risk_free_rate,
-        volatility,
-        dividend_yield,
-        scheme,
-        time_steps,
-        rannacher_steps,
-        _vanilla_boundaries(
-            grid, risk_free_rate, dividend_yield, put_option, american_option
-        ),
-        obstacle=(lambda _time: payoff) if american_option else None,
-        exercise_low=put_option,
-        exercise_method=exercise_method,
-    )
+    # One grid sized for the longest expiration spaces its points by a fraction of the
+    # standard deviation of that expiration, far too coarse for one a day away, and gives
+    # the first day a sliver of the time steps. So the expirations are solved in groups whose
+    # longest is at most EXPIRATION_RATIO_PER_SOLVE times their shortest, each on its own grid
+    # with all time_steps.
+    groups = []
+    for time in positive:
+        if groups and time <= EXPIRATION_RATIO_PER_SOLVE * groups[-1][0]:
+            groups[-1].append(time)
+        else:
+            groups.append([time])
 
-    for time, level in zip(positive, levels, strict=True):
-        values[:, times == time] = (strikes * CubicSpline(grid, level)(moneyness))[
-            :, None
-        ]
+    for group in groups:
+        width = _grid_width(risk_free_rate, volatility, group[-1], dividend_yield)
+        grid = _log_grid(
+            min(moneyness.min(), 0.0) - width,
+            max(moneyness.max(), 0.0) + width,
+            price_steps,
+        )
+        payoff = np.maximum(sign * (np.exp(grid) - 1), 0.0)
+        levels = _theta_scheme(
+            grid,
+            payoff,
+            np.asarray(group),
+            risk_free_rate,
+            volatility,
+            dividend_yield,
+            scheme,
+            time_steps,
+            rannacher_steps,
+            _vanilla_boundaries(
+                grid, risk_free_rate, dividend_yield, put_option, american_option
+            ),
+            obstacle=(lambda _time, payoff=payoff: payoff) if american_option else None,
+            exercise_low=put_option,
+            exercise_method=exercise_method,
+        )
+
+        for time, level in zip(group, levels, strict=True):
+            values[:, times == time] = (strikes * CubicSpline(grid, level)(moneyness))[
+                :, None
+            ]
 
     return values
 
@@ -583,7 +658,9 @@ def get_finite_difference_option(
     Also known as: finite difference method, PDE pricing, Crank-Nicolson, θ-scheme.
 
     The equation is solved backwards from the payoff at expiration on a uniform grid of
-    the log moneyness x = ln(S / K), with central differences in x and the θ-scheme in time:
+    the log moneyness x = ln(S / K), with central differences in x and the θ-scheme in time.
+
+    The formulas are as follows:
 
     - V_τ = a * V_xx + b * V_x - r * V, a = σ² / 2, b = r - q - σ² / 2
     - (I - θ * Δτ * L) * V(τ + Δτ) = (I + (1 - θ) * Δτ * L) * V(τ)
@@ -790,7 +867,9 @@ def get_finite_difference_barrier_option(
     rebate (paid when the barrier is hit), with grid points at the barrier and the strike
     price. A knock-in option is the European option less the knock-out option without
     rebate, plus the rebate paid at expiration when the barrier was never hit (a no-touch
-    claim solved on the same grid):
+    claim solved on the same grid).
+
+    The formulas are as follows:
 
     - Knock-out: V_τ = a * V_xx + b * V_x - r * V on the side of the barrier, V(H, τ) = R
     - Knock-in = Black-Scholes - Knock-out (R = 0) + R * No-touch
@@ -978,7 +1057,9 @@ def get_finite_difference_shout_option(
     expiration the call pays max(S_T - K, S_τ - K, 0) with a shout and max(S_T - K, 0)
     without. Shouting swaps the option for the locked amount, paid at expiration, plus an
     at-the-money option on the rest of the life, so the shout is an American-style right
-    with that as its exercise value (Thomas, 1993):
+    with that as its exercise value (Thomas, 1993).
+
+    The formulas are as follows:
 
     - V(S, τ) ≥ φ * e^(-r * τ) * (S - K) + BS(S, S, τ)
     - BS(S, S, τ) = S * BS(1, 1, τ), the at-the-money Black-Scholes option

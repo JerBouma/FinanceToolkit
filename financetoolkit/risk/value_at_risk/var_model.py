@@ -36,12 +36,18 @@ MINIMUM_SPREAD_OBSERVATIONS = 2
 MINIMUM_GARCH_OBSERVATIONS = 100
 
 
+@by_own_trading_days(rolling_only=True)
 def get_var_historic(
-    returns: pd.Series | pd.DataFrame, alpha: float
+    returns: pd.Series | pd.DataFrame, alpha: float, window: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the historical Value at Risk (VaR) of returns: the return that is only beaten
-    on the downside in a fraction alpha of the observed periods.
+    on the downside in a fraction alpha of the observed periods, over the whole sample or
+    within every rolling window.
+
+    The formula is as follows:
+
+        - VaR = Quantile(Return, alpha), with linear interpolation between observations
 
     Shares similar logic:
     - PerformanceAnalytics (R), VaR: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
@@ -52,6 +58,9 @@ def get_var_historic(
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the VaR over all returns (per period for a 'within
+            period' index).
 
     Returns:
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
@@ -61,6 +70,10 @@ def get_var_historic(
     - The VaR is the alpha quantile of the returns with linear interpolation; Riskfolio-Lib and
       skfolio take an observed return instead and report the loss as a positive number.
     """
+    if window is not None:
+        # Linear interpolation, as np.percentile, in one pass instead of a call per window.
+        return returns.rolling(window=window).quantile(alpha, interpolation="linear")
+
     return risk_model.get_quantile(returns, alpha)
 
 
@@ -226,29 +239,6 @@ def get_var_kernel(
     return risk_model.apply_to_observations(
         returns, lambda samples: get_var_kernel_samples(samples, alpha)
     )
-
-
-@by_own_trading_days
-def get_rolling_var_historic(
-    returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling historical Value at Risk (VaR) of returns: the return that is only
-    beaten on the downside in a fraction alpha of the periods of every rolling window.
-
-    Shares similar logic:
-    - PerformanceAnalytics (R), VaR: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        window_size (int): The size of the rolling window.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling VaR values with time as index.
-    """
-    # Linear interpolation, as np.percentile, in one pass instead of a call per window.
-    return returns.rolling(window=window_size).quantile(alpha, interpolation="linear")
 
 
 def fit_gpd_tail(

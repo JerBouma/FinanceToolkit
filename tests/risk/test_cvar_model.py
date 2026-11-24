@@ -43,16 +43,14 @@ def test_get_cvar_laplace(recorder):
     )
 
 
-def test_get_rolling_cvar_historic(recorder):
+def test_get_cvar_historic_rolling(recorder):
     returns = pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15, -0.05, 0.08, 0.12])
     recorder.capture(
-        cvar_model.get_rolling_cvar_historic(
-            returns=returns, alpha=0.05, window_size=3
-        ).round(4)
+        cvar_model.get_cvar_historic(returns=returns, alpha=0.05, window=3).round(4)
     )
 
 
-def test_get_rolling_cvar_historic_dataframe(recorder):
+def test_get_cvar_historic_rolling_dataframe(recorder):
     returns_df = pd.DataFrame(
         {
             "AAPL": [0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.05],
@@ -60,9 +58,7 @@ def test_get_rolling_cvar_historic_dataframe(recorder):
         }
     )
     recorder.capture(
-        cvar_model.get_rolling_cvar_historic(
-            returns=returns_df, alpha=0.05, window_size=3
-        ).round(4)
+        cvar_model.get_cvar_historic(returns=returns_df, alpha=0.05, window=3).round(4)
     )
 
 
@@ -297,17 +293,17 @@ def test_rolling_cvar_historic_matches_the_cvar_of_every_window():
             for column in returns.columns
         }
     ).reindex(returns.index)
-    rolling_cvar = cvar_model.get_rolling_cvar_historic(returns, 0.05, 30)
+    rolling_cvar = cvar_model.get_cvar_historic(returns, 0.05, window=30)
 
     pd.testing.assert_frame_equal(rolling_cvar, expected, rtol=1e-12, atol=1e-15)
     pd.testing.assert_series_equal(
-        cvar_model.get_rolling_cvar_historic(returns["A"], 0.05, 30),
+        cvar_model.get_cvar_historic(returns["A"], 0.05, window=30),
         expected["A"],
         rtol=1e-12,
         atol=1e-15,
     )
     assert (
-        cvar_model.get_rolling_cvar_historic(returns.iloc[:10], 0.05, 30)
+        cvar_model.get_cvar_historic(returns.iloc[:10], 0.05, window=30)
         .isna()
         .all()
         .all()

@@ -1449,8 +1449,8 @@ class VolatilityRisk:
         if method == "close_to_close":
             if rolling:
                 period_returns = self._historical_data[period]["Return"]
-                volatility = risk_model.get_rolling_volatility(
-                    period_returns, period, rolling
+                volatility = risk_model.get_volatility(
+                    period_returns, period, window=rolling
                 )
             else:
                 returns = self._historical_data["daily"]["Return"]
@@ -1763,8 +1763,8 @@ class VolatilityRisk:
             risk_free_rate = self._risk_free_rate_data[period].reindex(
                 index=period_returns.index, columns=period_returns.columns
             )
-            excess_volatility = risk_model.get_rolling_excess_volatility(
-                period_returns, risk_free_rate, period, rolling
+            excess_volatility = risk_model.get_excess_volatility(
+                period_returns, risk_free_rate, period, window=rolling
             )
         else:
             returns = self._historical_data["daily"]["Return"]
@@ -1931,8 +1931,8 @@ class VolatilityRisk:
 
         if rolling:
             returns = self._historical_data[period]["Return"]
-            downside_deviation = risk_model.get_rolling_downside_deviation(
-                returns, rolling, minimum_acceptable_return
+            downside_deviation = risk_model.get_downside_deviation(
+                returns, minimum_acceptable_return, window=rolling
             )
         else:
             returns = self._get_returns(period, within_period)

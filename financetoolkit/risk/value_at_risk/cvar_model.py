@@ -17,12 +17,18 @@ ALPHA_CONSTRAINT = 0.5
 MULTI_PERIOD_INDEX_LEVELS = 2
 
 
+@by_own_trading_days(rolling_only=True)
 def get_cvar_historic(
-    returns: pd.Series | pd.DataFrame, alpha: float
+    returns: pd.Series | pd.DataFrame, alpha: float, window: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the historical Conditional Value at Risk (CVaR) of returns: the average return
-    in the worst alpha share of the observed periods.
+    in the worst alpha share of the observed periods, over the whole sample or within every
+    rolling window.
+
+    The formula is as follows:
+
+        - CVaR = Mean(Return | Return <= VaR), with VaR the alpha quantile of the returns
 
     Shares similar logic:
     - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
@@ -32,13 +38,28 @@ def get_cvar_historic(
     - skfolio, cvar: https://skfolio.org/generated/skfolio.measures.cvar.html
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series of returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the CVaR over all returns (per period for a 'within
+            period' index).
 
     Returns:
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    if window is not None:
+
+        def _cvar(windows):
+            value_at_risk = np.percentile(windows, alpha * 100, axis=1, keepdims=True)
+
+            # The value at the percentile is always in the tail, so no window has an empty one.
+            return np.nanmean(
+                np.where(windows <= value_at_risk, windows, np.nan), axis=1
+            )
+
+        return risk_model.apply_to_stacked_windows(returns, window, _cvar)
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             value_at_risk = returns.groupby(level=0, sort=False).quantile(alpha)
@@ -68,35 +89,6 @@ def get_cvar_historic(
         ].mean()  # The actual calculation without data wrangling
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-
-
-@by_own_trading_days
-def get_rolling_cvar_historic(
-    returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling historical Conditional Value at Risk (CVaR) of returns: the average
-    return in the worst alpha share of the periods of every rolling window.
-
-    Shares similar logic:
-    - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        window_size (int): The size of the rolling window.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling CVaR values with time as index.
-    """
-
-    def _cvar(windows):
-        value_at_risk = np.percentile(windows, alpha * 100, axis=1, keepdims=True)
-
-        # The value at the percentile is always in the tail, so no window has an empty one.
-        return np.nanmean(np.where(windows <= value_at_risk, windows, np.nan), axis=1)
-
-    return risk_model.apply_to_stacked_windows(returns, window_size, _cvar)
 
 
 def get_cvar_gaussian(

@@ -26,8 +26,6 @@ from financetoolkit.risk.risk_model import (
     get_kurtosis,
     get_max_drawdown,
     get_pain_index,
-    get_rolling_kurtosis,
-    get_rolling_skewness,
     get_skewness,
     get_ui,
     get_volatility,
@@ -1029,8 +1027,8 @@ class Performance:
                 window_size=rolling,
             )
         elif rolling:
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
+            beta = performance_model.get_beta(
+                returns, benchmark_returns, window=rolling
             )
         else:
             beta = performance_model.get_beta(returns, benchmark_returns)
@@ -1319,8 +1317,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
+            beta = performance_model.get_beta(
+                returns, benchmark_returns, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -1381,7 +1379,7 @@ class Performance:
     ) -> pd.DataFrame:
         """
         The rolling factor regression of every ticker's daily excess returns (its return minus
-        the factor dataset's RF) on the factors, see `performance_model.get_rolling_factor_regression`.
+        the factor dataset's RF) on the factors, see `performance_model.get_factor_regression`.
 
         Args:
             factor_dataset (pd.DataFrame): The daily factors and RF.
@@ -1401,10 +1399,10 @@ class Performance:
 
         rolling_model = pd.concat(
             {
-                ticker: performance_model.get_rolling_factor_regression(
+                ticker: performance_model.get_factor_regression(
                     returns[ticker] - factor_dataset["RF"],
                     factor_dataset[factors],
-                    rolling,
+                    window=rolling,
                 )
                 for ticker in self._tickers_with_returns
             },
@@ -2327,7 +2325,7 @@ class Performance:
         self,
         style_tickers: str | list[str] | None = None,
         period: str = "monthly",
-        window: int | None = None,
+        rolling: int | None = None,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -2345,7 +2343,7 @@ class Performance:
         over the same returns the weights are fitted to, which flatters the fit, as the weights
         are chosen to explain exactly those returns.
 
-        A window estimates the weights over a rolling number of periods instead, which shows how
+        A rolling window estimates the weights over a set number of periods instead, which shows how
         a fund's style drifts over time, and adds Sharpe's out-of-sample measure of selection:
         the Out-of-Sample Selection Return of a date is the ticker's return of that period minus
         the return of that period of the style mix estimated over the window that ends one
@@ -2374,8 +2372,8 @@ class Performance:
                 AGG and BIL.
             period (str, optional): The return frequency. Options are: "daily", "weekly", "monthly",
                 "quarterly", "yearly". Defaults to "monthly".
-            window (int | None, optional): The number of periods to estimate the weights over on a
-                rolling basis, which adds the Out-of-Sample Selection Return. Defaults to None,
+            rolling (int | None, optional): The number of periods of a rolling window to estimate
+                the weights over, which adds the Out-of-Sample Selection Return. Defaults to None,
                 which uses every period.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
@@ -2386,7 +2384,7 @@ class Performance:
 
         Returns:
             pd.DataFrame: Per ticker the weight of every style, the R Squared, the Selection Return
-            and the Tracking Error, or with a window the same and the Out-of-Sample Selection
+            and the Tracking Error, or with a rolling window the same and the Out-of-Sample Selection
             Return per date (the last date of every window) and ticker. A ticker with no more
             returns than there are styles (in a window) is NaN.
 
@@ -2455,13 +2453,13 @@ class Performance:
         returns = returns.loc[
             self._start_date : self._end_date, [*funds, *style_tickers]
         ]
-        # When the prices start within the range, their first period has no prior close and so no return for any ticker; leaving it in would give the first window one observation fewer than `window`.  # noqa: E501
+        # When the prices start within the range, their first period has no prior close and so no return for any ticker; leaving it in would give the first window one observation fewer than `rolling`.  # noqa: E501
         if (first_return := returns.first_valid_index()) is not None:
             returns = returns.loc[first_return:]
         periods_per_year = PERIODS_PER_YEAR[period]
 
         # A fund with too few returns (a recent listing, say) comes back as NaN in the model, so it does not empty the result of every other fund.  # noqa: E501
-        if window is None:
+        if rolling is None:
             result = pd.DataFrame(
                 {
                     fund: performance_model.get_style_analysis(
@@ -2473,8 +2471,11 @@ class Performance:
         else:
             result = pd.concat(
                 {
-                    fund: performance_model.get_rolling_style_analysis(
-                        returns[fund], returns[style_tickers], window, periods_per_year
+                    fund: performance_model.get_style_analysis(
+                        returns[fund],
+                        returns[style_tickers],
+                        periods_per_year,
+                        window=rolling,
                     )
                     for fund in funds
                 },
@@ -2637,7 +2638,7 @@ class Performance:
                 period, "Return", within_period=within_period, benchmark=True
             )
             beta = (
-                performance_model.get_rolling_beta(returns, benchmark_returns, rolling)
+                performance_model.get_beta(returns, benchmark_returns, window=rolling)
                 if rolling
                 else performance_model.get_beta(returns, benchmark_returns)
             )
@@ -2714,8 +2715,8 @@ class Performance:
         )
 
         if rolling:
-            alpha = performance_model.get_rolling_alpha(
-                returns, benchmark_returns, rolling
+            alpha = performance_model.get_alpha(
+                returns, benchmark_returns, window=rolling
             )
         else:
             alpha = performance_model.get_alpha(returns, benchmark_returns)
@@ -2873,8 +2874,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
+            beta = performance_model.get_beta(
+                returns, benchmark_returns, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -3038,7 +3039,7 @@ class Performance:
         This codebase does not track "N literal strategy trials" — there is no record of how many
         parameter combinations were tried before arriving at the current Toolkit configuration. As a
         documented approximation, `Var[SR_trials]` is estimated from the variance of an auxiliary
-        *rolling* Sharpe ratio series (see `get_rolling_sharpe_ratio`) computed over a
+        *rolling* Sharpe ratio series (see `get_sharpe_ratio` with a window) computed over a
         `trials_window`-sized window across the full return history, and `n_trials` defaults to the
         number of non-overlapping `trials_window`-sized windows in that return history (at least 1):
         overlapping windows share most of their returns, so counting each of them as a trial would
@@ -3207,8 +3208,8 @@ class Performance:
 
         if rolling:
             excess_return = full_excess_return
-            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                excess_return, rolling
+            sharpe_ratio = performance_model.get_sharpe_ratio(
+                excess_return, window=rolling
             )
         else:
             excess_return = self._get_column(
@@ -3224,8 +3225,8 @@ class Performance:
             result = sharpe_ratio
         elif method == "smart":
             result = sharpe_ratio / (
-                performance_model.get_rolling_autocorrelation_penalty(
-                    excess_return, rolling
+                performance_model.get_autocorrelation_penalty(
+                    excess_return, window=rolling
                 )
                 if rolling
                 else performance_model.get_autocorrelation_penalty(excess_return)
@@ -3236,11 +3237,11 @@ class Performance:
             result = pd.concat(
                 [
                     (
-                        performance_model.get_rolling_lo_sharpe_ratio(
+                        performance_model.get_lo_sharpe_ratio(
                             excess_return[[column]],
-                            rolling,
                             observations_per_year[column],
                             lags,
+                            window=rolling,
                         )
                         if rolling
                         else performance_model.get_lo_sharpe_ratio(
@@ -3255,8 +3256,8 @@ class Performance:
             ).set_axis(excess_return.columns, axis=1)
         else:
             if rolling:
-                skewness = get_rolling_skewness(excess_return, rolling)
-                kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+                skewness = get_skewness(excess_return, window=rolling)
+                kurtosis = get_kurtosis(excess_return, fisher=False, window=rolling)
                 n_observations = rolling
             else:
                 skewness = get_skewness(excess_return)
@@ -3308,8 +3309,8 @@ class Performance:
                 )
                 trials_sharpe_ratio_variance = pd.Series(
                     {
-                        column: performance_model.get_rolling_sharpe_ratio(
-                            trials_returns[column], int(window[column])
+                        column: performance_model.get_sharpe_ratio(
+                            trials_returns[column], window=int(window[column])
                         ).var()
                         for column in trials_returns.columns
                     },
@@ -3553,8 +3554,8 @@ class Performance:
                 period_returns,
                 self._risk_free_rate_data[period][period_returns.columns],
             )
-            sortino_ratio = performance_model.get_rolling_sortino_ratio(
-                excess_return, rolling
+            sortino_ratio = performance_model.get_sortino_ratio(
+                excess_return, window=rolling
             )
         else:
             excess_return = self._get_column(
@@ -3565,8 +3566,8 @@ class Performance:
 
         if method == "smart":
             sortino_ratio = sortino_ratio / (
-                performance_model.get_rolling_autocorrelation_penalty(
-                    excess_return, rolling
+                performance_model.get_autocorrelation_penalty(
+                    excess_return, window=rolling
                 )
                 if rolling
                 else performance_model.get_autocorrelation_penalty(excess_return)
@@ -3576,8 +3577,8 @@ class Performance:
 
         if method in ("probabilistic", "probabilistic_adjusted"):
             if rolling:
-                skewness = get_rolling_skewness(excess_return, rolling)
-                kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+                skewness = get_skewness(excess_return, window=rolling)
+                kurtosis = get_kurtosis(excess_return, fisher=False, window=rolling)
                 n_observations = rolling
             else:
                 skewness = get_skewness(excess_return)
@@ -3742,8 +3743,8 @@ class Performance:
         ) - 1
 
         safety_first_ratio = (
-            performance_model.get_rolling_safety_first_ratio(
-                returns, rolling, threshold_per_observation
+            performance_model.get_safety_first_ratio(
+                returns, threshold_per_observation, window=rolling
             )
             if rolling
             else performance_model.get_safety_first_ratio(
@@ -3883,10 +3884,8 @@ class Performance:
                 period_returns,
                 self._risk_free_rate_data[period][period_returns.columns],
             )
-            upside_potential_ratio = (
-                performance_model.get_rolling_upside_potential_ratio(
-                    excess_return, rolling
-                )
+            upside_potential_ratio = performance_model.get_upside_potential_ratio(
+                excess_return, window=rolling
             )
         else:
             excess_return = self._get_column(
@@ -4803,8 +4802,11 @@ class Performance:
                 self._get_downside_deviation(period, "Excess Return", benchmark=True),
             )
         elif rolling:
-            m2_ratio = performance_model.get_rolling_m2_ratio(
-                period_returns, risk_free_rate, benchmark_period_returns, rolling
+            m2_ratio = performance_model.get_m2_ratio(
+                period_returns,
+                risk_free_rate,
+                benchmark_returns=benchmark_period_returns,
+                window=rolling,
             )
         else:
             daily_returns = self._get_column("daily", "Return", within_period=False)
@@ -4936,8 +4938,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            tracking_error = performance_model.get_rolling_tracking_error(
-                returns, benchmark_returns, rolling
+            tracking_error = performance_model.get_tracking_error(
+                returns, benchmark_returns, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -5068,8 +5070,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            information_ratio = performance_model.get_rolling_information_ratio(
-                returns, benchmark_returns, rolling
+            information_ratio = performance_model.get_information_ratio(
+                returns, benchmark_returns, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -5223,10 +5225,10 @@ class Performance:
         )
 
         if rolling:
-            upside_capture_ratio = performance_model.get_rolling_capture_ratio(
+            upside_capture_ratio = performance_model.get_capture_ratio(
                 returns,
                 benchmark_returns,
-                rolling,
+                window=rolling,
                 side="up",
                 method=method,
                 periods_per_year=periods_per_year,
@@ -5378,10 +5380,10 @@ class Performance:
         )
 
         if rolling:
-            downside_capture_ratio = performance_model.get_rolling_capture_ratio(
+            downside_capture_ratio = performance_model.get_capture_ratio(
                 returns,
                 benchmark_returns,
-                rolling,
+                window=rolling,
                 side="down",
                 method=method,
                 periods_per_year=periods_per_year,
@@ -6302,8 +6304,8 @@ class Performance:
         )
 
         if rolling:
-            r_squared = performance_model.get_rolling_r_squared(
-                returns, benchmark_returns, rolling
+            r_squared = performance_model.get_r_squared(
+                returns, benchmark_returns, window=rolling
             )
         else:
             r_squared = performance_model.get_r_squared(returns, benchmark_returns)
@@ -6424,8 +6426,8 @@ class Performance:
 
         # The Sharpe ratio of the returns themselves, without a risk free rate.
         if rolling:
-            risk_return_ratio = performance_model.get_rolling_sharpe_ratio(
-                returns, rolling
+            risk_return_ratio = performance_model.get_sharpe_ratio(
+                returns, window=rolling
             )
         else:
             risk_return_ratio = performance_model.get_sharpe_ratio(returns)
@@ -6962,8 +6964,8 @@ class Performance:
 
         if rolling:
             returns = self._get_column(period, "Return", within_period=False)
-            omega_ratio = performance_model.get_rolling_omega_ratio(
-                returns, rolling, minimum_acceptable_return
+            omega_ratio = performance_model.get_omega_ratio(
+                returns, minimum_acceptable_return, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=within_period)
@@ -7010,8 +7012,8 @@ class Performance:
         )
 
         if rolling:
-            return performance_model.get_rolling_morningstar_risk_adjusted_return(
-                excess_returns, rolling, gamma
+            return performance_model.get_morningstar_risk_adjusted_return(
+                excess_returns, gamma, window=rolling
             )
 
         if within_period:
@@ -7861,8 +7863,8 @@ class Performance:
                     returns, self._risk_free_rate_data[period][returns.columns]
                 )
 
-            kelly_criterion = performance_model.get_rolling_kelly_criterion(
-                returns, rolling, method, fraction
+            kelly_criterion = performance_model.get_kelly_criterion(
+                returns, method, fraction, window=rolling
             )
         else:
             column = "Excess Return" if method == "continuous" else "Return"
@@ -8737,7 +8739,7 @@ class Performance:
             rolling (int, optional): The rolling window size to use for the calculation. If set, Beta and
             the residual standard deviation are estimated over a rolling window of this many periods
             across the full return history instead of per `period`, the residuals of each window from
-            the regression over that window (see `performance_model.get_rolling_appraisal_ratio`).
+            the regression over that window (see `performance_model.get_appraisal_ratio`).
             Defaults to None.
             method (str, optional): The ratio, as described above. Options are: "appraisal" (Jensen's Alpha
                 per unit of residual risk), "modified" (Jensen's Alpha per unit of Beta), "alternative"
@@ -8803,8 +8805,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
+            beta = performance_model.get_beta(
+                returns, benchmark_returns, window=rolling
             )
 
             risk_free_rate = self._risk_free_rate_data[period]
@@ -8870,8 +8872,11 @@ class Performance:
         # A rolling Alpha is divided by the residual standard deviation of the regression
         # over the same window, so each ratio only uses the returns of its own window.
         appraisal_ratio = (
-            performance_model.get_rolling_appraisal_ratio(
-                jensens_alpha, excess_return, benchmark_excess_return, rolling
+            performance_model.get_appraisal_ratio(
+                jensens_alpha,
+                excess_returns=excess_return,
+                benchmark_excess_returns=benchmark_excess_return,
+                window=rolling,
             )
             if rolling
             else performance_model.get_appraisal_ratio(jensens_alpha, capm_residuals)
@@ -9005,8 +9010,8 @@ class Performance:
                 period, "Return", within_period=False, benchmark=True
             )
 
-            beta = performance_model.get_rolling_beta(
-                returns, benchmark_returns, rolling
+            beta = performance_model.get_beta(
+                returns, benchmark_returns, window=rolling
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -9027,13 +9032,11 @@ class Performance:
             # rolling Beta, so that Total Risk Beta = Asset Standard Deviation / Benchmark
             # Standard Deviation is at least |Beta| (the correlation is at most 1).
             # Each on its own dates, and the asset on the dates it shares with the benchmark (as Beta), so a stock next to a cryptocurrency keeps full windows on daily data.  # noqa: E501
-            asset_standard_deviation = performance_model.get_rolling_standard_deviation(
-                returns, rolling, benchmark_returns
+            asset_standard_deviation = performance_model.get_standard_deviation(
+                returns, benchmark_returns, window=rolling
             )
-            benchmark_standard_deviation = (
-                performance_model.get_rolling_standard_deviation(
-                    benchmark_returns, rolling
-                )
+            benchmark_standard_deviation = performance_model.get_standard_deviation(
+                benchmark_returns, window=rolling
             )
         else:
             daily_returns = self._get_column("daily", "Return", within_period=False)
@@ -10099,11 +10102,11 @@ class Performance:
                 self._get_column(period, "Return", within_period=False),
                 self._risk_free_rate_data[period][self._tickers_with_returns],
             )
-            sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                excess_return, rolling
+            sharpe_ratio = performance_model.get_sharpe_ratio(
+                excess_return, window=rolling
             )
-            skewness = get_rolling_skewness(excess_return, rolling)
-            kurtosis = get_rolling_kurtosis(excess_return, rolling, fisher=False)
+            skewness = get_skewness(excess_return, window=rolling)
+            kurtosis = get_kurtosis(excess_return, fisher=False, window=rolling)
         else:
             excess_return = self._get_column(
                 period, "Excess Return", within_period=True
@@ -10776,8 +10779,8 @@ class Performance:
         )
 
         if rolling:
-            information_ratio = performance_model.get_rolling_information_ratio(
-                returns, benchmark_returns, rolling
+            information_ratio = performance_model.get_information_ratio(
+                returns, benchmark_returns, window=rolling
             )
             observations = information_ratio.notna() * float(rolling)
         else:

@@ -685,43 +685,6 @@ def test_garch_parameters_fit_each_ticker_on_its_own_history(risk_module):
     assert garch[tickers[1]].notna().all()
 
 
-def test_move_significance_keeps_each_measure_per_ticker(risk_module):
-    significance = risk_module.get_move_significance(window=20)
-
-    measures = significance.columns.get_level_values(0).unique().tolist()
-    assert measures == [
-        "Return",
-        "Volatility Multiple",
-        "VaR Multiple",
-        "Percentile",
-        "Largest Since",
-    ]
-
-    returns = risk_module._historical_data["daily"]["Return"]
-    ticker = returns.columns[0]
-    expected = risk_model.get_move_significance(returns[ticker], 20)
-    expected = expected.loc[significance.index]
-
-    pd.testing.assert_series_equal(
-        significance[("Volatility Multiple", ticker)],
-        expected["Volatility Multiple"],
-        check_names=False,
-        check_dtype=False,
-        atol=1e-4,
-    )
-    assert (significance[("Largest Since", ticker)].dropna() < "9999").all()
-
-
-def test_move_significance_needs_a_window_of_two_returns(risk_module, caplog):
-    assert risk_module.get_move_significance(window=1).empty
-    assert "at least 2 returns" in caplog.text
-
-
-def test_move_significance_needs_an_alpha_between_zero_and_one(risk_module):
-    with pytest.raises(InvalidArgumentError, match="alpha is a tail probability"):
-        risk_module.get_move_significance(alpha=1.5)
-
-
 def test_the_recovery_needed_is_the_gain_back_to_the_running_peak(risk_module):
     drawdowns = risk_module.get_drawdown_series(rounding=10)
     recovery = risk_module.get_drawdown_series(recovery=True, rounding=10)

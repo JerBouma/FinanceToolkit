@@ -817,7 +817,7 @@ def test_limit_does_not_cut_tickers_next_to_a_portfolio_row(monkeypatch):
         ("fixed_income", "get_loan_payment", {}, 1),
         ("fixed_income", "get_affordable_loan", {}, 1),
         ("overlap", "get_support_resistance_levels", {"tickers": "AAPL"}, 20),
-        ("risk", "get_move_significance", {"tickers": "AAPL"}, 20),
+        ("econometrics", "get_move_significance", {"tickers": "AAPL"}, 20),
     ],
 )
 def test_a_default_limit_selects_the_last_rows(

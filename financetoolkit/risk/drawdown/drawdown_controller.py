@@ -165,10 +165,8 @@ class DrawdownRisk:
 
         if rolling:
             returns = self._historical_data[period]["Return"]
-            conditional_drawdown_at_risk = (
-                risk_model.get_rolling_conditional_drawdown_at_risk(
-                    returns, alpha, rolling, compound_returns=compound_returns
-                )
+            conditional_drawdown_at_risk = risk_model.get_conditional_drawdown_at_risk(
+                returns, alpha, compound_returns=compound_returns, window=rolling
             )
         else:
             returns = self._get_returns(period, within_period)
@@ -1025,7 +1023,7 @@ class DrawdownRisk:
 
         With the Deepest Since dates, every period below the peak also gets the last earlier date with a
         drawdown at least as deep, the familiar headline ("the deepest drawdown since April"), as
-        `get_move_significance` gives the "largest since" date of a single move.
+        `get_move_significance` (Econometrics) gives the "largest since" date of a single move.
 
         The formula is as follows:
 

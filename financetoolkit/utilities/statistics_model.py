@@ -678,7 +678,10 @@ def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
 
 
 def by_own_trading_days(
-    function: Callable | None = None, *, compound: bool = False
+    function: Callable | None = None,
+    *,
+    compound: bool = False,
+    rolling_only: bool = False,
 ) -> Callable:
     """
     Calculate a measure on the trading days of each column.
@@ -701,23 +704,37 @@ def by_own_trading_days(
     Pairing each one's own daily return instead would compare, after a holiday on one
     exchange, a two-day move with a one-day move.
 
+    With rolling_only=True, for a measure that is either one value over the whole sample or a
+    rolling series, only a call with a window (a `window` argument other than None) is
+    calculated per column: a whole-sample measure skips the missing values itself.
+
     Args:
         function (Callable | None): A function taking the returns (or prices), a Series or
             DataFrame with one column per asset, as its first argument.
         compound (bool, optional): Whether to compound the returns of the left out dates
             into the next date kept, for returns measured against each other. Defaults to False.
+        rolling_only (bool, optional): Whether to calculate per column only when the function
+            is called with a window. Defaults to False.
 
     Returns:
         Callable: The function, calculated per column when the columns trade on different dates.
     """
     if function is None:
-        return functools.partial(by_own_trading_days, compound=compound)
+        return functools.partial(
+            by_own_trading_days, compound=compound, rolling_only=rolling_only
+        )
 
     # The returns are the first parameter, passed by position or by name.
-    returns_name = next(iter(inspect.signature(function).parameters))
+    signature = inspect.signature(function)
+    returns_name = next(iter(signature.parameters))
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
+        if (
+            rolling_only
+            and signature.bind(*args, **kwargs).arguments.get("window") is None
+        ):
+            return function(*args, **kwargs)
         if args:
             returns, args = args[0], args[1:]
         else:

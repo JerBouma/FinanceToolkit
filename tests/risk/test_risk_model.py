@@ -139,30 +139,30 @@ def test_get_max_drawdown_recovery_time(recorder):
     )
 
 
-def test_get_rolling_skewness(recorder):
+def test_get_skewness_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_skewness(
+        risk_model.get_skewness(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_kurtosis(recorder):
+def test_get_kurtosis_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_kurtosis(
+        risk_model.get_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             # Kurtosis needs four observations, so a smaller window is all NaN.
-            window_size=4,
+            window=4,
             fisher=True,
         ).round(4)
     )
 
     recorder.capture(
-        risk_model.get_rolling_kurtosis(
+        risk_model.get_kurtosis(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             # Kurtosis needs four observations, so a smaller window is all NaN.
-            window_size=4,
+            window=4,
             fisher=False,
         ).round(4)
     )
@@ -199,51 +199,51 @@ def test_get_downside_deviation_dataframe(recorder):
     recorder.capture(risk_model.get_downside_deviation(returns=returns_df).round(4))
 
 
-def test_get_rolling_downside_deviation(recorder):
+def test_get_downside_deviation_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_downside_deviation(
+        risk_model.get_downside_deviation(
             returns=pd.Series([0.3, 0.2, -0.1, -0.2, 0.06, -0.15, 0.1]),
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_tail_ratio(recorder):
+def test_get_tail_ratio_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_tail_ratio(
+        risk_model.get_tail_ratio(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             alpha=0.2,
-            window_size=4,
+            window=4,
         ).round(4)
     )
 
 
-def test_get_rolling_conditional_drawdown_at_risk(recorder):
+def test_get_conditional_drawdown_at_risk_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_conditional_drawdown_at_risk(
+        risk_model.get_conditional_drawdown_at_risk(
             returns=pd.Series([0.3, 0.2, -0.1, -0.2, 0.06, -0.15, 0.1]),
             alpha=0.5,
-            window_size=4,
+            window=4,
         ).round(4)
     )
 
 
-def test_get_rolling_variance(recorder):
+def test_get_variance_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_variance(
+        risk_model.get_variance(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
 
-def test_get_rolling_volatility(recorder):
+def test_get_volatility_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_volatility(
+        risk_model.get_volatility(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
@@ -306,13 +306,13 @@ def test_get_hill_estimator_invalid_type():
         pass
 
 
-def test_get_rolling_excess_volatility(recorder):
+def test_get_excess_volatility_rolling(recorder):
     recorder.capture(
-        risk_model.get_rolling_excess_volatility(
+        risk_model.get_excess_volatility(
             returns=pd.Series([0.3, 0.2, 0.1, 0, 0.06, -0.1, -0.15]),
             risk_free_rate=pd.Series([0.01, 0.02, 0.01, 0.0, 0.006, 0.01, 0.02]),
             period="monthly",
-            window_size=3,
+            window=3,
         ).round(4)
     )
 
@@ -407,7 +407,7 @@ def test_rolling_cdar_matches_the_cdar_of_every_window(method):
     ).reindex(data.index)
 
     pd.testing.assert_frame_equal(
-        risk_model.get_rolling_conditional_drawdown_at_risk(data, 0.05, 20, method),
+        risk_model.get_conditional_drawdown_at_risk(data, 0.05, method, window=20),
         expected,
         rtol=1e-12,
         atol=1e-15,
@@ -773,8 +773,8 @@ def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
     assert np.isnan(risk_model.get_skewness(pd.Series([0.01] * 5)))
 
     rolling_returns = pd.Series([0.0] * 10 + [0.01, -0.02, 0.03, 0.01])
-    rolling_skewness = risk_model.get_rolling_skewness(rolling_returns, 5)
-    rolling_kurtosis = risk_model.get_rolling_kurtosis(rolling_returns, 5)
+    rolling_skewness = risk_model.get_skewness(rolling_returns, window=5)
+    rolling_kurtosis = risk_model.get_kurtosis(rolling_returns, window=5)
 
     # Windows of only zero returns are undefined; once a window varies it has a value.
     assert rolling_skewness.iloc[:10].isna().all()

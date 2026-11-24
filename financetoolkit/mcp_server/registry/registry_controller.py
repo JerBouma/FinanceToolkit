@@ -480,6 +480,25 @@ SHORT_WINDOW_DAYS = 3
 # hundreds would hold a worker for minutes on a server many people share.
 MAX_ENTITIES = 50
 
+
+def _pseudo_parameters(
+    tickers: list[str] | None, start_date: str, end_date: str
+) -> dict[str, float]:
+    """
+    The pseudo parameters of the size limits (coercion_model.PSEUDO_PARAMETERS): the number
+    of tickers of a call and the years from its start date to its end date (today when it has
+    none). A value that is not known is left out, which leaves out the limits that use it.
+    """
+    pseudo: dict[str, float] = {}
+    if tickers:
+        pseudo["tickers"] = len(tickers)
+    with contextlib.suppress(ValueError, TypeError):
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d") if end_date else datetime.now()
+        pseudo["range_years"] = max((end - start).days, 0) / 365.25
+    return pseudo
+
+
 # The parameters a series reference cannot set itself: the econometrics call sets them for
 # every reference from its own parameters.
 SERIES_TOOL_PARAMETERS = frozenset(
@@ -2073,7 +2092,10 @@ class ToolRegistry:
             # The same limits as a call of the indicator's own tool, with its own defaults
             # for the parameters computed together.
             if problem := size_limit_problem(
-                given,
+                given
+                | _pseudo_parameters(
+                    entities if by_ticker else None, start_date, end_date
+                ),
                 {
                     name: parameter.default
                     for name, parameter in signature.items()
@@ -2664,9 +2686,11 @@ class ToolRegistry:
                     method_kwargs[pname] = value
 
             # A call that would simulate or download more than the server can hold is
-            # refused before anything is collected.
+            # refused before anything is collected. The number of tickers and the years of
+            # the range count in the limits only (pseudo parameters), as the work of a
+            # pairwise or rolling indicator grows with them.
             if size_problem := size_limit_problem(
-                method_kwargs,
+                method_kwargs | _pseudo_parameters(tickers, start_date, end_date),
                 {
                     pname: per_method[method_name]
                     for pname, per_method in parameter_defaults.items()

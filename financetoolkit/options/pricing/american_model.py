@@ -266,6 +266,32 @@ def _quadratic_critical_price(
     )
 
 
+@lru_cache(maxsize=4096)
+def _unit_critical_price(
+    risk_free_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    time_to_expiration: float,
+    sign: int,
+) -> float:
+    """
+    Helper function with the critical stock price of _quadratic_critical_price for a strike
+    of 1. The approximation is homogeneous of degree one in the stock and strike price, so
+    the critical price of a strike K is K times this one, to the tolerance of the search.
+    """
+    return _quadratic_critical_price(
+        1.0,
+        risk_free_rate,
+        dividend_yield,
+        volatility,
+        time_to_expiration,
+        sign,
+        _quadratic_exponent(
+            risk_free_rate, dividend_yield, volatility, time_to_expiration, sign
+        )[0],
+    )
+
+
 def _validate(
     stock_price,
     strike_price,
@@ -273,13 +299,16 @@ def _validate(
     volatility,
     time_to_expiration,
     dividend_yield,
+    arrays: bool = False,
 ) -> None:
     """
     Rejects inputs that are not numbers, a stock or strike price that is not positive (the
     approximations divide by both, and the put-call symmetry swaps them) and a volatility
-    that is not positive.
+    that is not positive. With arrays=True the inputs may be arrays, for the methods that
+    price a grid of strikes and expirations at once.
     """
     validate_numeric_inputs(
+        arrays=arrays,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -287,13 +316,13 @@ def _validate(
         time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
     )
-    if stock_price <= 0 or strike_price <= 0:
+    if np.any(np.asarray(stock_price) <= 0) or np.any(np.asarray(strike_price) <= 0):
         raise ValueError(
             "The stock price and the strike price must be positive, received "
             f"{stock_price!r} and {strike_price!r}."
         )
     # The approximations divide by the variance, which a constant price does not have.
-    if volatility <= 0:
+    if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
 
@@ -311,6 +340,18 @@ def _quadratic_approximation(
     Helper function with the Barone-Adesi-Whaley price and, with ju_zhong, the correction of
     Ju and Zhong (1999), as they share the exponent and the critical stock price.
     """
+    if np.ndim(strike_price) or np.ndim(time_to_expiration):
+        return _quadratic_approximation_grid(
+            stock_price,
+            np.asarray(strike_price, dtype=float),
+            risk_free_rate,
+            volatility,
+            np.asarray(time_to_expiration, dtype=float),
+            dividend_yield,
+            put_option,
+            ju_zhong,
+        )
+
     sign = -1 if put_option else 1
     exercise_value = max(sign * (stock_price - strike_price), 0.0)
 
@@ -379,14 +420,14 @@ def _quadratic_approximation(
     exponent, exponent_derivative, alpha, beta = _quadratic_exponent(
         risk_free_rate, dividend_yield, volatility, time_to_expiration, sign
     )
-    critical_price = _quadratic_critical_price(
-        strike_price,
-        risk_free_rate,
-        dividend_yield,
-        volatility,
-        time_to_expiration,
+    # The critical price is homogeneous of degree one in the strike, so a grid of strikes
+    # with the same expiration solves it once, for a strike of 1.
+    critical_price = strike_price * _unit_critical_price(
+        float(risk_free_rate),
+        float(dividend_yield),
+        float(volatility),
+        float(time_to_expiration),
         sign,
-        exponent,
     )
 
     if sign * (stock_price - critical_price) >= 0:
@@ -444,6 +485,123 @@ def _quadratic_approximation(
             exercise_value,
         )
     )
+
+
+@np.errstate(divide="ignore", invalid="ignore", over="ignore")
+def _quadratic_approximation_grid(
+    stock_price: float,
+    strike_price: np.ndarray,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: np.ndarray,
+    dividend_yield: float,
+    put_option: bool,
+    ju_zhong: bool,
+) -> np.ndarray:
+    """
+    _quadratic_approximation on a grid of strikes and expirations at once, with the same
+    formulas element by element. The cases that depend on the rates alone (two exercise
+    boundaries, or early exercise with a non-positive rate) are evaluated per option, and
+    the critical price is solved once per expiration, for a strike of 1.
+    """
+    strike_price, time_to_expiration = np.broadcast_arrays(
+        strike_price, time_to_expiration
+    )
+    early = _early_exercise_is_optimal(risk_free_rate, dividend_yield, put_option)
+    if _has_two_exercise_boundaries(risk_free_rate, dividend_yield, put_option) or (
+        early and risk_free_rate <= 0
+    ):
+        return np.vectorize(_quadratic_approximation, otypes=[float])(
+            stock_price,
+            strike_price,
+            risk_free_rate,
+            volatility,
+            time_to_expiration,
+            dividend_yield,
+            put_option,
+            ju_zhong,
+        )
+
+    sign = -1 if put_option else 1
+    exercise_value = np.maximum(sign * (stock_price - strike_price), 0.0)
+    # The options at expiration are worth their exercise value: they are priced a year out
+    # and replaced at the end.
+    expired = time_to_expiration <= 0
+    time = np.where(expired, 1.0, time_to_expiration)
+    european_value = get_black_scholes(
+        stock_price=stock_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time,
+        dividend_yield=dividend_yield,
+        put_option=put_option,
+    )
+    if not early:
+        return np.where(
+            expired, exercise_value, np.maximum(european_value, exercise_value)
+        )
+
+    exponent, exponent_derivative, alpha, beta = _quadratic_exponent(
+        risk_free_rate, dividend_yield, volatility, time, sign
+    )
+    times, positions = np.unique(time, return_inverse=True)
+    critical_price = strike_price * np.array(
+        [
+            _unit_critical_price(
+                float(risk_free_rate),
+                float(dividend_yield),
+                float(volatility),
+                float(unique_time),
+                sign,
+            )
+            for unique_time in times
+        ]
+    )[positions].reshape(time.shape)
+    critical_value, critical_probability, critical_time_derivative = (
+        _european_and_derivatives(
+            critical_price,
+            strike_price,
+            risk_free_rate,
+            dividend_yield,
+            volatility,
+            time,
+            sign,
+        )
+    )
+    if ju_zhong:
+        h = -np.expm1(-risk_free_rate * time)
+        premium = sign * (critical_price - strike_price) - critical_value
+        european_h_derivative = critical_time_derivative / (risk_free_rate * (1 - h))
+        denominator = 2 * exponent + beta - 1
+        b_term = (1 - h) * alpha * exponent_derivative / (2 * denominator)
+        c_term = (
+            -(1 - h)
+            * alpha
+            / denominator
+            * (
+                european_h_derivative / premium
+                + 1 / h
+                + exponent_derivative / denominator
+            )
+        )
+        log_ratio = np.log(stock_price / critical_price)
+        chi = b_term * log_ratio**2 + c_term * log_ratio
+        value = european_value + premium * (
+            stock_price / critical_price
+        ) ** exponent / (1 - chi)
+    else:
+        premium = (
+            sign
+            * (1 - np.exp(-dividend_yield * time) * critical_probability)
+            * critical_price
+            / exponent
+        )
+        value = european_value + premium * (stock_price / critical_price) ** exponent
+
+    # Beyond the critical price the option is exercised right away.
+    exercised = expired | (sign * (stock_price - critical_price) >= 0)
+    return np.where(exercised, exercise_value, np.maximum(value, exercise_value))
 
 
 def get_barone_adesi_whaley(
@@ -515,6 +673,7 @@ def get_barone_adesi_whaley(
         volatility,
         time_to_expiration,
         dividend_yield,
+        arrays=True,
     )
 
     return _quadratic_approximation(
@@ -599,6 +758,7 @@ def get_ju_zhong(
         volatility,
         time_to_expiration,
         dividend_yield,
+        arrays=True,
     )
 
     return _quadratic_approximation(
@@ -634,12 +794,17 @@ def _qd_plus_put_boundary(
     hA = K — B — p(B) and ∂p/∂h at B). The boundary lies below K * min(1, r / q), its value
     at expiration, and the root is found by bisection on ln(B / K) below that limit.
 
+    The times may be a matrix with a row per option (the quadrature times of an expiration),
+    of which each row stops iterating once it has converged, so a row solved together with
+    others gives the same boundary as solved on its own.
+
     Args:
         strike_price (float): The strike price.
         risk_free_rate (float): The positive continuously compounded risk-free rate.
         dividend_yield (float): The continuous dividend yield.
         volatility (float): The volatility.
-        times (np.ndarray): The times to expiration τ, all positive.
+        times (np.ndarray): The times to expiration τ, all positive, as a vector or a matrix
+            of rows solved independently.
 
     Returns:
         np.ndarray: The boundary B(τ) at each time.
@@ -696,29 +861,48 @@ def _qd_plus_put_boundary(
     lower_value = objective(strike_price * np.exp(lower))
     upper_value = objective(strike_price * np.exp(upper))
     side = np.zeros_like(times)
+    middle = np.zeros_like(times)
+    # The rows still iterating; a converged row keeps its values.
+    active = np.ones(times.shape[:-1] + (1,), dtype=bool)
 
     for _ in range(_BOUNDARY_ITERATIONS):
-        middle = (lower * upper_value - upper * lower_value) / (
-            upper_value - lower_value
+        step = (lower * upper_value - upper * lower_value) / (upper_value - lower_value)
+        middle = np.where(
+            active,
+            np.where(np.isfinite(step), step, 0.5 * (lower + upper)),
+            middle,
         )
-        middle = np.where(np.isfinite(middle), middle, 0.5 * (lower + upper))
         value = objective(strike_price * np.exp(middle))
         positive = value > 0
 
         # The end that stays put a second time has its value halved (Illinois).
         upper_value = np.where(
-            positive, value, np.where(side == -1, upper_value / 2, upper_value)
+            active,
+            np.where(
+                positive, value, np.where(side == -1, upper_value / 2, upper_value)
+            ),
+            upper_value,
         )
         lower_value = np.where(
-            positive, np.where(side == 1, lower_value / 2, lower_value), value
+            active,
+            np.where(
+                positive, np.where(side == 1, lower_value / 2, lower_value), value
+            ),
+            lower_value,
         )
-        upper = np.where(positive, middle, upper)
-        lower = np.where(positive, lower, middle)
-        side = np.where(positive, 1, -1)
+        upper = np.where(active & positive, middle, upper)
+        lower = np.where(active & ~positive, middle, lower)
+        side = np.where(active, np.where(positive, 1, -1), side)
 
-        if np.all(upper - lower < _BOUNDARY_TOLERANCE) or np.all(
-            np.abs(value) < _BOUNDARY_TOLERANCE * strike_price
-        ):
+        active = active & ~(
+            np.all(upper - lower < _BOUNDARY_TOLERANCE, axis=-1, keepdims=True)
+            | np.all(
+                np.abs(value) < _BOUNDARY_TOLERANCE * strike_price,
+                axis=-1,
+                keepdims=True,
+            )
+        )
+        if not active.any():
             break
 
     return strike_price * np.exp(middle)
@@ -738,29 +922,48 @@ def _qd_plus_unit_boundary(
     strikes with the same expiration solves it once (and a grid of calls, whose put-call
     symmetry swaps the stock and strike price, needs no scaling at all).
     """
-    roots = 0.5 * np.sqrt(time_to_expiration) * (_QD_PLUS_NODES + 1)
-    boundary = _qd_plus_put_boundary(
-        1.0,
-        risk_free_rate,
-        dividend_yield,
-        volatility,
-        np.append(time_to_expiration - roots**2, time_to_expiration),
-    )
+    boundary = _qd_plus_unit_boundaries(
+        risk_free_rate, dividend_yield, volatility, np.array([time_to_expiration])
+    )[0]
     boundary.flags.writeable = False
     return boundary
 
 
+def _qd_plus_unit_boundaries(
+    risk_free_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    times_to_expiration: np.ndarray,
+) -> np.ndarray:
+    """
+    Helper function with the unit-strike QD+ boundaries of _qd_plus_unit_boundary for every
+    time to expiration at once, a row per expiration solved as on its own.
+    """
+    roots = 0.5 * np.sqrt(times_to_expiration)[:, None] * (_QD_PLUS_NODES + 1)
+
+    return _qd_plus_put_boundary(
+        1.0,
+        risk_free_rate,
+        dividend_yield,
+        volatility,
+        np.hstack(
+            [times_to_expiration[:, None] - roots**2, times_to_expiration[:, None]]
+        ),
+    )
+
+
 @np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
 def _qd_plus_put(
-    stock_price: float,
-    strike_price: float,
+    stock_price: np.ndarray,
+    strike_price: np.ndarray,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: np.ndarray,
     dividend_yield: float,
-) -> float:
+    unit_boundary: np.ndarray,
+) -> np.ndarray:
     """
-    Helper function with the QD+ price of an American put with a positive risk-free rate:
+    Helper function with the QD+ price of American puts with a positive risk-free rate:
     the European put plus the early exercise premium integrated over the QD+ boundary.
 
     - V = p(S) + ∫_0^T [r * K * e^(—rt) * N(—d2(t, S / B(T — t))) —
@@ -768,67 +971,64 @@ def _qd_plus_put(
 
     With d1(t, x) = [ln(x) + (r — q + σ² / 2) * t] / (σ√t) and d2 = d1 — σ√t. The integral
     is taken over u = √t with Gauss-Legendre quadrature, as the integrand changes fastest
-    near t = 0.
+    near t = 0. The stock prices, strike prices and times are arrays of one length, with a
+    row of the unit-strike boundary (see _qd_plus_unit_boundary) per option.
     """
-    roots = 0.5 * np.sqrt(time_to_expiration) * (_QD_PLUS_NODES + 1)
-    weights = 0.5 * np.sqrt(time_to_expiration) * _QD_PLUS_WEIGHTS
+    roots = 0.5 * np.sqrt(time_to_expiration)[:, None] * (_QD_PLUS_NODES + 1)
+    weights = 0.5 * np.sqrt(time_to_expiration)[:, None] * _QD_PLUS_WEIGHTS
     times_from_now = roots**2
 
     # The boundary at the quadrature times and, last, today's boundary B(T): at or below it
     # the put is exercised right away.
-    boundary = strike_price * _qd_plus_unit_boundary(
-        float(risk_free_rate),
-        float(dividend_yield),
-        float(volatility),
-        float(time_to_expiration),
-    )
-    if stock_price <= boundary[-1]:
-        return strike_price - stock_price
-    boundary = boundary[:-1]
+    boundary = strike_price[:, None] * unit_boundary
+    exercised = stock_price <= boundary[:, -1]
+    boundary = boundary[:, :-1]
 
     spread = volatility * roots
     d1 = (
-        np.log(stock_price / boundary)
+        np.log(stock_price[:, None] / boundary)
         + (risk_free_rate - dividend_yield + 0.5 * volatility**2) * times_from_now
     ) / spread
     d2 = d1 - spread
 
-    integrand = risk_free_rate * strike_price * np.exp(
+    integrand = risk_free_rate * strike_price[:, None] * np.exp(
         -risk_free_rate * times_from_now
-    ) * ndtr(-d2) - dividend_yield * stock_price * np.exp(
+    ) * ndtr(-d2) - dividend_yield * stock_price[:, None] * np.exp(
         -dividend_yield * times_from_now
     ) * ndtr(
         -d1
     )
     # dt = 2u du.
-    premium = float(np.sum(weights * integrand * 2 * roots))
+    premium = np.sum(weights * integrand * 2 * roots, axis=1)
 
-    # The European put with scipy's ndtr directly: scipy.stats' norm.cdf of get_black_scholes
-    # costs about half a millisecond a call, most of the time of a grid of QD+ prices.
-    european_value = float(
-        _european_and_derivatives(
-            stock_price,
-            strike_price,
-            risk_free_rate,
-            dividend_yield,
-            volatility,
-            time_to_expiration,
-            -1,
-        )[0]
+    # The European put with scipy's ndtr directly, as get_black_scholes adds checks that cost
+    # more than the formula on a grid of QD+ prices.
+    european_value = _european_and_derivatives(
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        dividend_yield,
+        volatility,
+        time_to_expiration,
+        -1,
+    )[0]
+
+    return np.where(
+        exercised,
+        strike_price - stock_price,
+        np.maximum(european_value + premium, strike_price - stock_price),
     )
-
-    return max(european_value + premium, strike_price - stock_price)
 
 
 def get_qd_plus(
-    stock_price: float,
-    strike_price: float,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of an American option with the QD+ exercise boundary of Li (2010)
     and the integral representation of the early exercise premium, as Andersen, Lake and
@@ -859,21 +1059,27 @@ def get_qd_plus(
     boundary of this method does not describe: it is priced on a binomial tree instead,
     averaged over 1,000 and 1,001 steps (within about 1e-3 of the exact value).
 
+    The stock prices, strike prices and times to expiration may be arrays (a grid of strikes
+    and expirations), which solve the boundary of every expiration at once and give the same
+    values as one call per option.
+
     Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
+        stock_price (float | np.ndarray): The current stock price.
+        strike_price (float | np.ndarray): The option's strike price.
         risk_free_rate (float): The continuously compounded risk-free interest rate.
         volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration of the option, in years.
-            At zero the option is worth its exercise value.
+        time_to_expiration (float | np.ndarray): The time to expiration of the option, in
+            years. At zero the option is worth its exercise value.
         dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
 
     Returns:
-        float: The QD+ value of the American option.
+        float | np.ndarray: The QD+ value of the American option, an array in the shape of
+        the inputs when any of them is an array.
 
     Raises:
-        TypeError: if any of the numeric inputs is not a float or int.
+        TypeError: if any of the numeric inputs is not a float or int (or, for the stock
+            price, strike price and time to expiration, an np.ndarray).
         ValueError: if the stock price, strike price or volatility is not positive.
 
     Notes:
@@ -896,14 +1102,13 @@ def get_qd_plus(
         volatility,
         time_to_expiration,
         dividend_yield,
+        arrays=True,
     )
-
-    exercise_value = max(
-        (strike_price - stock_price) if put_option else (stock_price - strike_price),
-        0.0,
+    validate_numeric_inputs(
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        dividend_yield=dividend_yield,
     )
-    if time_to_expiration <= 0:
-        return exercise_value
 
     if not put_option:
         # A call is the put with S and K and r and q swapped (McDonald and Schroder, 1998).
@@ -917,38 +1122,84 @@ def get_qd_plus(
             put_option=True,
         )
 
-    if _has_two_exercise_boundaries(risk_free_rate, dividend_yield, put_option=True):
-        return _two_boundary_put(
-            stock_price,
-            strike_price,
-            risk_free_rate,
-            volatility,
-            time_to_expiration,
-            dividend_yield,
+    stock_prices, strike_prices, times = np.broadcast_arrays(
+        *(
+            np.asarray(value, dtype=float)
+            for value in (stock_price, strike_price, time_to_expiration)
         )
-
-    if risk_free_rate <= 0:
-        european_value = float(
-            get_black_scholes(
-                stock_price=stock_price,
-                strike_price=strike_price,
-                risk_free_rate=risk_free_rate,
-                volatility=volatility,
-                time_to_expiration=time_to_expiration,
-                dividend_yield=dividend_yield,
-                put_option=True,
-            )
-        )
-        return max(european_value, exercise_value)
-
-    return _qd_plus_put(
-        stock_price,
-        strike_price,
-        risk_free_rate,
-        volatility,
-        time_to_expiration,
-        dividend_yield,
     )
+    shape = times.shape
+    stock_prices, strike_prices, times = (
+        stock_prices.ravel(),
+        strike_prices.ravel(),
+        times.ravel(),
+    )
+
+    # At expiration the option is worth its exercise value.
+    value = np.maximum(strike_prices - stock_prices, 0.0)
+    alive = times > 0
+
+    if alive.any():
+        if _has_two_exercise_boundaries(
+            risk_free_rate, dividend_yield, put_option=True
+        ):
+            value[alive] = [
+                _two_boundary_put(
+                    stock,
+                    strike,
+                    risk_free_rate,
+                    volatility,
+                    time,
+                    dividend_yield,
+                )
+                for stock, strike, time in zip(
+                    stock_prices[alive], strike_prices[alive], times[alive], strict=True
+                )
+            ]
+        elif risk_free_rate <= 0:
+            value[alive] = np.maximum(
+                get_black_scholes(
+                    stock_price=stock_prices[alive],
+                    strike_price=strike_prices[alive],
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility,
+                    time_to_expiration=times[alive],
+                    dividend_yield=dividend_yield,
+                    put_option=True,
+                ),
+                value[alive],
+            )
+        else:
+            # The boundary of each distinct expiration once, for a strike of 1.
+            unique_times, positions = np.unique(times[alive], return_inverse=True)
+            unit_boundaries = (
+                _qd_plus_unit_boundary(
+                    float(risk_free_rate),
+                    float(dividend_yield),
+                    float(volatility),
+                    float(unique_times[0]),
+                )[None, :]
+                if len(unique_times) == 1
+                else _qd_plus_unit_boundaries(
+                    float(risk_free_rate),
+                    float(dividend_yield),
+                    float(volatility),
+                    unique_times,
+                )
+            )
+            value[alive] = _qd_plus_put(
+                stock_prices[alive],
+                strike_prices[alive],
+                risk_free_rate,
+                volatility,
+                times[alive],
+                dividend_yield,
+                unit_boundaries[positions],
+            )
+
+    value = value.reshape(shape)
+
+    return value if value.ndim else float(value)
 
 
 def _qd_fixed_point_interpolate(

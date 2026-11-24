@@ -216,6 +216,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -523,9 +524,11 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A tree per strike holds (timesteps + 1)² values.
+            values_per_strike=(timesteps + 1) ** 2,
         )
 
-        binomial_trees: dict[str, dict[float, pd.DataFrame]] = {}
+        binomial_trees: dict[str, tuple[list[float], np.ndarray]] = {}
         binomial_trees_statistics: dict[str, dict[float, dict[str, float]]] = {
             "Up Movement": {},
             "Down Movement": {},
@@ -536,45 +539,47 @@ class PricingOptions:
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            binomial_trees[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
 
-            for strike_price in strike_prices:
-                dividend_yield_value[ticker] = (
-                    dividend_yield
-                    if dividend_yield is not None
-                    else self._dividend_yield_on(ticker, start_date)
-                )
-
-                tree = binomial_trees_model.get_option_payoffs(
-                    stock_price=stock_price.loc[ticker],
-                    strike_price=strike_price,
+            # The trees of every strike at once, as a strikes × nodes × steps array.
+            trees, up_movements, down_movements, probabilities = (
+                binomial_trees_model.get_option_payoff_trees(
+                    stock_price=float(stock_price.loc[ticker]),
+                    strike_prices=np.asarray(strike_prices, dtype=float),
                     years=time_to_expiration,
                     timesteps=timesteps,
-                    risk_free_rate=risk_free_rate,
-                    volatility=volatility.loc[ticker],
-                    dividend_yield=dividend_yield_value[ticker],
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    dividend_yield=float(dividend_yield_value[ticker]),
                     put_option=put_option,
                     american_option=american_option,
-                    show_input_info=show_input_info,
                     method=method,
                 )
+            )
+            binomial_trees[ticker] = (strike_prices, trees)
 
-                if show_input_info:
-                    # The Leisen-Reimer and exact inversion trees are centred on the strike, so their movements
-                    # and probability differ per strike and are shown for each.
+            if show_input_info:
+                # The Leisen-Reimer and exact inversion trees are centred on the strike, so their movements
+                # and probability differ per strike and are shown for each.
+                for position, strike_price in enumerate(strike_prices):
                     label = (
                         f"{ticker} at a strike of {strike_price:g}"
                         if method in ("leisen_reimer", "exact_inversion")
                         else ticker
                     )
-                    (
-                        tree,
-                        binomial_trees_statistics["Up Movement"][label],
-                        binomial_trees_statistics["Down Movement"][label],
-                        binomial_trees_statistics["Risk Neutral Probability"][label],
-                    ) = tree
-
-                binomial_trees[ticker][strike_price] = tree
+                    binomial_trees_statistics["Up Movement"][label] = float(
+                        up_movements[position]
+                    )
+                    binomial_trees_statistics["Down Movement"][label] = float(
+                        down_movements[position]
+                    )
+                    binomial_trees_statistics["Risk Neutral Probability"][label] = (
+                        float(probabilities[position])
+                    )
 
         binomial_trees_df = helpers.create_binomial_tree_dataframe(
             binomial_tree_dictionary=binomial_trees,
@@ -907,6 +912,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -924,40 +930,35 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            for strike_price in strike_prices:
-                parity_gap[ticker][strike_price] = {}
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": risk_free_rate,
+                "dividend_yield": dividend_yield_value[ticker],
+            }
 
-                for time_to_expiration in time_to_expiration_list:
-                    call_price = black_scholes_model.get_black_scholes(
-                        stock_price=stock_price.loc[ticker],
+            def parity(strike_price, time_to_expiration, inputs=inputs, ticker=ticker):
+                # The call and put of every strike price and expiration on arrays at once.
+                call_price, put_price = (
+                    black_scholes_model.get_black_scholes(
+                        **inputs,
                         strike_price=strike_price,
-                        risk_free_rate=risk_free_rate,
                         volatility=volatility.loc[ticker],
                         time_to_expiration=time_to_expiration,
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=False,
+                        put_option=put,
                     )
-                    put_price = black_scholes_model.get_black_scholes(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        time_to_expiration=time_to_expiration,
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=True,
-                    )
+                    for put in (False, True)
+                )
+                return black_scholes_model.get_put_call_parity(
+                    **inputs,
+                    strike_price=strike_price,
+                    time_to_expiration=time_to_expiration,
+                    call_price=call_price,
+                    put_price=put_price,
+                )
 
-                    parity_gap[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_put_call_parity(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            call_price=call_price,
-                            put_price=put_price,
-                        )
-                    )
+            parity_gap[ticker] = helpers.evaluate_on_grid(
+                parity, strike_prices, time_to_expiration_list
+            )
 
         parity_gap_df = helpers.create_greek_dataframe(
             greek_dictionary=parity_gap,
@@ -1112,6 +1113,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1121,23 +1123,20 @@ class PricingOptions:
         garman_kohlhagen: dict[str, dict[float, dict[float, float]]] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            garman_kohlhagen[ticker] = {}
-
-            for strike_price in strike_prices:
-                garman_kohlhagen[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    garman_kohlhagen[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_garman_kohlhagen(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            foreign_risk_free_rate=foreign_risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            put_option=put_option,
-                        )
-                    )
+            # Every strike price and time to expiration in one call on arrays.
+            garman_kohlhagen[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: black_scholes_model.get_garman_kohlhagen(
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    foreign_risk_free_rate=foreign_risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    time_to_expiration=time_to_expiration,
+                    put_option=put_option,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         garman_kohlhagen_df = helpers.create_greek_dataframe(
             greek_dictionary=garman_kohlhagen,
@@ -1302,6 +1301,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1319,23 +1319,22 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            for strike_price in strike_prices:
-                binary_option[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    binary_option[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_binary_option(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            option_type=option_type,
-                            cash_payout=cash_payout,
-                        )
-                    )
+            # Every strike price and time to expiration in one call on arrays.
+            binary_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: black_scholes_model.get_binary_option(
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    time_to_expiration=time_to_expiration,
+                    dividend_yield=dividend_yield_value[ticker],
+                    put_option=put_option,
+                    option_type=option_type,
+                    cash_payout=cash_payout,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         binary_option_df = helpers.create_greek_dataframe(
             greek_dictionary=binary_option,
@@ -1527,6 +1526,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1544,22 +1544,21 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            for strike_price in strike_prices:
-                bjerksund_stensland[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    bjerksund_stensland[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_bjerksund_stensland(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            method=method,
-                        )
-                    )
+            # Every strike price and time to expiration in one call on arrays.
+            bjerksund_stensland[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: black_scholes_model.get_bjerksund_stensland(
+                    stock_price=float(stock_price.loc[ticker]),
+                    strike_price=strike_price,
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    time_to_expiration=time_to_expiration,
+                    dividend_yield=float(dividend_yield_value[ticker]),
+                    put_option=put_option,
+                    method=method,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         bjerksund_stensland_df = helpers.create_greek_dataframe(
             greek_dictionary=bjerksund_stensland,
@@ -1786,6 +1785,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1825,11 +1825,31 @@ class PricingOptions:
                 }
                 continue
 
-            american_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: american_model.get_american_option(
+            if method == "qd_plus":
+                # Every strike price and expiration at once: the boundary of each expiration
+                # is solved once, for all expirations together, and scaled to every strike.
+                american_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration: american_model.get_qd_plus(
                         stock_price=float(stock_price.loc[ticker]),
-                        strike_price=float(strike_price),
+                        strike_price=strike_price,
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
+            # The quadratic approximations solve their critical price once per expiration and
+            # evaluate every strike at once; the QD fixed point is priced per option.
+            american_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration, ticker=ticker: (
+                    american_model.get_american_option(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=strike_price,
                         risk_free_rate=float(risk_free_rate),
                         volatility=float(volatility.loc[ticker]),
                         time_to_expiration=time_to_expiration,
@@ -1837,10 +1857,10 @@ class PricingOptions:
                         put_option=put_option,
                         method=method,
                     )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         american_option_df = helpers.create_greek_dataframe(
             greek_dictionary=american_option,
@@ -2012,6 +2032,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2198,6 +2219,7 @@ class PricingOptions:
             stock_price=futures_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2320,7 +2342,10 @@ class PricingOptions:
 
         All strike prices of an expiry are priced on the same simulated paths (common
         random numbers), which keeps the prices consistent across strikes and means the
-        paths are simulated once per expiry rather than once per strike.
+        paths are simulated once per expiry rather than once per strike. The European
+        expiries share one set of standardised shocks, each scaled to its own time to
+        expiration, which with a seed gives the prices of simulating every expiry with that
+        seed.
 
         As it is a simulation, the result comes with sampling error. Set
         ``show_standard_error=True`` to additionally return the standard error of each
@@ -2443,6 +2468,15 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A value from paths of the variance reductions or Sobol points evaluates every
+            # path per strike: about 0.4 milliseconds a value at 10,000 paths, so it counts as
+            # a value per 1,000 paths. The plain estimate sorts the paths once per expiration.
+            values_per_strike=expiration_time_range
+            * (
+                1
+                if variance_reduction is None and sequence == "pseudo_random"
+                else -(-simulations // 1_000)
+            ),
         )
 
         time_to_expiration_list = [
@@ -2467,26 +2501,50 @@ class PricingOptions:
                 monte_carlo_price[ticker][strike_price] = {}
                 monte_carlo_error[ticker][strike_price] = {}
 
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "strike_prices": np.asarray(strike_prices, dtype=float),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+                "simulations": simulations,
+                "time_steps": time_steps,
+                "seed": seed,
+                "variance_reduction": variance_reduction,
+                "sequence": sequence,
+            }
+
+            if not american_option:
+                # Every strike and expiry is priced on one set of simulated paths, scaled to
+                # each expiry, which with a seed gives the same prices as simulating per
+                # strike and expiry.
+                prices, standard_errors = options_model.get_monte_carlo_option_prices(
+                    **inputs, time_to_expiration=np.asarray(time_to_expiration_list)
+                )
+                monte_carlo_price[ticker] = {
+                    strike_price: dict(
+                        zip(time_to_expiration_list, map(float, row), strict=True)
+                    )
+                    for strike_price, row in zip(strike_prices, prices, strict=True)
+                }
+                monte_carlo_error[ticker] = {
+                    strike_price: dict(
+                        zip(time_to_expiration_list, map(float, row), strict=True)
+                    )
+                    for strike_price, row in zip(
+                        strike_prices, standard_errors, strict=True
+                    )
+                }
+                continue
+
             # Every strike is priced on the same simulated paths of an expiry, which with
             # a seed gives the same prices as simulating per strike, once per expiry.
             for time_to_expiration in time_to_expiration_list:
                 prices, standard_errors = (
-                    monte_carlo_model.get_longstaff_schwartz_option_prices
-                    if american_option
-                    else options_model.get_monte_carlo_option_prices
-                )(
-                    stock_price=float(stock_price.loc[ticker]),
-                    strike_prices=np.asarray(strike_prices, dtype=float),
-                    risk_free_rate=float(risk_free_rate),
-                    volatility=float(volatility.loc[ticker]),
-                    time_to_expiration=time_to_expiration,
-                    dividend_yield=float(dividend_yield_value[ticker]),
-                    put_option=put_option,
-                    simulations=simulations,
-                    time_steps=time_steps,
-                    seed=seed,
-                    variance_reduction=variance_reduction,
-                    sequence=sequence,
+                    monte_carlo_model.get_longstaff_schwartz_option_prices(
+                        **inputs, time_to_expiration=time_to_expiration
+                    )
                 )
                 for strike_price, price, standard_error in zip(
                     strike_prices, prices, standard_errors, strict=True
@@ -2832,6 +2890,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2875,55 +2934,50 @@ class PricingOptions:
                 "knock_type": knock_type,
             }
 
-            for strike_price in strike_prices:
-                barrier_option[ticker][strike_price] = {}
+            def barrier_value(
+                strike_price, time_to_expiration, inputs=inputs, barriers=barriers
+            ):
+                # Every strike price and time to expiration in one call on arrays.
+                arguments = {
+                    **inputs,
+                    "strike_price": strike_price,
+                    "time_to_expiration": time_to_expiration,
+                }
+                if barrier_direction == "double":
+                    return path_dependent_model.get_double_barrier_option(
+                        **arguments,
+                        lower_barrier=barriers[0],
+                        upper_barrier=barriers[1],
+                    )
+                if barrier_window != "full":
+                    return path_dependent_model.get_partial_time_barrier_option(
+                        **arguments,
+                        barrier=barriers[0],
+                        barrier_direction=barrier_direction,
+                        barrier_window=barrier_window,
+                        window_share=window_share,
+                    )
+                if soft_barrier_percentage is not None:
+                    return path_dependent_model.get_soft_barrier_option(
+                        **arguments,
+                        first_barrier=barriers[0],
+                        second_barrier=barriers[2],
+                        barrier_direction=barrier_direction,
+                    )
+                return exotics_model.get_barrier_option(
+                    **arguments,
+                    barrier=(
+                        barriers[0]
+                        if interval
+                        else stock_price.loc[ticker] * barrier_percentage
+                    ),
+                    barrier_direction=barrier_direction,
+                    rebate=rebate,
+                )
 
-                for time_to_expiration in time_to_expiration_list:
-                    arguments = {
-                        **inputs,
-                        "strike_price": float(strike_price),
-                        "time_to_expiration": time_to_expiration,
-                    }
-                    if barrier_direction == "double":
-                        value = path_dependent_model.get_double_barrier_option(
-                            **arguments,
-                            lower_barrier=barriers[0],
-                            upper_barrier=barriers[1],
-                        )
-                    elif barrier_window != "full":
-                        value = path_dependent_model.get_partial_time_barrier_option(
-                            **arguments,
-                            barrier=barriers[0],
-                            barrier_direction=barrier_direction,
-                            barrier_window=barrier_window,
-                            window_share=window_share,
-                        )
-                    elif soft_barrier_percentage is not None:
-                        value = path_dependent_model.get_soft_barrier_option(
-                            **arguments,
-                            first_barrier=barriers[0],
-                            second_barrier=barriers[2],
-                            barrier_direction=barrier_direction,
-                        )
-                    else:
-                        value = exotics_model.get_barrier_option(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            barrier=(
-                                barriers[0]
-                                if interval
-                                else stock_price.loc[ticker] * barrier_percentage
-                            ),
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            barrier_direction=barrier_direction,
-                            knock_type=knock_type,
-                            rebate=rebate,
-                        )
-                    barrier_option[ticker][strike_price][time_to_expiration] = value
+            barrier_option[ticker] = helpers.evaluate_on_grid(
+                barrier_value, strike_prices, time_to_expiration_list
+            )
 
         barrier_option_df = helpers.create_greek_dataframe(
             greek_dictionary=barrier_option,
@@ -3163,6 +3217,11 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A Monte Carlo value evaluates every path with its control variate per strike:
+            # about 1 millisecond a value at 10,000 paths, so it counts as a value per 500
+            # paths.
+            values_per_strike=expiration_time_range
+            * (-(-simulations // 500) if method == "monte_carlo" else 1),
         )
 
         time_to_expiration_list = [
@@ -3187,6 +3246,28 @@ class PricingOptions:
                 "put_option": put_option,
             }
 
+            if method == "geometric":
+                # Every strike price and time to expiration in one call on arrays.
+                asian_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration, inputs=inputs: (
+                        exotics_model.get_asian_option(
+                            **inputs,
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                        )
+                        if fixings is None
+                        else path_dependent_model.get_geometric_asian_option(
+                            **inputs,
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            fixings=fixings,
+                        )
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
             for time_to_expiration in time_to_expiration_list:
                 if method == "monte_carlo":
                     # Every strike is priced on the same simulated paths of an expiry.
@@ -3204,25 +3285,21 @@ class PricingOptions:
                         )
                     continue
 
-                for strike_price in strike_prices:
-                    if method == "geometric" and fixings is None:
-                        value = exotics_model.get_asian_option(
-                            **inputs,
-                            strike_price=float(strike_price),
-                            time_to_expiration=time_to_expiration,
-                        )
-                    else:
-                        value = {
-                            "geometric": path_dependent_model.get_geometric_asian_option,
-                            "turnbull_wakeman": path_dependent_model.get_turnbull_wakeman,
-                            "curran": path_dependent_model.get_curran,
-                        }[method](
-                            **inputs,
-                            strike_price=float(strike_price),
-                            time_to_expiration=time_to_expiration,
-                            fixings=fixings,
-                        )
-                    asian_option[ticker][strike_price][time_to_expiration] = value
+                # The moments (Turnbull-Wakeman) and the conditioning on the geometric
+                # average (Curran) of an expiration are shared by all its strikes.
+                values = {
+                    "turnbull_wakeman": path_dependent_model.get_turnbull_wakeman,
+                    "curran": path_dependent_model.get_curran,
+                }[method](
+                    **inputs,
+                    strike_price=np.asarray(strike_prices, dtype=float),
+                    time_to_expiration=time_to_expiration,
+                    fixings=fixings,
+                )
+                for strike_price, value in zip(strike_prices, values, strict=True):
+                    asian_option[ticker][strike_price][time_to_expiration] = float(
+                        value
+                    )
 
         asian_option_df = helpers.create_greek_dataframe(
             greek_dictionary=asian_option,
@@ -3424,6 +3501,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -3450,19 +3528,13 @@ class PricingOptions:
             }
 
             # A floating strike has no strike price, so it is priced once per expiration.
-            lookback_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: path_dependent_model.get_lookback_option(
-                        **inputs,
-                        strike_price=float(strike_price),
-                        time_to_expiration=time_to_expiration,
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in (
-                    strike_prices if strike_type == "fixed" else [inputs["stock_price"]]
-                )
-            }
+            lookback_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike, time, inputs=inputs: path_dependent_model.get_lookback_option(
+                    **inputs, strike_price=strike, time_to_expiration=time
+                ),
+                strike_prices if strike_type == "fixed" else [inputs["stock_price"]],
+                time_to_expiration_list,
+            )
 
         if strike_type == "fixed":
             lookback_option_df = helpers.create_greek_dataframe(
@@ -3914,6 +3986,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -3936,18 +4009,17 @@ class PricingOptions:
                 "dividend_yield": float(dividend_yield_value[ticker]),
             }
 
-            chooser_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: compound_model.get_chooser_option(
-                        **inputs,
-                        strike_price=float(strike_price),
-                        time_to_expiration=time_to_expiration,
-                        choice_time=choice_period * time_to_expiration,
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+            # Every strike price and time to expiration in one call on arrays.
+            chooser_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration, inputs=inputs: compound_model.get_chooser_option(
+                    **inputs,
+                    strike_price=strike_price,
+                    time_to_expiration=time_to_expiration,
+                    choice_time=choice_period * time_to_expiration,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         chooser_option_df = helpers.create_greek_dataframe(
             greek_dictionary=chooser_option,

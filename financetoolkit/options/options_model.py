@@ -471,12 +471,7 @@ def get_monte_carlo_option_price(
     return float(prices[0]), float(standard_errors[0])
 
 
-def _simulate_terminal_stock_prices(
-    stock_price: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    dividend_yield: float,
+def _simulate_terminal_shocks(
     simulations: int,
     time_steps: int,
     seed: int | None,
@@ -484,19 +479,19 @@ def _simulate_terminal_stock_prices(
     sequence: str = "pseudo_random",
 ) -> np.ndarray:
     """
-    Simulates the stock price at expiration of Geometric Brownian Motion paths under the
-    risk-neutral measure.
+    Simulates the standardised terminal shock of Geometric Brownian Motion paths: the sum of
+    the time_steps standard normal shocks of every path, divided by √time_steps, which is
+    standard normal. The stock price at expiration T of a path is then:
 
-    Every path is built from time_steps shocks, so a seed gives the same terminal prices
-    whatever the number of paths simulated at once; only the end of each path is kept,
-    since a European payoff needs nothing else. The shocks come from draw_standard_normals.
+    - S(T) = S * e^((r — q — σ²/2) * T + σ * √T * Z)
+
+    So one set of paths prices every expiration, each by scaling the same shocks (common
+    random numbers across expirations). Every path is built from time_steps shocks, so a
+    seed gives the same terminal prices whatever the number of paths simulated at once; only
+    the end of each path is kept, since a European payoff needs nothing else. The shocks come
+    from draw_standard_normals.
 
     Args:
-        stock_price (float): The current stock price.
-        risk_free_rate (float): The risk-free rate.
-        volatility (float): The volatility.
-        time_to_expiration (float): The time to expiration in years.
-        dividend_yield (float): The dividend yield.
         simulations (int): The number of paths.
         time_steps (int): The number of steps per path.
         seed (int | None): The seed of the random number generator.
@@ -505,7 +500,7 @@ def _simulate_terminal_stock_prices(
         sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
 
     Returns:
-        np.ndarray: The stock price at expiration of every path.
+        np.ndarray: The standardised terminal shock of every path.
     """
     if simulations * time_steps > MAX_SIMULATED_VALUES:
         raise ValueError(
@@ -513,10 +508,7 @@ def _simulate_terminal_stock_prices(
             f"simulations times time steps under {MAX_SIMULATED_VALUES:,}."
         )
 
-    time_delta = time_to_expiration / time_steps
-    drift = (risk_free_rate - dividend_yield - 0.5 * volatility**2) * time_delta
-    diffusion = volatility * np.sqrt(time_delta)
-    terminal_log_returns = np.empty(simulations)
+    shocks = np.empty(simulations)
     first = 0
 
     # The shocks come in chunks of paths, which holds only a chunk in memory.
@@ -529,12 +521,60 @@ def _simulate_terminal_stock_prices(
         chunk_size=SIMULATION_CHUNK_SIZE,
     ):
         rows = random_shocks.shape[0]
-        terminal_log_returns[first : first + rows] = (
-            drift + diffusion * random_shocks[:, :, 0]
-        ).sum(axis=1)
+        shocks[first : first + rows] = random_shocks[:, :, 0].sum(axis=1)
         first += rows
 
-    return stock_price * np.exp(terminal_log_returns)
+    return shocks / np.sqrt(time_steps)
+
+
+def _plain_monte_carlo_estimates(
+    terminal_stock_prices: np.ndarray,
+    strike_prices: np.ndarray,
+    discount_factor: float,
+    put_option: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The Monte Carlo price and standard error of every strike from the terminal stock prices
+    of independent paths, without a payoff per path and strike: with the prices sorted, the
+    count, sum and sum of squares of the prices beyond each strike are cumulative sums, and:
+
+    - Call = e^(—rT) * Σ_{S(T) > K} (S(T) — K) / n
+    - Standard error = √(Σ payoff² / n — (Σ payoff / n)²) * √(n / (n — 1)) / √n
+
+    With Σ_{S(T) > K} (S(T) — K)² = Σ S(T)² — 2K * Σ S(T) + K² * count over the same paths,
+    and the put alike over the paths below the strike.
+    """
+    simulations = len(terminal_stock_prices)
+    ordered = np.sort(terminal_stock_prices)
+    sums = np.concatenate([[0.0], np.cumsum(ordered)])
+    squares = np.concatenate([[0.0], np.cumsum(ordered**2)])
+    # The paths below each strike are the first `below` of the ordered prices.
+    below = np.searchsorted(ordered, strike_prices, side="right")
+
+    if put_option:
+        count, total, total_squares = below, sums[below], squares[below]
+        sign = -1.0
+    else:
+        count = simulations - below
+        total = sums[-1] - sums[below]
+        total_squares = squares[-1] - squares[below]
+        sign = 1.0
+
+    payoff_sum = sign * (total - strike_prices * count)
+    payoff_squares = (
+        total_squares - 2 * strike_prices * total + strike_prices**2 * count
+    )
+    mean = payoff_sum / simulations
+    variance = (
+        np.maximum(payoff_squares / simulations - mean**2, 0.0)
+        * simulations
+        / max(simulations - 1, 1)
+    )
+
+    return (
+        discount_factor * mean,
+        discount_factor * np.sqrt(variance / simulations),
+    )
 
 
 def get_monte_carlo_option_prices(
@@ -542,7 +582,7 @@ def get_monte_carlo_option_prices(
     strike_prices: np.ndarray,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
     simulations: int = 10_000,
@@ -552,18 +592,22 @@ def get_monte_carlo_option_prices(
     sequence: str = "pseudo_random",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculates the Monte Carlo price of European options with several strike prices from
-    one set of simulated paths, see get_monte_carlo_option_price. Pricing every strike on
-    the same paths (common random numbers) gives the same prices as simulating per strike
-    with the same seed, keeps the prices consistent across strikes and simulates once
-    rather than once per strike.
+    Calculates the Monte Carlo price of European options with several strike prices and
+    expirations from one set of simulated paths, see get_monte_carlo_option_price. Pricing
+    every strike on the same paths (common random numbers) gives the same prices as
+    simulating per strike with the same seed, keeps the prices consistent across strikes and
+    simulates once rather than once per strike. The expirations scale the same standardised
+    shocks (see _simulate_terminal_shocks), which with a seed gives the prices of simulating
+    each expiration with that seed. Every estimate still comes from independent paths, so its
+    standard error is that of one expiration simulated on its own.
 
     Args:
         stock_price (float): The current stock price.
         strike_prices (np.ndarray): The strike prices.
         risk_free_rate (float): The risk-free rate.
         volatility (float): The volatility.
-        time_to_expiration (float): The time to expiration in years.
+        time_to_expiration (float | np.ndarray): The time to expiration in years, or an
+            array of them.
         dividend_yield (float, optional): The dividend yield. Defaults to 0.0.
         put_option (bool, optional): Whether to price puts instead of calls. Defaults to
             False.
@@ -576,7 +620,8 @@ def get_monte_carlo_option_prices(
         sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
 
     Returns:
-        tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
+        tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price,
+        and per expiration (strikes by expirations) when time_to_expiration is an array.
     """
     if variance_reduction not in VARIANCE_REDUCTIONS:
         raise ValueError(
@@ -584,42 +629,65 @@ def get_monte_carlo_option_prices(
             f"received {variance_reduction!r}."
         )
 
-    terminal_stock_prices = _simulate_terminal_stock_prices(
-        stock_price,
-        risk_free_rate,
-        volatility,
-        time_to_expiration,
-        dividend_yield,
+    shocks = _simulate_terminal_shocks(
         simulations,
         time_steps,
         seed,
         antithetic=variance_reduction == "antithetic",
         sequence=sequence,
     )
-    discount_factor = np.exp(-risk_free_rate * time_to_expiration)
-    option_prices = np.empty(len(strike_prices))
-    standard_errors = np.empty(len(strike_prices))
+    strike_prices = np.asarray(strike_prices, dtype=float)
+    times = np.atleast_1d(np.asarray(time_to_expiration, dtype=float))
+    option_prices = np.empty((len(strike_prices), len(times)))
+    standard_errors = np.empty((len(strike_prices), len(times)))
     groups = simulation_groups(
         simulations, sequence, variance_reduction == "antithetic"
     )
+    # Independent paths give the estimates of all strikes from sorted prices; pairs, Sobol
+    # replications and the control variate take a payoff per path and strike.
+    independent = sequence == "pseudo_random" and variance_reduction is None
+    # The payoffs of this many strikes at a time, so a block holds about a million values.
+    block = max(1, 1_000_000 // max(simulations, 1))
 
-    # One strike at a time keeps the memory to one payoff per path.
-    for position, strike_price in enumerate(strike_prices):
-        if put_option:
-            payoffs = np.maximum(strike_price - terminal_stock_prices, 0)
-        else:
-            payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
-
-        discounted_payoffs = discount_factor * payoffs
-        if variance_reduction == "control_variate":
-            discounted_payoffs = control_variate(
-                discounted_payoffs,
-                discount_factor * terminal_stock_prices,
-                stock_price * np.exp(-dividend_yield * time_to_expiration),
-            )
-        option_prices[position], standard_errors[position] = monte_carlo_estimate(
-            discounted_payoffs, groups
+    for column, time in enumerate(times):
+        terminal_stock_prices = stock_price * np.exp(
+            (risk_free_rate - dividend_yield - 0.5 * volatility**2) * time
+            + volatility * np.sqrt(time) * shocks
         )
+        discount_factor = np.exp(-risk_free_rate * time)
+
+        if independent:
+            option_prices[:, column], standard_errors[:, column] = (
+                _plain_monte_carlo_estimates(
+                    terminal_stock_prices, strike_prices, discount_factor, put_option
+                )
+            )
+            continue
+
+        for first in range(0, len(strike_prices), block):
+            strikes = strike_prices[first : first + block, None]
+            payoffs = np.maximum(
+                (
+                    (strikes - terminal_stock_prices)
+                    if put_option
+                    else (terminal_stock_prices - strikes)
+                ),
+                0,
+            )
+            discounted_payoffs = discount_factor * payoffs
+            if variance_reduction == "control_variate":
+                discounted_payoffs = control_variate(
+                    discounted_payoffs,
+                    discount_factor * terminal_stock_prices,
+                    stock_price * np.exp(-dividend_yield * time),
+                )
+            (
+                option_prices[first : first + block, column],
+                standard_errors[first : first + block, column],
+            ) = monte_carlo_estimate(discounted_payoffs, groups)
+
+    if np.ndim(time_to_expiration) == 0:
+        return option_prices[:, 0], standard_errors[:, 0]
 
     return option_prices, standard_errors
 

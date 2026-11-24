@@ -334,3 +334,78 @@ def test_an_american_put_with_two_exercise_boundaries(
 def test_an_american_option_needs_positive_prices():
     with pytest.raises(ValueError, match="must be positive"):
         american_model.get_qd_fixed_point(100, 0, 0.04, 0.2, 1, 0.02, True)
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize(
+    ("risk_free_rate", "dividend_yield", "volatility"),
+    [
+        (0.05, 0.03, 0.25),
+        (0.05, 0.0, 0.05),
+        (0.12, 0.2, 0.8),
+        (-0.01, -0.02, 0.3),
+        (0.0, 0.03, 0.3),
+    ],
+)
+def test_qd_plus_on_a_grid_equals_the_price_per_option(
+    put_option, risk_free_rate, dividend_yield, volatility
+):
+    """The boundaries of all expirations solved together give the same prices as one by one."""
+    strikes, times = np.meshgrid(
+        np.arange(60.0, 150.0, 10.0),
+        np.array([0, 1, 7, 91, 365, 730]) / 365,
+        indexing="ij",
+    )
+    inputs = {
+        "stock_price": 100.0,
+        "risk_free_rate": risk_free_rate,
+        "volatility": volatility,
+        "dividend_yield": dividend_yield,
+        "put_option": put_option,
+    }
+
+    grid = american_model.get_qd_plus(
+        strike_price=strikes, time_to_expiration=times, **inputs
+    )
+    american_model._qd_plus_unit_boundary.cache_clear()
+    per_option = np.array(
+        [
+            american_model.get_qd_plus(
+                strike_price=float(strike), time_to_expiration=float(time), **inputs
+            )
+            for strike, time in zip(strikes.ravel(), times.ravel(), strict=True)
+        ]
+    ).reshape(strikes.shape)
+
+    np.testing.assert_allclose(grid, per_option, rtol=0, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    "function", [american_model.get_barone_adesi_whaley, american_model.get_ju_zhong]
+)
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize(
+    ("risk_free_rate", "dividend_yield", "volatility"),
+    [(0.05, 0.03, 0.25), (0.12, 0.2, 0.8), (-0.01, -0.02, 0.3), (0.0, 0.03, 0.3)],
+)
+def test_the_quadratic_approximations_on_a_grid_equal_the_price_per_option(
+    function, put_option, risk_free_rate, dividend_yield, volatility
+):
+    strikes, times = np.meshgrid(
+        np.arange(60.0, 150.0, 10.0),
+        np.array([0, 1, 7, 91, 365, 730]) / 365,
+        indexing="ij",
+    )
+    inputs = (risk_free_rate, volatility)
+
+    grid = function(100.0, strikes, *inputs, times, dividend_yield, put_option)
+    per_option = np.array(
+        [
+            function(
+                100.0, float(strike), *inputs, float(time), dividend_yield, put_option
+            )
+            for strike, time in zip(strikes.ravel(), times.ravel(), strict=True)
+        ]
+    ).reshape(strikes.shape)
+
+    np.testing.assert_allclose(grid, per_option, rtol=0, atol=1e-10)

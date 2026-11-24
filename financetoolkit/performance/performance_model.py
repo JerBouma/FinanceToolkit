@@ -1721,7 +1721,14 @@ def get_sortino_ratio(
 
     if isinstance(excess_returns, pd.Series | pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            return excess_returns.groupby(level=0).apply(_sortino)
+            # The mean, downside deviation and count per period of all assets at once.
+            periods = excess_returns.groupby(level=0)
+            downside_deviation = np.sqrt(
+                (excess_returns.clip(upper=0) ** 2).groupby(level=0).mean()
+            )
+            return remove_undefined_ratios(periods.mean() / downside_deviation).where(
+                periods.count() >= MIN_SORTINO_OBSERVATIONS
+            )
 
         return _sortino(excess_returns)
 
@@ -2265,11 +2272,13 @@ def get_tracking_error(
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            tracking_error = asset_returns.groupby(level=0).apply(
-                lambda x: (x.sub(benchmark_returns, axis=0)).std()
+            # One standard deviation per period of all assets at once, rather than one per period.  # noqa: E501
+            return (
+                asset_returns.sub(benchmark_returns, axis=0)
+                .reindex(asset_returns.index)
+                .groupby(level=0)
+                .std()
             )
-
-            return tracking_error
 
         # One value per asset over the whole series.
         return asset_returns.sub(benchmark_returns, axis=0).std()
@@ -2337,14 +2346,14 @@ def get_information_ratio(
     """
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            information_ratio = asset_returns.groupby(level=0).apply(
-                lambda x: (
-                    x.sub(benchmark_returns, axis=0).mean()
-                    / (x.sub(benchmark_returns, axis=0)).std()
-                )
+            # The mean and standard deviation per period of all assets at once, rather than one period at a time.  # noqa: E501
+            difference = (
+                asset_returns.sub(benchmark_returns, axis=0)
+                .reindex(asset_returns.index)
+                .groupby(level=0)
             )
 
-            return remove_undefined_ratios(information_ratio)
+            return remove_undefined_ratios(difference.mean() / difference.std())
 
         # One value per asset over the whole series.
         difference = asset_returns.sub(benchmark_returns, axis=0)
@@ -3070,9 +3079,10 @@ def get_win_rate(
         raise ValueError("The market must be all, up or down.")
 
     def win_share(
-        asset: pd.Series | pd.DataFrame, benchmark: pd.Series
-    ) -> pd.Series | float:
+        asset: pd.Series | pd.DataFrame, benchmark: pd.Series, by_period: bool = False
+    ) -> pd.Series | pd.DataFrame | float:
         # A comparison with a missing return is False, which would count a day without a quote as a loss; mask those days so the mean only covers days on which both returns exist.  # noqa: E501
+        benchmark = benchmark.reindex(asset.index)
         wins = asset.gt(benchmark, axis=0).astype(float)
         counted = benchmark.notna()
 
@@ -3080,15 +3090,14 @@ def get_win_rate(
             # A day the benchmark did not move is neither an up nor a down market.
             counted = benchmark > 0 if market == "up" else benchmark < 0
 
-        return wins.where(asset.notna()).where(counted, axis=0).mean()
+        shares = wins.where(asset.notna()).where(counted, axis=0)
+
+        return shares.groupby(level=0).mean() if by_period else shares.mean()
 
     if isinstance(asset_returns, pd.DataFrame):
         if asset_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            combination = pd.concat([asset_returns, benchmark_returns], axis=1)
-
-            return combination.groupby(level=0).apply(
-                lambda x: win_share(x[asset_returns.columns], x[benchmark_returns.name])
-            )
+            # The wins of every day are known without the period, so the shares per period are means over the counted days, all periods at once.  # noqa: E501
+            return win_share(asset_returns, benchmark_returns, by_period=True)
 
         return win_share(asset_returns, benchmark_returns)
 
@@ -3190,21 +3199,12 @@ def get_omega_ratio(
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            periods = returns.index.get_level_values(0).unique()
-            period_data_list = []
+            # The gains and losses per period of all assets at once, rather than one period and asset at a time.  # noqa: E501
+            excess_returns = returns - minimum_acceptable_return
+            gains = excess_returns.where(excess_returns > 0).groupby(level=0).sum()
+            losses = -excess_returns.where(excess_returns < 0).groupby(level=0).sum()
 
-            for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(
-                    get_omega_ratio, minimum_acceptable_return=minimum_acceptable_return
-                )
-                period_data.name = sub_period
-
-                if not period_data.empty:
-                    period_data_list.append(period_data)
-
-            omega_ratio = pd.concat(period_data_list, axis=1)
-
-            return omega_ratio.T
+            return (gains / losses).where(losses > 0)
 
         return returns.aggregate(
             get_omega_ratio, minimum_acceptable_return=minimum_acceptable_return
@@ -7015,6 +7015,39 @@ def get_bootstrap_samples(
     return rng.integers(0, observations, size=(simulations, length or observations))
 
 
+# The number of simulations get_bootstrap_statistics and get_forecast_cone hold at once: the
+# paths of 20,000 simulations of ten years of daily returns take 400 MB per array otherwise.
+BOOTSTRAP_CHUNK = 1000
+
+
+def _get_bootstrap_chunks(
+    observations: int,
+    simulations: int,
+    method: str = "resample",
+    length: int | None = None,
+    seed: int | None = 0,
+):
+    """
+    Yield the positions of `get_bootstrap_samples` in blocks of at most BOOTSTRAP_CHUNK
+    simulations. The blocks are drawn one after the other from one generator, which gives
+    the same rows as drawing all simulations at once (numpy draws the rows of `integers` and
+    `permuted` in order), so the results do not depend on the block size.
+    """
+    if method not in BOOTSTRAP_METHODS:
+        raise ValueError("The method must be resample or shuffle.")
+    if simulations < 1:
+        raise ValueError("The number of simulations must be at least 1.")
+
+    rng = np.random.default_rng(seed)
+
+    for first in range(0, simulations, BOOTSTRAP_CHUNK):
+        size = min(BOOTSTRAP_CHUNK, simulations - first)
+        if method == "shuffle":
+            yield rng.permuted(np.tile(np.arange(observations), (size, 1)), axis=1)
+        else:
+            yield rng.integers(0, observations, size=(size, length or observations))
+
+
 # The percentiles of the bootstrap distributions in get_bootstrap_statistics.
 BOOTSTRAP_PERCENTILES = [5, 25, 75, 95]
 
@@ -7082,28 +7115,42 @@ def get_bootstrap_statistics(
     if len(pairs) < 2:  # noqa: PLR2004
         return pd.DataFrame(np.nan, index=statistics, columns=summaries)
 
-    positions = get_bootstrap_samples(len(pairs), simulations, method, seed=seed)
-    samples = pairs.iloc[:, 0].to_numpy()[positions]
-    excess_samples = pairs.iloc[:, 1].to_numpy()[positions]
+    return_values = pairs.iloc[:, 0].to_numpy()
+    excess_values = pairs.iloc[:, 1].to_numpy()
+    chunks: dict[str, list[np.ndarray]] = {statistic: [] for statistic in statistics}
 
-    wealth = np.cumprod(1 + samples, axis=1)
-    cumulative_return = wealth[:, -1] - 1
+    # Every statistic is one number per simulation, so the simulations are calculated a
+    # block at a time and only those numbers are kept.
+    for positions in _get_bootstrap_chunks(len(pairs), simulations, method, seed=seed):
+        samples = return_values[positions]
+        excess_samples = excess_values[positions]
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        simulated = {
-            "Cumulative Return": cumulative_return,
-            "Annualized Return": (1 + cumulative_return)
-            ** (observations_per_year / samples.shape[1])
-            - 1,
-            "Annualized Volatility": samples.std(axis=1, ddof=1)
-            * np.sqrt(observations_per_year),
-            "Sharpe Ratio": excess_samples.mean(axis=1)
-            / excess_samples.std(axis=1, ddof=1)
-            * np.sqrt(observations_per_year),
-            "Maximum Drawdown": (
-                wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1
-            ).min(axis=1),
-        }
+        wealth = np.cumprod(1 + samples, axis=1)
+        cumulative_return = wealth[:, -1] - 1
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            chunks["Cumulative Return"].append(cumulative_return)
+            chunks["Annualized Return"].append(
+                (1 + cumulative_return) ** (observations_per_year / samples.shape[1])
+                - 1
+            )
+            chunks["Annualized Volatility"].append(
+                samples.std(axis=1, ddof=1) * np.sqrt(observations_per_year)
+            )
+            chunks["Sharpe Ratio"].append(
+                excess_samples.mean(axis=1)
+                / excess_samples.std(axis=1, ddof=1)
+                * np.sqrt(observations_per_year)
+            )
+            chunks["Maximum Drawdown"].append(
+                (wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1).min(
+                    axis=1
+                )
+            )
+
+    simulated = {
+        statistic: np.concatenate(chunks[statistic]) for statistic in statistics
+    }
 
     summary = {}
 
@@ -7179,12 +7226,32 @@ def get_forecast_cone(
     if len(values) < 2:  # noqa: PLR2004
         return pd.DataFrame(np.nan, index=range(1, horizon + 1), columns=labels)
 
-    positions = get_bootstrap_samples(
-        len(values), simulations, "resample", length=horizon, seed=seed
-    )
-    wealth = np.cumprod(1 + values[positions], axis=1)
-    mean = wealth.mean(axis=0)
-    deviation = wealth.std(axis=0, ddof=1) if simulations > 1 else np.zeros(horizon)
+    # The paths are drawn a block of simulations at a time, twice with the same seed: first
+    # for the sum of the wealth per period, then for the squared deviations from its mean.
+    # Summing the blocks row after row adds in the order numpy sums all paths at once (and
+    # the mean and standard deviation are those sums divided, starting from 0), so the cone
+    # is the same as from holding every path.
+    def wealth_chunks():
+        for positions in _get_bootstrap_chunks(
+            len(values), simulations, "resample", length=horizon, seed=seed
+        ):
+            yield np.cumprod(1 + values[positions], axis=1)
+
+    total = np.zeros(horizon)
+    for wealth in wealth_chunks():
+        for row in wealth:
+            total += row
+    mean = total / simulations
+
+    deviation = np.zeros(horizon)
+    if simulations > 1:
+        squares = np.zeros(horizon)
+        for wealth in wealth_chunks():
+            np.subtract(wealth, mean, out=wealth)
+            np.multiply(wealth, wealth, out=wealth)
+            for row in wealth:
+                squares += row
+        deviation = np.sqrt(squares / (simulations - 1))
 
     cone = (
         [mean - k * deviation for k in reversed(standard_deviations)]

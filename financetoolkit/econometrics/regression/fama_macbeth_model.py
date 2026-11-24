@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from financetoolkit.econometrics.least_squares_model import get_pseudo_inverse
 from financetoolkit.econometrics.regression import regression_model
 
 # Second-pass identification needs strictly more assets than coefficients.
@@ -187,30 +188,29 @@ def get_fama_macbeth_regression(
             f"regression -- need at least {minimum_assets}."
         )
 
-    # First pass: one time-series regression per asset for its factor loadings.
+    # First pass: one time-series regression per asset for its factor loadings. Every asset
+    # is regressed on the same factors, so one pseudo-inverse of the design solves them all.
+    return_values = aligned_returns.to_numpy(dtype=float)
+    factor_design, _ = regression_model._to_design_matrix(
+        aligned_factors, add_constant=True
+    )
+    regression_model._validate_design(factor_design, return_values[:, 0])
     betas = pd.DataFrame(
-        {
-            asset: regression_model.get_ols(
-                aligned_returns[asset], aligned_factors, add_constant=True
-            )["coefficients"][1:]
-            for asset in asset_names
-        },
-        index=factor_names,
-    ).T
+        (get_pseudo_inverse(factor_design)[0] @ return_values)[1:].T,
+        index=asset_names,
+        columns=factor_names,
+    )
 
-    # Second pass: one cross-sectional regression of returns on first-pass betas.
+    # Second pass: one cross-sectional regression of returns on first-pass betas per period,
+    # all on the same betas, so again one pseudo-inverse solves every period at once.
     coefficient_names = (["Intercept"] if add_constant else []) + factor_names
-    cross_sectional_rows = {
-        date: regression_model.get_ols(
-            aligned_returns.loc[date, asset_names],
-            betas.loc[asset_names, factor_names],
-            add_constant=add_constant,
-        )["coefficients"]
-        for date in aligned.index
-    }
+    beta_design, _ = regression_model._to_design_matrix(betas, add_constant)
+    regression_model._validate_design(beta_design, return_values[0])
     cross_sectional_coefficients = pd.DataFrame(
-        cross_sectional_rows, index=coefficient_names
-    ).T
+        (get_pseudo_inverse(beta_design)[0] @ return_values.T).T,
+        index=aligned.index,
+        columns=coefficient_names,
+    )
 
     risk_premia = cross_sectional_coefficients.mean()
     standard_errors = cross_sectional_coefficients.std(ddof=1) / np.sqrt(n_periods)

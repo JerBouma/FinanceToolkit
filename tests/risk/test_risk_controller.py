@@ -159,7 +159,11 @@ def test_get_garch(recorder, risk_module):
     recorder.capture(risk_module.get_garch(period="yearly", growth=True, lag=[1, 2, 3]))
     recorder.capture(risk_module.get_garch(method="gjr"))
     recorder.capture(risk_module.get_garch(method="gjr", period="monthly"))
-    recorder.capture(risk_module.get_garch(method="gjr", period="yearly", growth=True))
+    # Two yearly returns barely pin down a GJR fit: the optimum lies on a flat ridge whose
+    # third decimal moves with the platform's floating point, so it is recorded to two.
+    recorder.capture(
+        risk_module.get_garch(method="gjr", period="yearly", growth=True).round(2)
+    )
     assert risk_module.get_garch(method="harch").empty
 
 
@@ -1660,7 +1664,11 @@ def test_get_garch_arfima_mean(recorder, risk_module):
 
 
 def test_get_garch_simulation_bootstrap(recorder, risk_module):
-    recorder.capture(risk_module.get_garch_simulation(paths=500, bootstrap_fits=2))
+    # Each bootstrap fit runs on resampled returns whose likelihood can be flat, so its fourth
+    # decimal moves with the platform's floating point: recorded to three.
+    recorder.capture(
+        risk_module.get_garch_simulation(paths=500, bootstrap_fits=2).round(3)
+    )
     recorder.capture(
         risk_module.get_garch_simulation(
             paths=500, bootstrap_fits=0, output="volatility"

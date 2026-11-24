@@ -66,28 +66,72 @@ def _prefix_sums(
     )
 
 
+class _Workspace:
+    """
+    The planes of `_window_statistics`, kept from one block of windows to the next. A new
+    array per operation costs more than the operation: arrays of this size come fresh from
+    the operating system, and filling their pages took more than half of the time.
+    """
+
+    def __init__(self) -> None:
+        self.buffers: dict[tuple[str, int], np.ndarray] = {}
+
+    def plane(
+        self, name: str, shape: tuple[int, int], dtype: type = float
+    ) -> np.ndarray:
+        """A (shape) view of the buffer `name`, which grows when a block needs more room."""
+        size = shape[0] * shape[1]
+        key = (name, np.dtype(dtype).num)
+        if key not in self.buffers or self.buffers[key].size < size:
+            # Room for a block of the budget at once, so blocks of slightly different sizes
+            # do not each allocate again.
+            self.buffers[key] = np.empty(max(size, WINDOWS_PER_BLOCK), dtype=dtype)
+        return self.buffers[key][:size].reshape(shape)
+
+
 def _window_statistics(
     sums: tuple[np.ndarray, np.ndarray, np.ndarray],
     lags: int,
     ends: np.ndarray,
     starts: np.ndarray,
+    minimum_rows: int,
+    workspace: _Workspace | None = None,
 ) -> np.ndarray:
     """
     The ADF statistic t = β̂ / SE(β̂) of the lagged level for every window [start, end] of the
-    levels, as an (ends × starts) array, NaN where the window has no variation or too few rows.
+    levels, as an (ends × starts) array, minus infinity where the window has no variation or
+    fewer than `minimum_rows` regression rows (at least the regressors plus one), so that the
+    largest statistic per end is a plain maximum.
 
     With the Cholesky factor X'X = LL' and Lz = X'y, the coefficient of the last regressor (the
     lagged level) is β̂ = z_k / L_kk and its variance s²·(X'X)⁻¹_kk = s² / L_kk², so
     t = z_k / s with s² = (y'y - z'z) / (m - k): a forward substitution per window, done for
-    all windows at once over the (few) regressors.
+    all windows at once over the (few) regressors. Every step writes into a plane of the
+    `workspace`, so the returned array is only valid until the next call with it.
     """
+    workspace = workspace if workspace is not None else _Workspace()
     cross, joint, target = sums
     high, low = ends - lags, starts
-    count = (high[:, None] - low[None, :]).astype(float)
+    shape = (len(ends), len(starts))
     size = lags + 2
 
-    def window_sum(prefix: np.ndarray) -> np.ndarray:
-        return prefix[high][:, None] - prefix[low][None, :]
+    count = workspace.plane("count", shape)
+    # The rows are whole numbers, so subtracting them as floats is exact.
+    np.subtract(high[:, None], low[None, :], out=count, dtype=float)
+    scratch = workspace.plane("scratch", shape)
+
+    def window_sum(prefix: np.ndarray, name: str) -> np.ndarray:
+        return np.subtract(
+            prefix[high][:, None],
+            prefix[low][None, :],
+            out=workspace.plane(name, shape),
+        )
+
+    def subtract_product(
+        plane: np.ndarray, first: np.ndarray, second: np.ndarray
+    ) -> None:
+        np.multiply(first, second, out=scratch)
+        plane -= scratch
 
     # The factor and the solution as one (ends × starts) plane per element, so every step is
     # a contiguous array operation over all windows.
@@ -95,26 +139,46 @@ def _window_statistics(
     solution: list[np.ndarray] = []
     with np.errstate(divide="ignore", invalid="ignore"):
         for column in range(size):
-            diagonal = window_sum(cross[:, column, column])
+            # The first regressor is the constant, whose sum of squares over a window is its
+            # number of rows (the prefix sums of ones are exact).
+            if column == 0:
+                diagonal = workspace.plane("factor 0 0", shape)
+                np.copyto(diagonal, count)
+            else:
+                diagonal = window_sum(
+                    cross[:, column, column], f"factor {column} {column}"
+                )
             for inner in range(column):
-                diagonal -= factor[column, inner] ** 2
-            factor[column, column] = np.sqrt(diagonal)
+                subtract_product(diagonal, factor[column, inner], factor[column, inner])
+            factor[column, column] = np.sqrt(diagonal, out=diagonal)
             for row in range(column + 1, size):
-                element = window_sum(cross[:, row, column])
+                element = window_sum(cross[:, row, column], f"factor {row} {column}")
                 for inner in range(column):
-                    element -= factor[row, inner] * factor[column, inner]
-                factor[row, column] = element / factor[column, column]
-            value = window_sum(joint[:, column])
+                    subtract_product(element, factor[row, inner], factor[column, inner])
+                element /= factor[column, column]
+                factor[row, column] = element
+            value = window_sum(joint[:, column], f"solution {column}")
             for inner in range(column):
-                value -= factor[column, inner] * solution[inner]
-            solution.append(value / factor[column, column])
+                subtract_product(value, factor[column, inner], solution[inner])
+            value /= factor[column, column]
+            solution.append(value)
 
-        residual = window_sum(target)
+        residual = window_sum(target, "residual")
         for value in solution:
-            residual -= value**2
-        statistic = solution[-1] / np.sqrt(residual / (count - size))
+            subtract_product(residual, value, value)
+        np.subtract(count, size, out=scratch)
+        residual /= scratch
+        statistic = np.divide(
+            solution[-1], np.sqrt(residual, out=residual), out=residual
+        )
 
-    statistic[~np.isfinite(statistic) | (count <= size)] = np.nan
+    invalid = workspace.plane("invalid", shape, bool)
+    finite = workspace.plane("finite", shape, bool)
+    np.less(count, max(minimum_rows, size + 1), out=invalid)
+    np.isfinite(statistic, out=finite)
+    np.logical_not(finite, out=finite)
+    np.logical_or(invalid, finite, out=invalid)
+    np.copyto(statistic, -np.inf, where=invalid)
 
     return statistic
 
@@ -165,6 +229,7 @@ def get_recursive_adf_statistics(
         )
 
     sums = _prefix_sums(np.asarray(values, dtype=float), lags)
+    workspace = _Workspace()
     forward = np.full(observations, np.nan)
     backward = np.full(observations, np.nan)
 
@@ -181,12 +246,14 @@ def get_recursive_adf_statistics(
         )
         ends = np.arange(end, end + block)
         starts = np.arange(ends[-1] - window + 2)
-        statistic = _window_statistics(sums, lags, ends, starts)
-        statistic[starts[None, :] > ends[:, None] - window + 1] = np.nan
-        forward[ends] = statistic[:, 0]
-        with np.errstate(invalid="ignore"):
-            valid = ~np.all(np.isnan(statistic), axis=1)
-            backward[ends[valid]] = np.nanmax(statistic[valid], axis=1)
+        # A window from start to end holds end - lags - start regression rows, so the
+        # windows of at least w observations are those with at least w - 1 - lags rows.
+        statistic = _window_statistics(
+            sums, lags, ends, starts, window - 1 - lags, workspace
+        )
+        largest = statistic.max(axis=1)
+        forward[ends] = np.where(statistic[:, 0] == -np.inf, np.nan, statistic[:, 0])
+        backward[ends] = np.where(largest == -np.inf, np.nan, largest)
         end += block
 
     return forward, backward

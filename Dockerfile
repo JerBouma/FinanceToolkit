@@ -42,6 +42,16 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN mkdir -p /home/financetoolkit/.config/financetoolkit \
     && chown -R financetoolkit:financetoolkit /home/financetoolkit/.config
 
+# One thread per linear algebra library. The server answers requests in parallel, and the
+# calculations work on small matrices (a few thousand rows by a few columns), where a pool of
+# threads per operation spends more time on starting and syncing them than on the work: an SVD
+# of 2,520 by 30 takes 12 ms with one thread against 685 ms with a pool, a unit root test 0.26
+# against 6.56 s, an Engle-Granger test 0.68 against 16.7 s, a GARCH fit 3.06 against 6.07 s,
+# a Fama-MacBeth regression 7.7 against 14.9 s and a GLS regression 1.2 against 9.3 s.
+ENV OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
+
 ENV MCP_TRANSPORT=streamable-http
 ENV MCP_HOST=0.0.0.0
 ENV MCP_PORT=8000

@@ -31,6 +31,10 @@ MINIMUM_QUANTILE_OBSERVATIONS = 2
 # so a wealth within this relative distance of its peak is at the peak.  # noqa: E501
 PEAK_TOLERANCE = 1e-12
 
+# The number of pairs of days get_move_significance compares at once (a block of days with
+# every earlier day), which bounds the memory of the comparison of a long history.
+MOVE_COMPARISON_BLOCK = 1_048_576
+
 
 def get_quantile(
     returns: pd.Series | pd.DataFrame, quantile: float
@@ -2130,35 +2134,50 @@ def get_move_significance(
     largest_since = np.full(count, np.nan, dtype=object)
     absolute = np.abs(values)
 
-    for position in range(1, count):
-        earlier = values[:position]
+    # Every move is compared with all earlier moves, a block of days at a time: the pairs of
+    # a block are one array, which keeps the memory bounded for long histories.
+    positions = np.arange(count)
+    block = max(1, MOVE_COMPARISON_BLOCK // max(count, 1))
+    for start in range(1, count, block):
+        rows = positions[start : start + block]
+        earlier = positions[None, :] < rows[:, None]
+        current = values[rows][:, None]
+        current_size = absolute[rows][:, None]
 
         # Moves of rates quoted to a few decimals are differences of rounded numbers, so
         # equal moves differ in their last bits (0.001 as 0.000999...994 or 0.001...009):
-        # compare with a relative tolerance so they count as ties in every run.
-        same_size = np.isclose(
-            absolute[:position], absolute[position], rtol=1e-9, atol=0
+        # compare with a relative tolerance so they count as ties in every run (as
+        # np.isclose with rtol=1e-9 and atol=0).
+        same_size = earlier & (
+            (np.abs(absolute[None, :] - current_size) <= 1e-9 * current_size)
+            | (absolute[None, :] == current_size)
         )
-        same_move = np.isclose(earlier, values[position], rtol=1e-9, atol=0)
+        same_move = earlier & (
+            (np.abs(values[None, :] - current) <= 1e-9 * np.abs(current))
+            | (values[None, :] == current)
+        )
 
-        if position >= window:
-            # The mid-rank of the move among the earlier ones, as get_level_significance
-            # ranks a level: ties count as half, so a run of unchanged days is not at 0.
-            percentile[position] = np.mean(
-                (absolute[:position] < absolute[position]) & ~same_size
-            ) + 0.5 * np.mean(same_size)
+        # The mid-rank of the move among the earlier ones, as get_level_significance ranks a
+        # level: ties count as half, so a run of unchanged days is not at 0.
+        ranked = rows >= window
+        smaller = ((absolute[None, :] < current_size) & ~same_size & earlier).sum(
+            axis=1
+        )
+        percentile[rows[ranked]] = smaller[ranked] / rows[ranked] + 0.5 * (
+            same_size.sum(axis=1)[ranked] / rows[ranked]
+        )
 
         # The same direction, so a fall is compared with falls ("the largest drop since")
         # and a rise with rises; a flat day has no direction and gets no date.
-        if values[position] < 0:
-            as_large = np.flatnonzero((earlier <= values[position]) | same_move)
-        elif values[position] > 0:
-            as_large = np.flatnonzero((earlier >= values[position]) | same_move)
-        else:
-            continue
-
-        if as_large.size:
-            largest_since[position] = labels[as_large[-1]]
+        as_large = earlier & (
+            np.where(
+                current < 0, values[None, :] <= current, values[None, :] >= current
+            )
+            | same_move
+        )
+        found = as_large.any(axis=1) & (values[rows] != 0)
+        last = count - 1 - np.argmax(as_large[:, ::-1], axis=1)
+        largest_since[rows[found]] = np.asarray(labels)[last[found]]
 
     significance = drop_non_finite(
         pd.DataFrame(

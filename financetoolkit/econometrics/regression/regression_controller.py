@@ -861,8 +861,8 @@ class RegressionEconometrics:
 
         |           |   Risk Premium |   Std. Error |   t-Statistic |   P-Value |
         |:----------|---------------:|-------------:|--------------:|----------:|
-        | Intercept |         0.0066 |       0.0058 |        1.1505 |    0.2547 |
-        | Benchmark |         0.0101 |       0.008  |        1.2668 |    0.2103 |
+        | Intercept |         0.0066 |       0.0058 |        1.1514 |    0.2543 |
+        | Benchmark |         0.0101 |       0.008  |        1.2661 |    0.2105 |
         """
         period = period if period else "daily"
         factor_tickers = (

@@ -474,3 +474,12 @@ def test_a_new_variance_swap_at_its_fair_strike_is_worth_nothing():
     assert value == 0
     with pytest.raises(ValueError, match="between 0 and 1"):
         market_metrics_model.get_variance_swap_value(0.04, 0.04, 0.04, 1.5, 0.5, 0.03)
+
+
+def test_a_vega_notional_converts_to_a_variance_notional():
+    # A vega notional of 100,000 at a 20% strike is 100 * 100,000 / (2 * 0.2) = 25,000,000
+    # of variance notional, which pays 102,500 when 21% is realized.
+    notional = 100 * 100_000 / (2 * np.sqrt(0.2**2))
+    assert market_metrics_model.get_variance_swap_value(
+        0.21**2, 0.0, 0.2**2, 1.0, 0.0, 0.04, notional
+    ) == pytest.approx(102_500)

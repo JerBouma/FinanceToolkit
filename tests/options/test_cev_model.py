@@ -72,3 +72,88 @@ def test_the_cev_model_refuses_an_elasticity_outside_zero_and_one():
     with pytest.raises(ValueError, match="volatility must be positive"):
         cev_model.get_cev(100.0, 100.0, 0.05, 0.0, 1.0)
     assert cev_model.get_cev(100.0, 90.0, 0.05, 0.3, 0.0) == 10.0
+
+
+def _noncentralities(
+    strike, days, beta, stock=100.0, rate=0.04, dividend=0.01, volatility=0.3
+):
+    """The degrees of freedom and the x and y of get_cev."""
+    time = days / 365
+    carry = rate - dividend
+    growth = 2 * carry * (1 - beta)
+    variance = (
+        (volatility * stock ** (1 - beta)) ** 2 * np.expm1(growth * time) / growth
+    )
+    scale = (1 - beta) ** 2 * variance
+    forward = stock * np.exp(carry * time)
+    return (
+        1 / (1 - beta),
+        forward ** (2 * (1 - beta)) / scale,
+        strike ** (2 * (1 - beta)) / scale,
+    )
+
+
+# The two probabilities of the CEV call, P(χ²(ν + 2, x) > y) and P(χ²(ν, y) ≤ x), from a
+# quadrature of the non-central chi-squared density in 40-digit arithmetic (mpmath 1.4).
+# scipy's distribution gives NaN for the second at β = 0.9999 and one day, and 0.5881 for the
+# first at β = 0.99999.
+MPMATH_CASES = [
+    (100, 1, 0.9999, 0.505220562537, 0.498956234735),
+    (100, 1, 0.99999, 0.50522028059, 0.498955952766),
+    (120, 1, 0.99999, 2.11571465435e-31, 1.7604607008e-31),
+    (80, 182.5, 0.99999, 0.890405110826, 0.845316971958),
+    (120, 182.5, 0.999, 0.247407415396, 0.185451393645),
+    (100, 182.5, 0.99, 0.570574676779, 0.486321052683),
+]
+
+
+@pytest.mark.parametrize("strike, days, beta, upper, lower", MPMATH_CASES)
+def test_the_chi_squared_probabilities_near_beta_one_match_a_quadrature(
+    strike, days, beta, upper, lower
+):
+    degrees, x, y = _noncentralities(strike, days, beta)
+    assert cev_model._noncentral_chi_squared(y, degrees + 2, x, upper=True) == (
+        pytest.approx(upper, rel=1e-8, abs=1e-12)
+    )
+    assert cev_model._noncentral_chi_squared(x, degrees, y, upper=False) == (
+        pytest.approx(lower, rel=1e-8, abs=1e-12)
+    )
+
+
+def test_the_price_runs_into_black_scholes_as_beta_approaches_one():
+    strikes = np.repeat([50.0, 90, 100, 110, 200], 3)
+    times = np.tile([1 / 365, 0.5, 5], 5)
+    black_scholes = black_scholes_model.get_black_scholes(
+        100, strikes, 0.04, 0.3, times, 0.01
+    )
+    gaps = []
+    for beta in (0.999, 0.9999, 0.99999, 0.999999, 1 - 1e-9):
+        values = cev_model.get_cev(100, strikes, 0.04, 0.3, times, beta, 0.01)
+        assert np.all(np.isfinite(values))
+        gaps.append(np.abs(values - black_scholes).max())
+    # The CEV price differs from Black-Scholes by about (1 - β) times its sensitivity to β.
+    assert gaps[0] > gaps[1] > gaps[2] > gaps[3] and gaps[0] < 1e-2
+    # Within 1e-6 of 1 the elasticity is priced as Black-Scholes.
+    assert gaps[4] == 0
+
+
+def test_a_grid_of_strikes_and_expirations_is_priced_at_once():
+    strikes = np.repeat([0.0, 80, 100, 130], 3)
+    times = np.tile([0.0, 1 / 365, 1.0], 4)
+    for beta in (0.3, 0.995):
+        for put_option in (False, True):
+            grid = cev_model.get_cev(
+                100, strikes, 0.04, 0.3, times, beta, 0.01, put_option
+            )
+            one_by_one = [
+                cev_model.get_cev(
+                    100, float(strike), 0.04, 0.3, float(time), beta, 0.01, put_option
+                )
+                for strike, time in zip(strikes, times, strict=True)
+            ]
+            np.testing.assert_allclose(grid, one_by_one, rtol=1e-12, atol=1e-12)
+    # At a zero strike the call is the discounted forward, at β = 1 as well.
+    for beta in (0.5, 1.0):
+        assert cev_model.get_cev(100, 0.0, 0.04, 0.3, 1.0, beta, 0.01) == pytest.approx(
+            100 * np.exp(-0.01), rel=1e-12
+        )

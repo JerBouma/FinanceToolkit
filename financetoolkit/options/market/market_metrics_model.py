@@ -1039,7 +1039,9 @@ def get_variance_swap_value(
     N e^(-rT) (K_var - K), zero for a swap struck at its fair strike.
 
     A variance notional N pays N (σ² - K) on decimal variances. Quotes in vega notional
-    N_vega, the profit of one volatility point, translate to N = N_vega / (2 sqrt(K)).
+    N_vega, the profit of one volatility point (0.01 of decimal volatility) near the strike,
+    translate to N = 100 N_vega / (2 sqrt(K)): a vega notional of 100,000 at a 20% strike is
+    a variance notional of 25,000,000, which pays 102,500 when 21% is realized.
 
     Args:
         realized_variance (float): The annualized realized variance since the start.

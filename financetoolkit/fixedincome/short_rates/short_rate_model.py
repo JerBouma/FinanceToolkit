@@ -1077,7 +1077,9 @@ def get_option_adjusted_spread(
     bond's option value (the call less the put) is negative and its effective convexity
     positive.
     The effective duration and convexity follow from shifting the curve by 100 basis points
-    up and down at an unchanged OAS.
+    up and down at an unchanged OAS. Black-Karasinski and Black-Derman-Toy need positive
+    forward rates, so on a curve whose lowest forward rate on the tree is below 2% they shift
+    it by half that forward rate instead.
 
     The bond is valued on a trinomial tree of the short rate fitted exactly to the zero
     curve (`trinomial_tree_model.build_short_rate_tree`, the two-stage procedure of Hull and
@@ -1104,7 +1106,8 @@ def get_option_adjusted_spread(
       (P₋ + P₊ - 2P) / (P · Δy²)
 
     with P₊ and P₋ the dirty prices at the OAS on trees fitted to the curve shifted 100
-    basis points (Δy) up and down.
+    basis points (Δy) up and down, or half the lowest forward rate for the lognormal models
+    when that is less.
 
     Referenced against QuantLib's `CallableFixedRateBond` with the
     `TreeCallableFixedRateBondEngine` on `HullWhite` (a speed near zero for Ho-Lee) and
@@ -1217,8 +1220,16 @@ def get_option_adjusted_spread(
 
     # A 100 basis point parallel shift of the continuously compounded curve at an unchanged
     # OAS: at 25 basis points the convexity of a callable bond is mostly lattice noise (it can
-    # even turn positive at a 2% volatility).
+    # even turn positive at a 2% volatility). The lognormal models need a positive forward rate
+    # at every step of the tree, so on a curve with a forward below 2% the shift is half the
+    # lowest forward instead, which keeps the shifted-down curve positive.
     shift = 0.01
+    if model in trinomial_tree_model.LOGNORMAL_MODELS:
+        times = base_tree["Times"]
+        forwards = -np.diff(np.log(discount_factors(zero_curve, times))) / np.diff(
+            times
+        )
+        shift = min(shift, 0.5 * float(forwards.min()))
     up, down = (
         trinomial_tree_model.price_callable_bond(tree(move), *bond, *options, oas)
         for move in (shift, -shift)

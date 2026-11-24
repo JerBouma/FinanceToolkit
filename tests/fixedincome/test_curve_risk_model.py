@@ -149,3 +149,20 @@ def test_parallel_shift_ladder_of_a_portfolio(recorder):
             {"Present Value": 6, "P&L": 6, "Delta-Gamma P&L": 4, "Delta": 4, "Gamma": 1}
         )
     )
+
+
+def test_a_bump_that_is_not_positive_is_refused():
+    # The differences divide by the bump: a bump of 0 gave NaN deltas.
+    cash_flows = bond_model.get_bond_cash_flows(100, 0.04, 5, 2)
+    with pytest.raises(ValueError, match="bump must be positive"):
+        curve_risk_model.get_par_rate_delta(
+            cash_flows, PAR_CURVE, bill_convention=CONVENTION, bump=0
+        )
+    with pytest.raises(ValueError, match="bump must be positive"):
+        curve_risk_model.get_forward_rate_delta(
+            cash_flows, zero_curve(PAR_CURVE), bump=0
+        )
+    with pytest.raises(ValueError, match="bump must be positive"):
+        curve_risk_model.get_parallel_shift_ladder(
+            cash_flows, zero_curve(PAR_CURVE), bump=-0.0001
+        )

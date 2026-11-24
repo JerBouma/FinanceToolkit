@@ -144,3 +144,9 @@ def test_forward_inflation_index_starts_from_the_reference_month(fixedincome):
     assert forward.loc[pd.Period("2027-02", "M"), "Seasonal Factor"] == pytest.approx(
         factors[2] / factors[8], rel=1e-9
     )
+
+
+def test_inflation_swap_rate_needs_positive_maturities(fixedincome, monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="must be positive"):
+        fixedincome.get_inflation_swap_rate(maturities="0")

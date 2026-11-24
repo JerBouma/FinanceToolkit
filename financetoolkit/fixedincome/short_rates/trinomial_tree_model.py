@@ -811,7 +811,8 @@ def get_bond_option(
         option_expiry (float): The expiry of the option in years.
         strike (float): The strike, a clean price per face value.
         coupon_rate (float): The annual coupon rate of the bond.
-        years_to_maturity (float): The years to maturity of the bond, after the expiry.
+        years_to_maturity (float): The years from today to the maturity of the bond, which
+            must lie after the expiry.
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals) by
             maturity in years.
         speed (float): The speed of mean reversion a; not used by Ho-Lee and

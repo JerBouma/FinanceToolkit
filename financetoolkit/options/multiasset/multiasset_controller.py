@@ -152,9 +152,10 @@ class MultiAssetOptions:
         Measured in units of the second asset the payoff is a call on the ratio of the two prices, so the
         risk-free rate drops out and the volatility is that of the ratio. With american_option=True the option
         may be exercised at any time, which is an American call on the ticker with the second asset as strike, a
-        risk-free rate of q2 and a dividend yield of q1 (Bjerksund and Stensland, 1993), priced with the
-        Bjerksund-Stensland (1993) approximation. Without a dividend yield on the ticker early exercise is never
-        optimal and the American option is worth the European one.
+        risk-free rate of q2 and a dividend yield of q1 (Bjerksund and Stensland, 1993), priced with the QD+
+        exercise boundary and its integral (Li, 2010; Andersen, Lake and Offengenden, 2016), within about 0.1% of a
+        999-step Leisen-Reimer tree. Without a dividend yield on the ticker early exercise is never optimal and the
+        American option is worth the European one.
 
         The formula is as follows:
 
@@ -163,7 +164,7 @@ class MultiAssetOptions:
         - σ = √(σ1² + σ2² - 2ρσ1σ2)
         - d1 = (ln(S1 / S2) + (q2 - q1 + σ² / 2) * T) / (σ√T), d2 = d1 - σ√T
 
-        Where S1 is the ticker's price (the traded close on the pricing date), P2 the second asset's price, σ1
+        Where S1 is the ticker's price (the traded close on the pricing date), S2 the second asset's price, σ1
         and σ2 the annualized volatilities (the standard deviation of the daily returns over the trailing 252
         trading days of each times √252), ρ the correlation of the daily returns of the two over the trailing 252
         days on which both traded, q1 and q2 the dividend yields (ln(1 + dividend yield), continuously
@@ -177,7 +178,9 @@ class MultiAssetOptions:
         33(1), 177-186; Bjerksund, P. & Stensland, G. (1993), "American Exchange Options and a Put-Call
         Transformation: A Note", Journal of Business Finance & Accounting, 20(5), 761-764; Haug, E. G. (2007),
         The Complete Guide to Option Pricing Formulas, 2nd ed., chapter 5. Referenced against QuantLib's
-        AnalyticEuropeanMargrabeEngine and AnalyticAmericanMargrabeEngine (https://www.quantlib.org).
+        AnalyticEuropeanMargrabeEngine (https://www.quantlib.org), and the American value against a Leisen-Reimer
+        tree of 999 steps on the call it equals (QuantLib's AnalyticAmericanMargrabeEngine takes the
+        Bjerksund-Stensland (1993) approximation, a lower bound about 1% below it).
 
         Also known as: Margrabe option, exchange option, outperformance option, swap option.
 

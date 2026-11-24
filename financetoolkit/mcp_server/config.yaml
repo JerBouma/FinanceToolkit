@@ -98,6 +98,13 @@ parameter_limits:
     strike_price_range: 0.5
     expiration_time_range: 366
     number_of_strikes: 1000
+    # QD+ solves the exercise boundary once per expiration and integrates the premium per
+    # strike, about 0.26 milliseconds a price: 365 expirations of the widest range at a step
+    # of 5 take about 4 seconds per ticker near 200 and two minutes near 6,000 (the S&P 500
+    # index); 90 keep the latter within 30 seconds. The CEV and Black-76 grids are evaluated
+    # on arrays (Black-76 as fast as Black-Scholes, the CEV about 1 to 30 microseconds a
+    # price), so 365 expirations stay within about 15 seconds per ticker at that price.
+    get_american_option.expiration_time_range: 91
     # Each expiration, holding, page, contract or day is a download of its own.
     number_of_expirations: 24
     holdings: 500
@@ -293,6 +300,11 @@ parameter_limits:
   # (GARCH(1, 1), normal) and about three minutes every return.
   minimums:
     refit_every: 21
+    # Listed options are struck at least 0.5 apart. A finer step multiplies the strikes of
+    # every option grid (up to 10,000 per ticker): a step of 0.01 on a price of 200 gives
+    # 10,000 strikes at the default range, 900,000 QD+ prices over 90 expirations. At 0.5 the
+    # widest range has at most twice the price in strikes.
+    strike_step_size: 0.5
   products:
     # 10,000 paths of 100 steps per expiration by default.
     - parameters: [simulations, time_steps]

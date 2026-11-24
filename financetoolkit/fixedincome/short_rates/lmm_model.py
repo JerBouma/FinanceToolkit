@@ -58,7 +58,8 @@ def _check_tenor(
 
 def get_lmm_factor_loadings(
     times: np.ndarray | list,
-    correlation: float | np.ndarray | None = None,
+    correlation: np.ndarray | None = None,
+    correlation_decay: float | None = None,
     factors: int | None = None,
 ) -> np.ndarray:
     """
@@ -71,7 +72,7 @@ def get_lmm_factor_loadings(
 
     The formula is as follows:
 
-    - ρ_ij = e^(-β |T_i - T_j|), when the correlation is a decay β
+    - ρ_ij = e^(-β |T_i - T_j|), with the correlation decay β
     - ρ = V Λ Vᵀ, B̃ = V_k Λ_k^(1/2) with the k largest eigenvalues
     - B_ik = B̃_ik / √(SUM_l B̃_il²)
 
@@ -86,9 +87,13 @@ def get_lmm_factor_loadings(
 
     Args:
         times (np.ndarray | list): The tenor dates T_0 < T_1 < ... < T_n in years.
-        correlation (float | np.ndarray | None, optional): The correlation of the n forward
-            rates: a matrix, a decay β for ρ_ij = e^(-β |T_i - T_j|) on the reset times, or
-            None for perfectly correlated forwards. Defaults to None.
+        correlation (np.ndarray | None, optional): The correlation matrix of the n forward
+            rates, or None for correlation_decay or, without it, perfectly correlated
+            forwards. Defaults to None.
+        correlation_decay (float | None, optional): The decay β of the correlation
+            ρ_ij = e^(-β |T_i - T_j|) on the reset times, instead of a matrix: 0 gives
+            perfectly correlated forwards and a larger β less correlation (β = 1 gives
+            e^(-1) = 0.37 to forwards a year apart). Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
 
@@ -102,7 +107,7 @@ def get_lmm_factor_loadings(
     from financetoolkit.fixedincome.short_rates import lmm_model
 
     lmm_model.get_lmm_factor_loadings(
-        times=[1, 2, 3, 4, 5], correlation=0.2, factors=2
+        times=[1, 2, 3, 4, 5], correlation_decay=0.2, factors=2
     ).round(4)
     ```
 
@@ -118,12 +123,23 @@ def get_lmm_factor_loadings(
     times = np.asarray(times, dtype=float)
     resets = times[:-1]
     count = len(resets)
-    if correlation is None:
-        matrix = np.ones((count, count))
-    elif np.ndim(correlation) == 0:
-        if correlation < 0:
+    if correlation is not None and np.ndim(correlation) == 0:
+        raise ValueError(
+            "correlation takes a correlation matrix of the forwards; pass the decay β of "
+            "ρ_ij = e^(-β |T_i - T_j|) as correlation_decay instead."
+        )
+    if correlation is not None and correlation_decay is not None:
+        raise ValueError(
+            "Pass either a correlation matrix or a correlation_decay, not both."
+        )
+    if correlation_decay is not None:
+        if correlation_decay < 0:
             raise ValueError("The correlation decay β cannot be negative.")
-        matrix = np.exp(-float(correlation) * np.abs(resets[:, None] - resets[None, :]))
+        matrix = np.exp(
+            -float(correlation_decay) * np.abs(resets[:, None] - resets[None, :])
+        )
+    elif correlation is None:
+        matrix = np.ones((count, count))
     else:
         matrix = np.asarray(correlation, dtype=float)
         if matrix.shape != (count, count) or not np.allclose(matrix, matrix.T):
@@ -210,7 +226,8 @@ def simulate_lmm_forwards(
     forward_rates: np.ndarray | list,
     times: np.ndarray | list,
     volatilities: np.ndarray | list | float,
-    correlation: float | np.ndarray | None = None,
+    correlation: np.ndarray | None = None,
+    correlation_decay: float | None = None,
     factors: int | None = None,
     paths: int = 10000,
     seed: int | None = 0,
@@ -261,8 +278,10 @@ def simulate_lmm_forwards(
             before today; forward i runs from T_i to T_(i+1).
         volatilities (np.ndarray | list | float): The lognormal volatility σ_i of each
             forward, or one for all.
-        correlation (float | np.ndarray | None, optional): The correlation of the forwards:
-            a matrix, a decay β for ρ_ij = e^(-β |T_i - T_j|), or None for one factor.
+        correlation (np.ndarray | None, optional): The correlation matrix of the forwards,
+            or None for correlation_decay or, without it, one factor. Defaults to None.
+        correlation_decay (float | None, optional): The decay β of the correlation
+            ρ_ij = e^(-β |T_i - T_j|) instead of a matrix, see `get_lmm_factor_loadings`.
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
@@ -283,7 +302,7 @@ def simulate_lmm_forwards(
 
     forwards = lmm_model.simulate_lmm_forwards(
         forward_rates=[0.03, 0.032, 0.034, 0.035], times=[1, 2, 3, 4, 5],
-        volatilities=0.2, correlation=0.1, factors=2
+        volatilities=0.2, correlation_decay=0.1, factors=2
     )
 
     forwards[:, -1, -1].mean()
@@ -303,7 +322,7 @@ def simulate_lmm_forwards(
         )
     if paths < 1 or steps_per_year < 1:
         raise ValueError("The paths and the steps per year must be at least 1.")
-    loadings = get_lmm_factor_loadings(times, correlation, factors)
+    loadings = get_lmm_factor_loadings(times, correlation, correlation_decay, factors)
     return _evolve(
         forward_rates,
         times,
@@ -329,7 +348,8 @@ def get_lmm_cap(
     times: np.ndarray | list,
     volatilities: np.ndarray | list | float,
     strike: float,
-    correlation: float | np.ndarray | None = None,
+    correlation: np.ndarray | None = None,
+    correlation_decay: float | None = None,
     factors: int | None = None,
     option_type: str = "caplet",
     paths: int = 10000,
@@ -378,8 +398,10 @@ def get_lmm_cap(
         volatilities (np.ndarray | list | float): The lognormal volatility σ_i of each
             forward (its caplet volatility), or one for all.
         strike (float): The cap or floor rate K (decimal, simple interest).
-        correlation (float | np.ndarray | None, optional): The correlation of the forwards:
-            a matrix, a decay β for ρ_ij = e^(-β |T_i - T_j|), or None for one factor.
+        correlation (np.ndarray | None, optional): The correlation matrix of the forwards,
+            or None for correlation_decay or, without it, one factor. Defaults to None.
+        correlation_decay (float | None, optional): The decay β of the correlation
+            ρ_ij = e^(-β |T_i - T_j|) instead of a matrix, see `get_lmm_factor_loadings`.
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
@@ -405,7 +427,7 @@ def get_lmm_cap(
 
     lmm_model.get_lmm_cap(
         zero_curve=zero_curve, times=[1, 2, 3, 4, 5], volatilities=0.2, strike=0.04,
-        correlation=0.1, factors=2, notional=1_000_000
+        correlation_decay=0.1, factors=2, notional=1_000_000
     )
     ```
 
@@ -431,6 +453,7 @@ def get_lmm_cap(
         times,
         volatilities,
         correlation,
+        correlation_decay,
         factors,
         paths,
         seed,
@@ -458,7 +481,8 @@ def get_lmm_swaption(
     times: np.ndarray | list,
     volatilities: np.ndarray | list | float,
     fixed_rate: float,
-    correlation: float | np.ndarray | None = None,
+    correlation: np.ndarray | None = None,
+    correlation_decay: float | None = None,
     factors: int | None = None,
     swaption_type: str = "payer",
     paths: int = 10000,
@@ -506,8 +530,10 @@ def get_lmm_swaption(
         volatilities (np.ndarray | list | float): The lognormal volatility σ_i of each
             forward, or one for all.
         fixed_rate (float): The fixed rate K of the swap (decimal, simple interest).
-        correlation (float | np.ndarray | None, optional): The correlation of the forwards:
-            a matrix, a decay β for ρ_ij = e^(-β |T_i - T_j|), or None for one factor.
+        correlation (np.ndarray | None, optional): The correlation matrix of the forwards,
+            or None for correlation_decay or, without it, one factor. Defaults to None.
+        correlation_decay (float | None, optional): The decay β of the correlation
+            ρ_ij = e^(-β |T_i - T_j|) instead of a matrix, see `get_lmm_factor_loadings`.
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
@@ -533,7 +559,7 @@ def get_lmm_swaption(
 
     lmm_model.get_lmm_swaption(
         zero_curve=zero_curve, times=[2, 3, 4, 5, 6, 7], volatilities=0.2,
-        fixed_rate=0.04, correlation=0.1, factors=2, notional=1_000_000
+        fixed_rate=0.04, correlation_decay=0.1, factors=2, notional=1_000_000
     )
     ```
 
@@ -556,7 +582,7 @@ def get_lmm_swaption(
             "The paths must be at least 2 and the steps per year at least 1."
         )
     discounts, forward_rates = _curve_forwards(zero_curve, times)
-    loadings = get_lmm_factor_loadings(times, correlation, factors)
+    loadings = get_lmm_factor_loadings(times, correlation, correlation_decay, factors)
     forwards = _evolve(
         forward_rates, times, volatilities, loadings, paths, seed, steps_per_year, 0
     )[:, 0, :]
@@ -584,7 +610,8 @@ def get_rebonato_swaption_volatility(
     zero_curve: pd.Series,
     times: np.ndarray | list,
     volatilities: np.ndarray | list | float,
-    correlation: float | np.ndarray | None = None,
+    correlation: np.ndarray | None = None,
+    correlation_decay: float | None = None,
     factors: int | None = None,
 ) -> float:
     """
@@ -627,8 +654,10 @@ def get_rebonato_swaption_volatility(
             of the swap in years.
         volatilities (np.ndarray | list | float): The lognormal volatility σ_i of each
             forward, or one for all.
-        correlation (float | np.ndarray | None, optional): The correlation of the forwards:
-            a matrix, a decay β for ρ_ij = e^(-β |T_i - T_j|), or None for one factor.
+        correlation (np.ndarray | None, optional): The correlation matrix of the forwards,
+            or None for correlation_decay or, without it, one factor. Defaults to None.
+        correlation_decay (float | None, optional): The decay β of the correlation
+            ρ_ij = e^(-β |T_i - T_j|) instead of a matrix, see `get_lmm_factor_loadings`.
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
@@ -647,7 +676,7 @@ def get_rebonato_swaption_volatility(
 
     lmm_model.get_rebonato_swaption_volatility(
         zero_curve=zero_curve, times=[2, 3, 4, 5, 6, 7], volatilities=0.2,
-        correlation=0.1, factors=2
+        correlation_decay=0.1, factors=2
     )
     ```
 
@@ -661,7 +690,7 @@ def get_rebonato_swaption_volatility(
     if times[0] <= 0:
         raise ValueError("The swaption must expire after today.")
     discounts, forward_rates = _curve_forwards(zero_curve, times)
-    loadings = get_lmm_factor_loadings(times, correlation, factors)
+    loadings = get_lmm_factor_loadings(times, correlation, correlation_decay, factors)
     weights = np.diff(times) * discounts[1:]
     weights = weights / weights.sum()
     swap_rate = float(weights @ forward_rates)

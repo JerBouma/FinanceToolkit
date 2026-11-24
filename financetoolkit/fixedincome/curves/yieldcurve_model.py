@@ -342,10 +342,13 @@ def get_yield_curve_butterfly(
     long_yield: float | pd.Series,
 ) -> float | pd.Series:
     """
-    Calculate the butterfly ("fly") of three points on the yield curve: how far the middle
-    maturity (the body) lies above the straight line through the two wings, the curvature of
-    the curve. A positive butterfly means the body yields more than the wings (it is cheap
-    against them), a negative one that it yields less.
+    Calculate the butterfly ("fly") of three points on the yield curve: twice how far the
+    yield of the middle maturity (the body) lies above the average yield of the two wings, a
+    measure of the curvature of the curve. Only when the body lies midway between the wings
+    is that average the straight line through them; in 2s5s10s it is not, so a straight
+    curve there has a butterfly of its own. A positive butterfly means the body yields more
+    than the wings on average (it is cheap against them), a negative one that it yields
+    less.
 
     Also known as: fly, curve butterfly, 2s5s10s, curvature.
 

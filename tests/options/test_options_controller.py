@@ -2005,9 +2005,13 @@ def test_get_heston_parameters(recorder, option_market):
     # under 14 days and fits the other two, the nearest to every month of the grid.
     parameters = module.get_heston_parameters()
     # The fit stops where the least squares stops improving, which moves its last digits
-    # with the platform's floating point, so it is recorded to two decimals, and κ (with the
-    # Feller ratio), which two short expirations hardly pin down, to one.
-    recorder.capture(parameters.round(2).round({"kappa": 1, "Feller Ratio": 1}))
+    # with the platform's floating point, so it is recorded to two decimals. Two short
+    # expirations hardly pin down κ and θ apart (κ ends near zero, where θ barely changes the
+    # prices, and θ moved by 0.01 between Python versions), so only their combination is
+    # recorded: the Feller ratio 2κθ/σ², to one decimal.
+    recorder.capture(
+        parameters.drop(columns=["kappa", "theta"]).round(2).round({"Feller Ratio": 1})
+    )
     # The simulated chains have a downward skew: a negative correlation.
     assert (parameters["rho"] < 0).all()
     assert (parameters["Expirations"] == 2).all()

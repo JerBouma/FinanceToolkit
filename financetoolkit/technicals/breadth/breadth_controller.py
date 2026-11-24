@@ -1075,11 +1075,11 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        Referenced against:
-        - TA-Lib, CMF: https://ta-lib.org/functions/cmf.html
-
         - Twiggs, C. (2003). "Twiggs Money Flow." Incredible Charts
           (https://www.incrediblecharts.com/indicators/twiggs_money_flow.php).
+
+        Referenced against:
+        - TA-Lib, CMF: https://ta-lib.org/functions/cmf.html
 
         Also known as: CMF, Chaikin Money Flow, TMF, Twiggs Money Flow.
 
@@ -3036,12 +3036,12 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
+        - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4),
+          for a similar buying pressure measured from the lower of the low and the previous close.
+
         Referenced against:
         - finta, BASP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1671
         - finta, BASPN: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1691
-
-        - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4),
-          for a similar buying pressure measured from the lower of the low and the previous close.
 
         Also known as: BASP, BASPN, normalized buying and selling pressure.
 

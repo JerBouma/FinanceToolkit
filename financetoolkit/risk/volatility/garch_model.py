@@ -24,6 +24,16 @@ N_MULTI_START_POINTS = 32
 # The distance to a bound, as a fraction of the bounds' width, within which a weight of a
 # warm-started fit counts as on that bound.
 BOUND_DISTANCE = 1e-6
+# The largest gradient, on the parameters scaled to [0, 1] within their bounds and relative to
+# the size of the negative log-likelihood, at which an L-BFGS-B search counts as converged
+# inside the bounds rather than stalled on the stationarity wall.
+STATIONARY_GRADIENT = 1e-5
+# L-BFGS-B with an analytic gradient converges to the last digits the likelihood resolves.
+LBFGSB_OPTIONS = {"ftol": 1e-14, "gtol": 1e-9, "maxiter": 2000}
+# The value an L-BFGS-B search with an analytic gradient sees outside the admissible region
+# (a persistence of 1 or more): large but finite, so its line search backtracks to the
+# admissible side instead of stopping on an infinite value.
+INADMISSIBLE_VALUE = 1e10
 
 # The GARCH and GJR-GARCH recursions start from a backcast: an exponentially weighted average of the first squared returns, with the same window and decay as the arch package (Kevin Sheppard), so the fitted parameters agree with it.  # noqa: E501
 BACKCAST_OBSERVATIONS = 75
@@ -97,6 +107,36 @@ def _apply_per_column(
     )
 
 
+def _series_key(values) -> tuple[str, tuple[int, ...]]:
+    """The SHA-256 hash and shape of an array, which identify a series in a weights cache."""
+    values = np.ascontiguousarray(values, dtype=float)
+    return hashlib.sha256(values.tobytes()).hexdigest(), values.shape
+
+
+def _cached_weights(
+    cache: OrderedDict, lock: threading.Lock, key: tuple, fit
+) -> np.ndarray:
+    """
+    Returns the weights stored under `key`, or fits them with `fit()` and stores a copy,
+    dropping the least recently used entry beyond EGARCH_WEIGHTS_CACHE_SIZE entries. The
+    lock guards the cache, which the threads of the MCP server share.
+    """
+    with lock:
+        cached = cache.get(key)
+        if cached is not None:
+            cache.move_to_end(key)
+            return cached.copy()
+
+    weights = fit()
+
+    with lock:
+        cache[key] = weights.copy()
+        if len(cache) > EGARCH_WEIGHTS_CACHE_SIZE:
+            cache.popitem(last=False)
+
+    return weights
+
+
 # Outside the stationarity region the log-likelihood is infinite, so the finite-difference
 # gradient there subtracts infinities; L-BFGS-B handles the NaN step, and the warning it
 # raises says nothing to the user.
@@ -107,12 +147,21 @@ def _fit_multi_start(
     initial_guess: list[float],
     model_name: str,
     number_of_points: int = N_MULTI_START_POINTS,
+    gradient=None,
 ) -> np.ndarray:
     """
     Fits a GARCH-family log-likelihood by running `scipy.optimize.minimize` (L-BFGS-B)
-    from many deterministic starting points spread across `bounds`, keeps the best and
-    finishes it with Nelder-Mead. The search runs on the parameters scaled to [0, 1]
-    within their bounds.
+    from many deterministic starting points spread across `bounds` and keeps the best. The
+    search runs on the parameters scaled to [0, 1] within their bounds.
+
+    With an analytic `gradient`, one more L-BFGS-B search from the best point converges to
+    the maximum: it sees a large finite value (INADMISSIBLE_VALUE) beyond the stationarity
+    wall rather than an infinite one, so its line search backs away from the wall. The
+    result is finished with Nelder-Mead only when the search stalled: when it failed, or
+    when its gradient on the scaled parameters, leaving out the components that point out
+    of a bound the weights sit on (the projected gradient), is larger than
+    STATIONARY_GRADIENT times the size of the negative log-likelihood. A maximum on a bound
+    (an ARCH weight of 0, for example) is therefore accepted as it is.
 
     A global optimizer with a stochastic walk (such as simulated annealing) is avoided on
     purpose: the log-likelihood is not bit-identical across libm/BLAS backends, and tiny
@@ -140,6 +189,11 @@ def _fit_multi_start(
         number_of_points (int, optional): The number of Sobol-sampled starting points tried
         in addition to the initial guess; 0 runs a single local search from the initial
         guess. Defaults to N_MULTI_START_POINTS (32).
+        gradient (Callable | None, optional): The gradient of `wrapper_func` with respect to
+        the parameters (analytic, see `_garch_family_score`). Defaults to None, which lets
+        L-BFGS-B take finite differences: one more evaluation of the likelihood per
+        parameter at every step, which the analytic gradient replaces by one recursion of
+        the derivatives.
 
     Returns:
         np.ndarray: The fitted weights from the best-scoring successful attempt, or an
@@ -158,6 +212,15 @@ def _fit_multi_start(
     def scaled_objective(unit: np.ndarray) -> float:
         return wrapper_func(lower + unit * span)
 
+    def scaled_value_and_gradient(
+        unit: np.ndarray, inadmissible: float = np.inf
+    ) -> tuple[float, np.ndarray]:
+        value = scaled_objective(unit)
+        if gradient is None or not np.isfinite(value):
+            return inadmissible, np.zeros(dim)
+        values = np.asarray(gradient(lower + unit * span), dtype=float) * span
+        return value, np.where(np.isfinite(values), values, 0.0)
+
     sampler = qmc.Sobol(d=dim, seed=42)
     starts = np.vstack(
         [
@@ -168,12 +231,14 @@ def _fit_multi_start(
 
     best_x = None
     best_value = np.inf
+    best_gradient = None
 
     for start in starts:
         try:
             result = optimize.minimize(
-                scaled_objective,
+                scaled_objective if gradient is None else scaled_value_and_gradient,
                 np.clip(start, 0.0, 1.0),
+                jac=gradient is not None,
                 bounds=[(0.0, 1.0)] * dim,
                 method="L-BFGS-B",
             )
@@ -186,6 +251,7 @@ def _fit_multi_start(
         if result.fun < best_value:
             best_value = result.fun
             best_x = lower + result.x * span
+            best_gradient = result.jac
 
     if best_x is None and number_of_points == 0:
         # A single search from earlier weights (a warm start) that stalls on the constraint
@@ -206,18 +272,51 @@ def _fit_multi_start(
         )
         return np.full(dim, np.nan)
 
+    if gradient is not None:
+        # The searches above stop at the first step that reaches the stationarity wall, an infinite value their line search cannot back away from, so they only pick the best region. With the analytic gradient one more search from the best point sees a large finite value beyond the wall instead, backs away from it and converges to the maximum.  # noqa: E501
+        refined = optimize.minimize(
+            scaled_value_and_gradient,
+            (best_x - lower) / span,
+            args=(INADMISSIBLE_VALUE,),
+            jac=True,
+            bounds=[(0.0, 1.0)] * dim,
+            method="L-BFGS-B",
+            options=LBFGSB_OPTIONS,
+        )
+        best_gradient = None
+        if refined.fun <= best_value:
+            best_value = refined.fun
+            best_x = lower + refined.x * span
+            best_gradient = refined.jac if refined.success else None
+
     # The stationarity constraint is a wall of infinite values, along which gradient steps
-    # stall; Nelder-Mead, which only compares values, finishes the search from the best point.
-    polished = optimize.minimize(
-        lambda unit: (
-            scaled_objective(unit) if np.all((unit >= 0) & (unit <= 1)) else np.inf
-        ),
-        (best_x - lower) / span,
-        method="Nelder-Mead",
-        options={"xatol": 1e-8, "fatol": 1e-8, "maxiter": 2000 * dim},
-    )
-    if np.isfinite(polished.fun) and polished.fun < best_value:
-        best_x = lower + polished.x * span
+    # stall, and a search can stop short along a bound; Nelder-Mead, which only compares
+    # values, finishes the search from the best point in those cases. Where the gradient
+    # vanishes, apart from a bound it points out of (the projected gradient), L-BFGS-B has
+    # converged and the polish would only repeat it.
+    unit = (best_x - lower) / span
+    stalled = best_gradient is None or not np.all(np.isfinite(best_gradient))
+    if not stalled:
+        projected = np.where(
+            ((unit < BOUND_DISTANCE) & (best_gradient > 0))
+            | ((unit > 1 - BOUND_DISTANCE) & (best_gradient < 0)),
+            0.0,
+            best_gradient,
+        )
+        stalled = float(np.max(np.abs(projected))) > STATIONARY_GRADIENT * max(
+            1.0, abs(best_value)
+        )
+    if stalled:
+        polished = optimize.minimize(
+            lambda unit: (
+                scaled_objective(unit) if np.all((unit >= 0) & (unit <= 1)) else np.inf
+            ),
+            unit,
+            method="Nelder-Mead",
+            options={"xatol": 1e-8, "fatol": 1e-8, "maxiter": 2000 * dim},
+        )
+        if np.isfinite(polished.fun) and polished.fun < best_value:
+            best_x = lower + polished.x * span
 
     return best_x
 
@@ -319,6 +418,19 @@ def garch_log_maximization(
     return result
 
 
+def _log_maximization_gradient(
+    weights, returns: np.ndarray, t: int, method: str
+) -> np.ndarray:
+    """
+    The gradient of `garch_log_maximization` ("garch") or `gjr_garch_log_maximization`
+    ("gjr"): their objective, SUM(ln(v_i) + u_i ^ 2 / v_i), is -2 times the normal
+    log-likelihood without its constant, whose gradient `_garch_family_score` gives.
+    """
+    return -2 * _garch_family_score(
+        returns[:t], weights, method, "normal", "zero", get_backcast(returns)
+    )
+
+
 def get_garch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> np.ndarray:
@@ -366,8 +478,21 @@ def get_garch_weights(
             return np.inf  # Return a large number to represent an invalid solution
         return garch_log_maximization(parameters, returns, t, p, q)
 
-    # Seeded so fitted parameters are reproducible across runs.
-    return _fit_multi_start(wrapper_func, bounds, initial_guess, "GARCH")
+    # Seeded so fitted parameters are reproducible across runs, and kept, since the GJR-GARCH fit, the DCC model and the factor models fit the same returns again.  # noqa: E501
+    return _cached_weights(
+        GARCH_FAMILY_WEIGHTS_CACHE,
+        GARCH_FAMILY_WEIGHTS_CACHE_LOCK,
+        ("get_garch_weights", *_series_key(returns), t, p, q),
+        lambda: _fit_multi_start(
+            wrapper_func,
+            bounds,
+            initial_guess,
+            "GARCH",
+            gradient=lambda parameters: _log_maximization_gradient(
+                parameters, returns, t, "garch"
+            ),
+        ),
+    )
 
 
 def get_garch(
@@ -669,7 +794,12 @@ def get_gjr_garch_weights(
             return np.inf
         return gjr_garch_log_maximization(parameters, returns, t, p, q)
 
-    weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "GJR-GARCH")
+    def gradient(parameters):
+        return _log_maximization_gradient(parameters, returns, t, "gjr")
+
+    weights = _fit_multi_start(
+        wrapper_func, bounds, initial_guess, "GJR-GARCH", gradient=gradient
+    )
 
     if nested_weights is None:
         return weights
@@ -683,6 +813,7 @@ def get_gjr_garch_weights(
             nested_weights,
             "GJR-GARCH (local search from the GARCH fit)",
             number_of_points=0,
+            gradient=gradient,
         ),
         nested_weights,
     ]
@@ -946,6 +1077,13 @@ EGARCH_WEIGHTS_CACHE_SIZE = 64
 # The cache is shared by threads (the MCP server runs tools in threads), and an OrderedDict
 # is not safe to reorder and read concurrently.
 EGARCH_WEIGHTS_CACHE_LOCK = threading.Lock()
+# The fits of every other model, distribution and mean (and of GARCH(1, 1) itself, see
+# get_garch_weights), by the returns and the settings of the fit: the variance, the
+# forecast, the parameters, the diagnostics, the simulation and the econometric tests of
+# one series each fit the same model again. Like the EGARCH cache it keeps the
+# EGARCH_WEIGHTS_CACHE_SIZE fits used last.
+GARCH_FAMILY_WEIGHTS_CACHE: OrderedDict[tuple, np.ndarray] = OrderedDict()
+GARCH_FAMILY_WEIGHTS_CACHE_LOCK = threading.Lock()
 
 
 def get_egarch_weights(
@@ -975,14 +1113,6 @@ def get_egarch_weights(
     if t is None:
         t = len(returns)
 
-    values = np.ascontiguousarray(returns, dtype=float)
-    key = (hashlib.sha256(values.tobytes()).hexdigest(), values.shape, t, p, q)
-    with EGARCH_WEIGHTS_CACHE_LOCK:
-        cached = EGARCH_WEIGHTS_CACHE.get(key)
-        if cached is not None:
-            EGARCH_WEIGHTS_CACHE.move_to_end(key)
-            return cached.copy()
-
     # Omega sits well below -1 on a log scale; the rest stay near empirical EGARCH.
     bounds = [(-15, 5), (-1, 1), (-1, 1), (-0.999, 0.999)]
     initial_guess = [0.0, 0.1, -0.1, 0.9]
@@ -993,14 +1123,12 @@ def get_egarch_weights(
             return np.inf
         return egarch_log_maximization(parameters, returns, t, p, q)
 
-    weights = _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH")
-
-    with EGARCH_WEIGHTS_CACHE_LOCK:
-        EGARCH_WEIGHTS_CACHE[key] = weights.copy()
-        if len(EGARCH_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
-            EGARCH_WEIGHTS_CACHE.popitem(last=False)
-
-    return weights
+    return _cached_weights(
+        EGARCH_WEIGHTS_CACHE,
+        EGARCH_WEIGHTS_CACHE_LOCK,
+        (*_series_key(returns), t, p, q),
+        lambda: _fit_multi_start(wrapper_func, bounds, initial_guess, "EGARCH"),
+    )
 
 
 def get_egarch(
@@ -1348,9 +1476,6 @@ EXPECTATION_WEIGHTS[[0, -1]] /= 2
 
 LOG_2_PI = math.log(2 * math.pi)
 EXPECTED_ABSOLUTE_NORMAL = math.sqrt(2 / math.pi)
-
-GARCH_FAMILY_WEIGHTS_CACHE: OrderedDict[tuple, np.ndarray] = OrderedDict()
-GARCH_FAMILY_WEIGHTS_CACHE_LOCK = threading.Lock()
 
 
 def validate_garch_family(method: str, distribution: str, mean: str) -> None:
@@ -2361,6 +2486,291 @@ def _in_mean_filter(
     )
 
 
+# The models and means whose log-likelihood has an analytic gradient (see _garch_family_score): the variance recursions that are linear in the variance (GARCH, IGARCH and GJR-GARCH) or in a power of the volatility (APARCH, TGARCH and NGARCH), with a mean whose residuals follow a linear filter. The others (EGARCH, family GARCH, the component model, FIGARCH, the realized GARCH, GARCH-in-mean and the ARFIMA mean) are fitted with finite differences.  # noqa: E501
+ANALYTIC_SCORE_METHODS = ("garch", "igarch", "gjr", "aparch", "tgarch", "ngarch")
+ANALYTIC_SCORE_MEANS = ("zero", "constant", "arma")
+
+# The relative step of the central differences of the log density of the distributions without an analytic derivative (see _log_density_derivatives): the truncation error (step squared) and the rounding error (machine precision over the step) are then both of the order of 1e-10.  # noqa: E501
+DENSITY_DIFFERENCE_STEP = 1e-5
+
+
+def _linear_recursion_derivatives(
+    driver_derivatives: np.ndarray, first_derivatives, persistence: float
+) -> np.ndarray:
+    """
+    The derivatives of the recursion x_t = d_t + Beta * x_(t-1) (see
+    `_linear_variance_recursion`) with respect to every weight: dx_t = dd_t + Beta * dx_(t-1),
+    the same first-order recursion, run by lfilter for all weights at once. The derivatives
+    of the driver d_t include x_(t-1) for the weight Beta itself.
+
+    Args:
+        driver_derivatives (np.ndarray): The derivatives of the driver of steps 1 to T - 1,
+            one column per weight.
+        first_derivatives (Sequence[float]): The derivatives of x_0.
+        persistence (float): The weight of the previous value (Beta).
+
+    Returns:
+        np.ndarray: The derivatives of x_0 to x_(T-1), one column per weight.
+    """
+    from scipy import signal  # noqa: PLC0415
+
+    first = np.asarray(first_derivatives, dtype=float)
+    derivatives = np.empty((len(driver_derivatives) + 1, len(first)))
+    derivatives[0] = first
+
+    if len(driver_derivatives):
+        derivatives[1:], _ = signal.lfilter(
+            [1.0],
+            [1.0, -persistence],
+            driver_derivatives,
+            axis=0,
+            zi=persistence * first[None, :],
+        )
+
+    return derivatives
+
+
+def _mean_residual_derivatives(
+    returns: np.ndarray, mean_weights, mean: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The residuals of the zero, constant or ARMA(1, 1) mean (as `_garch_family_filter`
+    computes them) and their derivatives with respect to the mean weights. The ARMA
+    residuals e_t = r_t - Mu - AR * r_(t-1) - MA * e_(t-1) give the derivatives
+    de_t = -(1, r_(t-1), e_(t-1)) - MA * de_(t-1), the filter of the residuals itself.
+    """
+    if mean == "zero":
+        return returns, np.zeros((len(returns), 0))
+    if mean == "constant":
+        return returns - mean_weights[0], -np.ones((len(returns), 1))
+
+    from scipy import signal  # noqa: PLC0415
+
+    mu, autoregressive, moving_average = mean_weights
+    lagged = returns[:-1]
+    residuals = signal.lfilter(
+        [1.0], [1.0, moving_average], returns[1:] - mu - autoregressive * lagged
+    )
+    previous = np.concatenate(([0.0], residuals[:-1]))
+    derivatives = signal.lfilter(
+        [1.0],
+        [1.0, moving_average],
+        -np.column_stack([np.ones(len(lagged)), lagged, previous]),
+        axis=0,
+    )
+
+    return residuals, derivatives
+
+
+def _log_density_derivatives(
+    z: np.ndarray, distribution: str, parameters
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The derivatives of the log density of a standardized distribution (see
+    `get_standardized_log_density`) with respect to z and to its Shape (and Skew):
+
+    - normal: d ln f / dz = -z
+    - t: d ln f / dz = -(v + 1) z / (v - 2 + z^2) and d ln f / dv = (ψ((v + 1) / 2) - ψ(v / 2)) / 2
+      - 1 / (2 (v - 2)) - ln(1 + q) / 2 + (v + 1) q / (2 (v - 2) (1 + q)), with q = z^2 / (v - 2) and ψ the
+      digamma function
+
+    The skewed Student-t distributions, the GED and the Johnson SU take central differences of
+    the log density, with a step of 1e-5 relative to the value.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The derivative with respect to z at every z, and with
+        respect to the distribution parameters (one column each).
+    """
+    if distribution == "normal":
+        return -z, np.zeros((len(z), 0))
+
+    if distribution == "t":
+        shape = float(parameters[0])
+        ratio = z * z / (shape - 2)
+        slope = -(shape + 1) * z / (shape - 2 + z * z)
+        score = (
+            0.5 * (special.digamma((shape + 1) / 2) - special.digamma(shape / 2))
+            - 0.5 / (shape - 2)
+            - 0.5 * np.log1p(ratio)
+            + 0.5 * (shape + 1) * ratio / ((shape - 2) * (1 + ratio))
+        )
+        return slope, score[:, None]
+
+    parameters = np.asarray(parameters, dtype=float)
+    step = DENSITY_DIFFERENCE_STEP * np.maximum(1.0, np.abs(z))
+    slope = (
+        get_standardized_log_density(z + step, distribution, parameters)
+        - get_standardized_log_density(z - step, distribution, parameters)
+    ) / (2 * step)
+
+    scores = []
+    for position, value in enumerate(parameters):
+        parameter_step = DENSITY_DIFFERENCE_STEP * max(1.0, abs(value))
+        higher, lower = parameters.copy(), parameters.copy()
+        higher[position] += parameter_step
+        lower[position] -= parameter_step
+        scores.append(
+            (
+                get_standardized_log_density(z, distribution, higher)
+                - get_standardized_log_density(z, distribution, lower)
+            )
+            / (2 * parameter_step)
+        )
+
+    return slope, np.column_stack(scores)
+
+
+@np.errstate(over="ignore", invalid="ignore", divide="ignore")
+def _garch_family_score(
+    returns: np.ndarray,
+    weights,
+    method: str,
+    distribution: str,
+    mean: str,
+    backcast: float,
+) -> np.ndarray:
+    """
+    Calculates the gradient (score) of the log-likelihood of a GARCH-family model (see
+    `get_garch_family_log_likelihood`) with respect to its weights, for the models of
+    ANALYTIC_SCORE_METHODS with the means of ANALYTIC_SCORE_MEANS.
+
+    The log-likelihood of every observation is l_t = ln f(z_t) - ln(sigma_t^2) / 2 with
+    z_t = e_t / sigma_t, so with g = d ln f / dz (see `_log_density_derivatives`):
+
+    - dl_t = g(z_t) / sigma_t * de_t - (g(z_t) z_t + 1) / (2 sigma_t^2) * dsigma_t^2 + d ln f / dθ
+
+    The variance of GARCH, IGARCH and GJR-GARCH is a first-order linear recursion in itself
+    and that of APARCH, TGARCH and NGARCH in the power Delta of the volatility, p_t = sigma_t^Delta:
+
+    - sigma_t^2 = Omega + (Alpha + Gamma 1(e_(t-1) < 0)) e_(t-1)^2 + Beta sigma_(t-1)^2
+    - p_t = Omega + Alpha (|e_(t-1)| - Gamma e_(t-1))^Delta + Beta p_(t-1), sigma_t^2 = p_t^(2 / Delta)
+
+    so their derivatives with respect to every weight follow the same recursion (see
+    `_linear_recursion_derivatives`), with Beta's own derivative driven by the previous
+    value and the first one by the backcast (see `_first_variance`). The mean weights enter
+    through the residuals (see `_mean_residual_derivatives`) and the shocks they drive.
+    The indicator of GJR-GARCH has a derivative of zero wherever it is defined.
+
+    Args:
+        returns (np.ndarray): The returns.
+        weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
+        method (str): The variance model, one of ANALYTIC_SCORE_METHODS.
+        distribution (str): The innovation distribution.
+        mean (str): The mean model, one of ANALYTIC_SCORE_MEANS.
+        backcast (float): The backcast that starts the recursion.
+
+    Returns:
+        np.ndarray: The derivative of the log-likelihood with respect to every weight.
+    """
+    variance_weights, mean_weights, distribution_weights = _split_weights(
+        weights, method, mean
+    )
+    residuals, residual_derivatives = _mean_residual_derivatives(
+        returns, mean_weights, mean
+    )
+    observations = len(residuals)
+    lagged = residuals[:-1]
+    lagged_derivatives = residual_derivatives[:-1]
+    ones = np.ones(observations - 1)
+    mean_first = [0.0] * residual_derivatives.shape[1]
+
+    if method in ("garch", "igarch", "gjr"):
+        omega, alpha = variance_weights[0], variance_weights[1]
+        if method == "gjr":
+            gamma, beta = variance_weights[2], variance_weights[3]
+        else:
+            gamma = 0.0
+            beta = variance_weights[2] if method == "garch" else 1 - alpha
+
+        squared = lagged * lagged
+        negative = np.where(lagged < 0, 1.0, 0.0)
+        coefficient = alpha + gamma * negative
+        sigma2 = _linear_variance_recursion(
+            omega + coefficient * squared,
+            beta,
+            _first_variance(method, variance_weights, backcast),
+            observations,
+        )
+        previous = sigma2[:-1]
+
+        if method == "garch":
+            columns = [ones, squared, previous]
+            first = [1.0, backcast, backcast]
+        elif method == "igarch":
+            # Beta is 1 - Alpha, so Alpha also takes the previous variance away.
+            columns = [ones, squared - previous]
+            first = [1.0, 0.0]
+        else:
+            columns = [ones, squared, negative * squared, previous]
+            first = [1.0, backcast, backcast / 2, backcast]
+
+        mean_columns = (2 * coefficient * lagged)[:, None] * lagged_derivatives
+        derivatives = _linear_recursion_derivatives(
+            np.column_stack([*columns, mean_columns]), first + mean_first, beta
+        )
+    else:
+        omega, alpha, gamma, beta, power = _power_weights(method, variance_weights)
+        base = np.abs(lagged) - gamma * lagged
+        shocks = base**power
+        positive = base > 0
+        log_base = np.where(positive, np.log(np.where(positive, base, 1.0)), 0.0)
+        # The derivative of the shock with respect to its base, zero at a residual of zero.
+        slope = np.where(positive, power * shocks / np.where(positive, base, 1.0), 0.0)
+        start = backcast ** (power / 2)
+        powered = _linear_variance_recursion(
+            omega + alpha * shocks, beta, omega + (alpha + beta) * start, observations
+        )
+
+        # The derivatives with respect to Omega, Alpha, Gamma, Beta and Delta, of which every model takes its own.  # noqa: E501
+        columns = [
+            ones,
+            shocks,
+            -alpha * slope * lagged,
+            powered[:-1],
+            alpha * shocks * log_base,
+        ]
+        first = [
+            1.0,
+            start,
+            0.0,
+            start,
+            (alpha + beta) * start * math.log(backcast) / 2,
+        ]
+        kept = {
+            "aparch": [0, 1, 2, 3, 4],
+            "tgarch": [0, 1, 2, 3],
+            "ngarch": [0, 1, 3, 4],
+        }[method]
+        mean_columns = (alpha * slope * (np.sign(lagged) - gamma))[
+            :, None
+        ] * lagged_derivatives
+        power_derivatives = _linear_recursion_derivatives(
+            np.column_stack([*(columns[index] for index in kept), mean_columns]),
+            [first[index] for index in kept] + mean_first,
+            beta,
+        )
+
+        sigma2 = powered ** (2 / power)
+        derivatives = (2 / power) * (sigma2 / powered)[:, None] * power_derivatives
+        if method != "tgarch":
+            # sigma^2 = p^(2 / Delta) also depends on Delta directly, Delta being the last variance weight.  # noqa: E501
+            derivatives[:, len(variance_weights) - 1] -= (
+                2 / power**2 * sigma2 * np.log(powered)
+            )
+
+    z = residuals / np.sqrt(sigma2)
+    density_slope, distribution_score = _log_density_derivatives(
+        z, distribution, distribution_weights
+    )
+
+    gradient = (-0.5 * (density_slope * z + 1) / sigma2) @ derivatives
+    gradient[len(variance_weights) :] += (
+        density_slope / np.sqrt(sigma2)
+    ) @ residual_derivatives
+
+    return np.concatenate([gradient, distribution_score.sum(axis=0)])
+
+
 @np.errstate(over="ignore", invalid="ignore", divide="ignore")
 def get_garch_family_log_likelihood(
     returns: np.ndarray,
@@ -2501,8 +2911,15 @@ def get_garch_family_weights(
     that shares most of its returns with the previous one peaks close to the previous
     weights, and one search takes a fraction of the 33 of the multi-start search. A local
     search can stay on a bound the previous optimum sat on, or stop short along it, so a fit
-    that starts or ends on a bound also runs the multi-start search of a fit without
-    starting weights and keeps the higher likelihood.
+    that starts or ends on a bound (or does not converge) also runs the multi-start search
+    of a fit without starting weights and keeps the higher likelihood. A fall in the
+    likelihood from one window to the next is no sign of a missed optimum: the windows
+    differ by their returns, and a local optimum the search stays in can have a likelihood
+    as high as the previous window's.
+
+    The weights of the latest fits are kept by the returns and the settings (see
+    GARCH_FAMILY_WEIGHTS_CACHE), so the variance, forecast and parameters of one series fit
+    the model once.
 
     GARCH, GJR-GARCH and EGARCH with normal innovations and a zero mean are fitted by
     `get_garch_weights`, `get_gjr_garch_weights` and `get_egarch_weights`. Every other
@@ -2557,6 +2974,39 @@ def get_garch_family_weights(
     warm_start = starting_weights is not None and bool(
         np.all(np.isfinite(starting_weights))
     )
+    key = (
+        *_series_key(returns),
+        t,
+        method,
+        distribution,
+        mean,
+        tuple(np.round(starting_weights, 12)) if warm_start else None,
+        _series_key(realized_measure) if method == "realized" else None,
+    )
+
+    return _cached_weights(
+        GARCH_FAMILY_WEIGHTS_CACHE,
+        GARCH_FAMILY_WEIGHTS_CACHE_LOCK,
+        key,
+        lambda: _fit_garch_family_weights(
+            returns, method, distribution, mean, t, starting_weights, realized_measure
+        ),
+    )
+
+
+def _fit_garch_family_weights(
+    returns: np.ndarray,
+    method: str,
+    distribution: str,
+    mean: str,
+    t: int | None,
+    starting_weights: np.ndarray | None,
+    realized_measure: np.ndarray | None,
+) -> np.ndarray:
+    """Fits the weights of `get_garch_family_weights`, which keeps them in its cache."""
+    warm_start = starting_weights is not None and bool(
+        np.all(np.isfinite(starting_weights))
+    )
 
     if distribution == "normal" and mean == "zero" and not warm_start:
         if method == "garch":
@@ -2567,25 +3017,6 @@ def get_garch_family_weights(
             return get_egarch_weights(returns, t)
 
     returns = returns[:t] if t is not None else returns
-    key = (
-        hashlib.sha256(np.ascontiguousarray(returns).tobytes()).hexdigest(),
-        len(returns),
-        method,
-        distribution,
-        mean,
-        tuple(np.round(starting_weights, 12)) if warm_start else None,
-        (
-            hashlib.sha256(np.ascontiguousarray(realized_measure).tobytes()).hexdigest()
-            if method == "realized"
-            else None
-        ),
-    )
-    with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
-        cached = GARCH_FAMILY_WEIGHTS_CACHE.get(key)
-        if cached is not None:
-            GARCH_FAMILY_WEIGHTS_CACHE.move_to_end(key)
-            return cached.copy()
-
     scale = float(np.std(returns))
     scale = scale if scale > 0 else 1.0
     scaled = returns / scale
@@ -2655,6 +3086,16 @@ def get_garch_family_weights(
         )
         return -log_likelihood if np.isfinite(log_likelihood) else np.inf
 
+    def gradient(weights):
+        return -_garch_family_score(
+            scaled, weights, method, distribution, mean, backcast
+        )
+
+    gradient = (
+        gradient
+        if method in ANALYTIC_SCORE_METHODS and mean in ANALYTIC_SCORE_MEANS
+        else None
+    )
     model_name = f"{method} ({distribution}, {mean} mean)"
 
     if warm_start:
@@ -2662,7 +3103,12 @@ def get_garch_family_weights(
         lower = np.array([bound[0] for bound in bounds])
         span = np.array([bound[1] for bound in bounds]) - lower
         weights = _fit_multi_start(
-            objective, bounds, initial_guess, model_name, number_of_points=0
+            objective,
+            bounds,
+            initial_guess,
+            model_name,
+            number_of_points=0,
+            gradient=gradient,
         )
         value = objective(weights) if np.all(np.isfinite(weights)) else np.inf
         on_bound = [
@@ -2678,20 +3124,16 @@ def get_garch_family_weights(
                 bounds,
                 variance_guess + mean_guess + distribution_guess,
                 model_name,
+                gradient=gradient,
             )
             if np.all(np.isfinite(multi_start)) and objective(multi_start) < value:
                 weights = multi_start
     else:
-        weights = _fit_multi_start(objective, bounds, initial_guess, model_name)
+        weights = _fit_multi_start(
+            objective, bounds, initial_guess, model_name, gradient=gradient
+        )
 
-    weights = _rescale_weights(weights, method, mean, scale)
-
-    with GARCH_FAMILY_WEIGHTS_CACHE_LOCK:
-        GARCH_FAMILY_WEIGHTS_CACHE[key] = weights.copy()
-        if len(GARCH_FAMILY_WEIGHTS_CACHE) > EGARCH_WEIGHTS_CACHE_SIZE:
-            GARCH_FAMILY_WEIGHTS_CACHE.popitem(last=False)
-
-    return weights
+    return _rescale_weights(weights, method, mean, scale)
 
 
 def _garch_family_path(
@@ -4040,8 +4482,9 @@ def get_garch_family_rolling_forecast(
       the last refit on or before t, run over the returns from the start of that fit's window
 
     The first fit is the multi-start search of `get_garch_family_weights`; every later fit
-    starts a local search from the previous weights, and a fit that starts or ends on a bound
-    also runs the multi-start search (see `get_garch_family_weights`). The recursion of a
+    starts a local search from the previous weights, and a fit that starts or ends on a bound,
+    or does not converge, also runs the multi-start search and keeps the higher likelihood
+    (see `get_garch_family_weights`). The recursion of a
     refit starts from the backcast of its own window, as in the fit.
 
     Without `window_size`, the model is fitted once on every return and the result is the

@@ -213,21 +213,38 @@ def get_row_correlation(
         pd.Series: The correlation per row, NaN for a row with too few values or without
         variation.
     """
-    both = first.notna() & second.notna()
-    first, second = first.where(both), second.where(both)
-
-    first_deviation = first.sub(first.mean(axis=1), axis=0)
-    second_deviation = second.sub(second.mean(axis=1), axis=0)
-
-    covariance = (first_deviation * second_deviation).sum(axis=1, min_count=1)
-    scale = np.sqrt(
-        (first_deviation**2).sum(axis=1, min_count=1)
-        * (second_deviation**2).sum(axis=1, min_count=1)
+    # On the numpy arrays, a row at a time for all rows at once: the analyses call this for
+    # every factor and horizon, where the pandas operations per row cost more than the sums.
+    first_values = first.to_numpy(dtype=float)
+    second_values = second.reindex(index=first.index, columns=first.columns).to_numpy(
+        dtype=float
     )
+    both = ~np.isnan(first_values) & ~np.isnan(second_values)
+    observations = both.sum(axis=1)
 
-    correlation = covariance / scale.replace(0, np.nan)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        first_values = np.where(both, first_values, 0.0)
+        second_values = np.where(both, second_values, 0.0)
+        first_deviation = np.where(
+            both,
+            first_values - first_values.sum(axis=1)[:, None] / observations[:, None],
+            0.0,
+        )
+        second_deviation = np.where(
+            both,
+            second_values - second_values.sum(axis=1)[:, None] / observations[:, None],
+            0.0,
+        )
 
-    return correlation.where(both.sum(axis=1) >= minimum_observations)
+        covariance = (first_deviation * second_deviation).sum(axis=1)
+        scale = np.sqrt(
+            (first_deviation**2).sum(axis=1) * (second_deviation**2).sum(axis=1)
+        )
+        correlation = covariance / np.where(scale == 0, np.nan, scale)
+
+    correlation[observations < max(minimum_observations, 1)] = np.nan
+
+    return pd.Series(correlation, index=first.index)
 
 
 def get_information_coefficient(

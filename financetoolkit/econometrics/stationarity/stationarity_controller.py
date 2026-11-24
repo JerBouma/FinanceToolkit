@@ -228,16 +228,16 @@ class StationarityEconometrics:
 
         Which returns:
 
-        |                       |      EURUSD |     USDJPY |      GBPUSD |
-        |:----------------------|------------:|-----------:|------------:|
-        | ADF Statistic         |   -1.83568  |   -1.68762 |   -1.81162  |
-        | P-Value               |    0.362896 |    0.4375  |    0.374708 |
-        | Lags Used             |    5        |    0       |    2        |
-        | Observations          | 1345        | 1351       | 1349        |
-        | Critical Value 1%     |   -3.43522  |   -3.4352  |   -3.43521  |
-        | Critical Value 5%     |   -2.86369  |   -2.86368 |   -2.86368  |
-        | Critical Value 10%    |   -2.56792  |   -2.56791 |   -2.56791  |
-        | Reject Unit Root (5%) |    0        |    0       |    0        |
+        |                       |    EURUSD |    USDJPY |    GBPUSD |
+        |:----------------------|----------:|----------:|----------:|
+        | ADF Statistic         |   -2.0711 |   -1.6878 |   -1.8861 |
+        | P-Value               |    0.2563 |    0.4374 |    0.3386 |
+        | Lags Used             |    2      |    0      |    0      |
+        | Observations          | 1336      | 1351      | 1343      |
+        | Critical Value 1%     |   -3.4353 |   -3.4352 |   -3.4352 |
+        | Critical Value 5%     |   -2.8637 |   -2.8637 |   -2.8637 |
+        | Critical Value 10%    |   -2.5679 |   -2.5679 |   -2.5679 |
+        | Reject Unit Root (5%) |    0      |    0      |    0      |
         """
         if method not in (
             "augmented_dickey_fuller",
@@ -494,8 +494,8 @@ class StationarityEconometrics:
 
         |               |   Engle-Granger Statistic |   P-Value |   Critical Value 5% | Cointegrated (5%)   |
         |:--------------|--------------------------:|----------:|--------------------:|:--------------------|
-        | ('KO', 'PEP') |                   -1.0266 |    0.8977 |              -3.341 | False               |
-        | ('PEP', 'KO') |                   -2.0565 |    0.4991 |              -3.341 | False               |
+        | ('KO', 'PEP') |                   -1.0287 |    0.8973 |              -3.341 | False               |
+        | ('PEP', 'KO') |                   -2.0562 |    0.4993 |              -3.341 | False               |
         """
         period = period if period else "daily"
         prices = self._get_series_column(period, column)

@@ -1270,6 +1270,7 @@ class StatisticsEconometrics:
             include_benchmark=include_benchmark,
         )
 
+        rolling = None
         if method in ["sample", "approximate"]:
             function = (
                 entropy_model.get_sample_entropy
@@ -1277,6 +1278,12 @@ class StatisticsEconometrics:
                 else entropy_model.get_approximate_entropy
             )
             options = {"order": order or 2, "tolerance": tolerance}
+            # The windows share their comparisons of the values, so they are counted at once.
+            rolling = (
+                entropy_model.get_rolling_sample_entropy
+                if method == "sample"
+                else entropy_model.get_rolling_approximate_entropy
+            )
         elif method in ["permutation", "svd"]:
             function = (
                 entropy_model.get_permutation_entropy
@@ -1306,7 +1313,13 @@ class StatisticsEconometrics:
                 "'shannon', 'lempel_ziv' or 'kontoyiannis'."
             )
 
-        entropy = calculate_per_window(data, function, window, **options)
+        entropy = calculate_per_window(
+            data,
+            function,
+            window,
+            rolling=rolling,
+            **options,
+        )
 
         return apply_rounding(
             entropy, rounding if rounding is not None else self._rounding

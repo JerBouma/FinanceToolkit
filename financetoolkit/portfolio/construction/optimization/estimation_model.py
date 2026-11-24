@@ -1274,10 +1274,12 @@ def get_bootstrap_indices(
     method: str = "stationary",
     block_size: int = 3,
     generator: np.random.Generator | None = None,
+    simulations: int | None = None,
 ) -> np.ndarray:
     """
-    The periods of one bootstrapped history of the same length, drawn in blocks so that
-    the dependence between consecutive returns (volatility clustering) survives.
+    The periods of one bootstrapped history of the same length (or of `simulations` of
+    them), drawn in blocks so that the dependence between consecutive returns (volatility
+    clustering) survives.
 
     - "stationary": the stationary bootstrap of Politis and Romano (1994), blocks of a
       random length with a geometric distribution of mean block_size: every period
@@ -1304,28 +1306,50 @@ def get_bootstrap_indices(
             to 3.
         generator (np.random.Generator | None, optional): The random number generator.
             Defaults to None, a new unseeded one.
+        simulations (int | None, optional): The number of histories, each drawn from the
+            generator in turn, so that they are the histories of as many calls with one
+            history each. Defaults to None, one history.
 
     Returns:
-        np.ndarray: The T periods, numbered from 0, of the bootstrapped history.
+        np.ndarray: The T periods, numbered from 0, of the bootstrapped history, or a row of
+        them per history with `simulations`.
     """
     if not 1 <= block_size < periods:
         raise ValueError(
             f"The block size must lie between 1 and {periods - 1} for {periods} periods."
         )
     generator = generator if generator is not None else np.random.default_rng()
+    count = 1 if simulations is None else simulations
+    time = np.arange(periods)
     if method == "stationary":
-        starts = generator.random(periods) < 1 / block_size
-        starts[0] = True
-        indices = np.empty(periods, dtype=int)
-        random = generator.integers(0, periods, size=periods)
-        for t in range(periods):
-            indices[t] = random[t] if starts[t] else (indices[t - 1] + 1) % periods
-        return indices
+        # The draws of every history in turn: whether each period starts a new block, then
+        # the period each block would start at.
+        draws = [
+            (
+                generator.random(periods) < 1 / block_size,
+                generator.integers(0, periods, size=periods),
+            )  # noqa: E501
+            for _ in range(count)
+        ]
+        starts = np.array([new_block for new_block, _ in draws]).reshape(count, periods)
+        random = np.array([first for _, first in draws]).reshape(count, periods)
+        starts[:, 0] = True
+        # Every period continues the block of the last start before it (or on it), one
+        # period further for every period since that start.
+        block_start = np.maximum.accumulate(np.where(starts, time, 0), axis=1)
+        indices = (
+            np.take_along_axis(random, block_start, axis=1) + time - block_start
+        ) % periods
+        return indices[0] if simulations is None else indices
     blocks = -(-periods // block_size)
     highest = periods if method == "circular" else periods - block_size + 1
-    starts = generator.integers(0, highest, size=blocks)
-    indices = (starts[:, None] + np.arange(block_size)[None, :]).ravel()[:periods]
-    return indices % periods
+    starts = np.array(
+        [generator.integers(0, highest, size=blocks) for _ in range(count)]
+    ).reshape(count, blocks)
+    indices = (starts[:, :, None] + np.arange(block_size)).reshape(count, -1)[
+        :, :periods
+    ] % periods
+    return indices[0] if simulations is None else indices
 
 
 def get_bootstrap_estimates(
@@ -1397,11 +1421,16 @@ def get_bootstrap_estimates(
 
     means = np.empty((simulations, assets))
     covariances = np.empty((simulations, assets, assets))
+    indices = (
+        get_bootstrap_indices(periods, method, block_size, generator, simulations)
+        if method != "normal"
+        else None
+    )
     for simulation in range(simulations):
         history = (
             generator.multivariate_normal(average, sample, size=periods)
-            if method == "normal"
-            else values[get_bootstrap_indices(periods, method, block_size, generator)]
+            if indices is None
+            else values[indices[simulation]]
         )
         means[simulation] = history.mean(axis=0)
         covariances[simulation] = np.cov(history, rowvar=False)

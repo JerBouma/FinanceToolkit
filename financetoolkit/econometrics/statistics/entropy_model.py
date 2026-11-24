@@ -15,6 +15,10 @@ from financetoolkit.helpers import delay_embedding
 # them about three times as fast as one large block for a window of a few hundred values.
 DISTANCE_BLOCK = 65_536
 
+# The most cells of the grid of windows by radii, and of the pairs of templates, that the
+# rolling sample entropy holds at once (see get_rolling_pair_counts): 16 MB of integers each.
+ENTROPY_GRID_CELLS = 2_097_152
+
 
 def count_template_matches(
     values: np.ndarray, length: int, radius: float, number: int | None = None
@@ -176,6 +180,245 @@ def get_approximate_entropy(
         phi.append(np.mean(np.log(counts / len(counts))))
 
     return float(phi[0] - phi[1])
+
+
+def get_rolling_pair_counts(
+    values: np.ndarray, window: int, length: int, number: int, radii: np.ndarray
+) -> np.ndarray:
+    """
+    Count, for every trailing window of `window` values, the pairs i < j of its first
+    `number` templates of `length` consecutive values within a Chebyshev distance of that
+    window's radius: the totals of `count_template_matches` without the matches of a
+    template with itself, halved.
+
+    A pair of templates (i, j) belongs to the windows that start from j - number + 1 to i,
+    and matches in those whose radius is at least its distance. Every pair is therefore an
+    event over a range of windows and a range of radii, and the counts of all windows follow
+    from one two-dimensional cumulative sum over the windows and the ranks of their radii,
+    rather than from comparing the templates of every window again. The distances are taken
+    gap by gap (j - i), as the largest abs(x_(i+k) - x_(j+k)) over k, in blocks that keep
+    the memory bounded.
+
+    Args:
+        values (np.ndarray): The series, without missing values.
+        window (int): The number of values per window.
+        length (int): The number of values per template.
+        number (int): The number of templates per window, from the start of the window.
+        radii (np.ndarray): The tolerance r of every window, len(values) - window + 1 of them.
+
+    Returns:
+        np.ndarray: The number of pairs within r per window.
+    """
+    windows = len(radii)
+    templates = windows - 1 + number
+    sorted_radii = np.sort(radii)
+    # A pair matches in a window when the radii below its distance are at most the radii below the window's radius.  # noqa: E501
+    radius_ranks = np.searchsorted(sorted_radii, radii, "left")
+    counts = np.zeros(windows, dtype=np.int64)
+    chunk = max(1, min(windows, ENTROPY_GRID_CELLS // (windows + 1)))
+    gap_block = max(1, ENTROPY_GRID_CELLS // (chunk + number))
+
+    for first in range(0, windows, chunk):
+        last = min(windows, first + chunk)
+        rows = last - first + 1
+        grid = np.zeros(rows * (windows + 1), dtype=np.int64)
+        # The pairs of these windows start at a template from `first` and end before the last window's end.  # noqa: E501
+        starts = np.arange(first, min(last + number - 1, templates))
+
+        for gap_start in range(1, number, gap_block):
+            gaps = np.arange(gap_start, min(number, gap_start + gap_block))[:, None]
+            ends = starts[None, :] + gaps
+            valid = ends <= min(last + number - 2, templates - 1)
+            beginnings = np.broadcast_to(starts[None, :], ends.shape)[valid]
+            ends = ends[valid]
+
+            distances = np.abs(values[beginnings] - values[ends])
+            for offset in range(1, length):
+                np.maximum(
+                    distances,
+                    np.abs(values[beginnings + offset] - values[ends + offset]),
+                    out=distances,
+                )
+            keys = np.searchsorted(sorted_radii, distances, "left")
+            entering = np.maximum(ends - number + 1, first) - first
+            leaving = np.minimum(beginnings, last - 1) + 1 - first
+            grid += np.bincount(
+                entering * (windows + 1) + keys, minlength=grid.size
+            ) - np.bincount(leaving * (windows + 1) + keys, minlength=grid.size)
+
+        grid = grid.reshape(rows, windows + 1).cumsum(axis=0).cumsum(axis=1)
+        counts[first:last] = grid[np.arange(last - first), radius_ranks[first:last]]
+
+    return counts
+
+
+def get_rolling_template_matches(
+    values: np.ndarray,
+    window: int,
+    length: int,
+    number: int,
+    radii: np.ndarray,
+    per_template: bool = False,
+) -> np.ndarray:
+    """
+    Count the template matches of `count_template_matches` in every trailing window of
+    `window` values at once: for each window, the first `number` templates of `length`
+    consecutive values within a Chebyshev distance of that window's radius.
+
+    The distance of two templates i and j depends on the values only, not on the window,
+    so the distances of all pairs are taken once for a block of windows and every window
+    counts the pairs of its own templates against its own radius. The distance of the
+    templates starting at i and j is the largest of abs(x_(i+k) - x_(j+k)), which follows
+    from the differences of the single values along the diagonals; a pair is counted with
+    i < j only (the distance is symmetric), the matches of a template with itself added
+    back where needed.
+
+    Args:
+        values (np.ndarray): The series, without missing values.
+        window (int): The number of values per window.
+        length (int): The number of values per template.
+        number (int): The number of templates per window, from the start of the window.
+        radii (np.ndarray): The tolerance r of every window, len(values) - window + 1 of them.
+        per_template (bool, optional): Whether to return the count of every template (itself
+            included) rather than the number of matching pairs. Defaults to False.
+
+    Returns:
+        np.ndarray: The number of pairs i < j within r per window, or (with per_template)
+        the number of templates within r of each template per window, a row per window.
+    """
+    windows = len(values) - window + 1
+    counts = (
+        np.zeros((windows, number), dtype=np.int64)
+        if per_template
+        else np.zeros(windows, dtype=np.int64)
+    )
+    block = max(1, number)
+
+    for first in range(0, windows, block):
+        size = min(block, windows - first)
+        templates = size - 1 + number
+        stretch = values[first : first + templates + length - 1]
+        differences = np.abs(stretch[:, None] - stretch[None, :])
+        distances = differences[:templates, :templates].copy()
+        for offset in range(1, length):
+            np.maximum(
+                distances,
+                differences[offset : offset + templates, offset : offset + templates],
+                out=distances,
+            )
+        # Each pair once, with i < j: the diagonal and the lower triangle never match.
+        distances[np.tril_indices(templates)] = np.inf
+
+        for position in range(size):
+            close = (
+                distances[position : position + number, position : position + number]
+                <= radii[first + position]
+            )
+            if per_template:
+                counts[first + position] = 1 + close.sum(axis=1) + close.sum(axis=0)
+            else:
+                counts[first + position] = np.count_nonzero(close)
+
+    return counts
+
+
+def get_rolling_sample_entropy(
+    data: pd.Series | np.ndarray, window: int, order: int = 2, tolerance: float = 0.2
+) -> np.ndarray:
+    """
+    Calculate the Sample Entropy (see `get_sample_entropy`) of every trailing window of
+    `window` observations, with the template matches of all windows counted at once (see
+    `get_rolling_template_matches`). Gives the same values as `get_sample_entropy` on each
+    window.
+
+    Args:
+        data (pd.Series | np.ndarray): The series, e.g. returns, without missing values.
+        window (int): The number of observations per window.
+        order (int, optional): The template length m. Defaults to 2.
+        tolerance (float, optional): The tolerance r as a multiple of the standard
+            deviation of the window. Defaults to 0.2.
+
+    Returns:
+        np.ndarray: The sample entropy of every window, from the window ending at
+        observation `window` to the one ending at the last, NaN where it is undefined.
+    """
+    values = np.asarray(data, dtype=float)
+    windows = len(values) - window + 1
+    if windows < 1:
+        return np.array([])
+    if window <= order + 1 or not np.all(np.isfinite(values)):
+        return np.array(
+            [
+                get_sample_entropy(values[end - window : end], order, tolerance)
+                for end in range(window, len(values) + 1)
+            ]
+        )
+
+    radii = np.array(
+        [
+            tolerance * np.std(values[end - window : end], ddof=1)
+            for end in range(window, len(values) + 1)
+        ]
+    )
+    number = window - order
+
+    # Every pair i < j counts twice in the totals of get_sample_entropy (once from each template).  # noqa: E501
+    total = 2 * get_rolling_pair_counts(values, window, order, number, radii)
+    longer_total = 2 * get_rolling_pair_counts(values, window, order + 1, number, radii)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        entropy = -np.log(longer_total / total)
+
+    return np.where((total == 0) | (longer_total == 0), np.nan, entropy)
+
+
+def get_rolling_approximate_entropy(
+    data: pd.Series | np.ndarray, window: int, order: int = 2, tolerance: float = 0.2
+) -> np.ndarray:
+    """
+    Calculate the Approximate Entropy (see `get_approximate_entropy`) of every trailing
+    window of `window` observations, with the template matches of all windows counted at
+    once (see `get_rolling_template_matches`). Gives the same values as
+    `get_approximate_entropy` on each window.
+
+    Args:
+        data (pd.Series | np.ndarray): The series, e.g. returns, without missing values.
+        window (int): The number of observations per window.
+        order (int, optional): The template length m. Defaults to 2.
+        tolerance (float, optional): The tolerance r as a multiple of the standard
+            deviation of the window. Defaults to 0.2.
+
+    Returns:
+        np.ndarray: The approximate entropy of every window, from the window ending at
+        observation `window` to the one ending at the last.
+    """
+    values = np.asarray(data, dtype=float)
+    windows = len(values) - window + 1
+    if windows < 1:
+        return np.array([])
+    if window <= order + 1 or not np.all(np.isfinite(values)):
+        return np.array(
+            [
+                get_approximate_entropy(values[end - window : end], order, tolerance)
+                for end in range(window, len(values) + 1)
+            ]
+        )
+
+    radii = np.array(
+        [
+            tolerance * np.std(values[end - window : end], ddof=1)
+            for end in range(window, len(values) + 1)
+        ]
+    )
+
+    phi = []
+    for length in (order, order + 1):
+        counts = get_rolling_template_matches(
+            values, window, length, window - length + 1, radii, per_template=True
+        )
+        phi.append(np.mean(np.log(counts / counts.shape[1]), axis=1))
+
+    return phi[0] - phi[1]
 
 
 def get_ordinal_patterns(

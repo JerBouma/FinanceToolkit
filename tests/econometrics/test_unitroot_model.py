@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics.stationarity import unitroot_model
 
@@ -319,3 +320,34 @@ def test_get_phillips_perron_test_rejects_from_the_p_value():
     assert result["P-Value"] < 0.05  # noqa: PLR2004
     assert result["Phillips-Perron Statistic"] > result["Critical Value 5%"]
     assert result["Reject Unit Root (5%)"]
+
+
+def test_get_adf_regression_matches_statsmodels_adfuller():
+    # The lag search from one QR decomposition picks the lag of statsmodels' search over a regression per lag, with the same statistic, observations and AIC.  # noqa: E501
+    stattools = pytest.importorskip("statsmodels.tsa.stattools")
+    rng = np.random.default_rng(7)
+
+    for observations in [15, 40, 120, 500, 1500]:
+        shocks = rng.standard_t(5, observations)
+        stationary = np.zeros(observations)
+        for i in range(1, observations):
+            stationary[i] = 0.6 * stationary[i - 1] + shocks[i]
+
+        for values in [np.cumsum(shocks), stationary, np.round(np.cumsum(shocks))]:
+            for regression in ["n", "c", "ct"]:
+                max_lag = unitroot_model.default_max_lag(observations)
+                fast = unitroot_model.get_adf_regression(values, max_lag, regression)
+                statistic, _, lag, used, _, criterion = stattools.adfuller(
+                    values, maxlag=max_lag, regression=regression, autolag="AIC"
+                )
+
+                assert fast is not None
+                assert fast[1:3] == (lag, used)
+                np.testing.assert_allclose(fast[0], statistic, rtol=0, atol=1e-10)
+                np.testing.assert_allclose(fast[3], criterion, rtol=1e-12)
+
+
+def test_get_adf_regression_leaves_singular_designs_to_statsmodels():
+    # A constant series has a design with a column of zeros, and a lag range statsmodels refuses stays refused.  # noqa: E501
+    assert unitroot_model.get_adf_regression(np.ones(50), 3) is None
+    assert unitroot_model.get_adf_regression(np.arange(30.0), 20) is None

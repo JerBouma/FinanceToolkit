@@ -1326,6 +1326,7 @@ def calculate_per_window(
     data: pd.DataFrame,
     function: Callable[..., Any],
     window: int | None = None,
+    rolling: Callable[..., Any] | None = None,
     **kwargs,
 ) -> pd.Series | pd.DataFrame:
     """
@@ -1339,6 +1340,10 @@ def calculate_per_window(
             numpy array followed by `kwargs` and returns a number or a Series of numbers.
         window (int | None, optional): The number of observations per window. Defaults to
             None, which measures the full history of every series once.
+        rolling (Callable[..., Any] | None, optional): The same measure of every trailing
+            window at once, which takes the values of a series, the window and `kwargs` and
+            returns one number per window (such as an entropy whose comparisons the windows
+            share). Defaults to None, which applies `function` to every window.
         **kwargs: The further keyword arguments of the measure.
 
     Returns:
@@ -1359,10 +1364,14 @@ def calculate_per_window(
             results[series] = function(values, **kwargs)
             continue
 
-        measures = [
-            function(values[end - window : end], **kwargs)
-            for end in range(window, len(values) + 1)
-        ]
+        measures = (
+            list(rolling(values, window, **kwargs))
+            if rolling is not None
+            else [
+                function(values[end - window : end], **kwargs)
+                for end in range(window, len(values) + 1)
+            ]
+        )
         dates = column.index[window - 1 :]
         results[series] = (
             pd.DataFrame(measures, index=dates)

@@ -166,6 +166,29 @@ def _get_coefficient_covariance(
     return correction * ((bread @ (cluster_scores.T @ cluster_scores)) @ bread.T)
 
 
+def get_pseudo_inverse(x: np.ndarray) -> tuple[np.ndarray, int]:
+    """
+    Calculate the Moore-Penrose pseudo-inverse X⁺ of a design matrix and its rank, from the
+    singular value decomposition X = USV': X⁺ = VS⁺U', with S⁺ the reciprocals of the
+    singular values above PSEUDO_INVERSE_CUTOFF times the largest one (and zero for the
+    rest). X⁺y is the least squares solution of y on X; X⁺Y solves every column of Y at once,
+    such as the regressions of many assets on the same factors.
+
+    Args:
+        x (np.ndarray): The design matrix, shape `(n, k)`.
+
+    Returns:
+        tuple[np.ndarray, int]: The pseudo-inverse, shape `(k, n)`, and the rank of `x`.
+    """
+    left, singular_values, right = np.linalg.svd(x, full_matrices=False)
+    keep = singular_values > PSEUDO_INVERSE_CUTOFF * singular_values.max()
+    inverse_singular_values = np.zeros_like(singular_values)
+    inverse_singular_values[keep] = 1 / singular_values[keep]
+    pseudo_inverse = right.T @ (inverse_singular_values[:, None] * left.T)
+
+    return pseudo_inverse, int(np.linalg.matrix_rank(np.diag(singular_values)))
+
+
 def fit_least_squares(
     y: np.ndarray,
     x: np.ndarray,
@@ -272,12 +295,7 @@ def fit_least_squares(
     else:
         whitened_y, whitened_x, whitened_ones = y, x, np.ones(observations)
 
-    left, singular_values, right = np.linalg.svd(whitened_x, full_matrices=False)
-    keep = singular_values > PSEUDO_INVERSE_CUTOFF * singular_values.max()
-    inverse_singular_values = np.zeros_like(singular_values)
-    inverse_singular_values[keep] = 1 / singular_values[keep]
-    pseudo_inverse = right.T @ (inverse_singular_values[:, None] * left.T)
-    rank = int(np.linalg.matrix_rank(np.diag(singular_values)))
+    pseudo_inverse, rank = get_pseudo_inverse(whitened_x)
 
     coefficients = pseudo_inverse @ whitened_y
     fitted_values = x @ coefficients

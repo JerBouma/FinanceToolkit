@@ -707,6 +707,32 @@ def get_largest_lyapunov_exponent(
     )
 
 
+def _solve_least_squares(design: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """
+    Solve a stack of least squares problems min ||A_i x_i - y_i|| at once, with the minimum
+    norm solution x_i = V S⁺ U' y_i of the singular value decomposition A_i = U S V', as
+    np.linalg.lstsq solves one: singular values up to the machine precision times
+    max(rows, columns) of the largest count as zero.
+
+    Args:
+        design (np.ndarray): The designs A_i, shape (problems, rows, columns).
+        target (np.ndarray): The targets y_i, shape (problems, rows).
+
+    Returns:
+        np.ndarray: The solutions x_i, shape (problems, columns).
+    """
+    left, singular_values, right = np.linalg.svd(design, full_matrices=False)
+    cutoff = np.finfo(float).eps * max(design.shape[1:]) * singular_values[:, :1]
+    inverse = np.where(
+        singular_values > cutoff,
+        1 / np.where(singular_values > 0, singular_values, 1),
+        0,
+    )
+    projected = np.einsum("pij,pi->pj", left, target) * inverse
+
+    return np.einsum("pji,pj->pi", right, projected)
+
+
 def get_lyapunov_spectrum(
     data: pd.Series | np.ndarray,
     embedding: int = 10,
@@ -790,37 +816,72 @@ def get_lyapunov_spectrum(
     jacobians = np.empty((number, matrix_dimension, matrix_dimension))
     shift = np.eye(matrix_dimension, k=1)
     block_size = max(1, DISTANCE_BLOCK // (number * embedding))
+    embedded = values[: number + embedding - 1]
     for start in range(0, number, block_size):
-        block = vectors[start : start + block_size]
-        distances = np.abs(block[:, None, :] - vectors[None, :, :]).max(axis=2)
-        rows = np.arange(start, start + len(block))
+        rows = np.arange(start, min(start + block_size, number))
+        # The Chebyshev distance of X_i and X_j is the largest of abs(x_(i+k) - x_(j+k)) over k,
+        # so the differences of the single values are taken once and the distances follow as
+        # the maximum along the diagonals.
+        differences = np.abs(
+            embedded[start : start + len(rows) + embedding - 1, None]
+            - embedded[None, :]
+        )
+        distances = differences[: len(rows), :number].copy()
+        for offset in range(1, embedding):
+            np.maximum(
+                distances,
+                differences[offset : offset + len(rows), offset : offset + number],
+                out=distances,
+            )
         too_close = np.abs(rows[:, None] - np.arange(number)[None, :]) <= min_separation
         distances[too_close] = np.inf
         radii = np.partition(distances, neighbours_needed - 1, axis=1)[
             :, neighbours_needed - 1
         ]
+        within = distances <= radii[:, None]
+        jacobians[rows] = shift
 
-        for row, index in enumerate(rows):
-            neighbours = np.flatnonzero(distances[row] <= radii[row])
-            coefficients = np.linalg.lstsq(
-                coordinates[neighbours] - coordinates[index],
-                following[neighbours] - following[index],
+        # A vector without ties at its radius has exactly min_neighbors neighbours, so the
+        # least squares problems of those vectors have the same size and are solved at once
+        # (in the order of the neighbours in time, as one problem at a time would be).
+        exact = within.sum(axis=1) == neighbours_needed
+        if exact.any():
+            neighbours = np.sort(
+                np.argpartition(distances[exact], neighbours_needed - 1, axis=1)[
+                    :, :neighbours_needed
+                ],
+                axis=1,
+            )
+            centres = rows[exact]
+            jacobians[centres, -1] = _solve_least_squares(
+                coordinates[neighbours] - coordinates[centres][:, None, :],
+                following[neighbours] - following[centres][:, None],
+            )
+
+        for row in np.flatnonzero(~exact):
+            neighbours = np.flatnonzero(within[row])
+            jacobians[rows[row], -1] = np.linalg.lstsq(
+                coordinates[neighbours] - coordinates[rows[row]],
+                following[neighbours] - following[rows[row]],
                 rcond=None,
             )[0]
-            jacobians[index] = shift
-            jacobians[index, -1] = coefficients
 
+    # The m chains run side by side: step p decomposes the maps of i = chain + p * m of every
+    # chain that is that long, one stacked QR decomposition per step.
     totals = np.zeros(matrix_dimension)
     count = 0
-    for chain in range(step):
-        orthonormal = np.eye(matrix_dimension)
-        for index in range(chain, number, step):
-            orthonormal, upper = np.linalg.qr(jacobians[index] @ orthonormal)
-            diagonal = np.abs(np.diag(upper))
-            if (diagonal <= 0).any():
-                continue
-            totals += np.log(diagonal)
-            count += 1
+    orthonormal = np.broadcast_to(
+        np.eye(matrix_dimension), (step, matrix_dimension, matrix_dimension)
+    ).copy()
+    for first in range(0, number, step):
+        chains = min(step, number - first)
+        orthonormal[:chains], upper = np.linalg.qr(
+            jacobians[first : first + chains] @ orthonormal[:chains]
+        )
+        diagonal = np.abs(np.diagonal(upper, axis1=1, axis2=2))
+        valid = (diagonal > 0).all(axis=1)
+        totals += np.log(diagonal[valid]).sum(axis=0)
+        count += int(valid.sum())
 
     if count == 0:
         return pd.Series(np.nan, index=names)

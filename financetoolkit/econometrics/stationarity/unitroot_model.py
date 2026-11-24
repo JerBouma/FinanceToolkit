@@ -43,12 +43,120 @@ def default_max_lag(observations: int) -> int:
     return max(0, min(schwert, (observations - 5) // 3))
 
 
+# The smallest diagonal element of the triangular factor of an ADF design, relative to the
+# largest, at which the columns count as independent. Below it the regression is (nearly)
+# singular and the test falls back to statsmodels, whose pseudo-inverse handles that case.
+ADF_RANK_TOLERANCE = 1e-10
+
+
+def get_adf_regression(
+    values: np.ndarray, max_lag: int, regression: str = "c"
+) -> tuple[float, int, int, float] | None:
+    """
+    Calculate the statistic of the Augmented Dickey-Fuller test with the lag chosen by the
+    Akaike Information Criterion, as `statsmodels.tsa.stattools.adfuller` with
+    autolag="AIC" does, from one QR decomposition for the whole lag search.
+
+    statsmodels fits a regression for every candidate lag 0 to `max_lag` on the common
+    sample (the observations left after the largest lag), each through a pseudo-inverse.
+    Those regressions use the first columns of one design, ordered as the deterministic
+    terms, the lagged level and the lagged differences 1 to `max_lag`. With X = QR and
+    z = Q'dy, the residual sum of squares of the first p columns is
+
+    - RSS_p = ||dy - Qz||^2 + SUM(z_i^2 for i >= p)
+
+    so one decomposition gives all of them, and with them the AIC of every lag:
+
+    - AIC_p = n x (ln(2 x pi) + ln(RSS_p / n) + 1) + 2 x p
+
+    The chosen lag (the smallest with the lowest AIC) is refitted on its own, longer
+    sample, with the lagged level as the last column, where its t-statistic is
+    z_last x sign(R_last) / sigma, with sigma^2 = RSS / (n - p).
+
+    Args:
+        values (np.ndarray): The series, without missing values.
+        max_lag (int): The largest lag the search tries.
+        regression (str, optional): The deterministic terms, "n" (none), "c" (constant) or
+            "ct" (constant and trend). Defaults to "c".
+
+    Returns:
+        tuple[float, int, int, float] | None: The ADF statistic, the lag used, the number of
+        observations of the test regression and the AIC of that lag. None when statsmodels
+        would refuse the lag range, a column of the design is constant or the design is
+        (nearly) singular, cases left to statsmodels.
+    """
+    values = np.asarray(values, dtype=float)
+    observations = len(values)
+    trends = 0 if regression == "n" else len(regression)
+
+    if max_lag < 0 or max_lag > observations // 2 - trends - 1:
+        return None
+
+    differences = np.diff(values)
+
+    def design(lags: int, level_last: bool) -> tuple[np.ndarray, np.ndarray]:
+        rows = observations - 1 - lags
+        deterministic = [np.ones(rows), np.arange(1.0, rows + 1)][:trends]
+        level = [values[lags : observations - 1]]
+        lagged = [
+            differences[lags - lag : observations - 1 - lag]
+            for lag in range(1, lags + 1)
+        ]  # noqa: E501
+        columns = (
+            deterministic + lagged + level
+            if level_last
+            else deterministic + level + lagged
+        )
+        return np.column_stack(columns), differences[lags:]
+
+    def decompose(exog: np.ndarray, endog: np.ndarray):
+        # A constant level or lagged difference duplicates the constant, which statsmodels
+        # skips when adding the trend; such series go to statsmodels.
+        if np.any(np.ptp(exog[:, trends:], axis=0) == 0):
+            return None
+        q, r = np.linalg.qr(exog)
+        diagonal = np.abs(np.diag(r))
+        if diagonal.min() <= ADF_RANK_TOLERANCE * diagonal.max():
+            return None
+        projection = q.T @ endog
+        residual = endog - q @ projection
+        return r, projection, residual @ residual
+
+    exog, endog = design(max_lag, level_last=False)
+    decomposition = decompose(exog, endog)
+    if decomposition is None:
+        return None
+    _, projection, base = decomposition
+
+    rows = len(endog)
+    columns = trends + 1 + np.arange(max_lag + 1)
+    # The squares of z beyond the first p columns, for p = trends + 1 to trends + 1 + max_lag.
+    tail = np.concatenate([np.cumsum((projection**2)[::-1])[::-1], [0.0]])
+    residual_sums = base + tail[columns]
+    criteria = (
+        rows * (np.log(2 * np.pi) + np.log(residual_sums / rows) + 1) + 2 * columns
+    )
+    used_lag = int(np.argmin(criteria))
+
+    exog, endog = design(used_lag, level_last=True)
+    decomposition = decompose(exog, endog)
+    if decomposition is None or len(endog) <= exog.shape[1]:
+        return None
+    r, projection, residual_sum = decomposition
+    sigma = np.sqrt(residual_sum / (len(endog) - exog.shape[1]))
+    statistic = projection[-1] * np.sign(r[-1, -1]) / sigma
+
+    return float(statistic), used_lag, len(endog), float(criteria[used_lag])
+
+
 def get_augmented_dickey_fuller(
     series: pd.Series, max_lag: int | None = None, regression: str = "c"
 ) -> pd.Series:
     """
-    Calculate the Augmented Dickey-Fuller (ADF) test for a unit root, via
-    `statsmodels.tsa.stattools.adfuller`.
+    Calculate the Augmented Dickey-Fuller (ADF) test for a unit root, as
+    `statsmodels.tsa.stattools.adfuller` does, with the lag search of `get_adf_regression`
+    (the same lag and statistic from one decomposition) and statsmodels' MacKinnon p-values
+    and critical values.
 
     The test regresses the first difference of the series on its own lagged level and
     `p` lags of its own first difference:
@@ -103,21 +211,35 @@ def get_augmented_dickey_fuller(
         if len(values) < MINIMUM_TEST_OBSERVATIONS:
             raise ValueError("Too few observations for the test.")
 
-        # statsmodels 0.15 announces a switch to a result object in 0.16; the tuple layout used here is still returned until then and passing result_object would fail on 0.14.  # noqa: E501
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message="adfuller currently returns", category=FutureWarning
+        maximum = max_lag if max_lag is not None else default_max_lag(len(values))
+        # The lag search of statsmodels fits a regression per lag; the same search from one
+        # decomposition gives the same lag and statistic (see get_adf_regression).
+        fast = get_adf_regression(values, maximum, regression)
+
+        if fast is not None:
+            adf_statistic, used_lag, n_observations, _ = fast
+            p_value = stattools.mackinnonp(adf_statistic, regression=regression, N=1)
+            critical = stattools.mackinnoncrit(
+                N=1, regression=regression, nobs=n_observations
             )
-            adf_statistic, p_value, used_lag, n_observations, critical_values, _ = (
-                stattools.adfuller(
-                    values,
-                    maxlag=(
-                        max_lag if max_lag is not None else default_max_lag(len(values))
-                    ),
-                    regression=regression,
-                    autolag="AIC",
+            critical_values = {
+                "1%": critical[0],
+                "5%": critical[1],
+                "10%": critical[2],
+            }
+        else:
+            # statsmodels 0.15 announces a switch to a result object in 0.16; the tuple layout used here is still returned until then and passing result_object would fail on 0.14.  # noqa: E501
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="adfuller currently returns",
+                    category=FutureWarning,
                 )
-            )
+                adf_statistic, p_value, used_lag, n_observations, critical_values, _ = (
+                    stattools.adfuller(
+                        values, maxlag=maximum, regression=regression, autolag="AIC"
+                    )
+                )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(
             {

@@ -2,8 +2,12 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from financetoolkit.econometrics.stationarity import cointegration_model
+from financetoolkit.econometrics.stationarity import (
+    cointegration_model,
+    unitroot_model,
+)
 
 
 def test_get_engle_granger_cointegration_independent(recorder):
@@ -147,3 +151,38 @@ def test_cointegration_tests_need_enough_observations():
     assert np.isnan(engle_granger["P-Value"])
     assert not engle_granger["Cointegrated (5%)"]
     assert johansen["Trace Statistic"].isna().all()
+
+
+def test_get_engle_granger_cointegration_matches_statsmodels_coint():
+    # The residual-based test with the lag search from one decomposition gives statsmodels' coint statistic, p-value and critical values.  # noqa: E501
+    stattools = pytest.importorskip("statsmodels.tsa.stattools")
+    rng = np.random.default_rng(11)
+
+    for observations in [30, 250, 1000]:
+        common = np.cumsum(rng.standard_normal(observations))
+        independent = common + rng.standard_normal(observations)
+        for dependent in [
+            2 * common + rng.standard_normal(observations),
+            np.cumsum(rng.standard_normal(observations)),
+        ]:
+            result = cointegration_model.get_engle_granger_cointegration(
+                pd.Series(dependent), pd.Series(independent)
+            )
+            statistic, p_value, critical_values = stattools.coint(
+                dependent,
+                independent,
+                trend="c",
+                maxlag=unitroot_model.default_max_lag(observations),
+                autolag="aic",
+            )
+
+            np.testing.assert_allclose(
+                result["Engle-Granger Statistic"], statistic, rtol=0, atol=1e-10
+            )
+            np.testing.assert_allclose(result["P-Value"], p_value, rtol=0, atol=1e-10)
+            np.testing.assert_allclose(
+                result[
+                    ["Critical Value 1%", "Critical Value 5%", "Critical Value 10%"]
+                ].to_numpy(dtype=float),
+                critical_values,
+            )

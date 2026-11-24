@@ -11,6 +11,7 @@ from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.stationarity.unitroot_model import (
     MINIMUM_TEST_OBSERVATIONS,
     default_max_lag,
+    get_adf_regression,
 )
 
 JOHANSEN_MINIMUM_NUMBER_OF_SERIES = 2
@@ -20,13 +21,18 @@ MINIMUM_JOHANSEN_FREEDOM = 3
 # The conventional 5% significance level used for the "Cointegrated (5%)" flag.
 SIGNIFICANCE_LEVEL = 0.05
 
+# The R-squared of the cointegrating regression from which statsmodels' coint treats the two
+# series as (almost) perfectly collinear: 1 - 100 x the square root of machine precision.
+COLLINEAR_R_SQUARED = 1 - 100 * np.sqrt(np.finfo(float).eps)
+
 
 def get_engle_granger_cointegration(
     series_a: pd.Series, series_b: pd.Series, max_lag: int | None = None
 ) -> pd.Series:
     """
-    Calculate the Engle-Granger test for cointegration between two series, via
-    `statsmodels.tsa.stattools.coint`.
+    Calculate the Engle-Granger test for cointegration between two series, as
+    `statsmodels.tsa.stattools.coint` does, with the lag search of the ADF test on the
+    residuals from one decomposition (see `unitroot_model.get_adf_regression`).
 
     Two individually non-stationary series (e.g. two stock prices, each following a
     random walk) are cointegrated if some linear combination of them is stationary,
@@ -76,13 +82,34 @@ def get_engle_granger_cointegration(
         if len(dependent) < MINIMUM_TEST_OBSERVATIONS:
             raise ValueError("Too few observations for the test.")
 
-        eg_statistic, p_value, critical_values = stattools.coint(
-            dependent,
-            independent,
-            trend="c",
-            maxlag=max_lag if max_lag is not None else default_max_lag(len(dependent)),
-            autolag="aic",
+        maximum = max_lag if max_lag is not None else default_max_lag(len(dependent))
+
+        # The steps of statsmodels' coint, with the lag search of the ADF test on the
+        # residuals from one decomposition (see get_adf_regression), which gives the same
+        # lag and statistic. Collinear series and the cases get_adf_regression leaves to
+        # statsmodels go through coint itself.
+        design = np.column_stack([independent, np.ones(len(independent))])
+        coefficients = np.linalg.lstsq(design, dependent, rcond=None)[0]
+        residuals = dependent - design @ coefficients
+        deviations = dependent - dependent.mean()
+        r_squared = 1 - (residuals @ residuals) / (deviations @ deviations)
+        fast = (
+            get_adf_regression(residuals, maximum, "n")
+            if r_squared < COLLINEAR_R_SQUARED
+            else None
         )
+
+        if fast is not None:
+            eg_statistic = fast[0]
+            p_value = stattools.mackinnonp(eg_statistic, regression="c", N=2)
+            # One observation fewer, as statsmodels (and Stata's egranger) does.
+            critical_values = stattools.mackinnoncrit(
+                N=2, regression="c", nobs=len(dependent) - 1
+            )
+        else:
+            eg_statistic, p_value, critical_values = stattools.coint(
+                dependent, independent, trend="c", maxlag=maximum, autolag="aic"
+            )
     except (ValueError, np.linalg.LinAlgError):
         return pd.Series(
             {

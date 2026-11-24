@@ -1128,3 +1128,84 @@ def test_history_models_refuse_garch_in_mean():
         garch_model.validate_garch_family("figarch", "normal", "in_mean")
     with pytest.raises(ValueError, match="one-step"):
         garch_model._variance_step("figarch", [0.1, 0.2, 0.4, 0.5])
+
+
+@pytest.mark.parametrize("method", garch_model.ANALYTIC_SCORE_METHODS)
+@pytest.mark.parametrize("mean", garch_model.ANALYTIC_SCORE_MEANS)
+@pytest.mark.parametrize(
+    "distribution",
+    ["normal", "t", "skewt", "skewt_fernandez_steel", "ged", "johnson_su"],
+)
+def test_analytic_score_matches_finite_differences(method, mean, distribution):
+    # The gradient the fits pass to L-BFGS-B is that of the log-likelihood they maximise: central differences of the log-likelihood agree to their own accuracy.  # noqa: E501
+    returns = simulate_garch(0.05, 0.08, 0.88, n=800, seed=3)
+    variance = {
+        "garch": [0.05, 0.08, 0.88],
+        "igarch": [0.03, 0.1],
+        "gjr": [0.05, 0.04, 0.1, 0.85],
+        "aparch": [0.05, 0.08, 0.3, 0.85, 1.6],
+        "tgarch": [0.05, 0.08, 0.3, 0.85],
+        "ngarch": [0.05, 0.08, 0.85, 1.4],
+    }[method]
+    mean_weights = {"zero": [], "constant": [0.03], "arma": [0.02, 0.1, -0.05]}[mean]
+    shape = {
+        "normal": [],
+        "t": [7.0],
+        "skewt": [7.0, -0.1],
+        "skewt_fernandez_steel": [7.0, 0.9],
+        "ged": [1.4],
+        "johnson_su": [2.0, 0.3],
+    }[distribution]
+    weights = np.array(variance + mean_weights + shape, dtype=float)
+    backcast = garch_model.get_backcast(garch_model._starting_residuals(returns, mean))
+
+    def log_likelihood(values):
+        return garch_model.get_garch_family_log_likelihood(
+            returns, values, method, distribution, mean, backcast
+        )
+
+    step = 1e-6
+    numerical = np.array(
+        [
+            (
+                log_likelihood(weights + step * unit)
+                - log_likelihood(weights - step * unit)
+            )
+            / (2 * step)
+            for unit in np.eye(len(weights))
+        ]
+    )
+    analytic = garch_model._garch_family_score(
+        returns, weights, method, distribution, mean, backcast
+    )
+
+    np.testing.assert_allclose(analytic, numerical, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    ("method", "weights", "objective"),
+    [
+        ("garch", [2e-6, 0.08, 0.88], garch_model.garch_log_maximization),
+        ("gjr", [2e-6, 0.04, 0.1, 0.85], garch_model.gjr_garch_log_maximization),
+    ],
+)
+def test_garch_and_gjr_objective_gradients_match_finite_differences(
+    method, weights, objective
+):
+    # The objectives of get_garch_weights and get_gjr_garch_weights on the scale of daily returns, with a step relative to every weight.  # noqa: E501
+    returns = simulate_garch(2e-6, 0.08, 0.88, n=1200, seed=4)
+    weights = np.array(weights)
+    steps = np.abs(weights) * 1e-6
+    numerical = np.array(
+        [
+            (
+                objective(weights + unit * step, returns, 1100)
+                - objective(weights - unit * step, returns, 1100)
+            )
+            / (2 * step)
+            for unit, step in zip(np.eye(len(weights)), steps, strict=True)
+        ]
+    )
+    analytic = garch_model._log_maximization_gradient(weights, returns, 1100, method)
+
+    np.testing.assert_allclose(analytic, numerical, rtol=1e-5)

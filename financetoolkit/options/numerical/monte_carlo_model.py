@@ -70,7 +70,8 @@ def simulate_gbm_paths(
 ) -> np.ndarray:
     """
     Simulate Geometric Brownian Motion paths of one or more correlated stocks under the
-    risk-neutral measure, exactly at every time step.
+    risk-neutral measure: the prices the stocks may follow up to expiration, exact at every time
+    step.
 
     The formula is as follows:
 
@@ -78,10 +79,14 @@ def simulate_gbm_paths(
 
     Where r is the continuously compounded risk-free rate, q_i the continuous dividend yield
     and σ_i the volatility of stock i, Δt = T / time_steps, Z independent standard normal
-    numbers and L the Cholesky factor of the correlation matrix (L * Lᵀ = ρ, Glasserman 2003,
-    section 2.3). The numbers are pseudo-random (numpy's PCG64 seeded with seed) or scrambled
-    Sobol points with a Brownian bridge (sequence="sobol", 16 independently scrambled
-    replications), optionally in antithetic pairs, see helpers.draw_standard_normals.
+    numbers and L the Cholesky factor of the correlation matrix (L * Lᵀ = ρ, Glasserman
+    2003, section 2.3). The numbers are pseudo-random (numpy's PCG64 seeded with seed) or
+    scrambled Sobol points with a Brownian bridge (16 independently scrambled replications),
+    optionally in antithetic pairs, see helpers.draw_standard_normals.
+
+    Shares similar logic:
+    - FinancePy, get_gbm_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/process_simulator.py#L267
+    - FinancePy, get_assets_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gbm_process_simulator.py#L163
 
     Args:
         stock_price (float | np.ndarray | list[float]): The current price of each stock.
@@ -95,7 +100,9 @@ def simulate_gbm_paths(
             Defaults to None, independent stocks.
         time_steps (int, optional): The number of equal time steps. Defaults to 100.
         simulations (int, optional): The number of paths. Defaults to 10,000.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         antithetic (bool, optional): Whether every path is followed by its antithetic
             path. Defaults to False.
         seed (int | None, optional): The seed of the random numbers. Defaults to 0; None
@@ -112,9 +119,8 @@ def simulate_gbm_paths(
 
     Notes:
         References: Glasserman, P. (2003). "Monte Carlo Methods in Financial Engineering."
-        Springer, chapters 2 and 3. Referenced against FinancePy's get_gbm_paths and
-        get_assets_paths (https://github.com/domokane/FinancePy); its own random numbers
-        give other draws.
+        Springer, chapters 2 and 3.
+        - FinancePy draws its own random numbers, which give other paths.
 
     As an example:
 
@@ -219,8 +225,9 @@ def simulate_heston_paths(
     seed: int | None = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Simulate stock price and variance paths of the Heston (1993) stochastic volatility
-    model under the risk-neutral measure.
+    Simulate stock price and variance paths of the Heston (1993) stochastic volatility model
+    under the risk-neutral measure: the prices and variances the stock may follow up to
+    expiration when its variance reverts to a long-run level.
 
     The formulas are as follows:
 
@@ -229,7 +236,7 @@ def simulate_heston_paths(
 
     Two discretizations are available:
 
-    - Quadratic-exponential (scheme="quadratic_exponential", Andersen 2008): the variance
+    - Quadratic-exponential (Andersen 2008): the variance
       at the end of a step is drawn from a distribution with the exact mean m and variance
       s² of the CIR process, a scaled non-central chi-squared with one degree of freedom
       a * (b + Z_v)² when ψ = s² / m² ≤ 1.5 and otherwise a point mass at zero with an
@@ -242,7 +249,7 @@ def simulate_heston_paths(
         - ln S' = ln S + (r - q) * Δt + K0 + K1 * v + K2 * v' + √(K3 * v + K4 * v') * Z
         - K0 = -ρκθΔt / ξ, K1 = Δt * (κρ / ξ - 1/2) / 2 - ρ / ξ, K2 = Δt * (κρ / ξ - 1/2) / 2 + ρ / ξ
         - K3 = K4 = Δt * (1 - ρ²) / 2
-    - Full truncation Euler (scheme="full_truncation", Lord, Koekkoek and van Dijk 2010),
+    - Full truncation Euler (Lord, Koekkoek and van Dijk 2010),
       with v⁺ = max(v, 0):
         - v' = v + κ * (θ - v⁺) * Δt + ξ * √(v⁺ * Δt) * Z_v
         - ln S' = ln S + (r - q - v⁺ / 2) * Δt + √(v⁺ * Δt) * (ρ * Z_v + √(1 - ρ²) * Z)
@@ -252,6 +259,12 @@ def simulate_heston_paths(
     independent standard normal numbers and U = N(Z_v), r the continuously compounded
     risk-free rate and q the continuous dividend yield. The quadratic-exponential scheme
     keeps the variance at or above zero and is accurate at far larger steps.
+
+    Referenced against:
+    - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
+
+    Shares similar logic:
+    - FinancePy, get_heston_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/process_simulator.py#L126
 
     Args:
         stock_price (float): The current stock price.
@@ -265,9 +278,12 @@ def simulate_heston_paths(
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         time_steps (int, optional): The number of equal time steps. Defaults to 100.
         simulations (int, optional): The number of paths. Defaults to 10,000.
-        scheme (str, optional): "quadratic_exponential" or "full_truncation". Defaults to
+        scheme (str, optional): The discretization. Options are: "quadratic_exponential"
+            (quadratic-exponential), "full_truncation" (full truncation Euler). Defaults to
             "quadratic_exponential".
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         antithetic (bool, optional): Whether every path is followed by its antithetic
             path. Defaults to False.
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
@@ -287,8 +303,7 @@ def simulate_heston_paths(
         Heston Stochastic Volatility Model." Journal of Computational Finance, 11(3), 1-42.
         Lord, R., Koekkoek, R., & van Dijk, D. (2010). "A Comparison of Biased Simulation
         Schemes for Stochastic Volatility Models." Quantitative Finance, 10(2), 177-194.
-        Referenced against QuantLib's AnalyticHestonEngine (https://www.quantlib.org) and
-        FinancePy's get_heston_paths (https://github.com/domokane/FinancePy).
+        - The option prices of the paths are compared with QuantLib's AnalyticHestonEngine.
 
     As an example:
 
@@ -448,8 +463,11 @@ def get_monte_carlo_barrier_option(
 ) -> tuple[float, float]:
     """
     Calculate the Monte Carlo price of a discretely monitored single-barrier option with a
-    rebate: the barrier is only checked at monitoring_dates equally spaced dates, the last
-    at expiration, which is how most barrier contracts are written (at the daily close).
+    rebate: what an option is worth that knocks in or out when the stock price is beyond the
+    barrier on one of its monitoring dates.
+
+    The barrier is only checked at the equally spaced monitoring dates, the last at expiration,
+    which is how most barrier contracts are written (at the daily close).
 
     The stock price is simulated exactly at the monitoring dates (simulate_gbm_paths), and
     with t_h the first monitoring date at which the price is at or beyond the barrier.
@@ -460,12 +478,15 @@ def get_monte_carlo_barrier_option(
     - Knock-in = e^(-rT) * max(φ * (S_T - K), 0) if the barrier is hit, else e^(-rT) * R
 
     Where R is the rebate, K the strike price, r the continuously compounded risk-free rate,
-    T the time to expiration and φ = 1 for a call and -1 for a put. With
-    variance_reduction="control_variate" the European option on the same paths, whose
+    T the time to expiration and φ = 1 for a call and -1 for a put. With a
+    control variate, the European option on the same paths, whose
     Black-Scholes price is known, is the control. A discretely monitored barrier is
     crossed less often than a continuous one; its closed-form approximation shifts the
     barrier by e^(±0.5826 * σ * √Δt) (Broadie, Glasserman and Kou 1997, see
     path_dependent_model.get_discrete_monitoring_barrier).
+
+    Shares similar logic:
+    - FinancePy, EquityBarrierOption.value_mc: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_barrier_option.py#L132
 
     Args:
         stock_price (float): The current stock price.
@@ -476,8 +497,10 @@ def get_monte_carlo_barrier_option(
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        barrier_direction (str, optional): "down" or "up". Defaults to "down".
-        knock_type (str, optional): "out" or "in". Defaults to "out".
+        barrier_direction (str, optional): The side of the barrier. Options are: "down"
+            (below the stock price), "up" (above the stock price). Defaults to "down".
+        knock_type (str, optional): The knock. Options are: "out" (knock-out), "in"
+            (knock-in). Defaults to "out".
         rebate (float, optional): The rebate, paid at the monitoring date of the hit for a
             knock-out option and at expiration when the barrier is never hit for a
             knock-in option. Defaults to 0.
@@ -485,9 +508,12 @@ def get_monte_carlo_barrier_option(
             which are also the time steps of the paths. Defaults to 252 (daily over a
             year).
         simulations (int, optional): The number of paths. Defaults to 10,000.
-        variance_reduction (str | None, optional): None, "antithetic" or
-            "control_variate". Defaults to None.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        variance_reduction (str | None, optional): The variance reduction. Options are: None
+            (none), "antithetic" (antithetic variates), "control_variate" (control variate).
+            Defaults to None.
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
 
     Returns:
@@ -501,9 +527,8 @@ def get_monte_carlo_barrier_option(
         References: Broadie, M., Glasserman, P., & Kou, S. (1997). "A Continuity Correction
         for Discrete Barrier Options." Mathematical Finance, 7(4), 325-349. Glasserman, P.
         (2003). "Monte Carlo Methods in Financial Engineering." Springer, section 6.4.
-        Referenced against FinancePy's EquityBarrierOption.value_mc
-        (https://github.com/domokane/FinancePy). QuantLib's MCBarrierEngine prices the
-        continuously monitored barrier and is no reference for a discrete one.
+        - QuantLib's MCBarrierEngine prices the continuously monitored barrier and is no
+          reference for a discrete one.
 
     As an example:
 
@@ -676,11 +701,13 @@ def get_longstaff_schwartz_option_prices(
     seed: int | None = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculate the least-squares Monte Carlo price of American options with several strike
-    prices on the same paths, see get_longstaff_schwartz_option. The paths are simulated
-    once and the exercise rule is fitted per strike price, so the prices of the strikes share
-    their random numbers and a difference between two of them is far more precise than
-    either price.
+    Calculate the least-squares Monte Carlo price of American options with several strike prices
+    on the same paths: what each option is worth when it may be exercised at every time step
+    (see get_longstaff_schwartz_option).
+
+    The paths are simulated once and the exercise rule is fitted per strike price, so the prices
+    of the strikes share their random numbers and a difference between two of them is far more
+    precise than either price.
 
     The formulas are as follows:
 
@@ -692,6 +719,10 @@ def get_longstaff_schwartz_option_prices(
     each strike price, r the continuously compounded risk-free rate, Δt = T / time_steps,
     BS the Black-Scholes value of the same type and φ = 1 for a call and -1 for a put.
 
+    Shares similar logic:
+    - QuantLib, MCAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_american_engine.html
+    - FinancePy, equity_lsmc: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/equity_lsmc.py#L39
+
     Args:
         stock_price (float): The current stock price.
         strike_prices (np.ndarray | list[float]): The strike prices.
@@ -702,12 +733,17 @@ def get_longstaff_schwartz_option_prices(
         put_option (bool, optional): Whether the options are puts. Defaults to False.
         simulations (int, optional): The number of paths. Defaults to 10,000.
         time_steps (int, optional): The number of exercise dates. Defaults to 50.
-        basis (str, optional): "laguerre" or "monomial". Defaults to "laguerre".
+        basis (str, optional): The basis functions of the regression. Options are:
+            "laguerre" (weighted Laguerre polynomials), "monomial" (powers). Defaults to
+            "laguerre".
         degree (int, optional): The number of basis functions besides the constant.
             Defaults to 3.
-        variance_reduction (str | None, optional): None, "antithetic" or
-            "control_variate". Defaults to None.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        variance_reduction (str | None, optional): The variance reduction. Options are: None
+            (none), "antithetic" (antithetic variates), "control_variate" (control variate).
+            Defaults to None.
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
 
     Returns:
@@ -723,9 +759,9 @@ def get_longstaff_schwartz_option_prices(
         "Valuing American Options by Simulation: A Simple Least-Squares Approach." The Review
         of Financial Studies, 14(1), 113-147. Rasmussen, N. S. (2005). "Control Variates for
         Monte Carlo Valuation of American Options." Journal of Computational Finance, 9(1),
-        83-118. Referenced against QuantLib's MCAmericanEngine (https://www.quantlib.org) and
-        FinancePy's equity_lsmc (https://github.com/domokane/FinancePy), and the prices of
-        Table 1 of Longstaff and Schwartz (2001), which lie within two standard errors.
+        83-118.
+        - The prices of Table 1 of Longstaff and Schwartz (2001) lie within two standard
+          errors.
 
     As an example:
 
@@ -852,7 +888,8 @@ def get_longstaff_schwartz_option(
 ) -> tuple[float, float]:
     """
     Calculate the price of an American option by least-squares Monte Carlo (Longstaff and
-    Schwartz, 2001).
+    Schwartz, 2001): what the option is worth when it may be exercised at every time step, with
+    the exercise rule fitted by regression on simulated paths.
 
     Also known as: LSM, LSMC, least squares Monte Carlo, regression Monte Carlo.
 
@@ -870,8 +907,8 @@ def get_longstaff_schwartz_option(
     - Price = max(φ * (S - K), MEAN(e^(-rΔt) * Cash flow(Δt)))
 
     Where f_j are a constant with the weighted Laguerre polynomials e^(-x/2) * L_n(x),
-    n = 0, ..., degree - 1 (basis="laguerre", as in the paper) or the powers x^0, ...,
-    x^degree (basis="monomial"), K is the strike price, r the continuously compounded
+    n = 0, ..., degree - 1 (the Laguerre basis, as in the paper) or the powers x^0, ...,
+    x^degree (the monomial basis), K is the strike price, r the continuously compounded
     risk-free rate, Δt = T / time_steps, BS the Black-Scholes value of the same type and
     φ = 1 for a call and -1 for a put.
 
@@ -883,8 +920,12 @@ def get_longstaff_schwartz_option(
     within two standard errors of the finite difference value, and where early exercise is
     never optimal (a put with r ≤ 0 ≤ q, a call with q = 0) every exercise of the fitted rule
     alone would be an error, which the European floor of the continuation value rules out.
-    With variance_reduction="control_variate" the European payoff on the same
+    With a control variate, the European payoff on the same
     paths, whose Black-Scholes price is known, is the control (Rasmussen, 2005).
+
+    Shares similar logic:
+    - QuantLib, MCAmericanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_american_engine.html
+    - FinancePy, equity_lsmc: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/equity_lsmc.py#L39
 
     Args:
         stock_price (float): The current stock price.
@@ -896,12 +937,17 @@ def get_longstaff_schwartz_option(
         put_option (bool, optional): Whether the option is a put. Defaults to False.
         simulations (int, optional): The number of paths. Defaults to 10,000.
         time_steps (int, optional): The number of exercise dates. Defaults to 50.
-        basis (str, optional): "laguerre" or "monomial". Defaults to "laguerre".
+        basis (str, optional): The basis functions of the regression. Options are:
+            "laguerre" (weighted Laguerre polynomials), "monomial" (powers). Defaults to
+            "laguerre".
         degree (int, optional): The number of basis functions besides the constant.
             Defaults to 3.
-        variance_reduction (str | None, optional): None, "antithetic" or
-            "control_variate". Defaults to None.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        variance_reduction (str | None, optional): The variance reduction. Options are: None
+            (none), "antithetic" (antithetic variates), "control_variate" (control variate).
+            Defaults to None.
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
 
     Returns:
@@ -915,9 +961,7 @@ def get_longstaff_schwartz_option(
         References: Longstaff, F. A., & Schwartz, E. S. (2001). "Valuing American Options by
         Simulation: A Simple Least-Squares Approach." The Review of Financial Studies,
         14(1), 113-147. Rasmussen, N. S. (2005). "Control Variates for Monte Carlo Valuation
-        of American Options." Journal of Computational Finance, 9(1), 83-118. Referenced
-        against QuantLib's MCAmericanEngine (https://www.quantlib.org) and FinancePy's
-        equity_lsmc (https://github.com/domokane/FinancePy).
+        of American Options." Journal of Computational Finance, 9(1), 83-118.
 
     As an example:
 
@@ -981,12 +1025,12 @@ def get_longstaff_schwartz_basket_option(
     seed: int | None = 0,
 ) -> tuple[float, float]:
     """
-    Calculate the price of an American option on a basket of correlated stocks by
-    least-squares Monte Carlo (Longstaff and Schwartz, 2001), see
-    get_longstaff_schwartz_option for the method.
+    Calculate the price of an American option on a basket of correlated stocks by least-squares
+    Monte Carlo (Longstaff and Schwartz, 2001): what the option is worth when it may be
+    exercised at every time step (see get_longstaff_schwartz_option for the method).
 
-    The basket is the weighted sum B = Σ w_i * S_i (basket_type="weighted") or the best
-    of the weighted prices B = max(w_i * S_i) (basket_type="maximum"), and the option pays
+    The basket is the weighted sum B = Σ w_i * S_i or the best of the weighted prices
+    B = max(w_i * S_i), and the option pays
     φ * (B - K) when exercised. The correlated paths come from simulate_gbm_paths, and the
     continuation value is regressed on a constant, x_i, x_i * x_j (i ≤ j) and the exercise
     value, with x_i = w_i * S_i / K.
@@ -994,6 +1038,9 @@ def get_longstaff_schwartz_basket_option(
     The formulas are as follows:
 
     - C(t) = β_0 + Σ β_i * x_i + Σ β_ij * x_i * x_j + β_P * max(φ * (B - K), 0) / K
+
+    Referenced against:
+    - QuantLib, MCAmericanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_american_basket_engine.html
 
     Args:
         stock_prices (np.ndarray | list[float]): The current price of each stock.
@@ -1007,11 +1054,15 @@ def get_longstaff_schwartz_basket_option(
         dividend_yields (np.ndarray | list[float] | None, optional): The continuous dividend
             yield of each stock. Defaults to None, which uses 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        basket_type (str, optional): "weighted" or "maximum". Defaults to "weighted".
+        basket_type (str, optional): The basket. Options are: "weighted" (the weighted sum),
+            "maximum" (the best of the weighted prices). Defaults to "weighted".
         simulations (int, optional): The number of paths. Defaults to 10,000.
         time_steps (int, optional): The number of exercise dates. Defaults to 50.
-        variance_reduction (str | None, optional): None or "antithetic". Defaults to None.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        variance_reduction (str | None, optional): The variance reduction. Options are: None
+            (none), "antithetic" (antithetic variates). Defaults to None.
+        sequence (str, optional): The random numbers. Options are: "pseudo_random"
+            (pseudo-random numbers), "sobol" (scrambled Sobol points). Defaults to
+            "pseudo_random".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
 
     Returns:
@@ -1027,8 +1078,7 @@ def get_longstaff_schwartz_basket_option(
         14(1), 113-147. Broadie, M., & Glasserman, P. (1997). "Pricing American-Style
         Securities Using Simulation." Journal of Economic Dynamics and Control, 21(8-9),
         1323-1352. Glasserman, P. (2003). "Monte Carlo Methods in Financial Engineering."
-        Springer, section 8.6. Referenced against QuantLib's MCAmericanBasketEngine
-        (https://www.quantlib.org).
+        Springer, section 8.6.
 
     As an example:
 

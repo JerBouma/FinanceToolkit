@@ -60,7 +60,9 @@ def get_swap_rate(
     forward_start: float = 0.0,
 ) -> tuple[float, float]:
     """
-    Calculate the par swap rate and the annuity of an interest rate swap on a single curve.
+    Calculate the par swap rate and the annuity of an interest rate swap on a single curve:
+    the fixed rate at which the swap is worth nothing today, and the value of one basis
+    point of it.
 
     The par swap rate is the fixed rate at which a new swap is worth nothing: the present
     value of its fixed leg equals that of its floating leg. On a single curve the floating
@@ -82,9 +84,14 @@ def get_swap_rate(
     The annuity is the present value of receiving 1 a year on the fixed leg, so the value
     of a basis point on the fixed rate (the PV01) is Annuity * Notional * 0.0001.
 
-    Referenced against QuantLib's VanillaSwap with the DiscountingSwapEngine
-    (fairRate, fixedLegBPS), FinancePy's IborSwap (swap_rate, pv01) and rateslib's IRS
-    (rate, analytic_delta).
+    Referenced against:
+    - QuantLib, VanillaSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
+    - QuantLib, DiscountingSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_discounting_swap_engine.html
+    - rateslib, IRS.rate: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.rate
+
+    Shares similar logic:
+    - FinancePy, IborSwap.swap_rate: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L280
+    - FinancePy, IborSwap.pv01: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L269
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -169,7 +176,8 @@ def get_swap_value(
 ) -> dict[str, float]:
     """
     Calculate the value, the par swap rate and the risk of an interest rate swap on a single
-    curve: a new swap or one that is already running.
+    curve: what a new swap or one that is already running is worth, and how its value
+    changes with the rates.
 
     A payer swap pays the fixed rate and receives the floating rate; a receiver swap does the
     opposite. The fixed leg is worth the fixed rate times the annuity. The floating leg is worth
@@ -199,9 +207,12 @@ def get_swap_value(
     annually compounded zero rates by 1 basis point, by central difference: positive for a
     payer swap, which gains when rates rise.
 
-    Referenced against QuantLib's VanillaSwap with the DiscountingSwapEngine (NPV,
-    fixedLegBPS, fairRate), FinancePy's IborSwap (value, pv01) and rateslib's IRS (npv,
-    analytic_delta).
+    Referenced against:
+    - QuantLib, VanillaSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
+    - rateslib, IRS.npv: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.npv
+
+    Shares similar logic:
+    - FinancePy, IborSwap: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L29
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -278,7 +289,8 @@ def get_asset_swap_spread(
 ) -> tuple[float, float]:
     """
     Calculate the par and the market value asset swap spread of a fixed rate bond over a
-    swap curve.
+    swap curve: the spread over the floating rate that swapping the bond's fixed coupons
+    pays, a measure of the bond's credit relative to the swap curve.
 
     An asset swap combines a bond with a swap that pays away its coupons for the floating
     rate plus a spread, turning the bond into a floating rate asset. In a par asset swap the
@@ -301,7 +313,8 @@ def get_asset_swap_spread(
     floating leg, paid float_frequency times a year from today to maturity with a short first
     period. The spreads are simple annual rates on the floating leg's accrual basis.
 
-    Referenced against QuantLib's AssetSwap (fairSpread, par and market value).
+    Referenced against:
+    - QuantLib, AssetSwap.fairSpread: https://www.quantlib.org/reference/class_quant_lib_1_1_asset_swap.html
 
     Args:
         zero_curve (pd.Series): The annually compounded swap zero rates (decimals), indexed
@@ -343,7 +356,7 @@ def get_i_spread(
 ) -> float:
     """
     Calculate the I-spread (interpolated spread) of a bond: its yield to maturity over the
-    par swap rate of its maturity.
+    par swap rate of its maturity, the extra yield the bond pays over the swap curve.
 
     The I-spread compares a bond with the swap curve the way the G-spread compares it with
     government bonds: the yield of the bond minus the swap rate interpolated at the bond's

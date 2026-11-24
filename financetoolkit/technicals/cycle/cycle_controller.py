@@ -269,7 +269,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, HT_DCPERIOD: https://ta-lib.org/functions/ht_dcperiod.html
-            Test: tests/technical/test_cycle_model.py::test_dominant_cycle_period_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, ht_dcperiod: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcperiod.py#L14
@@ -410,7 +409,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, HT_DCPHASE: https://ta-lib.org/functions/ht_dcphase.html
-            Test: tests/technical/test_cycle_model.py::test_dominant_cycle_phase_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, ht_dcphase: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcphase.py#L14
@@ -543,7 +541,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, HT_PHASOR: https://ta-lib.org/functions/ht_phasor.html
-            Test: tests/technical/test_cycle_model.py::test_phasor_components_match_talib
 
         Shares similar logic:
         - pandas-ta-classic, ht_phasor: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_phasor.py#L14
@@ -701,10 +698,8 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, HT_SINE: https://ta-lib.org/functions/ht_sine.html
-            Test: tests/technical/test_cycle_model.py::test_sine_wave_matches_talib
         - Tulip Indicators, msw (MESA Sine Wave): https://tulipindicators.org/msw
         - pandas-ta-classic, msw (MESA Sine Wave): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/msw.py#L14
-            Test: tests/technical/test_cycle_model.py::test_mesa_sine_wave_matches_pandas_ta
 
         Shares similar logic:
         - pandas-ta-classic, ht_sine: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_sine.py#L14
@@ -864,7 +859,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, HT_TRENDMODE: https://ta-lib.org/functions/ht_trendmode.html
-            Test: tests/technical/test_cycle_model.py::test_trend_mode_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, ht_trendmode: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_trendmode.py#L14
@@ -1002,7 +996,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, MAMA: https://ta-lib.org/functions/mama.html
-            Test: tests/technical/test_cycle_model.py::test_mesa_adaptive_moving_average_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, mama: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mama.py#L248
@@ -1156,7 +1149,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, SWAK_HP: https://ta-lib.org/functions/swak_hp.html
-            Test: tests/technical/test_cycle_model.py::test_swiss_army_knife_filters_match_talib
         - TA-Lib, SWAK_2PHP: https://ta-lib.org/functions/swak_2php.html
         - TA-Lib, SWAK_BP: https://ta-lib.org/functions/swak_bp.html
         - TA-Lib, SWAK_BUTTER: https://ta-lib.org/functions/swak_butter.html
@@ -1311,7 +1303,6 @@ class CycleTechnicals:
 
         Referenced against:
         - pandas-ta-classic, ebsw: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ebsw.py#L63
-            Test: tests/technical/test_cycle_model.py::test_even_better_sinewave_matches_pandas_ta
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -1439,7 +1430,6 @@ class CycleTechnicals:
 
         Referenced against:
         - pandas-ta-classic, dsp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/dsp.py#L12
-            Test: tests/technical/test_cycle_model.py::test_detrended_synthetic_price_matches_pandas_ta_averages
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -1569,7 +1559,6 @@ class CycleTechnicals:
 
         Referenced against:
         - TA-Lib, CG: https://ta-lib.org/functions/cg.html
-            Test: tests/technical/test_cycle_model.py::test_center_of_gravity_oscillator_matches_talib
         - pandas-ta-classic, cg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cg.py#L12
 
         Args:

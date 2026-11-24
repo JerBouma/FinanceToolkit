@@ -455,7 +455,12 @@ def get_black_price(
     settlement: str = "physical",
 ) -> tuple[float, float]:
     """
-    Black's Model for pricing financial derivatives.
+    Calculate the price of a European swaption with Black's Model: what the right to enter an interest rate swap at
+    the strike rate is worth when the forward swap rate is lognormally distributed.
+
+    Black's Model is a mathematical model used for pricing financial derivatives, its primary applications are for
+    pricing options on future contracts, bond options, interest rate caps and floors, and swaptions. This function
+    implements the swaption case only.
 
     Black's Model is a mathematical model used for pricing financial derivatives, its primary applications are for
     pricing options on future contracts, bond options, interest rate caps and floors, and swaptions. This function
@@ -474,9 +479,9 @@ def get_black_price(
     lognormal volatility, which on a 3.25% forward corresponds to about 65 basis points of
     rate movement per year. This is a different number from the absolute, basis-point
     volatility that `get_bachelier_price` consumes, and passing one where the other is
-    expected misprices the swaption by a factor of roughly 1 / forward_rate. Pass
-    `volatility_type='normal'` to hand this function an absolute volatility and have it
-    converted explicitly — see `_convert_volatility` for the approximation used.
+    expected misprices the swaption by a factor of roughly 1 / forward_rate. An absolute
+    volatility can be handed to this function with its volatility type, which converts it
+    explicitly — see `_convert_volatility` for the approximation used.
 
     Because the lognormal assumption takes the logarithm of the forward rate, the model is
     undefined for a zero or negative forward or strike rate. Euro area rates spent years
@@ -509,8 +514,8 @@ def get_black_price(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       ch. 29.
 
-    Referenced against QuantLib's BlackSwaptionEngine (with a displacement, and with cash
-    settlement on the par yield curve method).
+    Referenced against:
+    - QuantLib, BlackSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_swaption_engine.html
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. Must be positive.
@@ -528,9 +533,9 @@ def get_black_price(
         payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
         (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
         is_receiver (bool, optional): Boolean indicating if the swaption holder is receiver. Default is True.
-        volatility_type (str, optional): The convention `volatility` is quoted on, either
-        'lognormal' (relative, this model's native basis) or 'normal' (absolute, in rate
-        units), in which case it is converted before use. Defaults to 'lognormal'.
+        volatility_type (str, optional): The convention `volatility` is quoted on. Options
+        are: "lognormal" (relative, this model's native basis), "normal" (absolute, in rate
+        units, converted before use). Defaults to "lognormal".
         discount_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
         by maturity in years that discount the swap's payment dates instead of the flat
         risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
@@ -538,8 +543,8 @@ def get_black_price(
         Defaults to None, which discounts at the risk-free rate.
         shift (float, optional): The shift s added to the forward and strike rate, which
         makes it the shifted Black model. Defaults to 0, Black's model.
-        settlement (str, optional): "physical" for a swaption that enters the swap, or
-        "cash" for one that pays the swap's value at expiry with the cash annuity.
+        settlement (str, optional): How the swaption settles. Options are: "physical" (it
+        enters the swap), "cash" (it pays the swap's value at expiry with the cash annuity).
         Defaults to "physical".
 
     Returns:
@@ -608,7 +613,13 @@ def get_bachelier_price(
     settlement: str = "physical",
 ) -> tuple[float, float]:
     """
-    Bachelier Model for pricing swaptions.
+    Calculate the price of a European swaption with the Bachelier Model: what the right to enter an interest rate
+    swap at the strike rate is worth when the forward swap rate is normally distributed, which admits zero and
+    negative rates.
+
+    The Bachelier Model is an alternative to Black's Model for pricing options on futures contracts and interest
+    rates. It assumes that the distribution of the underlying rate follows a normal distribution with constant
+    volatility. This function implements the swaption case.
 
     The Bachelier Model is an alternative to Black's Model for pricing options on futures contracts and interest
     rates. It assumes that the distribution of the underlying rate follows a normal distribution with constant
@@ -625,8 +636,8 @@ def get_bachelier_price(
     `get_black_price`, which takes a relative lognormal volatility, and the two numbers
     differ by a factor of roughly the forward rate — reusing a 20% lognormal quote here
     would price the swaption around thirty times too high on a 3.25% forward. Pass
-    `volatility_type='lognormal'` to hand this function a relative volatility and have it
-    converted explicitly — see `_convert_volatility` for the approximation used.
+    A relative volatility can be handed to this function with its volatility type, which
+    converts it explicitly — see `_convert_volatility` for the approximation used.
 
     The normal distribution places positive probability on negative rates, which is
     precisely why this model came back into use for euro area and yen rates and why it,
@@ -652,8 +663,8 @@ def get_bachelier_price(
     - Mercurio, F. (2008). "Cash-Settled Swaptions and No-Arbitrage." Risk, 21(2), 96-98.
     - https://en.wikipedia.org/wiki/Bachelier_model
 
-    Referenced against QuantLib's BachelierSwaptionEngine (with cash settlement on the par
-    yield curve method).
+    Referenced against:
+    - QuantLib, BachelierSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_swaption_engine.html
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. May be zero or negative.
@@ -671,16 +682,16 @@ def get_bachelier_price(
         payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
         (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
         is_receiver (bool, optional): Boolean indicating if the swaption holder is receiver. Default is True.
-        volatility_type (str, optional): The convention `volatility` is quoted on, either
-        'normal' (absolute, this model's native basis) or 'lognormal' (relative to the
-        forward rate), in which case it is converted before use. Defaults to 'normal'.
+        volatility_type (str, optional): The convention `volatility` is quoted on. Options
+        are: "normal" (absolute, this model's native basis), "lognormal" (relative to the
+        forward rate, converted before use). Defaults to "normal".
         discount_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
         by maturity in years that discount the swap's payment dates instead of the flat
         risk-free rate, such as a curve of `get_zero_coupon_curve`; the forward swap rate and
         annuity on such a curve follow from `swap_model.get_swap_rate` with a forward start.
         Defaults to None, which discounts at the risk-free rate.
-        settlement (str, optional): "physical" for a swaption that enters the swap, or
-        "cash" for one that pays the swap's value at expiry with the cash annuity.
+        settlement (str, optional): How the swaption settles. Options are: "physical" (it
+        enters the swap), "cash" (it pays the swap's value at expiry with the cash annuity).
         Defaults to "physical".
 
     Returns:
@@ -744,8 +755,9 @@ def get_swaption_greeks(
     settlement: str = "physical",
 ) -> dict[str, float]:
     """
-    Calculate the price, delta and vega of a European swaption in the Black, shifted Black or
-    Bachelier model.
+    Calculate the price, delta and vega of a European swaption in the Black, shifted Black
+    or Bachelier model: how much the swaption's value changes with the forward swap rate and
+    with its volatility.
 
     The delta is the change in value per unit change of the forward swap rate and the vega
     the change per unit change of the volatility, both with the annuity held fixed, as the
@@ -771,14 +783,18 @@ def get_swaption_greeks(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       ch. 19 and 29.
 
-    Referenced against the "delta" and "vega" results of QuantLib's BlackSwaptionEngine and
-    BachelierSwaptionEngine.
+    QuantLib's BlackSwaptionEngine and BachelierSwaptionEngine report these as their delta and
+    vega results.
+
+    Referenced against:
+    - QuantLib, BlackSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_swaption_engine.html
+    - QuantLib, BachelierSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_swaption_engine.html
 
     Args:
         forward_rate (float): The forward swap rate.
         strike_rate (float): The strike rate of the swaption.
-        volatility (float): The volatility: lognormal for "black" (of the forward rate plus
-            the shift), normal (absolute) for "bachelier".
+        volatility (float): The volatility: lognormal for the Black model (of the forward
+            rate plus the shift), normal (absolute) for the Bachelier model.
         years_to_maturity (float): The years until the swaption expires.
         risk_free_rate (float | None, optional): The risk-free interest rate, continuously
             compounded and assumed flat over the swap's payment dates, which it discounts.
@@ -790,12 +806,15 @@ def get_swaption_greeks(
             Defaults to 2 (semi-annual).
         is_receiver (bool, optional): Whether the swaption receives the fixed rate.
             Defaults to True.
-        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        method (str, optional): The model. Options are: "black" (Black's model, shifted by
+            `shift`), "bachelier" (the Bachelier model). Defaults to "black".
         shift (float, optional): The shift of the Black model. Defaults to 0.
         discount_curve (pd.Series | None, optional): The annually compounded zero-coupon
             rates by maturity in years that discount the swap's payment dates. Defaults to
             None, which discounts at the risk-free rate.
-        settlement (str, optional): "physical" or "cash". Defaults to "physical".
+        settlement (str, optional): How the swaption settles. Options are: "physical" (it
+            enters the swap), "cash" (it pays the swap's value with the cash annuity).
+            Defaults to "physical".
 
     Returns:
         dict[str, float]: The Price, the Delta (per unit of the forward rate) and the Vega
@@ -892,8 +911,8 @@ def get_implied_volatility(
 ) -> float:
     """
     Calculate the Black (lognormal, optionally shifted) or Bachelier (normal) implied
-    volatility of an option on a forward rate, such as a caplet, floorlet or swaption, from
-    its price.
+    volatility of an option on a forward rate, such as a caplet, floorlet or swaption: the
+    volatility at which the model returns the option's price.
 
     The price is divided by the annuity, the factor the model's formula is multiplied by:
     the notional times the swap annuity for a swaption, or the notional times the accrual
@@ -922,8 +941,9 @@ def get_implied_volatility(
     - Brent, R.P. (1973). "Algorithms for Minimization Without Derivatives." Prentice-Hall,
       ch. 4.
 
-    Referenced against QuantLib's blackFormulaImpliedStdDev and
-    bachelierBlackFormulaImpliedVol.
+    Referenced against:
+    - QuantLib, blackFormulaImpliedStdDev: https://www.quantlib.org/reference/namespace_quant_lib.html#ae5515dd7810c45e5a7c61df4a00a8166
+    - QuantLib, bachelierBlackFormulaImpliedVol: https://www.quantlib.org/reference/namespace_quant_lib.html#ae7f634488a3e089f97d4d1e64625dda8
 
     Args:
         price (float): The price of the option.
@@ -933,15 +953,16 @@ def get_implied_volatility(
         annuity (float, optional): The factor the formula is multiplied by, so that the
             price over the annuity is the undiscounted value. Defaults to 1, an undiscounted
             price per unit of notional.
-        option_type (str, optional): "call" for an option on a rising rate (a caplet or
-            payer swaption) or "put" for one on a falling rate (a floorlet or receiver
-            swaption). Defaults to "call".
-        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        option_type (str, optional): The option. Options are: "call" (an option on a rising
+            rate, a caplet or payer swaption), "put" (an option on a falling rate, a floorlet
+            or receiver swaption). Defaults to "call".
+        method (str, optional): The model. Options are: "black" (Black's model, shifted by
+            `shift`), "bachelier" (the Bachelier model). Defaults to "black".
         shift (float, optional): The shift of the Black model. Defaults to 0.
 
     Returns:
         float: The implied volatility per year: lognormal (of the rate plus the shift) for
-        "black", normal (absolute, in rate units) for "bachelier". NaN when the price lies
+        the Black model, normal (absolute, in rate units) for the Bachelier model. NaN when the price lies
         outside the no-arbitrage bounds.
 
     Raises:
@@ -1153,7 +1174,8 @@ def get_cap_floor(
 ) -> tuple[float, pd.DataFrame]:
     """
     Calculate the price of an interest rate cap, floor or collar, and of each of its caplets
-    or floorlets, in the Black, shifted Black or Bachelier model.
+    or floorlets, in the Black, shifted Black or Bachelier model: what the protection
+    against a rising (cap) or falling (floor) floating rate is worth.
 
     A cap pays, at the end of every period, the amount by which the floating rate fixed at
     its start exceeds the strike rate, on the period's accrual. Each payment is a caplet: a
@@ -1188,23 +1210,30 @@ def get_cap_floor(
     - Hull, J.C. (2022). "Options, Futures, and Other Derivatives." Pearson, 11th edition,
       ch. 29.
 
-    Referenced against QuantLib's Cap, Floor and Collar with the BlackCapFloorEngine (with a
-    displacement) and the BachelierCapFloorEngine.
+    Referenced against:
+    - QuantLib, Cap: https://www.quantlib.org/reference/class_quant_lib_1_1_cap.html
+    - QuantLib, Floor: https://www.quantlib.org/reference/class_quant_lib_1_1_floor.html
+    - QuantLib, Collar: https://www.quantlib.org/reference/class_quant_lib_1_1_collar.html
+    - QuantLib, BlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_cap_floor_engine.html
+    - QuantLib, BachelierCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_cap_floor_engine.html
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
             indexed by maturity in years.
         strike_rate (float): The strike rate (of the cap, for a collar).
         volatility (float | np.ndarray | list): One (flat) volatility for every caplet or one
-            per caplet: lognormal for "black" (of the rate plus the shift), normal (absolute)
-            for "bachelier".
+            per caplet: lognormal for the Black model (of the rate plus the shift), normal
+            (absolute) for the Bachelier model.
         maturity (float): The years until the last payment.
         frequency (int, optional): The periods per year. Defaults to 4 (quarterly).
         notional (float, optional): The notional. Defaults to 10,000,000.
-        option_type (str, optional): "cap", "floor" or "collar". Defaults to "cap".
+        option_type (str, optional): The option. Options are: "cap" (caplets on a rising
+            rate), "floor" (floorlets on a falling rate), "collar" (a cap bought and a floor
+            sold). Defaults to "cap".
         floor_strike_rate (float | None, optional): The strike rate of the floor of a collar.
             Defaults to None.
-        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        method (str, optional): The model. Options are: "black" (Black's model, shifted by
+            `shift`), "bachelier" (the Bachelier model). Defaults to "black".
         shift (float, optional): The shift of the Black model. Defaults to 0.
 
     Returns:
@@ -1298,8 +1327,8 @@ def get_cap_floor_implied_volatility(
     - Brent, R.P. (1973). "Algorithms for Minimization Without Derivatives." Prentice-Hall,
       ch. 4.
 
-    Referenced against QuantLib's CapFloor.impliedVolatility (with the Black and normal
-    volatility types).
+    Referenced against:
+    - QuantLib, CapFloor.impliedVolatility: https://www.quantlib.org/reference/class_quant_lib_1_1_cap_floor.html
 
     Args:
         price (float): The price of the cap or floor.
@@ -1309,13 +1338,15 @@ def get_cap_floor_implied_volatility(
         maturity (float): The years until the last payment.
         frequency (int, optional): The periods per year. Defaults to 4 (quarterly).
         notional (float, optional): The notional. Defaults to 10,000,000.
-        option_type (str, optional): "cap" or "floor". Defaults to "cap".
-        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        option_type (str, optional): The option. Options are: "cap" (caplets on a rising
+            rate), "floor" (floorlets on a falling rate). Defaults to "cap".
+        method (str, optional): The model. Options are: "black" (Black's model, shifted by
+            `shift`), "bachelier" (the Bachelier model). Defaults to "black".
         shift (float, optional): The shift of the Black model. Defaults to 0.
 
     Returns:
         float: The flat implied volatility per year: lognormal (of the rate plus the shift)
-        for "black", normal (absolute) for "bachelier". NaN when the price lies outside the
+        for the Black model, normal (absolute) for the Bachelier model. NaN when the price lies outside the
         no-arbitrage bounds.
 
     Raises:
@@ -1409,7 +1440,8 @@ def get_year_on_year_inflation_cap_floor(
 ) -> tuple[float, pd.DataFrame]:
     """
     Calculate the price of a year-on-year inflation cap, floor or collar, and of each of its
-    caplets or floorlets, in the Black, shifted Black (with a shift of 1, the unit-displaced
+    caplets or floorlets: what the protection against high (cap) or low (floor) yearly
+    inflation is worth, in the Black, shifted Black (with a shift of 1, the unit-displaced
     Black model of the inflation market) or Bachelier model.
 
     A year-on-year inflation caplet pays, at the end of year i, the amount by which that
@@ -1444,9 +1476,13 @@ def get_year_on_year_inflation_cap_floor(
     - Black, F. (1976). "The Pricing of Commodity Contracts." Journal of Financial
       Economics, 3(1-2), 167-179.
 
-    Referenced against QuantLib's YoYInflationCap, YoYInflationFloor and YoYInflationCollar
-    with the YoYInflationBlackCapFloorEngine, YoYInflationUnitDisplacedBlackCapFloorEngine and
-    YoYInflationBachelierCapFloorEngine.
+    Referenced against:
+    - QuantLib, YoYInflationCap: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_cap.html
+    - QuantLib, YoYInflationFloor: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_floor.html
+    - QuantLib, YoYInflationCollar: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_collar.html
+    - QuantLib, YoYInflationBlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_black_cap_floor_engine.html
+    - QuantLib, YoYInflationUnitDisplacedBlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_unit_displaced_black_cap_floor_engine.html
+    - QuantLib, YoYInflationBachelierCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_bachelier_cap_floor_engine.html
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates
@@ -1455,14 +1491,17 @@ def get_year_on_year_inflation_cap_floor(
             rates (decimals), indexed by maturity in years.
         strike_rate (float): The strike rate (of the cap, for a collar).
         volatility (float | np.ndarray | list): One volatility for every caplet or one per
-            caplet: lognormal for "black" (of the rate plus the shift), normal (absolute)
-            for "bachelier".
+            caplet: lognormal for the Black model (of the rate plus the shift), normal
+            (absolute) for the Bachelier model.
         maturity (int): The years until the last payment, a whole number.
         notional (float, optional): The notional. Defaults to 10,000,000.
-        option_type (str, optional): "cap", "floor" or "collar". Defaults to "cap".
+        option_type (str, optional): The option. Options are: "cap" (caplets on high
+            inflation), "floor" (floorlets on low inflation), "collar" (a cap bought and a
+            floor sold). Defaults to "cap".
         floor_strike_rate (float | None, optional): The strike rate of the floor of a collar.
             Defaults to None.
-        method (str, optional): The model, "black" or "bachelier". Defaults to "black".
+        method (str, optional): The model. Options are: "black" (Black's model, shifted by
+            `shift`), "bachelier" (the Bachelier model). Defaults to "black".
         shift (float, optional): The shift of the Black model, 1 for the unit-displaced
             model. Defaults to 0.
 

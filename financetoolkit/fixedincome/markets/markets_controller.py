@@ -163,9 +163,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         indirect bidders, Treasury issuance.
 
         Args:
-            security_type (list[str] | str | None, optional): The kind of security: "Bill",
-                "Cash Management Bill", "Note", "Bond", "TIPS" or "FRN", or several (a list or
-                a comma-separated string). Defaults to None, which returns every kind.
+            security_type (list[str] | str | None, optional): The kind of security, or several (a list or
+                a comma-separated string). Options are: "Bill", "Cash Management Bill", "Note", "Bond",
+                "TIPS", "FRN", None (every kind). Defaults to None.
             security_term (str | None, optional): The term as the Treasury writes it, such as
                 "13-Week", "10-Year" or "30-Year". Defaults to None, which returns every term.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -707,7 +707,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
         """
         Retrieves every marketable US Treasury (bills, notes, bonds, TIPS and floating rate
         notes) with its price, yield to maturity and modified duration on a day, without an
-        API key.
+        API key: what each Treasury trades at and yields.
 
         Where the Treasury par yield curve gives one yield per constant maturity, this lists
         the roughly 460 securities themselves, from the Bureau of the Fiscal Service's daily
@@ -748,9 +748,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         Args:
             date (str | None, optional): The day (YYYY-MM-DD); a weekend or holiday uses the
                 business day before it. Defaults to None, the latest day with prices.
-            security_type (list[str] | str | None, optional): The kind of security: "Bill",
-                "Note", "Bond", "TIPS" or "FRN", or several (a list or a comma-separated
-                string). Defaults to None, which returns every kind.
+            security_type (list[str] | str | None, optional): The kind of security, or several (a list or
+                a comma-separated string). Options are: "Bill", "Note", "Bond", "TIPS", "FRN", None
+                (every kind). Defaults to None.
             bonds (list[str] | str | None, optional): Keeps the securities with these CUSIPs
                 (or their US ISINs), as a list or a comma-separated string. Defaults to None,
                 every security.
@@ -873,12 +873,14 @@ class MarketsFixedIncome(CurvesFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Fits the US Treasury zero-coupon curve to the prices of every Treasury note and bond on
-        a day, from the Treasury's FedInvest prices. Where `get_zero_coupon_curve`
-        bootstraps the dozen constant maturity par yields of the Treasury's own curve, this
-        takes the roughly 330 notes and bonds themselves, so the curve reflects what trades
-        and each bond's residual shows whether it is rich (priced above the curve) or cheap
-        (below it), the relative value view of a bond desk.
+        Fits the US Treasury zero-coupon curve to the prices of every Treasury note and bond
+        on a day, from the Treasury's FedInvest prices: the term structure the bonds
+        themselves imply, with each bond's residual showing whether it is rich (priced above
+        the curve) or cheap (below it), the relative value view of a bond desk.
+
+        Where `get_zero_coupon_curve` bootstraps the dozen constant maturity par yields of
+        the Treasury's own curve, this takes the roughly 330 notes and bonds themselves, so
+        the curve reflects what trades.
 
         The curve minimizes the weighted squared differences between the bonds' prices and
         their prices on the curve, with weights inversely proportional to duration, as
@@ -896,14 +898,14 @@ class MarketsFixedIncome(CurvesFixedIncome):
         principal at times t_ik (actual days / 365 from the price date, on its actual coupon
         dates), D_i its modified duration and d(t) the discount function of the method:
 
-        - "svensson": d(t) = e^(-y(t) t), with y(t) the Svensson (1994) zero rate
+        - Svensson: d(t) = e^(-y(t) t), with y(t) the Svensson (1994) zero rate
           β0 + β1 (1 - e^(-t/τ1)) / (t/τ1) + β2 [(1 - e^(-t/τ1)) / (t/τ1) - e^(-t/τ1)]
           + β3 [(1 - e^(-t/τ2)) / (t/τ2) - e^(-t/τ2)], the model of the Federal Reserve's
           curve (Gürkaynak, Sack and Wright, 2007)
-        - "nelson_siegel": the same without β3 (Nelson and Siegel, 1987)
-        - "exponential_spline": d(t) = Σ_{k=1}^{9} a_k e^(-k κ t) with Σ a_k = 1, the
+        - Nelson-Siegel: the same without β3 (Nelson and Siegel, 1987)
+        - Exponential spline: d(t) = Σ_{k=1}^{9} a_k e^(-k κ t) with Σ a_k = 1, the
           exponential basis of Vasicek and Fong (1982)
-        - "cubic_spline": d(t) a cubic spline with d(0) = 1 and about √n basis functions for
+        - Cubic spline: d(t) a cubic spline with d(0) = 1 and about √n basis functions for
           n bonds, with knots at quantiles of the maturities so that as many bonds mature
           between every two knots (McCulloch, 1975)
 
@@ -936,16 +938,21 @@ class MarketsFixedIncome(CurvesFixedIncome):
         - Gürkaynak, R.S., Sack, B. and Wright, J.H. (2007). "The U.S. Treasury Yield Curve:
           1961 to the Present." Journal of Monetary Economics, 54(8), 2291-2304.
 
-        Referenced against QuantLib's FittedBondDiscountCurve with NelsonSiegelFitting,
-        SvenssonFitting, ExponentialSplinesFitting and CubicBSplinesFitting
-        (https://www.quantlib.org).
+        Shares similar logic:
+        - QuantLib, FittedBondDiscountCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_fitted_bond_discount_curve.html
+        - QuantLib, SvenssonFitting (svensson): https://www.quantlib.org/reference/class_quant_lib_1_1_svensson_fitting.html
+        - QuantLib, NelsonSiegelFitting (nelson_siegel): https://www.quantlib.org/reference/class_quant_lib_1_1_nelson_siegel_fitting.html
+        - QuantLib, ExponentialSplinesFitting (exponential_spline): https://www.quantlib.org/reference/class_quant_lib_1_1_exponential_splines_fitting.html
+        - QuantLib, CubicBSplinesFitting (cubic_spline): https://www.quantlib.org/reference/class_quant_lib_1_1_cubic_b_splines_fitting.html
 
         Also known as: fitted yield curve, Treasury curve fitting, rich cheap analysis,
         bond relative value, Svensson curve on bond prices, spline curve.
 
         Args:
-            method (str, optional): "svensson", "nelson_siegel", "exponential_spline" or
-                "cubic_spline". Defaults to "svensson".
+            method (str, optional): The discount function. Options are: "svensson" (the
+                Nelson-Siegel-Svensson zero rate), "nelson_siegel" (the Nelson-Siegel zero rate),
+                "exponential_spline" (the exponential spline of Vasicek and Fong), "cubic_spline"
+                (McCulloch's cubic spline). Defaults to "svensson".
             maturities (float | str | list | None, optional): The maturities to return the
                 curve at, in years or as labels such as '6M' (a list or a comma-separated
                 string). Defaults to None, 6 months and 1, 2, 3, 5, 7, 10, 20 and 30 years.
@@ -964,7 +971,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
         Returns:
             pd.DataFrame: The Zero Rate (annually compounded), the Discount Factor and the
             Instantaneous Forward Rate (continuously compounded) by maturity in years; or,
-            with residuals=True, per bond (by CUSIP) its Security Type, Coupon, Maturity,
+            with the residuals, per bond (by CUSIP) its Security Type, Coupon, Maturity,
             Price, Fitted Price (clean, on the curve), Price Residual (Price minus Fitted
             Price, positive for a bond that is rich), Yield to Maturity, Fitted Yield and Yield
             Residual (Yield to Maturity minus Fitted Yield, positive for a bond that is cheap).
@@ -1279,8 +1286,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
     ) -> pd.DataFrame:
         """
         Calculates the discount margin, yield and durations of every US Treasury floating
-        rate note (FRN) from its FedInvest price, with the Treasury's own pricing formula
-        (31 CFR 356, Appendix B, IV).
+        rate note (FRN) from its FedInvest price: what each note pays over its index and how
+        its price responds to the index and the margin, with the Treasury's own pricing
+        formula (31 CFR 356, Appendix B, IV).
 
         A Treasury FRN pays, each quarter, the interest accrued day by day at the index rate
         (the high rate of the latest 13-week bill auction, as a money market yield) plus a
@@ -1314,8 +1322,14 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         The pricing reproduces the Treasury's: the reopening of 91282CRD5 on 25 September
         2026 at a discount margin of 0.040% prices at 100.015499 with accrued interest of
-        0.603670, as announced. Referenced against FinancePy's BondFRN (dirty_price_from_dm,
-        discount_margin and modified_credit_duration), which agree on the same cash flows.
+        0.603670, as announced.
+
+        Referenced against:
+        - FinancePy, BondFRN.dirty_price_from_dm: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L107
+        - FinancePy, BondFRN.modified_credit_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L283
+
+        Shares similar logic:
+        - FinancePy, BondFRN.discount_margin: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L375
 
         See definition: https://www.ecfr.gov/current/title-31/part-356/appendix-Appendix%20B%20to%20Part%20356
 
@@ -1452,7 +1466,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
     ) -> pd.DataFrame:
         """
         Calculates the index ratio, inflation-adjusted price and breakeven inflation rate of
-        every US Treasury Inflation-Protected Security (TIPS) from its FedInvest price.
+        every US Treasury Inflation-Protected Security (TIPS) from its FedInvest price: how
+        much inflation has lifted each security's principal and what inflation its price
+        implies.
 
         TIPS pay a fixed real coupon on a principal that grows with the Consumer Price Index
         (CPI-U, not seasonally adjusted). They are quoted per 100 of inflation-adjusted
@@ -1484,15 +1500,21 @@ class MarketsFixedIncome(CurvesFixedIncome):
         2025) takes the index number the Treasury announced in its place, from the last
         twelve-month change.
 
-        Referenced against QuantLib's CPI interpolation (CPI.laggedFixing, linear, three
-        months' lag) and CPIBond, and FinancePy's InflationBond (inflation_principal and
-        inflation_accrued_interest). The Treasury's own figures are reproduced: the reference
-        CPI of 30 November 2026 is 336.87467, the index ratio of 91282CRE3 on that day 1.00870.
+        QuantLib's CPI interpolation is linear with three months' lag. The Treasury's own
+        figures are reproduced: the reference CPI of 30 November 2026 is 336.87467, the index
+        ratio of 91282CRE3 on that day 1.00870.
 
         See definition: https://www.treasurydirect.gov/marketable-securities/tips/
 
         Also known as: TIPS index ratio, inflation-adjusted principal, real yield, TIPS
         breakeven, inflation compensation, reference CPI.
+
+        Referenced against:
+        - QuantLib, CPI.laggedFixing: https://github.com/lballabio/QuantLib/blob/v1.44/ql/indexes/inflationindex.hpp#L39
+
+        Shares similar logic:
+        - QuantLib, CPIBond: https://www.quantlib.org/reference/class_quant_lib_1_1_c_p_i_bond.html
+        - FinancePy, InflationBond.inflation_principal: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/inflation/InflationBond.py#L92
 
         Args:
             date (str | None, optional): The day of the FedInvest prices (YYYY-MM-DD); a weekend
@@ -1733,12 +1755,18 @@ class MarketsFixedIncome(CurvesFixedIncome):
         repo cost) makes the forward price lower than the price. The implied repo rate of a
         quoted forward price inverts this formula (see `bond_futures_model.get_implied_repo_rate`).
 
-        Referenced against QuantLib's BondForward (equal without a coupon in between; with
-        one within 0.0001 per 100, as QuantLib discounts the coupon on the repo curve rather
-        than reinvesting it at simple interest) and rateslib's FixedRateBond.fwd_from_repo.
+        QuantLib's BondForward is equal without a coupon in between and within 0.0001 per 100
+        with one, as QuantLib discounts the coupon on the repo curve rather than reinvesting it
+        at simple interest.
 
         Also known as: bond forward price, repo carry, forward drop, cost of carry, forward
         yield, bond forward.
+
+        Referenced against:
+        - QuantLib, BondForward: https://www.quantlib.org/reference/class_quant_lib_1_1_bond_forward.html
+
+        Shares similar logic:
+        - rateslib, FixedRateBond.fwd_from_repo: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FixedRateBond.html#rateslib.instruments.FixedRateBond.fwd_from_repo
 
         Args:
             forward_date (str | None, optional): The forward (delivery) date (YYYY-MM-DD).
@@ -1750,8 +1778,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
             date (str | None, optional): The day of the FedInvest prices (YYYY-MM-DD); a weekend
                 or holiday uses the business day before it. Defaults to None, the latest day
                 with prices.
-            security_type (list[str] | str | None, optional): "Bill", "Note" or "Bond", or
-                several. Defaults to None, all three.
+            security_type (list[str] | str | None, optional): The kind of security, or several. Options
+                are: "Bill", "Note", "Bond", None (all three). Defaults to None.
             bonds (list[str] | str | None, optional): Keeps the securities with these CUSIPs
                 (or their US ISINs). Defaults to None, every security.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1878,8 +1906,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
     ) -> pd.DataFrame:
         """
         Calculates the conversion factor, basis and implied repo rate of every Treasury that
-        can be delivered into a CME US Treasury futures contract, and which of them is the
-        cheapest to deliver.
+        can be delivered into a CME US Treasury futures contract: what delivering each costs
+        and earns against the futures price, and which of them is the cheapest to deliver.
 
         The seller of a Treasury futures contract delivers a Treasury of its choice from a
         basket of eligible ones and receives the futures price times that security's
@@ -1915,17 +1943,26 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         The conversion factors equal those of FinancePy's BondFuture and rateslib's BondFuture
         (CME conventions) and Hull's examples (1.4623 for a 10% coupon with 20 years and 2
-        months). Referenced against FinancePy's BondFuture and rateslib's BondFuture
-        (gross_basis, net_basis, implied_repo).
+        months).
 
         See definition: https://www.cmegroup.com/trading/interest-rates/treasury-conversion-factors.html
 
         Also known as: cheapest to deliver, CTD, Treasury basis, implied repo rate, IRR,
         conversion factor, net basis, gross basis, invoice price, delivery basket.
 
+        Referenced against:
+        - rateslib, BondFuture.cfs: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.cfs
+
+        Shares similar logic:
+        - FinancePy, BondFuture.gross_basis: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L209
+        - FinancePy, BondFuture.net_basis: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L237
+        - rateslib, BondFuture.gross_basis: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.gross_basis
+        - rateslib, BondFuture.net_basis: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.net_basis
+        - rateslib, BondFuture.implied_repo: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.implied_repo
+
         Args:
-            contract (str, optional): The futures contract: "ZT" (2-year note), "ZF" (5-year
-                note), "ZN" (10-year note), "TN" (Ultra 10-year note), "ZB" (bond) or "UB"
+            contract (str, optional): The futures contract. Options are: "ZT" (2-year note), "ZF"
+                (5-year note), "ZN" (10-year note), "TN" (Ultra 10-year note), "ZB" (bond), "UB"
                 (Ultra bond). Defaults to "ZN".
             contract_month (str | None, optional): The delivery month (YYYY-MM), March, June,
                 September or December. Defaults to None, the first of those months that starts

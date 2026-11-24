@@ -79,9 +79,7 @@ class DiagnosticsEconometrics:
 
         Referenced against:
         - statsmodels, het_arch: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_arch.html
-            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
         - rugarch (R), Weighted.LM.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1172
-            Test: tests/econometrics/test_diagnostics_model.py::test_get_arch_lm_test_weighted_gamma_of_rugarch
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -192,7 +190,6 @@ class DiagnosticsEconometrics:
 
         Referenced against:
         - statsmodels, jarque_bera: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.jarque_bera.html
-            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -312,7 +309,6 @@ class DiagnosticsEconometrics:
 
         Referenced against:
         - statsmodels, acorr_ljungbox: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.acorr_ljungbox.html
-            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
         - rugarch (R), Weighted.Box.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1056
 
         Args:
@@ -437,7 +433,6 @@ class DiagnosticsEconometrics:
 
         Referenced against:
         - arch, VarianceRatio: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.VarianceRatio.html
-            Test: tests/econometrics/test_reference_validation.py::test_variance_ratio_matches_arch
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -588,7 +583,6 @@ class DiagnosticsEconometrics:
 
         Referenced against:
         - statsmodels, breaks_cusumolsresid (CUSUM of the OLS residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.breaks_cusumolsresid.html
-            Test: tests/econometrics/test_reference_validation.py::test_cusum_stability_test
 
         Shares similar logic:
         - statsmodels, recursive_olsresiduals (CUSUM of the recursive residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.recursive_olsresiduals.html

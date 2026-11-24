@@ -59,17 +59,12 @@ def get_covariance(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the covariance of returns.
+    Calculate the covariance of returns: how far every asset's returns move together with the
+    benchmark's.
 
-    A warnings filter is included given that the following error
-    can occur:
-
-    RuntimeWarning: Degrees of freedom <= 0 for slice
-        return np.cov(a, b, ddof=ddof)[0, 1]
-
-    Given that this is due to division by zero or NaN values, it does
-    not have any impact on the result. The warning is therefore
-    ignored.
+    A window without enough data raises NumPy's RuntimeWarning "Degrees of freedom <= 0 for
+    slice". It comes from a division by zero or NaN values and has no impact on the result, so
+    it is ignored.
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns, one column per asset, or a
@@ -78,7 +73,7 @@ def get_covariance(
             same index as `returns`.
 
     Returns:
-        pd.Series | pd.DataFrame | float: The sample covariance (ddof=1) of each asset with
+        pd.Series | pd.DataFrame | float: The sample covariance (with n - 1 in the denominator) of each asset with
         the benchmark: a Series per column for a DataFrame, a float for a Series and the
         rolling covariance for a rolling window object.
     """
@@ -108,14 +103,20 @@ def get_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate beta. Beta represents the slope in the linear regression between
-    the asset returns and the benchmark returns:
+    Calculate Beta: how strongly the asset's returns move with the benchmark's, the slope of the
+    linear regression of the asset returns on the benchmark returns.
+
+    The formula is as follows:
 
         - Beta = Covariance(Asset Returns, Benchmark Returns) / Variance(Benchmark Returns)
 
     Beta is estimated on the raw returns, not on returns in excess of the risk free rate.
     With a risk free rate that barely moves within a period the two slopes are nearly
     identical, and raw returns keep beta independent of the chosen risk free rate.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), CAPM.beta: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L89
+    - empyrical, beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1314
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
@@ -170,11 +171,15 @@ def get_rolling_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate rolling beta. Beta represents the slope in the linear regression between
-    the asset returns and the benchmark returns.
+    Calculate the rolling Beta: how strongly the asset's returns moved with the benchmark's
+    within each window of recent returns.
 
     Rolling beta is calculated by calculating the covariance between the asset returns
-    and the benchmark returns over a rolling window and dividing this by the variance
+    and the benchmark returns over a rolling window and dividing this by the variance of
+    the benchmark returns over the same window.
+
+    Shares similar logic:
+    - empyrical, roll_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1058
 
     Args:
         returns (pd.Series | pd.DataFrame): Asset returns.
@@ -215,10 +220,13 @@ def get_rolling_standard_deviation(
     benchmark_returns: pd.Series | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling sample standard deviation (ddof=1) of returns over the last
-    `window_size` returns of each column's own dates, so the dates only another ticker
-    has a return on (the weekends of a cryptocurrency next to a stock) do not leave every
-    window of a column incomplete.
+    Calculate the rolling standard deviation of returns: how much the returns varied within each
+    window of recent returns.
+
+    The standard deviation is the sample one (with n - 1 in the denominator), over the last
+    `window_size` returns of each column's own dates, so the dates only another ticker has a
+    return on (the weekends of a cryptocurrency next to a stock) do not leave every window of a
+    column incomplete.
 
     With `benchmark_returns`, the windows hold the dates both the column and the benchmark
     have a return on, with the returns of the dates in between compounded into the next
@@ -248,7 +256,10 @@ def get_beta_implied_return(
     beta_window: int,
 ) -> pd.DataFrame:
     """
-    Split each period's return into the part the market explains and the asset's own part:
+    Calculate the Beta-implied return: how much of each period's return the market explains, and
+    the Residual, the asset's own part of it.
+
+    The formula is as follows:
 
         - Implied Return = Beta × Benchmark Return
         - Residual = Actual Return − Implied Return
@@ -267,7 +278,8 @@ def get_beta_implied_return(
     Args:
         returns (pd.DataFrame): The daily asset returns, a daily PeriodIndex.
         benchmark_returns (pd.Series): The daily benchmark returns on the same index.
-        period (str): The period to explain: daily, weekly, monthly, quarterly or yearly.
+        period (str): The period to explain. Options are: "daily", "weekly", "monthly",
+            "quarterly", "yearly".
         beta_window (int): The number of daily returns the beta is estimated on.
 
     Returns:
@@ -331,8 +343,9 @@ def get_residual_value(
     residual: pd.DataFrame, market_cap: pd.DataFrame, period: str
 ) -> pd.DataFrame:
     """
-    Translate the Residual of each period into money: the residual return times the market
-    capitalization at the close before the period started.
+    Calculate the Residual Value: what the asset's own move of each period added to or took from
+    the company's market value, the residual return times the market capitalization at the close
+    before the period started.
 
         - Residual Value = Residual × Market Cap at the previous close
 
@@ -345,7 +358,8 @@ def get_residual_value(
             with the PeriodIndex of `period`.
         market_cap (pd.DataFrame): The daily market capitalization per ticker, a daily
             PeriodIndex. NaN where it is unknown, which keeps the value NaN.
-        period (str): The period of the residuals: daily, weekly, monthly, quarterly or yearly.
+        period (str): The period of the residuals. Options are: "daily", "weekly", "monthly",
+            "quarterly", "yearly".
 
     Returns:
         pd.DataFrame: The Residual Value per period and ticker, NaN without a market cap.
@@ -499,12 +513,16 @@ def get_beta_estimate(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate beta with an estimator other than ordinary least squares:
+    Calculate Beta with an estimator other than ordinary least squares: how strongly the asset's
+    returns move with the benchmark's, corrected for estimation noise or for a late reaction to
+    the market.
+
+    The estimators are:
 
         - Blume: 0.67 x OLS Beta + 0.33, the adjusted beta of Bloomberg (Blume, 1971, 1975).
         - Vasicek: the OLS beta shrunk towards the cross-sectional mean beta of the assets,
           weighted by the precisions: (σ²_prior x β + SE² x β_prior) / (σ²_prior + SE²)
-          (Vasicek, 1973). The prior is the mean and sample variance (ddof=1) of the OLS
+          (Vasicek, 1973). The prior is the mean and sample variance (with n - 1 in the denominator) of the OLS
           betas of the assets in the same period; one asset alone gets a prior mean of 1
           with a variance of 0.25.
         - Dimson: the sum of the slopes of a regression of the asset returns on the
@@ -523,8 +541,10 @@ def get_beta_estimate(
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
             'within period' MultiIndex (period, date) to get one beta per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
-        method (str, optional): One of "blume", "vasicek", "dimson", "scholes_williams",
-            "upside", "downside" or "ols". Defaults to "blume".
+        method (str, optional): The beta estimator. Options are: "ols" (ordinary least squares),
+            "blume" (Blume), "vasicek" (Vasicek), "dimson" (Dimson), "scholes_williams"
+            (Scholes-Williams), "upside" (upside beta), "downside" (downside beta). Defaults to
+            "blume".
         lags (int, optional): The leads and lags of the Dimson beta. Defaults to 1.
         window_size (int | None, optional): A rolling window over a flat index instead of
             one beta per period. Defaults to None.
@@ -580,9 +600,13 @@ def get_capital_asset_pricing_model(
     benchmark_returns: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return on an investment,
-    such as a stock or portfolio of stocks. It provides a framework for evaluating the risk and return trade-off of
-    an asset or portfolio in relation to the overall market. CAPM is based on the following key components:
+    Calculate the Capital Asset Pricing Model (CAPM): the return an asset is expected to earn
+    for its exposure to the market, the risk-free rate plus Beta times the market risk premium.
+
+    CAPM is a financial model used to estimate the expected return on an investment, such as a
+    stock or portfolio of stocks. It provides a framework for evaluating the risk and return
+    trade-off of an asset or portfolio in relation to the overall market. CAPM is based on the
+    following key components:
 
         - Risk-Free Rate (Rf): This is the theoretical return an investor could earn from an investment with no
         risk of financial loss. It is typically based on the yield of a government bond.
@@ -703,12 +727,15 @@ MISSING_FACTOR_VALUES = (-99.99, -999.0)
 
 def factor_url(region: str = "United States", kind: str = "five") -> str:
     """
-    The URL of Ken French's daily factor file of a region.
+    Give the URL of Ken French's daily factor file of a region, the source of the factor returns
+    of the factor models.
 
     Args:
-        region (str, optional): One of FACTOR_REGIONS. Defaults to "United States".
-        kind (str, optional): "five" (5 factors), "three" (3 factors) or "momentum".
-            Defaults to "five".
+        region (str, optional): The region of the factors. Options are: "United States", "Developed",
+            "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
+            Defaults to "United States".
+        kind (str, optional): The factor file. Options are: "five" (5 factors), "three"
+            (3 factors), "momentum" (momentum factor). Defaults to "five".
 
     Returns:
         str: The URL of the ZIP file.
@@ -722,9 +749,11 @@ def factor_url(region: str = "United States", kind: str = "five") -> str:
 
 def read_factor_file(zip_data: bytes) -> pd.DataFrame:
     """
-    Reads one of Ken French's daily factor files: the header is the first line that starts
-    with a comma (the number of description lines above it differs per file), the dates are
-    YYYYMMDD (padded with spaces in the regional files) and the values are in percent.
+    Read one of Ken French's daily factor files into daily factor returns as decimals.
+
+    The header is the first line that starts with a comma (the number of description lines above
+    it differs per file), the dates are YYYYMMDD (padded with spaces in the regional files) and
+    the values are in percent.
 
     Args:
         zip_data (bytes): The ZIP file.
@@ -784,8 +813,11 @@ def obtain_fama_and_french_dataset(
     fama_and_french_url: str | None = None, region: str = "United States"
 ):
     """
-    This functionality returns the Fama and French 5 Factor Model dataset. It is a dataset that contains the
-    excess returns of the 5 factors that are used in the Fama and French 5 Factor Model. The factors are:
+    Obtain the Fama and French 5 Factor Model dataset: the daily returns of the market, size,
+    value, investment and profitability factors and the risk-free rate.
+
+    It is a dataset that contains the excess returns of the 5 factors that are used in the Fama
+    and French 5 Factor Model. The factors are:
 
         - Market (MKT): The excess return of the market.
         - Size (SMB): Small companies tend to outperform large companies.
@@ -803,8 +835,8 @@ def obtain_fama_and_french_dataset(
     Args:
         fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
         Defaults to None, which uses the 5 factor file of the region.
-        region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
-        "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
+        region (str, optional): The region whose factors to use. Options are: "United States", "Developed",
+            "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
         Every region's factors are U.S. dollar returns with the U.S. one-month Treasury bill as the
         risk-free rate (RF). Defaults to "United States".
 
@@ -845,7 +877,10 @@ def obtain_fama_and_french_three_factor_dataset(
     fama_and_french_url: str | None = None, region: str = "United States"
 ) -> pd.DataFrame:
     """
-    This functionality returns the Fama and French 3 Factor Model dataset:
+    Obtain the Fama and French 3 Factor Model dataset: the daily returns of the market, size and
+    value factors and the risk-free rate.
+
+    The factors are:
 
         - Market (MKT): The excess return of the market.
         - Size (SMB): Small companies tend to outperform large companies.
@@ -864,8 +899,9 @@ def obtain_fama_and_french_three_factor_dataset(
     Args:
         fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
         Defaults to None, which uses the 3 factor file of the region.
-        region (str, optional): The region whose factors to use, see
-        `obtain_fama_and_french_dataset`. Defaults to "United States".
+        region (str, optional): The region whose factors to use. Options are: "United States", "Developed",
+            "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
+        Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Fama and French 3 Factor Model dataset.
@@ -879,8 +915,10 @@ def obtain_carhart_momentum_dataset(
     momentum_url: str | None = None, region: str = "United States"
 ) -> pd.DataFrame:
     """
-    This functionality returns the Carhart Momentum (MOM) factor dataset, used to extend
-    the Fama and French 3 Factor Model into the Carhart 4 Factor Model:
+    Obtain the Carhart Momentum (MOM) factor dataset: the daily return of stocks with high prior
+    returns over stocks with low prior returns.
+
+    It extends the Fama and French 3 Factor Model into the Carhart 4 Factor Model:
 
         - Momentum (MOM): Stocks with high prior returns (winners) tend to keep outperforming
         stocks with low prior returns (losers) over the medium term.
@@ -891,8 +929,9 @@ def obtain_carhart_momentum_dataset(
     Args:
         momentum_url (str | None, optional): the URL of the ZIP file that contains the dataset.
         Defaults to None, which uses the momentum file of the region.
-        region (str, optional): The region whose factor to use, see
-        `obtain_fama_and_french_dataset`. Defaults to "United States".
+        region (str, optional): The region whose factor to use. Options are: "United States", "Developed",
+            "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan", "North America".
+        Defaults to "United States".
 
     Returns:
         pd.DataFrame: the Carhart Momentum Factor dataset, with a single "Mom" column.
@@ -931,7 +970,8 @@ def get_factor_asset_correlations(
     excess_return: pd.Series,
 ) -> pd.Series:
     """
-    Calculates factor exposures for each asset.
+    Calculate the correlation of every factor with the asset's excess return: how closely the
+    asset moves with each factor.
 
     The major difference between the Fama and French Model here is that the correlation
     is taken as opposed to a Linear Regression in which the R-squared or Slope can be used to
@@ -1025,8 +1065,13 @@ def get_fama_and_french_model_multi(
     factor_dataset: pd.DataFrame,
 ) -> tuple[dict, pd.Series, str | None]:
     """
-    The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
+    Calculate the Fama and French 5 Factor Model regression: how much of the asset's excess
+    return the market, size, value, investment and profitability factors explain, and the
+    intercept left over.
+
+    The model is an extension of the CAPM model. It adds four additional factors to the
     regression analysis to better describe asset returns:
+
         - Size (SMB): Small companies tend to outperform large companies.
         - Value (HML): Value stocks tend to outperform growth stocks.
         - Investment (CMA): Companies that invest conservatively tend to outperform companies that invest aggressively.
@@ -1116,8 +1161,12 @@ def get_fama_and_french_model_single(
     factor: pd.Series,
 ) -> tuple[dict, pd.Series]:
     """
-    The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four additional factors to the
-    regression analysis to better describe asset returns:
+    Calculate the regression of the asset's excess return on a single factor: how much of the
+    return one factor of the Fama and French model explains, with its slope and intercept.
+
+    The Fama and French 5 Factor Model is an extension of the CAPM model. It adds four
+    additional factors to the regression analysis to better describe asset returns:
+
         - Size (SMB): Small companies tend to outperform large companies.
         - Value (HML): Value stocks tend to outperform growth stocks.
         - Investment (CMA): Companies that invest conservatively tend to outperform companies that invest aggressively.
@@ -1131,13 +1180,10 @@ def get_fama_and_french_model_single(
 
         - Excess Return = Intercept + Slope * Factor Value + Residuals
 
-    Note that `scipy.stats.linregress(x, y)` fits `y = intercept + slope * x`, i.e. `x`
-    is the independent/predictor variable and `y` is the dependent/response variable.
-    Given the formula above, `factor` is `x` and `excess_returns` is `y`, so it must be
-    called as `linregress(factor, excess_returns)` -- calling it the other way around
-    fits the reverse regression (`factor` as a function of `excess_returns`), which generally yields a different slope and
-    intercept (since OLS is not symmetric in `x` and `y`) and silently produces the
-    wrong regression parameters and residuals for this model.
+    The factor is the independent (predictor) variable and the excess return the dependent
+    (response) variable. OLS is not symmetric in the two, so the reverse regression, the
+    factor as a function of the excess return, would give a different slope and intercept
+    and the wrong residuals for this model.
 
     Args:
         excess_returns (pd.Series): the excess returns.
@@ -1149,7 +1195,7 @@ def get_fama_and_french_model_single(
 
     Notes:
     - Observations for which either the excess return or the factor is NaN are dropped
-    (listwise deletion), mirroring `get_fama_and_french_model_multi`. `scipy.stats.linregress`
+    (listwise deletion), mirroring `get_fama_and_french_model_multi`. A linear regression
     propagates NaN, so a single missing observation -- which the first period of any dataset
     always has, the first return having no prior close -- would otherwise turn every
     regression parameter and every residual for that period into NaN.
@@ -1191,8 +1237,8 @@ def get_alpha(
     benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the (arithmetic) Alpha, i.e. the asset's return in excess of the
-    benchmark's return.
+    Calculate the (arithmetic) Alpha: how much the asset's return exceeded the benchmark's
+    return.
 
     This is the simple, model-free notion of Alpha (sometimes called "active return"):
     it does not risk-adjust for market exposure at all. For the risk-adjusted version
@@ -1230,7 +1276,8 @@ def get_rolling_alpha(
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Alpha of returns.
+    Calculate the rolling Alpha: how much the asset's return exceeded the benchmark's on average
+    within each window of recent returns.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1252,8 +1299,8 @@ def get_jensens_alpha(
     benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate Jensen's Alpha, i.e. the return earned above what CAPM would predict
-    given the asset's Beta (systematic risk exposure).
+    Calculate Jensen's Alpha: the return earned above what the CAPM predicts for the asset's
+    Beta (systematic risk exposure).
 
     The formula is as follows:
 
@@ -1269,6 +1316,10 @@ def get_jensens_alpha(
 
     - Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period 1945-1964."
     Journal of Finance, 23(2), 389-416.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), CAPM.jensenAlpha: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.jensenAlpha.R#L34
+    - empyrical, alpha: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1154
 
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
@@ -1318,8 +1369,8 @@ def get_treynor_ratio(
     benchmark_standard_deviation: pd.Series | float | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Treynor ratio of returns, i.e. the excess return earned per unit of
-    systematic (market) risk, as measured by Beta.
+    Calculate the Treynor ratio: the excess return earned per unit of systematic (market) risk,
+    as measured by Beta.
 
     Unlike the Sharpe ratio, which divides by total volatility (standard deviation),
     the Treynor ratio divides by Beta -- appropriate for an investor who holds this
@@ -1343,10 +1394,14 @@ def get_treynor_ratio(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 77.
-    - PerformanceAnalytics: TreynorRatio(modified = TRUE)
-    (https://github.com/braverock/PerformanceAnalytics).
 
     A beta of 0 (or of rounding noise) leaves the ratio undefined: NaN, not infinite.
+
+    Referenced against:
+    - PerformanceAnalytics (R), TreynorRatio (modified): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TreynorRatio.R#L47
+
+    Shares similar logic:
+    - quantstats, treynor_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1469
 
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
@@ -1400,8 +1455,8 @@ def get_sharpe_ratio(
     excess_returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Sharpe ratio of returns, i.e. the mean excess return per unit of total
-    (upside and downside) volatility.
+    Calculate the Sharpe ratio: the mean excess return per unit of total (upside and downside)
+    volatility.
 
     The formula is as follows:
 
@@ -1422,6 +1477,14 @@ def get_sharpe_ratio(
 
     - Sharpe, W.F. (1966). "Mutual Fund Performance." Journal of Business, 39(1), 119-138.
     - Sharpe, W.F. (1994). "The Sharpe Ratio." Journal of Portfolio Management, 21(1), 49-58.
+
+    Referenced against:
+    - quantstats, smart_sharpe (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1000
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), SharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SharpeRatio.R#L80
+    - empyrical, sharpe_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L652
+    - quantstats, sharpe: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L938
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
@@ -1452,7 +1515,11 @@ def get_rolling_sharpe_ratio(
     window_size: int,
 ) -> pd.Series:
     """
-    Calculate the rolling Sharpe ratio of returns.
+    Calculate the rolling Sharpe ratio: the mean excess return per unit of volatility within
+    each window of recent returns.
+
+    Shares similar logic:
+    - quantstats, rolling_sharpe: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1030
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
@@ -1477,7 +1544,8 @@ def get_probabilistic_sharpe_ratio(
     n_observations: pd.Series | pd.DataFrame | float | int,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Probabilistic Sharpe Ratio (PSR).
+    Calculate the Probabilistic Sharpe Ratio (PSR): the probability that the true Sharpe ratio
+    exceeds a benchmark Sharpe ratio, given the skewness, kurtosis and length of the returns.
 
     The naive Sharpe ratio significance test (e.g. a t-test on SR̂) implicitly assumes
     that returns are normally (i.i.d. Gaussian) distributed. Real financial returns are
@@ -1501,11 +1569,11 @@ def get_probabilistic_sharpe_ratio(
     inconclusive, and a low PSR means the observed Sharpe ratio could plausibly be noise.
 
     Note that this formula requires **non-excess (raw) kurtosis**, i.e. a Normal
-    distribution has a kurtosis of 3, not 0. This codebase's `risk_model.get_kurtosis`
-    defaults to `fisher=True` (excess kurtosis, Normal = 0); either call it with
-    `fisher=False` before passing the result in here, or add 3 to a Fisher/excess
-    kurtosis value. Getting this convention backwards silently shifts every PSR value
-    (via the ((γ₄ − 1) / 4) term), so double check which convention is being fed in.
+    distribution has a kurtosis of 3, not 0. `risk_model.get_kurtosis` returns the excess
+    (Fisher) kurtosis by default (Normal = 0); either ask it for the raw (Pearson) kurtosis
+    before passing the result in here, or add 3 to an excess kurtosis value. Getting this
+    convention backwards silently shifts every PSR value (via the ((γ₄ − 1) / 4) term), so double
+    check which convention is being fed in.
 
     The probability does not depend on the time scale of the ratio: annualizing SR̂, SR* and
     the standard error of SR̂ by the same SQRT(q) leaves the z-score unchanged, so SR̂ and SR*
@@ -1520,9 +1588,16 @@ def get_probabilistic_sharpe_ratio(
 
     - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
     Journal of Risk, 15(2), 3-44.
-    - quantstats: stats.probabilistic_ratio, stats.probabilistic_sharpe_ratio,
-    stats.probabilistic_sortino_ratio and stats.probabilistic_adjusted_sortino_ratio
-    (https://github.com/ranaroussi/quantstats).
+
+    Referenced against:
+    - quantstats, probabilistic_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1404
+    - quantstats, probabilistic_adjusted_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1434
+
+    Shares similar logic:
+    - quantstats, probabilistic_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1297
+    - quantstats, probabilistic_sharpe_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1369
+    - PerformanceAnalytics (R), ProbSharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ProbSharpeRatio.R#L47
+    - RiskLabAI, probabilistic_sharpe_ratio: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/probabilistic_sharpe_ratio.py#L16
 
     Args:
         sharpe_ratio (pd.Series | pd.DataFrame | float): The observed (realized) Sharpe
@@ -1568,7 +1643,8 @@ def get_deflated_sharpe_ratio(
     kurtosis: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Deflated Sharpe Ratio (DSR).
+    Calculate the Deflated Sharpe Ratio (DSR): the probability that the true Sharpe ratio
+    exceeds the best Sharpe ratio the number of strategies tried would give by chance.
 
     The Probabilistic Sharpe Ratio corrects the naive Sharpe ratio test for skewed,
     fat-tailed returns, but it still assumes the reported Sharpe ratio is the *only*
@@ -1606,6 +1682,10 @@ def get_deflated_sharpe_ratio(
     - Bailey, D.H., & López de Prado, M. (2014). "The Deflated Sharpe Ratio: Correcting
     for Selection Bias, Backtest Overfitting, and Non-Normality." Journal of Portfolio
     Management, 40(5), 94-107.
+
+    Shares similar logic:
+    - ffn, calc_deflated_sharpe_ratio: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3077
+    - ffn, calc_expected_max_sharpe: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3048
 
     Args:
         sharpe_ratio (pd.Series | pd.DataFrame | float): The observed (realized) Sharpe
@@ -1658,8 +1738,8 @@ def get_sortino_ratio(
     excess_returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Sortino ratio of returns, i.e. the mean excess return per unit of
-    downside deviation.
+    Calculate the Sortino ratio: the mean excess return per unit of downside deviation, so only
+    volatility below the target counts as risk.
 
     Unlike the Sharpe ratio, which penalizes upside and downside volatility equally via
     the standard deviation, the Sortino ratio only penalizes volatility below a Minimum
@@ -1675,7 +1755,7 @@ def get_sortino_ratio(
     Where N is the *total* number of observations (not just the number of negative
     ones) -- periods with a non-negative excess return contribute 0 to the sum, but
     still count towards N, exactly as in Sortino & Price (1994). This is deliberately not the same
-    as `excess_returns[excess_returns < 0].std()`: that alternative would divide by
+    as the standard deviation of the negative excess returns alone: that alternative would divide by
     (number of negative observations - 1) and measure the dispersion of the losses
     around *their own mean*, rather than their root-mean-square distance below the MAR
     of 0 -- a materially different (and non-standard) quantity that understates how
@@ -1693,6 +1773,15 @@ def get_sortino_ratio(
 
     Without a return below 0 the downside deviation is 0 and the ratio is undefined: NaN, not
     infinite.
+
+    Referenced against:
+    - quantstats, smart_sortino (with get_autocorrelation_penalty): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1158
+    - quantstats, adjusted_sortino: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1258
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), SortinoRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SortinoRatio.R#L48
+    - empyrical, sortino_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L727
+    - quantstats, sortino: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1085
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
@@ -1734,13 +1823,18 @@ def get_rolling_sortino_ratio(
     excess_returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Sortino ratio of returns. See `get_sortino_ratio` for the
-    formula and the Notes on why the downside deviation is computed as the root-mean-
-    square of the negative part of returns over the *entire* window (Sortino & Price,
-    1994), rather than as the standard deviation of only the negative observations
-    within that window.
+    Calculate the rolling Sortino ratio: the mean excess return per unit of downside deviation
+    within each window of recent returns.
+
+    See `get_sortino_ratio` for the formula and the Notes on why the downside deviation is
+    computed as the root-mean-square of the negative part of returns over the *entire* window
+    (Sortino & Price, 1994), rather than as the standard deviation of only the negative
+    observations within that window.
 
     Windows without a loss have no ratio (NaN).
+
+    Shares similar logic:
+    - quantstats, rolling_sortino: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1188
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
@@ -1765,8 +1859,9 @@ def get_autocorrelation_penalty(
     returns: np.ndarray | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Calculate the autocorrelation penalty of returns, the factor by which the "smart" Sharpe
-    and Sortino ratios divide the plain ratio to account for serially correlated returns.
+    Calculate the autocorrelation penalty: how much serially correlated returns understate the
+    risk of holding the asset over several periods, the factor by which the "smart" Sharpe and
+    Sortino ratios divide the plain ratio.
 
     Positively autocorrelated returns (smoothed prices of illiquid assets, momentum) make the
     standard deviation of one return understate the risk of holding the asset over several
@@ -1791,11 +1886,12 @@ def get_autocorrelation_penalty(
 
     - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal, 58(4),
     36-52.
-    - quantstats: stats.autocorr_penalty, stats.smart_sharpe and stats.smart_sortino, the
-    reference for the penalty (https://github.com/ranaroussi/quantstats).
 
     Fewer than two returns, or returns without variation, have no autocorrelation and give
     NaN (quantstats returns a penalty of 1 for them).
+
+    Referenced against:
+    - quantstats, autocorr_penalty: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L875
 
     Args:
         returns (np.ndarray | pd.Series | pd.DataFrame): The (excess) returns. A "within
@@ -1845,8 +1941,12 @@ def get_rolling_autocorrelation_penalty(
     returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the autocorrelation penalty of returns over a rolling window, see
+    Calculate the rolling autocorrelation penalty: how much serially correlated returns
+    understated the risk within each window of recent returns, see
     `get_autocorrelation_penalty`.
+
+    Referenced against:
+    - quantstats, autocorr_penalty: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L875
 
     Args:
         returns (pd.Series | pd.DataFrame): The (excess) returns.
@@ -1865,17 +1965,22 @@ def get_annualized_return(
     observations_per_year: float | pd.Series,
 ) -> float | pd.Series:
     """
-    Calculate the annualized (geometric) return of a series of returns, the constant yearly
-    return that compounds into the same growth over the number of years the returns span.
+    Calculate the annualized (geometric) return: the constant yearly return that compounds into
+    the same growth over the number of years the returns span.
 
     The formula is as follows:
 
         - Annualized Return = PRODUCT(1 + Return) ^ (Observations per Year / N) − 1
 
     Where N is the number of returns of each column. The years are counted in observations
-    (N / Observations per Year), as PerformanceAnalytics (Return.annualized) and empyrical
-    (annual_return) do, rather than in calendar days as `get_compound_annual_growth_rate`
-    does; both agree for a full history of trading days.
+    (N / Observations per Year), as PerformanceAnalytics and empyrical do, rather than in
+    calendar days as `get_compound_annual_growth_rate` does; both agree for a full history of trading days.
+
+    Referenced against:
+    - PerformanceAnalytics (R), Return.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.annualized.R#L39
+
+    Shares similar logic:
+    - empyrical, annual_return: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L408
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns per observation, each column on its
@@ -1900,18 +2005,18 @@ def get_safety_first_ratio(
     minimum_acceptable_return: float | pd.Series = 0.0,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate Roy's Safety-First Ratio of returns, i.e. the mean return in excess of a
-    minimum_acceptable_return (shortfall) return per unit of total volatility.
+    Calculate Roy's Safety-First Ratio: the mean return above a minimum acceptable (shortfall)
+    return per unit of total volatility.
 
     The formula is as follows:
 
         - Safety-First Ratio = (Mean(Return) - Threshold) / Standard Deviation(Return)
 
     Roy (1952) chooses the portfolio that minimizes the probability of a return below the
-    minimum_acceptable_return (the "disaster level"); for normally distributed returns that is the
+    minimum acceptable return (the "disaster level"); for normally distributed returns that is the
     portfolio with the highest Safety-First Ratio, as the probability is N(-Ratio). With
     the risk-free rate as the threshold the ratio is the Sharpe Ratio (see
-    `get_sharpe_ratio`). The standard deviation is the sample one (ddof=1), and the
+    `get_sharpe_ratio`). The standard deviation is the sample one (with n - 1 in the denominator), and the
     threshold is in the units of the returns: per observation, so a daily threshold for
     daily returns. A "within period" (period, date) Multi Index gives one ratio per period.
 
@@ -1941,8 +2046,11 @@ def get_rolling_safety_first_ratio(
     minimum_acceptable_return: float | pd.Series = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Safety-First Ratio of returns, see `get_safety_first_ratio`,
-    each column over its own trading days (see `get_rolling_sharpe_ratio`).
+    Calculate the rolling Safety-First Ratio: the mean return above a minimum acceptable return
+    per unit of volatility within each window of recent returns.
+
+    See `get_safety_first_ratio`; each column is taken over its own trading days (see
+    `get_rolling_sharpe_ratio`).
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
@@ -1960,9 +2068,9 @@ def get_upside_potential_ratio(
     excess_returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Upside Potential Ratio of returns, i.e. the first order upper partial
-    moment (the expected return above the minimum acceptable return) per unit of the
-    downside deviation (the square root of the second order lower partial moment).
+    Calculate the Upside Potential Ratio: the expected gain above the minimum acceptable return
+    (the first order upper partial moment) per unit of downside deviation (the square root of
+    the second order lower partial moment).
 
     The formula is as follows:
 
@@ -1986,6 +2094,9 @@ def get_upside_potential_ratio(
     A ratio needs at least two observations (with a single one either moment is 0), and
     without a return below the minimum acceptable return there is no downside to divide by:
     both are returned as NaN.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), UpsidePotentialRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpsidePotentialRatio.R#L72
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
@@ -2021,9 +2132,11 @@ def get_rolling_upside_potential_ratio(
     excess_returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Upside Potential Ratio of returns, see
-    `get_upside_potential_ratio`, with both partial moments averaged over every
-    observation in the window.
+    Calculate the rolling Upside Potential Ratio: the expected gain above the minimum acceptable
+    return per unit of downside deviation within each window of recent returns.
+
+    See `get_upside_potential_ratio`; both partial moments are averaged over every observation
+    in the window.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
@@ -2050,8 +2163,8 @@ def get_ulcer_performance_index(
     excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
 ) -> pd.Series:
     """
-    Calculate the Ulcer Performance Index (UPI) of returns, i.e. the mean excess return
-    per unit of Ulcer Index (a depth- and duration-weighted measure of drawdown pain).
+    Calculate the Ulcer Performance Index (UPI): the mean excess return per unit of Ulcer Index,
+    a depth- and duration-weighted measure of drawdown pain.
 
     The formula is as follows:
 
@@ -2066,6 +2179,11 @@ def get_ulcer_performance_index(
     Ulcer Index, on which this ratio is based, was originally introduced in 1987.)
 
     Without a drawdown the Ulcer Index is 0 and the ratio is undefined (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), MartinRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MartinRatio.R#L33
+    - quantstats, ulcer_performance_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1855
+    - ffn, to_ulcer_performance_index: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L2989
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series of returns with risk-free rate subtracted.
@@ -2085,7 +2203,8 @@ def get_m2_ratio(
     benchmark_standard_deviation: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the M2 Ratio (Modigliani-Modigliani Measure) of returns.
+    Calculate the M2 Ratio (Modigliani-Modigliani Measure): the return the asset would have
+    earned with the benchmark's volatility, the Sharpe ratio expressed as a return.
 
     The Sharpe ratio is dimensionless (a ratio, not a return), which makes it awkward to
     communicate intuitively -- a Sharpe ratio of 0.5 does not by itself say how much
@@ -2110,6 +2229,12 @@ def get_m2_ratio(
     Portfolio Management, 23(2), 45-54.
 
     Returns without variation have no Sharpe ratio, which leaves the M2 Ratio NaN.
+
+    Referenced against:
+    - PerformanceAnalytics (R), MSquared: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MSquared.R#L33
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), Modigliani: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Modigliani.R#L36
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
@@ -2166,8 +2291,10 @@ def get_rolling_m2_ratio(
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns. See
-    `get_m2_ratio` for the formula.
+    Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure): the return the asset would
+    have earned with the benchmark's volatility within each window of recent returns.
+
+    See `get_m2_ratio` for the formula.
 
     Windows without variation have no ratio (NaN).
 
@@ -2202,8 +2329,8 @@ def get_m2_excess_return(
     method: str = "arithmetic",
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the M2 excess return, the M2 measure (see `get_m2_ratio`) above the return of the
-    benchmark: the return the risk-matched portfolio earned beyond the benchmark.
+    Calculate the M2 excess return: the return the risk-matched portfolio of the M2 measure (see
+    `get_m2_ratio`) earned beyond the benchmark.
 
     The formula is as follows:
 
@@ -2214,12 +2341,16 @@ def get_m2_excess_return(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 68.
-    - PerformanceAnalytics: MSquaredExcess (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), MSquaredExcess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MSquaredExcess.R#L35
 
     Args:
         m2_ratio (pd.Series | pd.DataFrame): The M2 measure per period (columns per asset).
         benchmark_returns (pd.Series | float): The benchmark return over the same periods.
-        method (str, optional): "arithmetic" or "geometric". Defaults to "arithmetic".
+        method (str, optional): The kind of excess return. Options are: "arithmetic"
+            (arithmetic M2 excess return), "geometric" (geometric M2 excess return). Defaults to
+            "arithmetic".
 
     Returns:
         pd.Series | pd.DataFrame: The M2 excess return.
@@ -2251,12 +2382,15 @@ def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Tracking Error of returns, i.e. the standard deviation of the
-    difference between the asset's and the benchmark's return (the "active return").
+    Calculate the Tracking Error: how far the asset's return strays from the benchmark's, the
+    standard deviation of their difference (the "active return").
 
     The formula is as follows:
 
         - Tracking Error = Standard Deviation(Asset Return - Benchmark Return)
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), TrackingError: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TrackingError.R#L32
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
@@ -2293,7 +2427,8 @@ def get_rolling_tracking_error(
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Tracking Error of returns.
+    Calculate the rolling Tracking Error: how far the asset's return strayed from the
+    benchmark's within each window of recent returns.
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -2313,8 +2448,8 @@ def get_information_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Information Ratio of returns, i.e. the mean active return (asset
-    return minus benchmark return) per unit of Tracking Error.
+    Calculate the Information Ratio: the mean active return (asset return minus benchmark
+    return) per unit of Tracking Error.
 
     The formula is as follows:
 
@@ -2331,6 +2466,11 @@ def get_information_ratio(
     Portfolio Management, 15(3), 30-37.
 
     Returns that track the benchmark exactly have a tracking error of 0 and no ratio (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), InformationRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/InformationRatio.R#L32
+    - quantstats, information_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2884
+    - ffn, calc_information_ratio: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1691
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
@@ -2373,7 +2513,8 @@ def get_rolling_information_ratio(
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Information Ratio of returns.
+    Calculate the rolling Information Ratio: the mean active return per unit of Tracking Error
+    within each window of recent returns.
 
     Windows without tracking error have no ratio (NaN).
 
@@ -2397,8 +2538,7 @@ def get_calmar_ratio(
     returns: pd.Series | pd.DataFrame, maximum_drawdown: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Calmar Ratio of returns, i.e. the (typically annualized) return per
-    unit of Maximum Drawdown.
+    Calculate the Calmar Ratio: the (typically annualized) return per unit of Maximum Drawdown.
 
     The formula is as follows:
 
@@ -2410,10 +2550,6 @@ def get_calmar_ratio(
     For more information about the method, see the following source:
 
     - Young, T.W. (1991). "Calmar Ratio: A Smoother Tool." Futures, 20(1), 40.
-    - PerformanceAnalytics: CalmarRatio (https://github.com/braverock/PerformanceAnalytics).
-    - empyrical: calmar_ratio (https://github.com/stefan-jansen/empyrical-reloaded).
-    - quantstats: stats.calmar (https://github.com/ranaroussi/quantstats).
-    - ffn: calc_calmar_ratio (https://github.com/pmorissette/ffn).
 
     The reference libraries divide the annualized return over the whole sample (see
     `get_annualized_return`) by the Maximum Drawdown over the whole sample; pass those to get
@@ -2421,6 +2557,12 @@ def get_calmar_ratio(
     gives a slightly different annualized return.
 
     Without a drawdown the ratio is undefined (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), CalmarRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CalmarRatio.R#L50
+    - empyrical, calmar_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L548
+    - quantstats, calmar: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1788
+    - ffn, calc_calmar_ratio: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L2945
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
@@ -2440,8 +2582,8 @@ def get_average_largest_drawdown(
     method: str = "return",
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Average Largest Drawdown D_Lar of returns (Bacon, 2008), the mean depth of
-    the d deepest drawdowns, each measured from its peak to its trough.
+    Calculate the Average Largest Drawdown D_Lar (Bacon, 2008): the mean depth of the d deepest
+    drawdowns, each measured from its peak to its trough.
 
     The formula is as follows:
 
@@ -2449,8 +2591,8 @@ def get_average_largest_drawdown(
 
     Where Trough_1 <= Trough_2 <= ... are the depths of the drawdown episodes (runs of
     observations below the running peak, an episode that has not recovered by the end
-    included), deepest first, as in `risk_model.get_drawdown_table`, and d is
-    `largest_drawdowns`, or the number of episodes when there are fewer. d = 1 gives the
+    included), deepest first, as in `risk_model.get_drawdown_table`, and d is the number
+    of largest drawdowns, or the number of episodes when there are fewer. d = 1 gives the
     Maximum Drawdown, and a d at least the number of episodes the average depth of all of
     them (Bacon's Average Drawdown).
 
@@ -2460,16 +2602,14 @@ def get_average_largest_drawdown(
     2nd edition, John Wiley & Sons.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
-        (method="return") or of raw levels (method="level"), optionally with a (period, date)
-        index for a value per period.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, or of raw levels
+        for level drawdowns, optionally with a (period, date) index for a value per period.
         largest_drawdowns (int, optional): The number d of deepest drawdowns averaged.
         Defaults to 3.
-        method (str, optional): Either "return" (default), which measures percentage
-        drawdowns of the compounded return series, or "level", which measures
-        absolute drawdowns of the raw level series directly -- use this when
-        `returns` is not a genuine percentage return (e.g. a series that can be zero
-        or negative). Defaults to "return".
+        method (str, optional): The kind of drawdown. Options are: "return" (percentage drawdowns
+        of the compounded return series), "level" (absolute drawdowns of the raw level series,
+        for a series that is not a genuine percentage return, such as one that can be zero or
+        negative). Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame | float: The Average Largest Drawdown, negative (0 without a
@@ -2531,8 +2671,8 @@ def get_sterling_ratio(
     adjustment: float = 0.1,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Sterling Ratio of returns as Bacon (2008) defines it: the return per unit of
-    the Average Largest Drawdown plus a fixed adjustment.
+    Calculate the Sterling Ratio as Bacon (2008) defines it: the return per unit of the Average
+    Largest Drawdown plus a fixed adjustment.
 
     The formula is as follows:
 
@@ -2541,7 +2681,7 @@ def get_sterling_ratio(
     Where D_Lar is the Average Largest Drawdown, the mean depth of the d deepest drawdowns
     (peak to trough, see `get_average_largest_drawdown`), and the Adjustment conventionally
     10%. With d = 1, D_Lar is the Maximum Drawdown, which is the Sterling Ratio of
-    PerformanceAnalytics (SterlingRatio, with the annualized return over the whole sample).
+    PerformanceAnalytics (with the annualized return over the whole sample).
     The original form of Deane Sterling Jones, popularised by Kestner (1996), divides the
     compound annual return of the last three years by the average of the maximum drawdown of
     each of those years plus 10% instead: an average of annual maxima, whereas D_Lar averages
@@ -2552,7 +2692,9 @@ def get_sterling_ratio(
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons.
     - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
-    - PerformanceAnalytics: SterlingRatio (https://github.com/braverock/PerformanceAnalytics).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), SterlingRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CalmarRatio.R#L85
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
@@ -2574,18 +2716,17 @@ def get_burke_drawdown_measure(
     method: str = "return",
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Burke Drawdown Measure of returns, i.e. the square root of the sum of
-    squared pointwise negative drawdowns in the cumulative return series.
+    Calculate the Burke Drawdown Measure: how deep and how long the cumulative returns stayed
+    below their peak, the square root of the sum of the squared pointwise drawdowns.
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
-        (method="return") or of raw levels (method="level").
-        method (str, optional): Either "return" (default), which measures percentage
-        drawdowns of the compounded return series, or "level", which measures
-        absolute drawdowns of the raw level series directly -- use this when
-        `returns` is not a genuine percentage return (e.g. a series that can be zero
-        or negative). Note that in "level" mode the result is in squared input units,
-        not a percentage. Defaults to "return".
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, or of raw levels
+        for level drawdowns.
+        method (str, optional): The kind of drawdown. Options are: "return" (percentage drawdowns
+        of the compounded return series), "level" (absolute drawdowns of the raw level series,
+        for a series that is not a genuine percentage return, such as one that can be zero or
+        negative; the result is then in squared input units, not a percentage). Defaults to
+        "return".
 
     Returns:
         pd.Series | pd.DataFrame: Burke Drawdown Measure values as float if returns is a
@@ -2636,7 +2777,8 @@ def get_burke_ratio(
     n_observations: pd.Series | pd.DataFrame | float | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Burke Ratio of returns.
+    Calculate the Burke Ratio: the excess return per unit of drawdown risk, the root of the sum
+    of the squared drawdowns.
 
     The formula is as follows:
 
@@ -2652,10 +2794,11 @@ def get_burke_ratio(
     - Burke, G. (1994). "A Sharper Sharpe Ratio." Futures, 23(3), 56.
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, pp. 90-91.
-    - PerformanceAnalytics: BurkeRatio(modified = TRUE)
-    (https://github.com/braverock/PerformanceAnalytics).
 
     Without a drawdown the ratio is undefined (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), BurkeRatio (modified): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/BurkeRatio.R#L37
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
@@ -2684,7 +2827,8 @@ def get_pain_ratio(
     pain_index: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Pain Ratio of returns, i.e. the excess return per unit of Pain Index.
+    Calculate the Pain Ratio: the excess return per unit of Pain Index, the average depth of the
+    drawdowns.
 
     The formula is as follows:
 
@@ -2696,6 +2840,9 @@ def get_pain_ratio(
 
     - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley &
     Sons, chapter 5.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), PainRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/PainRatio.R#L33
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
@@ -2825,22 +2972,29 @@ def get_upside_capture_ratio(
     periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Upside Capture Ratio, i.e. the ratio of the asset's geometric average
-    return to the benchmark's geometric average return during the observations in which
-    the benchmark's return is positive (Morningstar's definition):
+    Calculate the Upside Capture Ratio: how much of the benchmark's gains the asset captured,
+    its average return over the benchmark's in the periods in which the benchmark rose
+    (Morningstar's definition).
+
+    The formula is as follows:
 
         - Upside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark > 0))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return | Benchmark > 0))^(1 / n) - 1)
 
-    With method="annualized" both averages are annualized, (1 + average)^P - 1, as
-    empyrical's up_capture does; with method="arithmetic" it is the ratio of the sums
-    of the returns, as PerformanceAnalytics' UpDownRatios does.
+    The annualized method annualizes both averages, (1 + average)^P - 1, as empyrical does; the
+    arithmetic method takes the ratio of the sums of the returns, as PerformanceAnalytics'
+    UpDownRatios does.
+
+    Referenced against:
+    - empyrical, up_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1887
+    - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
-        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
-            "geometric".
+        method (str, optional): The average of the returns. Options are: "geometric" (geometric
+            averages), "annualized" (annualized geometric averages), "arithmetic" (the ratio of the
+            sums). Defaults to "geometric".
         periods_per_year (float | pd.Series, optional): The observations in a year of the
             annualized method, or one value per asset. Defaults to 252.
 
@@ -2860,22 +3014,32 @@ def get_downside_capture_ratio(
     periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Downside Capture Ratio, i.e. the ratio of the asset's geometric average
-    return to the benchmark's geometric average return during the observations in which
-    the benchmark's return is negative (Morningstar's definition):
+    Calculate the Downside Capture Ratio: how much of the benchmark's losses the asset took part
+    in, its average return over the benchmark's in the periods in which the benchmark fell
+    (Morningstar's definition).
+
+    The formula is as follows:
 
         - Downside Capture Ratio = ((PRODUCT(1 + Asset Return | Benchmark < 0))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return | Benchmark < 0))^(1 / n) - 1)
 
-    With method="annualized" both averages are annualized, (1 + average)^P - 1, as
-    empyrical's down_capture does; with method="arithmetic" it is the ratio of the sums
-    of the returns, as PerformanceAnalytics' UpDownRatios does.
+    The annualized method annualizes both averages, (1 + average)^P - 1, as empyrical does; the
+    arithmetic method takes the ratio of the sums of the returns, as PerformanceAnalytics'
+    UpDownRatios does. PerformanceAnalytics' Down Capture also counts the periods in which the benchmark
+    returned exactly 0, which are left out here.
+
+    Referenced against:
+    - empyrical, down_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1921
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
-        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
-            "geometric".
+        method (str, optional): The average of the returns. Options are: "geometric" (geometric
+            averages), "annualized" (annualized geometric averages), "arithmetic" (the ratio of the
+            sums). Defaults to "geometric".
         periods_per_year (float | pd.Series, optional): The observations in a year of the
             annualized method, or one value per asset. Defaults to 252.
 
@@ -2895,21 +3059,27 @@ def get_capture_ratio(
     periods_per_year: float | pd.Series = 252.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the (overall) Capture Ratio, the average return of the asset over that of the
-    benchmark on every observation both have, the measure empyrical calls capture:
+    Calculate the (overall) Capture Ratio: the asset's average return over the benchmark's on
+    every observation both have, the measure empyrical calls capture.
+
+    The formula is as follows:
 
         - Capture Ratio = ((PRODUCT(1 + Asset Return))^(1 / n) - 1)
           / ((PRODUCT(1 + Benchmark Return))^(1 / n) - 1)
 
-    With method="annualized" both averages are annualized, (1 + average)^P - 1, which is
-    empyrical's capture (the ratio of the annual returns); with method="arithmetic" it is
-    the ratio of the sums of the returns.
+    The annualized method annualizes both averages, (1 + average)^P - 1, which is
+    empyrical's capture (the ratio of the annual returns); the arithmetic method takes the
+    ratio of the sums of the returns.
+
+    Referenced against:
+    - empyrical, capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1531
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
-        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
-            "geometric".
+        method (str, optional): The average of the returns. Options are: "geometric" (geometric
+            averages), "annualized" (annualized geometric averages), "arithmetic" (the ratio of the
+            sums). Defaults to "geometric".
         periods_per_year (float | pd.Series, optional): The observations in a year of the
             annualized method, or one value per asset. Defaults to 252.
 
@@ -2931,19 +3101,28 @@ def get_rolling_capture_ratio(
     periods_per_year: float | pd.Series = 252.0,
 ) -> pd.DataFrame:
     """
-    Calculate the Upside, Downside or overall Capture Ratio over a rolling window of
-    `window_size` observations, such as 36 monthly returns for Morningstar's three year
-    capture ratios (see `get_upside_capture_ratio`). empyrical's roll_up_capture,
-    roll_down_capture and roll_up_down_capture are the annualized method on daily returns.
+    Calculate the rolling Capture Ratio: how much of the benchmark's gains, losses or overall
+    return the asset captured within each window of recent returns.
+
+    The window holds `window_size` observations, such as 36 monthly returns for Morningstar's
+    three year capture ratios (see `get_upside_capture_ratio`). empyrical's rolling capture
+    ratios are the annualized method on daily returns.
+
+    Shares similar logic:
+    - empyrical, roll_up_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2020
+    - empyrical, roll_down_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2045
+    - empyrical, roll_up_down_capture: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2070
 
     Args:
         asset_returns (pd.DataFrame): Asset returns, one column per asset.
         benchmark_returns (pd.Series): Benchmark returns on the same dates.
         window_size (int): The number of observations in a window.
-        side (str, optional): "up", "down", "up_down" (the upside over the downside capture)
-            or "all". Defaults to "up".
-        method (str, optional): "geometric", "annualized" or "arithmetic". Defaults to
-            "geometric".
+        side (str, optional): The capture ratio. Options are: "up" (Upside Capture Ratio),
+            "down" (Downside Capture Ratio), "up_down" (the upside over the downside capture),
+            "all" (overall Capture Ratio). Defaults to "up".
+        method (str, optional): The average of the returns. Options are: "geometric" (geometric
+            averages), "annualized" (annualized geometric averages), "arithmetic" (the ratio of the
+            sums). Defaults to "geometric".
         periods_per_year (float | pd.Series, optional): The observations in a year of the
             annualized method, or one value per asset. Defaults to 252.
 
@@ -2988,8 +3167,10 @@ def get_up_down_number(
     market: str = "up",
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Up Number or Down Number of Bacon (2008), the share of the periods in which
-    the benchmark rose (fell) that the asset rose (fell) as well:
+    Calculate the Up Number or Down Number of Bacon (2008): how often the asset rose (fell) when
+    the benchmark rose (fell), as a share of those periods.
+
+    The formula is as follows:
 
         - Up Number = Number of Periods with Asset Return > 0 and Benchmark Return > 0
           / Number of Periods with Benchmark Return > 0
@@ -3002,13 +3183,16 @@ def get_up_down_number(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons.
-    - PerformanceAnalytics: UpDownRatios (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), UpDownRatios (Up Number, Down Number): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns, a "within period" (period,
             date) Multi Index gives one value per period.
         benchmark_returns (pd.Series): Benchmark returns.
-        market (str, optional): "up" or "down". Defaults to "up".
+        market (str, optional): The market. Options are: "up" (Up Number), "down" (Down
+            Number). Defaults to "up".
 
     Returns:
         pd.Series | pd.DataFrame: The Up or Down Number.
@@ -3046,23 +3230,33 @@ def get_win_rate(
     market: str = "all",
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Win Rate, i.e. the percentage of periods in which the asset's return
-    exceeds the benchmark's return. Periods in which either return is missing are left out
-    of both the wins and the number of periods.
+    Calculate the Win Rate: the share of periods in which the asset's return exceeded the
+    benchmark's.
+
+    Periods in which either return is missing are left out of both the wins and the number of
+    periods.
 
     The formula is as follows:
 
         - Win Rate = Number of Periods with Asset Return > Benchmark Return / Number of Periods
           with both an Asset and a Benchmark Return
 
-    With market="up" or "down" only the periods in which the benchmark rose (Benchmark
-    Return > 0) or fell (Benchmark Return < 0) are counted, the up and down market batting
-    averages of empyrical and the Up and Down Percent of PerformanceAnalytics' UpDownRatios.
+    In up or down markets only the periods in which the benchmark rose (Benchmark Return > 0)
+    or fell (Benchmark Return < 0) are counted, the up and down market batting averages of
+    empyrical and the Up and Down Percent of PerformanceAnalytics' UpDownRatios.
+
+    Referenced against:
+    - PerformanceAnalytics (R), UpDownRatios (Up Percent, Down Percent): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
+
+    Shares similar logic:
+    - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         benchmark_returns (pd.Series): Benchmark returns.
-        market (str, optional): "all", "up" or "down", the periods counted. Defaults to "all".
+        market (str, optional): The periods counted. Options are: "all" (every period), "up"
+            (periods in which the benchmark rose), "down" (periods in which the benchmark fell).
+            Defaults to "all".
 
     Returns:
         pd.Series | pd.DataFrame: Win Rate values.
@@ -3102,9 +3296,10 @@ def get_kappa_ratio(
     excess_returns: pd.Series | pd.DataFrame, order: int = 3
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Kappa Ratio of returns, i.e. the mean excess return per unit of the
-    n-th order Lower Partial Moment (LPM). The Sortino Ratio (see `get_sortino_ratio`)
-    is the special case of the Kappa Ratio with order=2.
+    Calculate the Kappa Ratio: the mean excess return per unit of the n-th order Lower Partial
+    Moment (LPM), a downside risk that weighs large losses more as the order rises.
+
+    The Sortino Ratio (see `get_sortino_ratio`) is the special case of the Kappa Ratio of order 2.
 
     The formula is as follows:
 
@@ -3114,7 +3309,7 @@ def get_kappa_ratio(
     Where N is the *total* number of observations (not just the number of negative
     ones) -- periods with a non-negative excess return contribute 0 to the sum, but
     still count towards N. This mirrors the same convention used in `get_sortino_ratio`
-    (order=2): dividing only by the count of negative observations instead of the total
+    (order 2): dividing only by the count of negative observations instead of the total
     N, or centering the moment on the downside subset's own mean instead of on the MAR
     of 0, would compute a different (non-standard) quantity than the Lower Partial
     Moment this ratio is defined against.
@@ -3125,6 +3320,9 @@ def get_kappa_ratio(
     Performance Measure." Journal of Performance Measurement, 8(3), 42-54.
 
     Without a return below 0 the lower partial moment is 0 and the ratio is undefined (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), Kappa: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Kappa.R#L52
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
@@ -3158,8 +3356,8 @@ def get_omega_ratio(
     returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float = 0.0
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Omega Ratio of returns, i.e. the sum of gains above the minimum acceptable
-    return (MAR) divided by the sum of losses below the MAR.
+    Calculate the Omega Ratio: the sum of gains above the minimum acceptable return (MAR) over
+    the sum of losses below it.
 
     Unlike the Sharpe/Sortino ratios, which only use the first two (Sharpe) or a partial
     (Sortino) moment of the return distribution, the Omega Ratio uses the entire
@@ -3176,6 +3374,11 @@ def get_omega_ratio(
 
     - Keating, C., & Shadwick, W.F. (2002). "A Universal Performance Measure." Journal
     of Performance Measurement, 6(3), 59-84.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), Omega: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Omega.R#L72
+    - empyrical, omega_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L599
+    - quantstats, omega: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1508
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -3226,7 +3429,8 @@ def get_rolling_omega_ratio(
     minimum_acceptable_return: float = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Omega Ratio of returns.
+    Calculate the rolling Omega Ratio: the sum of gains above the minimum acceptable return over
+    the sum of losses below it within each window of recent returns.
 
     A window without losses (no return below the minimum acceptable return) has no ratio
     (NaN), like get_omega_ratio over the whole period.
@@ -3258,8 +3462,8 @@ def get_gain_to_pain_ratio(
     minimum_acceptable_return: float = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Gain-to-Pain Ratio of returns, i.e. the sum of all returns divided by the
-    sum of the absolute value of all losses.
+    Calculate the Gain-to-Pain Ratio: the sum of all returns over the sum of the absolute value
+    of all losses.
 
     The formula is as follows:
 
@@ -3283,10 +3487,12 @@ def get_gain_to_pain_ratio(
     the Sharpe ratio for evaluating trading strategies.)
     - Kazemi, H., Schneeweis, T., & Gupta, R. (2004). "Omega as a Performance Measure."
     Journal of Performance Measurement, 8(3), 16-25.
-    - PerformanceAnalytics: OmegaSharpeRatio (https://github.com/braverock/PerformanceAnalytics).
-    - quantstats: stats.gain_to_pain_ratio (https://github.com/ranaroussi/quantstats).
 
     Without a loss the ratio is undefined (NaN).
+
+    Referenced against:
+    - PerformanceAnalytics (R), OmegaSharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaSharpeRatio.R#L37
+    - quantstats, gain_to_pain_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1584
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -3333,8 +3539,8 @@ def get_gain_to_pain_ratio(
 
 def get_d_ratio(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the d ratio of returns, the losses relative to the gains, each weighted by how
-    often they occur.
+    Calculate the d ratio: the losses relative to the gains, each weighted by how often they
+    occur.
 
     The formula is as follows:
 
@@ -3348,10 +3554,12 @@ def get_d_ratio(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame |
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 95.
-    - PerformanceAnalytics: DRatio (https://github.com/braverock/PerformanceAnalytics).
 
     Without a positive return the ratio is undefined: NaN where PerformanceAnalytics reports
     infinity.
+
+    Referenced against:
+    - PerformanceAnalytics (R), DRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DRatio.R#L38
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
@@ -3384,8 +3592,8 @@ def get_prospect_ratio(
     loss_aversion: float = 2.25,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Prospect ratio of returns, a Sortino-type ratio in which losses weigh more
-    heavily than gains, following the loss aversion of prospect theory.
+    Calculate the Prospect ratio: a Sortino-type ratio in which losses weigh more heavily than
+    gains, following the loss aversion of prospect theory.
 
     The formula is as follows:
 
@@ -3403,13 +3611,15 @@ def get_prospect_ratio(
     Representation of Uncertainty." Journal of Risk and Uncertainty, 5(4), 297-323.
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 100.
-    - PerformanceAnalytics: ProspectRatio (https://github.com/braverock/PerformanceAnalytics).
 
     This is the formula of Bacon (2008) and the PerformanceAnalytics documentation.
     PerformanceAnalytics' ProspectRatio subtracts MAR / N instead of the MAR from the average, so both
     only agree for a MAR of 0, the default here.
 
     Without a return below the MAR the downside deviation is 0 and the ratio undefined (NaN).
+
+    Referenced against:
+    - PerformanceAnalytics (R), ProspectRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ProspectRatio.R#L32
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
@@ -3462,7 +3672,7 @@ def get_omega_excess_return(
     benchmark_downside_deviation: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Omega excess return, the return minus a charge for downside risk that is
+    Calculate the Omega excess return: the return minus a charge for downside risk that is
     priced at the downside risk of the benchmark.
 
     The formula is as follows:
@@ -3477,7 +3687,9 @@ def get_omega_excess_return(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 103.
-    - PerformanceAnalytics: OmegaExcessReturn (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), OmegaExcessReturn: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaExcessReturn.R#L36
 
     Args:
         returns (pd.Series | pd.DataFrame): The return of each period (columns per asset).
@@ -3549,9 +3761,30 @@ def get_return_statistics(
 
     - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
     (Expectancy and the payoff ratio as the basis of evaluating a trading system.)
-    - quantstats: stats.avg_return, best, worst, exposure, cpc_index, profit_ratio,
-    outlier_win_ratio, outlier_loss_ratio, risk_of_ruin, rar (https://github.com/ranaroussi/quantstats).
-    - PerformanceAnalytics: mean.stderr, mean.LCL, mean.UCL (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - quantstats, avg_return (Expectancy): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L640
+    - quantstats, best: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L362
+    - quantstats, worst: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L395
+    - quantstats, exposure: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L514
+    - quantstats, cpc_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2417
+    - quantstats, profit_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2312
+    - quantstats, outlier_win_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2484
+    - quantstats, outlier_loss_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2523
+    - quantstats, risk_of_ruin: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1968
+    - PerformanceAnalytics (R), mean.stderr: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L137
+    - PerformanceAnalytics (R), mean.LCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L169
+    - PerformanceAnalytics (R), mean.UCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L208
+
+    Shares similar logic:
+    - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
+    - quantstats, payoff_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2242
+    - quantstats, profit_factor: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2370
+    - quantstats, consecutive_wins: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L428
+    - quantstats, consecutive_losses: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L471
+    - quantstats, recovery_factor: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2562
+    - quantstats, common_sense_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2451
+    - quantstats, rar: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1698
 
     Args:
         returns (pd.Series): A Series of returns; missing returns are left out.
@@ -3653,8 +3886,11 @@ def get_return_statistics_table(
     confidence_level: float = 0.95,
 ) -> pd.DataFrame:
     """
-    Calculate the return statistics of `get_return_statistics` for every column, and for a
-    within period index for every period.
+    Calculate the return statistics of every column: how often each asset wins, how large its
+    wins and losses are and how its streaks, drawdown recovery and extremes look, see
+    `get_return_statistics`.
+
+    A within period index gives the statistics of every period.
 
     Args:
         returns (pd.DataFrame): A DataFrame of returns, one column per asset, optionally
@@ -3703,7 +3939,7 @@ def get_kelly_criterion(
     fraction: float = 1.0,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Kelly Criterion, the share of capital to put at risk that maximizes the
+    Calculate the Kelly Criterion: the share of capital to put at risk that maximizes the
     expected logarithmic growth of wealth.
 
     The formulas are as follows:
@@ -3715,7 +3951,7 @@ def get_kelly_criterion(
     average win to the average loss, calculated from the returns (a zero return counting
     as neither). The continuous form is Thorp's (2006) for returns
     that are (close to) normally distributed, on excess returns over the risk free rate,
-    with the sample variance (ddof=1); its value does not depend on the return frequency,
+    with the sample variance (with n - 1 in the denominator); its value does not depend on the return frequency,
     since the average and the variance scale alike. A value above 1 means borrowing to
     invest, a negative value means the edge is negative (short or stay out).
 
@@ -3728,10 +3964,15 @@ def get_kelly_criterion(
     - MacLean, L.C., Thorp, E.O. & Ziemba, W.T. (2011). "The Kelly Capital Growth Investment
     Criterion." World Scientific. (Fractional Kelly to reduce the volatility of growth.)
 
+    Shares similar logic:
+    - quantstats, kelly_criterion (discrete): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2786
+    - PerformanceAnalytics (R), KellyRatio (continuous): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/KellyRatio.R#L39
+
     Args:
         returns (pd.Series | pd.DataFrame): Returns for the discrete form, excess returns
             for the continuous form, optionally with a (period, date) index.
-        method (str, optional): "discrete" or "continuous". Defaults to "discrete".
+        method (str, optional): The form of the Kelly Criterion. Options are: "discrete"
+            (Kelly's discrete bet), "continuous" (Thorp's continuous form). Defaults to "discrete".
         fraction (float, optional): The share of the full Kelly bet, e.g. 0.5 for half
             Kelly. Defaults to 1.0.
 
@@ -3772,13 +4013,17 @@ def get_rolling_kelly_criterion(
     fraction: float = 1.0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling Kelly Criterion of returns (discrete) or excess returns
-    (continuous), as `get_kelly_criterion` calculates it.
+    Calculate the rolling Kelly Criterion: the share of capital to put at risk that maximized
+    the expected logarithmic growth within each window of recent returns.
+
+    The discrete form uses returns and the continuous form excess returns, as
+    `get_kelly_criterion` calculates it.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         window_size (int): The size of the rolling window.
-        method (str, optional): "discrete" or "continuous". Defaults to "discrete".
+        method (str, optional): The form of the Kelly Criterion. Options are: "discrete"
+            (Kelly's discrete bet), "continuous" (Thorp's continuous form). Defaults to "discrete".
         fraction (float, optional): The share of the full Kelly bet. Defaults to 1.0.
 
     Returns:
@@ -3796,11 +4041,13 @@ def get_rolling_kelly_criterion(
 
 def kelly_of_windows(windows: np.ndarray, method: str) -> np.ndarray:
     """
-    Calculate the full Kelly Criterion of every row of an array of returns.
+    Calculate the full Kelly Criterion of every row of an array of returns: the share of capital
+    to put at risk that maximizes the expected logarithmic growth of each set of returns.
 
     Args:
         windows (np.ndarray): One set of returns per row, without missing values.
-        method (str): "discrete" or "continuous".
+        method (str): The form of the Kelly Criterion. Options are: "discrete" (Kelly's discrete
+            bet), "continuous" (Thorp's continuous form).
 
     Returns:
         np.ndarray: The Kelly Criterion per row, NaN where it is undefined.
@@ -3836,7 +4083,8 @@ def get_compound_growth_rate(
     prices: pd.Series | pd.DataFrame, periods: int
 ) -> float | pd.Series:
     """
-    Calculate the Compound Growth Rate of a given data series.
+    Calculate the Compound Growth Rate (CGR): the constant rate per period that grows the first
+    value of a series into its last.
 
     CGR is the mean growth rate of an investment over a specified period. Typically,
     the Compound Annual Growth Rate (CAGR) is used.
@@ -3877,7 +4125,8 @@ def get_compound_annual_growth_rate(
     prices: pd.Series | pd.DataFrame,
 ) -> float | pd.Series:
     """
-    Calculate the Compound Annual Growth Rate (CAGR) of a price series on calendar time.
+    Calculate the Compound Annual Growth Rate (CAGR): the constant yearly rate that grows the
+    first price into the last one, on calendar time.
 
     The CAGR is the constant annual rate that grows the first price into the last one over
     the time between them. That time is measured in calendar days rather than in rows, so
@@ -3893,6 +4142,10 @@ def get_compound_annual_growth_rate(
     Each column is measured on its own first and last observation, so a ticker without a
     price on the first or last date of a shared calendar (a weekend for a stock next to a
     cryptocurrency, or a later listing) still gets the rate over the dates it has.
+
+    Shares similar logic:
+    - quantstats, cagr: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1636
+    - ffn, calc_cagr: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1563
 
     Args:
         prices (pd.Series | pd.DataFrame): Series or DataFrame of prices with a
@@ -3930,8 +4183,8 @@ def get_returns(
     cumulative: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the Return for a given period (weekly, monthly, quarterly or
-    yearly) based on daily historical returns.
+    Calculate the Return per period: how much an investment gained or lost each week, month,
+    quarter or year, compounding the daily returns.
 
     The period Return is obtained by compounding the daily returns within each
     period, following the formula:
@@ -3940,18 +4193,21 @@ def get_returns(
 
     A period without any return (e.g. before a ticker listed) is NaN rather than 0.
 
-    If cumulative is set to True, the period returns are compounded further into
-    a cumulative return, following the formula:
+    The cumulative return compounds the period returns further, following the formula:
 
         - Cumulative Return = (1 + Period Return 1) * (1 + Period Return 2) * ... * (1 + Period Return N)
 
+    Shares similar logic:
+    - empyrical, aggregate_returns: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L316
+    - PerformanceAnalytics (R), Return.cumulative: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.cumulative.R#L27
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
-        period (str): The period to calculate the Return for. Can be weekly,
-        monthly, quarterly or yearly. Ignored when `groups` is provided.
+        period (str): The period to calculate the Return for. Options are: "weekly", "monthly",
+        "quarterly", "yearly". Ignored when `groups` is provided.
         groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
         per row of `returns`, to group by instead of deriving calendar periods from
-        `returns.index` via `.asfreq()`. Use this when `returns` does not have a
+        the index of `returns`. Use this when `returns` does not have a
         DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
         Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
         cumulative (bool, optional): Whether to return the cumulative return over
@@ -3987,12 +4243,14 @@ def get_excess_return(
     cumulative: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the Excess Return, i.e. the return minus the risk free rate.
+    Calculate the Excess Return: how much the return exceeded the risk free rate.
 
-    If cumulative is set to True, the excess returns are compounded into a
-    cumulative excess return, following the formula:
+    The cumulative excess return compounds the excess returns, following the formula:
 
         - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), Return.excess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.excess.R#L42
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -4015,7 +4273,7 @@ def get_excess_return(
 
 def get_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate the full pairwise correlation matrix across N assets.
+    Calculate the correlation matrix: how closely every pair of assets moves together.
 
     Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
     benchmark, this computes the correlation between every pair of columns in the
@@ -4037,7 +4295,8 @@ def get_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
 
 def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate the full pairwise covariance matrix across N assets.
+    Calculate the covariance matrix: how far every pair of assets moves together, in the units
+    of the returns squared.
 
     Unlike `get_beta` or `get_covariance`, which relate a single asset to a single
     benchmark, this computes the covariance between every pair of columns in the
@@ -4064,9 +4323,9 @@ def get_capm_residuals(
     benchmark_excess_returns: pd.Series,
 ) -> pd.DataFrame:
     """
-    Calculate the pointwise (e.g. daily) CAPM regression residuals within each period of
-    a "within period" (period, date) Multi Index dataset, given a Beta estimated once per
-    period.
+    Calculate the CAPM residuals: the part of each (e.g. daily) excess return that the asset's
+    Beta to the benchmark does not explain, within each period of a "within period" (period,
+    date) Multi Index dataset with a Beta estimated once per period.
 
     The formula is as follows:
 
@@ -4137,9 +4396,8 @@ def get_appraisal_ratio(
     capm_residuals: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Appraisal Ratio, i.e. Jensen's Alpha divided by the idiosyncratic
-    (residual, unsystematic) standard deviation left over from the CAPM regression that
-    produced that Alpha.
+    Calculate the Appraisal Ratio: Jensen's Alpha per unit of the idiosyncratic (residual,
+    unsystematic) risk left over from the CAPM regression that produced that Alpha.
 
     Jensen's Alpha (see `get_jensens_alpha`) measures how much return a manager generated
     above what CAPM would predict given the asset's Beta. However, a large Alpha achieved
@@ -4170,6 +4428,9 @@ def get_appraisal_ratio(
 
     Without residual risk the ratio is undefined (NaN).
 
+    Shares similar logic:
+    - PerformanceAnalytics (R), AppraisalRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/AppraisalRatio.R#L45
+
     Args:
         jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
         capm_residuals (pd.Series | pd.DataFrame): The pointwise CAPM regression residuals
@@ -4185,8 +4446,8 @@ def get_appraisal_ratio(
 
     Notes:
     - `capm_residuals` is typically obtained via `get_capm_residuals`, which calls
-    `get_jensens_alpha` under the hood on already-excess returns (i.e. with
-    `risk_free_rate` set to 0), so it reuses the exact same CAPM regression machinery as
+    `get_jensens_alpha` under the hood on already-excess returns (i.e. with a
+    risk-free rate of 0), so it reuses the exact same CAPM regression machinery as
     `jensens_alpha` itself rather than reimplementing it.
     - When `capm_residuals` has a "within period" (period, date) Multi Index, the residuals
     themselves are pointwise (e.g. daily), so their per-period standard deviation is a
@@ -4218,8 +4479,9 @@ def get_modified_jensens_alpha(
     benchmark_standard_deviation: pd.Series | float | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the modified Jensen's alpha, Jensen's Alpha per unit of Beta, or the
-    alternative Jensen's alpha, Jensen's Alpha per unit of systematic risk.
+    Calculate the modified Jensen's alpha, Jensen's Alpha per unit of Beta, or the alternative
+    Jensen's alpha, Jensen's Alpha per unit of systematic risk: how much risk-adjusted return
+    the asset earned for each unit of market risk it took.
 
     The formula is as follows:
 
@@ -4234,10 +4496,11 @@ def get_modified_jensens_alpha(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 77.
-    - PerformanceAnalytics: AppraisalRatio(method = "modified") and
-    AppraisalRatio(method = "alternative") (https://github.com/braverock/PerformanceAnalytics).
 
     A Beta of 0 (or of rounding noise) leaves the ratio undefined (NaN).
+
+    Referenced against:
+    - PerformanceAnalytics (R), AppraisalRatio (modified, alternative): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/AppraisalRatio.R#L45
 
     Args:
         jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
@@ -4267,16 +4530,18 @@ def get_rolling_residual_standard_deviation(
     window_size: int,
 ) -> pd.DataFrame:
     """
-    Calculate the standard deviation of the CAPM regression residuals over a rolling
-    window, each window with the Beta of its own regression. The residuals of a window are
-    those of the regression of the asset's excess returns on the benchmark's over that
-    window, so they follow from the window's variances and covariance without computing
-    them one by one:
+    Calculate the rolling residual standard deviation: how much of each asset's excess return
+    its Beta to the benchmark left unexplained within each window of recent returns, each window
+    with the Beta of its own regression.
+
+    The residuals of a window are those of the regression of the asset's excess returns on the
+    benchmark's over that window, so they follow from the window's variances and covariance
+    without computing them one by one:
 
         - Beta = Cov(Asset Excess Return, Benchmark Excess Return) / Var(Benchmark Excess Return)
         - Residual Variance = Var(Asset Excess Return) - Beta^2 * Var(Benchmark Excess Return)
 
-    All three moments are sample moments (ddof=1), so the residual variance is the sum of
+    All three moments are sample moments (with n - 1 in the denominator), so the residual variance is the sum of
     the squared residuals divided by the window size minus 1, the sample variance of the
     residuals. Taking the standard deviation of residuals that each come from the Beta of
     a different window instead would mix regressions and need two windows of returns
@@ -4326,10 +4591,12 @@ def get_rolling_appraisal_ratio(
     window_size: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Appraisal Ratio over a rolling window: the rolling Jensen's Alpha divided
-    by the standard deviation of the CAPM regression residuals of the same window (see
-    `get_rolling_residual_standard_deviation`), so each ratio only uses the returns of its
-    own window and the first one follows the first full window.
+    Calculate the rolling Appraisal Ratio: Jensen's Alpha per unit of residual risk within each
+    window of recent returns.
+
+    The rolling Jensen's Alpha is divided by the standard deviation of the CAPM regression
+    residuals of the same window (see `get_rolling_residual_standard_deviation`), so each ratio
+    only uses the returns of its own window and the first one follows the first full window.
 
     The formula is as follows:
 
@@ -4364,8 +4631,9 @@ def get_fama_decomposition(
     benchmark_standard_deviation: pd.Series | float,
 ) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
     """
-    Calculate the Fama (1972) decomposition of total excess return into Selectivity and
-    Diversification.
+    Calculate the Fama (1972) decomposition: how much of the excess return came from security
+    selection (Selectivity) and how much from carrying risk that diversification would have
+    removed (Diversification).
 
     Jensen's Alpha alone conflates two very different sources of excess return: genuine
     stock/timing selection skill, and simply carrying more total risk than the market by
@@ -4419,6 +4687,10 @@ def get_fama_decomposition(
     against the original paper's exact terminology should substitute "Net Selectivity"
     wherever this function and its caller (`get_fama_decomposition` in
     `performance_controller.py`) say "Selectivity".
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), NetSelectivity: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/NetSelectivity.R#L35
+    - PerformanceAnalytics (R), Selectivity: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Selectivity.R#L32
 
     Args:
         asset_returns (pd.Series | pd.DataFrame | float): The asset's or portfolio's
@@ -4493,7 +4765,8 @@ def get_adjusted_sharpe_ratio(
     kurtosis: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Adjusted Sharpe Ratio (ASR).
+    Calculate the Adjusted Sharpe Ratio (ASR): the Sharpe ratio penalized for negative skewness
+    and fat tails of the returns.
 
     The Sharpe ratio only looks at the mean and standard deviation of returns, implicitly
     assuming a Normal distribution. The Adjusted Sharpe Ratio (Pezier & White, 2006)
@@ -4512,10 +4785,10 @@ def get_adjusted_sharpe_ratio(
 
     Note that this formula requires **non-excess (raw) kurtosis**, i.e. a Normal
     distribution has a kurtosis of 3, not 0 — exactly the same convention documented in
-    `get_probabilistic_sharpe_ratio` and used by `get_deflated_sharpe_ratio`. This
-    codebase's `risk_model.get_kurtosis` defaults to `fisher=True` (excess kurtosis, Normal
-    = 0); either call it with `fisher=False` before passing the result in here, or add 3 to
-    a Fisher/excess kurtosis value first. Getting this convention backwards flips the sign
+    `get_probabilistic_sharpe_ratio` and used by `get_deflated_sharpe_ratio`.
+    `risk_model.get_kurtosis` returns the excess (Fisher) kurtosis by default (Normal = 0);
+    either ask it for the raw (Pearson) kurtosis before passing the result in here, or add 3
+    to an excess kurtosis value first. Getting this convention backwards flips the sign
     of the ((K - 3) / 24) * SR^2 term for any return series that is actually close to
     Normal (where raw kurtosis is close to 3 but excess/Fisher kurtosis is close to 0),
     silently turning a near-zero adjustment into a large, wrong one, so double check which
@@ -4526,6 +4799,9 @@ def get_adjusted_sharpe_ratio(
     - Pezier, J., & White, A. (2006). "The Relative Merits of Investable Hedge Fund
     Indices and of Funds of Hedge Funds in Optimal Passive Portfolios." ICMA Centre
     Discussion Papers in Finance, DP2006-10.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), AdjustedSharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/AdjustedSharpeRatio.R#L35
 
     Args:
         sharpe_ratio (pd.Series | pd.DataFrame | float): The (ordinary) Sharpe ratio, see
@@ -4550,7 +4826,8 @@ def get_starr_ratio(
     alpha: float = 0.05,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the STARR (Stable Tail Adjusted Return Ratio) of returns.
+    Calculate the STARR (Stable Tail Adjusted Return Ratio): the excess return per unit of
+    Conditional Value at Risk, the average loss in the worst tail.
 
     The Sharpe ratio penalizes upside and downside volatility equally via the standard
     deviation. The STARR ratio instead scales the mean excess return by the Conditional
@@ -4631,7 +4908,8 @@ def get_rachev_ratio(
     alpha: float = 0.05,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Rachev Ratio (R-Ratio) of returns.
+    Calculate the Rachev Ratio (R-Ratio): the average size of the extreme gains over that of the
+    extreme losses.
 
     The Rachev ratio compares the "quality" of the best outcomes to the "quality" of the
     worst outcomes by taking the ratio of the right-tail Expected Shortfall (the average of
@@ -4662,6 +4940,9 @@ def get_rachev_ratio(
     to Risk Estimation in Portfolio Theory." Journal of Portfolio Management, 31(1), 103-112.
 
     A left tail expected shortfall of 0 leaves the ratio undefined (NaN).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), RachevRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/RachevRatio.R#L30
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
@@ -4759,7 +5040,9 @@ def get_treynor_mazuy_model(
     benchmark_excess_returns: pd.Series,
 ) -> tuple[dict, pd.Series]:
     """
-    Calculate the Treynor-Mazuy market timing model.
+    Calculate the Treynor-Mazuy market timing model: whether the asset raised its market
+    exposure ahead of rising markets, a quadratic term in the benchmark excess return next to
+    Alpha and Beta.
 
     Jensen's Alpha and Beta from a plain CAPM regression cannot distinguish stock-picking
     skill (selectivity) from market-timing skill (shifting exposure ahead of market moves).
@@ -4783,6 +5066,9 @@ def get_treynor_mazuy_model(
 
     - Treynor, J., & Mazuy, K. (1966). "Can Mutual Funds Outguess the Market?" Harvard
     Business Review, 44(4), 131-136.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), MarketTiming (TM): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MarketTiming.R#L52
 
     Args:
         excess_returns (pd.Series): The asset's excess returns.
@@ -4814,7 +5100,8 @@ def get_henriksson_merton_model(
     benchmark_excess_returns: pd.Series,
 ) -> tuple[dict, pd.Series]:
     """
-    Calculate the Henriksson-Merton market timing model.
+    Calculate the Henriksson-Merton market timing model: whether the asset had a higher Beta in
+    rising markets than in falling ones, next to its Alpha.
 
     Like the Treynor-Mazuy model, this separates market-timing skill from selectivity, but
     models timing as a piecewise (rather than quadratic) change in Beta: an "up-market"
@@ -4839,6 +5126,9 @@ def get_henriksson_merton_model(
     - Henriksson, R.D., & Merton, R.C. (1981). "On Market Timing and Investment
     Performance II: Statistical Procedures for Evaluating Forecasting Skills." Journal of
     Business, 54(4), 513-533.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), MarketTiming (HM): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MarketTiming.R#L52
 
     Args:
         excess_returns (pd.Series): The asset's excess returns.
@@ -4869,9 +5159,12 @@ def get_henriksson_merton_model(
 
 def get_style_weights(returns: pd.Series, style_returns: pd.DataFrame) -> pd.Series:
     """
-    The weights of returns-based style analysis (Sharpe, 1992): the mix of style indices,
-    every weight between 0 and 1 and the weights adding up to 1, that minimizes the variance
-    of the difference between the fund's return and the weighted style returns. As
+    Calculate the weights of returns-based style analysis (Sharpe, 1992): the mix of style
+    indices that tracks a fund's returns most closely, every weight between 0 and 1 and the
+    weights adding up to 1.
+
+    The weights minimize the variance of the difference between the fund's return and the
+    weighted style returns. As
 
         - Var(Fund - Styles @ w) = Var(Fund) - 2 * w' Cov(Styles, Fund) + w' Cov(Styles) w
 
@@ -4928,11 +5221,12 @@ def get_style_analysis(
     returns: pd.Series, style_returns: pd.DataFrame, periods_per_year: int = 12
 ) -> pd.Series:
     """
-    Returns-based style analysis (Sharpe, 1992): the mix of style indices whose returns track
-    a fund's returns most closely. The weights are found by minimizing the variance of the
-    difference between the fund's return and the weighted style returns, with every weight
-    between 0 and 1 and the weights adding up to 1, so they read as the fund's effective
-    asset mix (see `get_style_weights`).
+    Calculate returns-based style analysis (Sharpe, 1992): the mix of style indices whose
+    returns track a fund's returns most closely, the fund's effective asset mix.
+
+    The weights are found by minimizing the variance of the difference between the fund's return
+    and the weighted style returns, with every weight between 0 and 1 and the weights adding up
+    to 1 (see `get_style_weights`).
 
     The other figures are in-sample, measured over the same returns the weights are fitted
     to: the part of the fund's return the styles do not explain is the Selection Return, its
@@ -4995,10 +5289,12 @@ def get_rolling_style_analysis(
     periods_per_year: int = 12,
 ) -> pd.DataFrame:
     """
-    Returns-based style analysis (Sharpe, 1992) over a rolling window: per date the style
-    weights, R Squared, Selection Return and Tracking Error of the `window` periods up to and
-    including that date (see `get_style_analysis`, the figures are in-sample within each
-    window), which shows how a fund's style drifts over time.
+    Calculate returns-based style analysis (Sharpe, 1992) over a rolling window: how a fund's
+    style drifts over time.
+
+    Per date it gives the style weights, R Squared, Selection Return and Tracking Error of the
+    `window` periods up to and including that date (see `get_style_analysis`, the figures are
+    in-sample within each window).
 
     Next to them is Sharpe's out-of-sample measure of selection. The Out-of-Sample Selection
     Return of a date is the fund's return of that period minus the return of that period of
@@ -5073,7 +5369,7 @@ def get_geometric_excess_return(
     returns: pd.Series | pd.DataFrame, risk_free_rate: pd.Series
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the geometric excess return, the return relative to the risk-free return of the
+    Calculate the geometric excess return: the return relative to the risk-free return of the
     same period instead of minus it, as Morningstar defines it for its risk-adjusted return.
 
     The formula is as follows:
@@ -5119,12 +5415,12 @@ def get_morningstar_risk_adjusted_return(
     periods_per_year: int = 12,
 ) -> float | pd.Series:
     """
-    Calculate the Morningstar Risk-Adjusted Return (MRAR), the annualized certainty
-    equivalent of a series of geometric excess returns for an investor with risk aversion
-    gamma. It is the return a risk-averse investor would accept with certainty instead of the
-    uncertain returns: the more the returns vary, the further it falls below their geometric
-    mean. Morningstar ranks funds within their category on it, with a gamma of 2, for its
-    star rating.
+    Calculate the Morningstar Risk-Adjusted Return (MRAR): the return a risk-averse investor
+    would accept with certainty instead of the uncertain returns, the annualized certainty
+    equivalent of the geometric excess returns for a risk aversion gamma.
+
+    The more the returns vary, the further it falls below their geometric mean. Morningstar
+    ranks funds within their category on it, with a gamma of 2, for its star rating.
 
     The formula is as follows:
 
@@ -5174,8 +5470,9 @@ def get_rolling_morningstar_risk_adjusted_return(
     periods_per_year: int = 12,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Morningstar Risk-Adjusted Return over a rolling window, e.g. 36, 60 or 120
-    months for the three, five and ten year figures Morningstar rates funds on.
+    Calculate the rolling Morningstar Risk-Adjusted Return: the return a risk-averse investor
+    would accept with certainty within each window of recent returns, e.g. 36, 60 or 120 months
+    for the three, five and ten year figures Morningstar rates funds on.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): The geometric excess returns per month, as
@@ -5205,8 +5502,8 @@ def get_lo_annualization_factor(
     periods_per_year: int,
 ) -> float:
     """
-    Calculate Lo's (2002) factor η(q) that turns a Sharpe ratio of one period into a Sharpe
-    ratio of q periods (e.g. a year) when the returns are serially correlated.
+    Calculate Lo's (2002) annualization factor η(q): how much a Sharpe ratio grows from one
+    period to q periods (e.g. a year) when the returns are serially correlated.
 
     The formula is as follows:
 
@@ -5247,8 +5544,9 @@ def get_lo_sharpe_ratio(
     lags: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the annualized Sharpe ratio of Lo (2002), which corrects the annualization for
-    the serial correlation of the returns.
+    Calculate the annualized Sharpe ratio of Lo (2002): the mean excess return per unit of
+    volatility over a year, with the annualization corrected for the serial correlation of the
+    returns.
 
     The usual annualized Sharpe ratio, SQRT(q) * SR, assumes the returns are independent.
     When returns are autocorrelated, the variance of a q-period return is no longer q times
@@ -5258,7 +5556,7 @@ def get_lo_sharpe_ratio(
         - η(q) = q / SQRT( q + 2 * SUM_{k=1}^{q-1} (q - k) * ρ_k )
 
     Where SR is the Sharpe ratio of one period (mean excess return divided by its sample
-    standard deviation, ddof=1), q is `periods_per_year` and ρ_k the sample autocorrelation
+    standard deviation with n - 1 in the denominator), q is `periods_per_year` and ρ_k the sample autocorrelation
     at lag k (Box-Jenkins estimator). The sample autocorrelations at lags close to the
     sample size rest on very few pairs, so the sum includes `lags` lags and takes the
     autocorrelations beyond them as 0. By default `lags` follows the Newey and West (1994)
@@ -5346,8 +5644,8 @@ def get_rolling_lo_sharpe_ratio(
     lags: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the annualized Sharpe ratio of Lo (2002) over a rolling window, see
-    `get_lo_sharpe_ratio`.
+    Calculate the rolling annualized Sharpe ratio of Lo (2002): the serial-correlation-corrected
+    annualized Sharpe ratio within each window of recent returns, see `get_lo_sharpe_ratio`.
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): The excess returns.
@@ -5370,26 +5668,26 @@ def get_sharpe_ratio_standard_error(
     lags: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the standard error of the Sharpe ratio estimate, i.e. how far the measured
-    Sharpe ratio may lie from the true one.
+    Calculate the standard error of the Sharpe ratio: how far the measured Sharpe ratio may lie
+    from the true one.
 
     The formulas are as follows, with SR the Sharpe ratio of one period and n the number of
     observations:
 
-        - "iid": SE = SQRT( (1 + SR^2 / 2) / n ) (Lo, 2002, equation 9, normally and
+        - Independent normal returns: SE = SQRT( (1 + SR^2 / 2) / n ) (Lo, 2002, equation 9, normally and
           independently distributed returns)
-        - "non_normal": SE = SQRT( (1 − γ₃·SR + ((γ₄ − 1) / 4)·SR^2) / (n − 1) ) (Mertens,
+        - Non-normal returns: SE = SQRT( (1 − γ₃·SR + ((γ₄ − 1) / 4)·SR^2) / (n − 1) ) (Mertens,
           2002; Bailey & López de Prado, 2012), independent but skewed and fat-tailed
           returns, with γ₃ the skewness and γ₄ the non-excess (raw) kurtosis. This is the
           standard error inside the Probabilistic Sharpe Ratio.
-        - "gmm": SE = SQRT( ∂g/∂θ · Σ · ∂g/∂θ' / n ) (Lo, 2002, Appendix), returns that may
+        - GMM: SE = SQRT( ∂g/∂θ · Σ · ∂g/∂θ' / n ) (Lo, 2002, Appendix), returns that may
           also be serially correlated and heteroskedastic. θ = (μ, σ²), g(θ) = μ / σ, so
           ∂g/∂θ = (1 / σ, −μ / (2σ³)), and Σ is the Newey and West (1987) long-run covariance
           of the moment conditions (x_t − μ, (x_t − μ)² − σ²) with Bartlett weights over
           `lags` lags (σ² with 1 / n, as in GMM).
 
-    With independent normal returns the three agree as n grows; with lags=0 the "gmm" and
-    "non_normal" errors differ only by the finite-sample corrections of the moments.
+    With independent normal returns the three agree as n grows; without lags the GMM and
+    non-normal errors differ only by the finite-sample corrections of the moments.
 
     For more information about the method, see the following papers:
 
@@ -5406,9 +5704,11 @@ def get_sharpe_ratio_standard_error(
     Args:
         excess_returns (pd.Series | pd.DataFrame): The excess returns. With a "within
         period" (period, date) Multi Index, one standard error is calculated per period.
-        method (str, optional): "iid", "non_normal" or "gmm". Defaults to "iid".
+        method (str, optional): The standard error. Options are: "iid" (independent normal
+        returns), "non_normal" (independent, skewed and fat-tailed returns), "gmm" (GMM, serially
+        correlated and heteroskedastic returns). Defaults to "iid".
         lags (int | None, optional): The number of lags in the Newey-West covariance, only
-        for method="gmm". Defaults to None, the Newey and West (1994) rule
+        for the GMM error. Defaults to None, the Newey and West (1994) rule
         floor(4 * (n / 100)^(2/9)).
 
     Returns:
@@ -5480,16 +5780,17 @@ def get_sharpe_ratio_difference(
     lags: int | None = None,
 ) -> pd.Series:
     """
-    Test whether two Sharpe ratios differ, H0: SR_a = SR_b, on the dates both have an excess
-    return, with a two-sided p-value from the standard normal distribution.
+    Calculate the Sharpe ratio difference test: whether two Sharpe ratios differ (H0: SR_a =
+    SR_b), on the dates both have an excess return, with a two-sided p-value from the standard
+    normal distribution.
 
     The formulas are as follows, with n the number of paired observations:
 
-        - "memmel": z = (SR_a − SR_b) / SQRT( (2 − 2ρ + (SR_a² + SR_b² − 2·SR_a·SR_b·ρ²) / 2) / n ),
+        - Memmel: z = (SR_a − SR_b) / SQRT( (2 − 2ρ + (SR_a² + SR_b² − 2·SR_a·SR_b·ρ²) / 2) / n ),
           the Jobson and Korkie (1981) test as corrected by Memmel (2003), for independent and
-          jointly normal returns, with SR = mean / standard deviation (ddof=1) and ρ the
+          jointly normal returns, with SR = mean / standard deviation (n - 1 in the denominator) and ρ the
           correlation of the two excess returns.
-        - "ledoit_wolf": z = Δ / SQRT( ∇f' Ψ ∇f / n ), the HAC test of Ledoit and Wolf (2008,
+        - Ledoit-Wolf: z = Δ / SQRT( ∇f' Ψ ∇f / n ), the HAC test of Ledoit and Wolf (2008,
           section 3.1), robust to fat tails and serial correlation. With v = (μ_a, μ_b, γ_a, γ_b)
           the means and the mean squares (γ = mean(r²)), Δ = f(v) = μ_a / SQRT(γ_a − μ_a²) −
           μ_b / SQRT(γ_b − μ_b²), ∇f = (γ_a / c_a, −γ_b / c_b, −μ_a / (2·c_a), μ_b / (2·c_b))
@@ -5500,7 +5801,8 @@ def get_sharpe_ratio_difference(
     Args:
         excess_returns (pd.Series): The excess returns of the first asset.
         benchmark_excess_returns (pd.Series): The excess returns of the second asset.
-        method (str, optional): "memmel" or "ledoit_wolf". Defaults to "memmel".
+        method (str, optional): The test. Options are: "memmel" (Jobson-Korkie test with
+            Memmel's correction), "ledoit_wolf" (Ledoit-Wolf HAC test). Defaults to "memmel".
         lags (int | None, optional): The number of lags L of the Ledoit-Wolf covariance.
             Defaults to None, the Newey and West (1994) rule floor(4 * (n / 100)^(2/9)).
 
@@ -5585,15 +5887,16 @@ def get_sharpe_ratio_difference_test(
     lags: int | None = None,
 ) -> pd.DataFrame:
     """
-    Test the Sharpe ratio of every column against that of the benchmark with
-    `get_sharpe_ratio_difference`, over the whole sample or, with a "within period"
-    (period, date) Multi Index, per period.
+    Calculate the Sharpe ratio difference test of every column: whether its Sharpe ratio differs
+    from the benchmark's, with `get_sharpe_ratio_difference`, over the whole sample or, with a
+    "within period" (period, date) Multi Index, per period.
 
     Args:
         excess_returns (pd.DataFrame): The excess returns, one column per asset.
         benchmark_excess_returns (pd.Series): The excess returns of the benchmark, on the
             same index.
-        method (str, optional): "memmel" or "ledoit_wolf". Defaults to "memmel".
+        method (str, optional): The test. Options are: "memmel" (Jobson-Korkie test with
+            Memmel's correction), "ledoit_wolf" (Ledoit-Wolf HAC test). Defaults to "memmel".
         lags (int | None, optional): The number of lags of the Ledoit-Wolf covariance.
             Defaults to None, the Newey and West (1994) rule.
 
@@ -5637,8 +5940,8 @@ def get_minimum_track_record_length(
     confidence_level: float = 0.95,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Minimum Track Record Length (MinTRL), the number of return observations
-    needed before the measured Sharpe ratio is significantly above a benchmark Sharpe ratio.
+    Calculate the Minimum Track Record Length (MinTRL): the number of return observations needed
+    before the measured Sharpe ratio is significantly above a benchmark Sharpe ratio.
 
     The formula is as follows:
 
@@ -5655,6 +5958,9 @@ def get_minimum_track_record_length(
 
     - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
     Journal of Risk, 15(2), 3-44, equation 11.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), MinTrackRecord: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MinTRL.R#L49
 
     Args:
         sharpe_ratio (pd.Series | pd.DataFrame | float): The observed Sharpe ratio of one
@@ -5699,21 +6005,25 @@ def get_co_moment(
     method: str,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the standardized co-moment of each asset with the benchmark, the shared part of
-    `get_coskewness` (power 2) and `get_cokurtosis` (power 3):
+    Calculate the standardized co-moment of each asset with the benchmark: how the asset's
+    return moves with a power of the market's moves, the shared part of `get_coskewness` (power
+    2) and `get_cokurtosis` (power 3).
+
+    The formula is as follows:
 
         - Co-Moment = E[a · b^power] / (SQRT(E[a^2]) · E[b^2]^(power / 2))
 
-    Where b is the demeaned benchmark return and a the demeaned asset return
-    ("standardized") or the residual of the asset's regression on the benchmark
-    ("residual"), over the dates both have a return, with population moments (1 / n).
+    Where b is the demeaned benchmark return and a the demeaned asset return (standardized
+    co-moment) or the residual of the asset's regression on the benchmark (residual
+    co-moment), over the dates both have a return, with population moments (1 / n).
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
         (period, date) Multi Index, one value is calculated per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
         power (int): The power of the benchmark deviation, 2 or 3.
-        method (str): "standardized" or "residual".
+        method (str): The co-moment. Options are: "standardized" (demeaned asset returns),
+            "residual" (residuals of the asset's regression on the benchmark).
 
     Returns:
         pd.Series | pd.DataFrame | float: The co-moment per period (Multi Index), per
@@ -5769,14 +6079,15 @@ def get_coskewness(
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the co-skewness of each asset with the benchmark: how the asset's return moves
-    with the squared (large, either way) moves of the market. A negative co-skewness means
-    the asset does worse when the market makes large moves, which adds to the market's
-    downside skewness, and investors demand a premium for holding it.
+    with the squared (large, either way) moves of the market.
+
+    A negative co-skewness means the asset does worse when the market makes large moves, which
+    adds to the market's downside skewness, and investors demand a premium for holding it.
 
     The formulas are as follows:
 
-        - "standardized": CoSkewness = E[(r_i − μ_i)(r_m − μ_m)^2] / (σ_i · σ_m^2)
-        - "residual": β_SKD = E[ε_i · ε_m^2] / (SQRT(E[ε_i^2]) · E[ε_m^2]) (Harvey and
+        - Standardized: CoSkewness = E[(r_i − μ_i)(r_m − μ_m)^2] / (σ_i · σ_m^2)
+        - Residual: β_SKD = E[ε_i · ε_m^2] / (SQRT(E[ε_i^2]) · E[ε_m^2]) (Harvey and
           Siddique, 2000, equation 11)
 
     Where r_i is the asset return, r_m the benchmark return, ε_m = r_m − μ_m and ε_i the
@@ -5793,11 +6104,16 @@ def get_coskewness(
     - Kraus, A., & Litzenberger, R.H. (1976). "Skewness Preference and the Valuation of
     Risk Assets." Journal of Finance, 31(4), 1085-1100.
 
+    Shares similar logic:
+    - PerformanceAnalytics (R), CoSkewness: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CoMoments.R#L391
+
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
         (period, date) Multi Index, one value is calculated per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
-        method (str, optional): "standardized" or "residual". Defaults to "standardized".
+        method (str, optional): The co-skewness. Options are: "standardized" (standardized
+            co-skewness), "residual" (Harvey and Siddique's residual co-skewness). Defaults to
+            "standardized".
 
     Returns:
         pd.Series | pd.DataFrame | float: The co-skewness per period (Multi Index), per
@@ -5814,13 +6130,14 @@ def get_cokurtosis(
     """
     Calculate the co-kurtosis of each asset with the benchmark: how the asset's return moves
     with the cubed moves of the market, i.e. whether it shares the market's extreme moves.
+
     A high co-kurtosis means the asset adds to the fat tails of a market portfolio, which
     Dittmar (2002) shows investors with a preference against kurtosis demand a premium for.
 
     The formulas are as follows:
 
-        - "standardized": CoKurtosis = E[(r_i − μ_i)(r_m − μ_m)^3] / (σ_i · σ_m^3)
-        - "residual": E[ε_i · ε_m^3] / (SQRT(E[ε_i^2]) · E[ε_m^2]^(3/2))
+        - Standardized: CoKurtosis = E[(r_i − μ_i)(r_m − μ_m)^3] / (σ_i · σ_m^3)
+        - Residual: E[ε_i · ε_m^3] / (SQRT(E[ε_i^2]) · E[ε_m^2]^(3/2))
 
     Where r_i is the asset return, r_m the benchmark return, ε_m = r_m − μ_m and ε_i the
     residual of the regression r_i = α + β r_m + ε_i, the residual form Harvey and Siddique
@@ -5835,11 +6152,15 @@ def get_cokurtosis(
     - Harvey, C.R., & Siddique, A. (2000). "Conditional Skewness in Asset Pricing Tests."
     Journal of Finance, 55(3), 1263-1295.
 
+    Shares similar logic:
+    - PerformanceAnalytics (R), CoKurtosis: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CoMoments.R#L466
+
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
         (period, date) Multi Index, one value is calculated per period.
         benchmark_returns (pd.Series): The benchmark returns on the same index.
-        method (str, optional): "standardized" or "residual". Defaults to "standardized".
+        method (str, optional): The co-kurtosis. Options are: "standardized" (standardized
+            co-kurtosis), "residual" (residual co-kurtosis). Defaults to "standardized".
 
     Returns:
         pd.Series | pd.DataFrame | float: The co-kurtosis per period (Multi Index), per
@@ -5853,9 +6174,10 @@ def get_r_squared(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the R-squared of each asset against the benchmark, the share of the variance
-    of its returns that the single factor (CAPM) regression on the benchmark returns
-    explains. With one regressor it is the squared correlation:
+    Calculate the R-squared of each asset against the benchmark: the share of the variance of
+    its returns that the single factor (CAPM) regression on the benchmark returns explains.
+
+    With one regressor it is the squared correlation:
 
         - R Squared = Covariance(Asset, Benchmark)^2 / (Variance(Asset) x Variance(Benchmark))
 
@@ -5865,7 +6187,9 @@ def get_r_squared(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons.
-    - quantstats: stats.r_squared (https://github.com/ranaroussi/quantstats).
+
+    Referenced against:
+    - quantstats, r_squared: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2828
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
@@ -5916,8 +6240,12 @@ def get_rolling_r_squared(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the R-squared of each asset against the benchmark (see `get_r_squared`) over a
-    rolling window of `window_size` observations.
+    Calculate the rolling R-squared of each asset against the benchmark: the share of the
+    variance of its returns the benchmark explained within each window of `window_size`
+    observations (see `get_r_squared`).
+
+    Referenced against:
+    - quantstats, r_squared: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2828
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns.
@@ -5938,12 +6266,12 @@ def get_outperformance_probability(
     windows: list[int] | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the probability of outperformance over rolling windows: the share of every
-    window of `window` consecutive periods in which the compounded return of the asset beat
-    that of the benchmark, as defined in PerformanceAnalytics (Peterson and Carl) by
-    table.ProbOutPerformance. Without
-    a benchmark the asset's compounded return is compared with 0, ffn's
-    twelve_month_win_perc for a window of twelve monthly returns.
+    Calculate the probability of outperformance: how often the asset's compounded return beat
+    the benchmark's over every window of a given number of consecutive periods, as defined in
+    PerformanceAnalytics (Peterson and Carl).
+
+    Without a benchmark the asset's compounded return is compared with 0, which for a window of
+    twelve monthly returns is ffn's twelve month win percentage.
 
     The formula is as follows:
 
@@ -5953,6 +6281,12 @@ def get_outperformance_probability(
 
     The windows end at every period from the first full window onwards, so consecutive
     windows overlap. A window in which both returns are equal counts as neither.
+
+    Referenced against:
+    - PerformanceAnalytics (R), table.ProbOutPerformance: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.ProbOutperformance.R#L32
+
+    Shares similar logic:
+    - ffn, PerformanceStats (twelve_month_win_perc): https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, each on its own
@@ -6007,10 +6341,12 @@ def get_bull_bear_beta(
     periods_per_year: float = 252.0,
 ) -> dict:
     """
-    Calculate the bull and bear market Betas and Alphas and the Timing Ratio: the single
-    factor (CAPM) regression of the asset's excess returns on the benchmark's excess
-    returns, fitted separately over the observations in which the market rose (bull) and
-    fell (bear).
+    Calculate the bull and bear market Betas and Alphas and the Timing Ratio: how strongly the
+    asset moved with the benchmark in rising and in falling markets.
+
+    They come from the single factor (CAPM) regression of the asset's excess returns on the
+    benchmark's excess returns, fitted separately over the observations in which the market rose
+    (bull) and fell (bear).
 
     The formulas are as follows:
 
@@ -6019,9 +6355,8 @@ def get_bull_bear_beta(
         - Timing Ratio = Bull Beta / Bear Beta
         - Annualized Alpha = (1 + Alpha)^P - 1
 
-    Where the market is the benchmark excess return by default (PerformanceAnalytics'
-    CAPM.beta.bull, CAPM.beta.bear and TimingRatio, and empyrical's up_alpha_beta and
-    down_alpha_beta on excess returns) or, passed as `market_returns`, another series such
+    Where the market is the benchmark excess return by default (as in PerformanceAnalytics
+    and in empyrical on excess returns) or, passed as `market_returns`, another series such
     as the benchmark return itself, and P the observations in a year. A Timing Ratio above 1
     means the asset moved more with the market when it rose than when it fell, the asymmetry
     a successful market timer shows (Henriksson and Merton, 1981).
@@ -6033,9 +6368,13 @@ def get_bull_bear_beta(
     Business, 54(4), 513-533.
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons.
-    - PerformanceAnalytics: CAPM.beta.bull, CAPM.beta.bear, TimingRatio
-    (https://github.com/braverock/PerformanceAnalytics).
-    - empyrical: up_alpha_beta, down_alpha_beta (https://github.com/stefan-jansen/empyrical-reloaded).
+
+    Referenced against:
+    - PerformanceAnalytics (R), CAPM.beta.bull: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L133
+    - PerformanceAnalytics (R), CAPM.beta.bear: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L184
+    - PerformanceAnalytics (R), TimingRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L236
+    - empyrical, up_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1986
+    - empyrical, down_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2004
 
     Args:
         excess_returns (pd.Series): The asset's excess returns.
@@ -6087,8 +6426,9 @@ def get_beta_fragility_heuristic(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the beta fragility heuristic of Taleb, Canetti, Kinda, Loukoianova and
-    Schmieder (2012): how much the asset's response to the benchmark bends at its extremes.
+    Calculate the beta fragility heuristic of Taleb, Canetti, Kinda, Loukoianova and Schmieder
+    (2012): how much the asset's response to the benchmark bends at its extremes.
+
     The returns are sorted by the benchmark return, and the asset's return at the median
     benchmark return is compared with the line through its returns at the lowest and highest
     benchmark returns:
@@ -6107,7 +6447,9 @@ def get_beta_fragility_heuristic(
     - Taleb, N.N., Canetti, E., Kinda, T., Loukoianova, E., & Schmieder, C. (2012). "A New
     Heuristic Measure of Fragility and Tail Risks: Application to Stress Testing." IMF
     Working Paper WP/12/216.
-    - empyrical: beta_fragility_heuristic (https://github.com/stefan-jansen/empyrical-reloaded).
+
+    Referenced against:
+    - empyrical, beta_fragility_heuristic: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1565
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
@@ -6165,10 +6507,11 @@ def get_stability_of_returns(
     returns: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the stability of returns, the R-squared of a linear fit of the cumulative log
-    returns on time. A value close to 1 means the asset grew at a steady rate; a value close
-    to 0 means its growth path was erratic. The measure is defined in empyrical (Quantopian)
-    as stability_of_timeseries.
+    Calculate the stability of returns: how steadily the asset grew, the R-squared of a linear
+    fit of the cumulative log returns on time.
+
+    A value close to 1 means the asset grew at a steady rate; a value close to 0 means its
+    growth path was erratic. The measure is defined in empyrical (Quantopian).
 
     The formula is as follows:
 
@@ -6177,10 +6520,8 @@ def get_stability_of_returns(
 
     Where t counts the returns of each asset (0, 1, 2, ...), missing returns left out.
 
-    For more information, see the following sources:
-
-    - empyrical: stability_of_timeseries (https://github.com/stefan-jansen/empyrical-reloaded).
-    - pyfolio: timeseries.stability_of_timeseries (https://github.com/stefan-jansen/pyfolio-reloaded).
+    Referenced against:
+    - empyrical, stability_of_timeseries: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1471
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, either a flat index or a 'within
@@ -6230,7 +6571,7 @@ def get_risk_decomposition(
         - Total Risk = SQRT(Systematic Risk^2 + Specific Risk^2)
 
     Where the Residuals are those of the regression Excess Return = Alpha + Beta x Benchmark
-    Excess Return, the standard deviations are sample ones (ddof = 1) over the dates both have
+    Excess Return, the standard deviations are sample ones (with n - 1 in the denominator) over the dates both have
     a return, and N the number of observations to scale them to (such as 252 for a year of
     daily returns). With the same degrees of freedom the Total Risk equals the volatility of
     the excess returns, as the regression splits the variance exactly.
@@ -6239,8 +6580,13 @@ def get_risk_decomposition(
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, pp. 71-72.
-    - PerformanceAnalytics: SystematicRisk, SpecificRisk, TotalRisk, table.SpecificRisk
-    (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), SystematicRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SystematicRisk.R#L36
+    - PerformanceAnalytics (R), SpecificRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SpecificRisk.R#L27
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), TotalRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TotalRisk.R#L30
 
     Args:
         excess_returns (pd.Series): The asset's excess returns.
@@ -6252,6 +6598,10 @@ def get_risk_decomposition(
     Returns:
         dict: The Systematic Risk, Specific Risk and Total Risk. Fewer than three shared
         dates, or a benchmark without variation, give NaN.
+
+    Notes:
+    - PerformanceAnalytics' SpecificRisk divides the residual variance by n where the standard
+    deviations here divide by n - 1.
     """
     pairs = pd.concat(
         [excess_returns, benchmark_excess_returns], axis=1, keys=[0, 1]
@@ -6285,10 +6635,9 @@ def get_capital_market_line(
     risk_free_returns: pd.Series,
 ) -> dict:
     """
-    Calculate the Capital Market Line and the Security Market Line of the benchmark and
-    where an asset stands against them (Sharpe, 1964): the CML gives the return an efficient
-    portfolio earns for the asset's total risk, the SML the return the CAPM gives for its
-    Beta.
+    Calculate the Capital Market Line and the Security Market Line of the benchmark: the return
+    an efficient portfolio earns for the asset's total risk, and the return the CAPM gives per
+    unit of Beta (Sharpe, 1964).
 
     The formulas are as follows:
 
@@ -6307,8 +6656,10 @@ def get_capital_market_line(
 
     - Sharpe, W.F. (1964). "Capital Asset Prices: A Theory of Market Equilibrium under
     Conditions of Risk." Journal of Finance, 19(3), 425-442.
-    - PerformanceAnalytics: CAPM.CML.slope, CAPM.CML, CAPM.SML.slope
-    (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), CAPM.CML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L6
+    - PerformanceAnalytics (R), CAPM.SML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L152
 
     Args:
         returns (pd.Series): The asset's returns.
@@ -6319,6 +6670,10 @@ def get_capital_market_line(
     Returns:
         dict: The Capital Market Line Slope, Capital Market Line Return and Security Market
         Line Slope. Fewer than two shared dates, or a benchmark without variation, give NaN.
+
+    Notes:
+    - The Security Market Line Slope is the reciprocal of PerformanceAnalytics' CAPM.SML.slope,
+    which gives the Beta per unit of return.
     """
     pairs = pd.concat(
         [returns, benchmark_returns, risk_free_returns], axis=1, keys=[0, 1, 2]
@@ -6350,21 +6705,25 @@ def get_regression_epsilon(
     benchmark_period_excess_return: float,
 ) -> float:
     """
-    Calculate the regression epsilon of Bacon (2008), the part of the asset's return over a
-    period that its single factor (CAPM) regression does not predict:
+    Calculate the regression epsilon of Bacon (2008): the part of the asset's return over a
+    period that its single factor (CAPM) regression does not predict.
+
+    The formula is as follows:
 
         - Regression Epsilon = Period Excess Return - Alpha - Beta x Benchmark Period Excess Return
 
     Where Alpha and Beta come from the regression of the asset's excess returns per
     observation (such as per day) on those of the benchmark, and the period excess returns
-    are compounded over the period (such as the year), as PerformanceAnalytics' CAPM.epsilon
-    combines the annualized returns with the regression Alpha per observation.
+    are compounded over the period (such as the year), as PerformanceAnalytics combines the
+    annualized returns with the regression Alpha per observation.
 
     For more information, see the following sources:
 
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
     2nd edition, John Wiley & Sons, p. 71.
-    - PerformanceAnalytics: CAPM.epsilon (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), CAPM.epsilon: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.epsilon.R#L33
 
     Args:
         excess_returns (pd.Series): The asset's excess returns per observation.
@@ -6393,7 +6752,8 @@ def get_regression_epsilon(
 
 def get_log_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Convert simple returns into log (continuously compounded) returns.
+    Calculate log (continuously compounded) returns: the simple returns converted so that they
+    add up over time.
 
     The formula is as follows:
 
@@ -6406,8 +6766,10 @@ def get_log_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFra
 
     - Campbell, J.Y., Lo, A.W., & MacKinlay, A.C. (1997). "The Econometrics of Financial
     Markets." Princeton University Press, chapter 1.4.
-    - ffn: to_log_returns and PerformanceStats.log_returns (https://github.com/pmorissette/ffn).
-    - pandas-ta-classic: log_return (https://github.com/xgboosted/pandas-ta-classic).
+
+    Shares similar logic:
+    - ffn, to_log_returns: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1223
+    - pandas-ta-classic, log_return: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/performance/log_return.py#L12
 
     Args:
         returns (pd.Series | pd.DataFrame): The simple returns.
@@ -6420,7 +6782,8 @@ def get_log_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFra
 
 def get_geltner_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Unsmooth returns with Geltner's (1991, 1993) first order autocorrelation filter.
+    Calculate Geltner's (1991, 1993) unsmoothed returns: the returns of an appraisal-based or
+    illiquid asset with the smoothing of its first order autocorrelation removed.
 
     Appraisal-based and illiquid assets (real estate, private equity, many hedge funds)
     report returns that are smoothed: each return carries part of the earlier ones, which
@@ -6440,7 +6803,9 @@ def get_geltner_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Dat
     Finance and Economics, 4(3), 327-345.
     - Geltner, D. (1993). "Estimating Market Values from Appraised Values without Assuming an
     Efficient Market." Journal of Real Estate Research, 8(3), 325-345.
-    - PerformanceAnalytics: Return.Geltner (https://github.com/braverock/PerformanceAnalytics).
+
+    Referenced against:
+    - PerformanceAnalytics (R), Return.Geltner: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.Geltner.R#L43
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, each column on its own history
@@ -6467,8 +6832,8 @@ def get_geltner_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Dat
 
 def get_smoothing_index(returns: pd.Series, order: int = 2) -> pd.Series:
     """
-    Calculate the smoothing coefficients and the Smoothing Index of Getmansky, Lo and
-    Makarov (2004) from returns.
+    Calculate the Smoothing Index of Getmansky, Lo and Makarov (2004): how much reported returns
+    are smoothed over past periods, with the smoothing coefficients.
 
     Getmansky, Lo and Makarov model an observed return as a weighted average of the true
     returns of the current and the `order` previous periods, which is what reported returns of
@@ -6489,12 +6854,17 @@ def get_smoothing_index(returns: pd.Series, order: int = 2) -> pd.Series:
     - Getmansky, M., Lo, A.W., & Makarov, I. (2004). "An Econometric Model of Serial
     Correlation and Illiquidity in Hedge Fund Returns." Journal of Financial Economics, 74(3),
     529-609.
-    - PerformanceAnalytics: SmoothingIndex (https://github.com/braverock/PerformanceAnalytics).
 
     The likelihood is that of the returns as given: Getmansky, Lo and Makarov fit the model to
     de-meaned returns, so subtract the mean first to follow them. Negative moving average
     coefficients are set to 0 before the weights are normalized, as PerformanceAnalytics does
     by default, since a negative weight on a past return is no smoothing.
+
+    Referenced against:
+    - statsmodels, ARIMA (order (0, 0, k), without a mean): https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), SmoothingIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SmoothingIndex.R#L96
 
     Args:
         returns (pd.Series): The returns, usually monthly (missing returns are left out).
@@ -6563,9 +6933,9 @@ def get_serenity_index(
     volatility: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Serenity Index (Serenity Ratio) of KeyQuant, the excess return per unit of
-    Ulcer Index, penalized further when the drawdowns have a fat tail compared to the
-    volatility of the returns.
+    Calculate the Serenity Index (Serenity Ratio) of KeyQuant: the excess return per unit of
+    Ulcer Index, penalized further when the drawdowns have a fat tail compared to the volatility
+    of the returns.
 
     The formula is as follows:
 
@@ -6584,9 +6954,11 @@ def get_serenity_index(
     (the Serenity Ratio and the Pitfall Indicator).
     - Martin, P.G., & McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John
     Wiley & Sons (the Ulcer Index).
-    - quantstats: stats.serenity_index (https://github.com/ranaroussi/quantstats).
 
     A period without a drawdown leaves the index undefined (NaN).
+
+    Shares similar logic:
+    - quantstats, serenity_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1906
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): The excess returns, one per period.
@@ -6635,30 +7007,40 @@ def get_risk_measure(
     returns: pd.Series | pd.DataFrame, risk_measure: str = "cvar", alpha: float = 0.05
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate one of the risk measures of the Toolkit's risk module as a positive number, the
-    denominator of `get_risk_measure_ratio`:
+    Calculate a risk measure as a positive number: how much the returns are at risk by one of
+    the measures of the Toolkit's risk module, the denominator of `get_risk_measure_ratio`.
 
-    - "var": the historical Value at Risk, the alpha quantile of the returns.
-    - "cvar": the historical Conditional Value at Risk, the mean of the returns at or below it.
-    - "evar": the historical Entropic Value at Risk.
-    - "erm": the Entropic Risk Measure with a risk aversion of 1.
-    - "worst": the Worst Realization, the lowest return.
-    - "mad": the Mean Absolute Deviation from the mean.
-    - "lpm": the first Lower Partial Moment below the mean, mean(max(Mean - Return, 0)).
-    - "gmd": the Gini Mean Difference.
-    - "max_drawdown": the Maximum Drawdown.
-    - "average_drawdown": the Average Drawdown over every observation.
-    - "dar": the Drawdown at Risk, the alpha quantile of the drawdowns.
-    - "cdar": the Conditional Drawdown at Risk.
-    - "edar": the Entropic Drawdown at Risk.
-    - "ulcer": the Ulcer Index, the root mean square drawdown.
+    The risk measures are:
+
+    - Value at Risk: the historical Value at Risk, the alpha quantile of the returns.
+    - Conditional Value at Risk: the historical Conditional Value at Risk, the mean of the
+      returns at or below it.
+    - Entropic Value at Risk: the historical Entropic Value at Risk.
+    - Entropic Risk Measure: the Entropic Risk Measure with a risk aversion of 1.
+    - Worst Realization: the lowest return.
+    - Mean Absolute Deviation: the Mean Absolute Deviation from the mean.
+    - Lower Partial Moment: the first Lower Partial Moment below the mean,
+      mean(max(Mean - Return, 0)).
+    - Gini Mean Difference: the Gini Mean Difference.
+    - Maximum Drawdown: the Maximum Drawdown.
+    - Average Drawdown: the Average Drawdown over every observation.
+    - Drawdown at Risk: the alpha quantile of the drawdowns.
+    - Conditional Drawdown at Risk: the Conditional Drawdown at Risk.
+    - Entropic Drawdown at Risk: the Entropic Drawdown at Risk.
+    - Ulcer Index: the root mean square drawdown.
 
     The drawdowns compound the returns and start from a wealth of 1 before the first return.
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, optionally with a (period, date)
             index for one value per period.
-        risk_measure (str, optional): The risk measure, one of the above. Defaults to "cvar".
+        risk_measure (str, optional): The risk measure. Options are: "var" (historical Value at
+            Risk), "cvar" (historical Conditional Value at Risk), "evar" (historical Entropic Value
+            at Risk), "erm" (Entropic Risk Measure), "worst" (Worst Realization), "mad" (Mean
+            Absolute Deviation), "lpm" (first Lower Partial Moment), "gmd" (Gini Mean Difference),
+            "max_drawdown" (Maximum Drawdown), "average_drawdown" (Average Drawdown), "dar"
+            (Drawdown at Risk), "cdar" (Conditional Drawdown at Risk), "edar" (Entropic Drawdown
+            at Risk), "ulcer" (Ulcer Index). Defaults to "cvar".
         alpha (float, optional): The tail probability of the VaR, CVaR, EVaR, ERM, DaR,
             CDaR and EDaR. Defaults to 0.05.
 
@@ -6710,8 +7092,8 @@ def get_risk_measure_ratio(
     alpha: float = 0.05,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the mean excess return per unit of a risk measure, the Sharpe ratio with any
-    risk measure of `get_risk_measure` in place of the standard deviation.
+    Calculate the risk measure ratio: the mean excess return per unit of a risk measure, the
+    Sharpe ratio with any risk measure of `get_risk_measure` in place of the standard deviation.
 
     The formula is as follows:
 
@@ -6724,23 +7106,31 @@ def get_risk_measure_ratio(
     For more information, see the following sources:
 
     - Cajas, D. (2021). "Riskfolio-Lib: Portfolio Optimization in Python", the risk-adjusted
-    return ratios (https://riskfolio-lib.readthedocs.io).
+    return ratios.
     - Gregoriou, G.N., & Gueyie, J.P. (2003). "Risk-Adjusted Performance of Funds of Hedge Funds
     Using a Modified Sharpe Ratio." Journal of Wealth Management, 6(3), 77-83.
-    - skfolio: RatioMeasure (https://skfolio.org/generated/skfolio.measures.RatioMeasure.html).
-    - Riskfolio-Lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
-    - PerformanceAnalytics: SharpeRatio with FUN="VaR" or "ES"
-    (https://github.com/braverock/PerformanceAnalytics).
 
     A risk measure of 0 leaves the ratio undefined (NaN).
+
+    Referenced against:
+    - skfolio, RatioMeasure: https://skfolio.org/generated/skfolio.measures.RatioMeasure.html
+
+    Shares similar logic:
+    - Riskfolio-Lib, Sharpe: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Sharpe
+    - PerformanceAnalytics (R), SharpeRatio (VaR and ES): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SharpeRatio.R#L80
 
     Args:
         excess_returns (pd.Series | pd.DataFrame): The returns minus the risk free rate, on the
             same index as `returns`.
         returns (pd.Series | pd.DataFrame): The returns the risk measure is taken of, optionally
             with a (period, date) index for one ratio per period.
-        risk_measure (str, optional): The risk measure, see `get_risk_measure`. Defaults to
-            "cvar".
+        risk_measure (str, optional): The risk measure. Options are: "var" (historical Value at
+            Risk), "cvar" (historical Conditional Value at Risk), "evar" (historical Entropic Value
+            at Risk), "erm" (Entropic Risk Measure), "worst" (Worst Realization), "mad" (Mean
+            Absolute Deviation), "lpm" (first Lower Partial Moment), "gmd" (Gini Mean Difference),
+            "max_drawdown" (Maximum Drawdown), "average_drawdown" (Average Drawdown), "dar"
+            (Drawdown at Risk), "cdar" (Conditional Drawdown at Risk), "edar" (Entropic Drawdown
+            at Risk), "ulcer" (Ulcer Index). Defaults to "cvar".
         alpha (float, optional): The tail probability of the tail and drawdown measures.
             Defaults to 0.05.
 
@@ -6780,9 +7170,9 @@ ANNUALIZED_WINDOW_MONTHS = 36
 
 def get_trailing_returns(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Calculate the trailing returns of prices up to their last close: month to date, the last
-    3 and 6 months, year to date, the last year, the last 3, 5 and 10 years (annualized) and
-    the whole history (annualized).
+    Calculate the trailing returns: how much the prices gained up to their last close over the
+    month to date, the last 3 and 6 months, year to date, the last year, the last 3, 5 and 10
+    years (annualized) and the whole history (annualized).
 
     The formula is as follows:
 
@@ -6798,13 +7188,15 @@ def get_trailing_returns(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.Dat
     return since inception is the Compound Annual Growth Rate of the whole history (see
     `get_compound_annual_growth_rate`).
 
-    For more information, see the following sources:
-
-    - ffn: calc_mtd, calc_ytd, calc_cagr and PerformanceStats (mtd, three_month, six_month,
-    ytd, one_year, three_year, five_year, ten_year, incep) (https://github.com/pmorissette/ffn).
-    - PerformanceAnalytics: table.TrailingPeriods (https://github.com/braverock/PerformanceAnalytics).
-
     A history that does not reach back to the start of a window gives NaN for it.
+
+    Referenced against:
+    - ffn, PerformanceStats: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
+
+    Shares similar logic:
+    - ffn, calc_mtd: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1426
+    - ffn, calc_ytd: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1437
+    - PerformanceAnalytics (R), table.TrailingPeriods: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.RollingPeriods.R#L36
 
     Args:
         prices (pd.Series | pd.DataFrame): The prices (or total return index) with a
@@ -6892,7 +7284,7 @@ MONTH_NAMES = [
 
 def get_calendar_returns(returns: pd.Series | pd.DataFrame) -> pd.DataFrame:
     """
-    Arrange returns into a calendar table: the compounded return of every month, with the
+    Calculate the calendar returns: the compounded return of every month, in a table with the
     years as the rows and the months as the columns, and the compounded return of the year.
 
     The formula is as follows:
@@ -6903,11 +7295,10 @@ def get_calendar_returns(returns: pd.Series | pd.DataFrame) -> pd.DataFrame:
     A month without any return (before a listing or after the end of the data) is NaN, and
     the year compounds the months it has.
 
-    For more information, see the following sources:
-
-    - quantstats: stats.monthly_returns (https://github.com/ranaroussi/quantstats).
-    - ffn: PerformanceStats.return_table (https://github.com/pmorissette/ffn).
-    - PerformanceAnalytics: table.CalendarReturns (https://github.com/braverock/PerformanceAnalytics).
+    Shares similar logic:
+    - quantstats, monthly_returns: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L3190
+    - ffn, PerformanceStats (return_table): https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
+    - PerformanceAnalytics (R), table.CalendarReturns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.CalendarReturns.R#L41
 
     Args:
         returns (pd.Series | pd.DataFrame): The daily (or any higher frequency than monthly)
@@ -6965,11 +7356,14 @@ def get_bootstrap_samples(
     seed: int | None = 0,
 ) -> np.ndarray:
     """
-    Draw the positions of the returns of every simulation of a bootstrap.
+    Draw the positions of the returns of every simulation of a bootstrap: the histories that
+    could have happened, by resampling or shuffling the returns.
 
-    - "resample" draws `length` positions with replacement (Efron's bootstrap), so a return
+    The bootstraps are:
+
+    - Resampling draws `length` positions with replacement (Efron's bootstrap), so a return
     can appear several times or not at all and every statistic varies across simulations.
-    - "shuffle" puts the positions in a random order without replacement (a permutation), so
+    - Shuffling puts the positions in a random order without replacement (a permutation), so
     every simulation holds the same returns: the cumulative return, the volatility and the
     Sharpe ratio are those of the history, and only the statistics that depend on the order,
     such as the drawdowns, vary.
@@ -6977,9 +7371,10 @@ def get_bootstrap_samples(
     Args:
         observations (int): The number of returns to draw from.
         simulations (int, optional): The number of simulations. Defaults to 1000.
-        method (str, optional): "resample" or "shuffle". Defaults to "resample".
+        method (str, optional): The bootstrap. Options are: "resample" (draws with replacement),
+            "shuffle" (a random order without replacement). Defaults to "resample".
         length (int | None, optional): The number of returns of each simulation, only for
-            "resample". Defaults to None, the number of observations.
+            resampling. Defaults to None, the number of observations.
         seed (int | None, optional): The seed of the random numbers, for reproducible results.
             Defaults to 0.
 
@@ -7043,8 +7438,9 @@ def get_bootstrap_statistics(
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
-    Calculate the distribution of performance statistics over bootstrapped histories of the
-    returns, how much the statistics of one history could have differed by chance.
+    Calculate bootstrap statistics: how much the cumulative return, annualized return,
+    volatility, Sharpe ratio and maximum drawdown of one history could have differed by chance,
+    from bootstrapped histories of the returns.
 
     Every simulation draws a history of the same length from the returns (see
     `get_bootstrap_samples`, with the excess return of the same date drawn with each return)
@@ -7057,25 +7453,28 @@ def get_bootstrap_statistics(
         - Maximum Drawdown = MIN(Wealth / Running Peak of Wealth - 1), the wealth starting at 1
 
     Where N is the number of returns and P the returns in a year. Each statistic is summarized
-    by the mean, the median, the standard deviation (ddof=1) and the 5th, 25th, 75th and 95th
+    by the mean, the median, the standard deviation (with n - 1 in the denominator) and the 5th, 25th, 75th and 95th
     percentiles over the resamples.
 
     For more information, see the following sources:
 
     - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of
     Statistics, 7(1), 1-26.
-    - pyfolio: timeseries.perf_stats_bootstrap, calc_bootstrap and calc_distribution_stats
-    (https://github.com/quantopian/pyfolio), which resample with replacement.
-    - quantstats: stats.montecarlo, montecarlo_cagr, montecarlo_drawdown and montecarlo_sharpe
-    (https://github.com/ranaroussi/quantstats), which shuffle the returns.
-    - ffn: resample_returns (https://github.com/pmorissette/ffn).
+
+    pyfolio resamples with replacement, quantstats shuffles the returns.
+
+    Shares similar logic:
+    - pyfolio, perf_stats_bootstrap: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L742
+    - quantstats, montecarlo: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L3428
+    - ffn, resample_returns: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3293
 
     Args:
         returns (pd.Series): The returns (missing returns are left out).
         excess_returns (pd.Series): The excess returns on the same index.
         observations_per_year (float): The number of returns in a year, such as 252.
         n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
-        method (str, optional): "resample" or "shuffle", see `get_bootstrap_samples`.
+        method (str, optional): The bootstrap, see `get_bootstrap_samples`. Options are:
+            "resample" (draws with replacement), "shuffle" (a random order without replacement).
             Defaults to "resample".
         seed (int | None, optional): The seed of the random numbers. Defaults to 0.
 
@@ -7162,8 +7561,8 @@ def get_forecast_cone(
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
-    Calculate a forecast cone of the growth of 1 over the next `horizon` periods from
-    bootstrapped paths of the returns: the mean path and the bounds a number of standard
+    Calculate a forecast cone: the range the growth of 1 may take over the next `horizon`
+    periods, the mean of bootstrapped paths of the returns and the bounds a number of standard
     deviations above and below it.
 
     Every simulation draws `horizon` returns with replacement from the history (see
@@ -7176,12 +7575,16 @@ def get_forecast_cone(
     returns are drawn from the same distribution as the past ones, independently. The
     bootstrap forecast cone is the one pyfolio (Quantopian) draws in its tear sheets.
 
-    For more information, see the following sources:
+    For more information, see the following source:
 
-    - pyfolio: timeseries.forecast_cone_bootstrap, simulate_paths and summarize_paths
-    (https://github.com/quantopian/pyfolio).
     - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of
     Statistics, 7(1), 1-26.
+
+    Referenced against:
+    - pyfolio, summarize_paths: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1111
+
+    Shares similar logic:
+    - pyfolio, forecast_cone_bootstrap: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1147
 
     Args:
         returns (pd.Series): The returns to draw from (missing returns are left out).
@@ -7250,9 +7653,10 @@ def get_probability_of_backtest_overfitting(
     returns: pd.DataFrame, blocks: int = 16
 ) -> pd.Series:
     """
-    Calculate the Probability of Backtest Overfitting (PBO) of picking the best of several
-    strategies (or assets) on their past Sharpe ratio, with the Combinatorially Symmetric
-    Cross-Validation (CSCV) of Bailey, Borwein, López de Prado and Zhu (2017).
+    Calculate the Probability of Backtest Overfitting (PBO): how likely the strategy (or asset)
+    with the best past Sharpe ratio does no better than the median out of sample, with the
+    Combinatorially Symmetric Cross-Validation (CSCV) of Bailey, Borwein, López de Prado and Zhu
+    (2017).
 
     The history is split into S blocks of equal length. For every way to choose S / 2 blocks
     as the in-sample period, with the other half as the out-of-sample period:
@@ -7282,11 +7686,16 @@ def get_probability_of_backtest_overfitting(
 
     - Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2017). "The Probability of
     Backtest Overfitting." Journal of Computational Finance, 20(4), 39-69.
-    - ffn: calc_prob_backtest_overfitting (https://github.com/pmorissette/ffn).
 
     The returns beyond a multiple of S rows are left out from the end, as in ffn. The Sharpe
     ratios skip missing returns. A combination in which a strategy has no Sharpe ratio (too
     few returns, or returns without variation) leaves the statistics undefined (NaN).
+
+    Referenced against:
+    - ffn, calc_prob_backtest_overfitting: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3165
+
+    Shares similar logic:
+    - RiskLabAI, probability_of_backtest_overfitting: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/probability_of_backtest_overfitting.py#L80
 
     Args:
         returns (pd.DataFrame): The returns of the strategies, one column each, in
@@ -7379,8 +7788,8 @@ def get_probabilistic_momentum(
     observations: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Probabilistic Momentum of Varadi (2014), the confidence that one asset
-    outperforms another: the probability of Student's t distribution that the mean of the
+    Calculate the Probabilistic Momentum of Varadi (2014): the confidence that one asset
+    outperforms another, the probability of Student's t distribution that the mean of the
     differences between their returns is above 0.
 
     The formula is as follows:
@@ -7398,7 +7807,9 @@ def get_probabilistic_momentum(
 
     - Varadi, D. (2014). "Are Simple Momentum Strategies Too Dumb? Introducing Probabilistic
     Momentum." CSS Analytics, 28 January 2014.
-    - ffn: calc_prob_mom (https://github.com/pmorissette/ffn).
+
+    Referenced against:
+    - ffn, calc_prob_mom: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1739
 
     Args:
         information_ratio (pd.Series | pd.DataFrame | float): The information ratio of the
@@ -7432,7 +7843,8 @@ def get_rolling_factor_regression(
     excess_returns: pd.Series, factor_dataset: pd.DataFrame, window_size: int
 ) -> pd.DataFrame:
     """
-    Fit the factor regression of excess returns over every rolling window of observations.
+    Calculate the rolling factor regression: how the factor exposures of the excess returns move
+    over time, from the regression fitted over every rolling window of observations.
 
     The formula is as follows:
 
@@ -7447,7 +7859,12 @@ def get_rolling_factor_regression(
 
     - Fama, E.F., & French, K.R. (2015). "A Five-Factor Asset Pricing Model." Journal of
     Financial Economics, 116(1), 1-22.
-    - pyfolio: timeseries.rolling_regression (https://github.com/quantopian/pyfolio).
+
+    Referenced against:
+    - pyfolio, rolling_regression: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.10.2/src/pyfolio/timeseries.py#L550
+
+    Shares similar logic:
+    - statsmodels, RollingOLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.rolling.RollingOLS.html
 
     Args:
         excess_returns (pd.Series): The excess returns.
@@ -7535,10 +7952,11 @@ def get_variability_weighted_return(
     maximum_deviation: float = 0.2,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Variability-Weighted Return (VWR): the annualized return reduced by how far the
-    value strays from a steady exponential path with the same overall growth. A return earned
-    along a smooth path keeps most of its value; one earned with large swings loses part of it,
-    and all of it once the deviations reach `maximum_deviation`.
+    Calculate the Variability-Weighted Return (VWR): the annualized return reduced by how far
+    the value strays from a steady exponential path with the same overall growth.
+
+    A return earned along a smooth path keeps most of its value; one earned with large swings
+    loses part of it, and all of it once the deviations reach `maximum_deviation`.
 
     The formula is as follows:
 
@@ -7548,12 +7966,13 @@ def get_variability_weighted_return(
     - VWR = Annualized Return x (1 - (Std(Deviation) / maximum_deviation) ^ tau)
 
     Where P is the number of returns in a year, N the number of returns and Std the sample
-    standard deviation (ddof=1).
+    standard deviation (with n - 1 in the denominator).
 
-    For more information, see the following sources:
+    The measure comes from backtrader's VWR analyzer (Daniel Rodriguez), after the "Sharpe
+    Ratio: Better with Log Returns" article of crystalbull.com.
 
-    - backtrader's VWR analyzer (Daniel Rodriguez, https://www.backtrader.com/docu/analyzers-reference/),
-      after the "Sharpe Ratio: Better with Log Returns" article of crystalbull.com.
+    Shares similar logic:
+    - backtrader, VWR: https://github.com/backtrader/backtrader/blob/1.9.74.123/backtrader/analyzers/vwr.py#L32
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, one column per asset, optionally with a
@@ -7637,8 +8056,8 @@ def _get_herfindahl_hirschman_index(values: np.ndarray) -> float:
 
 def get_return_concentration(returns: pd.Series) -> pd.Series:
     """
-    Calculate the concentration of the returns of López de Prado: how much of the gains (and of
-    the losses) comes from a few returns, and how much the bets cluster in a few months, each as a
+    Calculate the return concentration of López de Prado: how much of the gains (and of the
+    losses) comes from a few returns, and how much the bets cluster in a few months, each as a
     normalized Herfindahl-Hirschman Index between 0 (spread evenly) and 1 (all in one).
 
     The formula is as follows:
@@ -7688,8 +8107,9 @@ def get_binomial_sharpe_ratio(
     profit_taking: float, stop_loss: float, precision: float, frequency: float
 ) -> float:
     """
-    Calculate the annualized Sharpe ratio of a strategy whose bets either gain `profit_taking`
-    or lose `stop_loss`, with a probability `precision` of a gain and `frequency` bets a year.
+    Calculate the binomial Sharpe ratio: the annualized Sharpe ratio of a strategy whose bets
+    either gain `profit_taking` or lose `stop_loss`, with a probability `precision` of a gain
+    and `frequency` bets a year.
 
     The formula is as follows:
 
@@ -7701,6 +8121,9 @@ def get_binomial_sharpe_ratio(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.3
       (Snippets 15.1 to 15.4).
+
+    Shares similar logic:
+    - RiskLabAI, binomial_sharpe_ratio: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L193
 
     Args:
         profit_taking (float): The return of a winning bet π+.
@@ -7740,6 +8163,9 @@ def get_implied_precision(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.4
       (Snippet 15.3).
+
+    Shares similar logic:
+    - RiskLabAI, implied_precision: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L82
 
     Args:
         profit_taking (float): The return of a winning bet π+.
@@ -7783,6 +8209,9 @@ def get_implied_frequency(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 15.4
       (Snippet 15.4).
 
+    Shares similar logic:
+    - RiskLabAI, bin_frequency: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L134
+
     Args:
         profit_taking (float): The return of a winning bet π+.
         stop_loss (float): The return of a losing bet π-, negative.
@@ -7806,10 +8235,13 @@ def get_strategy_risk(
     returns: pd.Series, frequency: float = 252.0, target_sharpe_ratio: float = 2.0
 ) -> pd.Series:
     """
-    Calculate the strategy risk of López de Prado: the returns read as bets that either win
-    the average gain or lose the average loss, the Sharpe ratio such a strategy has, the
-    precision and the number of bets a year it needs to reach a target Sharpe ratio, and the
-    probability that its true precision is below the one needed (the probability of failure).
+    Calculate the strategy risk of López de Prado: how likely a strategy is to miss a target
+    Sharpe ratio, reading the returns as bets that either win the average gain or lose the
+    average loss.
+
+    It gives the Sharpe ratio such a strategy has, the precision and the number of bets a year
+    it needs to reach the target, and the probability that its true precision is below the one
+    needed (the probability of failure).
 
     The formula is as follows:
 
@@ -7829,8 +8261,12 @@ def get_strategy_risk(
       (Snippets 15.1 to 15.5).
     - Bailey, D.H. and López de Prado, M. (2014). "The Sharpe Ratio Efficient Frontier." Journal
       of Risk, 15(2), 3-44.
-    - Referenced against RiskLabAI's `implied_precision`, `bin_frequency`,
-      `binomial_sharpe_ratio` and `failure_probability` (https://github.com/RiskLabAI/RiskLabAI.py).
+
+    Shares similar logic:
+    - RiskLabAI, implied_precision: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L82
+    - RiskLabAI, bin_frequency: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L134
+    - RiskLabAI, binomial_sharpe_ratio: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L193
+    - RiskLabAI, failure_probability: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/strategy_risk.py#L281
 
     Args:
         returns (pd.Series): The returns of the bets, missing returns left out.
@@ -7887,8 +8323,9 @@ def get_backtest_statistics_table(
     **kwargs: float | pd.Series,
 ) -> pd.DataFrame:
     """
-    Calculate a statistic that returns several values (a Series) for every column, and for a
-    within period index for every period, with keyword arguments given per column as a Series.
+    Calculate a backtest statistic of every column: a statistic that returns several values (a
+    Series) per asset, and for a within period index per period, with keyword arguments given
+    per column as a Series.
 
     Args:
         returns (pd.DataFrame): A DataFrame of returns, one column per asset, optionally with a

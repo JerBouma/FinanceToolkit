@@ -328,8 +328,8 @@ def _fit_multi_start(
 
 def get_backcast(returns: np.ndarray) -> float:
     """
-    Calculates the backcast the GARCH and GJR-GARCH variance recursions start from: an
-    exponentially weighted average (decay 0.94) of the first 75 squared returns, with the
+    Calculate the backcast the GARCH variance recursions start from: the variance before the first
+    return, an exponentially weighted average (decay 0.94) of the first 75 squared returns, with the
     first return weighted most.
 
     The recursion needs a variance and a squared return for the period before the first
@@ -345,8 +345,9 @@ def get_backcast(returns: np.ndarray) -> float:
 
     - Bollerslev, T. (1986). "Generalized Autoregressive Conditional Heteroskedasticity."
     Journal of Econometrics, 31(3), 307-327.
-    - Sheppard, K. arch: Autoregressive Conditional Heteroskedasticity models in Python,
-    https://arch.readthedocs.io
+
+    Shares similar logic:
+    - arch, VolatilityProcess.backcast: https://github.com/bashtage/arch/blob/v7.2.0/arch/univariate/volatility.py#L580
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -395,7 +396,12 @@ def garch_log_maximization(
     weights: list, returns: np.ndarray, t: int, p: int = 1, q: int = 1
 ) -> float:
     """
-    Calculates -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
+    Calculate the negative Gaussian log-likelihood of a GARCH(1, 1) model, up to constants: the
+    objective the GARCH fit minimizes, lower for weights that fit the returns better.
+
+    The formula is as follows:
+
+    - -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
 
     Args:
         weights (list): List with the values for omega, alpha and beta
@@ -440,7 +446,8 @@ def get_garch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> np.ndarray:
     """
-    Estimates the weights (parameters) for a GARCH(p, q) model using multi-start optimization.
+    Calculate the weights (parameters) of a GARCH(p, q) model by multi-start optimization: how strongly
+    the variance reacts to the last shock (alpha), how long it remembers (beta) and its constant (omega).
 
     The weights are estimated by trying many starting values of (1 - alpha - beta) sigma_l,
     alpha and beta, while maximizing: SUM(-ln(v_i) - (u_i ^ 2) / v_i).
@@ -450,6 +457,9 @@ def get_garch_weights(
     - alpha + beta < 1
     - 0 < (1 - alpha - beta) sigma_l <= 2 * Var(returns), which follows from the long run
       variance sigma_l being of the same order as the sample Variance under stationarity.
+
+    Referenced against:
+    - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -509,7 +519,8 @@ def get_garch(
     q: int = 1,
     backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates the conditional variance of the GARCH model.
+    """Calculate the conditional variance of the GARCH model: how volatile each period is expected to be
+    given the shocks and the variance before it.
 
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
@@ -522,6 +533,9 @@ def get_garch(
     - Generalized Autoregressive Conditional Heteroskedasticity, by Tim Bollerslev
     - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
     - Options, Futures & other Derivates, by John C. Hull; ISBN: 0-13-022444-8
+
+    Referenced against:
+    - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -619,7 +633,8 @@ def get_garch_forecast(
     p: int = 1,
     q: int = 1,
 ):
-    """Calculates sigma_2 forecasts.
+    """Calculate the GARCH variance forecast (sigma_2): the conditional variance expected for each period
+    after the last return, as a shock fades towards the long-run variance.
 
     GARCH (Generalized autoregressive conditional heteroskedasticity) is stochastic model for time series, which is for
     instance used to model volatility clusters, stock return and inflation. It is a generalisation of the ARCH models.
@@ -636,6 +651,9 @@ def get_garch_forecast(
 
     For more:
     - Finance Compact Plus Band 1, by Yvonne Seler Zimmerman and Heinz Zimmerman; ISBN: 978-3-907291-31-1
+
+    Shares similar logic:
+    - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -718,7 +736,12 @@ def gjr_garch_log_maximization(
     weights: list, returns: np.ndarray, t: int, p: int = 1, q: int = 1
 ) -> float:
     """
-    Calculates -SUM(-ln(v_i) - (u_i ^ 2) / v_i) for the GJR-GARCH model.
+    Calculate the negative Gaussian log-likelihood of a GJR-GARCH model, up to constants: the
+    objective the GJR-GARCH fit minimizes, lower for weights that fit the returns better.
+
+    The formula is as follows:
+
+    - -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
 
     Args:
         weights (list): List with the values for omega, alpha, gamma and beta.
@@ -745,8 +768,9 @@ def get_gjr_garch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> np.ndarray:
     """
-    Estimates the weights (parameters) for a GJR-GARCH(1, 1, 1) model using multi-start
-    optimization.
+    Calculate the weights (parameters) of a GJR-GARCH(1, 1, 1) model by multi-start optimization:
+    how strongly the variance reacts to a shock, how much more to a negative one (gamma) and how long
+    it remembers.
 
     The weights are estimated by maximizing the Gaussian log-likelihood, subject to:
     - omega > 0, alpha > 0, beta > 0
@@ -761,6 +785,9 @@ def get_gjr_garch_weights(
     as a floor: GARCH is the special case gamma = 0, so a local search from them competes
     with the multi-start result, and when both end at a lower log-likelihood than the
     GARCH fit (a local optimum), the GARCH weights with gamma = 0 are returned instead.
+
+    Referenced against:
+    - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -844,7 +871,8 @@ def get_gjr_garch(
     q: int = 1,
     backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates the conditional variance of the GJR-GARCH model.
+    """Calculate the conditional variance of the GJR-GARCH model: how volatile each period is expected to
+    be, with negative shocks raising it by more than positive ones.
 
     GJR-GARCH extends GARCH with a leverage term that lets negative shocks (bad news)
     raise volatility by more than positive shocks of the same size, a well documented
@@ -863,6 +891,9 @@ def get_gjr_garch(
     - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
     between the Expected Value and the Volatility of the Nominal Excess Return on
     Stocks." The Journal of Finance, 48(5), 1779-1801.
+
+    Referenced against:
+    - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -959,7 +990,8 @@ def get_gjr_garch_forecast(
     p: int = 1,
     q: int = 1,
 ):
-    """Calculates sigma_2 forecasts based on the GJR-GARCH model.
+    """Calculate the GJR-GARCH variance forecast (sigma_2): the conditional variance expected for each
+    period after the last return, as a shock fades towards the long-run variance.
 
     The forecasting with GJR-GARCH is done with the following formula, using the
     "effective" persistence (alpha + gamma / 2 + beta), which reduces to the plain
@@ -977,6 +1009,9 @@ def get_gjr_garch_forecast(
     - Glosten, L.R., Jagannathan, R., and Runkle, D.E. (1993). "On the Relation
     between the Expected Value and the Volatility of the Nominal Excess Return on
     Stocks." The Journal of Finance, 48(5), 1779-1801.
+
+    Referenced against:
+    - arch, GARCH (GJR-GARCH forecast): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1060,7 +1095,12 @@ def egarch_log_maximization(
     weights: list, returns: np.ndarray, t: int, p: int = 1, q: int = 1
 ) -> float:
     """
-    Calculates -SUM(-ln(v_i) - (u_i ^ 2) / v_i) for the EGARCH model.
+    Calculate the negative Gaussian log-likelihood of an EGARCH model, up to constants: the objective
+    the EGARCH fit minimizes, lower for weights that fit the returns better.
+
+    The formula is as follows:
+
+    - -SUM(-ln(v_i) - (u_i ^ 2) / v_i)
 
     Args:
         weights (list): List with the values for omega, alpha, gamma and beta.
@@ -1103,12 +1143,15 @@ def get_egarch_weights(
     returns: np.ndarray, t: int | None = None, p: int = 1, q: int = 1
 ) -> np.ndarray:
     """
-    Estimates the weights (parameters) for an EGARCH(1, 1) model using multi-start
-    optimization.
+    Calculate the weights (parameters) of an EGARCH(1, 1) model by multi-start optimization: how
+    strongly the log variance reacts to the size and the sign of a shock and how long it remembers.
 
     Unlike GARCH and GJR-GARCH, EGARCH models the log of the conditional variance, so
     omega, alpha and gamma are unconstrained in sign; only |beta| < 1 is required for
     stationarity of the log-variance process.
+
+    Referenced against:
+    - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
 
     Args:
         returns (np.ndarray): A np.ndarray of returns.
@@ -1153,7 +1196,8 @@ def get_egarch(
     q: int = 1,
     backcast: float | None = None,
 ) -> np.ndarray | pd.Series | pd.DataFrame:
-    """Calculates the conditional variance of the EGARCH model.
+    """Calculate the conditional variance of the EGARCH model: how volatile each period is expected to be,
+    modelled through its logarithm, with shocks of each sign moving it differently.
 
     EGARCH models the log of the conditional variance, which avoids having to
     constrain the parameters to keep the variance positive and, like GJR-GARCH, lets
@@ -1172,6 +1216,9 @@ def get_egarch(
 
     - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
     Approach." Econometrica, 59(2), 347-370.
+
+    Referenced against:
+    - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1282,7 +1329,8 @@ def get_egarch_forecast(
     p: int = 1,
     q: int = 1,
 ):
-    """Calculates sigma_2 forecasts based on the EGARCH model.
+    """Calculate the EGARCH variance forecast (sigma_2): the conditional variance expected for each period
+    after the last return, as the log variance reverts to its long-run level.
 
     Since EGARCH is nonlinear in log-variance, the multi-step-ahead forecast is
     approximated by forecasting the log-variance (whose forecast has a closed form,
@@ -1303,6 +1351,9 @@ def get_egarch_forecast(
 
     - Nelson, D.B. (1991). "Conditional Heteroskedasticity in Asset Returns: A New
     Approach." Econometrica, 59(2), 347-370.
+
+    Shares similar logic:
+    - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
 
     Args:
         returns (pd.Series | pd.DataFrame | np.ndarray): A Series or Dataframe or np.ndarray of returns.
@@ -1497,13 +1548,19 @@ EXPECTED_ABSOLUTE_NORMAL = math.sqrt(2 / math.pi)
 
 def validate_garch_family(method: str, distribution: str, mean: str) -> None:
     """
-    Checks that the model, the innovation distribution and the mean model are known.
+    Check that the model, the innovation distribution and the mean model are known: whether a
+    GARCH-family specification can be fitted, raising an error when it cannot.
 
     Args:
-        method (str): The variance model, a key of GARCH_FAMILY_VARIANCE_PARAMETERS.
-        distribution (str): The innovation distribution, a key of
-            GARCH_FAMILY_DISTRIBUTION_PARAMETERS.
-        mean (str): The mean model, a key of GARCH_FAMILY_MEAN_PARAMETERS.
+        method (str): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch" (EGARCH), "igarch"
+            (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH), "avgarch" (absolute
+            value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH), "figarch" (FIGARCH),
+            "realized" (Realized GARCH).
+        distribution (str): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU).
+        mean (str): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean" (GARCH-in-mean),
+            "arfima" (ARFIMA(1, d, 1)).
 
     Raises:
         InvalidArgumentError: When one of them is not known.
@@ -1530,13 +1587,19 @@ def get_garch_family_parameter_names(
     method: str = "garch", distribution: str = "normal", mean: str = "zero"
 ) -> list[str]:
     """
-    Returns the names of the weights of a GARCH-family model: the variance parameters,
-    then the mean parameters and then those of the innovation distribution.
+    Calculate the names of the weights of a GARCH-family model: which parameter every weight is, the
+    variance parameters, then the mean parameters and then those of the innovation distribution.
 
     Args:
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
 
     Returns:
         list[str]: The parameter names, in the order of the weights.
@@ -1565,24 +1628,24 @@ def get_standardized_log_density(
     z: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
 ) -> np.ndarray:
     """
-    Calculates the log density of a standardized innovation distribution (mean 0 and
-    Variance 1) at the standardized residuals z = epsilon / sigma.
+    Calculate the log density of a standardized innovation distribution (mean 0 and Variance 1) at the
+    standardized residuals z = epsilon / sigma: how likely every shock is under the distribution.
 
     The formula is as follows, with Shape and Skew the distribution parameters:
 
-    - normal: ln f(z) = -(ln(2π) + z^2) / 2
-    - t (Bollerslev, 1987), Shape v > 2: ln f(z) = ln Γ((v + 1) / 2) - ln Γ(v / 2) - ln(π (v - 2)) / 2
+    - Normal: ln f(z) = -(ln(2π) + z^2) / 2
+    - Student-t (Bollerslev, 1987), Shape v > 2: ln f(z) = ln Γ((v + 1) / 2) - ln Γ(v / 2) - ln(π (v - 2)) / 2
       - (v + 1) / 2 * ln(1 + z^2 / (v - 2))
-    - skewt (Hansen, 1994), Shape η > 2 and Skew λ in (-1, 1):
+    - Hansen's skewed Student-t (Hansen, 1994), Shape η > 2 and Skew λ in (-1, 1):
       f(z) = b c (1 + ((b z + a) / (1 ± λ))^2 / (η - 2))^(-(η + 1) / 2), with 1 - λ below z = -a / b and 1 + λ
       above it, c = Γ((η + 1) / 2) / (√(π (η - 2)) Γ(η / 2)), a = 4 λ c (η - 2) / (η - 1) and b^2 = 1 + 3 λ^2 - a^2
-    - skewt_fernandez_steel (Fernández and Steel, 1998), Shape v > 2 and Skew ξ > 0: the standardized Student-t g
+    - Fernández and Steel's skewed Student-t (1998), Shape v > 2 and Skew ξ > 0: the standardized Student-t g
       scaled by ξ above zero and by 1 / ξ below it, f(x) = 2 / (ξ + 1 / ξ) * g(x / ξ) for x >= 0 and g(x ξ) for
       x < 0, then standardized with its mean m = M1 (ξ - 1 / ξ) and Variance s^2 = ξ^2 + 1 / ξ^2 - 1 - m^2,
       M1 = 2 √(v - 2) Γ((v + 1) / 2) / (√π (v - 1) Γ(v / 2)), so f(z) = s f(m + s z)
-    - ged (Nelson, 1991), Shape v > 0: ln f(z) = ln v - ln λ - (1 + 1 / v) ln 2 - ln Γ(1 / v) - |z / λ|^v / 2,
-      with λ = √(2^(-2 / v) Γ(1 / v) / Γ(3 / v))
-    - johnson_su (Johnson, 1949), Shape δ > 0 and Skew γ: x = sinh((n - γ) / δ) for a standard normal n,
+    - Generalized error distribution (Nelson, 1991), Shape v > 0: ln f(z) = ln v - ln λ - (1 + 1 / v) ln 2 - ln Γ(1 / v)
+      - |z / λ|^v / 2, with λ = √(2^(-2 / v) Γ(1 / v) / Γ(3 / v))
+    - Johnson SU (Johnson, 1949), Shape δ > 0 and Skew γ: x = sinh((n - γ) / δ) for a standard normal n,
       f(x) = δ / (√(2π) √(1 + x^2)) exp(-(γ + δ asinh(x))^2 / 2), standardized with its mean
       m = -exp(1 / (2 δ^2)) sinh(γ / δ) and Variance s^2 = (exp(1 / δ^2) - 1) (exp(1 / δ^2) cosh(2 γ / δ) + 1) / 2
 
@@ -1602,14 +1665,22 @@ def get_standardized_log_density(
     - Johnson, N.L. (1949). "Systems of Frequency Curves Generated by Methods of Translation."
     Biometrika, 36(1/2), 149-176.
 
-    Referenced against the Normal, StudentsT, SkewStudent and GeneralizedError distributions of
-    the arch package (https://arch.readthedocs.io) and the "sstd" and "jsu" distributions of R's
-    rugarch (https://cran.r-project.org/package=rugarch).
+    Referenced against:
+    - arch, Normal: https://bashtage.github.io/arch/univariate/generated/arch.univariate.Normal.html
+    - arch, StudentsT: https://bashtage.github.io/arch/univariate/generated/arch.univariate.StudentsT.html
+    - arch, SkewStudent: https://bashtage.github.io/arch/univariate/generated/arch.univariate.SkewStudent.html
+    - arch, GeneralizedError: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GeneralizedError.html
+    - scipy, johnsonsu: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.johnsonsu.html
+    - scipy, gennorm: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gennorm.html
+
+    Shares similar logic:
+    - rugarch (R), ddist (sstd, jsu): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1715
 
     Args:
         z (np.ndarray): The standardized residuals.
-        distribution (str, optional): "normal", "t", "skewt", "skewt_fernandez_steel", "ged" or
-            "johnson_su". Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
             Defaults to (), for the normal distribution.
 
@@ -1713,8 +1784,8 @@ def get_standardized_draws(
     rng: np.random.Generator,
 ) -> np.ndarray:
     """
-    Draws standardized innovations (mean 0 and Variance 1) from one of the distributions of
-    `get_standardized_log_density`.
+    Calculate random standardized innovations (mean 0 and Variance 1): shocks drawn from one of the
+    distributions of `get_standardized_log_density`, for a simulation.
 
     The Student-t is drawn from numpy's Student-t scaled to a unit Variance; the skewed
     Student-t of Hansen and of Fernández and Steel draw the size of a standardized
@@ -1723,8 +1794,13 @@ def get_standardized_draws(
     takes |z| = λ (2 W)^(1 / v) with W from a Gamma(1 / v) distribution and a random sign; the
     Johnson SU transforms a standard normal draw.
 
+    Shares similar logic:
+    - rugarch (R), rdist: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1783
+
     Args:
-        distribution (str): The distribution, see `get_standardized_log_density`.
+        distribution (str): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's skewed
+            Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized error
+            distribution), "johnson_su" (Johnson SU).
         parameters (Sequence[float]): The Shape (and Skew) of the distribution.
         size (int | tuple[int, ...]): The number (or shape) of draws.
         rng (np.random.Generator): The random number generator.
@@ -1784,12 +1860,16 @@ def get_standardized_expectation(
     values: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
 ) -> float:
     """
-    Calculates the expectation E[h(z)] over a standardized innovation distribution of a
-    function h evaluated on EXPECTATION_GRID, by the trapezoid rule on z = sinh(u).
+    Calculate the expectation E[h(z)] of a function h over a standardized innovation distribution: the
+    average value of h(z) under the distribution, by the trapezoid rule on z = sinh(u).
+
+    The function h is evaluated on EXPECTATION_GRID.
 
     Args:
         values (np.ndarray): h(z) at every point of EXPECTATION_GRID.
-        distribution (str, optional): The distribution. Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
 
     Returns:
@@ -1806,8 +1886,8 @@ def get_standardized_raw_moments(
     distribution: str = "normal", parameters: tuple[float, ...] = (), order: int = 8
 ) -> np.ndarray:
     """
-    Calculates the raw moments E[z^k], k = 0, ..., `order`, of a standardized innovation
-    distribution (mean 0 and Variance 1).
+    Calculate the raw moments E[z^k], k = 0, ..., `order`, of a standardized innovation distribution
+    (mean 0 and Variance 1): the averages of the powers of the shocks, which describe its shape.
 
     The normal moments are exact (0 for an odd k and (k - 1)!! for an even k); the other
     distributions are expectations over EXPECTATION_GRID (see `get_standardized_expectation`),
@@ -1815,7 +1895,9 @@ def get_standardized_raw_moments(
     moment.
 
     Args:
-        distribution (str, optional): The distribution. Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
         order (int, optional): The highest moment. Defaults to 8.
 
@@ -1855,15 +1937,21 @@ def get_standardized_moments(
     distribution: str = "normal", parameters: tuple[float, ...] = ()
 ) -> tuple[float, float]:
     """
-    Calculates the skewness E[z^3] and the kurtosis E[z^4] (not excess) of a standardized
-    innovation distribution (mean 0 and Variance 1).
+    Calculate the skewness E[z^3] and the kurtosis E[z^4] (not excess) of a standardized innovation
+    distribution (mean 0 and Variance 1): how asymmetric and heavy-tailed its shocks are.
 
     The normal (0 and 3), the Student-t (0 and 3 + 6 / (v - 4)) and the GED (0 and
     Γ(5 / v) Γ(1 / v) / Γ(3 / v)^2) are exact; the skewed distributions and the Johnson SU are
     expectations over EXPECTATION_GRID (see `get_standardized_expectation`).
 
+    Shares similar logic:
+    - rugarch (R), dskewness: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1805
+    - rugarch (R), dkurtosis: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1833
+
     Args:
-        distribution (str, optional): The distribution. Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
 
     Returns:
@@ -1935,23 +2023,23 @@ def get_garch_family_persistence(
     distribution_weights: tuple[float, ...] = (),
 ) -> float:
     """
-    Calculates the persistence of a GARCH-family model: the factor by which a shock to the
-    (power of the) conditional variance carries over to the next period on average.
+    Calculate the persistence of a GARCH-family model: how much of a shock to the (power of the)
+    conditional variance carries over to the next period on average.
 
     The formula is as follows, with z a standardized innovation of the chosen distribution:
 
-    - garch: Alpha + Beta
-    - igarch: 1
-    - gjr: Alpha + Gamma * E[z^2 1(z < 0)] + Beta, with E[z^2 1(z < 0)] = 1 / 2 for a symmetric distribution
-    - egarch: Beta, the persistence of the log variance
-    - aparch, tgarch and ngarch: Alpha * E[(|z| - Gamma * z)^Delta] + Beta
-    - avgarch and nagarch: Alpha * E[(|z - Shift| - Gamma * (z - Shift))^d] + Beta, with d = 1 and 2
-    - component: Rho, the persistence of the long-run component (the short-run component fades with
+    - GARCH: Alpha + Beta
+    - IGARCH: 1
+    - GJR-GARCH: Alpha + Gamma * E[z^2 1(z < 0)] + Beta, with E[z^2 1(z < 0)] = 1 / 2 for a symmetric distribution
+    - EGARCH: Beta, the persistence of the log variance
+    - APARCH, TGARCH and NGARCH: Alpha * E[(|z| - Gamma * z)^Delta] + Beta
+    - AVGARCH and NAGARCH: Alpha * E[(|z - Shift| - Gamma * (z - Shift))^d] + Beta, with d = 1 and 2
+    - Component GARCH: Rho, the persistence of the long-run component (the short-run component fades with
       Alpha + Beta, which is smaller)
-    - figarch: the sum of the ARCH(∞) weights of the untruncated model, 1 for D > 0 (a shock fades
+    - FIGARCH: the sum of the ARCH(∞) weights of the untruncated model, 1 for D > 0 (a shock fades
       hyperbolically, never as a fixed factor per period) and Phi for D = 0, where FIGARCH is GARCH(1, 1)
       with Alpha = Phi - Beta
-    - realized: Beta + Gamma * Phi, the persistence of the log variance (Hansen, Huang and Shek, 2012)
+    - Realized GARCH: Beta + Gamma * Phi, the persistence of the log variance (Hansen, Huang and Shek, 2012)
 
     For more information, see the following papers:
 
@@ -1960,10 +2048,18 @@ def get_garch_family_persistence(
     - Hentschel, L. (1995). "All in the Family: Nesting Symmetric and Asymmetric GARCH Models."
     Journal of Financial Economics, 39(1), 71-104.
 
+    Shares similar logic:
+    - rugarch (R), persistence: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2529
+
     Args:
         variance_weights (Sequence[float]): The variance parameters of the model.
-        method (str, optional): The model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        method (str, optional): The model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch" (EGARCH),
+            "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH), "avgarch"
+            (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH), "figarch"
+            (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         distribution_weights (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
 
     Returns:
@@ -2335,9 +2431,9 @@ def _starting_residuals(returns: np.ndarray, mean: str) -> np.ndarray:
 
 def get_measure_backcast(measure: np.ndarray) -> float:
     """
-    The backcast of the realized measure that starts the realized GARCH recursion: the
-    exponentially weighted average of the first 75 measures (decay 0.94) on the days with a
-    positive measure, as `get_backcast` averages the first squared returns.
+    Calculate the backcast of the realized measure that starts the realized GARCH recursion: the
+    measure before the first day, the exponentially weighted average of the first 75 measures (decay
+    0.94) on the days with a positive measure, as `get_backcast` averages the first squared returns.
 
     Args:
         measure (np.ndarray): The realized measure per day, such as the daily Parkinson
@@ -2811,7 +2907,10 @@ def get_garch_family_log_likelihood(
     realized_measure: np.ndarray | None = None,
 ) -> float | np.ndarray:
     """
-    Calculates the log-likelihood of a GARCH-family model:
+    Calculate the log-likelihood of a GARCH-family model: how well its weights explain the returns,
+    the quantity the fit maximizes.
+
+    The formula is as follows:
 
     - Log-Likelihood = Σ (ln f(e_t / sigma_t) - ln(sigma_t^2) / 2)
 
@@ -2827,18 +2926,28 @@ def get_garch_family_log_likelihood(
     - u_t = ln x_t - Xi - Phi * ln sigma_t^2 - Tau 1 * z_t - Tau 2 * (z_t^2 - 1)
     - Log-Likelihood += Σ (-(ln(2π) + 2 ln(Sigma U) + u_t^2 / Sigma U^2) / 2)
 
+    Referenced against:
+    - arch, GARCH, EGARCH, APARCH and ARCHInMean (with ZeroMean, ConstantMean and ARX): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+    - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
+
     Args:
         returns (np.ndarray): The returns.
         weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         backcast (float | None, optional): The backcast that starts the recursion. Defaults
             to None, which uses the backcast of the starting residuals of the mean model.
         per_observation (bool, optional): Whether to return the log-likelihood of every
             observation instead of their sum. Defaults to False.
         realized_measure (np.ndarray | None, optional): The realized measure of every return,
-            in the units of the squared returns, for method="realized". Defaults to None.
+            in the units of the squared returns, for the Realized GARCH. Defaults to None.
 
     Returns:
         float | np.ndarray: The log-likelihood, -inf for weights outside the model's region.
@@ -2931,8 +3040,11 @@ def get_garch_family_weights(
     realized_measure: np.ndarray | None = None,
 ) -> np.ndarray:
     """
-    Estimates the weights of a GARCH-family model by maximum likelihood, with the same
-    deterministic multi-start search as GARCH(1, 1) (see `_fit_multi_start`).
+    Calculate the weights of a GARCH-family model by maximum likelihood: the parameters of the variance,
+    the mean and the innovation distribution that explain the returns best.
+
+    The search is the same deterministic multi-start search as that of GARCH(1, 1) (see
+    `_fit_multi_start`).
 
     With `starting_weights` (the weights of an earlier fit, such as the previous window of
     a rolling forecast) the search is a local search from them: the likelihood of a window
@@ -2968,19 +3080,32 @@ def get_garch_family_weights(
     `_rescale_weights`); its search starts from Xi at the average log measure and Omega at
     -Gamma * Xi, where the log variance of the scaled returns is about 0.
 
+    Referenced against:
+    - arch, APARCH and GARCH (with other distributions and means): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
+    - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
+
+    Shares similar logic:
+    - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
+    - rugarch (R), ugarchfit: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1059
+
     Args:
         returns (np.ndarray): The returns.
-        method (str, optional): The variance model, see GARCH_FAMILY_VARIANCE_PARAMETERS.
-            Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         t (int | None, optional): The number of returns, from the first, to fit on.
             Defaults to None, which uses every return.
         starting_weights (np.ndarray | None, optional): The weights to start a local
             search from, on the scale of the returns. Defaults to None, which runs the
             multi-start search.
         realized_measure (np.ndarray | None, optional): The realized measure of every return,
-            in the units of the squared returns, which method="realized" needs. Defaults to
+            in the units of the squared returns, which the Realized GARCH needs. Defaults to
             None.
 
     Returns:
@@ -3211,31 +3336,49 @@ def get_garch_family(
     realized_measure: np.ndarray | pd.Series | pd.DataFrame | None = None,
 ) -> np.ndarray | pd.DataFrame:
     """
-    Calculates the conditional variance of a GARCH-family model, or its standardized
-    residuals or (for the component model) its long-run component, with every model of
-    `get_garch_family_weights`.
+    Calculate the conditional variance of a GARCH-family model: how volatile each period is expected
+    to be given the shocks before it, or the standardized residuals or (for the component model) the
+    long-run component, with every model of `get_garch_family_weights`.
 
     Every series is fitted on its own returns (see `_apply_per_column`) and a 'within period'
     index fits every period separately, as in `get_garch`.
+
+    Referenced against:
+    - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+    - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+    - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
+    - arch, APARCH (APARCH, TGARCH, NGARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
+    - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
+    - arch, ARCHInMean (GARCH-in-mean): https://bashtage.github.io/arch/univariate/generated/arch.univariate.ARCHInMean.html
+
+    Shares similar logic:
+    - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
+    - rugarch (R), ugarchfit: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1059
 
     Args:
         returns (np.ndarray | pd.Series | pd.DataFrame): The returns.
         weights (np.ndarray | list | None, optional): The weights, see
             `get_garch_family_parameter_names`, used for every column. Defaults to None, which
             fits them per column.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
-        output (str, optional): "variance" for the conditional variance, "standardized_residuals"
-            for e_t / sigma_t or "long_run_variance" for the long-run component q_t of
-            method="component". Defaults to "variance".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
+        output (str, optional): What to return: the conditional variance, the standardized residuals e_t / sigma_t or
+            the long-run component q_t of the component GARCH. Options are: "variance", "standardized_residuals",
+            "long_run_variance" (component GARCH only). Defaults to "variance".
         time_steps (int | None, optional): The number of returns, from the first, to return.
             Defaults to None, which returns every return.
         optimization_t (int | None, optional): The number of returns, from the first, to fit on.
             Defaults to None, which uses every return.
         realized_measure (np.ndarray | pd.Series | pd.DataFrame | None, optional): The realized
             measure of every return (a frame with the columns of the returns), in the units of
-            the squared returns, which method="realized" needs. Defaults to None.
+            the squared returns, which the Realized GARCH needs. Defaults to None.
 
     Returns:
         np.ndarray | pd.DataFrame: The values, NaN for a return the mean model holds back
@@ -3317,24 +3460,24 @@ def get_garch_family_forecast(
     realized_measure: np.ndarray | pd.Series | pd.DataFrame | None = None,
 ) -> np.ndarray | pd.DataFrame:
     """
-    Forecasts the conditional variance of a GARCH-family model for h = 1, ..., forecast_steps
-    periods after the last return.
+    Calculate the variance forecast of a GARCH-family model: the conditional variance expected for
+    each of h = 1, ..., forecast_steps periods after the last return.
 
     The first value is the one-step-ahead variance of the fitted recursion, which consumes the
     last return. Further steps take the expectation of the shock terms over the innovation
     distribution, which makes the recursion linear in the variance (or its power):
 
-    - garch, gjr, igarch, aparch, tgarch, ngarch, avgarch and nagarch: s_(n+h) = Omega + P * s_(n+h-1), with
+    - GARCH, GJR-GARCH, IGARCH, APARCH, TGARCH, NGARCH, AVGARCH and NAGARCH: s_(n+h) = Omega + P * s_(n+h-1), with
       s = sigma^d the power of the model (2 for the variance models, Delta, or 1 for TGARCH and AVGARCH) and P
       the persistence (see `get_garch_family_persistence`), and sigma_(n+h)^2 = s_(n+h)^(2 / d)
-    - component: q_(n+h) = Omega + Rho * q_(n+h-1) and
+    - Component GARCH: q_(n+h) = Omega + Rho * q_(n+h-1) and
       sigma_(n+h)^2 - q_(n+h) = (Alpha + Beta) * (sigma_(n+h-1)^2 - q_(n+h-1))
-    - egarch: ln sigma_(n+h)^2 = Omega + Alpha * (E|z| - √(2 / π)) + Beta * ln sigma_(n+h-1)^2, and
+    - EGARCH: ln sigma_(n+h)^2 = Omega + Alpha * (E|z| - √(2 / π)) + Beta * ln sigma_(n+h-1)^2, and
       sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
-    - figarch: sigma_(n+h)^2 = Omega / (1 - Beta) + Σ_(i=1..1000) lambda_i E[e_(n+h-i)^2], with the squared
+    - FIGARCH: sigma_(n+h)^2 = Omega / (1 - Beta) + Σ_(i=1..1000) lambda_i E[e_(n+h-i)^2], with the squared
       residuals for the returns, their backcast before the first and the forecast variance
       sigma_(n+j)^2 for the periods after the last return
-    - realized: ln sigma_(n+h)^2 = Omega + Gamma * Xi + (Beta + Gamma * Phi) * ln sigma_(n+h-1)^2, the
+    - Realized GARCH: ln sigma_(n+h)^2 = Omega + Gamma * Xi + (Beta + Gamma * Phi) * ln sigma_(n+h-1)^2, the
       expected log measure Xi + Phi * ln sigma_t^2 in place of ln x_t (E[Tau(z)] = 0), and
       sigma_(n+h)^2 = exp(ln sigma_(n+h)^2)
 
@@ -3345,16 +3488,28 @@ def get_garch_family_forecast(
     innovations and a zero mean are forecast by `get_garch_forecast`,
     `get_gjr_garch_forecast` and `get_egarch_forecast`.
 
+    Referenced against:
+    - arch, GARCH (GJR-GARCH forecast): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+
+    Shares similar logic:
+    - rugarch (R), ugarchforecast: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1071
+
     Args:
         returns (np.ndarray | pd.Series | pd.DataFrame): The returns.
         weights (np.ndarray | list | None, optional): The weights, see
             `get_garch_family_parameter_names`. Defaults to None, which fits them per column.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         forecast_steps (int, optional): The number of periods to forecast. Defaults to 10.
         realized_measure (np.ndarray | pd.Series | pd.DataFrame | None, optional): The realized
-            measure of every return, which method="realized" needs. Defaults to None.
+            measure of every return, which the Realized GARCH needs. Defaults to None.
 
     Returns:
         np.ndarray | pd.DataFrame: The forecasted variance, one row per step.
@@ -3493,21 +3648,32 @@ def get_garch_family_unconditional_variance(
     distribution_weights=(),
 ) -> float:
     """
-    Calculates the unconditional (long-run) variance a GARCH-family model reverts to:
+    Calculate the unconditional (long-run) variance of a GARCH-family model: the level the conditional
+    variance reverts to after a shock.
+
+    The formula is as follows:
 
     - sigma^2 = (Omega / (1 - P))^(2 / d), with P the persistence (see
       `get_garch_family_persistence`) and d the power of the model (2, Delta, or 1 for TGARCH and AVGARCH)
-    - component: Omega / (1 - Rho)
-    - egarch: exp(Omega / (1 - Beta)), the exponential of the long-run log variance, which
+    - Component GARCH: Omega / (1 - Rho)
+    - EGARCH: exp(Omega / (1 - Beta)), the exponential of the long-run log variance, which
       understates the expected variance somewhat (Jensen's inequality)
-    - realized: exp((Omega + Gamma * Xi) / (1 - Beta - Gamma * Phi)), likewise
-    - figarch: Omega / (1 - Phi) for D = 0 (GARCH(1, 1)); none for D > 0, where the model is not
+    - Realized GARCH: exp((Omega + Gamma * Xi) / (1 - Beta - Gamma * Phi)), likewise
+    - FIGARCH: Omega / (1 - Phi) for D = 0 (GARCH(1, 1)); none for D > 0, where the model is not
       covariance stationary (Baillie, Bollerslev and Mikkelsen, 1996)
+
+    Shares similar logic:
+    - rugarch (R), uncvariance: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L3036
 
     Args:
         variance_weights (Sequence[float]): The variance parameters.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         distribution_weights (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
 
     Returns:
@@ -3647,8 +3813,10 @@ def get_garch_family_scores(
     realized_measure: np.ndarray | None = None,
 ) -> np.ndarray:
     """
-    Calculates the score of every observation of a GARCH-family model: the derivatives of
-    its log-likelihood (see `get_garch_family_log_likelihood`) with respect to every weight.
+    Calculate the score of every observation of a GARCH-family model: how the log-likelihood of each
+    observation (see `get_garch_family_log_likelihood`) changes with every weight.
+
+    The formula is as follows:
 
     - s_t,j = d ln l_t / d w_j
 
@@ -3661,11 +3829,17 @@ def get_garch_family_scores(
     Args:
         returns (np.ndarray): The returns.
         weights (Sequence[float]): The weights, see `get_garch_family_parameter_names`.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         realized_measure (np.ndarray | None, optional): The realized measure of every return,
-            which method="realized" needs. Defaults to None.
+            which the Realized GARCH needs. Defaults to None.
 
     Returns:
         np.ndarray: The scores, one row per observation in the likelihood and one column per
@@ -3688,9 +3862,9 @@ def get_garch_family_diagnostics(
     realized_measure: np.ndarray | None = None,
 ) -> dict[str, float]:
     """
-    Calculates the fit diagnostics of a GARCH-family model: its persistence, half-life and
-    unconditional variance, the log-likelihood and information criteria and the standard
-    errors of the weights.
+    Calculate the fit diagnostics of a GARCH-family model: how persistent the volatility is and how
+    well and how precisely the model fits, its persistence, half-life and unconditional variance, the
+    log-likelihood and information criteria and the standard errors of the weights.
 
     The formula is as follows, with LL the log-likelihood, k the number of estimated
     weights and n the number of returns in the likelihood:
@@ -3721,21 +3895,37 @@ def get_garch_family_diagnostics(
     - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
     Volatility." The Journal of Finance, 48(5), 1749-1778.
 
-    Referenced against the information criteria, `persistence`, `halflife`, `uncvariance` and
-    `vcov` of R's rugarch and the "classic" and "robust" covariances of the arch package.
+    Referenced against:
+    - arch, GARCH (classic and robust standard errors, log-likelihood, information criteria): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+
+    Shares similar logic:
+    - rugarch (R), persistence: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2529
+    - rugarch (R), halflife: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2490
+    - rugarch (R), uncvariance: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L3036
+    - rugarch (R), infocriteria: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2063
 
     Args:
         returns (np.ndarray): The returns.
         weights (Sequence[float]): The fitted weights.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         realized_measure (np.ndarray | None, optional): The realized measure of every return,
-            which method="realized" needs. Defaults to None.
+            which the Realized GARCH needs. Defaults to None.
 
     Returns:
         dict[str, float]: The diagnostics, with a "<weight> Standard Error" and a
         "<weight> Robust Standard Error" for every estimated weight.
+
+    Notes:
+    - The arch package reports the information criteria in total, rugarch and the Toolkit per
+    observation.
     """
     returns = np.asarray(returns, dtype=float)
     weights = np.asarray(weights, dtype=float)
@@ -3812,42 +4002,49 @@ def get_news_impact_curve(
     shocks: np.ndarray | None = None,
 ) -> pd.Series:
     """
-       Calculates the news impact curve of Engle and Ng (1993): the conditional variance of
-       the next period as a function of this period's shock, with the variance of this period
-       at the unconditional variance sigma^2 of the model.
+    Calculate the news impact curve of Engle and Ng (1993): how a shock of each size moves the next
+    period's volatility, the conditional variance of the next period as a function of this period's
+    shock, with the variance of this period at the unconditional variance sigma^2 of the model.
 
-       The formula is as follows:
+    The formula is as follows:
 
-       - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
+    - News Impact(z) = sigma_(t+1)^2 given e_t = z * sigma and sigma_t^2 = sigma^2
 
-       Where z is the shock in unconditional standard deviations, sigma^2 the unconditional
-       variance (see `get_garch_family_unconditional_variance`) and, for the component model,
-       the long-run component also at sigma^2. IGARCH and FIGARCH (with D > 0) have no
-       unconditional variance, so their curve is NaN. For the realized GARCH the shock moves the
-       next log variance through the measurement equation (Hansen, Huang and Shek, 2012), with
-       the measurement error at its mean of 0:
+    Where z is the shock in unconditional standard deviations, sigma^2 the unconditional
+    variance (see `get_garch_family_unconditional_variance`) and, for the component model,
+    the long-run component also at sigma^2. IGARCH and FIGARCH (with D > 0) have no
+    unconditional variance, so their curve is NaN. For the realized GARCH the shock moves the
+    next log variance through the measurement equation (Hansen, Huang and Shek, 2012), with
+    the measurement error at its mean of 0:
 
-       - News Impact(z) = exp(ln sigma^2 + Gamma * (Tau 1 * z + Tau 2 * (z^2 - 1)))
+    - News Impact(z) = exp(ln sigma^2 + Gamma * (Tau 1 * z + Tau 2 * (z^2 - 1)))
     A curve that rises faster to the left than to the right shows the
-       leverage effect: bad news raises volatility by more than good news of the same size.
+    leverage effect: bad news raises volatility by more than good news of the same size.
 
-       For more information, see the following paper:
+    For more information, see the following paper:
 
-       - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
-       Volatility." The Journal of Finance, 48(5), 1749-1778.
+    - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
+    Volatility." The Journal of Finance, 48(5), 1749-1778.
 
-       Referenced against `newsimpact` of R's rugarch.
+    Shares similar logic:
+    - rugarch (R), newsimpact: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L2287
 
-       Args:
-           weights (Sequence[float]): The fitted weights.
-           method (str, optional): The variance model. Defaults to "garch".
-           distribution (str, optional): The innovation distribution. Defaults to "normal".
-           mean (str, optional): The mean model. Defaults to "zero".
-           shocks (np.ndarray | None, optional): The shocks z, in unconditional standard
-               deviations. Defaults to None, which uses -5, -4.5, ..., 5.
+    Args:
+        weights (Sequence[float]): The fitted weights.
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
+        shocks (np.ndarray | None, optional): The shocks z, in unconditional standard
+            deviations. Defaults to None, which uses -5, -4.5, ..., 5.
 
-       Returns:
-           pd.Series: The variance of the next period, indexed by the shock z.
+    Returns:
+        pd.Series: The variance of the next period, indexed by the shock z.
     """
     shocks = np.linspace(-5, 5, 21) if shocks is None else np.asarray(shocks, float)
     variance_weights, _, distribution_weights = _split_weights(weights, method, mean)
@@ -4065,9 +4262,9 @@ def get_garch_simulation(
     realized_measure: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
-    Simulates paths of the returns and conditional volatility of a GARCH-family model from
-    the end of the sample and summarizes them per step: the mean and the 5th, 25th, 50th,
-    75th and 95th percentiles.
+    Calculate a GARCH simulation: the spread of the returns and conditional volatility a GARCH-family
+    model expects after the end of the sample, from simulated paths summarized per step by the mean
+    and the 5th, 25th, 50th, 75th and 95th percentiles.
 
     Every path starts from the fitted state after the last return (its one-step-ahead
     variance and, for the ARMA(1, 1) and ARFIMA(1, d, 1) means, the last return and
@@ -4081,7 +4278,7 @@ def get_garch_simulation(
     - sigma_(t+1)^2 from the variance recursion of the model; the realized GARCH draws its
       measure from the measurement equation with u_t ~ N(0, Sigma U^2)
 
-    With `bootstrap_fits`, the forecast density of Pascual, Romo and Ruiz (2006) replaces
+    With bootstrap fits, the forecast density of Pascual, Romo and Ruiz (2006) replaces
     the fitted distribution with the standardized residuals z_t of the fit (and, for the
     realized GARCH, the measurement errors of the same days), drawn with replacement, and
     adds the uncertainty of the weights:
@@ -4091,7 +4288,7 @@ def get_garch_simulation(
       search from the fitted weights, see `get_garch_family_weights`)
     - Each of these weights filters the original returns to the state after the last
       return and simulates simulations / bootstrap_fits of the paths from it
-    - bootstrap_fits=0 keeps the fitted weights and only resamples the residuals (the
+    - No bootstrap fits (0) keeps the fitted weights and only resamples the residuals (the
       partial bootstrap)
 
     For more information, see the following paper:
@@ -4100,27 +4297,35 @@ def get_garch_simulation(
     Volatilities in GARCH Models." Computational Statistics & Data Analysis, 50(9),
     2293-2312.
 
-    Referenced against `ugarchsim`, `ugarchpath` and the "Partial" and "Full" methods of
-    `ugarchboot` in R's rugarch, as its documentation describes them.
+    Shares similar logic:
+    - rugarch (R), ugarchsim: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1090
+    - rugarch (R), ugarchpath: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1105
+    - rugarch (R), ugarchboot (partial and full bootstrap): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1210
 
     Args:
         returns (np.ndarray): The returns.
         weights (Sequence[float] | None, optional): The weights. Defaults to None, which fits them.
-        method (str, optional): The variance model. Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model. Defaults to "zero".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant", "arma" (ARMA(1, 1)), "in_mean"
+            (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
         forecast_steps (int, optional): The number of periods to simulate. Defaults to 10.
         simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The seed of the random draws, None for a different
             simulation every time. Defaults to 0.
-        output (str, optional): "returns" for the return of each step, "cumulative_returns"
-            for the compounded return from the end of the sample, (1 + r_1) ... (1 + r_h) - 1,
-            or "volatility" for sigma_t. Defaults to "returns".
+        output (str, optional): What to summarize: the return of each step, the compounded return from the end of the
+            sample, (1 + r_1) ... (1 + r_h) - 1, or the conditional volatility sigma_t. Options are: "returns",
+            "cumulative_returns", "volatility". Defaults to "returns".
         bootstrap_fits (int | None, optional): The number of bootstrap series the model is
             fitted to again, 0 for the partial bootstrap. Defaults to None, which draws from
             the fitted distribution instead.
         realized_measure (np.ndarray | None, optional): The realized measure of every return,
-            which method="realized" needs. Defaults to None.
+            which the Realized GARCH needs. Defaults to None.
 
     Returns:
         pd.DataFrame: The Mean and the percentiles per step (1 to forecast_steps).
@@ -4240,26 +4445,30 @@ def get_standardized_cdf(
     z: np.ndarray, distribution: str = "normal", parameters: tuple[float, ...] = ()
 ) -> np.ndarray:
     """
-    Calculates the distribution function F(z) = P(Z <= z) of a standardized innovation
-    distribution (mean 0 and Variance 1) of `get_standardized_log_density`.
+    Calculate the distribution function F(z) = P(Z <= z) of a standardized innovation distribution
+    (mean 0 and Variance 1): the probability of a shock at or below z.
 
     The formula is as follows, with G the standardized Student-t distribution function
     G(x) = T_v(x √(v / (v - 2))) and the constants a, b, m and s of `get_standardized_log_density`:
 
-    - normal: F(z) = Φ(z)
-    - t: F(z) = G(z)
-    - skewt (Hansen, 1994): F(z) = (1 - λ) G((b z + a) / (1 - λ)) below z = -a / b and
+    - Normal: F(z) = Φ(z)
+    - Student-t: F(z) = G(z)
+    - Hansen's skewed Student-t (Hansen, 1994): F(z) = (1 - λ) G((b z + a) / (1 - λ)) below z = -a / b and
       (1 - λ) / 2 + (1 + λ) (G((b z + a) / (1 + λ)) - 1 / 2) above it
-    - skewt_fernandez_steel: with x = m + s z, F = 2 / (ξ + 1 / ξ) G(x ξ) / ξ below zero and
+    - Fernández and Steel's skewed Student-t: with x = m + s z, F = 2 / (ξ + 1 / ξ) G(x ξ) / ξ below zero and
       1 / (1 + ξ^2) + 2 ξ / (ξ + 1 / ξ) (G(x / ξ) - 1 / 2) above it
-    - ged: F(z) = 1 / 2 + sign(z) P(Γ(1 / v), |z / λ|^v / 2) / 2, with P the regularized lower
-      incomplete gamma function
-    - johnson_su: F(z) = Φ(γ + δ asinh(m + s z))
+    - Generalized error distribution: F(z) = 1 / 2 + sign(z) P(Γ(1 / v), |z / λ|^v / 2) / 2, with P the regularized
+      lower incomplete gamma function
+    - Johnson SU: F(z) = Φ(γ + δ asinh(m + s z))
+
+    Shares similar logic:
+    - rugarch (R), pdist: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1736
 
     Args:
         z (np.ndarray): The standardized values.
-        distribution (str, optional): The distribution, see `get_standardized_log_density`.
-            Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
             Defaults to (), for the normal distribution.
 
@@ -4325,22 +4534,31 @@ def get_standardized_quantile(
     parameters: tuple[float, ...] = (),
 ) -> np.ndarray:
     """
-    Calculates the quantile F^-1(p) of a standardized innovation distribution (mean 0 and
-    Variance 1), the inverse of `get_standardized_cdf`, in closed form:
+    Calculate the quantile F^-1(p) of a standardized innovation distribution (mean 0 and Variance 1):
+    the shock that a share p of the shocks falls below, the inverse of `get_standardized_cdf`.
 
-    - normal: Φ^-1(p)
-    - t: G^-1(p) = T_v^-1(p) √((v - 2) / v)
-    - skewt (Hansen, 1994): z = ((1 - λ) G^-1(p / (1 - λ)) - a) / b for p < (1 - λ) / 2 and
+    The formula, in closed form, is as follows:
+
+    - Normal: Φ^-1(p)
+    - Student-t: G^-1(p) = T_v^-1(p) √((v - 2) / v)
+    - Hansen's skewed Student-t (Hansen, 1994): z = ((1 - λ) G^-1(p / (1 - λ)) - a) / b for p < (1 - λ) / 2 and
       z = ((1 + λ) G^-1(1 / 2 + (p - (1 - λ) / 2) / (1 + λ)) - a) / b otherwise
-    - skewt_fernandez_steel: x = G^-1(p ξ (ξ + 1 / ξ) / 2) / ξ for p < 1 / (1 + ξ^2) and
+    - Fernández and Steel's skewed Student-t: x = G^-1(p ξ (ξ + 1 / ξ) / 2) / ξ for p < 1 / (1 + ξ^2) and
       x = ξ G^-1(1 / 2 + (p - 1 / (1 + ξ^2)) (ξ + 1 / ξ) / (2 ξ)) otherwise, z = (x - m) / s
-    - ged: z = sign(p - 1 / 2) λ (2 P^-1(1 / v, |2 p - 1|))^(1 / v)
-    - johnson_su: z = (sinh((Φ^-1(p) - γ) / δ) - m) / s
+    - Generalized error distribution: z = sign(p - 1 / 2) λ (2 P^-1(1 / v, |2 p - 1|))^(1 / v)
+    - Johnson SU: z = (sinh((Φ^-1(p) - γ) / δ) - m) / s
+
+    Referenced against:
+    - arch, Normal, StudentsT, SkewStudent and GeneralizedError (ppf): https://bashtage.github.io/arch/univariate/generated/arch.univariate.SkewStudent.html
+
+    Shares similar logic:
+    - rugarch (R), qdist: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-distributions.R#L1757
 
     Args:
         probability (float | np.ndarray): The probability (e.g., 0.05 for the 5% quantile).
-        distribution (str, optional): The distribution, see `get_standardized_log_density`.
-            Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
             Defaults to (), for the normal distribution.
 
@@ -4414,8 +4632,10 @@ def get_standardized_expected_shortfall(
     parameters: tuple[float, ...] = (),
 ) -> float:
     """
-    Calculates the expected shortfall of a standardized innovation distribution (mean 0 and
-    Variance 1), the mean of z below its quantile at `probability`:
+    Calculate the expected shortfall of a standardized innovation distribution (mean 0 and Variance 1):
+    the average shock in the worst tail, the mean of z below its quantile at `probability`.
+
+    The formula is as follows:
 
     - ES(p) = E[z | z <= F^-1(p)] = (1 / p) ∫_0^p F^-1(u) du
 
@@ -4426,8 +4646,9 @@ def get_standardized_expected_shortfall(
 
     Args:
         probability (float): The tail probability (e.g., 0.05).
-        distribution (str, optional): The distribution, see `get_standardized_log_density`.
-            Defaults to "normal".
+        distribution (str, optional): The distribution. Options are: "normal", "t" (Student-t), "skewt" (Hansen's
+            skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized
+            error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (Sequence[float], optional): The Shape (and Skew) of the distribution.
             Defaults to (), for the normal distribution.
 
@@ -4501,15 +4722,17 @@ def get_garch_family_rolling_forecast(
     mean: str = "constant",
 ) -> pd.DataFrame:
     """
-    Forecasts the conditional mean and volatility of the next return with a GARCH-family
-    model refitted every `refit_every` returns on a moving window of `window_size` returns,
-    with the parameters of the innovation distribution of every fit.
+    Calculate a rolling GARCH forecast: the conditional mean and volatility each return was expected to
+    have, from a GARCH-family model fitted only on the returns before it.
+
+    The model is refitted every `refit_every` returns on a moving window of `window_size` returns, with
+    the parameters of the innovation distribution of every fit.
 
     The model is fitted on the window of returns that ends at a refit date and the fitted
     weights filter every later return until the next refit, so the forecast for each return
     only uses the returns before it:
 
-    - Mean_(t+1) = Mu (0 for mean="zero")
+    - Mean_(t+1) = Mu (0 for the zero mean)
     - Volatility_(t+1) = √(sigma_(t+1)^2), the one-step variance of the recursion of the weights of
       the last refit on or before t, run over the returns from the start of that fit's window
 
@@ -4522,24 +4745,32 @@ def get_garch_family_rolling_forecast(
     Without `window_size`, the model is fitted once on every return and the result is the
     forecast for the period after the last return.
 
-    Referenced against the rolling estimation of `ugarchroll` in R's rugarch
-    (https://cran.r-project.org/package=rugarch), which refits every `refit.every` periods on a
-    moving or expanding window; rugarch starts every fit from its default starting values.
+    Shares similar logic:
+    - rugarch (R), ugarchroll: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1141
 
     Args:
         returns (pd.Series): The returns of one asset, without missing values.
         window_size (int | None, optional): The number of returns of every fit. Defaults to
             None, which fits once on every return.
         refit_every (int, optional): The number of returns between two fits. Defaults to 21.
-        method (str, optional): The variance model, see GARCH_FAMILY_VARIANCE_PARAMETERS.
-            Defaults to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
-        mean (str, optional): The mean model, "zero" or "constant". Defaults to "constant".
+        method (str, optional): The variance model. Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH), "realized" (Realized GARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal", "t" (Student-t), "skewt"
+            (Hansen's skewed Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+        mean (str, optional): The mean model. Options are: "zero", "constant". Defaults to "constant".
 
     Returns:
         pd.DataFrame: The Mean and Volatility of the next return and the parameters of the
         innovation distribution (Shape, Skew), indexed by the date of the last return each
         forecast uses.
+
+    Notes:
+    - rugarch's ugarchroll refits every number of periods on a moving or expanding window and starts
+    every fit from its default starting values, where every later fit here starts from the previous
+    weights.
     """
     validate_garch_family(method, distribution, mean)
 

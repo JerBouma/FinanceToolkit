@@ -68,7 +68,7 @@ def get_government_bond_yields() -> pd.DataFrame:
 
 def get_long_term_interest_rate() -> pd.DataFrame:
     """
-    Retrieves the daily yield of a 10-year Japanese government bond.
+    Retrieve the daily yield of a 10-year Japanese government bond: the long-term interest rate of Japan.
 
     Returns:
         pd.DataFrame: A single "Japan" column with the yield as a decimal, indexed by day.

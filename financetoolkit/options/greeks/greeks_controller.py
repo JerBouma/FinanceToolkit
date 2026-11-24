@@ -40,8 +40,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate all Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate all Greeks of an option based on the Black Scholes Model: how the option value responds to the
+        price of the underlying asset, the strike price, the volatility, time, the risk free rate and the dividend
+        yield.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         **First Order Greeks:**
 
@@ -238,8 +241,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the first order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the first order Greeks of an option based on the Black Scholes Model: how the option value
+        responds to the price of the underlying asset, the strike price, the volatility, time, the risk free rate
+        and the dividend yield.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Delta: measures the rate of change of the theoretical option value with respect to changes in the underlying
         asset's price.
@@ -447,9 +453,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the delta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The delta is
-        the rate of change of the option price with respect to the price of the underlying asset.
+        Calculate the delta of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        delta is the rate of change of the option price with respect to the price of the underlying asset.
 
         The delta calculation is the theoretical value of the delta. The actual delta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -649,9 +657,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The dual delta is
-        the first derivative of the option price with respect to the strike price; up to the discount
+        Calculate the dual delta of an option based on the Black Scholes Model: how much the option value changes
+        for a 1.00 change in the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        dual delta is the first derivative of the option price with respect to the strike price; up to the discount
         factor and its sign it is the risk-neutral probability of the option finishing in the money.
 
         The dual delta calculation is the theoretical value of the dual delta. The actual dual delta can differ from this
@@ -844,9 +854,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vega of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vega is
-        the rate of change of the option price with respect to the volatility of the underlying asset.
+        Calculate the vega of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the volatility of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vega is the rate of change of the option price with respect to the volatility of the underlying asset.
 
         The vega calculation is the theoretical value of the vega. The actual vega can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1043,9 +1055,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the theta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The theta is
-        the rate of change of the option price with respect to the passage of time.
+        Calculate the theta of an option based on the Black Scholes Model: how much the option value changes as time
+        passes, its time decay.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        theta is the rate of change of the option price with respect to the passage of time.
 
         The theta calculation is the theoretical value of the theta. The actual theta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1243,9 +1257,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the rho of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The rho is
-        the rate of change of the option price with respect to the risk free interest rate.
+        Calculate the rho of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the risk free rate.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        rho is the rate of change of the option price with respect to the risk free interest rate.
 
         The rho calculation is the theoretical value of the rho. The actual rho can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1435,9 +1451,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the epsilon of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The epsilon is
-        the rate of change of the option price with respect to the dividend yield.
+        Calculate the epsilon of an option based on the Black Scholes Model: how much the option value changes for a
+        1.00 change in the dividend yield.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        epsilon is the rate of change of the option price with respect to the dividend yield.
 
         The epsilon calculation is the theoretical value of the epsilon. The actual epsilon can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -1624,9 +1642,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The lambda, or
-        elasticity, is the percentage change in the option price for a 1% change in the price of the
+        Calculate the lambda of an option based on the Black Scholes Model: the percentage change in the option
+        value per percentage change in the price of the underlying asset, the leverage the option gives.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        lambda, or elasticity, is the percentage change in the option price for a 1% change in the price of the
         underlying asset, i.e. the leverage the option gives.
 
         The lambda calculation is the theoretical value of the lambda. The actual lambda can differ from this
@@ -1819,8 +1839,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the second order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the second order Greeks of an option based on the Black Scholes Model: how the first order Greeks
+        themselves respond to the price of the underlying asset, the strike price, the volatility and time.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Gamma: measures the rate of change in the delta with respect to changes in the underlying price. Gamma is
         the second derivative of the value function with respect to the underlying price.
@@ -2035,9 +2057,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The gamma is
-        the rate of change of the delta with respect to the price of the underlying asset.
+        Calculate the gamma of an option based on the Black Scholes Model: how much the delta changes for a 1.00
+        change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        gamma is the rate of change of the delta with respect to the price of the underlying asset.
 
         The gamma calculation is the theoretical value of the gamma. The actual gamma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2224,10 +2248,12 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the dual gamma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The dual gamma is
-        the second derivative of the option price with respect to the strike price, i.e. the rate of change
-        of the dual delta as the strike price changes. It is the strike-space counterpart of gamma and
+        Calculate the dual gamma of an option based on the Black Scholes Model: how much the dual delta changes for
+        a 1.00 change in the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        dual gamma is the second derivative of the option price with respect to the strike price, i.e. the rate of
+        change of the dual delta as the strike price changes. It is the strike-space counterpart of gamma and
         describes the (discounted) risk-neutral probability density of the underlying finishing at the strike.
 
         The dual gamma calculation is the theoretical value of the dual gamma. The actual dual gamma can differ
@@ -2404,9 +2430,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vanna of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vanna is
-        the rate of change of the vega with respect to the price of the underlying asset.
+        Calculate the vanna of an option based on the Black Scholes Model: how much the delta changes for a 1.00
+        change in the volatility, or equally the vega for a 1.00 change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vanna is the rate of change of the vega with respect to the price of the underlying asset.
 
         The vanna calculation is the theoretical value of the vanna. The actual vanna can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2596,9 +2624,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the charm of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The charm is
-        the rate of change of the delta with respect to the time to expiration.
+        Calculate the charm of an option based on the Black Scholes Model: how much the delta changes as time
+        passes, the delta decay.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        charm is the rate of change of the delta with respect to the time to expiration.
 
         The charm calculation is the theoretical value of the charm. The actual charm can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2797,9 +2827,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vomma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vomma is
-        the rate of change of the vega with respect to the volatility of the underlying asset.
+        Calculate the vomma of an option based on the Black Scholes Model: how much the vega changes for a 1.00
+        change in the volatility, the convexity of the option value in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vomma is the rate of change of the vega with respect to the volatility of the underlying asset.
 
         The vomma calculation is the theoretical value of the vomma. The actual vomma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -2990,9 +3022,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the vera of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The vera is
-        the rate of change of the rho with respect to volatility.
+        Calculate the vera of an option based on the Black Scholes Model: how much the rho changes for a 1.00 change
+        in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        vera is the rate of change of the rho with respect to volatility.
 
         The vera calculation is the theoretical value of the vera. The actual vera can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3182,9 +3216,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the veta of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The veta is
-        the rate of change of the vega with respect to the time to expiration.
+        Calculate the veta of an option based on the Black Scholes Model: how much the vega changes as time passes.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        veta is the rate of change of the vega with respect to the time to expiration.
 
         The veta calculation is the theoretical value of the veta. The actual veta can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3376,10 +3411,12 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The partial derivative is
-        the second derivative of the option price with respect to the strike price, the rate at which the dual
-        delta changes with the strike.
+        Calculate the partial derivative of an option based on the Black Scholes Model: how fast the dual delta
+        changes with the strike price, the second derivative of the option value with respect to the strike price.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        partial derivative is the second derivative of the option price with respect to the strike price, the rate
+        at which the dual delta changes with the strike.
 
         Note that this uses a single, flat assumed volatility (the same value at every strike price) rather than
         the market's actual implied volatility smile. This means it is NOT the Breeden-Litzenberger risk-neutral
@@ -3568,8 +3605,10 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the third order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
-        per Strike Price and Expiration Date:
+        Calculate the third order Greeks of an option based on the Black Scholes Model: how the second order Greeks
+        themselves respond to the price of the underlying asset, the volatility and time.
+
+        This will return the following Greeks per Strike Price and Expiration Date:
 
         - Speed: measures the rate of change in Gamma with respect to changes in the underlying price.
         - Zomma: measures the rate of change of gamma with respect to changes in volatility.
@@ -3740,9 +3779,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the speed of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The speed is
-        the rate of change of the gamma with respect to the price of the underlying asset.
+        Calculate the speed of an option based on the Black Scholes Model: how much the gamma changes for a 1.00
+        change in the price of the underlying asset.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        speed is the rate of change of the gamma with respect to the price of the underlying asset.
 
         The speed calculation is the theoretical value of the speed. The actual speed can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -3919,9 +3960,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the zomma of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The zomma is
-        the rate of change of the gamma with respect to volatility.
+        Calculate the zomma of an option based on the Black Scholes Model: how much the gamma changes for a 1.00
+        change in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        zomma is the rate of change of the gamma with respect to volatility.
 
         The zomma calculation is the theoretical value of the zomma. The actual zomma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4105,9 +4148,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the color of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The color is
-        the rate of change of the gamma with respect to time to expiration.
+        Calculate the color of an option based on the Black Scholes Model: how much the gamma changes as time
+        passes.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        color is the rate of change of the gamma with respect to time to expiration.
 
         The color calculation is the theoretical value of the color. The actual color can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,
@@ -4293,9 +4338,11 @@ class GreeksOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the ultima of an option based on the Black Scholes Model. The Black Scholes Model
-        is a mathematical model used to estimate the price of European—style options. The ultima is
-        the rate of change of the vomma with respect to volatility.
+        Calculate the ultima of an option based on the Black Scholes Model: how much the vomma changes for a 1.00
+        change in the volatility.
+
+        The Black Scholes Model is a mathematical model used to estimate the price of European—style options. The
+        ultima is the rate of change of the vomma with respect to volatility.
 
         The ultima calculation is the theoretical value of the ultima. The actual gamma can differ from this
         value due to several factors such as the volatility of the underlying asset, the time to expiration,

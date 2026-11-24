@@ -36,7 +36,8 @@ def get_d1(
     dividend_yield: float | pd.Series | np.ndarray = 0,
 ):
     """
-    Calculate d1 in the Black-Scholes model for option pricing.
+    Calculate d1 of the Black-Scholes model: the standardized distance between the log of the
+    stock price and the strike price, which sets the probabilities of the formula.
 
     Args:
         stock_price (float or pd.Series): The current stock price.
@@ -83,7 +84,9 @@ def get_d2(
     time_to_expiration: float | pd.Series | np.ndarray,
 ):
     """
-    Calculate d2 in the Black-Scholes model for option pricing.
+    Calculate d2 of the Black-Scholes model: d1 less the volatility over the life of the option,
+    whose normal distribution N(d2) is the risk-neutral probability that a call expires in the
+    money.
 
     Args:
         d1 (float or pd.Series): The d1 value, as calculated by get_d1.
@@ -107,7 +110,8 @@ def get_black_scholes(
     put_option: bool = False,
 ):
     """
-    Calculate the Black-Scholes model for option pricing.
+    Calculate the Black-Scholes value of a European option: what a call or put is worth today
+    when the stock follows a lognormal process with a constant volatility.
 
     Args:
         stock_price (float or pd.Series): The current stock price.
@@ -171,10 +175,11 @@ def get_implied_volatility(
     put_option: bool = False,
 ) -> float:
     """
-    Numerically solve for the Black-Scholes implied volatility that reprices a
-    single observed market option price: the root of Black-Scholes price(σ) — market
-    price, found with Brent's method (scipy.optimize.brentq) on the volatility
-    interval [1e-6, 5].
+    Calculate the Black-Scholes implied volatility: the volatility at which the
+    Black-Scholes price equals an observed market price of an option.
+
+    It is the root of Black-Scholes price(σ) — market price, found with Brent's method
+    (scipy.optimize.brentq) on the volatility interval [1e-6, 5].
 
     Args:
         market_price (float): The observed market price of the option.
@@ -250,7 +255,8 @@ def get_put_call_parity(
     put_price: float | pd.Series | None = None,
 ) -> float | pd.Series:
     """
-    Check or derive the no-arbitrage Put-Call Parity relationship for European options.
+    Calculate the Put-Call Parity of European options: the price of a call or put that rules
+    out arbitrage given the other, or the gap by which observed prices deviate from it.
 
     Also known as: Put-Call Parity, PCP, the no-arbitrage relationship between calls and puts.
 
@@ -265,16 +271,16 @@ def get_put_call_parity(
 
     This function is deliberately flexible so it can serve two related purposes:
 
-    1. Derive the theoretical price of the missing leg. Provide either ``call_price`` or
-       ``put_price`` (not both) and the function returns the parity-implied price of the
+    1. Derive the theoretical price of the missing leg. Provide either the call price or
+       the put price (not both) and the function returns the parity-implied price of the
        other option.
-    2. Validate an observed pair of option prices. Provide both ``call_price`` and
-       ``put_price`` and the function returns the parity gap, i.e. the amount by which the
+    2. Validate an observed pair of option prices. Provide both the call price and the put
+       price and the function returns the parity gap, i.e. the amount by which the
        observed prices deviate from the no-arbitrage relationship. A gap of (approximately)
        zero confirms no-arbitrage; a non-zero gap signals a potential arbitrage opportunity
        (ignoring transaction costs).
 
-    If neither ``call_price`` nor ``put_price`` is provided, the function returns the
+    If neither the call price nor the put price is provided, the function returns the
     forward-implied differential S * e^(-q * t) - K * e^(-r * t) itself, i.e. the value that
     C - P should equal under parity.
 
@@ -291,8 +297,8 @@ def get_put_call_parity(
 
     Returns:
         float | pd.Series: depending on the inputs, either the parity-implied put price,
-        the parity-implied call price, the parity gap (call_price and put_price both
-        provided) or the forward-implied differential (neither provided).
+        the parity-implied call price, the parity gap (the call price and the put price
+        both provided) or the forward-implied differential (neither provided).
 
     Raises:
         TypeError: if any of the numeric inputs is not a float, int, np.ndarray or
@@ -343,7 +349,9 @@ def get_garman_kohlhagen(
     put_option: bool = False,
 ) -> float | pd.Series:
     """
-    Calculate the Garman-Kohlhagen model for foreign exchange (FX) option pricing.
+    Calculate the Garman-Kohlhagen value of a European currency option: what a call or put
+    on an exchange rate is worth, with the foreign interest rate in the role of a dividend
+    yield.
 
     Also known as: the Black-Scholes model for currency options, FX option pricing model.
 
@@ -352,7 +360,7 @@ def get_garman_kohlhagen(
     currency earns the foreign risk-free rate (analogous to a continuous dividend yield
     on a stock), the domestic risk-free rate used for discounting is complemented by a
     foreign risk-free rate that plays the same role as the dividend yield does for equity
-    options. The value is therefore ``get_black_scholes`` with the foreign risk-free rate
+    options. The value is therefore get_black_scholes with the foreign risk-free rate
     as the dividend yield, and at expiration the exercise value.
 
     The formulas are as follows:
@@ -422,7 +430,8 @@ def get_black_76(
     put_option: bool = False,
 ) -> float | pd.Series | np.ndarray:
     """
-    Calculate the Black (1976) model for European options on futures and forwards.
+    Calculate the Black (1976) value of a European option on a futures or forward contract:
+    what a call or put on the futures price is worth, discounted at the risk-free rate.
 
     Also known as: Black-76, Black's model, the Black model for options on futures.
 
@@ -444,6 +453,12 @@ def get_black_76(
     futures price, t is the time to expiration in years and N is the standard normal
     distribution. At expiration the option is worth max(F — K, 0) or max(K — F, 0).
 
+    Referenced against:
+    - QuantLib, blackFormula: https://www.quantlib.org/reference/namespace_quant_lib.html#adfe71f9b0b157cae6e4bd53faaa676af
+
+    Shares similar logic:
+    - FinancePy, Black: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black.py#L18
+
     Args:
         forward_price (float | pd.Series | np.ndarray): The futures or forward price.
         strike_price (float | pd.Series | np.ndarray): The option's strike price.
@@ -463,10 +478,9 @@ def get_black_76(
 
     Notes:
         Reference: Black, F. (1976). "The Pricing of Commodity Contracts." Journal of
-        Financial Economics, 3(1-2), 167-179. Referenced against QuantLib's blackFormula
-        (https://www.quantlib.org), with which it agrees within 1e-12, and FinancePy's
-        Black model (https://github.com/domokane/FinancePy), which approximates the normal
-        distribution and so differs by up to about 1e-4.
+        Financial Economics, 3(1-2), 167-179.
+        - The value agrees with QuantLib's blackFormula within 1e-12. FinancePy's Black
+          model approximates the normal distribution and so differs by up to about 1e-4.
 
     As an example:
 
@@ -517,9 +531,11 @@ def get_black_76_implied_volatility(
     put_option: bool = False,
 ) -> float:
     """
-    Numerically solve for the Black-76 implied volatility of an option on a futures or
-    forward contract: the root of Black-76 price(σ) — market price, found with Brent's
-    method on the volatility interval [1e-6, 5].
+    Calculate the Black-76 implied volatility of an option on a futures or forward contract:
+    the volatility at which the Black-76 price equals an observed market price.
+
+    It is the root of Black-76 price(σ) — market price, found with Brent's method on the
+    volatility interval [1e-6, 5].
 
     Also known as: implied volatility of options on futures, Black implied volatility.
 
@@ -527,6 +543,10 @@ def get_black_76_implied_volatility(
     risk-free rate (see get_black_76), so this is the Black-Scholes implied volatility of
     get_implied_volatility with that yield and the same no-arbitrage bounds:
     e^(—rt) * max(F — K, 0) < call < e^(—rt) * F and e^(—rt) * max(K — F, 0) < put < e^(—rt) * K.
+
+    Shares similar logic:
+    - QuantLib, blackFormulaImpliedStdDev: https://www.quantlib.org/reference/namespace_quant_lib.html#ae5515dd7810c45e5a7c61df4a00a8166
+    - FinancePy, Black.implied_volatility: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black.py#L426
 
     Args:
         market_price (float): The observed market price of the option.
@@ -541,9 +561,8 @@ def get_black_76_implied_volatility(
             (outside the bounds above, or at or after expiration).
 
     Notes:
-        Referenced against QuantLib's blackFormulaImpliedStdDev (https://www.quantlib.org)
-        divided by √t and FinancePy's Black.implied_volatility
-        (https://github.com/domokane/FinancePy).
+        QuantLib's blackFormulaImpliedStdDev gives the standard deviation, the implied
+        volatility times √t.
 
     As an example:
 
@@ -588,20 +607,22 @@ def get_binary_option(
     cash_payout: float = 1.0,
 ) -> float | pd.Series:
     """
-    Calculate the price of a Binary (Digital) Option using the Black-Scholes framework.
+    Calculate the price of a Binary (Digital) Option: what a payoff of all or nothing at
+    expiration is worth, a fixed cash amount or the stock itself when the option ends in the
+    money.
 
     Also known as: digital option, all-or-nothing option, cash-or-nothing option,
     asset-or-nothing option.
 
     A binary option pays out a fixed amount if the option expires in-the-money and
-    nothing otherwise. Two variants are supported through the ``option_type`` parameter:
+    nothing otherwise. Two variants are supported:
 
-    - "cash-or-nothing": pays a fixed cash amount if the option expires in-the-money.
+    - Cash-or-nothing: pays a fixed cash amount if the option expires in-the-money.
 
         - Call = cash_payout * e^(—r * t) * N(d2)
         - Put = cash_payout * e^(—r * t) * N(—d2)
 
-    - "asset-or-nothing": pays the value of the underlying asset if the option expires
+    - Asset-or-nothing: pays the value of the underlying asset if the option expires
       in-the-money.
 
         - Call = S * e^(—q * t) * N(d1)
@@ -619,8 +640,8 @@ def get_binary_option(
         time_to_expiration (float or pd.Series): The time to expiration of the option.
         dividend_yield (float or pd.Series): The dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not.
-        option_type (str): Either "cash-or-nothing" or "asset-or-nothing". Defaults to
-            "cash-or-nothing".
+        option_type (str): The payoff. Options are: "cash-or-nothing" (a fixed cash amount),
+            "asset-or-nothing" (the value of the stock). Defaults to "cash-or-nothing".
         cash_payout (float): The fixed cash amount paid out by a cash-or-nothing option
             when it expires in-the-money. Ignored for asset-or-nothing options. Defaults
             to 1.0.
@@ -1400,9 +1421,9 @@ def get_bjerksund_stensland(
     method: str = "2002",
 ) -> float | np.ndarray:
     """
-    Calculate the price of an American option using the Bjerksund-Stensland (2002)
-    closed-form analytical approximation, or with method="1993" the original version with
-    one flat boundary.
+    Calculate the price of an American option, which may be exercised at any time up to
+    expiration, with the closed-form approximation of Bjerksund and Stensland (2002), or
+    their original version of 1993 with one flat exercise boundary.
 
     Also known as: BS2002, Bjerksund-Stensland approximation, American option approximation.
 
@@ -1457,6 +1478,10 @@ def get_bjerksund_stensland(
     a non-positive risk-free rate), the approximation would exercise options that are out
     of the money, and a 1,000-step binomial tree prices the option instead.
 
+    Referenced against:
+    - QuantLib, BjerksundStenslandApproximationEngine (1993): https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_approximation_engine.html
+    - QuantLib, FdBlackScholesVanillaEngine (2002): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+
     Args:
         stock_price (float | np.ndarray): The current stock price.
         strike_price (float | np.ndarray): The option's strike price.
@@ -1468,8 +1493,8 @@ def get_bjerksund_stensland(
         dividend_yield (float | np.ndarray): The continuous dividend yield of the stock.
             Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): The version of the approximation, "2002" (two flat boundaries) or
-            "1993" (one flat boundary). Defaults to "2002".
+        method (str): The version of the approximation. Options are: "2002" (two flat
+            boundaries), "1993" (one flat boundary). Defaults to "2002".
 
     Returns:
         float | np.ndarray: The Bjerksund-Stensland approximation of the American option
@@ -1483,10 +1508,10 @@ def get_bjerksund_stensland(
     Notes:
         Reference for the 1993 version: Bjerksund, P., & Stensland, G. (1993). "Closed-Form
         Approximation of American Options." Scandinavian Journal of Management, 9, S87-S99,
-        as presented in Haug (2007), section 3.1.3. It is referenced against QuantLib's
-        BjerksundStenslandApproximationEngine, which also searches the boundary that
-        maximizes the price where the cost of carry is negative and the 1993 boundary falls
-        short, where this version uses the binomial tree instead. For S = K = 100, r = 5%,
+        as presented in Haug (2007), section 3.1.3. QuantLib's
+        BjerksundStenslandApproximationEngine also searches the boundary that maximizes the
+        price where the cost of carry is negative and the 1993 boundary falls short, where
+        this version uses the binomial tree instead. For S = K = 100, r = 5%,
         q = 3%, σ = 25% and T = 1 the 1993 put is 8.8152, against 8.8439 for the 2002
         version.
 
@@ -1704,17 +1729,18 @@ def get_black_scholes_cash_dividends(
 ):
     """
     Calculate the price of a European option on a stock that pays known cash dividends
-    before expiration, instead of a continuous dividend yield.
+    before expiration: what a call or put is worth when the stock drops by each dividend on
+    its ex-dividend date, instead of a continuous dividend yield.
 
     A cash dividend lowers the stock price by its amount on the ex-dividend date, which a
     dividend yield only spreads over the year. Two methods are available:
 
-    - "escrowed" (Hull, 2022, chapter 17): the stock price net of the present value of
+    - The escrowed dividend model (Hull, 2022, chapter 17): the stock price net of the present value of
       the dividends up to expiration follows the lognormal process, so the Black-Scholes
       formula applies to S* = S — Σ D_i * e^(—r * t_i) with no dividend yield. It is the
       market convention and exact for that process, but the volatility then applies to
       S* rather than S, which lowers the volatility of the stock itself.
-    - "haug_haug_lewis" (Haug, Haug and Lewis, 2003): the stock price itself follows the
+    - The Haug-Haug-Lewis model (Haug, Haug and Lewis, 2003): the stock price itself follows the
       lognormal process and drops by D_i at t_i (to 0 when the dividend exceeds it). After
       the last dividend the option is a Black-Scholes option; before it, its value at each
       dividend date is the discounted expectation of the value just after the next one:
@@ -1730,6 +1756,10 @@ def get_black_scholes_cash_dividends(
     rate, σ the volatility, D_i the cash dividend with ex-date t_i years from now and T the
     time to expiration. Dividends after T or not after today are left out.
 
+    Referenced against:
+    - QuantLib, AnalyticDividendEuropeanEngine (escrowed): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_dividend_european_engine.html
+    - QuantLib, CashDividendEuropeanEngine (Haug-Haug-Lewis): https://www.quantlib.org/reference/class_quant_lib_1_1_cash_dividend_european_engine.html
+
     Args:
         stock_price (float | np.ndarray): The current stock price.
         strike_price (float | np.ndarray): The option's strike price.
@@ -1742,7 +1772,8 @@ def get_black_scholes_cash_dividends(
         dividend_amounts (list[float] | np.ndarray): The cash dividend per share of each
             ex-dividend date.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
-        method (str): "escrowed" or "haug_haug_lewis". Defaults to "escrowed". The
+        method (str): The dividend model. Options are: "escrowed" (escrowed dividend
+            model), "haug_haug_lewis" (Haug-Haug-Lewis). Defaults to "escrowed". The
             Haug-Haug-Lewis method takes a single stock price, strike price and time to
             expiration; the escrowed method also takes arrays of them.
 
@@ -1757,10 +1788,9 @@ def get_black_scholes_cash_dividends(
         References: Hull, J. C. (2022). "Options, Futures, and Other Derivatives" (11th
         ed.), chapter 17; Haug, E. G., Haug, J., & Lewis, A. (2003). "Back to Basics: a New
         Approach to the Discrete Dividend Problem." Wilmott Magazine, September, 37-47.
-        Referenced against QuantLib's AnalyticDividendEuropeanEngine (escrowed) and
-        CashDividendEuropeanEngine with the Spot model (Haug-Haug-Lewis),
-        https://www.quantlib.org. For S = K = 100, r = 5%, σ = 30%, T = 1 and a dividend of
-        2 after 30 days, the escrowed call is 13.0133 and the Haug-Haug-Lewis call 13.0325.
+        - QuantLib's CashDividendEuropeanEngine is used with the Spot model.
+        - For S = K = 100, r = 5%, σ = 30%, T = 1 and a dividend of 2 after 30 days, the
+          escrowed call is 13.0133 and the Haug-Haug-Lewis call 13.0325.
     """
     check_option("method", method, ("escrowed", "haug_haug_lewis"))
     if volatility <= 0:

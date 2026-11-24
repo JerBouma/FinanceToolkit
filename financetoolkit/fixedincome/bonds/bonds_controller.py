@@ -445,6 +445,13 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: bond data, fixed income statistics, bond analytics.
 
+        Referenced against:
+        - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+        - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
+        Shares similar logic:
+        - QuantLib, BondFunctions.zSpread: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
         Args:
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, a list or a
                 comma-separated string. Treasuries (CUSIPs starting with 912) come from
@@ -545,12 +552,14 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the present value of individual bonds: their coupons and principal
-        discounted with the Treasury zero-coupon curve of the price date, next to the price
-        they trade at. For a Treasury the two differ by how far the issue trades off the
-        curve; for a corporate bond the present value is the price it would have without
-        any credit or liquidity risk, and the gap with its price is what the Z-spread
-        (`get_z_spread`) measures.
+        Calculates the present value of individual bonds: what their coupons and principal
+        are worth when discounted with the Treasury zero-coupon curve of the price date,
+        next to the price they trade at.
+
+        For a Treasury the two differ by how far the issue trades off the curve; for a
+        corporate bond the present value is the price it would have without any credit or
+        liquidity risk, and the gap with its price is what the Z-spread (`get_z_spread`)
+        measures.
 
         The formula is as follows:
 
@@ -656,8 +665,10 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the duration of individual bonds at their yield to maturity. It has the
-        option to calculate the following type of bond durations:
+        Calculates the duration of individual bonds at their yield to maturity: how sensitive the price of each bond
+        is to a change in its yield, or how long on average its cash flows take to arrive.
+
+        It has the option to calculate the following type of bond durations:
 
         - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
         - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield (YTM / 2).
@@ -691,9 +702,13 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: Macaulay duration, modified duration, bond price sensitivity.
 
+        Referenced against:
+        - QuantLib, BondFunctions.duration (modified, macaulay): https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+
         Args:
-            method (str, optional): The duration measure. Options are: "modified", "macaulay",
-                "effective" or "dollar". Defaults to "modified".
+            method (str, optional): The duration measure. Options are: "modified" (Modified Duration),
+                "macaulay" (Macaulay's Duration), "effective" (Effective Duration), "dollar" (Dollar
+                Duration). Defaults to "modified".
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
                 `collect_bond_statistics`. Defaults to None.
             issuer (list[str] | str | None, optional): Part of an issuer's name, such as
@@ -772,9 +787,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the yield to maturity of individual bonds from their market price. The yield to maturity is the
-        internal rate of return of the bond, the discount rate that equates the present value of the bond's cash flows
-        to its price.
+        Calculates the yield to maturity of individual bonds from their market price: the internal rate of return of
+        the bond, the discount rate that equates the present value of the bond's cash flows to its price.
 
         The formula is as follows, solved for YTM:
 
@@ -874,8 +888,8 @@ class BondsFixedIncome(MarketsFixedIncome):
     ):
         """
         Calculates the zero-volatility spread (Z-spread) of individual bonds over the Treasury
-        zero-coupon curve. The Z-spread is the constant spread that, when added uniformly to every
-        point of the curve, makes the present value of the bond's cash flows equal to its price.
+        zero-coupon curve: the constant spread that, when added uniformly to every point of the
+        curve, makes the present value of the bond's cash flows equal to its price.
 
         Unlike a simple yield spread (the bond's yield to maturity minus a Treasury yield of the
         same maturity, the G-spread of `get_bond_universe`), the Z-spread is measured against the
@@ -901,6 +915,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         `bond_model.get_z_spread`.
 
         Also known as: zero-volatility spread, static spread, credit spread.
+
+        Shares similar logic:
+        - QuantLib, BondFunctions.zSpread: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
 
         Args:
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
@@ -1130,11 +1147,13 @@ class BondsFixedIncome(MarketsFixedIncome):
     ):
         """
         Calculates the bucketed delta of individual bonds on the Treasury curve: the change in
-        each bond's present value, per 100 of par, when one maturity of the curve rises by a basis
-        point, for every maturity the Treasury quotes. Where `get_key_rate_duration` shocks a
-        zero-coupon rate with a tent around it, these deltas move the rates traders hedge with.
+        each bond's present value, per 100 of par, when one maturity of the curve rises by a
+        basis point, for every maturity the Treasury quotes.
 
-        With method="par" (the par-rate delta) one par yield of the Treasury par curve rises by a
+        Where `get_key_rate_duration` shocks a zero-coupon rate with a tent around it, these
+        deltas move the rates traders hedge with.
+
+        For the par-rate delta one par yield of the Treasury par curve rises by a
         basis point and the zero-coupon curve is bootstrapped again, so the deltas are the
         sensitivities to the notes and bonds of each maturity: a par bond maturing at a quoted
         maturity has a delta to that maturity only. They follow from the chain rule through the
@@ -1143,7 +1162,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         - PV = SUM(CF(t) * (1 + Zero Rate(t))^(-t))
         - Par Rate Delta(i) = SUM_j(dPV / dZero Rate(j) * dZero Rate(j) / dPar Yield(i)) * 0.0001
 
-        With method="forward" (the forward-rate delta) the continuously compounded instantaneous
+        For the forward-rate delta the continuously compounded instantaneous
         forward rate between two neighbouring quoted maturities rises by a basis point, which moves
         every discount factor beyond it as well (see `curve_risk_model.get_forward_rate_delta`):
 
@@ -1164,9 +1183,14 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: bucketed PV01, par-rate risk, forward-rate risk, DV01 ladder, partial DV01.
 
+        Shares similar logic:
+        - rateslib, Solver.delta (par): https://rateslib.com/py/en/3.0.x/api/rateslib.solver.Solver.html#rateslib.solver.Solver.delta
+        - FinancePy, par_rate_risk_report (par): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L25
+        - FinancePy, forward_rate_risk_report (forward): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L84
+
         Args:
-            method (Literal["par", "forward"], optional): "par" for the par-rate delta or
-                "forward" for the forward-rate delta. Defaults to "par".
+            method (Literal["par", "forward"], optional): The delta. Options are: "par" (the par-rate
+                delta), "forward" (the forward-rate delta). Defaults to "par".
             bump (float, optional): The move of a rate up and down in the differences (decimal).
                 Defaults to 0.0001.
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
@@ -1299,6 +1323,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         `curve_risk_model.get_parallel_shift_ladder`.
 
         Also known as: parallel shift report, scenario ladder, PV ladder, dollar gamma.
+
+        Shares similar logic:
+        - FinancePy, parallel_shift_ladder_report: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L291
 
         Args:
             shifts (list[float] | str | None, optional): The parallel shifts (decimals), e.g.
@@ -1454,6 +1481,10 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         Also known as: duration-convexity approximation, second-order price approximation, realised
         bond price change.
+
+        Referenced against:
+        - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
+        - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
 
         Args:
             yield_change (float | None, optional): The change in the yield to maturity (decimal),
@@ -1624,11 +1655,13 @@ class BondsFixedIncome(MarketsFixedIncome):
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price.
+        Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price:
+        the return of the bill on a basis comparable to coupon-bearing notes and bonds.
+
         Bills are quoted on a discount-yield basis, which understates the return an investor
         earns because it is computed on face value rather than the (lower) purchase price,
-        and uses a 360-day rather than a 365-day year. The bond-equivalent yield restates the
-        discount yield on a basis that is comparable to coupon-bearing notes and bonds.
+        and uses a 360-day rather than a 365-day year. The bond-equivalent yield restates
+        the discount yield on a basis that is comparable to coupon-bearing notes and bonds.
 
         The formula is as follows:
 

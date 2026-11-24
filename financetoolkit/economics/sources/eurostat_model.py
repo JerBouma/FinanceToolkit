@@ -228,8 +228,9 @@ def collect_eurostat_data(
     extra_labels: Callable[[str], object] | None = None,
 ) -> pd.DataFrame:
     """
-    Retrieves the months or quarters between two dates of a Eurostat dataset for every
-    country it covers. Only the periods that are not cached yet are requested.
+    Retrieves the months or quarters between two dates of a Eurostat dataset for every country it covers.
+
+    Only the periods that are not cached yet are requested.
 
     Args:
         dataset (str): The Eurostat dataset code, e.g. "prc_hicp_minr".
@@ -316,7 +317,8 @@ def get_inflation_rate(
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
-        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
+        measure (str): The aggregate. Options are: "all" (all items), "core" (all items less energy and food),
+            "energy" (energy), "food" (food), "goods" (goods), "services" (services). Defaults to "all".
 
     Returns:
         pd.DataFrame: The annual inflation rate as a decimal (0.038 for 3.8%), indexed by
@@ -344,7 +346,8 @@ def get_consumer_price_index(
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
-        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
+        measure (str): The aggregate. Options are: "all" (all items), "core" (all items less energy and food),
+            "energy" (energy), "food" (food), "goods" (goods), "services" (services). Defaults to "all".
 
     Returns:
         pd.DataFrame: The index, indexed by month with a column per country.
@@ -362,8 +365,11 @@ def get_industrial_price_index(
     measure: str, start_date: str, end_date: str
 ) -> pd.DataFrame:
     """
-    Retrieves a monthly industrial price index for the euro area, the European Union and
-    the countries Eurostat covers, not seasonally adjusted, with 2021 = 100:
+    Retrieve a monthly industrial price index for the euro area, the European Union and the countries Eurostat covers:
+    how the prices of industrial output move.
+
+    Retrieves a monthly industrial price index for the euro area, the European Union and the countries Eurostat
+    covers, not seasonally adjusted, with 2021 = 100:
 
     - "producer": the producer prices of industry on the domestic market (sts_inppd_m),
       the industrial producer price index Eurostat headlines.
@@ -372,7 +378,8 @@ def get_industrial_price_index(
     - "import": the import prices of industrial products (sts_inpi_m).
 
     Args:
-        measure (str): "producer", "export" or "import".
+        measure (str): The price index. Options are: "producer" (producer price index), "export" (export price index),
+            "import" (import price index).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 
@@ -419,10 +426,11 @@ def get_gross_domestic_product_growth(
     start_date: str, end_date: str, year_over_year: bool = False
 ) -> pd.DataFrame:
     """
-    Retrieves the growth of gross domestic product in chain-linked volumes, seasonally
-    and calendar adjusted, for the euro area and the countries Eurostat covers. The
-    latest quarter of the euro area is the preliminary flash estimate, published about
-    thirty days after the quarter ends.
+    Retrieves the growth of gross domestic product in chain-linked volumes, seasonally and calendar adjusted, for the
+    euro area and the countries Eurostat covers.
+
+    The latest quarter of the euro area is the preliminary flash estimate, published about thirty days after the
+    quarter ends.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -463,10 +471,11 @@ INDUSTRY_SURVEY_DATASET = "ei_bsin_q_r2"
 
 def get_job_vacancy_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the quarterly job vacancy rate, seasonally adjusted, of industry,
-    construction and services (NACE Rev. 2.1 B-T) for the euro area, the European Union
-    and the countries Eurostat covers: the job vacancies as a share of the occupied posts
-    plus the job vacancies (Regulation (EC) No 453/2008).
+    Retrieve the quarterly job vacancy rate of industry, construction and services (NACE Rev. 2.1 B-T): the job
+    vacancies as a share of the occupied posts plus the job vacancies.
+
+    It is seasonally adjusted, for the euro area, the European Union and the countries Eurostat covers (Regulation
+    (EC) No 453/2008).
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -496,12 +505,13 @@ def get_job_vacancy_rate(start_date: str, end_date: str) -> pd.DataFrame:
 
 def get_capacity_utilization(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the capacity utilisation of manufacturing, seasonally adjusted, from the
-    quarterly business survey of the Joint Harmonised EU Programme of Business and
-    Consumer Surveys (indicator BS-ICU-PC) for the euro area, the European Union and the
-    countries Eurostat covers. Manufacturers answer at what percentage of full capacity
-    their company operates in the first month of each quarter, and the answers are
-    averaged weighted by company size.
+    Retrieve the capacity utilisation of manufacturing from the quarterly EU business survey (indicator BS-ICU-PC):
+    the percentage of full capacity at which manufacturers operate.
+
+    It is seasonally adjusted, from the Joint Harmonised EU Programme of Business and Consumer Surveys, for the euro
+    area, the European Union and the countries Eurostat covers. Manufacturers answer at what percentage of full
+    capacity their company operates in the first month of each quarter, and the answers are averaged weighted by
+    company size.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -575,8 +585,10 @@ def get_life_table(
     Economic Area, by single year of age from 0 to 95 and over, from 1960.
 
     Args:
-        measure (str): A key of LIFE_TABLE_MEASURES, e.g. "death_probability".
-        sex (str): "total", "male" or "female".
+        measure (str): The life table measure. Options are: "death_rate" (mx), "death_probability" (qx),
+            "survival_probability" (px), "survivors" (lx), "deaths" (dx), "person_years" (Lx), "total_person_years"
+            (Tx), "life_expectancy" (ex).
+        sex (str): The sex of the population. Options are: "total" (everyone), "male" (men), "female" (women).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
         country_codes (list[str] | None): The Eurostat codes of the countries to retrieve.

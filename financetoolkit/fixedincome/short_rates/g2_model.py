@@ -104,10 +104,13 @@ def get_g2_bond_price(
     factor_y: float | np.ndarray = 0.0,
 ) -> float | np.ndarray:
     """
-    The price at time t of zero-coupon bonds paying 1 at the maturities T in the G2++ model,
-    given the factors x(t) and y(t). The deterministic shift φ is chosen so that the model
-    reproduces the zero curve, so at t = 0 the price is the curve's discount factor P(0, T),
-    and at a later t the price follows from the factors alone, without φ itself.
+    Calculate the price at time t of zero-coupon bonds paying 1 at the maturities T in the
+    G2++ model, given the factors x(t) and y(t): what the bonds are worth in the two-factor
+    model of the short rate.
+
+    The deterministic shift φ is chosen so that the model reproduces the zero curve, so at t
+    = 0 the price is the curve's discount factor P(0, T), and at a later t the price follows
+    from the factors alone, without φ itself.
 
     The formula is as follows:
 
@@ -133,7 +136,8 @@ def get_g2_bond_price(
     - Hull, J. and White, A. (1994). "Numerical Procedures for Implementing Term Structure
       Models II: Two-Factor Models." The Journal of Derivatives, 2(2), 37-48.
 
-    Referenced against QuantLib's `G2.discountBond`.
+    Referenced against:
+    - QuantLib, G2.discountBond: https://www.quantlib.org/reference/class_quant_lib_1_1_g2.html
 
     Args:
         maturities (float | np.ndarray): The maturities T of the bonds in years from today,
@@ -215,11 +219,14 @@ def get_g2_zero_coupon_bond_option(
     option_type: str = "call",
 ) -> float | np.ndarray:
     """
-    The price of a European option on a zero-coupon bond in the G2++ model, in closed form:
-    a call or put expiring at T on a bond paying 1 at S > T, struck at K. The bond price at
-    T is lognormal, as in Hull-White, with a variance that adds the two factors and their
-    covariance, so the price is Black's formula on the forward bond price. A caplet is
-    (1 + Kτ) puts on the bond from its reset to its payment date struck at 1 / (1 + Kτ).
+    Calculate the price of a European option on a zero-coupon bond in the G2++ model, in
+    closed form: what a call or put expiring at T on a bond paying 1 at S > T, struck at K,
+    is worth.
+
+    The bond price at T is lognormal, as in Hull-White, with a variance that adds the two
+    factors and their covariance, so the price is Black's formula on the forward bond price.
+    A caplet is (1 + Kτ) puts on the bond from its reset to its payment date struck at 1 /
+    (1 + Kτ).
 
     The formula is as follows:
 
@@ -240,7 +247,8 @@ def get_g2_zero_coupon_bond_option(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 4.2.3, equations 4.30 and 4.31 (the caplet).
 
-    Referenced against QuantLib's `G2.discountBondOption`.
+    Referenced against:
+    - QuantLib, G2.discountBondOption: https://www.quantlib.org/reference/class_quant_lib_1_1_g2.html
 
     Args:
         option_expiry (float | np.ndarray): The expiry T of the option in years.
@@ -254,7 +262,8 @@ def get_g2_zero_coupon_bond_option(
         speed_y (float): The speed of mean reversion b of the second factor.
         volatility_y (float): The volatility η of the second factor.
         correlation (float): The correlation ρ of the two factors.
-        option_type (str, optional): "call" or "put". Defaults to "call".
+        option_type (str, optional): The option. Options are: "call" (the right to buy the
+            bond), "put" (the right to sell it). Defaults to "call".
 
     Returns:
         float | np.ndarray: The option price per 1 of face value.
@@ -326,12 +335,15 @@ def get_g2_swaption(
     notional: float = 1.0,
 ) -> float:
     """
-    The price of a European swaption in the G2++ model by a one-dimensional integral. At
-    expiry T a payer swaption is worth max(1 - CB, 0), with CB the coupon bond paying the
+    Calculate the price of a European swaption in the G2++ model by a one-dimensional
+    integral: what the right to enter a swap at the fixed rate is worth in the two-factor
+    model of the short rate.
+
+    At expiry T a payer swaption is worth max(1 - CB, 0), with CB the coupon bond paying the
     fixed rate on the fixed leg's dates and 1 at the end. Given the first factor x(T) the
-    coupon bond falls as the second factor rises, so there is one value ȳ(x) at which it
-    is worth 1, and the expectation over y given x is a sum of normal distribution values.
-    What is left is an integral over the normal density of x(T) under the T-forward measure.
+    coupon bond falls as the second factor rises, so there is one value ȳ(x) at which it is
+    worth 1, and the expectation over y given x is a sum of normal distribution values. What
+    is left is an integral over the normal density of x(T) under the T-forward measure.
 
     The formula is as follows:
 
@@ -366,7 +378,8 @@ def get_g2_swaption(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 4.2.5, theorem 4.2.3 (equation 4.31).
 
-    Referenced against QuantLib's `G2SwaptionEngine`.
+    Referenced against:
+    - QuantLib, G2SwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_g2_swaption_engine.html
 
     Args:
         option_expiry (float): The expiry T of the swaption, the start of the swap, in years.
@@ -378,12 +391,12 @@ def get_g2_swaption(
         volatility_x (float): The volatility σ of the first factor, positive.
         speed_y (float): The speed of mean reversion b of the second factor.
         volatility_y (float): The volatility η of the second factor, positive. For η = 0
-            the model is Hull-White: use `short_rate_model.get_swaption` with
-            model="hull_white".
+            the model is Hull-White: use `short_rate_model.get_swaption` with the
+            Hull-White model.
         correlation (float): The correlation ρ of the two factors, strictly between -1
             and 1.
-        swaption_type (str, optional): "payer" (the right to pay the fixed rate) or
-            "receiver". Defaults to "payer".
+        swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay
+            the fixed rate), "receiver" (the right to receive it). Defaults to "payer".
         fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
         notional (float, optional): The notional. Defaults to 1.
 

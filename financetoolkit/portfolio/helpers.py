@@ -247,9 +247,11 @@ def get_trading_day_locations(
 
 def get_view_vector(view: str, names: pd.Index) -> np.ndarray:
     """
-    The pick vector of a view on one name ("AAPL": +1 for AAPL) or on the difference
-    between two names ("AAPL-MSFT": +1 for AAPL and -1 for MSFT), as the views of
-    Black-Litterman and Entropy Pooling are written. Names can hold a hyphen themselves
+    The pick vector of a view on one name ("AAPL": +1 for AAPL) or on the difference between
+    two names.
+
+    The view "AAPL" is +1 for AAPL and "AAPL-MSFT" +1 for AAPL and -1 for MSFT, as the views
+    of Black-Litterman and Entropy Pooling are written. Names can hold a hyphen themselves
     (BRK-B, Mkt-RF), so a name that matches in full is read as one name and otherwise every
     hyphen is tried as the split between the two legs.
 
@@ -284,10 +286,12 @@ def get_view_vector(view: str, names: pd.Index) -> np.ndarray:
 
 def get_risk_budget(risk_budget: pd.Series | None, assets: pd.Index) -> np.ndarray:
     """
-    The share of the risk every asset should contribute, scaled to sum to one, equal
-    shares without a risk budget. A budget that names an asset outside the portfolio, or
-    leaves an asset without a positive budget, is refused with the assets named, rather
-    than silently dropping or optimizing without them.
+    The share of the risk every asset should contribute, scaled to sum to one, equal shares
+    without a risk budget.
+
+    A budget that names an asset outside the portfolio, or leaves an asset without a
+    positive budget, is refused with the assets named, rather than silently dropping or
+    optimizing without them.
 
     Args:
         risk_budget (pd.Series | None): The risk budget per asset.
@@ -322,9 +326,10 @@ def get_regularized_covariance(
 ) -> np.ndarray:
     """
     The covariance matrix with the L2 penalty γ w'w on the weights folded in, Σ + γI, so
-    that w'(Σ + γI)w = w'Σw + γ w'w. With weights that sum to one, w'w is the squared
-    distance from the equal weights plus 1/N, so the penalty pulls a portfolio towards
-    equal weights.
+    that w'(Σ + γI)w = w'Σw + γ w'w.
+
+    With weights that sum to one, w'w is the squared distance from the equal weights plus
+    1/N, so the penalty pulls a portfolio towards equal weights.
 
     Args:
         covariance (np.ndarray): The covariance matrix Σ.
@@ -340,12 +345,13 @@ def get_regularized_covariance(
 
 def get_linear_regression(target: np.ndarray, regressors: np.ndarray) -> dict:
     """
-    The ordinary least squares regression of a target on regressors and a constant, with
-    the statistics the stepwise selection of factors compares: the two-sided p-values of
-    the t-statistics, the Akaike and Schwarz (Bayesian) information criteria and the
-    (adjusted) R squared, defined as statsmodels' OLS defines them: the log-likelihood
-    ln L = -n / 2 (ln(2π) + ln(SSR / n) + 1), AIC = -2 ln L + 2k and BIC = -2 ln L + k ln n
-    with k the number of coefficients including the constant.
+    The ordinary least squares regression of a target on regressors and a constant, with the
+    statistics the stepwise selection of factors compares.
+
+    It gives the two-sided p-values of the t-statistics, the Akaike and Schwarz (Bayesian)
+    information criteria and the (adjusted) R squared, defined as statsmodels' OLS defines
+    them: the log-likelihood ln L = -n / 2 (ln(2π) + ln(SSR / n) + 1), AIC = -2 ln L + 2k
+    and BIC = -2 ln L + k ln n with k the number of coefficients including the constant.
 
     Args:
         target (np.ndarray): The n observations of the dependent variable.
@@ -421,13 +427,15 @@ def get_cutting_plane_solution(
     unbounded: str = "",
 ) -> np.ndarray:
     """
-    Minimize cost'x subject to inequality x ≤ upper, equality x = target and the bounds
-    with HiGHS, where part of the feasible set is convex but not polyhedral, or polyhedral
-    with too many faces to write down. That part enters as cutting planes (Kelley, 1960):
-    the linear programme is solved, cuts(x) gives the supporting hyperplanes a'x ≤ b of
-    the convex set at a point (none at a point inside it), those that the solution
-    violates are added and the programme is solved again. No cut removes a feasible point,
-    so a solution that violates none is the exact optimum.
+    Minimize cost'x subject to inequality x ≤ upper, equality x = target and the bounds with
+    HiGHS.
+
+    Part of the feasible set is convex but not polyhedral, or polyhedral with too many faces
+    to write down. That part enters as cutting planes (Kelley, 1960): the linear programme
+    is solved, cuts(x) gives the supporting hyperplanes a'x ≤ b of the convex set at a point
+    (none at a point inside it), those that the solution violates are added and the
+    programme is solved again. No cut removes a feasible point, so a solution that violates
+    none is the exact optimum.
 
     With feasible, which turns a solution into a feasible point of the same or a higher
     cost (or None), the cuts are placed between the cheapest feasible point found and the
@@ -522,11 +530,12 @@ def get_transaction_order(
     dates: pd.Index, volumes: pd.Series | np.ndarray, purchases_first: bool = True
 ) -> np.ndarray:
     """
-    The order in which transactions are matched against each other: by date and, within a
-    day, the purchases before the sales, so a sale is matched against the units bought that
-    day whatever the order of the rows in the file. With `purchases_first=False`, for
-    transactions in the order they were made (dated with a time of day), the rows of a day
-    keep their order.
+    The order in which transactions are matched against each other.
+
+    By date and, within a day, the purchases before the sales, so a sale is matched against
+    the units bought that day whatever the order of the rows in the file. With
+    `purchases_first=False`, for transactions in the order they were made (dated with a time
+    of day), the rows of a day keep their order.
 
     Args:
         dates (pd.Index): The date of every transaction.

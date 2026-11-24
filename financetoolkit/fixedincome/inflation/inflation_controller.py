@@ -130,9 +130,9 @@ class InflationFixedIncome(MarketsFixedIncome):
     ) -> pd.DataFrame:
         """
         Calculates the zero-coupon and year-on-year inflation swap rates the government bond
-        market implies: the fair fixed rates of swaps on US CPI-U inflation (from Treasury and
-        TIPS yields) or euro area HICP inflation excluding tobacco (from nominal and
-        inflation-linked German federal securities).
+        market implies: the inflation the market expects, as the fair fixed rates of swaps
+        on US CPI-U inflation (from Treasury and TIPS yields) or euro area HICP inflation
+        excluding tobacco (from nominal and inflation-linked German federal securities).
 
         A zero-coupon inflation swap pays the growth of the price index over its life against
         a fixed rate compounded over the same years; a year-on-year swap pays each year's
@@ -158,16 +158,17 @@ class InflationFixedIncome(MarketsFixedIncome):
         adjustment, which needs the volatilities of real and nominal rates: it is a few basis
         points up to ten years.
 
-        Referenced against QuantLib's ZeroCouponInflationSwap and YearOnYearInflationSwap
-        (fairRate) on the same forward index.
+        Referenced against:
+        - QuantLib, ZeroCouponInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
+        - QuantLib, YearOnYearInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
 
         Also known as: ZCIS rate, YoY swap rate, zero-coupon breakeven inflation, inflation
         swap curve.
 
         Args:
-            country (str, optional): "United States" (CPI-U, Treasury and TIPS curves) or
-                "Germany" (euro area HICP excluding tobacco, Bundesbank curves). Defaults to
-                "United States".
+            country (str, optional): The country. Options are: "United States" (CPI-U, Treasury and
+                TIPS curves), "Germany" (euro area HICP excluding tobacco, Bundesbank curves).
+                Defaults to "United States".
             date (str | None, optional): The day (YYYY-MM-DD), or the last day before it with a
                 real yield curve. Defaults to None, the end date.
             maturities (list[float] | str | None, optional): The swap maturities in years, or
@@ -282,8 +283,8 @@ class InflationFixedIncome(MarketsFixedIncome):
     ) -> pd.DataFrame:
         """
         Calculates the forward US consumer price index (CPI-U, not seasonally adjusted) of
-        every coming month from the inflation swap rates the Treasury and TIPS curves imply,
-        with the monthly seasonality of the CPI.
+        every coming month: the price level the inflation swap rates the Treasury and TIPS
+        curves imply, with the monthly seasonality of the CPI.
 
         The zero-coupon inflation swap rates fix the growth of the index over whole years
         (see `get_inflation_swap_rate`). Between them, prices rise faster in some months than
@@ -308,8 +309,9 @@ class InflationFixedIncome(MarketsFixedIncome):
         from on the first of the month (31 CFR 356), so the breakevens price the inflation from
         it on.
 
-        Referenced against QuantLib's ZeroInflationIndex forecasts on a ZeroInflationCurve
-        with MultiplicativePriceSeasonality.
+        Referenced against:
+        - QuantLib, ZeroInflationIndex: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_inflation_index.html
+        - QuantLib, MultiplicativePriceSeasonality: https://www.quantlib.org/reference/class_quant_lib_1_1_multiplicative_price_seasonality.html
 
         Also known as: forward CPI, CPI fixing curve, inflation index curve, seasonal
         adjustment of inflation swaps.

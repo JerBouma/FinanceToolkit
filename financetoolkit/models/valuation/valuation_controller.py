@@ -88,8 +88,9 @@ class ValuationModels:
 
         The formula is as follows:
 
-        - Market Capitalization = Share Price * Weighted Average Shares Diluted (Weighted Average Shares
-          when diluted=False), with the share price the traded close at the end of each quarter or year
+        - Market Capitalization = Share Price * Weighted Average Shares Diluted (Weighted
+          Average Shares without dilution), with the share price the traded close at the end of
+          each quarter or year
         - Enterprise Value = Market Capitalization + Total Debt + Preferred Equity + Minority Interest -
           Cash and Cash Equivalents - Short Term Investments
 
@@ -489,10 +490,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate
-        the cost of capital for a company. It represents the average rate of return a company
-        must pay to its investors for using their capital. WACC takes into account the cost of
-        both equity and debt, weighted by their respective proportions in the company's capital structure.
+        The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the
+        cost of capital for a company.
+
+        It represents the average rate of return a company must pay to its investors for using
+        their capital. WACC takes into account the cost of both equity and debt, weighted by
+        their respective proportions in the company's capital structure.
 
         The formula is as follows:
 
@@ -571,10 +574,11 @@ class ValuationModels:
         data, which a short or strong sample makes large: about 15% a year for the S&P 500 over
         2022-2026. Set `market_risk_premium` to use one premium for every company. Beta is estimated
         from the period's daily returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
-        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
-        Debt covers that span, the risk-free rate and premium of the Cost of Equity are the per-period
-        rates times `trailing` and the Beta is estimated from the daily returns of the trailing periods.
-        With quarterly data and trailing=4, every rate is an annual rate on a year of daily returns.
+        - With `trailing` set, the Interest Expense is summed over the trailing periods, so the
+          Cost of Debt covers that span, the risk-free rate and premium of the Cost of Equity
+          are the per-period rates times `trailing` and the Beta is estimated from the daily
+          returns of the trailing periods. With quarterly data and four trailing quarters, every
+          rate is an annual rate on a year of daily returns.
         - The Market Value of Debt is approximated as the Total Debt.
         - The capital weights are taken at the end of the fiscal period, also with `trailing` set: the
         Market Value of Equity is the closing share price on that day times the period's weighted
@@ -666,11 +670,14 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Easton's (2004) implied cost of equity capital, the expected rate of return
-        on equity at which the share price equals the value of the next two years of earnings
-        expected by analysts. Where the Cost of Equity of `get_weighted_average_cost_of_capital`
-        is the return the Capital Asset Pricing Model (CAPM) requires from a beta and a market
-        risk premium, this is the return the market price itself implies (ex-ante).
+        Calculate Easton's (2004) implied cost of equity capital: the return on equity the share
+        price implies.
+
+        It is the expected rate of return on equity at which the share price equals the value of
+        the next two years of earnings expected by analysts. Where the Cost of Equity of
+        `get_weighted_average_cost_of_capital` is the return the Capital Asset Pricing Model
+        (CAPM) requires from a beta and a market risk premium, this is the return the market
+        price itself implies (ex-ante).
 
         The formula is as follows:
 
@@ -869,10 +876,11 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Economic Value Added (EVA) is a measure of a company's financial performance that
-        represents the value created in excess of the required return of the company's capital
-        providers. It captures whether a company is generating returns above its true cost of
-        capital, which distinguishes it from purely accounting-based measures such as Net Income.
+        Economic Value Added (EVA) shows the value a company creates above the return its
+        capital providers require.
+
+        It captures whether a company is generating returns above its true cost of capital,
+        which distinguishes it from purely accounting-based measures such as Net Income.
 
         The formula is as follows:
 
@@ -938,10 +946,11 @@ class ValuationModels:
         `trailing` set), i.e. the capital employed over the course of the period rather than its
         closing balance, consistent with the Return on Invested Capital calculation in the Ratios
         module.
-        - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
-        with the market risk premium given by `market_risk_premium` (by default the equity risk
-        premium of the company's country) and the same `trailing`, so that it
-        covers the span of the NOPAT (an annual rate for trailing=4 with quarterly data).
+        - The Weighted Average Cost of Capital comes from
+          `get_weighted_average_cost_of_capital`, with the market risk premium given by
+          `market_risk_premium` (by default the equity risk premium of the company's country)
+          and the same `trailing`, so that it covers the span of the NOPAT (an annual rate for
+          four trailing quarters).
 
         As an example:
 
@@ -1039,12 +1048,14 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Market Value Added (MVA) is a measure of a company's financial performance that
-        represents the difference between the current market value of a company (both its
-        equity and its debt) and the total capital that has historically been invested in it.
-        It is the market-priced counterpart to Economic Value Added (EVA): where EVA measures
-        a single period's excess return over the cost of capital, MVA reflects the market's
-        cumulative, forward-looking verdict on all of a company's expected future EVA.
+        Market Value Added (MVA) shows the difference between a company's market value and the
+        capital invested in it.
+
+        The market value is that of both its equity and its debt, and the capital is all that
+        has historically been invested. It is the market-priced counterpart to Economic Value
+        Added (EVA): where EVA measures a single period's excess return over the cost of
+        capital, MVA reflects the market's cumulative, forward-looking verdict on all of a
+        company's expected future EVA.
 
         The formula is as follows:
 
@@ -1172,10 +1183,11 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Calculate the Return on Incremental Invested Capital (ROIIC): the growth in after-tax
-        operating profit over the capital invested to produce it. Where the Return on Invested
-        Capital measures the return on all the capital in place, ROIIC measures the return on the
-        newest investments, which shows whether growth creates value: growth adds value only while
-        the ROIIC exceeds the cost of capital.
+        operating profit over the capital invested to produce it.
+
+        Where the Return on Invested Capital measures the return on all the capital in place,
+        ROIIC measures the return on the newest investments, which shows whether growth creates
+        value: growth adds value only while the ROIIC exceeds the cost of capital.
 
         The formula is as follows, with n the number of years:
 
@@ -1291,11 +1303,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Warren Buffett's owner earnings: the cash a business could pay its owners while
-        keeping its competitive position and unit volume. Buffett defines them in the 1986
-        Berkshire Hathaway letter as the reported earnings plus depreciation, depletion and
-        amortization and other non-cash charges, less the average yearly capital expenditure the
-        business needs to keep its position (and any additional working capital that requires).
+        Calculate Warren Buffett's owner earnings: the cash a business could pay its owners
+        while keeping its competitive position and unit volume.
+
+        Buffett defines them in the 1986 Berkshire Hathaway letter as the reported earnings plus
+        depreciation, depletion and amortization and other non-cash charges, less the average
+        yearly capital expenditure the business needs to keep its position (and any additional
+        working capital that requires).
 
         The formula is as follows:
 
@@ -1304,11 +1318,11 @@ class ValuationModels:
             - Owner Earnings per Share = Owner Earnings / Weighted Average Shares Diluted
 
         The statements do not split the capital expenditure into maintenance and growth, which
-        Buffett himself calls a guess. `method` chooses the estimate of the maintenance part:
+        Buffett himself calls a guess. There are two estimates of the maintenance part:
 
-            - "total": all the capital expenditure, the conservative estimate (owner earnings then
+            - Total: all the capital expenditure, the conservative estimate (owner earnings then
               differ from the free cash flow only by the non-cash items other than depreciation).
-            - "greenwald": the capital expenditure minus the growth capital expenditure, the
+            - Greenwald: the capital expenditure minus the growth capital expenditure, the
               investment the growth in revenue required at the company's ratio of property, plant
               and equipment to revenue a year earlier (Greenwald et al., 2001):
               Maintenance Capital Expenditure = Capital Expenditure - PP&E / Revenue (t - 1) *
@@ -1324,8 +1338,9 @@ class ValuationModels:
         Also known as: owner earnings, Buffett owner earnings, maintenance free cash flow.
 
         Args:
-            method (str, optional): The estimate of the maintenance capital expenditure: "total" or
-                "greenwald". Defaults to "total".
+            method (str, optional): The estimate of the maintenance capital expenditure. Options are: "total" (all
+                the capital expenditure), "greenwald" (the capital expenditure minus the growth capital expenditure,
+                Greenwald et al., 2001). Defaults to "total".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -1351,9 +1366,9 @@ class ValuationModels:
         - Depreciation and Amortization is that of the cash flow statement; other non-cash charges
         (such as share-based compensation) are not added back, as Buffett adds back only the
         charges that do not reflect an economic cost.
-        - With method="greenwald" on quarterly data, the change in revenue is measured against the
-        same period a year earlier and divided over the four quarters of that year when `trailing`
-        is not set.
+        - With Greenwald's estimate on quarterly data, the change in revenue is measured against
+          the same period a year earlier and divided over the four quarters of that year when
+          `trailing` is not set.
 
         As an example:
 
@@ -1447,10 +1462,11 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Calculate the unlevered (asset) beta of Hamada (1972): the beta each company's shares
-        would have without debt, its business risk apart from its financial leverage. Unlevered
-        betas can be compared across companies with different amounts of debt, averaged over an
-        industry and relevered at a company's own leverage (Damodaran's bottom-up beta, see
-        `wacc_model.get_relevered_beta`).
+        would have without debt, its business risk apart from its financial leverage.
+
+        Unlevered betas can be compared across companies with different amounts of debt,
+        averaged over an industry and relevered at a company's own leverage (Damodaran's
+        bottom-up beta, see `wacc_model.get_relevered_beta`).
 
         The formula is as follows:
 
@@ -1557,9 +1573,10 @@ class ValuationModels:
         """
         Capitalize the research and development expenses as Aswath Damodaran does: accounting
         treats R&D as an expense, while it is an investment whose benefit lasts several years.
+
         Every year's R&D becomes an asset amortized straight-line over its amortizable life,
-        which changes the operating income, the net income, the book equity, the invested capital
-        and with them the return on capital of research-intensive companies.
+        which changes the operating income, the net income, the book equity, the invested
+        capital and with them the return on capital of research-intensive companies.
 
         The formula is as follows, with n the amortizable life in years:
 
@@ -1709,12 +1726,13 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Calculate the Cash Flow Return on Investment (CFROI) of Bartley Madden (the HOLT model):
-        the internal rate of return of a company's assets seen as one project. The gross
-        investment buys a gross cash flow for every year of the life of the depreciating assets,
-        and the non-depreciating assets (working capital) come back at the end. Where the return
-        on invested capital divides an accounting profit by depreciated book values, the CFROI
-        compares cash flows with the original cost of the assets, which makes companies with old
-        and new assets comparable.
+        the internal rate of return of a company's assets seen as one project.
+
+        The gross investment buys a gross cash flow for every year of the life of the
+        depreciating assets, and the non-depreciating assets (working capital) come back at the
+        end. Where the return on invested capital divides an accounting profit by depreciated
+        book values, the CFROI compares cash flows with the original cost of the assets, which
+        makes companies with old and new assets comparable.
 
         The formula is as follows, solved for the CFROI:
 
@@ -1856,12 +1874,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Intrinsic value is a fundamental concept in finance and investing that represents the
-        true worth or value of an asset, security, or investment, independent of its current
-        market price or prevailing market sentiment. It is a concept often associated with
-        the value investing philosophy, made famous by legendary investors like Benjamin Graham
-        and Warren Buffett. Understanding intrinsic value is crucial for investors looking to make
-        informed decisions about where to allocate their capital.
+        Intrinsic value shows what a share is worth by its discounted future cash flows,
+        independent of its market price.
+
+        It is a fundamental concept in finance and investing that represents the true worth of
+        an asset, security, or investment, independent of prevailing market sentiment. It is a
+        concept often associated with the value investing philosophy, made famous by legendary
+        investors like Benjamin Graham and Warren Buffett. Understanding intrinsic value is
+        crucial for investors looking to make informed decisions about where to allocate their
+        capital.
 
         This functionality uses DCF, or Discounted Cash Flow which is a widely used financial
         valuation method that allows investors and analysts to estimate the intrinsic value of
@@ -1909,10 +1930,11 @@ class ValuationModels:
             period valued, calculated over a year (the last 4 quarters with quarterly data, with a beta of
             their daily returns).
             periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
-            cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections.
-            Defaults to "Free Cash Flow to Firm". The other options are "Free Cash Flow" and "Operating
-            Cash Flow" as reported on the cash flow statement; both are after interest, so discounting
-            them at the WACC and subtracting the debt counts the cost of debt twice.
+            cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections. Both
+                reported cash flows are after interest, so discounting them at the WACC and subtracting the debt
+                counts the cost of debt twice. Options are: "Free Cash Flow to Firm", "Free Cash Flow" (as
+                reported on the cash flow statement), "Operating Cash Flow" (as reported on the cash flow
+                statement). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): The number of trailing periods to sum for the base cash flow.
                 The window counts calendar periods, so a period without a report makes it NaN.
             When set, uses the sum of the latest N consecutive calendar periods that are all reported instead
@@ -1929,8 +1951,9 @@ class ValuationModels:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: DataFrame containing the intrinsic value and its components for each ticker, or
-            with `historical=True` the intrinsic value per share for each ticker (rows) and period (columns).
+            pd.DataFrame: DataFrame containing the intrinsic value and its components for each
+            ticker, or for the historical valuation the intrinsic value per share for each
+            ticker (rows) and period (columns).
 
         Notes:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
@@ -1948,9 +1971,10 @@ class ValuationModels:
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
         such row.
         - The Equity Value is divided by the Weighted Average Shares Diluted of the most recent period.
-        - With `historical=True` no period uses figures reported after it, so the series shows what this
-        DCF gave at each period end, with the growth and WACC known at that period end when they are not given. A period whose cash flow, cash, debt or
-        shares are missing is NaN, while the single valuation takes the most recent value of each.
+        - In the historical valuation no period uses figures reported after it, so the series
+          shows what this DCF gave at each period end, with the growth and WACC known at that
+          period end when they are not given. A period whose cash flow, cash, debt or shares are
+          missing is NaN, while the single valuation takes the most recent value of each.
 
         As an example:
 
@@ -1975,7 +1999,7 @@ class ValuationModels:
         | CRM  |       67.9174 |
         | INTU |      172.144  |
 
-        And the same valuation for every period with `historical=True`:
+        And the same valuation for every period:
 
         ```python
         toolkit.models.get_intrinsic_valuation(historical=True)
@@ -2224,11 +2248,13 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
-        capital, both debt and equity holders, after the company has paid all of its
-        operating expenses and invested in the assets needed to sustain its operations.
-        Because it is measured before any financing cash flows, FCFF is capital-structure
-        neutral, making it the cash flow base typically discounted at the Weighted Average
-        Cost of Capital (WACC) when valuing the Enterprise Value of a company directly.
+        capital, both debt and equity holders.
+
+        It is what is left after the company has paid all of its operating expenses and invested
+        in the assets needed to sustain its operations. Because it is measured before any
+        financing cash flows, FCFF is capital-structure neutral, making it the cash flow base
+        typically discounted at the Weighted Average Cost of Capital (WACC) when valuing the
+        Enterprise Value of a company directly.
 
         The formula is as follows:
 
@@ -2351,11 +2377,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common
-        equity holders after all operating expenses, reinvestment needs, and net payments to
-        (or from) debt holders have been accounted for. Unlike FCFF, FCFE is a levered cash
-        flow measure and should be discounted at the Cost of Equity, not the Weighted Average
-        Cost of Capital, when used to value equity directly.
+        Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common equity
+        holders.
+
+        It is what is left after all operating expenses, reinvestment needs, and net payments to
+        (or from) debt holders have been accounted for. Unlike FCFF, FCFE is a levered cash flow
+        measure and should be discounted at the Cost of Equity, not the Weighted Average Cost of
+        Capital, when used to value equity directly.
 
         The formula is as follows:
 
@@ -2515,9 +2543,11 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth,
-        is a method used to estimate the intrinsic value of a stock based on its expected future dividends.
-        The model assumes that dividends will grow at a constant rate indefinitely.
+        The Gordon Growth Model shows the intrinsic value of a stock from its expected future
+        dividends.
+
+        It is also known as the Dividend Discount Model (DDM) with Constant Growth. The model
+        assumes that dividends will grow at a constant rate indefinitely.
 
         The formula is as follows:
 
@@ -2695,11 +2725,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model
-        to companies that are not expected to grow at a constant rate forever. It explicitly
-        projects and discounts dividends over an initial high-growth phase, and then values
-        everything from the end of that phase onward as a perpetuity growing at a lower,
-        more sustainable stable rate (a Gordon Growth terminal value).
+        The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model to
+        companies that are not expected to grow at a constant rate forever.
+
+        It explicitly projects and discounts dividends over an initial high-growth phase, and
+        then values everything from the end of that phase onward as a perpetuity growing at a
+        lower, more sustainable stable rate (a Gordon Growth terminal value).
 
         The formula is as follows:
 
@@ -2857,13 +2888,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at
-        a high rate and declines linearly to a stable rate over a number of years, after
-        which it grows at the stable rate forever. It is a closed-form approximation of the
-        three-stage dividend discount model (see `get_two_stage_dividend_discount_model` with
-        `transition_periods`): the Gordon Growth Model at the stable rate plus the value of
-        the extra growth during the decline, which is about half the high-growth period (H)
-        times the extra growth.
+        The H-Model of Fuller and Hsia (1984) shows the value of a stock whose dividend growth
+        declines linearly to a stable rate.
+
+        The growth starts at a high rate and declines over a number of years, after which it
+        grows at the stable rate forever. It is a closed-form approximation of the three-stage
+        dividend discount model (see `get_two_stage_dividend_discount_model` with
+        `transition_periods`): the Gordon Growth Model at the stable rate plus the value of the
+        extra growth during the decline, which is about half the high-growth period (H) times
+        the extra growth.
 
         The formula is as follows:
 
@@ -3013,9 +3046,11 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The justified multiples are the Price-to-Earnings and Price-to-Book ratios the
-        dividend discount and residual income models imply for a company with a constant
-        payout ratio, Return on Equity and growth rate. Comparing them with the actual
+        The justified multiples are the Price-to-Earnings and Price-to-Book ratios that a
+        company's fundamentals justify.
+
+        They are the multiples the dividend discount and residual income models imply for a
+        constant payout ratio, Return on Equity and growth rate. Comparing them with the actual
         multiples shows whether the market prices a company above or below what its
         profitability, payout and growth justify at a given required rate of return.
 
@@ -3173,12 +3208,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Residual Income is a measure of the profit a company generates in excess of the
-        return required by its equity holders. It is the equity-side counterpart to Economic
-        Value Added (EVA), and underpins the Residual Income Model, an alternative equity
-        valuation lens to a traditional Discounted Cash Flow (DCF) that is particularly
-        useful when a company's free cash flows are negative or unpredictable but its
-        accounting earnings are more stable.
+        Residual Income is a measure of the profit a company generates in excess of the return
+        required by its equity holders.
+
+        It is the equity-side counterpart to Economic Value Added (EVA), and underpins the
+        Residual Income Model, an alternative equity valuation lens to a traditional Discounted
+        Cash Flow (DCF) that is particularly useful when a company's free cash flows are
+        negative or unpredictable but its accounting earnings are more stable.
 
         The formula is as follows:
 
@@ -3213,12 +3249,12 @@ class ValuationModels:
         Income indicates the company failed to earn its equity holders' required return, even
         if it still reported a positive Net Income.
         - The Cost of Equity follows from the Capital Asset Pricing Model (CAPM), as in
-        `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta times
-        the market risk premium, by default the equity risk premium of the company's country
-        (see `market_risk_premium`). It covers the span of the Net Income: a
-        quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
-        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data),
-        with the Beta estimated from the daily returns of the same trailing periods.
+          `get_weighted_average_cost_of_capital`: the risk-free rate of the period plus Beta
+          times the market risk premium, by default the equity risk premium of the company's
+          country (see `market_risk_premium`). It covers the span of the Net Income: a quarter
+          with quarterly data, and the per-period rate times `trailing` when the Net Income is a
+          trailing sum (an annual rate for the trailing twelve months of quarterly data), with
+          the Beta estimated from the daily returns of the same trailing periods.
         - The Book Value of Equity is the Total Shareholder Equity minus Preferred Stock at the
         beginning of the period (the previous period's closing balance, or that of `trailing` periods
         back with `trailing` set), the capital the shareholders had invested while the Net Income was
@@ -3315,10 +3351,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
-        present value of a company's future growth opportunities. It is calculated as the difference
-        between the share price and the value of the company's current earnings as a perpetuity without
-        growth, i.e. Earnings per Share divided by the Cost of Equity.
+        The Present Value of Growth Opportunities (PVGO) is a financial metric that represents
+        the present value of a company's future growth opportunities.
+
+        It is calculated as the difference between the share price and the value of the
+        company's current earnings as a perpetuity without growth, i.e. Earnings per Share
+        divided by the Cost of Equity.
 
         The formula is as follows:
 
@@ -3359,8 +3397,9 @@ class ValuationModels:
         the share price and the Earnings per Share are equity-only, per-share quantities (Brealey, Myers
         and Allen, "Principles of Corporate Finance"; Bodie, Kane and Marcus, "Investments"). The Cost of
         Equity is the CAPM Cost of Equity of `get_weighted_average_cost_of_capital`.
-        - The Cost of Equity uses the same `trailing` as the Earnings per Share, so both cover the same
-        span (with quarterly data, a quarter without `trailing` and a year with trailing=4).
+        - The Cost of Equity uses the same `trailing` as the Earnings per Share, so both cover
+          the same span (with quarterly data, a quarter without `trailing` and a year with four
+          trailing quarters).
         - When the Earnings per Share is negative, the no-growth value is negative and the PVGO
         exceeds the share price, which has no meaningful interpretation.
 
@@ -3521,8 +3560,8 @@ class ValuationModels:
         Notes:
         - Graham's limits of 15 times earnings and 1.5 times book value refer to annual earnings, so
         with quarterly data the Earnings per Share are the sum of the last four quarters by default.
-        - Earnings and Book Value per Share use the Weighted Average Shares Diluted (or the Weighted
-        Average Shares with diluted=False).
+        - Earnings and Book Value per Share use the Weighted Average Shares Diluted (or the
+          Weighted Average Shares without dilution).
         - Only the Earnings per Share are trailing: the earnings are a flow over the trailing periods,
         divided by the average shares over those periods. The Book Value per Share is a stock, the Total
         Shareholder Equity minus the Preferred Stock at the end of the period divided by the shares of
@@ -3602,16 +3641,15 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the intrinsic value of a share with Benjamin Graham's growth formula, the
-        value of a growth stock from its earnings, their expected growth and the yield of high
-        grade corporate bonds.
+        Calculate the intrinsic value of a share with Benjamin Graham's growth formula.
 
-        Graham gave the formula in The Intelligent Investor (fourth revised edition, 1973,
-        chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5 the price-to-earnings ratio of
-        a company without growth and g the growth rate of its earnings expected over the next
-        7 to 10 years, in percent. In 1974 he scaled it by 4.4 / Y, with 4.4 the average yield
-        of AAA corporate bonds in 1962 and Y their current yield, so that the value falls when
-        interest rates rise.
+        It is the value of a growth stock from its earnings, their expected growth and the yield
+        of high grade corporate bonds. Graham gave the formula in The Intelligent Investor
+        (fourth revised edition, 1973, chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5
+        the price-to-earnings ratio of a company without growth and g the growth rate of its
+        earnings expected over the next 7 to 10 years, in percent. In 1974 he scaled it by 4.4 /
+        Y, with 4.4 the average yield of AAA corporate bonds in 1962 and Y their current yield,
+        so that the value falls when interest rates rise.
 
         The formula is as follows:
 
@@ -3665,10 +3703,10 @@ class ValuationModels:
             pd.DataFrame: DataFrame containing the intrinsic value per share.
 
         Notes:
-        - Graham's formula takes the earnings of the last twelve months, so with quarterly data the
-        Earnings per Share are the sum of the last four quarters by default; it is the Net Income divided
-        by the Weighted Average Shares Diluted (or the Weighted Average Shares with diluted=False), as in
-        `get_graham_number`.
+        - Graham's formula takes the earnings of the last twelve months, so with quarterly data
+          the Earnings per Share are the sum of the last four quarters by default; it is the Net
+          Income divided by the Weighted Average Shares Diluted (or the Weighted Average Shares
+          without dilution), as in `get_graham_number`.
         - The default growth rate looks back, while Graham's g is the growth expected ahead: pass a
         growth_rate (e.g. from analyst estimates, see `toolkit.get_analyst_estimates`) to value on a
         forecast. Each period only uses the earnings up to it, and the bond yield of the end of that
@@ -4080,12 +4118,13 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the growth rate the share price implies, a reverse Discounted Cash Flow
-        (DCF). Instead of estimating growth to arrive at a value, it takes the current share
-        price as given and solves for the yearly cash flow growth over the projection
-        periods at which the DCF value per share equals that price. The answer is the
-        market's expectation, which can then be compared with the company's history: an
-        implied growth far above what the company has achieved signals optimism.
+        Calculate the growth rate the share price implies, a reverse Discounted Cash Flow (DCF).
+
+        Instead of estimating growth to arrive at a value, it takes the current share price as
+        given and solves for the yearly cash flow growth over the projection periods at which
+        the DCF value per share equals that price. The answer is the market's expectation, which
+        can then be compared with the company's history: an implied growth far above what the
+        company has achieved signals optimism.
 
         The DCF is the same as in `get_intrinsic_valuation`, by default on the Free Cash
         Flow to the Firm:
@@ -4113,12 +4152,11 @@ class ValuationModels:
                 calculated over a year (the last 4 quarters with quarterly data) whatever
                 `trailing` the cash flows use, as the rate is a yearly one.
             periods (int, optional): The number of projection periods. Defaults to 5.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
-                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
-                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
-                or "Operating Cash Flow" as reported, which are after interest (cash flows
-                to equity), so that discounting them at the WACC and subtracting the debt
-                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
+            cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
+                (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
+                cost of debt twice. Options are: "Free Cash Flow to Firm" (see get_free_cash_flow_to_firm, the cash
+                flow to debt and equity holders that the WACC discounts into an enterprise value), "Free Cash Flow"
+                (as reported), "Operating Cash Flow" (as reported). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. The window counts calendar
                 periods, so a period without a report makes it NaN. Defaults to None, which
@@ -4238,11 +4276,12 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Earnings Power Value (EPV), the value of a company's current earnings
-        if they never grew. Bruce Greenwald uses it to separate what is known (today's
-        earnings power) from what is speculative (growth): the operating margin is averaged
-        over several years and applied to the latest yearly revenue, taxed, and capitalized
-        at the cost of capital.
+        Calculate the Earnings Power Value (EPV), the value of a company's current earnings if
+        they never grew.
+
+        Bruce Greenwald uses it to separate what is known (today's earnings power) from what is
+        speculative (growth): the operating margin is averaged over several years and applied to
+        the latest yearly revenue, taxed, and capitalized at the cost of capital.
 
             - Normalized Operating Income = Average Operating Margin * Latest Revenue
             - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
@@ -4405,12 +4444,14 @@ class ValuationModels:
     ) -> pd.DataFrame:
         """
         Calculate the distribution of the intrinsic value per share when the inputs of the
-        Discounted Cash Flow model are uncertain. A single DCF value hides how sensitive it
-        is to its assumptions; here the growth rate, the perpetual growth rate and the
-        discount rate are drawn from normal distributions around their expected values in
-        every simulation, and the DCF of `get_intrinsic_valuation` is calculated for each
-        draw. The spread of the outcomes, and the probability that the value exceeds the
-        share price, show how robust the conclusion is.
+        Discounted Cash Flow model are uncertain.
+
+        A single DCF value hides how sensitive it is to its assumptions; here the growth rate,
+        the perpetual growth rate and the discount rate are drawn from normal distributions
+        around their expected values in every simulation, and the DCF of
+        `get_intrinsic_valuation` is calculated for each draw. The spread of the outcomes, and
+        the probability that the value exceeds the share price, show how robust the conclusion
+        is.
 
         Draws in which the discount rate does not exceed the perpetual growth rate by at
         least half a percentage point are redrawn, as the terminal value is undefined there.
@@ -4443,12 +4484,11 @@ class ValuationModels:
                 deviation. Defaults to 0.01.
             periods (int, optional): The number of projection periods. Defaults to 5.
             simulations (int, optional): The number of simulations. Defaults to 10,000.
-            cash_flow_type (str, optional): The cash flow to project: "Free Cash Flow to
-                Firm" (see `get_free_cash_flow_to_firm`), the cash flow to debt and equity
-                holders that the WACC discounts into an enterprise value; or "Free Cash Flow"
-                or "Operating Cash Flow" as reported, which are after interest (cash flows
-                to equity), so that discounting them at the WACC and subtracting the debt
-                counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
+            cash_flow_type (str, optional): The cash flow to project. The reported cash flows are after interest
+                (cash flows to equity), so that discounting them at the WACC and subtracting the debt counts the
+                cost of debt twice. Options are: "Free Cash Flow to Firm" (see get_free_cash_flow_to_firm, the cash
+                flow to debt and equity holders that the WACC discounts into an enterprise value), "Free Cash Flow"
+                (as reported), "Operating Cash Flow" (as reported). Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
                 4 quarters) instead of taking the latest one. The window counts calendar
                 periods, so a period without a report makes it NaN. Defaults to None, which
@@ -4562,17 +4602,18 @@ class ValuationModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Compare every company with its peers on valuation, profitability, growth and
-        leverage. For each metric it shows the company's latest value, the median and mean
-        of its peers and the company's percentile among them (the share of peers with a
-        lower value), which tells at a glance whether a company is expensive or cheap,
-        and better or worse run, than comparable companies.
+        Compare every company with its peers on valuation, profitability, growth and leverage.
+
+        For each metric it shows the company's latest value, the median and mean of its peers
+        and the company's percentile among them (the share of peers with a lower value), which
+        tells at a glance whether a company is expensive or cheap, and better or worse run, than
+        comparable companies.
 
         The metrics are the Price-to-Earnings, EV-to-EBITDA, Price-to-Book and
         Price-to-Sales ratios, the Gross, Operating and Net Profit Margin, the Return on
         Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
         Dividend Yield, all of the latest period up to the Toolkit's end date: the fiscal year,
-        or with quarterly=True the quarter, with the ratios over the trailing year and the
+        or with quarterly data the quarter, with the ratios over the trailing year and the
         Revenue Growth over the same quarter a year earlier. The peers are retrieved with the
         Toolkit's settings (quarterly, point_in_time and convert_currency), so the Company
         column equals the Toolkit's own ratios of that period.

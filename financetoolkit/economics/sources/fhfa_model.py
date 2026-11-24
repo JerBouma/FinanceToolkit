@@ -37,11 +37,12 @@ WEIGHTINGS = {"VALUE1": "Loans", "VALUE2": "Balance"}
 
 def get_outstanding_mortgage_interest_rates() -> pd.DataFrame:
     """
-    Retrieves the contract interest rates of the residential mortgages outstanding at the
-    end of each quarter from the FHFA's National Mortgage Database, from 2013 Q1: the
-    average rate and the share of mortgages below 3%, between 3% and 4%, 4% and 5%, 5% and
-    6%, and at or above 6%. The NMDB is a 1-in-20 sample of the closed-end first-lien
-    mortgages reported to a national credit bureau.
+    Retrieve the contract interest rates of the residential mortgages outstanding at the end of each quarter from the
+    FHFA's National Mortgage Database, from 2013 Q1.
+
+    It gives the average rate and the share of mortgages below 3%, between 3% and 4%, 4% and 5%, 5% and 6%, and at or
+    above 6%. The NMDB is a 1-in-20 sample of the closed-end first-lien mortgages reported to a national credit
+    bureau.
 
     Returns:
         pd.DataFrame: The rates and shares as decimals (0.192 for 19.2%), indexed by

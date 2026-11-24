@@ -171,13 +171,13 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Consumer Price Index (CPI) is a measure that examines the average change in prices
-        paid by consumers for goods and services over time. It is a measure of inflation.
+        Get the Consumer Price Index (CPI) of a variety of countries: the average change in the prices consumers pay
+        for goods and services, the measure of inflation.
 
         By default the data is monthly, from the most current national source per country
-        (see below). With period="yearly" the data comes from the Global Macro Database
-        (GMDB), annual with 2015 = 100. Set `oecd_source=True` to retrieve monthly or
-        quarterly data from the OECD instead (base year varies per country).
+        (see below). Yearly data comes from the Global Macro Database
+        (GMDB), annual with 2015 = 100. The OECD can be chosen as the source for monthly or
+        quarterly data instead (base year varies per country).
 
         The yearly index is chained across currency reforms and redenominations, in today's
         currency. A warning names the years in the date range where it repeats the value
@@ -186,7 +186,7 @@ class PricesEconomics:
         rising more than tenfold in a year), after which the yearly average still rises
         sharply even when a currency reform ended them within the year.
 
-        With period="monthly" and without oecd_source, every country comes from its most
+        With monthly data and without the OECD as the source, every country comes from its most
         current source: Eurostat for the euro area and the European
         Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
         United Kingdom (CPI, 2015 = 100), the Statistics Bureau of Japan for Japan (CPI
@@ -208,8 +208,8 @@ class PricesEconomics:
         publishes a few days after the BLS. The months the BLS has published since are
         added to it, so a release appears the same day.
 
-        With cumulative=True, every country's index is divided by its value in the first
-        period of the date range: the growth of 1 in prices since the start_date (1.3460
+        Cumulatively, every country's index is divided by its value in the first
+        period of the date range: the growth of 1 in prices since the start date (1.3460
         for prices 34.60% higher), which compares countries regardless of their base year.
         A country without data in the first period starts from its own first period. The
         purchasing power of money is its inverse (see get_purchasing_power).
@@ -222,15 +222,16 @@ class PricesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Without `oecd_source=True`, "monthly" uses the monthly sources described above and the
-                annual data comes from the GMDB. Defaults to None, which is the monthly data (quarterly
-                with `oecd_source=True` when the Economics class was initialized with quarterly=True).
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Without `oecd_source=True`, "monthly" uses the
+                monthly sources described above and the annual data comes from the GMDB. Defaults to None, which is
+                the monthly data (quarterly with `oecd_source=True` when the Economics class was initialized with
+                quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
-            measure (str, optional): "all" for all items, "core" for all items less food and
-                energy, or a component: "energy", "food", "goods", "services" or "shelter"
-                (United States only). Other measures than "all" are monthly, without
+            measure (str, optional): The basket of the index. Options are: "all" (all items), "core" (all
+                items less food and energy), "energy" (energy), "food" (food), "goods" (goods), "services"
+                (services), "shelter" (shelter, United States only). Other measures than "all" are monthly, without
                 oecd_source. Defaults to "all".
             cumulative (bool, optional): Whether to return the growth of 1 in prices since the
                 first period of the date range instead of the index. Defaults to False.
@@ -349,12 +350,12 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Inflation Rate is the percentage change in the Consumer Price Index (CPI) from one
-        period to another. It is a measure of the rate of price increases in the economy.
+        Get the inflation rate of a variety of countries: the percentage change in the Consumer Price Index (CPI), how
+        fast prices rise.
 
-        With period="yearly" the data comes from the Global Macro Database (GMDB). Its years
-        that are IMF World Economic Outlook projections are only included with
-        gmdb_forecasts=True; by default a series ends with its last observation. Further
+        Yearly data comes from the Global Macro Database (GMDB). Its years
+        that are IMF World Economic Outlook projections are only included on
+        request; by default a series ends with its last observation. Further
         information about the variable can be found within
         https://www.globalmacrodata.com/documentation.html
 
@@ -365,7 +366,7 @@ class PricesEconomics:
         rising more than tenfold in a year), after which the yearly average still rises
         sharply even when a currency reform ended them within the year.
 
-        With period="monthly", the default, the annual rate of change is returned for every
+        With monthly data, the default, the annual rate of change is returned for every
         month, the figure statistical offices publish, taken per country from the most
         current source: Eurostat for the euro area and the European
         Economic Area (the HICP, including the flash estimate at the end of the month
@@ -415,11 +416,11 @@ class PricesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly or the annual data.
-                Defaults to None, which is the monthly data.
-            measure (str, optional): "all" for all items, "core" for all items less food and
-                energy, or a component: "energy", "food", "goods", "services" or "shelter"
-                (United States only). Other measures than "all" are monthly. Defaults to "all".
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data), "yearly"
+                (yearly data). Defaults to None, which is the monthly data.
+            measure (str, optional): The basket of the index. Options are: "all" (all items), "core" (all items less
+                food and energy), "energy" (energy), "food" (food), "goods" (goods), "services" (services), "shelter"
+                (shelter, United States only). Other measures than "all" are monthly. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -517,16 +518,18 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Purchasing Power is what 100 units of a currency at the start of the date range
-        buy in every later period, in the prices of the start: it falls as consumer prices
-        rise, so 74.29 means that money has lost a quarter of its value. It is the inverse
-        of the growth in the Consumer Price Index since the first period of the range (see
-        get_consumer_price_index with cumulative=True), on the same monthly sources by
-        default (period="yearly" for the Global Macro Database's annual averages).
+        Get the purchasing power of the currencies of a variety of countries: what 100 units of money at the start of
+        the date range buy in every later period.
 
-        With overnight_rate=True, the 100 is not held as banknotes but deposited at the
-        overnight rate of its currency, compounded day by day (see get_overnight_rate with
-        cumulative=True): €STR for the Euro Area and its members, SONIA for the United
+        Purchasing Power is what 100 units of a currency at the start of the date range buy in every later period, in
+        the prices of the start: it falls as consumer prices rise, so 74.29 means that money has lost a quarter of its
+        value. It is the inverse of the growth in the Consumer Price Index since the first period of the range (see
+        the cumulative get_consumer_price_index), on the same monthly sources by default (yearly data for
+        the Global Macro Database's annual averages).
+
+        Deposited at the overnight rate, the 100 is not held as banknotes but deposited at the
+        overnight rate of its currency, compounded day by day (see the cumulative
+        get_overnight_rate): €STR for the Euro Area and its members, SONIA for the United
         Kingdom, TONA for Japan and SOFR for the United States. The result is the real
         value of cash, which stays above 100 only when the interest outpaced inflation.
         Countries without an overnight rate are left out with a note. A euro member earns
@@ -552,9 +555,9 @@ class PricesEconomics:
                 Defaults to None, which is every country with a consumer price index, or the
                 Euro Area, Japan, the United Kingdom and the United States with
                 overnight_rate=True.
-            period (str | None, optional): Whether to return the monthly or the annual data.
-                Defaults to None, which is the monthly data. The overnight rate is only
-                combined with the monthly data.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data), "yearly"
+                (yearly data). Defaults to None, which is the monthly data. The overnight rate is only combined with
+                the monthly data.
             overnight_rate (bool, optional): Whether the 100 earns the overnight rate of its
                 currency instead of being held as banknotes. Defaults to False.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -676,11 +679,11 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Producer Price Index (PPI) for a variety of countries over time. The PPI
-        measures the average change over time in the prices domestic producers receive for
-        their output. Because producers tend to pass rising input costs on to their
-        customers with a lag, the PPI is generally seen as a leading, upstream indicator of
-        cost pressure that later shows up in the Consumer Price Index (CPI).
+        Get the Producer Price Index (PPI) of a variety of countries: the average change in the prices domestic
+        producers receive for their output.
+
+        Because producers tend to pass rising input costs on to their customers with a lag, the PPI is generally seen
+        as a leading, upstream indicator of cost pressure that later shows up in the Consumer Price Index (CPI).
 
         Each country's headline index comes monthly from its official publisher:
 
@@ -698,7 +701,7 @@ class PricesEconomics:
         automated requests. Its monthly year-on-year figure is in get_economic_calendar.
 
         All indices are not seasonally adjusted, so changes are best taken year over year
-        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        (the growth over a lag of 12 on monthly data), which returns them as decimals (0.057 for
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
@@ -708,9 +711,9 @@ class PricesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -805,11 +808,11 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Export Price Index for a variety of countries over time. The index
-        measures the average change over time in the prices a country's producers receive
-        for the goods they sell abroad, in its own currency. Together with the Import Price
-        Index it gives the terms of trade, and it shows how much of a currency move or a
-        foreign price shock exporters pass on.
+        Get the Export Price Index of a variety of countries: the average change in the prices a country's producers
+        receive for the goods they sell abroad.
+
+        Together with the Import Price Index it gives the terms of trade, and it shows how much of a currency move or
+        a foreign price shock exporters pass on.
 
         Each country's index comes monthly from its official publisher:
 
@@ -823,7 +826,7 @@ class PricesEconomics:
         - The Bank of Japan for Japan: the export price index in yen, 2020 = 100, from 1960.
 
         All indices are not seasonally adjusted, so changes are best taken year over year
-        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        (the growth over a lag of 12 on monthly data), which returns them as decimals (0.057 for
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
@@ -833,9 +836,9 @@ class PricesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -930,10 +933,11 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Import Price Index for a variety of countries over time. The index measures
-        the average change over time in the prices of the goods a country buys from abroad,
-        in its own currency. It shows how foreign price shocks and currency moves reach the
-        domestic economy, ahead of the Producer and Consumer Price Indices.
+        Get the Import Price Index of a variety of countries: the average change in the prices of the goods a country
+        buys from abroad.
+
+        It shows how foreign price shocks and currency moves reach the domestic economy, ahead of the Producer and
+        Consumer Price Indices.
 
         Each country's index comes monthly from its official publisher:
 
@@ -946,7 +950,7 @@ class PricesEconomics:
         - The Bank of Japan for Japan: the import price index in yen, 2020 = 100, from 1960.
 
         All indices are not seasonally adjusted, so changes are best taken year over year
-        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        (the growth over a lag of 12 on monthly data), which returns them as decimals (0.057 for
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
@@ -956,9 +960,9 @@ class PricesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1102,14 +1106,15 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        In most cases, the nominal house price index covers the sales of newly-built
-        and existing dwellings, following the recommendations from the RPPI (Residential
-        Property Prices Indices) manual.
+        Get the house price index of a variety of countries: how the prices of residential property move over time.
+
+        In most cases, the nominal house price index covers the sales of newly-built and existing dwellings, following
+        the recommendations from the RPPI (Residential Property Prices Indices) manual.
 
         By default the data is quarterly, from the OECD, the only source with quarterly
-        data. With quarterly=False the data is annual and comes from the Global Macro
-        Database (GMDB), with 2015 = 100, unless gmdb_source=False is given (or the
-        Economics class was initialized with gmdb_source=False), which takes the annual
+        data. Without quarterly data the data is annual and comes from the Global Macro
+        Database (GMDB), with 2015 = 100, unless the OECD is chosen as the source (also
+        when the Economics class was initialized that way), which takes the annual
         data from the OECD.
 
         In the OECD data, the real house price index is given by the ratio of the nominal
@@ -1251,9 +1256,10 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The housing rent price index measures the prices paid for renting
-        residential properties over time. Together with the house price index
-        it is a key input into affordability and house ownership profitability
+        Get the housing rent price index of a variety of countries: how the prices paid for renting residential
+        property move over time.
+
+        Together with the house price index it is a key input into affordability and house ownership profitability
         measures such as the price to rent ratio.
 
         This is an index based on 2015 = 100.
@@ -1347,9 +1353,8 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the quarterly growth of commercial real estate prices: the change in the price
-        of commercial property (offices, retail, industrial and apartment buildings) on the
-        same quarter a year earlier, for around twenty economies.
+        Get the year-on-year growth of commercial real estate prices of around twenty economies: how the prices of
+        offices, retail, industrial and apartment buildings change.
 
         This tracks commercial (office, retail, industrial, apartment) property
         prices, as distinct from residential house prices (see `get_house_prices`,
@@ -1364,7 +1369,7 @@ class PricesEconomics:
         area, the United States (from 1945), Japan, Denmark, the Netherlands, Germany,
         France, Spain and around ten more, taking per country a nominal index of commercial
         property, preferably all commercial property in the whole country. When a FRED API
-        key is set (see the `fred_api_key` parameter of the `Economics` class), the United
+        key is set on the Economics class, the United
         States instead comes from FRED's series sourced from the IMF's Financial Soundness
         Indicators.
 
@@ -1461,14 +1466,15 @@ class PricesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the World Bank's monthly commodity prices from 1960 (The Pink Sheet): the
-        average price of each month in US dollars of around seventy commodities, among which
-        crude oil (Brent, WTI, Dubai), natural gas, coal, gold, silver, platinum, copper,
-        aluminum, iron ore, nickel, zinc, grains, softs and fertilizers. Futures prices from
-        exchanges reach back to 2000 at most, which leaves out the commodity booms and busts
-        of the 1970s and 1980s, such as gold's peak of January 1980 and the oil shocks.
+        Get the World Bank's monthly commodity prices from 1960 (The Pink Sheet): the average price of each month in
+        US dollars of around seventy commodities.
 
-        With deflate_with, the prices are in real terms: in the money of the latest month of
+        Among them are crude oil (Brent, WTI, Dubai), natural gas, coal, gold, silver, platinum, copper, aluminum,
+        iron ore, nickel, zinc, grains, softs and fertilizers. Futures prices from exchanges reach back to 2000 at
+        most, which leaves out the commodity booms and busts of the 1970s and 1980s, such as gold's peak of January
+        1980 and the oil shocks.
+
+        Deflated with a country's prices, the prices are in real terms: in the money of the latest month of
         that country's consumer price index up to the end date (see get_consumer_price_index),
         so that the gold price of 1980 can be compared with today's. A month after the latest
         month of the consumer price index, which is published a few weeks late, keeps its
@@ -1485,9 +1491,9 @@ class PricesEconomics:
         the currency (NaN), and a warning names those months. The Natural gas index is an
         index rather than a price in US dollars and is not converted.
 
-        With both, the prices are converted first and deflated after, so deflate_with is the
-        country whose money the currency is, e.g. currency="EUR" with deflate_with="Euro
-        Area" for prices in euros of the latest month of the euro area consumer price index.
+        With both, the prices are converted first and deflated after, so the deflating country is the
+        country whose money the currency is, e.g. euros deflated with the Euro
+        Area for prices in euros of the latest month of the euro area consumer price index.
 
         The formula is as follows:
 

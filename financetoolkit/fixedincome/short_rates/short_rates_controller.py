@@ -67,9 +67,12 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
     ):
         """
         Calibrates the Vasicek and Cox-Ingersoll-Ross (CIR) short-rate models to the history
-        of a country's short-term government bond yield and compares the zero-coupon curve
-        each model implies with today's. Short-rate models describe how the interest rate
-        moves, pulled back to a long-run mean b at a speed a with a volatility σ:
+        of a country's short-term government bond yield: how fast the rate reverts to its
+        long-run mean and how volatile it is, with the zero-coupon curve each model implies
+        next to today's.
+
+        Short-rate models describe how the interest rate moves, pulled back to a long-run
+        mean b at a speed a with a volatility σ:
 
             - Vasicek (1977): dr = a (b - r) dt + σ dW
             - CIR (1985): dr = a (b - r) dt + σ √r dW
@@ -104,8 +107,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 Defaults to "United States".
             short_rate (str, optional): The maturity of the yield used as the short rate,
                 such as "1M", "3M" or "6M". Defaults to "3M".
-            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
-                Defaults to "daily".
+            period (str, optional): The frequency of the rates. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -233,8 +236,9 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
     ):
         """
         Simulates the future path of a country's short-term interest rate with the
-        Hull-White, Vasicek or Cox-Ingersoll-Ross model and summarizes the distribution of
-        the paths per step: the mean and the 5th, 25th, 50th, 75th and 95th percentiles.
+        Hull-White, Vasicek or Cox-Ingersoll-Ross model: the distribution of the rate per
+        step, the mean and the 5th, 25th, 50th, 75th and 95th percentiles of the paths.
+
         Simulated rate paths value interest rate derivatives and path-dependent products
         (such as mortgages with prepayment), and stress the interest income of a balance
         sheet.
@@ -249,8 +253,8 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             dr = [θ(t) - a r] dt + σ dW,  θ(t) = ∂f/∂t + a f(t) + σ² (1 - e^(-2at)) / (2a)
 
         with f the instantaneous forward rate. The paths start at today's rate and are
-        simulated with an Euler scheme (CIR's are kept at or above zero) or, with
-        scheme="exact", by drawing the rate at the end of every step from its exact
+        simulated with an Euler scheme (CIR's are kept at or above zero) or, with the
+        exact scheme, by drawing the rate at the end of every step from its exact
         distribution given the rate at the start: normal for Vasicek and Hull-White
         (r' = r e^(-aΔ) + m (1 - e^(-aΔ)) + σ √((1 - e^(-2aΔ)) / (2a)) Z, with m the mean of
         the step) and a scaled non-central chi-squared for CIR (Glasserman, 2003, Monte Carlo
@@ -272,20 +276,25 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         Also known as: interest rate simulation, Hull-White model, Monte Carlo short rate,
         interest rate scenarios.
 
+        Shares similar logic:
+        - FinancePy, CIRMonteCarlo (cir): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/cir_montecarlo.py#L10
+
         Args:
-            model (str, optional): "hull_white", "vasicek" or "cir". Defaults to "hull_white".
+            model (str, optional): The model. Options are: "hull_white" (Hull-White, fitted to today's curve), "vasicek"
+                (Vasicek), "cir" (Cox-Ingersoll-Ross). Defaults to "hull_white".
             country (str, optional): The country, see `get_government_bond_yield_curve`.
                 Defaults to "United States".
             short_rate (str, optional): The maturity of the yield used as the short rate,
                 such as "1M", "3M" or "6M". Defaults to "3M".
-            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
-                Defaults to "daily".
+            period (str, optional): The frequency of the rates. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             years (float, optional): The horizon in years. Defaults to 10.
             steps_per_year (int, optional): The steps per year. Defaults to 12.
             simulations (int, optional): The number of simulated paths. Defaults to 10,000.
             seed (int | None, optional): The random seed, None for a different simulation
                 every time. Defaults to 0.
-            scheme (str, optional): "euler" or "exact". Defaults to "euler".
+            scheme (str, optional): The simulation scheme. Options are: "euler" (an Euler scheme), "exact" (sampling the
+                exact distribution of the rate). Defaults to "euler".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -417,13 +426,15 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         exercise: str = "european",
     ):
         """
-        Calculates the prices of European or Bermudan swaptions, the right to enter an
-        interest rate swap at the option's expiry, for a grid of expiries and swap tenors in a one-factor
-        short-rate model fitted to today's government zero-coupon curve. A payer swaption is
-        the right to pay the fixed rate (it gains when rates rise), a receiver swaption the
-        right to receive it. Without a strike every swaption is at the money: struck at the
-        forward swap rate of its expiry and tenor on the same curve (`get_swap_rate` with
-        curve="government" and forward_start the expiry).
+        Calculates the prices of European or Bermudan swaptions for a grid of expiries and
+        swap tenors in a one-factor short-rate model fitted to today's government
+        zero-coupon curve: what the right to enter an interest rate swap at the option's
+        expiry is worth.
+
+        A payer swaption is the right to pay the fixed rate (it gains when rates rise), a
+        receiver swaption the right to receive it. Without a strike every swaption is at the
+        money: struck at the forward swap rate of its expiry and tenor on the same curve
+        (`get_swap_rate` on the government curve, starting at the expiry).
 
         Two models reproduce the curve and so price at-the-money swaptions consistently:
 
@@ -441,7 +452,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         splits into puts on its zero-coupon bonds, each priced in closed form (see
         `short_rate_model.get_swaption` and `get_zero_coupon_bond_option`).
 
-        A Bermudan swaption (exercise="bermudan", Hull-White only) can also be exercised on
+        A Bermudan swaption (Hull-White only) can also be exercised on
         every fixed payment date after the expiry, into the rest of a swap that ends at the
         expiry plus the tenor (co-terminal, "10 non-call 1"). It has no closed form and is
         valued on a Hull-White trinomial tree fitted exactly to the zero curve with the
@@ -484,12 +495,12 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         - Hull, J. and White, A. (1994). "Numerical Procedures for Implementing Term
           Structure Models I: Single-Factor Models." Journal of Derivatives, 2(1), 7-16.
 
-        Referenced against QuantLib's `JamshidianSwaptionEngine` with `HullWhite` and
-        `ExtendedCoxIngersollRoss`, and for Bermudan swaptions its `TreeSwaptionEngine` with
-        `HullWhite`.
-
         Also known as: swaption price, Bermudan swaption, Hull-White swaption, CIR++ swaption, Jamshidian
         decomposition, interest rate option.
+
+        Referenced against:
+        - QuantLib, JamshidianSwaptionEngine (european): https://www.quantlib.org/reference/class_quant_lib_1_1_jamshidian_swaption_engine.html
+        - QuantLib, TreeSwaptionEngine (bermudan): https://www.quantlib.org/reference/class_quant_lib_1_1_tree_swaption_engine.html
 
         Args:
             expiries (float | str | list | None, optional): The expiries of the swaptions, in
@@ -497,8 +508,10 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
             tenors (float | str | list | None, optional): The tenors of the underlying swaps,
                 in years or as labels such as '10Y'. Defaults to None, 1, 2, 5, 10 and 30
                 years.
-            model (str, optional): "hull_white" or "cir++". Defaults to "hull_white".
-            swaption_type (str, optional): "payer" or "receiver". Defaults to "payer".
+            model (str, optional): The model. Options are: "hull_white" (Hull-White), "cir++" (CIR++ of Brigo and
+                Mercurio). Defaults to "hull_white".
+            swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay the fixed rate),
+                "receiver" (the right to receive it). Defaults to "payer".
             strike (float | None, optional): The fixed rate of the swaps (decimal). Defaults
                 to None, the at-the-money forward swap rate of each expiry and tenor.
             fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
@@ -506,16 +519,15 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
                 Defaults to "United States".
             short_rate (str, optional): The maturity of the yield used as the short rate,
                 such as "1M", "3M" or "6M". Defaults to "3M".
-            period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
-                Defaults to "daily".
+            period (str, optional): The frequency of the rates. Options are: "daily", "weekly", "monthly". Defaults to
+                "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
-            exercise (str, optional): "european" (at the expiry only) or "bermudan" (on every
-                fixed payment date from the expiry on, Hull-White only). Defaults to
-                "european".
+            exercise (str, optional): The exercise. Options are: "european" (at the expiry only), "bermudan" (on every
+                fixed payment date from the expiry on, Hull-White only). Defaults to "european".
 
         Returns:
             pd.DataFrame: The swaption price per 1 of notional, by expiry in years (rows) and

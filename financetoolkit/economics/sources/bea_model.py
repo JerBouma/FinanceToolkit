@@ -23,9 +23,8 @@ REAL_PERSONAL_INCOME = "W875RX"
 
 def get_real_personal_income() -> pd.DataFrame:
     """
-    Retrieves the monthly real personal income excluding current transfer receipts, in
-    billions of chained dollars at a seasonally adjusted annual rate, from the U.S. Bureau
-    of Economic Analysis, from 1959.
+    Retrieves the monthly real personal income excluding current transfer receipts, in billions of chained dollars at
+    a seasonally adjusted annual rate, from the U.S. Bureau of Economic Analysis, from 1959.
 
     The BEA's file holds the series in millions. It is converted to billions rounded to
     one decimal, rounding a half up, the figures the BEA publishes in its tables.

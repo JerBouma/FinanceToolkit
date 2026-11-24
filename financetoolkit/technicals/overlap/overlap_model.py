@@ -179,7 +179,6 @@ def get_trix(
 
     Referenced against:
     - TA-Lib, TRIX: https://ta-lib.org/functions/trix.html
-        Test: tests/technical/test_overlap_model.py::test_trix_signal_line_matches_talib
 
     Shares similar logic:
     - pandas-ta-classic, trix: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trix.py#L18
@@ -505,7 +504,6 @@ def get_triple_exponential_moving_average(prices: pd.Series, window: int) -> pd.
 
     Referenced against:
     - TA-Lib, TEMA: https://ta-lib.org/functions/tema.html
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Notes:
         - Each EMA is seeded with the simple average of its first `window` values, so TEMA
@@ -550,7 +548,6 @@ def get_t3_moving_average(
 
     Referenced against:
     - TA-Lib, T3: https://ta-lib.org/functions/t3.html
-        Test: tests/technical/test_overlap_model.py::test_t3_moving_average_matches_talib
     - pandas-ta-classic, t3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/t3.py#L14
 
     Notes:
@@ -602,7 +599,6 @@ def get_zero_lag_exponential_moving_average(
 
     Referenced against:
     - TA-Lib, ZLEMA: https://ta-lib.org/functions/zlema.html
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Notes:
         - The EMA is seeded with the simple average of the first `window` de-lagged prices,
@@ -645,7 +641,6 @@ def get_arnaud_legoux_moving_average(
 
     Referenced against:
     - TA-Lib, ALMA: https://ta-lib.org/functions/alma.html
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
     - pandas-ta-classic, alma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/alma.py#L12
 
     Notes:
@@ -695,7 +690,6 @@ def get_volume_weighted_moving_average(
 
     Referenced against:
     - TA-Lib, VWMA: https://ta-lib.org/functions/vwma.html
-        Test: tests/technical/test_overlap_model.py::test_volume_weighted_moving_average_matches_talib
     - pandas-ta-classic, vwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwma.py#L13
 
     Shares similar logic:
@@ -886,7 +880,6 @@ def get_fractal_adaptive_moving_average(
 
     Referenced against:
     - TA-Lib, FRAMA: https://ta-lib.org/functions/frama.html
-        Test: tests/technical/test_overlap_model.py::test_fractal_adaptive_moving_average_matches_talib_after_the_seed
     - finta, FRAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L463
 
     Notes:
@@ -962,7 +955,6 @@ def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Serie
 
     Referenced against:
     - pandas-ta-classic, sinwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/sinwma.py#L12
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -999,7 +991,6 @@ def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.
 
     Referenced against:
     - pandas-ta-classic, fwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/fwma.py#L17
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1037,7 +1028,6 @@ def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Ser
 
     Referenced against:
     - pandas-ta-classic, pwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/pwma.py#L17
-        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1083,7 +1073,6 @@ def get_price_transform(
 
     Referenced against:
     - TA-Lib, AVGPRICE: https://ta-lib.org/functions/avgprice.html
-        Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
     - TA-Lib, MEDPRICE: https://ta-lib.org/functions/medprice.html
     - TA-Lib, TYPPRICE: https://ta-lib.org/functions/typprice.html
     - TA-Lib, WCLPRICE: https://ta-lib.org/functions/wclprice.html
@@ -1150,7 +1139,6 @@ def get_midpoint(
 
     Referenced against:
     - TA-Lib, MIDPOINT: https://ta-lib.org/functions/midpoint.html
-        Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
     - TA-Lib, MIDPRICE: https://ta-lib.org/functions/midprice.html
 
     Shares similar logic:
@@ -1209,7 +1197,6 @@ def get_holt_winters_moving_average(
 
     Referenced against:
     - pandas-ta-classic, hwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hwma.py#L31
-        Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
     Notes:
         - The recursion starts on the first price, as in the MQL5 indicator and
@@ -1292,7 +1279,6 @@ def get_holt_winters_channel(
 
     Referenced against:
     - pandas-ta-classic, hwc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/hwc.py#L75
-        Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
     Notes:
         - The band of period t uses the variance up to period t-1, which holds the
@@ -1408,7 +1394,6 @@ def get_volume_adjusted_moving_average(
 
     Referenced against:
     - finta, VAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L226
-        Test: tests/technical/test_overlap_model.py::test_volume_adjusted_moving_average_matches_finta
 
     Notes:
         - The weights are finta's, which multiplies the volume ratio by the price as well,
@@ -1539,7 +1524,6 @@ def get_zigzag(
 
     Referenced against:
     - TA-Lib, ZIGZAG: https://ta-lib.org/functions/zigzag.html
-        Test: tests/technical/test_overlap_model.py::test_zigzag_matches_talib
 
     Notes:
         - Every period shows what is known at its close: the extreme of the current leg,
@@ -1762,8 +1746,6 @@ def get_parabolic_sar(
 
     Referenced against:
     - TA-Lib, SAR: https://ta-lib.org/functions/sar.html
-        Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_ta_lib_from_a_short_start
-        Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_talib_sarext
     - TA-Lib, SAREXT: https://ta-lib.org/functions/sarext.html
 
     Shares similar logic:
@@ -1944,7 +1926,6 @@ def get_pivot_points(
 
     Referenced against:
     - pandas-ta-classic, cpr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cpr.py#L76
-        Test: tests/technical/test_overlap_model.py::test_pivot_point_variants_match_pandas_ta
 
     Shares similar logic:
     - finta, PIVOT: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1123

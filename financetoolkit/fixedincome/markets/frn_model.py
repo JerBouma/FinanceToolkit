@@ -27,7 +27,7 @@ BASIS_POINT = 0.0001
 def get_index_rate(high_rate: float, days_to_maturity: float) -> float:
     """
     Calculate the index rate of US Treasury floating rate notes from the high rate of a
-    13-week bill auction.
+    13-week bill auction: the rate the notes pay interest at, before their spread.
 
     The index rate is the auction's high (discount) rate restated as a simple-interest money
     market yield on an actual/360 basis, rounded to nine decimal places of a percent (31 CFR
@@ -68,8 +68,8 @@ def get_daily_index_rates(
     lockout_dates: list[date] | None = None,
 ) -> pd.Series:
     """
-    Calculate the index rate that applies to each day of a floating rate note's accrual,
-    from the 13-week bill auctions held before it.
+    Calculate the index rate that applies to each day of a floating rate note's accrual: the
+    rate of the latest 13-week bill auction held before each day.
 
     Each day accrues at the index rate of the most recent 13-week bill auction held before
     that day, so a Monday auction applies from Tuesday (31 CFR 356, Appendix B, I.C.3).
@@ -178,7 +178,8 @@ def get_frn_price(
     of 91282CRD5 reopened on 25 September 2026 at a discount margin of 0.040% prices at
     100.015499, as the Treasury announced.
 
-    Referenced against FinancePy's BondFRN (dirty_price_from_dm) on the same cash flows.
+    Referenced against:
+    - FinancePy, BondFRN.dirty_price_from_dm: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L107
 
     Args:
         index_rate (float): The index rate that applies to the settlement date (decimal).
@@ -215,7 +216,8 @@ def get_discount_margin(
     price. It is the floating rate note's counterpart of a yield spread: a note priced
     above par has a discount margin below its spread.
 
-    Referenced against FinancePy's BondFRN (discount_margin) on the same cash flows.
+    Shares similar logic:
+    - FinancePy, BondFRN.discount_margin: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L375
 
     Args:
         clean_price (float): The clean price per 100 of par.
@@ -255,8 +257,9 @@ def get_frn_durations(
 ) -> tuple[float, float]:
     """
     Calculate the index (rate) duration and the spread duration of a US Treasury floating
-    rate note on the Treasury's pricing formula (see get_frn_price), by a change of one basis
-    point either way (Fabozzi, 2012, The Handbook of Fixed Income Securities, ch. 17).
+    rate note: how much its price changes with the index rate and with the discount margin,
+    on the Treasury's pricing formula (see get_frn_price), by a change of one basis point
+    either way (Fabozzi, 2012, The Handbook of Fixed Income Securities, ch. 17).
 
     The coupons follow the index, so a change in the index rate moves both the projected
     cash flows and their discounting and barely moves the price: the index duration is
@@ -270,8 +273,11 @@ def get_frn_durations(
 
     where P is the dirty price at the index rate r and discount margin m.
 
-    Referenced against FinancePy's BondFRN (dollar_rate_duration and
-    modified_credit_duration), which take the same changes.
+    Referenced against:
+    - FinancePy, BondFRN.modified_credit_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L283
+
+    Shares similar logic:
+    - FinancePy, BondFRN.dollar_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L178
 
     Args:
         index_rate (float): The index rate that applies to the settlement date (decimal).

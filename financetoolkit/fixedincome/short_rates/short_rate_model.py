@@ -93,7 +93,8 @@ def calibrate_short_rate_model(
 
     Args:
         rates (pd.Series): The short rate over time, as decimals.
-        model (str, optional): "vasicek" or "cir". Defaults to "vasicek".
+        model (str, optional): The model. Options are: "vasicek" (Vasicek, 1977), "cir"
+            (Cox-Ingersoll-Ross, 1985). Defaults to "vasicek".
         periods_per_year (int, optional): The observations per year. Defaults to 252.
 
     Returns:
@@ -210,8 +211,9 @@ def get_model_yields(
     rate: float,
 ) -> np.ndarray:
     """
-    The zero-coupon yields the Vasicek or CIR model implies, from the closed-form bond price
-    P(T) = A(T) e^(-B(T) r):
+    Calculate the zero-coupon yields the Vasicek or CIR model implies: the yield curve that
+    the model's parameters and today's short rate give, from the closed-form bond price P(T)
+    = A(T) e^(-B(T) r):
 
         - Vasicek: B = (1 - e^(-aT)) / a,
           ln A = (B - T)(a²b - σ²/2) / a² - σ² B² / (4a)
@@ -221,7 +223,8 @@ def get_model_yields(
 
     Args:
         maturities (np.ndarray): The maturities in years.
-        model (str): "vasicek" or "cir".
+        model (str): The model. Options are: "vasicek" (Vasicek, 1977), "cir"
+            (Cox-Ingersoll-Ross, 1985).
         speed (float): The speed of mean reversion a.
         mean (float): The long-run mean b.
         volatility (float): The volatility σ.
@@ -238,7 +241,9 @@ def get_model_yields(
 
 def get_feller_ratio(speed: float, mean: float, volatility: float) -> float:
     """
-    The Feller ratio of the Cox-Ingersoll-Ross (1985) model dr = a (b - r) dt + σ √r dW:
+    Calculate the Feller ratio of the Cox-Ingersoll-Ross (1985) model dr = a (b - r) dt + σ
+    √r dW: whether the mean reversion is strong enough to keep the short rate away from
+    zero.
 
         - Feller Ratio = 2ab / σ²
 
@@ -255,7 +260,8 @@ def get_feller_ratio(speed: float, mean: float, volatility: float) -> float:
     - Cox, J.C., Ingersoll, J.E. and Ross, S.A. (1985). "A Theory of the Term Structure of
       Interest Rates." Econometrica, 53(2), 385-407.
 
-    Referenced against FinancePy's `satisfies_feller` of `CIRMonteCarlo`.
+    Shares similar logic:
+    - FinancePy, satisfies_feller: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/cir_montecarlo.py#L56
 
     Args:
         speed (float): The speed of mean reversion a.
@@ -298,9 +304,12 @@ def simulate_short_rate(
 ) -> np.ndarray:
     """
     Simulate short-rate paths with an Euler scheme or by sampling the exact distribution of
-    the rate at the end of every step. For Hull-White (1990) the long-run mean varies over
-    time, θ(t)/a, so that the model reproduces today's curve; pass it as an array with one
-    value per step (`hull_white_mean` with the same scheme).
+    the rate at the end of every step: the paths the short rate may follow in the Vasicek,
+    Cox-Ingersoll-Ross or Hull-White model.
+
+    For Hull-White (1990) the long-run mean varies over time, θ(t)/a, so that the model
+    reproduces today's curve; pass it as an array with one value per step (`hull_white_mean`
+    with the same scheme).
 
     The schemes are as follows, with Δ the step, φ = e^(-aΔ) and Z a standard normal draw:
 
@@ -321,12 +330,16 @@ def simulate_short_rate(
     - Glasserman, P. (2003). "Monte Carlo Methods in Financial Engineering." Springer,
       sections 3.3 and 3.4.
 
-    Referenced against FinancePy's `CIRMonteCarlo` (`draw` with the exact scheme), with
-    numpy's generator drawing the non-central chi-squared values, so the paths match in
-    distribution rather than draw by draw.
+    numpy's generator draws the non-central chi-squared values of the exact scheme, so the
+    paths match FinancePy's in distribution rather than draw by draw.
+
+    Shares similar logic:
+    - FinancePy, CIRMonteCarlo: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/cir_montecarlo.py#L10
+    - FinancePy, draw: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/cir_montecarlo.py#L126
 
     Args:
-        model (str): "vasicek", "cir" or "hull_white".
+        model (str): The model. Options are: "vasicek" (Vasicek, 1977), "cir"
+            (Cox-Ingersoll-Ross, 1985), "hull_white" (Hull-White, 1990).
         speed (float): The speed of mean reversion.
         mean (float | np.ndarray): The long-run mean, or one per step for Hull-White.
         volatility (float): The volatility.
@@ -335,7 +348,9 @@ def simulate_short_rate(
         steps_per_year (int, optional): The steps per year. Defaults to 12.
         simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
-        scheme (str, optional): "euler" or "exact". Defaults to "euler".
+        scheme (str, optional): The simulation scheme. Options are: "euler" (an Euler
+            scheme), "exact" (sampling the exact distribution of the rate). Defaults to
+            "euler".
 
     Returns:
         np.ndarray: The rates, paths by steps (including the start).
@@ -415,8 +430,9 @@ def hull_white_mean(
     scheme: str = "euler",
 ) -> np.ndarray:
     """
-    The long-run mean per step that makes the Hull-White model fit today's curve. In the
-    model dr = [θ(t) - a r] dt + σ dW the expected short rate is
+    Calculate the long-run mean per step that makes the Hull-White model fit today's curve:
+    the time-varying level the short rate reverts to so that the model reproduces the zero
+    curve.
 
         E[r(t)] = f(t) + σ² (1 - e^(-at))² / (2a²)
 
@@ -436,8 +452,9 @@ def hull_white_mean(
         rate (float): The short rate today.
         years (float): The horizon.
         steps_per_year (int): The steps per year.
-        scheme (str, optional): The scheme of the simulation, "euler" or "exact".
-            Defaults to "euler".
+        scheme (str, optional): The scheme of the simulation. Options are: "euler" (an Euler
+            scheme), "exact" (sampling the exact distribution of the rate). Defaults to
+            "euler".
 
     Returns:
         np.ndarray: The long-run mean per step.
@@ -618,11 +635,12 @@ def get_zero_coupon_bond_option(
     option_type: str = "call",
 ) -> float | np.ndarray:
     """
-    The price of a European option on a zero-coupon bond in a short-rate model, in closed
-    form: a call or put expiring at T on a bond paying 1 at S > T, struck at K (a bond
-    price, so a put on the bond is a call on its yield). These options are the building
-    blocks of caplets and floorlets (`get_caplet`) and, through Jamshidian's decomposition,
-    of European swaptions (`get_swaption`).
+    Calculate the price of a European option on a zero-coupon bond in a short-rate model, in
+    closed form: what a call or put expiring at T on a bond paying 1 at S > T, struck at K,
+    is worth (a bond price, so a put on the bond is a call on its yield).
+
+    These options are the building blocks of caplets and floorlets (`get_caplet`) and,
+    through Jamshidian's decomposition, of European swaptions (`get_swaption`).
 
     The formula is as follows:
 
@@ -661,9 +679,14 @@ def get_zero_coupon_bond_option(
       Springer, 2nd edition, sections 3.2, 3.3 and 3.9 (CIR++, Brigo and Mercurio, 2001,
       Finance and Stochastics, 5(3), 369-387).
 
-    Referenced against QuantLib's `discountBondOption` of `Vasicek`, `HullWhite`,
-    `CoxIngersollRoss` and `ExtendedCoxIngersollRoss`, and FinancePy's `option_on_zcb` of
-    `ModelRatesVasicek` and `ModelRatesHW`.
+    Referenced against:
+    - QuantLib, Vasicek.discountBondOption (vasicek): https://www.quantlib.org/reference/class_quant_lib_1_1_vasicek.html
+    - QuantLib, HullWhite.discountBondOption (hull_white): https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
+    - QuantLib, CoxIngersollRoss.discountBondOption (cir): https://www.quantlib.org/reference/class_quant_lib_1_1_cox_ingersoll_ross.html
+    - QuantLib, ExtendedCoxIngersollRoss.discountBondOption (cir++): https://www.quantlib.org/reference/class_quant_lib_1_1_extended_cox_ingersoll_ross.html
+
+    Shares similar logic:
+    - FinancePy, HWTree.option_on_zcb (hull_white): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/hw_tree.py#L946
 
     Args:
         option_expiry (float | np.ndarray): The expiry T of the option in years.
@@ -680,9 +703,11 @@ def get_zero_coupon_bond_option(
         zero_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
             (decimals) by maturity in years, which Hull-White and CIR++ fit. Defaults to
             None.
-        model (str, optional): "vasicek", "hull_white", "cir" or "cir++". Defaults to
-            "vasicek".
-        option_type (str, optional): "call" or "put". Defaults to "call".
+        model (str, optional): The model. Options are: "vasicek" (Vasicek, 1977),
+            "hull_white" (Hull-White, 1990), "cir" (Cox-Ingersoll-Ross, 1985), "cir++"
+            (CIR++ of Brigo and Mercurio, 2001). Defaults to "vasicek".
+        option_type (str, optional): The option. Options are: "call" (the right to buy the
+            bond), "put" (the right to sell it). Defaults to "call".
 
     Returns:
         float | np.ndarray: The option price per 1 of face value.
@@ -759,12 +784,14 @@ def get_caplet(
     notional: float = 1.0,
 ) -> float | np.ndarray:
     """
-    The price of a caplet or floorlet in a short-rate model: an option on the simple rate L
-    that is fixed at the reset time T and paid over τ = S - T at the payment time S. A caplet
-    pays τ max(L - K, 0) at S, which is worth (1 + Kτ) times a put on the zero-coupon bond
-    from T to S struck at 1 / (1 + Kτ) at T; a floorlet is the matching call. A cap or floor
-    is the sum of its caplets or floorlets, so pass the reset and payment times as arrays
-    and sum the result.
+    Calculate the price of a caplet or floorlet in a short-rate model: what an option on the
+    simple rate L that is fixed at the reset time T and paid over τ = S - T at the payment
+    time S is worth.
+
+    A caplet pays τ max(L - K, 0) at S, which is worth (1 + Kτ) times a put on the
+    zero-coupon bond from T to S struck at 1 / (1 + Kτ) at T; a floorlet is the matching
+    call. A cap or floor is the sum of its caplets or floorlets, so pass the reset and
+    payment times as arrays and sum the result.
 
     The formula is as follows:
 
@@ -783,7 +810,8 @@ def get_caplet(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 2.6.
 
-    Referenced against QuantLib's `AnalyticCapFloorEngine` with `HullWhite`.
+    Referenced against:
+    - QuantLib, AnalyticCapFloorEngine (hull_white): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cap_floor_engine.html
 
     Args:
         reset_time (float | np.ndarray): The time T at which the rate is fixed, in years.
@@ -797,9 +825,11 @@ def get_caplet(
             Hull-White. Defaults to None.
         zero_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
             by maturity in years, which Hull-White and CIR++ fit. Defaults to None.
-        model (str, optional): "vasicek", "hull_white", "cir" or "cir++". Defaults to
-            "vasicek".
-        option_type (str, optional): "caplet" or "floorlet". Defaults to "caplet".
+        model (str, optional): The model. Options are: "vasicek" (Vasicek, 1977),
+            "hull_white" (Hull-White, 1990), "cir" (Cox-Ingersoll-Ross, 1985), "cir++"
+            (CIR++ of Brigo and Mercurio, 2001). Defaults to "vasicek".
+        option_type (str, optional): The option. Options are: "caplet" (an option on a
+            rising rate), "floorlet" (an option on a falling rate). Defaults to "caplet".
         notional (float, optional): The notional. Defaults to 1.
 
     Returns:
@@ -862,13 +892,15 @@ def get_swaption(
     notional: float = 1.0,
 ) -> float:
     """
-    The price of a European swaption in a one-factor short-rate model with Jamshidian's
-    (1989) decomposition. At expiry T a payer swaption is worth max(1 - CB, 0), with CB the
-    value of a coupon bond paying the fixed rate on the fixed leg's dates and 1 at the end.
-    In a one-factor model every bond price falls as the state of the model rises, so there
-    is one state x* at which the coupon bond is worth exactly 1, and the option on the
-    coupon bond splits into options on its zero-coupon bonds, each struck at its price in
-    that state:
+    Calculate the price of a European swaption in a one-factor short-rate model with
+    Jamshidian's (1989) decomposition: what the right to enter a swap at the fixed rate is
+    worth in the model.
+
+    At expiry T a payer swaption is worth max(1 - CB, 0), with CB the value of a coupon bond
+    paying the fixed rate on the fixed leg's dates and 1 at the end. In a one-factor model
+    every bond price falls as the state of the model rises, so there is one state x* at
+    which the coupon bond is worth exactly 1, and the option on the coupon bond splits into
+    options on its zero-coupon bonds, each struck at its price in that state:
 
     The formula is as follows:
 
@@ -897,8 +929,8 @@ def get_swaption(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, sections 3.2.2 and 3.3.2.
 
-    Referenced against QuantLib's `JamshidianSwaptionEngine` with `Vasicek`, `HullWhite`
-    and `CoxIngersollRoss`.
+    Referenced against:
+    - QuantLib, JamshidianSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_jamshidian_swaption_engine.html
 
     Args:
         option_expiry (float): The expiry T of the swaption, the start of the swap, in years.
@@ -912,10 +944,11 @@ def get_swaption(
             Hull-White. Defaults to None.
         zero_curve (pd.Series | None, optional): The annually compounded zero-coupon rates
             by maturity in years, which Hull-White and CIR++ fit. Defaults to None.
-        model (str, optional): "vasicek", "hull_white", "cir" or "cir++". Defaults to
-            "vasicek".
-        swaption_type (str, optional): "payer" (the right to pay the fixed rate) or
-            "receiver". Defaults to "payer".
+        model (str, optional): The model. Options are: "vasicek" (Vasicek, 1977),
+            "hull_white" (Hull-White, 1990), "cir" (Cox-Ingersoll-Ross, 1985), "cir++"
+            (CIR++ of Brigo and Mercurio, 2001). Defaults to "vasicek".
+        swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay
+            the fixed rate), "receiver" (the right to receive it). Defaults to "payer".
         fixed_frequency (int, optional): The fixed payments per year. Defaults to 1.
         notional (float, optional): The notional. Defaults to 1.
 
@@ -1018,10 +1051,12 @@ def get_cir_plus_plus_shift(
     rate: float,
 ) -> float | np.ndarray:
     """
-    The deterministic shift φ(t) of the CIR++ model of Brigo and Mercurio (2001), which
-    adds it to a Cox-Ingersoll-Ross process x so that the short rate r = x + φ reproduces
-    today's zero curve exactly while x keeps CIR's closed forms. The shift is the market's
-    instantaneous forward rate less the one the CIR process implies:
+    Calculate the deterministic shift φ(t) of the CIR++ model of Brigo and Mercurio (2001):
+    what it adds to a Cox-Ingersoll-Ross process x so that the short rate r = x + φ
+    reproduces today's zero curve exactly while x keeps CIR's closed forms.
+
+    The shift is the market's instantaneous forward rate less the one the CIR process
+    implies:
 
     The formula is as follows:
 
@@ -1036,7 +1071,7 @@ def get_cir_plus_plus_shift(
     positive when φ(t) is at least zero for every t and the CIR parameters meet the Feller
     condition (`get_feller_ratio`). Bond and option prices follow from the CIR closed forms
     times the ratio of the market's and the CIR discount factors, see
-    `get_zero_coupon_bond_option` and `get_swaption` with model="cir++". The shift is a
+    `get_zero_coupon_bond_option` and `get_swaption` for the CIR++ model. The shift is a
     continuously compounded rate.
 
     For more information, see the following sources:
@@ -1047,7 +1082,8 @@ def get_cir_plus_plus_shift(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 3.9.
 
-    Referenced against QuantLib's `ExtendedCoxIngersollRoss`.
+    Shares similar logic:
+    - QuantLib, ExtendedCoxIngersollRoss: https://www.quantlib.org/reference/class_quant_lib_1_1_extended_cox_ingersoll_ross.html
 
     Args:
         times (float | np.ndarray): The times t in years.
@@ -1119,17 +1155,18 @@ def get_option_adjusted_spread(
     speed: float = 0.0,
 ) -> dict[str, float]:
     """
-    The option-adjusted spread (OAS) of a callable or puttable bond: the spread over a
-    short-rate tree calibrated to today's zero curve at which the model price, with the
-    issuer's call and the investor's put exercised whenever optimal, equals the market
-    price. Unlike the Z-spread it removes the value of the embedded options, so it measures
-    the credit and liquidity premium alone. A put raises the bond's value, so a puttable
-    bond's option value (the call less the put) is negative and its effective convexity
-    positive.
+    Calculate the option-adjusted spread (OAS) of a callable or puttable bond: the spread
+    over a short-rate tree calibrated to today's zero curve at which the model price, with
+    the issuer's call and the investor's put exercised whenever optimal, equals the market
+    price.
+
+    Unlike the Z-spread it removes the value of the embedded options, so it measures the
+    credit and liquidity premium alone. A put raises the bond's value, so a puttable bond's
+    option value (the call less the put) is negative and its effective convexity positive.
     The effective duration and convexity follow from shifting the curve by 100 basis points
     up and down at an unchanged OAS. Black-Karasinski and Black-Derman-Toy need positive
-    forward rates, so on a curve whose lowest forward rate on the tree is below 2% they shift
-    it by half that forward rate instead.
+    forward rates, so on a curve whose lowest forward rate on the tree is below 2% they
+    shift it by half that forward rate instead.
 
     The bond is valued on a trinomial tree of the short rate fitted exactly to the zero
     curve (`trinomial_tree_model.build_short_rate_tree`, the two-stage procedure of Hull and
@@ -1159,10 +1196,6 @@ def get_option_adjusted_spread(
     basis points (Δy) up and down, or half the lowest forward rate for the lognormal models
     when that is less.
 
-    Referenced against QuantLib's `CallableFixedRateBond` with the
-    `TreeCallableFixedRateBondEngine` on `HullWhite` (a speed near zero for Ho-Lee) and
-    `BlackKarasinski`, and FinancePy's `callable_puttable_bond_tree` of `BDTTree`.
-
     For more information, see the following sources:
 
     - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest Rate
@@ -1171,6 +1204,13 @@ def get_option_adjusted_spread(
       Models I: Single-Factor Models." Journal of Derivatives, 2(1), 7-16.
     - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th edition,
       chapter 18.
+
+    Referenced against:
+    - QuantLib, TreeCallableFixedRateBondEngine (ho_lee): https://www.quantlib.org/reference/class_quant_lib_1_1_tree_callable_fixed_rate_bond_engine.html
+
+    Shares similar logic:
+    - QuantLib, CallableFixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_callable_fixed_rate_bond.html
+    - FinancePy, BDTTree.callable_puttable_bond_tree (black_derman_toy): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/bdt_tree.py#L831
 
     Args:
         price (float): The market (clean) price of the bond.
@@ -1191,8 +1231,9 @@ def get_option_adjusted_spread(
             Defaults to None.
         years_to_first_put (float, optional): The years until the bond can first be put.
             Defaults to 0.
-        model (str, optional): "ho_lee", "hull_white", "black_karasinski" or
-            "black_derman_toy". Defaults to "ho_lee".
+        model (str, optional): The short-rate model of the tree. Options are: "ho_lee"
+            (Ho-Lee), "hull_white" (Hull-White), "black_karasinski" (Black-Karasinski),
+            "black_derman_toy" (Black-Derman-Toy). Defaults to "ho_lee".
         speed (float, optional): The speed of mean reversion a of Hull-White and
             Black-Karasinski. Defaults to 0.
 
@@ -1300,8 +1341,9 @@ def get_implied_default_probability(
     horizons: tuple[float, ...] = (1, 3, 5, 10),
 ) -> dict[str, float]:
     """
-    The default probabilities a credit spread implies with a constant hazard rate (the
-    credit triangle): investors are compensated for the expected loss, so
+    Calculate the default probabilities a credit spread implies with a constant hazard rate
+    (the credit triangle): how likely a default within each horizon is when investors are
+    compensated for the expected loss, so
 
         λ = Spread / (1 - Recovery Rate),  P(default before t) = 1 - e^(-λt)
 

@@ -72,9 +72,13 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The ICE BofA Option-Adjusted Spreads (OASs) are the calculated spreads between a computed OAS index
-        of all bonds in a given maturity and rating category and a spot Treasury curve. An OAS index is constructed
-        using each constituent bond's OAS, weighted by market capitalization.
+        Retrieves the ICE BofA Option-Adjusted Spreads (OASs): the extra yield that US corporate bonds of a given
+        maturity or rating category pay over a spot Treasury curve once their embedded options are taken out, the
+        compensation investors demand for credit risk.
+
+        The spreads are calculated between a computed OAS index of all bonds in a given maturity and rating category
+        and a spot Treasury curve. An OAS index is constructed using each constituent bond's OAS, weighted by market
+        capitalization.
 
         The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually quoted in
         basis points, that equates the theoretical present value of a series of uncertain cash flows to the
@@ -169,8 +173,11 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This data represents the effective yield of the ICE BofA Indices, When the last calendar day of the month
-        takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
+        Retrieves the effective yield of the ICE BofA Indices: the yield that US corporate bonds of a given maturity
+        or rating category pay, an index of the cost of corporate borrowing.
+
+        When the last calendar day of the month takes place on the weekend, weekend observations will occur as a
+        result of month ending accrued interest adjustments.
 
         The effective yield of an ICE BofA index is the yield of the index as a whole, aggregated from the
         yields of its constituent bonds and weighted by their market capitalisation. It is an index-level yield of the corporate bond market segment,
@@ -269,8 +276,11 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This data represents the total return of the ICE BofA Indices, When the last calendar day of the month
-        takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
+        Retrieves the total return of the ICE BofA Indices: the gain of holding US corporate bonds of a given
+        maturity or rating category, coupons and price changes included.
+
+        When the last calendar day of the month takes place on the weekend, weekend observations will occur as a
+        result of month ending accrued interest adjustments.
 
         The total return is the actual rate of return of an investment or a pool of investments over a given evaluation period.
         Total return includes interest, capital gains, dividends and distributions realized over a given period of time.
@@ -361,8 +371,12 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        This data represents the semi-annual yield to worst of the ICE BofA Indices, When the last calendar day of the month
-        takes place on the weekend, weekend observations will occur as a result of month ending accrued interest adjustments.
+        Retrieves the semi-annual yield to worst of the ICE BofA Indices: the lowest yield US corporate bonds of a
+        given maturity or rating category pay if their issuers redeem them at the least favourable moment for
+        investors.
+
+        When the last calendar day of the month takes place on the weekend, weekend observations will occur as a
+        result of month ending accrued interest adjustments.
 
         Yield to worst is the lowest potential yield that a bond can generate without the issuer defaulting. The standard US
         convention for this series is to use semi-annual coupon payments, whereas the standard in the foreign markets is
@@ -464,11 +478,10 @@ class CreditFixedIncome:
         prescribed discount curve for US corporate pension obligations, and its long history
         makes it a natural basis for modelling how corporate yields and spreads move.
 
-        Two curves are available. Spot rates (rate="spot") are zero-coupon yields, the rate
-        to discount a single payment at that maturity, for 17 maturities. Par yields
-        (rate="par") are the coupons a bond priced at par would pay, for 2, 5, 10 and 30
-        years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
-        value is the average over the month.
+        Two curves are available. Spot rates are zero-coupon yields, the rate to discount a
+        single payment at that maturity, for 17 maturities. Par yields are the coupons a bond
+        priced at par would pay, for 2, 5, 10 and 30 years, comparable to the Treasury par yield
+        curve (see `get_treasury_rates`). Every value is the average over the month.
 
         Without a FRED API key the curve comes from the Treasury's own
         HQM files, which gives the same figures. When a FRED API key is set (see the
@@ -482,8 +495,8 @@ class CreditFixedIncome:
         corporate curve.
 
         Args:
-            rate (str, optional): "spot" for the spot rates or "par" for the par yields.
-                Defaults to "spot".
+            rate (str, optional): The curve. Options are: "spot" (the spot rates), "par" (the par
+                yields). Defaults to "spot".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
@@ -671,7 +684,7 @@ class CreditFixedIncome:
           requires a FRED API key (the fred_api_key of the FixedIncome class); see
           get_moodys_corporate_bond_yields for daily data.
 
-        With spread=True each yield is returned as a spread over government bonds: for
+        As spreads, each yield is returned over government bonds: for
         Germany over the yield on public debt securities outstanding (from 1956), for
         Australia over the Australian government bond yield of the same tenor (end of
         month, interpolated between 5 and 10 years for 7 years, from 2013), and for the
@@ -853,8 +866,11 @@ class CreditFixedIncome:
         """
         Retrieves the rating transition matrix of a credit rating agency: for every rating
         at the start of a period, the share of ratings that ended the period in each rating
-        category, in default or withdrawn. It is the input of rating migration and default
-        models, such as the Jarrow-Lando-Turnbull model, and of credit portfolio models.
+        category, in default or withdrawn, which shows how likely a rating is to be
+        upgraded, downgraded or to default.
+
+        It is the input of rating migration and default models, such as the
+        Jarrow-Lando-Turnbull model, and of credit portfolio models.
 
         The data comes from CEREP, the central repository where every credit rating agency
         registered in the European Union reports its ratings to ESMA, published twice a
@@ -865,16 +881,17 @@ class CreditFixedIncome:
 
         By default the matrix is withdrawal-adjusted, the convention of the agencies' own
         default studies: ratings withdrawn during the period are left out, so each row sums
-        to 1. The matrix compares the rating at the start of the period with the rating at
-        its end, so a default that was followed by a new rating within the period (as after
-        a distressed exchange) shows as that new rating; get_default_rates counts every
-        default within the period and is the measure to calibrate default rates on. With include_withdrawals=True they are a separate "Withdrawals" column, and
-        with probabilities=False the counts are returned instead.
+        to 1. The matrix compares the rating at the start of the period with the rating at its
+        end, so a default that was followed by a new rating within the period (as after a
+        distressed exchange) shows as that new rating; get_default_rates counts every default
+        within the period and is the measure to calibrate default rates on. The withdrawals can
+        be kept as a separate "Withdrawals" column, and the counts can be returned instead of
+        the probabilities.
 
-        The formula is as follows (probabilities=True, the default):
+        The formula of the probabilities is as follows:
 
         - Transition Probability (from, to) = Count (from, to) / SUM(Count (from, every end category)), with
-          the end categories the ratings and default, plus "Withdrawals" only when include_withdrawals=True
+          the end categories the ratings and default, plus "Withdrawals" only when they are kept
 
         A single year's matrix rests on few observations in the top and bottom rows: an AAA
         row with few issuers is often 100% stable one year and shows a downgrade the next.
@@ -891,8 +908,9 @@ class CreditFixedIncome:
             agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
                 "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
                 Defaults to "S&P".
-            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
-                "covered_bonds". Defaults to "corporate".
+            rating_type (str, optional): The rated instruments. Options are: "corporate" (companies),
+                "sovereign" (governments), "structured_finance" (structured finance products),
+                "covered_bonds" (covered bonds). Defaults to "corporate".
             year (int | None, optional): The first year of the period. Defaults to None,
                 which takes the latest year published.
             horizon (int, optional): The length of the period in years, from 1 January of
@@ -901,9 +919,9 @@ class CreditFixedIncome:
                 instead of the number. Defaults to True.
             include_withdrawals (bool, optional): Whether to keep the ratings withdrawn
                 during the period as a "Withdrawals" column. Defaults to False.
-            region (str | None, optional): The area of the rated entities: "Africa",
-                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
-                Defaults to None, which covers all of them.
+            region (str | None, optional): The area of the rated entities. Options are: "Africa",
+                "America", "Asia", "Europe", "EU members", "International", "Oceania", None (all of
+                them). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -995,8 +1013,10 @@ class CreditFixedIncome:
         """
         Retrieves the one-year default rates per rating of a credit rating agency, year by
         year from 1989: the share of the ratings outstanding at the start of each year that
-        defaulted within it. The history of default rates per rating calibrates the default
-        intensity of credit risk models and shows how defaults cluster in recessions.
+        defaulted within it.
+
+        The history of default rates per rating calibrates the default intensity of credit
+        risk models and shows how defaults cluster in recessions.
 
         The data comes from CEREP, the central repository where every credit rating agency
         registered in the European Union reports its ratings to ESMA, in each agency's own
@@ -1022,11 +1042,12 @@ class CreditFixedIncome:
             agency (str, optional): The rating agency, e.g. "S&P", "Moody's", "Fitch",
                 "DBRS", "Scope" or "Kroll", or the CEREP code of any registered agency.
                 Defaults to "S&P".
-            rating_type (str, optional): "corporate", "sovereign", "structured_finance" or
-                "covered_bonds". Defaults to "corporate".
-            region (str | None, optional): The area of the rated entities: "Africa",
-                "America", "Asia", "Europe", "EU members", "International" or "Oceania".
-                Defaults to None, which covers all of them.
+            rating_type (str, optional): The rated instruments. Options are: "corporate" (companies),
+                "sovereign" (governments), "structured_finance" (structured finance products),
+                "covered_bonds" (covered bonds). Defaults to "corporate".
+            region (str | None, optional): The area of the rated entities. Options are: "Africa",
+                "America", "Asia", "Europe", "EU members", "International", "Oceania", None (all of
+                them). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1134,10 +1155,12 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the default probabilities that credit spreads imply. Investors in a
-        corporate bond are compensated for the loss they expect from a default, so with a
-        constant default intensity (hazard rate) λ and a share R recovered on default the
-        spread s is about λ (1 - R), the "credit triangle":
+        Calculates the default probabilities that credit spreads imply: how likely the
+        market prices a default of an issuer of each rating within each horizon.
+
+        Investors in a corporate bond are compensated for the loss they expect from a
+        default, so with a constant default intensity (hazard rate) λ and a share R
+        recovered on default the spread s is about λ (1 - R), the "credit triangle":
 
             λ = s / (1 - R),  P(default within t years) = 1 - e^(-λt)
 
@@ -1372,7 +1395,12 @@ class CreditFixedIncome:
           ch. 3 and 7.
         - Markit (2009). "ISDA CDS Standard Model."
 
-        Referenced against QuantLib's PiecewiseFlatHazardRate and RiskyBondEngine.
+        Referenced against:
+        - QuantLib, HazardRateCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_hazard_rate_curve.html
+        - QuantLib, RiskyBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_risky_bond_engine.html
+
+        Shares similar logic:
+        - QuantLib, PiecewiseFlatHazardRate: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_default_curve.html
 
         Also known as: credit curve, hazard rate curve, default probability term structure,
         bond-implied default probabilities.
@@ -1466,11 +1494,13 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates the CDS-equivalent spreads of US corporate credit: the par spreads of
-        credit default swaps on the survival curves the ICE BofA option-adjusted spreads
-        imply (see `get_survival_curve`). It turns the spreads of corporate bonds into the
-        spread a protection buyer would pay each year to insure against a default of an
-        issuer with that credit, by maturity or by rating.
+        Calculates the CDS-equivalent spreads of US corporate credit: the spread a
+        protection buyer would pay each year to insure against a default of an issuer with
+        that credit, by maturity or by rating.
+
+        These are the par spreads of credit default swaps on the survival curves the ICE
+        BofA option-adjusted spreads imply (see `get_survival_curve`), which turns the
+        spreads of corporate bonds into CDS spreads.
 
         The swaps follow the ISDA CDS Standard Model: the premium is paid quarterly on an
         ACT/360 basis, the premium accrued since the last payment is paid on default, and the
@@ -1505,12 +1535,18 @@ class CreditFixedIncome:
         - Hull, J.C. and White, A. (2000). "Valuing Credit Default Swaps I: No Counterparty
           Default Risk." The Journal of Derivatives, 8(1), 29-40.
 
-        Referenced against QuantLib's CreditDefaultSwap with the IsdaCdsEngine and FinancePy's
-        CDS. For a single name with spreads or hazard rates of your own, use
+        For a single name with spreads or hazard rates of your own, use
         `cds_model.get_credit_default_swap` and `cds_model.get_cds_implied_hazard_rates`.
 
         Also known as: CDS spread, CDS-equivalent spread, credit default swap premium,
         bond-implied CDS spread.
+
+        Referenced against:
+        - QuantLib, CreditDefaultSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_credit_default_swap.html
+        - QuantLib, IsdaCdsEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_isda_cds_engine.html
+
+        Shares similar logic:
+        - FinancePy, CDS: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds.py#L262
 
         Args:
             maturity (bool, optional): Whether to use the survival curve of the maturity
@@ -1597,11 +1633,12 @@ class CreditFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves Moody's seasoned corporate bond yields for Aaa (the highest rating) and Baa
-        (the lowest investment grade rating) US corporate bonds, the longest running corporate
-        bond yield benchmark there is: daily from 1986 and monthly from 1919.
+        Retrieves Moody's seasoned corporate bond yields for Aaa (the highest rating) and
+        Baa (the lowest investment grade rating) US corporate bonds: what the safest and the
+        riskiest investment grade companies pay to borrow, the longest running corporate
+        bond yield benchmark there is, daily from 1986 and monthly from 1919.
 
-        With spread=True the spreads over the 10-year Treasury yield are returned instead,
+        The spreads over the 10-year Treasury yield can be returned instead,
         together with the Baa minus Aaa spread, the classic measure of default risk in the
         academic literature (e.g. Fama and French, 1989), which widens sharply in recessions.
         Monthly spreads start in 1953, when the monthly 10-year Treasury yield does.
@@ -1609,7 +1646,7 @@ class CreditFixedIncome:
         Monthly values are the averages over the month, as Moody's publishes them; weekly
         values are the yields on the last day of each week (weeks end on Friday).
 
-        The formula is as follows (spread=True only):
+        The formula of the spreads is as follows:
 
         - Aaa = Aaa Yield - 10-Year Treasury Yield, and Baa likewise
         - Baa - Aaa = Baa Yield - Aaa Yield
@@ -1624,10 +1661,10 @@ class CreditFixedIncome:
         spread, credit spread.
 
         Args:
-            period (str, optional): Whether to return the daily, weekly, monthly, quarterly or
-                yearly data. Weekly takes the last day of every week; quarterly and yearly
-                average the monthly averages of the complete quarters and years. Defaults to
-                "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily),
+                "weekly" (the last day of every week), "monthly" (monthly averages), "quarterly"
+                and "yearly" (the averages of the monthly averages of the complete quarters and
+                years). Defaults to "daily".
             spread (bool, optional): Whether to return the spreads over the 10-year Treasury
                 yield instead of the yields. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1642,7 +1679,7 @@ class CreditFixedIncome:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The "Aaa" and "Baa" yields, or with spread=True the "Aaa", "Baa" and
+            pd.DataFrame: The "Aaa" and "Baa" yields, or as spreads the "Aaa", "Baa" and
             "Baa - Aaa" spreads.
 
         As an example:
@@ -1904,8 +1941,8 @@ class CreditFixedIncome:
         Args:
             countries (list[str] | str | None, optional): The areas to include, e.g. 'Euro Area'
                 or ['United States', 'United Kingdom']. Defaults to None, which returns all of them.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly",
+                "monthly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.

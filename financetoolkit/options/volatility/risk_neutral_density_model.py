@@ -20,12 +20,14 @@ def get_risk_neutral_density(
     number_of_strikes: int = 200,
 ) -> pd.Series:
     """
-    Extract the market-implied risk-neutral probability density of the underlying's
-    price at expiration, via the Breeden-Litzenberger (1978) theorem, from a
-    calibrated SVI implied volatility smile (see `svi_model.get_svi_parameters`) --
-    as opposed to a single flat (constant-across-strikes) assumed volatility, which
-    can only ever recover a lognormal density and defeats the purpose of the
-    theorem, since the entire point is to recover whatever (typically non-lognormal,
+    Calculate the market-implied risk-neutral probability density of the underlying's price
+    at expiration: how likely the market prices each price at expiration, via the
+    Breeden-Litzenberger (1978) theorem, from a calibrated SVI implied volatility smile (see
+    `svi_model.get_svi_parameters`).
+
+    The smile is used as opposed to a single flat (constant-across-strikes) assumed
+    volatility, which can only ever recover a lognormal density and defeats the purpose of
+    the theorem, since the entire point is to recover whatever (typically non-lognormal,
     fat-tailed and/or skewed) density the market's actual smile implies.
 
     The theorem states that the risk-neutral density is the second partial

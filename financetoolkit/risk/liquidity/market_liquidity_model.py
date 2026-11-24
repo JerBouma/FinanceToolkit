@@ -59,7 +59,8 @@ def get_amihud_illiquidity(
     scale: float = 1_000_000,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Amihud (2002) Illiquidity ratio.
+    Calculate the Amihud (2002) Illiquidity ratio: how much the price moves per dollar traded,
+    high for an illiquid asset.
 
     The Amihud ratio measures the average price impact of trading, i.e. how much the
     price moves per dollar of trading volume. It is the average, over the sample, of
@@ -148,7 +149,8 @@ def get_roll_spread(
     close_prices: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Roll (1984) implied bid-ask spread.
+    Calculate the Roll (1984) implied bid-ask spread: the cost of a round trip implied by the
+    bounce of the price between the bid and the ask.
 
     Roll's model shows that, under a stylized microstructure model in which the true
     (efficient) price follows a random walk and observed trade prices randomly bounce
@@ -260,7 +262,8 @@ def get_corwin_schultz_spread(
     rolling: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Corwin and Schultz (2012) high-low bid-ask spread per period.
+    Calculate the Corwin and Schultz (2012) high-low bid-ask spread per period: the cost of a
+    round trip estimated from the daily High and Low.
 
     The daily High is almost always a trade at the ask and the daily Low one at the bid, so
     the High/Low ratio holds both the volatility and the spread. The variance part grows
@@ -288,13 +291,16 @@ def get_corwin_schultz_spread(
     - Corwin, S. A., & Schultz, P. (2012). "A Simple Way to Estimate Bid-Ask Spreads from
     Daily High and Low Prices." The Journal of Finance, 67(2), 719-760.
 
+    Shares similar logic:
+    - RiskLabAI, corwin_schultz_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/corwin_schultz.py#L106
+
     Args:
         high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
         prices, used for the overnight adjustment.
-        period (str, optional): The period to average the two-day spreads over: weekly,
-        monthly, quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period to average the two-day spreads over.
+        Options are: "weekly", "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Average the two-day spreads of the last `rolling`
         periods instead of those of a single period. A window with a period without
         spreads is NaN. Defaults to None.
@@ -378,12 +384,13 @@ def get_bekker_parkinson_volatility(
     - Parkinson, M. (1980). "The Extreme Value Method for Estimating the Variance of the
     Rate of Return." Journal of Business, 53(1), 61-65.
 
-    Referenced against RiskLabAI's `bekker_parkinson_volatility_estimates`
-    (https://github.com/RiskLabAI/RiskLabAI.py), which averages β over a rolling window of
-    days while taking γ of the last pair only and does not adjust for the overnight return;
-    here σ is taken per pair (with the overnight adjustment)
-    and averaged per period, as the Corwin-Schultz spread is. On a pair without an overnight
-    gap the two agree to machine precision.
+    RiskLabAI's estimate averages β over a rolling window of days while taking γ of the last
+    pair only and does not adjust for the overnight return; here σ is taken per pair (with the
+    overnight adjustment) and averaged per period, as the Corwin-Schultz spread is. On a single
+    pair without an overnight gap the two use the same formula.
+
+    Shares similar logic:
+    - RiskLabAI, bekker_parkinson_volatility_estimates: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/bekker_parkinson_volatility_estimator.py#L51
 
     Args:
         high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
@@ -391,7 +398,7 @@ def get_bekker_parkinson_volatility(
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
         prices, used for the overnight adjustment.
         period (str, optional): The period to average the two-day volatilities over and
-        scale to: weekly, monthly, quarterly or yearly. Defaults to "monthly".
+        scale to. Options are: "weekly", "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Average the two-day volatilities of the last
         `rolling` periods instead of those of a single period. A window with a period
         without pairs is NaN. Defaults to None.
@@ -445,7 +452,8 @@ def get_abdi_ranaldo_spread(
     rolling: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Abdi and Ranaldo (2017) close-high-low bid-ask spread per period.
+    Calculate the Abdi and Ranaldo (2017) close-high-low bid-ask spread per period: the cost of
+    a round trip estimated from the distance of the Close to the middle of the daily range.
 
     The mid-range (the average of the log High and log Low) of a day is a proxy for the
     efficient price that holds no spread, while the Close is a trade at the bid or the ask.
@@ -478,8 +486,8 @@ def get_abdi_ranaldo_spread(
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
         prices.
-        period (str, optional): The period to average the two-day spreads over: weekly,
-        monthly, quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period to average the two-day spreads over.
+        Options are: "weekly", "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Average the two-day spreads of the last `rolling`
         periods instead of those of a single period. A window with a period without
         spreads is NaN. Defaults to None.
@@ -535,7 +543,8 @@ def get_edge_spread(
     rolling: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the EDGE bid-ask spread of Ardia, Guidotti and Kroencke (2024) per period.
+    Calculate the EDGE bid-ask spread of Ardia, Guidotti and Kroencke (2024) per period: the
+    cost of a round trip estimated from the Open, High, Low and Close.
 
     EDGE (the Efficient Discrete Generalized Estimator) combines four moment conditions on
     the Open, High, Low and Close: two measure the spread at the open (OHL and OHLC) and
@@ -576,14 +585,17 @@ def get_edge_spread(
     Spreads from Open, High, Low, and Close Prices." Journal of Financial Economics, 161,
     103916.
 
+    Shares similar logic:
+    - RiskLabAI, edge_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/edge.py#L42
+
     Args:
         open_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Open prices.
         high_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily High prices.
         low_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Low prices.
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close
         prices.
-        period (str, optional): The period to estimate the spread over: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period to estimate the spread over. Options are: "weekly", "monthly", "quarterly",
+        "yearly". Defaults to "monthly".
         rolling (int | None, optional): Estimate the spread from the pairs of the last
         `rolling` periods together instead of those of a single period. A window with a
         period without pairs is NaN. Defaults to None.
@@ -770,7 +782,7 @@ def get_share_turnover(
     - Turnover = SUM(Daily Turnover within the period)
 
     The paper measures the turnover per month and averages it over the three months
-    before the month of the returns; `rolling=3` with monthly periods gives that average.
+    before the month of the returns; a rolling window of 3 monthly periods gives that average.
 
     A period in which a trading day has a Volume but no (positive) number of shares
     outstanding is NaN, as its turnover would be incomplete.
@@ -785,8 +797,8 @@ def get_share_turnover(
         the days the asset did not trade.
         shares_outstanding (pd.Series | pd.DataFrame): The shares outstanding on each day,
         aligned to the same index (and columns) as `volume`.
-        period (str, optional): The period to sum the daily turnover over: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period to sum the daily turnover over. Options are: "weekly", "monthly",
+        "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): The mean of the turnover of the last `rolling`
         periods instead of the turnover per period. A window with a period without any
         trading day is NaN. Defaults to None.
@@ -846,7 +858,7 @@ def get_idiosyncratic_volatility(
     - Excess Return_t = α + β_1 * (Mkt-RF)_t + β_2 * SMB_t + β_3 * HML_t + ε_t
     - Idiosyncratic Volatility = Std(ε_t) * √(Trading Days per Period)
 
-    Where Std is the sample standard deviation (ddof=1) of the residuals and the trading
+    Where Std is the sample standard deviation (with n - 1 in the denominator) of the residuals and the trading
     days per period are 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly), the
     scaling of the Volatility of the Risk module; with `annualize` the scaling is √252 for
     every period. Any set of factors works the same way, e.g. the excess return of a
@@ -867,8 +879,8 @@ def get_idiosyncratic_volatility(
         returns.
         factors (pd.DataFrame): The daily factor returns, one column per factor, on the
         same dates as `excess_returns`.
-        period (str, optional): The period each regression runs within: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period each regression runs within. Options are: "weekly",
+        "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Regress on the days of the last `rolling` periods
         instead of a single period, from the period in which the asset's history first
         spans `rolling` periods. Defaults to None.
@@ -992,8 +1004,8 @@ def get_kyle_lambda(
     Args:
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
         volume (pd.Series | pd.DataFrame): The daily Volume on the same dates.
-        period (str, optional): The period each regression runs within: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period each regression runs within. Options are: "weekly",
+        "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Regress on the days of the last `rolling` periods
         instead of a single period. A window with a period without days is NaN. Defaults to
         None.
@@ -1080,8 +1092,8 @@ def get_amihud_lambda(
         returns (e.g. the Adjusted Close).
         dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
         times the Volume) on the same dates.
-        period (str, optional): The period each regression runs within: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period each regression runs within. Options are: "weekly",
+        "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Regress on the days of the last `rolling` periods
         instead of a single period. A window with a period without days is NaN. Defaults to
         None.
@@ -1167,8 +1179,8 @@ def get_hasbrouck_lambda(
         returns (e.g. the Adjusted Close).
         dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
         times the Volume) on the same dates.
-        period (str, optional): The period each regression runs within: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period each regression runs within. Options are: "weekly",
+        "monthly", "quarterly", "yearly". Defaults to "monthly".
         rolling (int | None, optional): Regress on the days of the last `rolling` periods
         instead of a single period. A window with a period without days is NaN. Defaults to
         None.
@@ -1232,7 +1244,7 @@ def get_roll_impact(
     - Roll Impact = Roll Spread / Mean(DV_t)
 
     Where P is the Close, DV the dollar volume of a day, Cov the sample autocovariance
-    (ddof=1) of the consecutive price changes within the period and the mean runs over the
+    (with n - 1 in the denominator) of the consecutive price changes within the period and the mean runs over the
     days of the period. A period with an autocovariance of zero or above has no Roll spread
     and is NaN, as in `get_roll_spread`, and so is a period with fewer than three pairs of
     consecutive price changes. The changes are those between the prices within the period,
@@ -1255,8 +1267,8 @@ def get_roll_impact(
         close_prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily Close prices.
         dollar_volume (pd.Series | pd.DataFrame): The daily dollar volume (e.g. the Close
         times the Volume) on the same dates.
-        period (str, optional): The period to estimate the impact over: weekly, monthly,
-        quarterly or yearly. Defaults to "monthly".
+        period (str, optional): The period to estimate the impact over. Options are: "weekly", "monthly", "quarterly",
+        "yearly". Defaults to "monthly".
         rolling (int | None, optional): Estimate from the days of the last `rolling` periods
         instead of a single period. A window with a period without days is NaN. Defaults to
         None.
@@ -1337,7 +1349,7 @@ def get_bulk_volume_classification(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the buy volume of each bar with the Bulk Volume Classification of Easley,
-    López de Prado and O'Hara (2012).
+    López de Prado and O'Hara (2012): the share of the volume that was buying, from the price change.
 
     Rather than signing every trade, the Bulk Volume Classification splits the volume of a
     bar into buys and sells by how large the price change of the bar is relative to the
@@ -1350,7 +1362,7 @@ def get_bulk_volume_classification(
 
     Where Z is the cumulative distribution function of the standard normal distribution (or
     of the Student-t distribution with `degrees_of_freedom`, as in Easley, López de Prado and
-    O'Hara (2016)), and σ_ΔP the sample standard deviation (ddof=1) of the price changes of
+    O'Hara (2016)), and σ_ΔP the sample standard deviation (with n - 1 in the denominator) of the price changes of
     the last `window` bars, the bar itself included. The papers classify one-minute or other
     intraday bars; on daily bars each day is classified as a whole.
 
@@ -1412,8 +1424,8 @@ def get_vpin(
     degrees_of_freedom: float | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Volume-Synchronized Probability of Informed Trading (VPIN) of Easley,
-    López de Prado and O'Hara (2012) on daily bars.
+    Calculate the Volume-Synchronized Probability of Informed Trading (VPIN) of Easley, López de
+    Prado and O'Hara (2012) on daily bars: how one-sided, and thus toxic, the order flow is.
 
     VPIN measures the toxicity of the order flow: the share of the volume that is one-sided,
     as informed traders buy (or sell) persistently while uninformed trading roughly
@@ -1446,6 +1458,9 @@ def get_vpin(
 
     The buckets are formed from the days, so each holds the same volume, as in the paper,
     and the mean imbalance of the last n buckets is divided by that volume.
+
+    Shares similar logic:
+    - RiskLabAI, volume_synchronized_pin: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/order_flow.py#L157
 
     Args:
         prices (pd.Series | pd.DataFrame): A Series or Dataframe of daily prices.

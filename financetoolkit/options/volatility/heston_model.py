@@ -69,9 +69,12 @@ def get_heston_characteristic_function(
 ) -> np.ndarray:
     """
     Calculate the characteristic function of the log return X = ln(S_T / F) in the Heston
-    (1993) model, in the form of Albrecher, Mayer, Schoutens and Tistaert (2007) ("the little
-    Heston trap"), which keeps the complex logarithm on its principal branch for every
-    expiration, so no count of branch crossings is needed.
+    (1993) model: the Fourier transform of its distribution, from which the option prices
+    follow, in the form of Albrecher, Mayer, Schoutens and Tistaert (2007) ("the little
+    Heston trap").
+
+    This form keeps the complex logarithm on its principal branch for every expiration, so
+    no count of branch crossings is needed.
 
     The formulas are as follows:
 
@@ -142,11 +145,12 @@ def get_heston_moment_explosion_time(
     rho: float,
 ) -> float:
     """
-    Calculate the time at which the moment E[S_T^p] of the stock price explodes in the Heston
-    (1993) model, following Andersen and Piterbarg (2007): the moment is finite for every
-    expiration before this time and infinite from it on. Moments of an order between 0 and 1
-    never explode, and neither does a moment of a higher order when the variance reverts fast
-    enough against the correlation.
+    Calculate the time at which the moment E[S_T^p] of the stock price explodes in the
+    Heston (1993) model, following Andersen and Piterbarg (2007): the expiration from which
+    the moment is infinite, while it is finite for every expiration before it.
+
+    Moments of an order between 0 and 1 never explode, and neither does a moment of a higher
+    order when the variance reverts fast enough against the correlation.
 
     The moment is E[S_T^p] = F^p * e^(A(T) + B(T) * v0), where B solves the Riccati equation
     dB / dt = σ²B² / 2 + (ρσp — κ)B + p(p — 1) / 2 from B(0) = 0, and the moment explodes when B
@@ -173,7 +177,8 @@ def get_heston_moment_explosion_time(
         float: The explosion time T* in years, np.inf if the moment never explodes.
 
     Notes:
-        The Carr-Madan transform (method="fft" of get_heston_price and get_bates_price) needs
+        The Carr-Madan transform (the fast Fourier transform of get_heston_price and
+        get_bates_price) needs
         the moment of order α + 1 of the damping α to be finite, and is accurate only with a
         margin above it (see fourier_model.FFT_MOMENT_ORDER). References: Andersen, L. B. G.
         and Piterbarg, V. V. (2007). "Moment Explosions in Stochastic Volatility Models."
@@ -231,16 +236,18 @@ def get_heston_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of a European option in the stochastic volatility model of Heston
-    (1993), in which the variance of the stock follows a mean-reverting square-root process
-    correlated with the stock. A negative correlation makes the volatility rise as the price
-    falls, which gives the downward sloping skew of equity options, and the volatility of the
-    variance curves the smile.
+    (1993): what a call or put is worth when the variance of the stock follows a
+    mean-reverting square-root process correlated with the stock.
+
+    A negative correlation makes the volatility rise as the price falls, which gives the
+    downward sloping skew of equity options, and the volatility of the variance curves the
+    smile.
 
     The model is dS = (r — q)S dt + √v S dW_1 and dv = κ(θ — v) dt + σ√v dW_2, with
     dW_1 dW_2 = ρ dt. The price follows from the characteristic function in the form of
     Albrecher et al. (2007) (see get_heston_characteristic_function) with the Fourier pricer
     of the Toolkit (see fourier_model.get_fourier_price): Lewis' integral by default, or the
-    COS method (method="cos") or the Carr-Madan fast Fourier transform (method="fft").
+    COS method or the Carr-Madan fast Fourier transform.
 
     The formulas are as follows:
 
@@ -255,12 +262,16 @@ def get_heston_price(
     variance stays above zero when the Feller condition 2κθ ≥ σ² holds; the price is defined
     either way.
 
-    The Carr-Madan transform (method="fft") needs the moment E[S_T^(α + 1)] of its damping α
+    The Carr-Madan transform needs the moment E[S_T^(α + 1)] of its damping α
     to be finite, and in the Heston model that moment explodes at a finite time when ρσ(α + 1)
     exceeds κ, or σ is large (see get_heston_moment_explosion_time). Close to the explosion the
     transform aliases the damped price into errors of 0.1 or more. When the moment of order
     4 (α + 1 with a margin of 1.5, see fourier_model.FFT_MOMENT_ORDER) is infinite at the
     expiration, the price is taken with the Lewis method instead and a warning says so.
+
+    Referenced against:
+    - QuantLib, AnalyticHestonEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
+    - FinancePy, Heston.value_weber: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/heston.py#L363
 
     Args:
         stock_price (float): The current stock price.
@@ -275,7 +286,8 @@ def get_heston_price(
         rho (float): The correlation ρ between the stock and its variance, between -1 and 1.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price a put instead of a call. Defaults to False.
-        method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
+        method (str, optional): The Fourier pricer. Options are: "lewis" (Lewis' integral), "cos" (the COS method),
+            "fft" (the Carr-Madan fast Fourier transform). Defaults to "lewis".
 
     Returns:
         float | np.ndarray: The option price, a float for a single strike price and an array
@@ -290,14 +302,13 @@ def get_heston_price(
         Volatility with Applications to Bond and Currency Options." The Review of Financial
         Studies, 6(2), 327-343; Albrecher, H., Mayer, P., Schoutens, W. and Tistaert, J.
         (2007). "The Little Heston Trap." Wilmott Magazine, January, 83-92; Lewis, A. L.
-        (2000). Option Valuation under Stochastic Volatility. Finance Press. Referenced
-        against QuantLib's AnalyticHestonEngine (https://www.quantlib.org) on nine parameter
-        sets from a day to ten years, with ρ from -0.999 to 0.99 and σ up to 2: the Lewis
+        (2000). Option Valuation under Stochastic Volatility. Finance Press.
+        - QuantLib's AnalyticHestonEngine is used on nine parameter sets from a day to ten
+          years, with ρ from -0.999 to 0.99 and σ up to 2: the Lewis
         method agrees within 1e-10, the COS method within 1e-8 for typical parameters and 6e-7
         for a volatile variance with a slow mean reversion (σ = 1.5, κ = 0.5, ρ = -0.9 over
         five years), and the FFT within 1e-6 where it applies.
-        FinancePy's Heston.value_weber (https://github.com/domokane/FinancePy) agrees with
-        the Lewis method within 1e-10.
+        - FinancePy's Heston.value_weber agrees with the Lewis method within 1e-10.
 
     As an example:
 
@@ -380,9 +391,11 @@ def get_bates_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of a European option in the stochastic volatility jump diffusion of
-    Bates (1996): the Heston model with lognormal jumps in the stock as in Merton (1976). The
-    stochastic volatility shapes the smile of the longer expirations and the jumps the steep
-    smile of the short ones, which the Heston model alone fits poorly.
+    Bates (1996): what a call or put is worth in the Heston model with lognormal jumps in
+    the stock as in Merton (1976).
+
+    The stochastic volatility shapes the smile of the longer expirations and the jumps the
+    steep smile of the short ones, which the Heston model alone fits poorly.
 
     The jumps are independent of the diffusion, so the characteristic function of the log
     return is the product of the Heston one and the compensated jump part of the Merton model
@@ -402,9 +415,12 @@ def get_bates_price(
     standard deviation of the log jump size. With λ = 0 it is the Heston price.
 
     The lognormal jumps have finite moments of every order, so the moment condition of the
-    Carr-Madan transform (method="fft") is that of the Heston part: when its moment of order 4
+    Carr-Madan transform is that of the Heston part: when its moment of order 4
     is infinite at the expiration (see get_heston_price), the price is taken with the Lewis
     method instead and a warning says so.
+
+    Referenced against:
+    - QuantLib, BatesEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -423,7 +439,8 @@ def get_bates_price(
         jump_volatility (float): The standard deviation δ of the log jump size, 0 or above.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price a put instead of a call. Defaults to False.
-        method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
+        method (str, optional): The Fourier pricer. Options are: "lewis" (Lewis' integral), "cos" (the COS method),
+            "fft" (the Carr-Madan fast Fourier transform). Defaults to "lewis".
 
     Returns:
         float | np.ndarray: The option price, a float for a single strike price and an array
@@ -438,9 +455,9 @@ def get_bates_price(
         References: Bates, D. S. (1996). "Jumps and Stochastic Volatility: Exchange Rate
         Processes Implicit in Deutsche Mark Options." The Review of Financial Studies, 9(1),
         69-107; Merton, R. C. (1976). "Option Pricing When Underlying Stock Returns Are
-        Discontinuous." Journal of Financial Economics, 3(1-2), 125-144. Referenced against
-        QuantLib's BatesEngine with a BatesModel (https://www.quantlib.org), which agrees
-        with the Lewis method within 1e-12.
+        Discontinuous." Journal of Financial Economics, 3(1-2), 125-144.
+        - QuantLib's BatesEngine with a BatesModel agrees with the Lewis method within
+          1e-12.
 
     As an example:
 
@@ -523,9 +540,9 @@ def get_heston_parameters(
 ) -> dict[str, float]:
     """
     Calibrate the Heston (1993) model to the implied volatilities of an option chain: the
-    variance today v0, the speed of mean reversion κ, the long-run variance θ, the volatility
-    of the variance σ and the correlation ρ that best reproduce the market's smile across
-    every expiration at once.
+    variance today v0, the speed of mean reversion κ, the long-run variance θ, the
+    volatility of the variance σ and the correlation ρ that best reproduce the market's
+    smile across every expiration at once.
 
     The fit minimizes the vega-weighted price errors, the price error of each quote divided
     by its Black-Scholes vega, which to first order is its error in implied volatility and is
@@ -556,6 +573,9 @@ def get_heston_parameters(
     equity smiles commonly break it, as the steep short-dated skew asks for a high σ, and
     imposing it worsens the fit.
 
+    Referenced against:
+    - QuantLib, HestonModelHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_heston_model_helper.html
+
     Args:
         stock_price (float): The current stock price.
         strike_price (np.ndarray): The strike price of every quote.
@@ -585,9 +605,9 @@ def get_heston_parameters(
         Currency Options." The Review of Financial Studies, 6(2), 327-343; Fang, F. and
         Oosterlee, C. W. (2008). "A Novel Pricing Method for European Options Based on
         Fourier-Cosine Series Expansions." SIAM Journal on Scientific Computing, 31(2),
-        826-848. Referenced against QuantLib's HestonModelHelper calibration
-        (https://www.quantlib.org) on the implied volatilities of a known Heston surface,
-        whose parameters both recover.
+        826-848.
+        - QuantLib's HestonModelHelper calibration and this one both recover the parameters
+          of a known Heston surface from its implied volatilities.
 
     As an example:
 

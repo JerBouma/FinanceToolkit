@@ -471,9 +471,9 @@ def get_finite_difference_option_values(
     exercise_method: str = "brennan_schwartz",
 ) -> np.ndarray:
     """
-    Calculate the finite difference values of European or American options for several
-    strike prices and times to expiration with one solve of the Black-Scholes equation, see
-    get_finite_difference_option.
+    Calculate the finite difference values of European or American options for several strike
+    prices and times to expiration: what each option is worth, from one solve of the
+    Black-Scholes equation (see get_finite_difference_option).
 
     The value of a vanilla option is homogeneous in the stock price and the strike price,
     V(S, K, τ) = K * v(ln(S / K), τ), so the equation is solved once for a strike of 1 on a
@@ -499,6 +499,10 @@ def get_finite_difference_option_values(
     rate, q the continuous dividend yield, σ the volatility, φ = 1 for a call and -1 for a
     put and θ = 0, 1 or 1/2 for the explicit, implicit and Crank-Nicolson schemes.
 
+    Shares similar logic:
+    - QuantLib, FdBlackScholesVanillaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+    - FinancePy, black_scholes_fd: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference.py#L318
+
     Args:
         stock_price (float): The current stock price.
         strike_prices (np.ndarray | list[float]): The strike prices.
@@ -509,7 +513,8 @@ def get_finite_difference_option_values(
         put_option (bool, optional): Whether the options are puts. Defaults to False.
         american_option (bool, optional): Whether the options are American. Defaults to
             False.
-        scheme (str, optional): "explicit", "implicit" or "crank_nicolson". Defaults to
+        scheme (str, optional): The time stepping. Options are: "explicit" (explicit),
+            "implicit" (implicit), "crank_nicolson" (Crank-Nicolson). Defaults to
             "crank_nicolson".
         price_steps (int, optional): The number of steps of the grid of log moneyness,
             which spans every strike price plus five standard deviations on either side.
@@ -519,8 +524,9 @@ def get_finite_difference_option_values(
             Defaults to 200.
         rannacher_steps (int, optional): The number of Crank-Nicolson steps taken as two
             implicit half steps at the start. Defaults to 2.
-        exercise_method (str, optional): "brennan_schwartz" or "psor". Defaults to
-            "brennan_schwartz".
+        exercise_method (str, optional): The solver of the exercise constraint. Options are:
+            "brennan_schwartz" (Brennan-Schwartz), "psor" (projected successive
+            over-relaxation). Defaults to "brennan_schwartz".
 
     Returns:
         np.ndarray: The values, strike prices by times to expiration.
@@ -534,8 +540,8 @@ def get_finite_difference_option_values(
         Evaluation of Solutions of Partial Differential Equations of the Heat-Conduction
         Type." Mathematical Proceedings of the Cambridge Philosophical Society, 43(1),
         50-67. Brennan, M. J., & Schwartz, E. S. (1977). "The Valuation of American Put
-        Options." The Journal of Finance, 32(2), 449-462. Referenced against QuantLib's
-        FdBlackScholesVanillaEngine (https://www.quantlib.org) on a 4,000 by 4,000 grid.
+        Options." The Journal of Finance, 32(2), 449-462.
+        - QuantLib's FdBlackScholesVanillaEngine is used on a 4,000 by 4,000 grid.
 
     As an example:
 
@@ -646,8 +652,9 @@ def get_finite_difference_option(
     exercise_method: str = "brennan_schwartz",
 ) -> float:
     """
-    Calculate the value of a European or American option by solving the Black-Scholes
-    equation with finite differences on the log stock price.
+    Calculate the value of a European or American option by solving the Black-Scholes equation
+    with finite differences on the log stock price: what the option is worth on a grid of prices
+    and times.
 
     Also known as: finite difference method, PDE pricing, Crank-Nicolson, θ-scheme.
 
@@ -678,6 +685,13 @@ def get_finite_difference_option(
     successive over-relaxation (PSOR, Cryer 1971) with ω = 1.2 until a sweep changes less
     than 1e-12, which is far slower and gives the same values.
 
+    Referenced against:
+    - QuantLib, FdBlackScholesVanillaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+    - FinancePy, black_scholes_fd: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference.py#L318
+
+    Shares similar logic:
+    - FinancePy, black_scholes_fd_psor: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference_psor.py#L13
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The strike price.
@@ -688,15 +702,18 @@ def get_finite_difference_option(
         put_option (bool, optional): Whether the option is a put. Defaults to False.
         american_option (bool, optional): Whether the option is American. Defaults to
             False.
-        scheme (str, optional): "explicit", "implicit" or "crank_nicolson". Defaults to
+        scheme (str, optional): The time stepping. Options are: "explicit" (explicit),
+            "implicit" (implicit), "crank_nicolson" (Crank-Nicolson). Defaults to
             "crank_nicolson".
         price_steps (int, optional): The number of steps of the grid of log moneyness.
             Defaults to 400.
         time_steps (int, optional): The number of time steps. Defaults to 200.
         rannacher_steps (int, optional): The number of Crank-Nicolson steps taken as two
             implicit half steps at the start. Defaults to 2.
-        exercise_method (str, optional): "brennan_schwartz" or "psor" for American
-            options. Defaults to "brennan_schwartz".
+        exercise_method (str, optional): The solver of the exercise constraint of
+            American options. Options are:
+            "brennan_schwartz" (Brennan-Schwartz), "psor" (projected successive
+            over-relaxation). Defaults to "brennan_schwartz".
 
     Returns:
         float: The value of the option.
@@ -715,10 +732,7 @@ def get_finite_difference_option(
         Control, 9(3), 385-392. Rannacher, R. (1984). "Finite Element Solution of Diffusion
         Problems with Irregular Data." Numerische Mathematik, 43(2), 309-327. Wilmott, P.,
         Howison, S., & Dewynne, J. (1995). "The Mathematics of Financial Derivatives."
-        Cambridge University Press. Referenced against QuantLib's
-        FdBlackScholesVanillaEngine (https://www.quantlib.org) and FinancePy's
-        black_scholes_fd and black_scholes_fd_psor
-        (https://github.com/domokane/FinancePy).
+        Cambridge University Press.
 
     As an example:
 
@@ -854,8 +868,8 @@ def get_finite_difference_barrier_option(
 ) -> float:
     """
     Calculate the value of a continuously monitored single-barrier option with a rebate by
-    solving the Black-Scholes equation with finite differences, see
-    get_finite_difference_option for the scheme.
+    solving the Black-Scholes equation with finite differences: what an option is worth that
+    knocks in or out at the barrier (see get_finite_difference_option for the scheme).
 
     A knock-out option is solved on a grid that ends at the barrier, where its value is the
     rebate (paid when the barrier is hit), with grid points at the barrier and the strike
@@ -871,6 +885,10 @@ def get_finite_difference_barrier_option(
     Where H is the barrier, R the rebate, and a and b as in get_finite_difference_option.
     The closed forms of Reiner and Rubinstein (1991) are in exotics_model.get_barrier_option.
 
+    Shares similar logic:
+    - QuantLib, FdBlackScholesBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_barrier_engine.html
+    - QuantLib, FdBlackScholesRebateEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_rebate_engine.html
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The strike price.
@@ -880,13 +898,15 @@ def get_finite_difference_barrier_option(
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        barrier_direction (str, optional): "down" (the barrier below the stock price) or
-            "up". Defaults to "down".
-        knock_type (str, optional): "out" or "in". Defaults to "out".
+        barrier_direction (str, optional): The side of the barrier. Options are: "down"
+            (below the stock price), "up" (above the stock price). Defaults to "down".
+        knock_type (str, optional): The knock. Options are: "out" (knock-out), "in"
+            (knock-in). Defaults to "out".
         rebate (float, optional): The rebate, paid when the barrier is hit for a knock-out
             option and at expiration when it is never hit for a knock-in option. Defaults
             to 0.
-        scheme (str, optional): "explicit", "implicit" or "crank_nicolson". Defaults to
+        scheme (str, optional): The time stepping. Options are: "explicit" (explicit),
+            "implicit" (implicit), "crank_nicolson" (Crank-Nicolson). Defaults to
             "crank_nicolson".
         price_steps (int, optional): The number of steps between the barrier and the far
             end of the grid. Defaults to 400.
@@ -905,9 +925,7 @@ def get_finite_difference_barrier_option(
     Notes:
         References: Reiner, E., & Rubinstein, M. (1991). "Breaking Down the Barriers."
         Risk, 4(8), 28-35. Wilmott, P., Howison, S., & Dewynne, J. (1995). "The Mathematics
-        of Financial Derivatives." Cambridge University Press, chapter 11. Referenced
-        against QuantLib's FdBlackScholesBarrierEngine and FdBlackScholesRebateEngine
-        (https://www.quantlib.org).
+        of Financial Derivatives." Cambridge University Press, chapter 11.
 
     As an example:
 
@@ -1040,7 +1058,9 @@ def get_finite_difference_shout_option(
 ) -> float:
     """
     Calculate the value of a shout option by solving the Black-Scholes equation with
-    finite differences, see get_finite_difference_option for the scheme.
+    finite differences: what an option is worth whose holder may once lock in its intrinsic
+    value before expiration and keep the upside (see get_finite_difference_option for the
+    scheme).
 
     The holder of a shout option may once, at any time τ before expiration, lock in the
     intrinsic value S_τ - K (of a call; K - S_τ of a put) and keeps the upside after it: at
@@ -1058,6 +1078,9 @@ def get_finite_difference_shout_option(
     Black-Scholes value of the same type. Every time step solves this constraint by
     Brennan-Schwartz or PSOR, as for an American option.
 
+    Referenced against:
+    - QuantLib, FdBlackScholesShoutEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/fdblackscholesshoutengine.hpp#L35
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The strike price.
@@ -1066,15 +1089,17 @@ def get_finite_difference_shout_option(
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        scheme (str, optional): "explicit", "implicit" or "crank_nicolson". Defaults to
+        scheme (str, optional): The time stepping. Options are: "explicit" (explicit),
+            "implicit" (implicit), "crank_nicolson" (Crank-Nicolson). Defaults to
             "crank_nicolson".
         price_steps (int, optional): The number of steps of the grid of log moneyness.
             Defaults to 400.
         time_steps (int, optional): The number of time steps. Defaults to 200.
         rannacher_steps (int, optional): The number of Crank-Nicolson steps taken as two
             implicit half steps at the start. Defaults to 2.
-        exercise_method (str, optional): "brennan_schwartz" or "psor". Defaults to
-            "brennan_schwartz".
+        exercise_method (str, optional): The solver of the exercise constraint. Options are:
+            "brennan_schwartz" (Brennan-Schwartz), "psor" (projected successive
+            over-relaxation). Defaults to "brennan_schwartz".
 
     Returns:
         float: The value of the shout option.
@@ -1086,8 +1111,7 @@ def get_finite_difference_shout_option(
         References: Thomas, B. (1993). "Something to Shout About." Risk, 6(5), 56-58.
         Windcliff, H., Forsyth, P. A., & Vetzal, K. R. (2001). "Shout Options: A Framework
         for Pricing Contracts Which Can Be Modified by the Investor." Journal of
-        Computational and Applied Mathematics, 134(1-2), 213-241. Referenced against
-        QuantLib's FdBlackScholesShoutEngine (https://www.quantlib.org).
+        Computational and Applied Mathematics, 134(1-2), 213-241.
 
     As an example:
 

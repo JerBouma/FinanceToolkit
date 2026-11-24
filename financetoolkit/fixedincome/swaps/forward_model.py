@@ -27,7 +27,9 @@ def get_forward_rate_agreement(
     day_count: str = "act/360",
 ) -> tuple[float, float]:
     """
-    Calculate the rate and the value of a forward rate agreement (FRA) on a zero-coupon curve.
+    Calculate the rate and the value of a forward rate agreement (FRA) on a zero-coupon
+    curve: the simple interest rate fixed today for a loan from `start` to `end`, and what
+    an existing FRA is worth.
 
     A forward rate agreement fixes today the simple interest rate of a loan from `start` to
     `end`. At no arbitrage the FRA rate is the simple forward rate implied by the discount
@@ -48,8 +50,12 @@ def get_forward_rate_agreement(
     that day count. The value is that of a long FRA (paying the fixed rate); a short FRA is
     worth its negative.
 
-    Referenced against QuantLib's ForwardRateAgreement (forwardRate, NPV), FinancePy's
-    IborFRA (value) and rateslib's FRA (rate, npv).
+    Referenced against:
+    - QuantLib, ForwardRateAgreement: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_rate_agreement.html
+
+    Shares similar logic:
+    - FinancePy, IborFRA: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_fra.py#L23
+    - rateslib, FRA: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FRA.html
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -59,8 +65,8 @@ def get_forward_rate_agreement(
         fixed_rate (float | None, optional): The fixed rate K of an existing FRA (decimal,
             simple interest on the day count). Defaults to None, which returns no value.
         notional (float, optional): The notional of the FRA. Defaults to 10,000,000.
-        day_count (str, optional): The day count of the FRA rate, "act/360" or "act/365".
-            Defaults to "act/360".
+        day_count (str, optional): The day count of the FRA rate. Options are: "act/360"
+            (actual/360), "act/365" (actual/365). Defaults to "act/360".
 
     Returns:
         tuple[float, float]: The FRA rate (decimal) and the value of the long FRA in the
@@ -96,7 +102,8 @@ def get_futures_convexity_adjustment(
 ) -> float:
     """
     Calculate the convexity adjustment between the rate of a short-rate futures contract
-    (such as SOFR or Euribor futures) and the forward rate of the same period.
+    (such as SOFR or Euribor futures) and the forward rate of the same period: how much the
+    futures rate exceeds the forward rate because futures settle daily.
 
     A futures contract is settled every day while a forward rate agreement is settled once,
     so the futures rate is higher than the forward rate: gains on a short futures position
@@ -120,10 +127,16 @@ def get_futures_convexity_adjustment(
     (100 minus the price, simple interest on ACT/360) to continuous compounding before
     subtracting it.
 
-    Referenced against FinancePy's IborFuture.convexity. QuantLib's HullWhite.convexityBias
-    is a different formula: it states the adjustment in simple interest and adds a term for
-    the futures period itself (σ² * t1 * (t2 - t1) / 2 in Ho-Lee), so it is larger, by about
-    an eighth for a three-month contract two years out.
+    QuantLib's HullWhite.convexityBias is a different formula: it states the adjustment in
+    simple interest and adds a term for the futures period itself (σ² * t1 * (t2 - t1) / 2
+    in Ho-Lee), so it is larger, by about an eighth for a three-month contract two years
+    out.
+
+    Referenced against:
+    - FinancePy, IborFuture.convexity: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_future.py#L106
+
+    Shares similar logic:
+    - QuantLib, HullWhite.convexityBias: https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
 
     Args:
         volatility (float): The absolute volatility of the short rate (decimal a year,
@@ -175,7 +188,8 @@ def get_fx_forward_rate(
 ) -> tuple[float, float]:
     """
     Calculate the forward exchange rate by covered interest parity, and the value of an
-    existing FX forward.
+    existing FX forward: the exchange rate at which a currency can be bought for later
+    delivery today, set by the interest rates of the two currencies.
 
     Exchanging currency today and depositing it, or depositing at home and exchanging at the
     forward rate, must give the same amount, so the forward rate is the spot rate carried at
@@ -194,8 +208,13 @@ def get_fx_forward_rate(
     foreign currency. With continuously compounded rates this is S * e^((r_d - r_f) * T).
     The value is in the domestic currency.
 
-    Referenced against QuantLib's FxForward with the DiscountingFxForwardEngine,
-    FinancePy's FXForward and rateslib's forward_fx.
+    Referenced against:
+    - rateslib, forward_fx: https://rateslib.com/py/en/3.0.x/api/rateslib.fx.forward_fx.html
+
+    Shares similar logic:
+    - QuantLib, FxForward: https://www.quantlib.org/reference/class_quant_lib_1_1_fx_forward.html
+    - QuantLib, DiscountingFxForwardEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_discounting_fx_forward_engine.html
+    - FinancePy, FXForward: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/fx/fx_forward.py#L20
 
     Args:
         spot_rate (float): The spot exchange rate, domestic currency per unit of foreign.
@@ -235,7 +254,9 @@ def get_equity_forward(
     strike_price: float | None = None,
 ) -> tuple[float, float]:
     """
-    Calculate the forward price of a stock or index and the value of an existing forward.
+    Calculate the forward price of a stock or index and the value of an existing forward:
+    the price agreed today for delivery later, the spot price carried at the risk-free rate
+    less the dividends.
 
     Buying the stock today and holding it, financed at the risk-free rate, replicates a
     long forward; the dividends received along the way lower the forward price, either as
@@ -252,8 +273,11 @@ def get_equity_forward(
     dividend paid after t_i years and K the delivery price of a long forward. The value of
     a short forward is its negative.
 
-    Referenced against QuantLib's forward pricing of an equity (spot carried on a
-    zero curve, EquityTotalReturnSwap) and FinancePy's EquityForward (forward, value).
+    Referenced against:
+    - FinancePy, EquityForward: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_forward.py#L19
+
+    Shares similar logic:
+    - QuantLib, EquityTotalReturnSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_equity_total_return_swap.html
 
     Args:
         spot_price (float): The price of the stock or index today.

@@ -135,8 +135,9 @@ def get_discrete_monitoring_barrier(
     monitoring_interval: float,
 ) -> float:
     """
-    Calculate the continuous barrier that prices a discretely watched barrier with the
-    continuity correction of Broadie, Glasserman and Kou (1997).
+    Calculate the continuous barrier that prices a discretely watched barrier: the barrier
+    shifted away from the stock price by the continuity correction of Broadie, Glasserman and
+    Kou (1997).
 
     A barrier that is only checked at the close of each day (or week, or month) is crossed less
     often than one watched continuously, so a discretely monitored barrier option is priced
@@ -285,8 +286,9 @@ def get_geometric_asian_option(
     fixings: int | None = None,
 ) -> float | np.ndarray:
     """
-    Calculate the closed-form price of a geometric-average price Asian option, averaged
-    continuously (Kemna & Vorst, 1990) or over n equally spaced fixings.
+    Calculate the closed-form price of a geometric-average price Asian option: what an option on
+    the geometric average of the stock price is worth, averaged continuously (Kemna & Vorst,
+    1990) or over n equally spaced fixings.
 
     The logarithm of the geometric average G of a lognormal stock price is normal, so the
     option is a Black-Scholes option on G:
@@ -298,6 +300,9 @@ def get_geometric_asian_option(
     - d1 = (E[ln G] - ln K + Var[ln G]) / √Var[ln G], d2 = d1 - √Var[ln G]
 
     With b = r - q. The continuous version equals exotics_model.get_asian_option.
+
+    Referenced against:
+    - QuantLib, AnalyticDiscreteGeometricAveragePriceAsianEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_discrete_geometric_average_price_asian_engine.html
 
     Args:
         stock_price (float | np.ndarray): The current stock price.
@@ -409,8 +414,8 @@ def get_turnbull_wakeman(
 ) -> float:
     """
     Calculate the price of an arithmetic-average price Asian option with the approximation of
-    Turnbull and Wakeman (1991), which takes the average to be lognormal with the first two
-    moments of the true average.
+    Turnbull and Wakeman (1991): what an option on the average stock price is worth when that
+    average is taken to be lognormal with the first two moments of the true average.
 
     - M1 = E[A] / S, M2 = E[A²] / S² (see the moments below)
     - F_A = S * M1, v = ln(M2 / M1²)
@@ -426,6 +431,10 @@ def get_turnbull_wakeman(
     σ_A² = ln(M2) / T - 2b_A, which gives the same price. For a continuous average that starts
     today, Levy (1992) matches the same two moments with a lognormal and gives the same price;
     the two differ only for an average that has already started.
+
+    Referenced against:
+    - QuantLib, TurnbullWakemanAsianEngine (fixings): https://www.quantlib.org/reference/class_quant_lib_1_1_turnbull_wakeman_asian_engine.html
+    - QuantLib, ContinuousArithmeticAsianLevyEngine (continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_continuous_arithmetic_asian_levy_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -552,7 +561,8 @@ def get_curran(
 ) -> float:
     """
     Calculate the price of an arithmetic-average price Asian option with the approximation of
-    Curran (1994), which conditions on the geometric average G.
+    Curran (1994): what an option on the average stock price is worth, conditioning on the
+    geometric average G.
 
     The arithmetic average A is at least G, so when G ends above the strike the call pays
     A - K exactly; only the paths with G below the strike are approximated, by the threshold
@@ -568,6 +578,9 @@ def get_curran(
     integrals over [0, T] (σ_tG = σ² * (t - t² / (2T)), σ_G² = σ² * T / 3), taken with
     Gauss-Legendre points. When K̂ is not positive the average ends above the strike on
     every path and the call is e^(-rT) * (E[A] - K).
+
+    Referenced against:
+    - QuantLib, MCDiscreteArithmeticAPEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -663,8 +676,9 @@ def get_monte_carlo_asian_options(
     seed: int | None = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculate the Monte Carlo price of arithmetic-average price Asian options with the
-    geometric-average option as control variate (Kemna & Vorst, 1990).
+    Calculate the Monte Carlo price of arithmetic-average price Asian options: what options on
+    the average stock price are worth on simulated paths, with the geometric-average option as
+    control variate (Kemna & Vorst, 1990).
 
     Every path is a Geometric Brownian Motion observed at n equally spaced fixings. The
     geometric-average option on the same paths has a known price and moves closely with the
@@ -678,6 +692,9 @@ def get_monte_carlo_asian_options(
     Where A and G are the arithmetic and geometric averages of the fixings of a path, E[X] is
     the closed-form discrete geometric price (get_geometric_asian_option) and Var and Cov use
     ddof=1. All strike prices are priced on the same paths (common random numbers).
+
+    Referenced against:
+    - QuantLib, MCDiscreteArithmeticAPEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
 
     Args:
         stock_price (float): The current stock price.
@@ -1058,8 +1075,9 @@ def get_lookback_option(
     lookback_period: float = 1.0,
 ) -> float | np.ndarray:
     """
-    Calculate the price of a lookback option, of which the payoff depends on the highest or
-    lowest stock price over (part of) the option's life, for an option starting today.
+    Calculate the price of a lookback option: what an option is worth whose payoff depends on
+    the highest or lowest stock price over (part of) the option's life, for an option starting
+    today.
 
     - Floating strike call: S(T) - min S, put: max S - S(T) (Goldman, Sosin & Gatto, 1979)
     - Fixed strike call: max(max S - K, 0), put: max(K - min S, 0) (Conze & Viswanathan, 1991)
@@ -1089,6 +1107,12 @@ def get_lookback_option(
 
     Where b = 0 (r = q) the formulas are taken at b = ±1e-5, their limit to O(b²).
 
+    Referenced against:
+    - QuantLib, AnalyticContinuousFixedLookbackEngine (fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_fixed_lookback_engine.html
+    - QuantLib, AnalyticContinuousFloatingLookbackEngine (floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_floating_lookback_engine.html
+    - QuantLib, AnalyticContinuousPartialFixedLookbackEngine (partial fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_fixed_lookback_engine.html
+    - QuantLib, AnalyticContinuousPartialFloatingLookbackEngine (partial floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_floating_lookback_engine.html
+
     Args:
         stock_price (float): The current stock price, which is also the extreme so far.
         strike_price (float): The option's strike price, ignored for a floating strike.
@@ -1097,7 +1121,8 @@ def get_lookback_option(
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
-        strike_type (str): "fixed" or "floating". Defaults to "fixed".
+        strike_type (str): The strike. Options are: "fixed" (fixed strike), "floating"
+            (floating strike). Defaults to "fixed".
         lookback_period (float): The share of the life over which the extreme is watched,
             above 0 and at most 1: the start for a floating strike, the end for a fixed
             strike. Defaults to 1, the whole life.
@@ -1287,8 +1312,9 @@ def get_double_barrier_option(
     knock_type: str = "out",
 ) -> float | np.ndarray:
     """
-    Calculate the price of a double barrier (knock-out or knock-in) European option with flat,
-    continuously watched barriers, with the formula of Ikeda and Kunitomo (1992).
+    Calculate the price of a double barrier European option: what an option is worth that knocks
+    out (or in) when the stock price touches either of two flat, continuously watched barriers,
+    with the formula of Ikeda and Kunitomo (1992).
 
     The knock-out option pays the vanilla payoff only when the stock price stays between the
     lower barrier L and the upper barrier U up to expiration. With the density of those paths
@@ -1308,6 +1334,9 @@ def get_double_barrier_option(
     until the terms are below machine precision. With the stock price outside the corridor
     the knock-out is worth 0 and the knock-in the vanilla price.
 
+    Referenced against:
+    - QuantLib, AnalyticDoubleBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_engine.html
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The option's strike price, or an array of them.
@@ -1319,7 +1348,8 @@ def get_double_barrier_option(
             array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
-        knock_type (str): "out" or "in". Defaults to "out".
+        knock_type (str): The knock. Options are: "out" (knock-out), "in" (knock-in).
+            Defaults to "out".
 
     Returns:
         float | np.ndarray: The double barrier option value, an array in the shape of the
@@ -1552,9 +1582,9 @@ def get_partial_time_barrier_option(
     window_share: float = 0.5,
 ) -> float | np.ndarray:
     """
-    Calculate the price of a partial-time single barrier option (Heynen & Kat, 1994), whose
-    barrier is only watched during part of the option's life: from today to t1 (a "start"
-    window) or from t1 to expiration (an "end" window).
+    Calculate the price of a partial-time single barrier option (Heynen & Kat, 1994): what an
+    option is worth whose barrier is only watched during part of its life, from today to t1 (a
+    start window) or from t1 to expiration (an end window).
 
     With t1 the end (start window) or the start (end window) of the watched period, Y = ln S(t1)
     normal with mean ln S + (b - σ²/2) * t1 and variance σ² * t1, and h = ln(H / S):
@@ -1573,6 +1603,9 @@ def get_partial_time_barrier_option(
     and at T), the form in which Heynen and Kat give them. In the end window the option is
     knocked out when the stock price is beyond the barrier at t1 (Heynen and Kat's type B2).
 
+    Referenced against:
+    - QuantLib, AnalyticPartialTimeBarrierOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_partial_time_barrier_option_engine.html
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The option's strike price, or an array of them.
@@ -1583,10 +1616,12 @@ def get_partial_time_barrier_option(
             array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
-        barrier_direction (str): "down" or "up". Defaults to "down".
-        knock_type (str): "out" or "in". Defaults to "out".
-        barrier_window (str): "start" (watched from today to t1) or "end" (watched from t1 to
-            expiration). Defaults to "start".
+        barrier_direction (str): The side of the barrier. Options are: "down" (below the
+            stock price), "up" (above the stock price). Defaults to "down".
+        knock_type (str): The knock. Options are: "out" (knock-out), "in" (knock-in).
+            Defaults to "out".
+        barrier_window (str): The watched window. Options are: "start" (watched from today
+            to t1), "end" (watched from t1 to expiration). Defaults to "start".
         window_share (float): The share of the life during which the barrier is watched, above
             0 and at most 1, so t1 = window_share * T for a start window and
             t1 = (1 - window_share) * T for an end window. Defaults to 0.5.
@@ -1786,9 +1821,9 @@ def get_soft_barrier_option(
     knock_type: str = "out",
 ) -> float | np.ndarray:
     """
-    Calculate the price of a soft barrier option (Hart & Ross, 1994), which knocks in or out
-    gradually as the stock price moves through a band of barriers [L, U] instead of at once
-    at a single barrier.
+    Calculate the price of a soft barrier option (Hart & Ross, 1994): what an option is worth
+    that knocks in or out gradually as the stock price moves through a band of barriers [L, U]
+    instead of at once at a single barrier.
 
     A soft down-and-out option pays the vanilla payoff times the share of the band that the
     lowest price did not reach, (min S - L) / (U - L) between 0 and 1, and the soft up-and-out
@@ -1803,6 +1838,9 @@ def get_soft_barrier_option(
     each side of the strike and the stock price, where the hard barrier price is smooth. A band
     of zero width is the hard barrier.
 
+    Referenced against:
+    - QuantLib, AnalyticSoftBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_soft_barrier_engine.html
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The option's strike price, or an array of them.
@@ -1814,8 +1852,10 @@ def get_soft_barrier_option(
             array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
-        barrier_direction (str): "down" or "up". Defaults to "down".
-        knock_type (str): "out" or "in". Defaults to "out".
+        barrier_direction (str): The side of the barriers. Options are: "down" (below the
+            stock price), "up" (above the stock price). Defaults to "down".
+        knock_type (str): The knock. Options are: "out" (knock-out), "in" (knock-in).
+            Defaults to "out".
 
     Returns:
         float | np.ndarray: The soft barrier option value, an array in the shape of the
@@ -1994,11 +2034,11 @@ def get_touch_option(
     payment: str = "expiration",
 ) -> float:
     """
-    Calculate the price of a one-touch or no-touch option (Reiner & Rubinstein, 1991), a
-    binary option on whether the stock price touches a barrier before expiration.
+    Calculate the price of a one-touch or no-touch option (Reiner & Rubinstein, 1991): what a
+    binary option on whether the stock price touches a barrier before expiration is worth.
 
-    - One-touch: pays the cash payout when the barrier is touched, at that moment ("hit")
-      or at expiration ("expiration").
+    - One-touch: pays the cash payout when the barrier is touched, at that moment or at
+      expiration.
     - No-touch: pays the cash payout at expiration when the barrier is never touched.
 
     With b = r - q, ν = b - σ²/2, μ = ν / σ², λ = √(μ² + 2r / σ²), h = ln(H / S) and η = 1 for
@@ -2013,6 +2053,10 @@ def get_touch_option(
     A barrier at or beyond the stock price is touched already: the one-touch pays at once (or
     the discounted cash at expiration) and the no-touch is worth 0.
 
+    Referenced against:
+    - QuantLib, AnalyticDigitalAmericanEngine (one-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_digital_american_engine.html
+    - QuantLib, AnalyticBinaryBarrierEngine (no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_binary_barrier_engine.html
+
     Args:
         stock_price (float): The current stock price.
         barrier (float): The barrier level, below or above the stock price.
@@ -2020,11 +2064,11 @@ def get_touch_option(
         volatility (float): The volatility of the stock.
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
-        option_type (str): The kind of touch option. Options are: "one-touch" or "no-touch".
-            Defaults to "one-touch".
+        option_type (str): The kind of touch option. Options are: "one-touch" (one-touch),
+            "no-touch" (no-touch). Defaults to "one-touch".
         cash_payout (float): The cash paid. Defaults to 1.
-        payment (str): When a one-touch pays, "expiration" or "hit". A no-touch pays at
-            expiration. Defaults to "expiration".
+        payment (str): When a one-touch pays. Options are: "expiration" (at expiration),
+            "hit" (when the barrier is touched). A no-touch pays at expiration. Defaults to "expiration".
 
     Returns:
         float: The touch option value.
@@ -2129,8 +2173,11 @@ def get_double_touch_option(
 ) -> float:
     """
     Calculate the price of a double one-touch or double no-touch option (Hui, 1996), paid at
-    expiration: the double no-touch pays when the stock price stays between the two barriers
-    up to expiration, the double one-touch when it touches either barrier.
+    expiration: what a binary option on whether the stock price touches either of two barriers
+    is worth.
+
+    The double no-touch pays when the stock price stays between the two barriers up to
+    expiration, the double one-touch when it touches either barrier.
 
     - P(stay) = Σ_n [e^(2nZν / σ²) * (N((u - 2nZ - νT) / (σ√T)) - N((l - 2nZ - νT) / (σ√T)))
       - e^(2ν(l - nZ) / σ²) * (N((u - 2l + 2nZ - νT) / (σ√T)) - N((l - 2l + 2nZ - νT) / (σ√T)))]
@@ -2142,6 +2189,9 @@ def get_double_touch_option(
     the same probability as the sine series Σ_i 2πi / Z² * ... * e^(-(iπ / Z)²σ²T / 2), which
     converges fast for long and the image series for short times to expiration.
 
+    Referenced against:
+    - QuantLib, AnalyticDoubleBarrierBinaryEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_binary_engine.html
+
     Args:
         stock_price (float): The current stock price.
         lower_barrier (float): The lower barrier L.
@@ -2151,7 +2201,8 @@ def get_double_touch_option(
         time_to_expiration (float): The time to expiration in years.
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         option_type (str): The kind of double touch option. Options are:
-            "double-one-touch" or "double-no-touch". Defaults to "double-one-touch".
+            "double-one-touch" (double one-touch), "double-no-touch" (double no-touch).
+            Defaults to "double-one-touch".
         cash_payout (float): The cash paid. Defaults to 1.
 
     Returns:

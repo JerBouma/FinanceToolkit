@@ -212,7 +212,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns.
+        Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns: the return that a period
+        only falls below with a small probability alpha, a bad-case loss.
 
         Value at Risk (VaR) is a risk management metric that quantifies the maximum potential loss
         an investment portfolio or asset may experience over a specified time horizon and confidence level.
@@ -220,7 +221,7 @@ class ValueAtRiskRisk:
         informed decisions about risk tolerance.
 
         The VaR is calculated as the quantile of the return distribution, representing the loss threshold
-        that is only exceeded with tail probability alpha (e.g., in 5% of the periods for alpha=0.05, the
+        that is only exceeded with tail probability alpha (e.g., in 5% of the periods for an alpha of 0.05, the
         95% confidence level).
 
         Value at Risk is a quantile: it says how bad a period gets at the chosen confidence level, not how
@@ -246,9 +247,10 @@ class ValueAtRiskRisk:
         - Kernel VaR solves mean(Φ((VaR - Return_i) / h)) = alpha, with h = Std * (4 / (3 * n))^(1/5)
         - GARCH VaR = Mu + Volatility_(t+1) * F^-1(alpha)
 
-        Where z is the standard normal quantile at alpha, Std the sample standard deviation (ddof=1), S the
-        sample skewness and K the sample excess kurtosis. The Student-T degrees of freedom v, Location and Scale
-        are fitted by maximum likelihood. For "evt", u is the loss at `threshold_percentile`, xi and Scale_GPD the
+        Where z is the standard normal quantile at alpha, Std the sample standard deviation (with n - 1 in the
+        denominator), S the sample skewness and K the sample excess kurtosis. The Student-T degrees of freedom v,
+        Location and Scale are fitted by maximum likelihood. For the EVT VaR, u is the loss at
+        `threshold_percentile`, xi and Scale_GPD the
         shape and scale of the Generalized Pareto Distribution fitted to the losses above it and p the fraction of
         losses above it. The kernel VaR is the alpha quantile of a Gaussian kernel density of the n returns with
         Silverman's bandwidth h, a smoothed historical quantile (Gourieroux, Laurent and Scaillet 2000), and Φ the
@@ -269,13 +271,25 @@ class ValueAtRiskRisk:
         - Silverman, B.W. (1986). "Density Estimation for Statistics and Data Analysis." Chapman and Hall.
         - McNeil, A.J. and Frey, R. (2000). "Estimation of Tail-Related Risk Measures for Heteroscedastic
         Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
-        - rugarch: ugarchroll and its VaR (the rolling GARCH VaR, https://cran.r-project.org/package=rugarch).
 
         Also known as: VaR, maximum expected loss, portfolio loss risk.
 
+        Referenced against:
+        - scipy, gaussian_kde (kernel): https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
+        - arch, GARCH (GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), VaR (historic, gaussian, Cornish-Fisher): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
+        - empyrical, value_at_risk (historic): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2095
+        - quantstats, value_at_risk (gaussian): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2014
+        - Riskfolio-Lib, VaR_Hist (historic): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.VaR_Hist
+        - skfolio, value_at_risk (historic): https://skfolio.org/generated/skfolio.measures.value_at_risk.html
+        - empyrical, gpd_risk_estimates (EVT): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1675
+        - rugarch (R), ugarchroll (rolling GARCH): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1141
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability for the VaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate VaR within the specified period or for the entire
@@ -295,8 +309,10 @@ class ValueAtRiskRisk:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             method (str, optional): The estimator of the VaR, a distribution or a model. Options are: "historic"
-            (the empirical quantile), "gaussian", "cornish-fisher", "studentt", "evt", "kernel" or "garch". Defaults
-            to "historic". The parametric distributions use the sample standard deviation; "cornish-fisher" adjusts the gaussian quantile for the skewness and
+            (the empirical quantile), "gaussian" (normal distribution), "cornish-fisher" (Cornish-Fisher
+            expansion), "studentt" (Student-T distribution), "evt" (Extreme Value Theory), "kernel" (Gaussian
+            kernel density), "garch" (GARCH-family model). Defaults to "historic". The parametric distributions use
+            the sample standard deviation; "cornish-fisher" adjusts the gaussian quantile for the skewness and
             excess kurtosis of the returns (see `var_model.get_var_cornish_fisher`), "studentt" uses the
             quantile of a Student-T distribution fitted by maximum likelihood and "kernel" the quantile of a
             Gaussian kernel density of the returns. "garch" fits a GARCH-family model per ticker (and per period with
@@ -310,11 +326,15 @@ class ValueAtRiskRisk:
             refit_every (int, optional): Only used with the "garch" method and `rolling`. The number of
             returns between two fits; the fitted model filters the returns in between. Every refit after the
             first starts from the previous fit and takes a fraction of a second. Defaults to 21.
-            garch_method (str, optional): Only used with the "garch" method. The variance model, one of the
-            methods of `get_garch` (garch, gjr, egarch, igarch, aparch, tgarch, ngarch, avgarch, nagarch or
-            component). Defaults to "garch".
-            garch_distribution (str, optional): Only used with the "garch" method. The innovation
-            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): Only used with the GARCH method. The variance model of `get_garch`.
+            Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH). Defaults to "garch".
+            garch_distribution (str, optional): Only used with the GARCH method. The innovation distribution.
+            Options are: "normal" (normal), "t" (Student-t), "skewt" (Hansen's skewed
+            Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized error
+            distribution), "johnson_su" (Johnson's SU). Defaults to "normal".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -326,9 +346,9 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates VaR for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of VaR values using the specified `lag`.
-        - The kernel VaR equals the quantile of scipy's gaussian_kde with bw_method="silverman". It differs
-        from PerformanceAnalytics' VaR(method="kernel"), which is the kernel estimator of the component VaR of
+        - With growth, the method calculates the growth of VaR values using the specified `lag`.
+        - The kernel VaR equals the quantile of scipy's gaussian_kde with Silverman's bandwidth. It differs
+        from PerformanceAnalytics' kernel VaR, which is the kernel estimator of the component VaR of
         Epperlein and Smillie (2006) and is not defined for a single asset.
 
         As an example:
@@ -467,7 +487,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Conditional Value at Risk (CVaR) of an investment portfolio or asset's returns.
+        Calculate the Conditional Value at Risk (CVaR) of an investment portfolio or asset's returns: the average
+        return in the worst alpha share of the periods, how bad the bad cases are.
 
         Conditional Value at Risk (CVaR) is a risk management metric that quantifies the loss in the worst % of cases of
         an investment portfolio or asset may experience over a specified time horizon and confidence level.
@@ -475,7 +496,7 @@ class ValueAtRiskRisk:
         informed decisions about risk tolerance.
 
         The CVaR is calculated as the expected loss given that the loss threshold (VaR) with a given confidence
-        level (e.g., 5% for alpha=0.05) is exceeded.
+        level (e.g., 5% for an alpha of 0.05) is exceeded.
 
         The Conditional Value at Risk (expected shortfall) is the measure banks report for market risk under
         the Basel framework, at 97.5% rather than 95% confidence, because unlike VaR it accounts for the size
@@ -490,8 +511,8 @@ class ValueAtRiskRisk:
         - VaR = Quantile(Returns, alpha)
 
         The quantile interpolates linearly and the CVaR is reported as a return (negative for a loss). The other
-        distributions use closed forms, with Std the sample standard deviation (ddof=1) and z_alpha the standard
-        normal quantile at alpha:
+        distributions use closed forms, with Std the sample standard deviation (with n - 1 in the denominator)
+        and z_alpha the standard normal quantile at alpha:
 
         - Gaussian CVaR = Mean - Std * pdf(z_alpha) / alpha
         - Student-T CVaR = Location - Scale * (v + t^2) / (v - 1) * pdf_v(t) / alpha, with t = t_v^-1(1 - alpha)
@@ -530,13 +551,24 @@ class ValueAtRiskRisk:
         Financial Time Series: An Extreme Value Approach." Journal of Empirical Finance, 7(3-4), 271-300.
         - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected Shortfall."
         Mathematical Finance, 14(1), 115-129.
-        - Riskfolio-Lib: OwaWeights.owa_wcvar (the Weighted CVaR, https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: CVaR, expected shortfall, ES, tail risk, weighted CVaR, WCVaR, spectral risk measure.
 
+        Referenced against:
+        - scipy, gaussian_kde (kernel): https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), ES (historic, gaussian, Cornish-Fisher): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
+        - empyrical, conditional_value_at_risk (historic): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2115
+        - quantstats, conditional_value_at_risk (historic): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2086
+        - Riskfolio-Lib, CVaR_Hist (historic): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CVaR_Hist
+        - skfolio, cvar (historic): https://skfolio.org/generated/skfolio.measures.cvar.html
+        - empyrical, gpd_risk_estimates (EVT): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1675
+        - Riskfolio-Lib, owa_wcvar (Weighted CVaR): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_wcvar
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float | list[float], optional): The tail probability for the CVaR calculation (e.g., 0.05 for
             the 95% confidence level), or a list of them for the Weighted CVaR. Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CVaR within the specified period or for the entire
@@ -555,9 +587,11 @@ class ValueAtRiskRisk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): The estimator of the CVaR, a distribution or a model. Options are: "historic",
-            "gaussian", "studentt", "laplace", "logistic", "cornish-fisher", "evt", "kernel" or "garch". Defaults to
-            "historic". "garch" fits a GARCH-family
+            method (str, optional): The estimator of the CVaR, a distribution or a model. Options are: "historic"
+            (the empirical tail average), "gaussian" (normal distribution), "studentt" (Student-T distribution),
+            "laplace" (Laplace distribution), "logistic" (logistic distribution), "cornish-fisher" (Cornish-Fisher
+            expansion), "evt" (Extreme Value Theory), "kernel" (Gaussian kernel density), "garch" (GARCH-family
+            model). Defaults to "historic". "garch" fits a GARCH-family
             model per ticker (and per period with `within_period`), see `get_value_at_risk`.
             threshold_percentile (float, optional): Only used with the "evt" method. The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
@@ -568,10 +602,15 @@ class ValueAtRiskRisk:
             non-negative and summing to 1. Defaults to None, which weighs every tail probability equally.
             refit_every (int, optional): Only used with the "garch" method and `rolling`. The number of
             returns between two fits. Defaults to 21.
-            garch_method (str, optional): Only used with the "garch" method. The variance model, one of the
-            methods of `get_garch`. Defaults to "garch".
-            garch_distribution (str, optional): Only used with the "garch" method. The innovation
-            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): Only used with the GARCH method. The variance model of `get_garch`.
+            Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH). Defaults to "garch".
+            garch_distribution (str, optional): Only used with the GARCH method. The innovation distribution.
+            Options are: "normal" (normal), "t" (Student-t), "skewt" (Hansen's skewed
+            Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized error
+            distribution), "johnson_su" (Johnson's SU). Defaults to "normal".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -583,14 +622,14 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates CVaR for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of CVaR values using the specified `lag`.
+        - With growth, the method calculates the growth of CVaR values using the specified `lag`.
         - Riskfolio-Lib's Weighted CVaR applies the ordered weighted average weights of its CVaR, the exact
         tail average of Rockafellar and Uryasev (2002) that counts the return at the boundary with a fraction,
         where the historic CVaR here averages the returns up to the interpolated quantile; the weighted sum is
         the same, so the two differ by the difference of the CVaR estimators. Riskfolio-Lib reports the loss
         as a positive number, the Toolkit as a return.
-        - The kernel CVaR equals the mean below the quantile of scipy's gaussian_kde with
-        bw_method="silverman". PerformanceAnalytics' ES(method="kernel") is defined for the component
+        - The kernel CVaR equals the mean below the quantile of scipy's gaussian_kde with Silverman's
+        bandwidth. PerformanceAnalytics' kernel ES is defined for the component
         Expected Shortfall of a portfolio only.
 
         As an example:
@@ -732,7 +771,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
+        Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns: an upper bound
+        on the VaR and CVaR from the Chernoff inequality, the most conservative of the three.
 
         Entropic Value at Risk (EVaR) is a risk management metric that quantifies upper bound for the value
         at risk (VaR) and the conditional value at risk (CVaR) over a specified time horizon and confidence
@@ -749,7 +789,7 @@ class ValueAtRiskRisk:
         - EVaR = Mean - Std * √(-2 * ln(alpha))
 
         Where alpha is the tail probability (0.05 for the 95% confidence level) and Std the sample standard
-        deviation (ddof=1). It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
+        deviation (with n - 1 in the denominator). It is an upper bound of the gaussian VaR and CVaR at the same confidence level.
         Since it only uses the mean and the standard deviation of the returns, it does not reflect their
         skewness or fat tails, and at high confidence levels it can be less severe than the historical CVaR
         of an asset with heavy tails. With the historic method:
@@ -765,14 +805,16 @@ class ValueAtRiskRisk:
 
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - Riskfolio-Lib: RiskFunctions.EVaR_Hist (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.evar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: EVaR, historical EVaR, entropic VaR, Chernoff bound.
 
+        Referenced against:
+        - skfolio, evar (historic): https://skfolio.org/generated/skfolio.measures.evar.html
+        - Riskfolio-Lib, EVaR_Hist (historic): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability for the EVaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate EVaR within the specified period or for the entire
@@ -803,7 +845,7 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates EVaR for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
+        - With growth, the method calculates the growth of EVaR values using the specified `lag`.
         - The historic EVaR agrees with Riskfolio-Lib's EVaR_Hist and skfolio's evar, which report the loss as a
         positive number; the Toolkit keeps the sign of a return, as for the VaR and CVaR.
 
@@ -871,7 +913,7 @@ class ValueAtRiskRisk:
     ):
         """
         Calculate the Entropic Risk Measure (ERM) of an investment portfolio or asset's returns at a given
-        risk aversion.
+        risk aversion: the entropic bound on the tail loss of an investor with that risk aversion.
 
         The Entropic Risk Measure is the certainty equivalent loss of an investor with exponential utility,
         shifted by the confidence level: by the Chernoff inequality the loss exceeds it with a probability of
@@ -881,7 +923,7 @@ class ValueAtRiskRisk:
         the size of the returns (about 0.01 for daily returns) gives a value near the EVaR; a large z gives
         a value dominated by z * ln(1 / alpha).
 
-        The formula is as follows (with the default risk_aversion=1 and alpha=0.05):
+        The formula is as follows (with the default risk aversion of 1 and an alpha of 0.05):
 
         - ERM = -z * ln(mean(exp(-Return_i / z)) / alpha)
 
@@ -894,14 +936,16 @@ class ValueAtRiskRisk:
         Stochastics, 6(4), 429-447.
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - Riskfolio-Lib: RiskFunctions.Entropic_RM (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.entropic_risk_measure (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: ERM, entropic risk, exponential utility risk measure.
 
+        Referenced against:
+        - skfolio, entropic_risk_measure: https://skfolio.org/generated/skfolio.measures.entropic_risk_measure.html
+        - Riskfolio-Lib, Entropic_RM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Entropic_RM
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             risk_aversion (float, optional): The risk aversion z, larger than 0, in the units of the returns.
                 Defaults to 1, the default of Riskfolio-Lib and skfolio.
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
@@ -931,7 +975,7 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the ERM
         for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of ERM values using the specified `lag`.
+        - With growth, the method calculates the growth of ERM values using the specified `lag`.
         - Equals Riskfolio-Lib's Entropic_RM and skfolio's entropic_risk_measure, which report the loss as a
         positive number; the Toolkit keeps the sign of a return. The exponential average is taken in log
         space (logsumexp), so a small risk aversion does not overflow.
@@ -994,8 +1038,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Higher Moment Coherent Risk (HMCR) of an investment portfolio or asset's returns, by
-        default of order 2, the Coherent Second Moment (CSM).
+        Calculate the Higher Moment Coherent Risk (HMCR) of an investment portfolio or asset's returns: a tail
+        loss like the CVaR that weighs the deepest losses more, by default the Coherent Second Moment (CSM).
 
         The Conditional Value at Risk averages the losses beyond a threshold, so a loss twice as deep counts
         twice. The Higher Moment Coherent Risk measures those losses with a higher moment instead: of order 2
@@ -1005,13 +1049,13 @@ class ValueAtRiskRisk:
         diversification and rises with the losses, which makes it a portfolio objective (the minimum CSM
         portfolio) that the variance and the VaR are not.
 
-        The formula is as follows (with the default order=2 and alpha=0.05):
+        The formula is as follows (with the default order of 2 and an alpha of 0.05):
 
         - Loss = -Return
         - HMCR = min over ζ of ζ + (1 / alpha) * (Mean(max(Loss - ζ, 0)^order))^(1 / order)
 
         Where ζ is a threshold (the minimum is found by bisection on the derivative, which the convexity of
-        the objective makes increasing) and the mean runs over the n returns. With order=1 it is the CVaR in
+        the objective makes increasing) and the mean runs over the n returns. With an order of 1 it is the CVaR in
         the minimization form of Rockafellar and Uryasev (2002). A higher order weighs the deepest losses
         more, so the HMCR rises with the order towards the worst return. The result is a return, negative
         for a loss, as the VaR, CVaR and EVaR of the Toolkit are.
@@ -1021,13 +1065,15 @@ class ValueAtRiskRisk:
         - Krokhmal, P.A. (2007). "Higher Moment Coherent Risk Measures." Quantitative Finance, 7(4), 373-387.
         - Rockafellar, R.T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General Loss
         Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
-        - PortfolioAnalytics (R): extract_risk and the CSM objective (https://github.com/braverock/PortfolioAnalytics).
 
         Also known as: HMCR, Coherent Second Moment, CSM, higher moment risk, second moment coherent risk.
 
+        Shares similar logic:
+        - PortfolioAnalytics (R), extract_risk: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/extractrisk.R#L22
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             order (float, optional): The order p of the moment, at least 1. Defaults to 2.
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
                 Defaults to 0.05.
@@ -1056,7 +1102,7 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the HMCR
         for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of HMCR values using the specified `lag`.
+        - With growth, the method calculates the growth of HMCR values using the specified `lag`.
         - The HMCR of order 1 is the exact tail average of Rockafellar and Uryasev (2002), which counts the
         return at the boundary with a fraction; `get_conditional_value_at_risk` averages the returns up to the
         interpolated quantile, so the two differ slightly.
@@ -1065,8 +1111,8 @@ class ValueAtRiskRisk:
         grow with the length of the sample until it equals the worst loss; the Toolkit keeps the mean, so the
         measure does not depend on the number of returns.
         - With n returns the minimum lies at the worst loss whenever n^(-1 / order) >= alpha, the tail then
-        holding less than one return's worth of the moment (for order=1, n <= 1 / alpha). For order=2 and
-        alpha=0.05 that is any sample of 400 returns or fewer, so within a year of daily returns the CSM is the
+        holding less than one return's worth of the moment (for an order of 1, n <= 1 / alpha). For an order of 2
+        and an alpha of 0.05 that is any sample of 400 returns or fewer, so within a year of daily returns the CSM is the
         worst day; use the whole history, a rolling window above 400 returns or a larger alpha.
 
         As an example:
@@ -1125,8 +1171,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Expected Quadratic Shortfall (EQS) of an investment portfolio or asset's returns, the
-        average of the largest squared losses.
+        Calculate the Expected Quadratic Shortfall (EQS) of an investment portfolio or asset's returns: the
+        average squared loss in the worst alpha share of the periods.
 
         Where the Conditional Value at Risk averages the worst alpha share of the returns, the Expected
         Quadratic Shortfall averages the worst alpha share of the squared losses, so a loss twice as deep counts
@@ -1137,7 +1183,7 @@ class ValueAtRiskRisk:
         of the tail losses, on the scale of the returns. For a coherent measure that weighs the tail by its second
         moment, see `get_higher_moment_coherent_risk` (the Coherent Second Moment).
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - Squared Loss = max(-Return, 0)^2
         - EQS = min over ζ of ζ + (1 / (n * alpha)) * Σ max(Squared Loss - ζ, 0)
@@ -1151,13 +1197,15 @@ class ValueAtRiskRisk:
 
         - Rockafellar, R.T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General Loss
         Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
-        - PortfolioAnalytics (R): extract_risk and the EQS objective (https://github.com/braverock/PortfolioAnalytics).
 
         Also known as: EQS, expected squared shortfall, tail semi-variance.
 
+        Shares similar logic:
+        - PortfolioAnalytics (R), extract_risk: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/extractrisk.R#L22
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
                 Defaults to 0.05.
             within_period (bool, optional): Whether to calculate the EQS within the specified period or for the
@@ -1185,7 +1233,7 @@ class ValueAtRiskRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the EQS
         for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of EQS values using the specified `lag`.
+        - With growth, the method calculates the growth of EQS values using the specified `lag`.
         - The values are small for daily returns (a tail of 3% losses gives about 0.0009), so set `rounding`
         to 6 or more decimals, or take the square root.
         - PortfolioAnalytics' EQS objective squares the positive part of the portfolio returns, the gains, while
@@ -1288,8 +1336,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a
-        portfolio.
+        Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a portfolio: how much the portfolio's
+        VaR changes when the weight of that asset rises a little.
 
         Ordinary VaR (see `get_value_at_risk`) treats each asset in isolation.
         Marginal VaR instead measures how much the *portfolio's* VaR would change for
@@ -1304,7 +1352,7 @@ class ValueAtRiskRisk:
         - Marginal VaR_i = Beta_i * Portfolio VaR
 
         Where the weights are normalized to sum to 1, the covariance and variance are sample estimates
-        (ddof=1) on the dates all assets have a return (the returns of a date only some of them traded on are
+        (with n - 1 in the denominator) on the dates all assets have a return (the returns of a date only some of them traded on are
         compounded into the next date all of them traded on), and Portfolio VaR is the VaR of the portfolio return
         under the chosen method (see `get_value_at_risk`). The beta-based sensitivity is exact for a zero-mean
         elliptical distribution and an approximation otherwise; the gaussian method uses the exact
@@ -1325,19 +1373,23 @@ class ValueAtRiskRisk:
 
         Also known as: Marginal VaR, MVaR.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), VaR.Marginal: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.Marginal.R#L1
+
         Args:
             weights (dict[str, float] | None, optional): Portfolio weights
             keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a whole-series estimate needs far more observations than a single
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a whole-series estimate needs far more observations than a single
                 quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
             Defaults to 0.05.
             method (str, optional): The estimator of the underlying portfolio VaR. Options are:
-            "historic", "gaussian", "cornish-fisher" or "studentt". Defaults to "historic".
+            "historic" (historical), "gaussian" (gaussian), "cornish-fisher" (Cornish-Fisher), "studentt"
+            (Student-T). Defaults to "historic".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1405,8 +1457,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Component Value at Risk (Component VaR) of each asset in a
-        portfolio.
+        Calculate the Component Value at Risk (Component VaR) of each asset in a portfolio: the part of the
+        portfolio's VaR that each holding accounts for.
 
         Component VaR allocates total portfolio VaR across its constituent assets,
         such that the allocations sum exactly back to the portfolio VaR — an "Euler"
@@ -1443,19 +1495,24 @@ class ValueAtRiskRisk:
 
         Also known as: Component VaR, risk contribution.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), VaR: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
+        - Riskfolio-Lib, Risk_Contribution: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Risk_Contribution
+
         Args:
             weights (dict[str, float] | None, optional): Portfolio weights
             keyed by ticker. Normalized internally to sum to 1. Defaults to None, which
             uses equal weights across every ticker in the Toolkit instance (excluding
             the "Portfolio" and "Benchmark" pseudo-tickers, if present).
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a whole-series estimate needs far more observations than a single
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a whole-series estimate needs far more observations than a single
                 quarter or year holds.
             column (str, optional): The historical data column to use. Defaults to "Return".
             alpha (float, optional): The tail probability (e.g., 0.05 for the 95% confidence level).
             Defaults to 0.05.
             method (str, optional): The estimator of the underlying portfolio VaR. Options are:
-            "historic", "gaussian", "cornish-fisher" or "studentt". Defaults to "historic".
+            "historic" (historical), "gaussian" (gaussian), "cornish-fisher" (Cornish-Fisher), "studentt"
+            (Student-T). Defaults to "historic".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1535,7 +1592,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Backtest a Value at Risk model against realized returns.
+        Backtest a Value at Risk model against realized returns: whether its breaches come as often and as
+        independently as they should.
 
         A Value at Risk estimate is only useful if it is actually well-calibrated
         against reality. This method builds a rolling, out-of-sample VaR path (each
@@ -1572,7 +1630,8 @@ class ValueAtRiskRisk:
         breach. L(a, b) is the Weibull likelihood of the number of periods between breaches, with the periods
         before the first and after the last breach as censored durations, and b = 1 the exponential distribution
         of a model without memory (b_hat below 1 means breaches cluster). CVaR_t is the Conditional Value at Risk of
-        the same window and distribution and Volatility_t the standard deviation (ddof=1) of the window (the
+        the same window and distribution and Volatility_t the standard deviation (with n - 1 in the
+        denominator) of the window (the
         volatility forecast with the GARCH method); the McNeil-Frey p-value is the share of `n_bootstrap`
         resamples of the residuals less their mean whose statistic is at least as large (one-sided). The Kupiec
         and Christoffersen statistics are compared with a χ² distribution with one degree of freedom and the
@@ -1599,16 +1658,22 @@ class ValueAtRiskRisk:
         - González-Rivera, G., Lee, T.H. and Mishra, S. (2004). "Forecasting Volatility: A Reality Check Based
         on Option Pricing, Utility Function, Value-at-Risk, and Predictive Likelihood." International Journal
         of Forecasting, 20(4), 629-645.
-        - rugarch: VaRTest, VaRDurTest, ESTest and VaRloss (https://cran.r-project.org/package=rugarch).
 
         Also known as: VaR validation, VaR backtest, POF test, conditional coverage test, duration test,
         exceedance residual test, quantile loss.
 
+        Shares similar logic:
+        - rugarch (R), VaRTest (Kupiec, Christoffersen, conditional coverage): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L418
+        - rugarch (R), VaRDurTest (duration): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L469
+        - rugarch (R), ESTest (McNeil-Frey): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L440
+        - rugarch (R), VaRloss (tick loss): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L3839
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
-            Defaults to "daily".
-            method (str, optional): The estimator of the rolling VaR. Options are: "historic", "gaussian",
-            "studentt", "evt" or "garch". Defaults to "historic".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+            "quarterly", "yearly". Defaults to "daily".
+            method (str, optional): The estimator of the rolling VaR. Options are: "historic" (the empirical
+            quantile), "gaussian" (normal distribution), "studentt" (Student-T distribution), "evt" (Extreme Value
+            Theory), "garch" (GARCH-family model). Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
             years of daily data, where "historic" and "gaussian" take well under a second. "garch" takes
             one to five seconds for its first fit per ticker and a fraction of a second for every refit.
@@ -1620,15 +1685,21 @@ class ValueAtRiskRisk:
             `period`) used to estimate each VaR value. Defaults to None, which uses a year of observations
             with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly returns), and two
             years with a minimum of 100 for "garch" (504 daily, 104 weekly and 100 otherwise).
-            test (str | list[str], optional): Which test(s) to run: "kupiec", "christoffersen",
-            "conditional_coverage", "duration", "mcneil_frey" or "tick_loss", a list of them, "both" (Kupiec and
-            Christoffersen) or "all". Defaults to "both".
+            test (str | list[str], optional): Which test(s) to run, one or a list of them. Options are: "kupiec"
+            (Kupiec's test), "christoffersen" (Christoffersen's independence test), "conditional_coverage"
+            (conditional coverage test), "duration" (duration test), "mcneil_frey" (McNeil-Frey test), "tick_loss"
+            (tick loss), "both" (Kupiec and Christoffersen), "all" (every test). Defaults to "both".
             refit_every (int, optional): Only used with the "garch" method. The number of returns between
             two fits. Defaults to 21.
-            garch_method (str, optional): Only used with the "garch" method. The variance model, one of the
-            methods of `get_garch`. Defaults to "garch".
-            garch_distribution (str, optional): Only used with the "garch" method. The innovation
-            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): Only used with the GARCH method. The variance model of `get_garch`.
+            Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH). Defaults to "garch".
+            garch_distribution (str, optional): Only used with the GARCH method. The innovation distribution.
+            Options are: "normal" (normal), "t" (Student-t), "skewt" (Hansen's skewed
+            Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized error
+            distribution), "johnson_su" (Johnson's SU). Defaults to "normal".
             n_bootstrap (int, optional): The number of bootstrap resamples of the McNeil-Frey test. Defaults
             to 1000.
             seed (int, optional): The seed of the McNeil-Frey bootstrap. Defaults to 0.
@@ -1767,8 +1838,8 @@ class ValueAtRiskRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Backtest a Conditional Value at Risk (Expected Shortfall) model against
-        realized returns, via the Acerbi-Szekely (2014) Z2 statistic.
+        Backtest a Conditional Value at Risk (Expected Shortfall) model against realized returns with the
+        Acerbi-Szekely (2014) Z2 statistic: whether the losses beyond the VaR are as severe as the CVaR predicted.
 
         `get_var_backtest` above only backtests the VaR estimate itself -- it checks
         how often (and how independently) the VaR threshold is breached, but says
@@ -1785,7 +1856,7 @@ class ValueAtRiskRisk:
 
         Where VaR_t and CVaR_t are estimated from the `window` returns before t (see `get_var_backtest`), Breach_t is
         1 if Return_t < VaR_t and 0 otherwise, n is the number of estimates and the Standard Error is the sample
-        standard deviation (ddof=1) of Z2 over `n_bootstrap` paired bootstrap resamples. Returns and CVaR are
+        standard deviation (with n - 1 in the denominator) of Z2 over `n_bootstrap` paired bootstrap resamples. Returns and CVaR are
         both negative, so Z2 is about 0 for a well-calibrated model and positive when the realized tail losses
         exceed the CVaR (the opposite sign of the paper, which counts losses as positive).
 
@@ -1797,10 +1868,11 @@ class ValueAtRiskRisk:
         Also known as: Acerbi-Szekely test, ES backtest, Z2 test.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
-            Defaults to "daily".
-            method (str, optional): The estimator of the rolling VaR and CVaR. Options are: "historic",
-            "gaussian", "studentt", "evt" or "garch". Defaults to "historic".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+            "quarterly", "yearly". Defaults to "daily".
+            method (str, optional): The estimator of the rolling VaR and CVaR. Options are: "historic" (the
+            empirical quantile), "gaussian" (normal distribution), "studentt" (Student-T distribution), "evt"
+            (Extreme Value Theory), "garch" (GARCH-family model). Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
             years of daily data, where "historic" and "gaussian" take well under a second. "garch" refits
             a GARCH-family model every `refit_every` returns (see `get_var_backtest`).
@@ -1814,10 +1886,15 @@ class ValueAtRiskRisk:
             returns), and two years with a minimum of 100 for "garch".
             refit_every (int, optional): Only used with the "garch" method. The number of returns between
             two fits. Defaults to 21.
-            garch_method (str, optional): Only used with the "garch" method. The variance model, one of the
-            methods of `get_garch`. Defaults to "garch".
-            garch_distribution (str, optional): Only used with the "garch" method. The innovation
-            distribution (normal, t, skewt, skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): Only used with the GARCH method. The variance model of `get_garch`.
+            Options are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch"
+            (EGARCH), "igarch" (IGARCH), "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH), "component" (component GARCH),
+            "figarch" (FIGARCH). Defaults to "garch".
+            garch_distribution (str, optional): Only used with the GARCH method. The innovation distribution.
+            Options are: "normal" (normal), "t" (Student-t), "skewt" (Hansen's skewed
+            Student-t), "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged" (generalized error
+            distribution), "johnson_su" (Johnson's SU). Defaults to "normal".
             n_bootstrap (int, optional): The number of bootstrap resamples used to estimate the Standard
             Error of Z2. Defaults to 1000.
             seed (int, optional): The seed for the bootstrap random number generator. Defaults to 0.

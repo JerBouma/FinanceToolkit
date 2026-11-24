@@ -204,7 +204,6 @@ def get_recursive_adf_statistics(
 
     Referenced against:
     - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
-        Test: tests/econometrics/test_bubble_model.py::test_window_statistic_matches_statsmodels
     - RiskLabAI, get_bsadf_sequence: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L434
 
     Args:

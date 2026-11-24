@@ -37,11 +37,13 @@ def get_trades(
     purchases_first: bool = True,
 ) -> pd.DataFrame:
     """
-    The trade list (round trips) of a set of transactions: every lot a transaction opened,
-    paired with the transaction that closed it, and the lots still open marked to the last
-    price. Each ticker is matched on its own with `overview_model.match_lots`, the lot
-    matching behind the realized profit and loss of the Portfolio, with short selling: a
-    sale of more units than are held opens a short trade that later purchases close.
+    The trade list (round trips) of a set of transactions.
+
+    Every lot a transaction opened, paired with the transaction that closed it, and the lots
+    still open marked to the last price. Each ticker is matched on its own with
+    `overview_model.match_lots`, the lot matching behind the realized profit and loss of the
+    Portfolio, with short selling: a sale of more units than are held opens a short trade
+    that later purchases close.
 
     A transaction that closes part of a lot splits it, so one purchase sold in two parts is
     two trades, and a sale that closes two purchases is two trades as well. The costs of a
@@ -58,9 +60,10 @@ def get_trades(
     - Duration (Days) = Exit Date − Entry Date in calendar days, Duration (Periods) the number
       of trading dates from the entry to the exit
 
-    Referenced against vectorbt's Trades (https://github.com/polakowo/vectorbt), whose PnL and
-    return are defined the same way, backtesting.py's Trade (https://github.com/kernc/backtesting.py)
-    and backtrader's TradeAnalyzer (https://github.com/mementum/backtrader).
+    Shares similar logic:
+    - vectorbt, Trades: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+    - backtesting.py, Trade: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Trade
+    - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
 
     Args:
         transactions (pd.DataFrame): One row per transaction with the columns "Date", "Ticker",
@@ -68,8 +71,8 @@ def get_trades(
         last_prices (pd.Series): The last price of every ticker, at which open lots are marked.
         trading_dates (pd.Index): The trading dates, of the same type as the transaction dates,
             on which the durations in periods are counted.
-        method (str, optional): "FIFO" closes the oldest lots first, "LIFO" the newest.
-            Defaults to "FIFO".
+        method (str, optional): Which lots a sale closes first. Options are: "FIFO" (the oldest lots
+            close first), "LIFO" (the newest lots close first). Defaults to "FIFO".
         purchases_first (bool, optional): Whether the purchases of a day come before its
             sales. False keeps the order of the rows within a day. Defaults to True.
 
@@ -79,6 +82,9 @@ def get_trades(
         Price, Exit Date, Exit Price, Size, Costs, Gross PnL, PnL, Return, Duration (Days) and
         Duration (Periods). An open trade exits at the last trading date and the last price,
         without exit costs.
+
+    Notes:
+    - vectorbt's Trades define the PnL and the return the same way.
     """
     method = method.upper()
     check_option("method", method, ("FIFO", "LIFO"))
@@ -179,20 +185,21 @@ def get_trades_from_positions(
     method: str = "FIFO",
 ) -> pd.DataFrame:
     """
-    The trade list (round trips) of a position series, such as the signals of a trading
-    rule (1 long, −1 short, 0 flat), the pairs trading positions of
-    `toolkit.econometrics.get_pairs_trading` or a number of units per date: every change in
-    the position is a transaction at that date's price, and the transactions are matched
-    into trades as `get_trades` does. A change from long to short closes the long trade
-    and opens a short one on the same date.
+    The trade list (round trips) of a position series.
+
+    The positions can be the signals of a trading rule (1 long, −1 short, 0 flat), the pairs
+    trading positions of `toolkit.econometrics.get_pairs_trading` or a number of units per
+    date: every change in the position is a transaction at that date's price, and the
+    transactions are matched into trades as `get_trades` does. A change from long to short
+    closes the long trade and opens a short one on the same date.
 
     The position on a date is traded at that date's price, the close for daily prices, so a
     signal that is only known at the close has to be shifted a period to be traded at the
-    next close without look-ahead (`positions.shift(1)`).
+    next close without look-ahead.
 
-    Referenced against vectorbt's Portfolio.from_orders with target amounts and backtesting.py,
-    both trading at the close (https://github.com/polakowo/vectorbt,
-    https://github.com/kernc/backtesting.py).
+    Shares similar logic:
+    - vectorbt, Portfolio.from_orders (target amounts): https://vectorbt.dev/api/portfolio/base/#vectorbt.portfolio.base.Portfolio.from_orders
+    - backtesting.py, Trade: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Trade
 
     Args:
         prices (pd.Series | pd.DataFrame): The price per date, one column per ticker.
@@ -201,12 +208,16 @@ def get_trades_from_positions(
             position is flat.
         fees (float, optional): The costs as a fraction of the value traded, 0.001 for 0.1%.
             Defaults to 0.0.
-        method (str, optional): "FIFO" or "LIFO", which lots a smaller position closes first.
-            Defaults to "FIFO".
+        method (str, optional): Which lots a smaller position closes first. Options are: "FIFO" (the
+            oldest lots close first), "LIFO" (the newest lots close first). Defaults to "FIFO".
 
     Returns:
         pd.DataFrame: The trade list as `get_trades` returns it, with an open trade marked to
         the last price.
+
+    Notes:
+    - vectorbt's Portfolio.from_orders with target amounts and backtesting.py both trade at
+      the close as well.
     """
     prices = prices.to_frame() if isinstance(prices, pd.Series) else prices
     positions = (
@@ -360,10 +371,11 @@ def get_trade_statistics(
     trades: pd.DataFrame, trading_dates: pd.Index, by: str | None = None
 ) -> pd.DataFrame:
     """
-    The statistics of a trade list (`get_trades` or `get_trades_from_positions`): how many
-    trades there were, how many made money, how much they made and lost, how long they lasted
-    and how they followed each other. Every statistic but the counts, the Open PnL and the
-    coverage is calculated on the closed trades, in the order they closed.
+    The statistics of a trade list (`get_trades` or `get_trades_from_positions`).
+
+    How many trades there were, how many made money, how much they made and lost, how long
+    they lasted and how they followed each other. Every statistic but the counts, the Open
+    PnL and the coverage is calculated on the closed trades, in the order they closed.
 
     The formula is as follows:
 
@@ -407,17 +419,20 @@ def get_trade_statistics(
     - Kelly, J.L. (1956). "A New Interpretation of Information Rate." Bell System Technical
       Journal, 35(4), 917-926.
 
-    Referenced against vectorbt's Trades.stats (https://github.com/polakowo/vectorbt),
-    backtesting.py's statistics (https://github.com/kernc/backtesting.py) and backtrader's
-    TradeAnalyzer and SQN (https://github.com/mementum/backtrader).
+    Shares similar logic:
+    - vectorbt, Trades.stats: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+    - vectorbt, Ranges.coverage (coverage): https://vectorbt.dev/api/generic/ranges/#vectorbt.generic.ranges.Ranges.coverage
+    - backtesting.py, Backtest.run (statistics): https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Backtest.run
+    - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
+    - backtrader, SQN: https://www.backtrader.com/docu/analyzers-reference/#sqn
 
     Args:
         trades (pd.DataFrame): The trade list, as `get_trades` returns it.
         trading_dates (pd.Index): The trading dates the trades took place in, of the same type
             as their dates, over which the coverage is measured.
-        by (str | None, optional): "direction" for the long and short trades next to all of
-            them, "ticker" for every ticker next to all of them. Defaults to None, all trades
-            together.
+        by (str | None, optional): How the trades are split. Options are: "direction" (the long and
+            short trades next to all of them), "ticker" (every ticker next to all of them). Defaults
+            to None, all trades together.
 
     Returns:
         pd.DataFrame: The statistics as rows, with a column "All" and one per direction or
@@ -444,9 +459,10 @@ def get_trade_statistics(
 def get_flattening_and_flips(positions: pd.Series) -> pd.Series:
     """
     The dates on which a position is flattened (goes to zero) or flips (changes sign), the
-    dates on which a bet ends, as López de Prado defines a bet: a position held from the
-    date it opens until it is flattened or flipped. The number of bets measures how often a
-    strategy takes an independent position.
+    dates on which a bet ends, as López de Prado defines a bet.
+
+    A bet is a position held from the date it opens until it is flattened or flipped. The
+    number of bets measures how often a strategy takes an independent position.
 
     For more information, see the following source:
 
@@ -479,11 +495,13 @@ def get_flattening_and_flips(positions: pd.Series) -> pd.Series:
 def get_average_holding_period(positions: pd.Series) -> float:
     """
     The average holding period of a position series in calendar days, as López de Prado
-    defines it: the time every unit was held, weighted by the units. Each increase of the
-    position moves its average entry time towards the date of the increase, weighted by the
-    units added; each decrease closes units that were held since the average entry time,
-    and a flip closes the whole position and opens a new one at the date of the flip. Units
-    still held at the end are not counted, as their holding period has not ended.
+    defines it: the time every unit was held, weighted by the units.
+
+    Each increase of the position moves its average entry time towards the date of the
+    increase, weighted by the units added; each decrease closes units that were held since
+    the average entry time, and a flip closes the whole position and opens a new one at the
+    date of the flip. Units still held at the end are not counted, as their holding period
+    has not ended.
 
     The formula is as follows:
 

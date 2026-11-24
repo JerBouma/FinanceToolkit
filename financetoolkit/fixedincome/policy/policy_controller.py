@@ -37,10 +37,11 @@ class PolicyFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
-        of European banks lend funds to one another in the interbank market. These rates are fixed
-        daily by the European Money Markets Institute (EMMI) and serve as a benchmark for various
-        financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
+        Retrieves the Euribor rates, short for Euro Interbank Offered Rate: the interest rates at which a panel of
+        European banks lend funds to one another in the interbank market.
+
+        These rates are fixed daily by the European Money Markets Institute (EMMI) and serve as a benchmark for
+        various financial products and contracts, including mortgages, loans, and derivatives, across the Eurozone.
 
         Euribor is fixed for maturities of one week to 12 months; this method returns the 1, 3, 6 and 12-month
         rates as monthly averages of the daily fixings, from the European Central Bank, as decimals. Longer
@@ -52,13 +53,12 @@ class PolicyFixedIncome:
         Also known as: euro interbank offered rate, eurozone money market.
 
         Args:
-            maturities (str | list | None, optional): The maturities to retrieve, from "1M", "3M", "6M" and "1Y",
-                as a list or a comma-separated string ("1M,3M").
-                Defaults to None, which retrieves all four.
+            maturities (str | list | None, optional): The maturities to retrieve, as a list or a comma-separated
+                string ("1M,3M"). Options are: "1M", "3M", "6M", "1Y", None (all four). Defaults to None.
             nominal (bool, optional): Whether to retrieve the nominal Euribor fixings or their real
-                (inflation-adjusted) counterpart. The ECB only publishes a real Euribor for the 3-month
-                maturity, so nominal=False returns that maturity alone and warns about any others that
-                were requested rather than silently answering them with a nominal rate. Defaults to True.
+                (inflation-adjusted) counterpart. The ECB only publishes a real Euribor for the 3-month maturity, so
+                the real rates return that maturity alone and warn about any others that were requested rather than
+                silently answering them with a nominal rate. Defaults to True.
             rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -177,8 +177,10 @@ class PolicyFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The Governing Council of the ECB sets the key interest rates for the
-        euro area. The available rates are:
+        Retrieves the key interest rates the Governing Council of the ECB sets for the euro
+        area: what banks pay to borrow from and receive to deposit with the central bank.
+
+        The available rates are:
 
         - Main refinancing operations (refinancing)
         - Marginal lending facility (lending)
@@ -211,10 +213,11 @@ class PolicyFixedIncome:
         Also known as: ECB rates, deposit facility rate.
 
         Args:
-            rate (str, optional): The rate to return. Defaults to None, which returns all rates.
-                Choose between 'refinancing', 'lending' or 'deposit'.
-            period (str, optional): Whether to return the daily, weekly, monthly, quarterly or
-                yearly data. Defaults to 'daily'.
+            rate (str, optional): The rate to return. Options are: "refinancing" (the main refinancing operations
+                rate), "lending" (the marginal lending facility rate), "deposit" (the deposit facility rate), None
+                (all rates). Defaults to None.
+            period (str, optional): The frequency of the data. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -296,7 +299,10 @@ class PolicyFixedIncome:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
+        Get the Federal Reserve rates as published by the Federal Reserve Bank of New York:
+        the overnight rates at which US banks and other institutions borrow dollars,
+        unsecured or against Treasury collateral.
+
         The federal funds market consists of domestic unsecured borrowings in U.S. dollars
         by depository institutions from other depository institutions and certain other
         entities, primarily government-sponsored enterprises.
@@ -345,7 +351,9 @@ class PolicyFixedIncome:
         Also known as: Fed rates, federal funds rate, FOMC rate.
 
         Args:
-            rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
+            rate (str): The rate to return. Options are: "EFFR" (Effective Federal Funds Rate), "OBFR" (Overnight
+                Bank Funding Rate), "TGCR" (Tri-Party General Collateral Rate), "BGCR" (Broad General Collateral
+                Rate), "SOFR" (Secured Overnight Financing Rate). Defaults to "EFFR".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

@@ -1401,7 +1401,6 @@ def get_model_confidence_set(
 
     Referenced against:
     - arch, MCS: https://bashtage.github.io/arch/multiple-comparison/generated/arch.bootstrap.MCS.html
-        Test: tests/econometrics/test_forecast_evaluation_model.py::test_get_model_confidence_set_matches_the_arch_package
     - rugarch (R), mcsTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L919
 
     Args:

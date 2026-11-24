@@ -429,22 +429,23 @@ class PortfolioConstruction(
 ):
     """
     The Portfolio Construction module builds and examines portfolios from the assets of a
-    Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance,
-    risk parity, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested
-    Clustered Optimization, Black-Litterman, minimum CVaR, minimum drawdown, maximum
-    Omega ratio, maximum CVaR ratio, maximum diversification, minimum tracking error,
-    growth optimal, resampled efficient), the efficient frontier, a walk-forward
-    backtest of the optimizers against equal weights, risk contributions to volatility,
-    expected shortfall, semideviation, mean absolute deviation, drawdowns and the other
-    risk measures of the Risk module, per asset and per factor, the risk metrics of given
-    weights, a whole-share allocation of the weights, diversification metrics, historical
-    stress tests, look-through exposure, a Brinson-Fachler attribution against the
-    benchmark, a factor attribution and the return contributions per period, and the
-    estimates behind the weights: expected returns, covariance and codependence
-    matrices, factor loadings, asset clusters, coskewness and cokurtosis, their
-    bootstrapped uncertainty and Entropy Pooling of views. Black-Litterman takes views
-    on assets and, augmented or Bayesian, on factors. The
-    optimizers take weight bounds per asset, sector and country bounds from the company
-    profiles, for long-short portfolios a net and gross exposure and, from current
-    weights, a maximum turnover.
+    Toolkit.
+
+    Optimal weights (minimum variance, maximum Sharpe ratio, mean-variance, risk parity,
+    Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested Clustered
+    Optimization, Black-Litterman, minimum CVaR, minimum drawdown, maximum Omega ratio,
+    maximum CVaR ratio, maximum diversification, minimum tracking error, growth optimal,
+    resampled efficient), the efficient frontier, a walk-forward backtest of the optimizers
+    against equal weights, risk contributions to volatility, expected shortfall,
+    semideviation, mean absolute deviation, drawdowns and the other risk measures of the
+    Risk module, per asset and per factor, the risk metrics of given weights, a whole-share
+    allocation of the weights, diversification metrics, historical stress tests,
+    look-through exposure, a Brinson-Fachler attribution against the benchmark, a factor
+    attribution and the return contributions per period, and the estimates behind the
+    weights: expected returns, covariance and codependence matrices, factor loadings, asset
+    clusters, coskewness and cokurtosis, their bootstrapped uncertainty and Entropy Pooling
+    of views. Black-Litterman takes views on assets and, augmented or Bayesian, on factors.
+    The optimizers take weight bounds per asset, sector and country bounds from the company
+    profiles, for long-short portfolios a net and gross exposure and, from current weights,
+    a maximum turnover.
     """

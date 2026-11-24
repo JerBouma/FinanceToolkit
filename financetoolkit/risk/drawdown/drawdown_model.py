@@ -19,9 +19,11 @@ def get_drawdown_samples(
     samples: np.ndarray, compound_returns: bool = True
 ) -> np.ndarray:
     """
-    Calculate the drawdowns of every row of returns without missing values, measured from the
-    running peak of the wealth path, which starts before the first return (a wealth of 1, or a
-    cumulative return of 0 without compounding), so a loss on the first return is a drawdown.
+    Calculate the drawdowns of every row of returns without missing values: how far the wealth
+    path stands below its running peak at every observation.
+
+    The peak starts before the first return (a wealth of 1, or a cumulative return of 0 without
+    compounding), so a loss on the first return is a drawdown.
 
     The formula is as follows:
 
@@ -29,7 +31,11 @@ def get_drawdown_samples(
         Uncompounded: Drawdown_t = Sum_t - max(0, max(Sum_s for s <= t)), Sum_t = Σ Return_s
 
     The uncompounded drawdown is the absolute drawdown of Riskfolio-Lib (MDD_Abs, DaR_Abs) and
-    skfolio (get_drawdowns(compounded=False)): the decline of the summed returns from their peak.
+    the uncompounded drawdown of skfolio: the decline of the summed returns from their peak.
+
+    Shares similar logic:
+    - skfolio, get_drawdowns: https://skfolio.org/generated/skfolio.measures.get_drawdowns.html
+    - PerformanceAnalytics (R), Drawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Drawdowns.R#L3
 
     Args:
         samples (np.ndarray): The returns, one sample per row.
@@ -58,9 +64,21 @@ def get_maximum_drawdown(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Maximum Drawdown of returns, the lowest drawdown of `get_drawdown_samples`,
-    over the whole sample, per period or over every rolling window (each window starting from
-    a fresh wealth path).
+    Calculate the Maximum Drawdown of returns: the largest decline from a peak, the lowest
+    drawdown of `get_drawdown_samples`.
+
+    It is taken over the whole sample, per period or over every rolling window (each window
+    starting from a fresh wealth path).
+
+    Referenced against:
+    - skfolio, max_drawdown: https://skfolio.org/generated/skfolio.measures.max_drawdown.html
+    - Riskfolio-Lib, MDD_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Rel
+    - Riskfolio-Lib, MDD_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Abs
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), maxDrawdown: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L44
+    - empyrical, max_drawdown: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L352
+    - quantstats, max_drawdown: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2677
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -86,13 +104,20 @@ def get_drawdown_at_risk(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Drawdown at Risk (DaR) of returns, the alpha quantile of the drawdowns of
-    every observation (Chekhlov, Uryasev and Zabarankin 2005):
+    Calculate the Drawdown at Risk (DaR) of returns: the drawdown that is only exceeded in a
+    fraction alpha of the observations, the alpha quantile of the drawdowns (Chekhlov, Uryasev
+    and Zabarankin 2005).
+
+    The formula is as follows:
 
         DaR = Quantile(Drawdown_t, alpha)
 
     The quantile is interpolated linearly, as in the historic Value at Risk and the
     Conditional Drawdown at Risk of the Toolkit.
+
+    Shares similar logic:
+    - skfolio, drawdown_at_risk: https://skfolio.org/generated/skfolio.measures.drawdown_at_risk.html
+    - Riskfolio-Lib, DaR_Rel: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.DaR_Rel
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -118,8 +143,11 @@ def get_drawdown_at_risk(
 
 def get_drawdown_troughs(drawdowns: np.ndarray) -> np.ndarray:
     """
-    The depth of every drawdown episode in a series of drawdowns: the lowest drawdown of each
-    run of observations below the peak.
+    Calculate the depth of every drawdown episode in a series of drawdowns: the lowest drawdown
+    of each run of observations below the peak.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), findDrawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/findDrawdowns.R#L45
 
     Args:
         drawdowns (np.ndarray): The drawdowns of one sample.
@@ -145,9 +173,11 @@ def get_average_drawdown(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Average Drawdown of returns, either the average depth of the drawdown
-    episodes (Bacon 2008) or the average drawdown of every observation (Chekhlov, Uryasev and
-    Zabarankin 2005):
+    Calculate the Average Drawdown of returns: how deep the declines from a peak typically are,
+    either the average depth of the drawdown episodes (Bacon 2008) or the average drawdown of
+    every observation (Chekhlov, Uryasev and Zabarankin 2005).
+
+    The formula is as follows:
 
         Episode: Average Drawdown = Σ_j Trough_j / d
         Observation: Average Drawdown = Σ_t Drawdown_t / n
@@ -156,10 +186,19 @@ def get_average_drawdown(
     episode that has not recovered by the end included) and n the number of observations,
     those at a peak counting as 0.
 
+    Referenced against:
+    - skfolio, average_drawdown (observation): https://skfolio.org/generated/skfolio.measures.average_drawdown.html
+    - Riskfolio-Lib, ADD_Rel (observation): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Rel
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), AverageDrawdown (episode): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L178
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
-        method (str, optional): "episode" or "observation". Defaults to "episode".
+        method (str, optional): The average. Options are: "episode" (the average depth of the
+            drawdown episodes), "observation" (the average drawdown of every observation).
+            Defaults to "episode".
         compound_returns (bool, optional): Whether to compound the returns. Defaults to True.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
@@ -190,13 +229,20 @@ def get_entropic_drawdown_at_risk(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Entropic Drawdown at Risk (EDaR) of returns, the historical Entropic Value at
-    Risk of the drawdowns of every observation (Cajas 2021):
+    Calculate the Entropic Drawdown at Risk (EDaR) of returns: the tightest entropic bound on
+    the deep drawdowns, the historical Entropic Value at Risk of the drawdowns of every
+    observation (Cajas 2021).
+
+    The formula is as follows:
 
         EDaR = -inf over z > 0 of z * ln(mean(exp(-Drawdown_t / z)) / alpha)
 
     It lies between the Conditional Drawdown at Risk and the Maximum Drawdown, see
     `evar_model.get_evar_samples` for the minimization.
+
+    Referenced against:
+    - skfolio, edar: https://skfolio.org/generated/skfolio.measures.edar.html
+    - Riskfolio-Lib, EDaR_Rel: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Rel
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -228,8 +274,11 @@ def get_conditional_expected_drawdown(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Conditional Expected Drawdown (CED) of returns, the tail average of the
-    Maximum Drawdowns over every path of `window` returns (Goldberg and Mahmoud 2017):
+    Calculate the Conditional Expected Drawdown (CED) of returns: how deep the worst declines
+    within a path of a given length get, the tail average of the Maximum Drawdowns over every
+    path of `window` returns (Goldberg and Mahmoud 2017).
+
+    The formula is as follows:
 
         MDD_s = min over t in [s, s + window) of Drawdown_t, each path starting
         from a fresh wealth of 1
@@ -240,7 +289,7 @@ def get_conditional_expected_drawdown(
     tail average is the exact one of Rockafellar and Uryasev (2002), the path at the boundary
     counted with the fraction of it inside the tail. Where the Conditional
     Drawdown at Risk averages the drawdowns of single observations, the CED averages the
-    worst decline of whole paths, so it answers how deep a bad month (for window=21 on daily
+    worst decline of whole paths, so it answers how deep a bad month (a window of 21 daily
     returns) gets.
 
     Args:
@@ -286,8 +335,8 @@ def get_conditional_expected_drawdown(
 def get_drawdown_state(returns: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate the share of the time spent below the peak and the state of the drawdown that is
-    still open at the end of the data, per column, on the drawdowns of
-    `risk_model.get_drawdown_series`.
+    still open at the end of the data: how often and how far an asset is under water, per
+    column, on the drawdowns of `risk_model.get_drawdown_series`.
 
     The formula is as follows:
 
@@ -363,10 +412,12 @@ def get_drawdown_state(returns: pd.DataFrame) -> pd.DataFrame:
 
 def get_drawdown_statistics(returns: pd.DataFrame) -> pd.DataFrame:
     """
-    Summarize the drawdown episodes of every column (see `risk_model.get_drawdown_table`): the
-    number of drawdowns, their average depth, the drawdown deviation, their average lengths and
-    recoveries, the share of the time below the peak and the state of the open drawdown (see
-    `get_drawdown_state`).
+    Summarize the drawdown episodes of every column: how many there were, how deep and long they
+    were and how they recovered.
+
+    The summary (see `risk_model.get_drawdown_table`) holds the number of drawdowns, their
+    average depth, the drawdown deviation, their average lengths and recoveries, the share of
+    the time below the peak and the state of the open drawdown (see `get_drawdown_state`).
 
     The formula is as follows:
 
@@ -381,6 +432,11 @@ def get_drawdown_statistics(returns: pd.DataFrame) -> pd.DataFrame:
     recovered by the end of the data counts towards the depths and To Trough, not towards To
     Recovery, the Lengths and the recovery measures. The Recovery Return of an episode runs from
     the trough to the close of the recovery, which may lie above the old peak.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), DrawdownDeviation: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L147
+    - PerformanceAnalytics (R), AverageRecovery: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L212
+    - PerformanceAnalytics (R), AverageLength: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L240
 
     Args:
         returns (pd.DataFrame): The returns, one column per asset.

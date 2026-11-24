@@ -24,7 +24,10 @@ logger = get_logger()
 @track_sources
 class QualityModels:
     """
-    Quality and earnings manipulation scores: Piotroski, Beneish, Mohanram, Dechow, Montier, the magic formula, the quality score, the accruals ratio and the modified Jones discretionary accruals.
+    Quality and earnings manipulation scores.
+
+    Piotroski, Beneish, Mohanram, Dechow, Montier, the magic formula, the quality score, the
+    accruals ratio and the modified Jones discretionary accruals.
     """
 
     @handle_errors
@@ -79,7 +82,7 @@ class QualityModels:
         The formula is as follows, where (t-1) is the same period a year earlier (the previous column on
         yearly data, four quarters back on quarterly data, so quarterly comparisons are year over year) and
         Beginning Total Assets are the total assets at the end of the previous period (`trailing` periods back
-        when set, one year earlier with trailing=4 on quarterly data):
+        when set, one year earlier with four trailing quarters):
 
         - Return on Assets (ROA) = Net Income / Beginning Total Assets
         - Return on Assets Criteria = 1 if ROA > 0, else 0
@@ -335,9 +338,11 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight
-        financial ratios derived from a company's financial statements to identify whether a company
-        has manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski
+        The Beneish M-Score shows how likely it is that a company has manipulated its earnings.
+
+        It is a probabilistic model, developed by Messod Beneish, that uses eight financial
+        ratios derived from a company's financial statements to identify whether a company has
+        manipulated its earnings. It is a natural companion to the Altman Z-Score and Piotroski
         F-Score, using the same normalized financial statements as its input.
 
         The formula is as follows, where (t-1) is the same period a year earlier (the previous column on yearly
@@ -652,9 +657,11 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Joel Greenblatt's Magic Formula ranking. Companies are ranked on two
-        measures and the ranks are added; the lowest total combines a good business with a
-        low price:
+        Calculate Joel Greenblatt's Magic Formula ranking, which shows the good businesses at a
+        low price.
+
+        Companies are ranked on two measures and the ranks are added; the lowest total combines
+        a good business with a low price:
 
             - Earnings Yield = EBIT / Enterprise Value (how cheap the company is)
             - Return on Capital = EBIT / (Net Working Capital + Net Fixed Assets) (how good
@@ -767,10 +774,14 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Partha Mohanram's G-Score, a score from 0 to 8 that separates winners
-        from losers among growth (low book-to-market) companies, where value measures such
-        as the Piotroski F-Score say little. Each signal is 1 when the company does better
-        than the median of its peers, the Toolkit's tickers:
+        Calculate Partha Mohanram's G-Score, which separates winners from losers among growth
+        companies.
+
+        It is a score from 0 to 8 for companies with a low book-to-market ratio, where value
+        measures such as the Piotroski F-Score say little.
+
+        Each signal is 1 when the company does better than the median of its peers, the
+        Toolkit's tickers:
 
         - Profitability: return on assets (G1) and cash flow return on assets (G2) above
           the median, and cash flow above net income (G3).
@@ -900,9 +911,11 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Dechow F-Score, the probability that a company's financial statements
-        are misstated relative to the average company. It was estimated on companies the
-        SEC charged with misstating their earnings, and combines:
+        Calculate the Dechow F-Score, the probability that a company's financial statements are
+        misstated relative to the average company.
+
+        It was estimated on companies the SEC charged with misstating their earnings, and
+        combines:
 
         - Accrual quality: RSST accruals (the change in non-cash working capital,
           non-current operating assets and financial assets), the changes in receivables and
@@ -1028,8 +1041,10 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate James Montier's C-Score, a count from 0 to 6 of warning signs that a
-        company is "cooking the books". Each sign is 1 when present:
+        Calculate James Montier's C-Score, a count from 0 to 6 of warning signs that a company
+        is "cooking the books".
+
+        Each sign is 1 when present:
 
         - A growing gap between net income and cash flow from operations.
         - Rising days sales outstanding: receivables growing faster than sales.
@@ -1144,11 +1159,13 @@ class QualityModels:
     ) -> pd.DataFrame:
         """
         The Quality Score follows the Quality Minus Junk (QMJ) score of Asness, Frazzini and
-        Pedersen (2019): a company is of high quality when it is profitable, growing, safe and
-        pays out to its shareholders. Every measure is ranked across the tickers given in each
-        period and turned into a z-score, each of the four components is the z-score of the
-        average of its measures, and the Quality Score is the z-score of their sum. A positive
-        score is a higher quality than the average of the tickers given.
+        Pedersen (2019).
+
+        A company is of high quality when it is profitable, growing, safe and pays out to its
+        shareholders. Every measure is ranked across the tickers given in each period and turned
+        into a z-score, each of the four components is the z-score of the average of its
+        measures, and the Quality Score is the z-score of their sum. A positive score is a
+        higher quality than the average of the tickers given.
 
         The measures are as follows (a higher value is a higher quality, so the measures marked
         "low" enter with a minus sign):
@@ -1356,18 +1373,19 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the accrual quality of Dechow and Dichev (2002): how well a company's working
-        capital accruals map into its operating cash flows of the year before, the year itself
-        and the year after. Accruals anticipate cash flows (a sale on credit is collected next
-        year), so accruals that the cash flows do not explain are estimation errors; their
-        standard deviation measures the quality of the accruals and of the earnings they are part
-        of. A higher value means lower quality. Francis et al. (2005) found that companies with
-        poor accrual quality have a higher cost of capital.
+        Calculate the accrual quality of Dechow and Dichev (2002).
+
+        How well a company's working capital accruals map into its operating cash flows of the
+        year before, the year itself and the year after. Accruals anticipate cash flows (a sale
+        on credit is collected next year), so accruals that the cash flows do not explain are
+        estimation errors; their standard deviation measures the quality of the accruals and of
+        the earnings they are part of. A higher value means lower quality. Francis et al. (2005)
+        found that companies with poor accrual quality have a higher cost of capital.
 
         The regression is estimated per company over the `window` years before the period:
 
             - ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) + b3 CFO (t + 1) + e (t)
-            - McNichols (2002), method="mcnichols": ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) +
+            - McNichols (2002): ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) +
               b3 CFO (t + 1) + b4 ΔRevenue (t) + b5 PP&E (t) + e (t)
             - Accrual Quality = σ(e), the standard deviation of the residuals (ddof=1)
 
@@ -1388,8 +1406,9 @@ class QualityModels:
         Also known as: Dechow-Dichev model, accruals quality, AQ, DD model, McNichols model.
 
         Args:
-            method (str, optional): "dechow_dichev" or "mcnichols" (adds the change in revenue and
-                the property, plant and equipment). Defaults to "dechow_dichev".
+            method (str, optional): Options are: "dechow_dichev" (Dechow and Dichev, 2002), "mcnichols" (McNichols,
+                2002, which adds the change in revenue and the property, plant and equipment). Defaults to
+                "dechow_dichev".
             window (int, optional): The number of years every regression is estimated on. Dechow
                 and Dichev required at least 8 years per company. Defaults to 8.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1491,12 +1510,14 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the accounting-based earnings attributes of Francis, LaFond, Olsson and Schipper
-        (2004): the persistence, predictability and smoothness of a company's earnings over the
-        past years. Persistent and predictable earnings are more useful to forecast with, and the
-        paper finds that companies with less favourable attributes have a higher cost of equity.
-        Together with the accrual quality (`get_accrual_quality`) they are the paper's accounting
-        attributes.
+        Calculate the accounting-based earnings attributes of Francis, LaFond, Olsson and
+        Schipper (2004).
+
+        These are the persistence, predictability and smoothness of a company's earnings over
+        the past years. Persistent and predictable earnings are more useful to forecast with,
+        and the paper finds that companies with less favourable attributes have a higher cost of
+        equity. Together with the accrual quality (`get_accrual_quality`) they are the paper's
+        accounting attributes.
 
         The formula is as follows, each over the `window` years up to the period:
 
@@ -1601,12 +1622,13 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the seven criteria Benjamin Graham sets for the stocks of the defensive investor
-        in The Intelligent Investor (chapter 14), with the number met: an adequate size, a strong
-        financial condition, earnings stability, a dividend record, earnings growth, a moderate
-        price to earnings and a moderate price to assets. Graham meant them as a minimum of
-        quality and a maximum of price for an investor who does not want to analyse companies in
-        depth.
+        Calculate the seven criteria Benjamin Graham sets for the stocks of the defensive
+        investor in The Intelligent Investor (chapter 14), with the number met.
+
+        They are an adequate size, a strong financial condition, earnings stability, a dividend
+        record, earnings growth, a moderate price to earnings and a moderate price to assets.
+        Graham meant them as a minimum of quality and a maximum of price for an investor who
+        does not want to analyse companies in depth.
 
         The formula is as follows:
 
@@ -1731,11 +1753,12 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the accruals ratios: the part of earnings that is not backed by cash,
-        relative to the average of the total assets at the start and the end of the year.
+        Calculate the accruals ratios: the part of earnings that is not backed by cash, relative
+        to the average of the total assets at the start and the end of the year.
+
         Richard Sloan showed that earnings driven by accruals are less persistent than cash
-        earnings and that companies with high accruals earn lower future returns (the
-        accrual anomaly).
+        earnings and that companies with high accruals earn lower future returns (the accrual
+        anomaly).
 
             - Balance Sheet Accruals Ratio = [(ΔCurrent Assets - ΔCash) - (ΔCurrent
               Liabilities - ΔShort-term Debt - ΔTaxes Payable) - Depreciation] / Average
@@ -1839,15 +1862,16 @@ class QualityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the discretionary accruals of the modified Jones model, the part of a
-        company's accruals that its change in revenues and its fixed assets do not explain
-        and that is therefore attributed to management's discretion. Jones (1991) modelled
-        the accruals a company needs as a function of its change in revenues (working
-        capital moves with sales) and its property, plant and equipment (depreciation).
-        Dechow, Sloan and Sweeney (1995) subtracted the change in receivables from the
-        change in revenues, because revenue booked on credit can itself be managed, and
-        found this modified model the most powerful at detecting earnings management.
-        Large positive discretionary accruals point at earnings that were managed up.
+        Calculate the discretionary accruals of the modified Jones model.
+
+        They are the part of a company's accruals that its change in revenues and its fixed
+        assets do not explain and that is therefore attributed to management's discretion. Jones
+        (1991) modelled the accruals a company needs as a function of its change in revenues
+        (working capital moves with sales) and its property, plant and equipment (depreciation).
+        Dechow, Sloan and Sweeney (1995) subtracted the change in receivables from the change in
+        revenues, because revenue booked on credit can itself be managed, and found this
+        modified model the most powerful at detecting earnings management. Large positive
+        discretionary accruals point at earnings that were managed up.
 
         The formula is as follows:
 
@@ -1861,7 +1885,7 @@ class QualityModels:
         Here A(t-1) is the total assets at the start of the year, ΔRevenue and
         ΔReceivables the changes over the year and PPE the property, plant and equipment
         at the end of it. The coefficients a1, a2 and a3 are estimated with ordinary least
-        squares without an intercept, as in Jones (1991); with intercept=True a constant a0
+        squares without an intercept, as in Jones (1991); with an intercept a constant a0
         is added to the estimation and the Non-Discretionary Accruals (Kothari, Leone and
         Wasley, 2005).
 
@@ -1878,15 +1902,17 @@ class QualityModels:
         Also known as: modified Jones model, abnormal accruals, Jones model, earnings
         management.
 
+        Referenced against:
+        - statsmodels, OLS (time series): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+        - statsmodels, OLS (with an intercept): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+
         Args:
-            method (str, optional): How the coefficients are estimated. "time_series"
-                estimates them for every year on the company's own earlier years, as Jones
-                (1991) and Dechow, Sloan and Sweeney (1995) did, with the change in revenues
-                in the estimation and the change in receivables subtracted only for the year
-                itself. "cross_section" estimates them per year across the tickers of the
-                Toolkit, with the change in revenues minus the change in receivables in the
-                estimation as well, which is meaningful with many companies of one industry.
-                Defaults to "time_series".
+            method (str, optional): How the coefficients are estimated. Options are: "time_series" (for every year
+                on the company's own earlier years, as Jones (1991) and Dechow, Sloan and Sweeney (1995) did, with
+                the change in revenues in the estimation and the change in receivables subtracted only for the year
+                itself), "cross_section" (per year across the tickers of the Toolkit, with the change in revenues
+                minus the change in receivables in the estimation as well, which is meaningful with many companies
+                of one industry). Defaults to "time_series".
             min_observations (int, optional): The fewest observations a regression is
                 estimated on: earlier years of the company with "time_series", tickers with
                 "cross_section". At least 3, the number of coefficients. Defaults to 10, the
@@ -1935,13 +1961,13 @@ class QualityModels:
         - The cross-section design uses the companies of the same year, so it needs at
           least `min_observations` tickers that report every input. Many later papers
           estimate it per industry and year and add an intercept (Kothari, Leone and
-          Wasley, 2005), which `intercept=True` does.
+          Wasley, 2005), which the intercept option does.
         - Without an intercept the PPE term carries the average level of the accruals, so a
           company whose PPE intensity or size trends away from its estimation years gets
           discretionary accruals of one sign. In the example below AAPL's and MSFT's PPE
           averaged about 0.11 of their beginning assets in the estimation years and is 0.15
           to 0.17 (AAPL) and 0.24 to 0.45 (MSFT) in the years shown, where their
-          discretionary accruals are positive in every year. `intercept=True` removes this
+          discretionary accruals are positive in every year. An intercept removes this
           level bias within the estimation years at the cost of a degree of freedom, and
           gives both companies discretionary accruals of either sign in these years.
         - The expanding window of the time series design starts at the first year loaded,

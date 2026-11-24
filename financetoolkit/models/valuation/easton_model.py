@@ -14,10 +14,11 @@ def get_implied_cost_of_capital(
     modified: bool = True,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate Easton's (2004) implied cost of equity capital: the expected rate of return at
-    which the share price equals the capitalized next-year earnings plus the capitalized
-    abnormal growth in earnings of the year after, solved from two years of earnings
-    forecasts and the share price.
+    Calculate Easton's (2004) implied cost of equity capital.
+
+    It is the expected rate of return at which the share price equals the capitalized
+    next-year earnings plus the capitalized abnormal growth in earnings of the year after,
+    solved from two years of earnings forecasts and the share price.
 
     The formula is as follows:
 

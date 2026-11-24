@@ -34,8 +34,8 @@ CHUNK_SIZE = 250
 
 def maturity_in_years(label: str | float) -> float:
     """
-    The maturity of a label such as "3M", "1.5M", "10Y", "52W", "3month" or "0.5" (years),
-    in years.
+    Convert a maturity label such as "3M", "1.5M", "10Y", "52W", "3month" or "0.5" (years)
+    to the maturity in years.
 
     Args:
         label (str | float): The label, or a number of years.
@@ -87,7 +87,8 @@ def nelson_siegel_svensson_yield(
     tau_2: float,
 ) -> np.ndarray:
     """
-    The yield of the Nelson-Siegel-Svensson model at the given maturities:
+    Calculate the yield of the Nelson-Siegel-Svensson model at the given maturities: the
+    smooth yield curve that its level, slope and two curvature factors describe:
 
         y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1) +
                β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)] +
@@ -202,11 +203,13 @@ def fit_nelson_siegel_curves(
 ) -> pd.DataFrame:
     """
     Fit the Nelson-Siegel or Nelson-Siegel-Svensson model to every curve (row) of a yield
-    curve history. Given the decays the betas follow exactly from linear least squares, so
-    the decays are searched on a grid, for all curves with the same maturities at once,
-    after which the search zooms in on the best grid point of each curve. The level is
-    kept at or above the lower of zero and the longest yield, and the first decay at least a
-    third of the shortest maturity.
+    curve history: the level, slope and curvature factors that describe each curve.
+
+    Given the decays the betas follow exactly from linear least squares, so the decays are
+    searched on a grid, for all curves with the same maturities at once, after which the
+    search zooms in on the best grid point of each curve. The level is kept at or above the
+    lower of zero and the longest yield, and the first decay at least a third of the
+    shortest maturity.
 
     The Nelson-Siegel model describes a curve with a level, a slope and a curvature:
 
@@ -370,16 +373,18 @@ def bill_yields_to_annual(
     convention: str | None = None,
 ) -> np.ndarray:
     """
-    Convert the yields of zero-coupon bills (up to a year) to annually compounded rates. By
-    default the yields are compounded `frequency` times a year; a convention gives the way a
-    country quotes its bills instead:
+    Convert the yields of zero-coupon bills (up to a year) to annually compounded rates: the
+    bill yields on the same footing as the rates of the rest of the curve.
 
-        - "bond-equivalent": the US Treasury's bond-equivalent yield, simple interest up to
+    By default the yields are compounded `frequency` times a year; a convention gives the
+    way a country quotes its bills instead:
+
+        - Bond-equivalent: the US Treasury's bond-equivalent yield, simple interest up to
           half a year and for a longer bill a half-year compounding step followed by simple
           interest for the rest, 1 + annual rate = [(1 + y min(m, ½)) (1 + y max(m - ½, 0))]^(1/m)
-        - "act/365": simple interest over the actual days on a 365-day year, as the Government
+        - Actual/365: simple interest over the actual days on a 365-day year, as the Government
           of Canada quotes its treasury bills, 1 + annual rate = (1 + y m)^(1/m)
-        - "act/360": simple interest over the actual days on a 360-day year, as the Swedish
+        - Actual/360: simple interest over the actual days on a 360-day year, as the Swedish
           National Debt Office quotes its treasury bills (statsskuldväxlar),
           1 + annual rate = (1 + y m 365 / 360)^(1/m)
 
@@ -397,8 +402,9 @@ def bill_yields_to_annual(
         maturities (np.ndarray): The maturities in years.
         yields (np.ndarray): The yields, as decimals.
         frequency (int, optional): The compounding periods per year. Defaults to 2.
-        convention (str | None, optional): "bond-equivalent", "act/365" or "act/360", or None
-            for yields compounded `frequency` times a year. Defaults to None.
+        convention (str | None, optional): How the bills are quoted. Options are:
+            "bond-equivalent" (the US Treasury), "act/365" (Canada), "act/360" (Sweden),
+            None (yields compounded `frequency` times a year). Defaults to None.
 
     Returns:
         np.ndarray: The annually compounded rates.
@@ -437,12 +443,14 @@ def bootstrap_zero_rates(
     return_grid: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
-    Bootstrap zero-coupon rates from par yields, quoted with `frequency` compounding periods a
-    year (bond-equivalent yields). Maturities up to one year are treated as zero-coupon
-    (bills), so only their compounding changes (see bill_yields_to_annual); longer ones as
-    bonds paying `frequency` coupons a year at their par yield. The par yields are
-    interpolated linearly to every coupon date, and each discount factor follows from the
-    earlier ones:
+    Bootstrap zero-coupon rates from par yields, quoted with `frequency` compounding periods
+    a year (bond-equivalent yields): the rate at which a single payment at each maturity is
+    discounted, so that every par bond prices at par.
+
+    Maturities up to one year are treated as zero-coupon (bills), so only their compounding
+    changes (see bill_yields_to_annual); longer ones as bonds paying `frequency` coupons a
+    year at their par yield. The par yields are interpolated linearly to every coupon date,
+    and each discount factor follows from the earlier ones:
 
         P(t_n) = (1 - c/f Σ_{i<n} P(t_i)) / (1 + c/f)
 
@@ -453,14 +461,18 @@ def bootstrap_zero_rates(
     `return_grid` returns the zero rate of every coupon date, on which each par bond prices
     at 100.
 
+    Referenced against:
+    - QuantLib, PiecewiseYieldCurve (PiecewiseLogLinearDiscount): https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
+    - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
+
     Args:
         maturities (np.ndarray): The maturities in years, ascending.
         par_yields (np.ndarray): The par yields, as decimals.
         frequency (int, optional): The coupons per year. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields (up to a year) are
-            quoted: "bond-equivalent" (the US Treasury), "act/365" (Canada), "act/360"
-            (Sweden) or None for yields compounded `frequency` times a year, see
-            bill_yields_to_annual. Defaults to None.
+            quoted, see bill_yields_to_annual. Options are: "bond-equivalent" (the US
+            Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
+            `frequency` times a year). Defaults to None.
         return_grid (bool, optional): Whether to return the zero rates of every coupon date
             and of the maturities up to a year, as a tuple of those maturities (ascending) and
             their rates, instead of the zero rates of the given maturities. Defaults to False.
@@ -527,12 +539,13 @@ def get_principal_components(
     curves: pd.DataFrame, components: int = 3, changes: bool = True
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     """
-    The principal components of a yield curve history (Litterman and Scheinkman, 1991):
-    the few independent movements that explain most of how the curve changes, typically a
-    parallel shift (level), a steepening (slope) and a bending (curvature). The sign of a
-    component is arbitrary; PC1 is oriented so that its loadings sum to a positive number (a
-    rise in all yields), PC2 so that the longest maturity loads above the shortest (a
-    steepening) and the others so that their loadings sum to a positive number.
+    Calculate the principal components of a yield curve history (Litterman and Scheinkman,
+    1991): the few independent movements that explain most of how the curve changes,
+    typically a parallel shift (level), a steepening (slope) and a bending (curvature).
+
+    The sign of a component is arbitrary; PC1 is oriented so that its loadings sum to a
+    positive number (a rise in all yields), PC2 so that the longest maturity loads above the
+    shortest (a steepening) and the others so that their loadings sum to a positive number.
 
     Args:
         curves (pd.DataFrame): The yields by date (rows) and maturity (columns).

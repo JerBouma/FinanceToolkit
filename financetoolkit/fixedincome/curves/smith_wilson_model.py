@@ -63,10 +63,11 @@ def get_smith_wilson_curve(
     convergence_speed: float,
 ) -> pd.DataFrame:
     """
-    Builds a discount curve with the Smith-Wilson method (Smith and Wilson, 2001), the
-    method Solvency II prescribes for the risk-free rate term structures of EIOPA: it prices
-    every input instrument exactly and, beyond the last of them, converges to an ultimate
-    forward rate (UFR) at a speed set by the convergence speed α (EIOPA's alpha).
+    Build a discount curve with the Smith-Wilson method (Smith and Wilson, 2001): the
+    risk-free term structure that prices every input instrument exactly and, beyond the last
+    of them, converges to an ultimate forward rate (UFR) at a speed set by the convergence
+    speed α (EIOPA's alpha), the method Solvency II prescribes for the risk-free rate term
+    structures of EIOPA.
 
     The formula is as follows:
 
@@ -94,8 +95,11 @@ def get_smith_wilson_curve(
     - EIOPA (2022). "Technical Documentation of the Methodology to Derive EIOPA's Risk-Free
       Interest Rate Term Structures." EIOPA-BoS-22/409, section on the Smith-Wilson method.
 
-    Referenced against rateslib's SmithWilsonCurve (https://rateslib.com) and EIOPA's
-    published curves and Smith-Wilson coefficients (Qb).
+    EIOPA's published curves and Smith-Wilson coefficients (Qb) are reproduced, see
+    tests/fixedincome/test_curve_construction.py::test_smith_wilson_reproduces_eiopa.
+
+    Referenced against:
+    - rateslib, SmithWilsonCurve: https://rateslib.com/py/en/3.0.x/api/rateslib.curves.SmithWilsonCurve.html
 
     Args:
         cash_flow_times (np.ndarray | list): The times of the cash flows in years, after 0.
@@ -158,8 +162,8 @@ def get_smith_wilson_alpha(
     tolerance: float = CONVERGENCE_TOLERANCE,
 ) -> float:
     """
-    The alpha of the Smith-Wilson method as EIOPA sets it: the smallest alpha of at least
-    0.05 for which the instantaneous forward rate (continuously compounded) at the
+    Calculate the alpha of the Smith-Wilson method as EIOPA sets it: the smallest alpha of
+    at least 0.05 for which the instantaneous forward rate (continuously compounded) at the
     convergence point lies within the tolerance (a basis point) of the ultimate forward
     intensity ω = ln(1 + UFR).
 

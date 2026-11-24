@@ -23,13 +23,18 @@ L_SCALE_ORDER = 2
 
 def get_owa_gmd_weights(observations: int) -> np.ndarray:
     """
-    The ordered weighted average (OWA) weights of the Gini Mean Difference: applied to the
-    returns sorted from low to high they give the mean absolute difference between every
-    two distinct returns (Yitzhaki 1982, Cajas 2021).
+    Calculate the ordered weighted average (OWA) weights of the Gini Mean Difference: the
+    weights that turn returns sorted from low to high into how far apart two returns lie on average.
+
+    Applied to the sorted returns they give the mean absolute difference between every two
+    distinct returns (Yitzhaki 1982, Cajas 2021).
 
     The formula is as follows:
 
         Weight_i = 2 * (2i - 1 - N) / (N * (N - 1)) for i = 1, ..., N
+
+    Shares similar logic:
+    - Riskfolio-Lib, owa_gmd: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_gmd
 
     Args:
         observations (int): The number of returns N, 2 or more.
@@ -44,9 +49,11 @@ def get_owa_gmd_weights(observations: int) -> np.ndarray:
 
 def get_owa_cvar_weights(observations: int, alpha: float) -> np.ndarray:
     """
-    The ordered weighted average (OWA) weights of the Conditional Value at Risk: applied to
-    the returns sorted from low to high they give the average of the worst alpha share of
-    the returns, the observation at the boundary counting with its fraction (Rockafellar and
+    Calculate the ordered weighted average (OWA) weights of the Conditional Value at Risk: the
+    weights that turn returns sorted from low to high into the average loss in the worst tail.
+
+    Applied to the sorted returns they give the average of the worst alpha share of the
+    returns, the observation at the boundary counting with its fraction (Rockafellar and
     Uryasev 2002, Cajas 2021). The result is a return, negative for a loss.
 
     The formula is as follows:
@@ -54,6 +61,9 @@ def get_owa_cvar_weights(observations: int, alpha: float) -> np.ndarray:
         Weight_i = 1 / (N * alpha) for i < k, Weight_k = 1 - (k - 1) / (N * alpha), else 0
 
     Where k = ceil(N * alpha).
+
+    Shares similar logic:
+    - Riskfolio-Lib, owa_cvar: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_cvar
 
     Args:
         observations (int): The number of returns N.
@@ -74,10 +84,13 @@ def get_owa_tail_gini_weights(
     observations: int, alpha: float = 0.05, points: int = 100
 ) -> np.ndarray:
     """
-    The ordered weighted average (OWA) weights of the Tail Gini: a weighted sum of the
-    Conditional Value at Risk at `points` tail probabilities from 0.0001 up to alpha,
-    which approximates the Tail Gini of Furman, Wang and Zitikis (2017) as in Cajas (2021).
-    Applied to the returns sorted from low to high they give a return, negative for a loss.
+    Calculate the ordered weighted average (OWA) weights of the Tail Gini: the weights that
+    turn returns sorted from low to high into a tail loss that weighs the worst returns most.
+
+    The weights are a weighted sum of the Conditional Value at Risk at `points` tail
+    probabilities from 0.0001 up to alpha, which approximates the Tail Gini of Furman, Wang and
+    Zitikis (2017) as in Cajas (2021). Applied to the returns sorted from low to high they give
+    a return, negative for a loss.
 
     The formula is as follows:
 
@@ -87,6 +100,9 @@ def get_owa_tail_gini_weights(
         c_m = (alpha_m - alpha_(m-1)) / alpha
 
     Where alpha_1 < ... < alpha_m = alpha are evenly spaced from 0.0001 to alpha.
+
+    Shares similar logic:
+    - Riskfolio-Lib, owa_tg: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_tg
 
     Args:
         observations (int): The number of returns N.
@@ -115,15 +131,18 @@ def get_owa_tail_gini_weights(
 
 def get_owa_l_moment_weights(observations: int, order: int) -> np.ndarray:
     """
-    The ordered weighted average (OWA) weights of the sample L-moment of an order: applied
-    to the returns sorted from low to high they give Hosking's (1990) unbiased estimate of
-    the L-moment.
+    Calculate the ordered weighted average (OWA) weights of the sample L-moment of an order:
+    the weights that turn returns sorted from low to high into Hosking's (1990) unbiased
+    estimate of the L-moment, which describes the shape of the distribution.
 
     The formula is as follows:
 
         Weight_i = Σ_j (-1)^j * C(k - 1, j) * C(i - 1, k - 1 - j) * C(N - i, j) / (k * C(N, k))
 
     Where C is the binomial coefficient, k the order and j runs from 0 to k - 1.
+
+    Shares similar logic:
+    - Riskfolio-Lib, owa_l_moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment
 
     Args:
         observations (int): The number of returns N, at least the order.
@@ -153,36 +172,49 @@ def get_owa_l_moment_crm_weights(
     max_weight: float = 0.5,
 ) -> np.ndarray:
     """
-    The ordered weighted average (OWA) weights of the convex risk measure based on the
-    L-moments of order 2 up to `order` (Cajas 2023): a combination Σ φ_k * (-1)^k * λ_k
-    whose weights φ are non-negative, sum to 1 and decrease with the order, chosen so that
-    the OWA weights increase from the best to the worst return (which makes the measure
-    convex). The odd L-moments enter with a minus sign, so a negative L-skewness adds risk.
+    Calculate the ordered weighted average (OWA) weights of the L-moment convex risk measure:
+    the weights that turn returns sorted from low to high into a risk measure of the spread
+    and the shape of the distribution, which weighs the worst returns most.
 
-    The φ follow from `method`:
+    The measure is based on the L-moments of order 2 up to `order` (Cajas 2023): a combination
+    Σ φ_k * (-1)^k * λ_k whose weights φ are non-negative, sum to 1 and decrease with the order,
+    chosen so that the OWA weights increase from the best to the worst return (which makes the
+    measure convex). The odd L-moments enter with a minus sign, so a negative L-skewness adds
+    risk.
 
-    - "msd": the smallest sum of squared differences between neighbouring OWA weights.
-    - "mss": the smallest sum of squared OWA weights.
-    - "crra": φ_k proportional to Π (risk_aversion + i - 1) / k! (i = 1 .. k - 1), constant
-      relative risk aversion, with the OWA weights made non-decreasing by a running maximum.
+    The φ follow from one of three methods:
+
+    - Minimum squared differences: the smallest sum of squared differences between
+      neighbouring OWA weights.
+    - Minimum sum of squares: the smallest sum of squared OWA weights.
+    - Constant relative risk aversion: φ_k proportional to Π (risk_aversion + i - 1) / k!
+      (i = 1 .. k - 1), with the OWA weights made non-decreasing by a running maximum.
 
     The first two are solved for φ with at most `max_weight` per L-moment, as convex
-    programs over the k - 1 weights (Riskfolio-Lib solves them with cvxpy). Riskfolio-Lib's
-    maximum entropy method ("ME") is left out: it maximizes the entropy of a bound above the
-    absolute OWA weights, which is the same for every feasible φ, so its weights depend on
-    the solver rather than on the problem.
+    programs over the k - 1 weights (Riskfolio-Lib solves them with cvxpy).
+
+    Shares similar logic:
+    - Riskfolio-Lib, owa_l_moment_crm: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment_crm
 
     Args:
         observations (int): The number of returns N, at least the order.
         order (int, optional): The highest L-moment order, 2 or higher. Defaults to 4.
-        method (str, optional): "msd", "mss" or "crra". Defaults to "msd".
-        risk_aversion (float, optional): The risk aversion for "crra", between 0 and 1.
+        method (str, optional): How the weights of the L-moments are chosen. Options are: "msd"
+            (minimum squared differences), "mss" (minimum sum of squares), "crra" (constant
+            relative risk aversion). Defaults to "msd".
+        risk_aversion (float, optional): The risk aversion of the constant relative risk
+            aversion method, between 0 and 1. Defaults to 0.5.
+        max_weight (float, optional): The largest weight of one L-moment for the minimum
+            squared differences and minimum sum of squares methods, between 0 and 1.
             Defaults to 0.5.
-        max_weight (float, optional): The largest weight of one L-moment for "msd" and "mss",
-            between 0 and 1. Defaults to 0.5.
 
     Returns:
         np.ndarray: The N weights.
+
+    Notes:
+    - Riskfolio-Lib's maximum entropy method is left out: it maximizes the entropy of a bound
+    above the absolute OWA weights, which is the same for every feasible φ, so its weights
+    depend on the solver rather than on the problem.
     """
     check_option("method", method, L_MOMENT_RISK_METHODS)
     if order < 2 or int(order) != order:  # noqa: PLR2004
@@ -258,12 +290,17 @@ def get_central_moment(
     returns: pd.Series | pd.DataFrame, order: int = 3, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the central moment of returns of an order, the average of the deviations from
-    the mean raised to that power.
+    Calculate the central moment of returns of an order: the average of the deviations from
+    the mean raised to that power, the spread (order 2) or the shape (order 3 or 4) of the returns.
 
     The formula is as follows:
 
         Central Moment = (1 / N) * Σ (Return - Mean)^order
+
+    Referenced against:
+    - skfolio, third_central_moment: https://skfolio.org/generated/skfolio.measures.third_central_moment.html
+    - skfolio, fourth_central_moment: https://skfolio.org/generated/skfolio.measures.fourth_central_moment.html
+    - Riskfolio-Lib, Kurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Kurtosis
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -274,6 +311,9 @@ def get_central_moment(
     Returns:
         pd.Series | pd.DataFrame | float: The central moment, see
         `risk_model.apply_to_observations`.
+
+    Notes:
+    - Riskfolio-Lib's Kurtosis is the square root of the fourth central moment.
     """
     if order < 2 or int(order) != order:  # noqa: PLR2004
         raise ValueError("The order must be an integer of 2 or higher.")
@@ -291,7 +331,12 @@ def get_worst_realization(
     returns: pd.Series | pd.DataFrame, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Worst Realization of returns, the lowest return (Young 1998).
+    Calculate the Worst Realization of returns: the lowest return, the worst loss in the
+    sample (Young 1998).
+
+    Referenced against:
+    - Riskfolio-Lib, WR: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.WR
+    - skfolio, worst_realization: https://skfolio.org/generated/skfolio.measures.worst_realization.html
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -300,6 +345,10 @@ def get_worst_realization(
 
     Returns:
         pd.Series | pd.DataFrame | float: The lowest return, negative for a loss.
+
+    Notes:
+    - Unlike Riskfolio-Lib and skfolio, which report the loss as a positive number, the
+    lowest return keeps its sign.
     """
     return risk_model.apply_to_observations(
         returns, lambda samples: samples.min(axis=1), window_size, 1
@@ -310,8 +359,8 @@ def get_gini_mean_difference(
     returns: pd.Series | pd.DataFrame, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Gini Mean Difference of returns, the mean absolute difference between
-    every two distinct returns (Yitzhaki 1982).
+    Calculate the Gini Mean Difference of returns: how far apart two returns lie on average,
+    the mean absolute difference between every two distinct returns (Yitzhaki 1982).
 
     The formula is as follows:
 
@@ -319,6 +368,10 @@ def get_gini_mean_difference(
 
     It is calculated as the ordered weighted average of the sorted returns with the weights
     of `get_owa_gmd_weights`, and equals twice the second L-moment.
+
+    Referenced against:
+    - Riskfolio-Lib, GMD: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.GMD
+    - skfolio, gini_mean_difference: https://skfolio.org/generated/skfolio.measures.gini_mean_difference.html
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -343,10 +396,14 @@ def get_tail_gini(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Tail Gini of returns: a weighted average of the Conditional Value at Risk
-    at tail probabilities from 0.0001 up to alpha (see `get_owa_tail_gini_weights`), which
-    weighs the worst returns within the alpha tail more than the Conditional Value at Risk
-    does.
+    Calculate the Tail Gini of returns: the loss in the worst tail of the returns, weighing
+    the worst returns within that tail more than the Conditional Value at Risk does.
+
+    It is a weighted average of the Conditional Value at Risk at tail probabilities from
+    0.0001 up to alpha (see `get_owa_tail_gini_weights`).
+
+    Referenced against:
+    - Riskfolio-Lib, TG: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TG
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -357,6 +414,10 @@ def get_tail_gini(
 
     Returns:
         pd.Series | pd.DataFrame | float: The Tail Gini as a return, negative for a loss.
+
+    Notes:
+    - Unlike Riskfolio-Lib, which reports the loss as a positive number, the Tail Gini is a
+    return, negative for a loss.
     """
     get_owa_tail_gini_weights(2, alpha, points)  # Validates alpha up front.
 
@@ -376,7 +437,7 @@ def get_l_moment(
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the sample L-moment of returns of an order (Hosking 1990), or its L-moment
-    ratio.
+    ratio: the location, spread, asymmetry or tail weight of the returns, robust to outliers.
 
     The formula is as follows:
 
@@ -385,6 +446,10 @@ def get_l_moment(
 
     Where Return_(i) are the returns sorted from low to high and the weights are those of
     `get_owa_l_moment_weights`.
+
+    Referenced against:
+    - Riskfolio-Lib, L_Moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment
+    - scipy, lmoment: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lmoment.html
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -432,21 +497,33 @@ def get_l_moment_risk_measure(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the convex risk measure based on the L-moments of order 2 up to `order`
-    (Cajas 2023), the ordered weighted average of the sorted returns with the weights of
-    `get_owa_l_moment_crm_weights`.
+    Calculate the L-moment convex risk measure of returns: a risk measure of the spread and
+    the shape of the returns that weighs the worst returns most (Cajas 2023).
+
+    It is based on the L-moments of order 2 up to `order`, the ordered weighted average of the
+    sorted returns with the weights of `get_owa_l_moment_crm_weights`.
+
+    Referenced against:
+    - Riskfolio-Lib, L_Moment_CRM (constant relative risk aversion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment_CRM
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
         order (int, optional): The highest L-moment order, 2 or higher. Defaults to 4.
-        method (str, optional): "msd", "mss" or "crra". Defaults to "msd".
-        risk_aversion (float, optional): The risk aversion for "crra". Defaults to 0.5.
+        method (str, optional): How the weights of the L-moments are chosen. Options are: "msd"
+            (minimum squared differences), "mss" (minimum sum of squares), "crra" (constant
+            relative risk aversion). Defaults to "msd".
+        risk_aversion (float, optional): The risk aversion of the constant relative risk
+            aversion method. Defaults to 0.5.
         max_weight (float, optional): The largest weight of one L-moment. Defaults to 0.5.
         window_size (int | None, optional): The size of the rolling window. Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame | float: The risk measure, a positive decimal.
+
+    Notes:
+    - The minimum squared differences and minimum sum of squares methods are solved with tight
+    tolerances; the default solver tolerances of Riskfolio-Lib can give slightly different values.
     """
     # The parameters are validated up front, as a period fails on them only when it is calculated.
     check_option("method", method, L_MOMENT_RISK_METHODS)
@@ -477,8 +554,8 @@ def get_risk_range(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate a range measure of returns (Cajas 2021): the distance between a measure of the
-    gains (the upper tail) and the same measure of the losses (the lower tail).
+    Calculate a range measure of returns (Cajas 2021): how far the gains (the upper tail) lie
+    from the losses (the lower tail), each measured the same way.
 
     The formula is as follows:
 
@@ -493,11 +570,21 @@ def get_risk_range(
     the Toolkit; the Tail Gini is that of `get_tail_gini` and the EVaR the historic Entropic
     Value at Risk of `evar_model.get_evar_historic`.
 
+    Referenced against:
+    - Riskfolio-Lib, RG (Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.RG
+    - Riskfolio-Lib, TGRG (Tail Gini Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TGRG
+    - Riskfolio-Lib, EVRG (EVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVRG
+
+    Shares similar logic:
+    - Riskfolio-Lib, VRG (VaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.VRG
+    - Riskfolio-Lib, CVRG (CVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CVRG
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
             a (period, date) index.
-        measure (str, optional): "range", "var", "cvar", "tail_gini" or "evar". Defaults to
-            "range".
+        measure (str, optional): The measure of the tails. Options are: "range" (Range),
+            "var" (VaR Range), "cvar" (CVaR Range), "tail_gini" (Tail Gini Range), "evar"
+            (EVaR Range). Defaults to "range".
         alpha (float, optional): The tail probability of the losses. Defaults to 0.05.
         beta (float | None, optional): The tail probability of the gains. Defaults to None,
             which uses alpha.
@@ -554,13 +641,18 @@ def get_skewness_kurtosis_ratio(
     returns: pd.Series | pd.DataFrame, window_size: int | None = None
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Skewness-Kurtosis Ratio of returns (Bacon 2008), the skewness over the
-    (Pearson, not excess) kurtosis, both the bias-adjusted sample estimates of
-    `risk_model.get_skewness` and `risk_model.get_kurtosis`.
+    Calculate the Skewness-Kurtosis Ratio of returns (Bacon 2008): how lopsided the returns
+    are relative to how heavy their tails are.
+
+    It is the skewness over the (Pearson, not excess) kurtosis, both the bias-adjusted sample
+    estimates of `risk_model.get_skewness` and `risk_model.get_kurtosis`.
 
     The formula is as follows:
 
         Skewness-Kurtosis Ratio = Skewness / Kurtosis
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), SkewnessKurtosisRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SkewnessKurtosisRatio.R#L31
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with

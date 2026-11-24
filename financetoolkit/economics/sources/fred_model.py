@@ -55,17 +55,20 @@ def get_price_index(
     measure: str, start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the full history of a US price index from FRED, which republishes the BLS
-    series: the Producer Price Index for final demand (PPIFID), the export or import
-    price index of all commodities (IQ and IR), or a component of the Consumer Price
-    Index (CPILFENS for the core index, CPIENGNS, CPIUFDNS, CUUR0000SAC, CUUR0000SAS
-    and CUUR0000SAH1), not seasonally adjusted.
+    Retrieve the full history of a US price index from FRED, which republishes the BLS series: the producer, export or
+    import price index or a component of the CPI.
+
+    The series are the Producer Price Index for final demand (PPIFID), the export or import price index of all
+    commodities (IQ and IR), or a component of the Consumer Price Index (CPILFENS for the core index, CPIENGNS,
+    CPIUFDNS, CUUR0000SAC, CUUR0000SAS and CUUR0000SAH1), not seasonally adjusted.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Args:
-        measure (str): "producer", "export", "import", or "consumer_" followed by "core",
-            "energy", "food", "goods", "services" or "shelter".
+        measure (str): The price index. Options are: "producer" (producer price index), "export" (export price index),
+            "import" (import price index), "consumer_core" (consumer prices less food and energy), "consumer_energy"
+            (energy), "consumer_food" (food), "consumer_goods" (goods), "consumer_services" (services),
+            "consumer_shelter" (shelter).
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         api_key (str): FRED API key.
@@ -85,7 +88,7 @@ def get_price_index(
 
 def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
-    Retrieves Total Nonfarm Payroll Employment from FRED (series PAYEMS).
+    Retrieve total nonfarm payroll employment from FRED (series PAYEMS): the number of US jobs outside farming.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -103,9 +106,8 @@ def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.Dat
 
 def get_job_openings_rate(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
-    Retrieves the job openings rate of total nonfarm from FRED (series JTSJOR), which
-    republishes the BLS Job Openings and Labor Turnover Survey, seasonally adjusted, from
-    December 2000.
+    Retrieves the job openings rate of total nonfarm from FRED (series JTSJOR), which republishes the BLS Job Openings
+    and Labor Turnover Survey, seasonally adjusted, from December 2000.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -133,7 +135,8 @@ def get_initial_jobless_claims(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves Initial Claims for Unemployment Insurance from FRED (series ICSA).
+    Retrieve the initial claims for unemployment insurance from FRED (series ICSA): how many people newly file for
+    unemployment benefits.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -154,7 +157,8 @@ def get_continuing_jobless_claims(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves Continued Claims (Insured Unemployment) from FRED (series CCSA).
+    Retrieve the continued claims (insured unemployment) from FRED (series CCSA): how many people keep receiving
+    unemployment benefits.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -175,7 +179,8 @@ def get_insured_unemployment_rate(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the Insured Unemployment Rate from FRED (series IURSA).
+    Retrieve the insured unemployment rate from FRED (series IURSA): the continued claims as a share of covered
+    employment.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -195,8 +200,8 @@ def get_insured_unemployment_rate(
 
 def get_retail_sales(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
-    Retrieves Advance Retail Sales: Retail Trade and Food Services from FRED (series
-    RSAFS).
+    Retrieve the advance retail sales of retail trade and food services from FRED (series RSAFS): what US consumers
+    spend in shops and restaurants.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -216,7 +221,8 @@ def get_industrial_production_index(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the Industrial Production Index from FRED (series INDPRO).
+    Retrieve the Industrial Production Index from FRED (series INDPRO): the real output of US manufacturing, mining
+    and utilities.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -234,8 +240,8 @@ def get_industrial_production_index(
 
 def get_housing_starts(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
-    Retrieves Housing Starts: Total New Privately-Owned Housing Units from FRED
-    (series HOUST).
+    Retrieve the housing starts (total new privately-owned housing units) from FRED (series HOUST): how many new US
+    homes are started.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -257,8 +263,8 @@ def get_real_personal_income(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves Real Personal Income Excluding Current Transfer Receipts from FRED
-    (series W875RX1).
+    Retrieve the real personal income excluding current transfer receipts from FRED (series W875RX1): the income US
+    households earn, adjusted for inflation.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -279,8 +285,8 @@ def get_mortgage_rate_30_year(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the 30-Year Fixed Rate Mortgage Average from FRED (series
-    MORTGAGE30US, Freddie Mac's Primary Mortgage Market Survey).
+    Retrieve the 30-year fixed rate mortgage average from FRED (series MORTGAGE30US, Freddie Mac's Primary Mortgage
+    Market Survey): what new US home buyers pay.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -310,7 +316,8 @@ def get_recession_indicator(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the NBER-based US Recession Indicator from FRED (series USREC).
+    Retrieve the NBER-based US recession indicator from FRED (series USREC): 1 in the months of a recession and 0
+    otherwise.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
@@ -333,8 +340,8 @@ def get_commercial_real_estate_prices(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:
     """
-    Retrieves the Commercial Real Estate Price Index for the United States from FRED
-    (series COMREPUSQ159N, sourced from the IMF's Financial Soundness Indicators).
+    Retrieve the commercial real estate price index of the United States from FRED (series COMREPUSQ159N, from the
+    IMF's Financial Soundness Indicators).
 
     This tracks commercial (office, retail, industrial, apartment) property prices,
     as distinct from residential house prices (see `get_house_prices`). It is a

@@ -158,11 +158,15 @@ def get_years_to_maturity(
       30/360 US, which also counts the last day of February as the 30th; the two differ by
       at most a few days of accrual around February.
 
+    Referenced against:
+    - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
+
     Args:
         settlement (date): The date the price applies to.
         maturity (date): The maturity date.
         frequency (int): The number of coupons per year. Defaults to 2.
-        day_count (str): The day count convention, "act/act" or "30/360". Defaults to
+        day_count (str): The day count convention. Options are: "act/act" (actual/actual, the
+            Treasury's), "30/360" (the 30/360 Bond Basis of corporate bonds). Defaults to
             "act/act".
 
     Returns:
@@ -302,6 +306,9 @@ def get_bill_price(years_to_maturity: float, yield_to_maturity: float) -> float:
     half a year the yield is simple interest; beyond it an equivalent note would have paid
     a coupon after half a year, so the yield compounds once.
 
+    Referenced against:
+    - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
+
     Args:
         years_to_maturity (float): The days to maturity divided by 365.
         yield_to_maturity (float): The bond-equivalent yield (decimal).
@@ -340,6 +347,9 @@ def get_bill_measures(years_to_maturity: float, yield_to_maturity: float) -> dic
 
     where P is get_bill_price, y the bond-equivalent yield and t the days to maturity
     divided by 365.
+
+    Referenced against:
+    - QuantLib, ZeroCouponBond: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_bond.html
 
     Args:
         years_to_maturity (float): The days to maturity divided by 365.

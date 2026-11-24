@@ -50,12 +50,13 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Sovereign Debt Crisis dummy for a variety of countries over time from the Global
-        Macro Database (GMDB). Unlike the other indicators in this module, this is a binary
-        (0 = no crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a
-        continuous economic series: a value of 1 marks a year in which a country was undergoing a
-        sovereign debt crisis (e.g. a default or restructuring of government debt), and 0 marks a
-        year in which it was not.
+        Get the sovereign debt crisis dummy of a variety of countries from the Global Macro Database (GMDB): whether a
+        country was in a sovereign debt crisis in each year.
+
+        Unlike the other indicators in this module, this is a binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff
+        style crisis-dating series rather than a continuous economic series: a value of 1 marks a year in which a
+        country was undergoing a sovereign debt crisis (e.g. a default or restructuring of government debt), and 0
+        marks a year in which it was not.
 
         The crisis dating stops short of the present and ends in a different year per country
         (2017 for Argentina, for example), so the years after it are NaN rather than 0.
@@ -135,12 +136,13 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Currency Crisis dummy for a variety of countries over time from the Global Macro
-        Database (GMDB). Unlike the other indicators in this module, this is a binary (0 = no
-        crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a continuous
-        economic series: a value of 1 marks a year in which a country was undergoing a currency
-        crisis (e.g. a sharp, disorderly depreciation or collapse of the exchange rate), and 0
-        marks a year in which it was not.
+        Get the currency crisis dummy of a variety of countries from the Global Macro Database (GMDB): whether a
+        country was in a currency crisis in each year.
+
+        Unlike the other indicators in this module, this is a binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff
+        style crisis-dating series rather than a continuous economic series: a value of 1 marks a year in which a
+        country was undergoing a currency crisis (e.g. a sharp, disorderly depreciation or collapse of the exchange
+        rate), and 0 marks a year in which it was not.
 
         The crisis dating stops short of the present and ends in a different year per country,
         so the years after it are NaN rather than 0.
@@ -218,12 +220,13 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Banking Crisis dummy for a variety of countries over time from the Global Macro
-        Database (GMDB). Unlike the other indicators in this module, this is a binary (0 = no
-        crisis, 1 = crisis) Reinhart & Rogoff style crisis-dating series rather than a continuous
-        economic series: a value of 1 marks a year in which a country was undergoing a systemic
-        banking crisis (e.g. bank runs, large-scale bank failures or government intervention to
-        prevent them), and 0 marks a year in which it was not.
+        Get the banking crisis dummy of a variety of countries from the Global Macro Database (GMDB): whether a
+        country was in a systemic banking crisis in each year.
+
+        Unlike the other indicators in this module, this is a binary (0 = no crisis, 1 = crisis) Reinhart & Rogoff
+        style crisis-dating series rather than a continuous economic series: a value of 1 marks a year in which a
+        country was undergoing a systemic banking crisis (e.g. bank runs, large-scale bank failures or government
+        intervention to prevent them), and 0 marks a year in which it was not.
 
         The crisis dating stops short of the present and ends in a different year per country,
         so the years after it are NaN rather than 0.
@@ -319,11 +322,11 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the credit-to-GDP gap: how far the ratio of credit to the private non-financial
-        sector to GDP lies above or below its long-term trend, in percentage points of GDP.
-        The trend is a one-sided Hodrick-Prescott filter with a smoothing parameter of
-        400,000, which only uses the quarters up to each point, so the gap is what was
-        known at the time.
+        Get the credit-to-GDP gap: how far the ratio of credit to the private non-financial sector to GDP lies above
+        or below its long-term trend, in percentage points of GDP.
+
+        The trend is a one-sided Hodrick-Prescott filter with a smoothing parameter of 400,000, which only uses the
+        quarters up to each point, so the gap is what was known at the time.
 
         A gap that stays above two percentage points of GDP has preceded most banking
         crises of the past decades, often by several years, which is why Basel III uses
@@ -426,10 +429,10 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the debt service ratio: the share of income that goes to interest payments and
-        repayments of debt. It captures both how much is borrowed and at what rate, so it
-        rises when rates go up even if the debt itself does not, and it is a leading
-        indicator of financial stress: a high debt service ratio held back spending and
+        Get the debt service ratio: the share of income that goes to interest payments and repayments of debt.
+
+        It captures both how much is borrowed and at what rate, so it rises when rates go up even if the debt itself
+        does not, and it is a leading indicator of financial stress: a high debt service ratio held back spending and
         preceded the downturns after several credit booms (Drehmann and Juselius, 2012).
 
         The ratio is computed by the Bank for International Settlements for the private
@@ -447,9 +450,9 @@ class StabilityEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            borrowers (str, optional): The borrowing sector: "private" (households and
-                non-financial corporations together), "households" or "corporations"
-                (non-financial corporations). Defaults to "private", the sector with the
+            borrowers (str, optional): The borrowing sector. Options are: "private" (households and
+                non-financial corporations together), "households" (households), "corporations" (non-financial
+                corporations). Defaults to "private", the sector with the
                 widest coverage.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
                 moving average). Defaults to None.
@@ -544,12 +547,12 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the total credit to a non-financial sector as a share of GDP: all loans and
-        debt securities owed by households, non-financial corporations or the government,
-        whoever the lender is (banks, other financial institutions, foreign lenders or
-        bond holders). It measures how leveraged an economy is and where the debt sits,
-        such as the high corporate debt in China or the high household debt in Australia
-        and Canada.
+        Get the total credit to a non-financial sector as a share of GDP: all loans and debt securities owed by
+        households, non-financial corporations or the government.
+
+        The lender can be anyone: banks, other financial institutions, foreign lenders or bond holders. It measures
+        how leveraged an economy is and where the debt sits, such as the high corporate debt in China or the high
+        household debt in Australia and Canada.
 
         Unlike bank lending alone, it also counts market and cross-border funding, so it
         is comparable across countries where companies borrow from banks (the euro area,
@@ -565,10 +568,10 @@ class StabilityEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            borrowers (str, optional): The borrowing sector: "private" (households and
-                non-financial corporations), "households", "corporations" (non-financial
-                corporations), "government" (at nominal value) or "non_financial" (all
-                three together). Defaults to "private", the measure behind the
+            borrowers (str, optional): The borrowing sector. Options are: "private" (households and
+                non-financial corporations), "households" (households), "corporations" (non-financial
+                corporations), "government" (the government, at nominal value), "non_financial" (all three
+                together). Defaults to "private", the measure behind the
                 credit-to-GDP gap.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
                 moving average). Defaults to None.
@@ -652,11 +655,12 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the implied volatility the option markets price, by market and time to expiry:
-        the volatility indices of Cboe, STOXX and ICE. Implied volatility is the market's
-        expectation of how much prices will move, and its term structure (how it rises or
-        falls with the time to expiry) is the market-consistent target for calibrating the
-        volatility of equity, rate and commodity models.
+        Get the implied volatility the option markets price, by market and time to expiry: the volatility indices of
+        Cboe, STOXX and ICE.
+
+        Implied volatility is the market's expectation of how much prices will move, and its term structure (how it
+        rises or falls with the time to expiry) is the market-consistent target for calibrating the volatility of
+        equity, rate and commodity models.
 
         The markets and their maturities:
         - "US Equity": S&P 500 options, the Cboe VIX family: 9 days (VIX9D, from 2011), 1
@@ -674,7 +678,7 @@ class StabilityEconomics:
           month, from 2009.
         - "US Treasury Rates": the ICE BofA MOVE index, the normal (basis point) volatility of
           Treasury yields implied by 1-month options on 2, 5, 10 and 30-year Treasuries, from
-          2002. Requires a FinancialModelingPrep API key (the api_key of the Economics class).
+          2002. Requires a FinancialModelingPrep API key on the Economics class.
         - "Japan Government Bonds": the S&P/JPX JGB VIX, from options on JGB futures, 1
           month, from 2015. Requires a FinancialModelingPrep API key.
 
@@ -690,14 +694,14 @@ class StabilityEconomics:
         volatility index, fear index.
 
         Args:
-            markets (list[str] | str | None, optional): The markets to retrieve, from
+            markets (list[str] | str | None, optional): The markets to retrieve. Options are:
                 "US Equity", "Euro Area Equity", "Emerging Markets Equity", "US Equity
                 Volatility", "US Treasury Bonds", "Crude Oil", "Gold", "US Treasury Rates" and
                 "Japan Government Bonds". Defaults to None, which retrieves every market, with
                 "US Treasury Rates" (the MOVE) and "Japan Government Bonds" (the JGB VIX) only
                 when an API key is set.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly
+                data), "monthly" (monthly data). Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -850,10 +854,11 @@ class StabilityEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the scenarios regulators publish for their stress tests: documented paths of
-        the economy and financial markets under a baseline and an adverse scenario, which
-        serve as calibration and validation targets for scenario generators and as the
-        stresses banks and insurers are tested against.
+        Get the scenarios regulators publish for their stress tests: documented paths of the economy and financial
+        markets under a baseline and an adverse scenario.
+
+        They serve as calibration and validation targets for scenario generators and as the stresses banks and
+        insurers are tested against.
 
         Two authorities are available:
         - "federal_reserve": the Federal Reserve's supervisory stress test, quarterly over
@@ -862,15 +867,15 @@ class StabilityEconomics:
           rates, the BBB corporate yield, the mortgage and prime rate, the Dow Jones Total
           Stock Market Index, house and commercial real estate price indices and the VIX;
           for the euro area, developing Asia, Japan and the United Kingdom: GDP growth,
-          inflation and the dollar exchange rate. scenario="historic" returns the history
-          of the same variables from 1976. year selects the year of the test (published in
+          inflation and the dollar exchange rate. The historic scenario returns the history
+          of the same variables from 1976. The year selects the year of the test (published in
           February), from 2025; by default the latest.
         - "esrb": the macro-financial scenario the European Systemic Risk Board designs for
           the EU-wide bank stress test of the EBA, yearly over three years: GDP growth,
           inflation, unemployment, residential and commercial real estate prices and
           long-term rates for every EU member and the main other economies, stock prices by
           region, commodity prices, iTraxx credit spreads and euro exchange rates.
-          scenario="historic" returns the starting point. Always the latest exercise.
+          The historic scenario returns the starting point. Always the latest exercise.
 
         The Federal Reserve's growth and inflation variables (GDP, disposable income and
         CPI, and the international GDP growth and inflation) are annualized
@@ -888,10 +893,13 @@ class StabilityEconomics:
         scenario, severely adverse scenario.
 
         Args:
-            scenario (str, optional): "baseline", "adverse" (the Federal Reserve's severely
-                adverse scenario) or "historic". Defaults to "adverse".
-            authority (str, optional): "federal_reserve" or "esrb". Defaults to
-                "federal_reserve".
+            scenario (str, optional): The stress test scenario. Options are: "baseline" (the baseline
+                scenario), "adverse" (the adverse scenario, for the Federal Reserve its severely adverse
+                scenario), "historic" (the history or starting point of the variables). Defaults to
+                "adverse".
+            authority (str, optional): The authority that sets the scenarios. Options are:
+                "federal_reserve" (the Federal Reserve), "esrb" (the European Systemic Risk Board). Defaults
+                to "federal_reserve".
             countries (list[str] | str | None, optional): The countries (or regions) to
                 include. Defaults to None, which includes all of them.
             year (int | None, optional): The year of the Federal Reserve's stress test, from
@@ -985,12 +993,12 @@ class StabilityEconomics:
         self, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Returns the market risk premium per country: the extra return investors demand
-        for holding equities over a risk-free investment. It consists of the country risk
-        premium, which compensates for the additional risk of the country itself, and the
-        total equity risk premium, which adds the premium of a mature market. The market
-        risk premium is a key input of the Capital Asset Pricing Model (CAPM) and with
-        that of the cost of equity and the WACC.
+        Get the market risk premium per country: the extra return investors demand for holding equities over a
+        risk-free investment.
+
+        It consists of the country risk premium, which compensates for the additional risk of the country itself, and
+        the total equity risk premium, which adds the premium of a mature market. The market risk premium is a key
+        input of the Capital Asset Pricing Model (CAPM) and with that of the cost of equity and the WACC.
 
         In the CAPM the cost of equity is the risk-free rate plus beta times the total
         equity risk premium. Use the premium of the country where the company earns its
@@ -999,7 +1007,7 @@ class StabilityEconomics:
         was estimated against.
 
         The same data is available as Toolkit.get_market_risk_premium; both share one
-        cached copy. This requires a FinancialModelingPrep API key, passed via api_key
+        cached copy. This requires a FinancialModelingPrep API key, passed
         when initializing.
 
         Also known as: equity risk premium, country risk premium, MRP.

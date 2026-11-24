@@ -87,8 +87,9 @@ def get_cev(
     put_option: bool = False,
 ) -> float | np.ndarray:
     """
-    Calculate the price of a European option in the constant elasticity of variance (CEV)
-    model of Cox (1975), with the non-central chi-squared formula of Schroder (1989).
+    Calculate the price of a European option in the constant elasticity of variance (CEV) model
+    of Cox (1975): what a call or put is worth when the volatility rises as the stock price
+    falls, with the non-central chi-squared formula of Schroder (1989).
 
     Also known as: CEV option price, constant elasticity of variance, local volatility
     power model.
@@ -131,6 +132,9 @@ def get_cev(
     Black-Scholes, which it then differs from by at most about 2e-5, while the formula itself
     loses digits there.
 
+    Referenced against:
+    - QuantLib, AnalyticCEVEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/analyticcevengine.hpp#L62
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | pd.Series | np.ndarray): The option's strike price, or a range
@@ -160,10 +164,12 @@ def get_cev(
         Variance Diffusions." Working paper, Stanford University (reprinted in The Journal
         of Portfolio Management, 23(2), 1996); Schroder, M. (1989). "Computing the Constant
         Elasticity of Variance Option Pricing Formula." The Journal of Finance, 44(1),
-        211-219. Referenced against QuantLib's AnalyticCEVEngine (https://www.quantlib.org),
-        which takes the coefficient of the futures price, √(v / T) here, and agrees within
-        1e-12, and against a Monte Carlo simulation of the stock with drift r — q. A β
-        above 1 is not accepted: the futures price is then a strict local martingale, so
+        211-219.
+        - QuantLib's AnalyticCEVEngine takes the coefficient of the futures price, √(v / T)
+          here, and agrees within 1e-12; the price also matches a Monte Carlo simulation of
+          the stock with drift r — q.
+
+        A β above 1 is not accepted: the futures price is then a strict local martingale, so
         the call and put no longer satisfy put-call parity. The put of the example below is
         above the Black-Scholes price of the same put, 4.0241: with β = 0.5 the volatility
         rises as the price falls towards the strike. The Sankaran approximation is checked

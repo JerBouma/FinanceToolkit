@@ -13,8 +13,10 @@ def get_net_income_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Net Income to Total Assets Ratio measures a company's profitability relative to the size of its
-    balance sheet. It is the profitability component of the Zmijewski Score.
+    The Net Income to Total Assets Ratio measures a company's profitability relative to the
+    size of its balance sheet.
+
+    It is the profitability component of the Zmijewski Score.
 
     The formula is as follows:
 
@@ -41,8 +43,10 @@ def get_total_liabilities_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Total Liabilities to Total Assets Ratio measures the proportion of a company's assets that are
-    financed through debt rather than equity. It is the leverage component of the Zmijewski Score.
+    The Total Liabilities to Total Assets Ratio measures the proportion of a company's
+    assets that are financed through debt rather than equity.
+
+    It is the leverage component of the Zmijewski Score.
 
     The formula is as follows:
 
@@ -69,9 +73,10 @@ def get_current_assets_to_current_liabilities_ratio(
     current_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Current Assets to Current Liabilities Ratio measures a company's short-term liquidity, i.e. its
-    ability to cover short-term obligations with short-term resources. It is the liquidity component of
-    the Zmijewski Score.
+    The Current Assets to Current Liabilities Ratio measures a company's short-term
+    liquidity, i.e. its ability to cover short-term obligations with short-term resources.
+
+    It is the liquidity component of the Zmijewski Score.
 
     The formula is as follows:
 
@@ -99,11 +104,14 @@ def get_zmijewski_score(
     current_assets_to_current_liabilities_ratio: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Zmijewski Score is a bankruptcy prediction model developed by Mark Zmijewski in 1984. It is a
-    simpler, three-variable model compared to both the five-variable Altman Z-Score and the
-    nine-variable Ohlson O-Score, and is commonly used as a robustness check when those two models
-    disagree, since it is estimated on a different sample and with a different statistical technique
-    (a probit model rather than discriminant analysis or logistic regression).
+    The Zmijewski Score is a bankruptcy prediction model developed by Mark Zmijewski in
+    1984.
+
+    It is a simpler, three-variable model compared to both the five-variable Altman Z-Score
+    and the nine-variable Ohlson O-Score, and is commonly used as a robustness check when
+    those two models disagree, since it is estimated on a different sample and with a
+    different statistical technique (a probit model rather than discriminant analysis or
+    logistic regression).
 
     The formula is as follows:
 
@@ -148,11 +156,13 @@ def get_zmijewski_bankruptcy_probability(
     zmijewski_score: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    Converts the Zmijewski Score into a probability of bankruptcy using the cumulative distribution
-    function (CDF) of the standard normal distribution, i.e. a probit link. This is deliberately
-    different from the Ohlson O-Score's logistic link — Zmijewski's model is estimated with a probit
-    regression, so applying a logistic transform here (a common mistake when the two models are
-    implemented side by side) would produce the wrong probability.
+    Converts the Zmijewski Score into a probability of bankruptcy using the cumulative
+    distribution function (CDF) of the standard normal distribution, i.e. a probit link.
+
+    This is deliberately different from the Ohlson O-Score's logistic link — Zmijewski's
+    model is estimated with a probit regression, so applying a logistic transform here (a
+    common mistake when the two models are implemented side by side) would produce the wrong
+    probability.
 
     The formula is as follows:
 

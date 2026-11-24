@@ -48,8 +48,9 @@ def get_credit_default_swap(
     frequency: int = 4,
 ) -> pd.Series:
     """
-    Calculate the par spread, risky PV01, upfront and mark-to-market of a credit default swap
-    with the ISDA CDS Standard Model (O'Kane, 2008, ch. 6; Markit, 2009).
+    Calculate the par spread, risky PV01, upfront and mark-to-market of a credit default
+    swap with the ISDA CDS Standard Model (O'Kane, 2008, ch. 6; Markit, 2009): what
+    protection against the default of a reference entity costs and is worth.
 
     The premium leg pays the coupon c on the dates t_k, each accruing τ_k = (t_k - t_(k-1))
     * 365 / 360, as long as the reference entity survives, and the premium accrued since
@@ -88,8 +89,14 @@ def get_credit_default_swap(
     - Hull, J.C. and White, A. (2000). "Valuing Credit Default Swaps I: No Counterparty
       Default Risk." The Journal of Derivatives, 8(1), 29-40.
 
-    Referenced against QuantLib's CreditDefaultSwap with the IsdaCdsEngine, MidPointCdsEngine
-    and IntegralCdsEngine, and FinancePy's CDS (par_spread, risky_pv01, value).
+    Referenced against:
+    - QuantLib, CreditDefaultSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_credit_default_swap.html
+    - QuantLib, IsdaCdsEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_isda_cds_engine.html
+    - QuantLib, MidPointCdsEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/credit/midpointcdsengine.hpp#L34
+    - QuantLib, IntegralCdsEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/credit/integralcdsengine.hpp#L33
+
+    Shares similar logic:
+    - FinancePy, CDS: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds.py#L262
 
     Args:
         maturity (float): The years until the protection ends.
@@ -169,8 +176,9 @@ def get_cds_implied_hazard_rates(
     frequency: int = 4,
 ) -> pd.Series:
     """
-    Bootstrap a piecewise flat hazard rate curve from the par spreads of credit default swaps
-    (O'Kane, 2008, ch. 7).
+    Bootstrap a piecewise flat hazard rate curve from the par spreads of credit default
+    swaps (O'Kane, 2008, ch. 7): the default intensity of the reference entity over time
+    that the CDS market prices in.
 
     The hazard rate up to each CDS maturity T_i is solved in maturity order, with the
     earlier ones fixed, so that the par spread of that CDS (see `get_credit_default_swap`)
@@ -187,8 +195,10 @@ def get_cds_implied_hazard_rates(
       ch. 7.
     - Markit (2009). "ISDA CDS Standard Model."
 
-    Referenced against QuantLib's PiecewiseFlatHazardRate on SpreadCdsHelpers and
-    FinancePy's CDSCurve.
+    Referenced against:
+    - QuantLib, PiecewiseFlatHazardRate: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_default_curve.html
+    - QuantLib, SpreadCdsHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_spread_cds_helper.html
+    - FinancePy, CDSCurve: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/cds_curve.py#L45
 
     Args:
         maturities (np.ndarray | list): The CDS maturities in years, increasing.
@@ -273,7 +283,8 @@ def get_cds_option(
     knockout: bool = True,
 ) -> pd.Series:
     """
-    Calculate the value of an option on a credit default swap (a CDS swaption) with Black's
+    Calculate the value of an option on a credit default swap (a CDS swaption): what the
+    right to buy or sell protection at the strike spread at expiry is worth, with Black's
     formula on the forward CDS spread, discounted with the forward risky annuity
     (Schönbucher, 2003; O'Kane, 2008, ch. 9).
 
@@ -313,10 +324,16 @@ def get_cds_option(
     - Hull, J.C. and White, A. (2003). "The Valuation of Credit Default Swap Options."
       Journal of Derivatives, 10(3), 40-50.
 
-    Referenced against QuantLib's CdsOption with the BlackCdsOptionEngine. QuantLib takes the
-    forward spread and annuity from the engine of the underlying CDS; with its
+    QuantLib takes the forward spread and annuity from the engine of the underlying CDS; with its
     IntegralCdsEngine the values agree to within a few hundredths of a percent, the
     difference of its daily integration steps.
+
+    Referenced against:
+    - QuantLib, CdsOption: https://www.quantlib.org/reference/class_quant_lib_1_1_cds_option.html
+    - QuantLib, BlackCdsOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_cds_option_engine.html
+
+    Shares similar logic:
+    - FinancePy, CDSOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds_option.py#L41
 
     Args:
         option_expiry (float): The years until the option expires and the forward CDS starts.
@@ -332,8 +349,8 @@ def get_cds_option(
             Defaults to 0.4.
         notional (float, optional): The notional. Defaults to 1.
         frequency (int, optional): The number of premium payments per year. Defaults to 4.
-        option_type (str, optional): "payer" (buy protection) or "receiver" (sell it).
-            Defaults to "payer".
+        option_type (str, optional): The option. Options are: "payer" (the right to buy
+            protection), "receiver" (the right to sell it). Defaults to "payer".
         knockout (bool, optional): Whether a default before the expiry cancels the option.
             Defaults to True.
 

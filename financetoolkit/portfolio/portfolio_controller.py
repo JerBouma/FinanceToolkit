@@ -816,10 +816,12 @@ class Portfolio:
     def get_presets() -> pd.DataFrame:
         """
         List the classic portfolios that ship with the Finance Toolkit, to use with
-        `Portfolio.from_preset`. Each is defined with real funds and the source of its
-        allocation: the 60/40, Ray Dalio's All Weather, Harry Browne's Permanent Portfolio,
-        the Golden Butterfly, the Bogleheads three-fund portfolio, Warren Buffett's 90/10,
-        Nassim Taleb's barbell, a target-date glide path and more.
+        `Portfolio.from_preset`.
+
+        Each is defined with real funds and the source of its allocation: the 60/40, Ray Dalio's
+        All Weather, Harry Browne's Permanent Portfolio, the Golden Butterfly, the Bogleheads
+        three-fund portfolio, Warren Buffett's 90/10, Nassim Taleb's barbell, a target-date
+        glide path and more.
 
         Returns:
             pd.DataFrame: Per preset (by identifier) its Name, Description, Holdings,
@@ -869,11 +871,12 @@ class Portfolio:
     @classmethod
     def from_preset(cls, name: str, **kwargs) -> "Portfolio":
         """
-        Create a Portfolio from one of the classic portfolios, by its identifier, name or
-        alias (see `Portfolio.get_presets`), e.g. "60/40", "All Weather", "Permanent",
-        "Golden Butterfly" or "Three Fund". It invests `initial_value` on `start_date` and
-        rebalances as the definition says, after which every Portfolio and Toolkit analysis
-        applies.
+        Create a Portfolio from one of the classic portfolios.
+
+        A portfolio is chosen by its identifier, name or alias (see `Portfolio.get_presets`),
+        such as "60/40", "All Weather", "Permanent", "Golden Butterfly" or "Three Fund". It
+        invests `initial_value` on `start_date` and rebalances as the definition says, after
+        which every Portfolio and Toolkit analysis applies.
 
         Args:
             name (str): The identifier, name or alias of the preset.
@@ -902,8 +905,9 @@ class Portfolio:
     @property
     def definition(self) -> PortfolioDefinition:
         """
-        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset
-        or weights), or, for holdings and transactions, the current weight of every position.
+        The portfolio as a `PortfolioDefinition`: the definition it was built from (a preset or
+        weights), or, for holdings and transactions, the current weight of every position.
+
         It can be stored with `to_yaml` and read by other tools.
 
         Returns:
@@ -1147,7 +1151,8 @@ class Portfolio:
         Notes:
             - Reading the transactions again, after data was collected, starts over: the prices, the benchmark
             and every overview are collected and calculated again for the transactions that are read.
-            - Duplicates are handled according to configuration settings ('self._cfg["general"]["adjust_duplicates"]').
+            - Duplicates are handled according to the adjust duplicates setting of the
+              configuration.
             - If duplicate data is found in the combination of datasets, it will be removed to prevent double-counting.
             - The date columns are converted to datetime objects, and transaction descriptions are treated as
             categorical data.
@@ -2381,21 +2386,22 @@ class Portfolio:
     ):
         """
         Calculate portfolio performance metrics for a specified period: each position and the
-        Portfolio at the end of every period. The Return is the total return on the capital
-        deployed since the purchase, as of the end of the period, not the return within the
-        period (`get_return_contributions` gives that per period).
+        Portfolio at the end of every period.
+
+        The Return is the total return on the capital deployed since the purchase, as of the end
+        of the period, not the return within the period (`get_return_contributions` gives that
+        per period).
 
         This method calculates key performance metrics, such as returns, for the portfolio
-        over a specified period. The available periods are 'yearly', 'quarterly', 'monthly',
-        'weekly', and 'daily'. It uses the positions overview dataset for these calculations.
+        over a specified period, from daily to yearly. It uses the positions overview dataset
+        for these calculations.
         If the necessary data has not been collected, it triggers the collection of historical
         and benchmark data.
 
         Args:
             period (str | None): The time period for which portfolio performance metrics should be calculated.
-                It can be one of the following: 'yearly', 'quarterly', 'monthly', 'weekly', or 'daily'.
-                If None, the default period is 'quarterly' (if the 'quarterly' attribute is set to True),
-                otherwise, it defaults to 'yearly'.
+                Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to None, which is
+                "quarterly" when the Portfolio is quarterly and "yearly" otherwise.
             exclude_sold_positions (bool): A flag indicating whether to exclude the periods in which a position was
                 sold, its sales adding up to its purchases. Open positions stay, long or short. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
@@ -2511,11 +2517,11 @@ class Portfolio:
                 is realized when shares are sold, so it is booked on the sell transactions: with
                 True, every remaining (buy) transaction shows a PnL of 0 and the realized total is
                 in the Cumulative PnL column. Pass False to see the PnL of each sale. Defaults to True.
-            pnl_method (str): The method for calculating profit & loss. Options are:
-                'FIFO' (First In, First Out), 'LIFO' (Last In, First Out), or 'AVERAGE'.
-                The purchases of a day come before its sales, unless the dates of the
-                transactions include a time of day ("%Y-%m-%d %H:%M:%S"), which orders them
-                within the day. Defaults to 'FIFO'.
+            pnl_method (str): The method for calculating profit & loss. Options are: "FIFO" (first in, first out:
+                the oldest lots close first), "LIFO" (last in, first out: the newest lots close first), "AVERAGE"
+                (every sale at the average cost of the units held). Defaults to "FIFO". The purchases of a day come
+                before its sales, unless the dates of the transactions include a time of day ("%Y-%m-%d %H:%M:%S"),
+                which orders them within the day.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2673,10 +2679,9 @@ class Portfolio:
         earlier ones. Units are valued at the traded closing price and receive their dividends as cash.
 
         Args:
-            period (str | None, optional): The time period for which transaction performance metrics
-                should be calculated. This can be one of the following: 'yearly', 'quarterly',
-                'monthly', 'weekly', or 'daily'. If None, the default is 'quarterly' if
-                the 'quarterly' attribute is set to True, otherwise 'yearly'. Defaults to None.
+            period (str | None, optional): The time period for which transaction performance metrics should be
+                calculated. Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to None,
+                which is "quarterly" when the Portfolio is quarterly and "yearly" otherwise.
             exclude_sold_positions (bool): Whether to leave out the periods without an
                 invested amount, those in which only units bought earlier were sold, and those whose only
                 purchases cost nothing (a price of 0), which have no return to measure. Defaults
@@ -2697,9 +2702,9 @@ class Portfolio:
                         with creating the transaction performance metrics.
 
         Notes:
-            - The method supports multiple time periods ('yearly', 'quarterly', 'monthly',
-              'weekly', 'daily') for calculating transaction performance metrics.
-            - If no period is provided, it defaults to 'quarterly' or 'yearly' based on the
+            - The method supports every period from daily to yearly for calculating transaction
+              performance metrics.
+            - If no period is provided, it defaults to quarterly or yearly based on the
               configuration.
             - The end-of-period prices and dividends are taken from the daily data, in the currency of
               each ticker's transactions for the asset and the benchmark alike.
@@ -2812,14 +2817,14 @@ class Portfolio:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Calculate the money-weighted return of every position and of the whole portfolio:
-        the annual rate at which the money put in grew into the money taken out plus the
-        value still held (the internal rate of return, or XIRR, of the transactions).
+        Calculate the money-weighted return of every position and of the whole portfolio.
 
-        Unlike the time-weighted return, it depends on when money was added: buying more
-        just before a rally raises it and buying at a peak lowers it. It therefore
-        measures the investor's own result, including the timing of every purchase and
-        sale, rather than the result of the assets alone.
+        It is the annual rate at which the money put in grew into the money taken out plus the
+        value still held (the internal rate of return, or XIRR, of the transactions). Unlike the
+        time-weighted return, it depends on when money was added: buying more just before a
+        rally raises it and buying at a peak lowers it. It therefore measures the investor's own
+        result, including the timing of every purchase and sale, rather than the result of the
+        assets alone.
 
         The cash flows are every purchase (money in, including costs), every sale (money
         out, after costs), every cash dividend received (money out, on its ex-dividend date)
@@ -3028,16 +3033,18 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the turnover of the portfolio, the value traded as a share of the value
-        held: how much of the portfolio the transactions replace. A turnover of 0.1 on a
-        day means that a tenth of the portfolio's value was bought or sold.
+        Calculate the turnover of the portfolio, the value traded as a share of the value held:
+        how much of the portfolio the transactions replace.
+
+        A turnover of 0.1 on a day means that a tenth of the portfolio's value was bought or
+        sold.
 
         - Traded Value = Σ |volume × price| of the day's transactions
         - Gross Value = Σ |value of every position|
         - Turnover = Traded Value / ((Gross Value_t + Gross Value_t-1) / 2)
 
-        With denominator="net_value" the traded value is divided by the net value of the
-        positions that day instead. Over weeks, months, quarters or years the traded
+        The traded value can also be divided by the net value of the positions that day
+        instead. Over weeks, months, quarters or years the traded
         values and the daily turnovers are added up and the value is that at the end of
         the period.
 
@@ -3045,16 +3052,18 @@ class Portfolio:
 
         - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
           Attribution." 2nd edition, Wiley.
-        - pyfolio: get_turnover (https://github.com/stefan-jansen/pyfolio-reloaded).
 
         Also known as: portfolio turnover, turnover rate, trading activity.
 
+        Shares similar logic:
+        - pyfolio, get_turnover: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/txn.py#L148
+
         Args:
-            denominator (str, optional): "gross_value" (pyfolio's "AGB", the average of
-                the gross value of the day and the day before) or "net_value" (pyfolio's
-                "portfolio_value"). Defaults to "gross_value".
-            period (str, optional): daily, weekly, monthly, quarterly or yearly. Defaults
-                to "daily".
+            denominator (str, optional): Options are: "gross_value" (pyfolio's "AGB", the average of the gross value
+                of the day and the day before), "net_value" (pyfolio's "portfolio_value"). Defaults to
+                "gross_value".
+            period (str, optional): The period over which the traded values and turnovers are added up. Options are:
+                "daily", "weekly", "monthly", "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3067,8 +3076,8 @@ class Portfolio:
             the Turnover.
 
         Notes:
-        - Equals pyfolio's get_turnover on the daily positions; the positions hold no
-          cash, so the net value is that of the positions, where pyfolio adds the cash.
+        - The positions hold no cash, so the net value is that of the positions, where
+          pyfolio adds the cash.
         - The first purchase of the portfolio is a turnover of 2: the average gross value
           of that day and the empty day before is half the value bought.
         - A transaction on a day without prices counts on the next day that has one.
@@ -3154,17 +3163,16 @@ class Portfolio:
         A portfolio of long positions has a gross leverage of 1; short positions raise it,
         e.g. to 1.6 for a 130/30 portfolio. Over weeks, months, quarters or years the
         values at the end of the period are shown. The measure is defined in pyfolio
-        (Quantopian) as gross_lev.
-
-        For more information, see the following sources:
-
-        - pyfolio: gross_lev (https://github.com/stefan-jansen/pyfolio-reloaded).
+        (Quantopian).
 
         Also known as: gross exposure, leverage ratio.
 
+        Shares similar logic:
+        - pyfolio, gross_lev: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.9.9/src/pyfolio/timeseries.py#L605
+
         Args:
-            period (str, optional): daily, weekly, monthly, quarterly or yearly. Defaults
-                to "daily".
+            period (str, optional): The period whose last values are shown. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3177,8 +3185,8 @@ class Portfolio:
             the net value is not positive.
 
         Notes:
-        - Equals pyfolio's gross_lev without cash: the positions hold no cash, so the net
-          value is that of the positions.
+        - Unlike pyfolio, the positions hold no cash, so the net value is that of the
+          positions.
 
         As an example:
 
@@ -3264,16 +3272,17 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the trade list of the portfolio: its round trips, every lot a transaction
-        opened paired with the transaction that closed it, with its profit and loss, return
-        and duration, and the lots still held marked to the latest closing price.
+        Calculate the trade list of the portfolio.
 
-        The trades follow from the same lot matching as the realized profit and loss of
-        `get_transactions_overview`: a sale closes the oldest lots first (FIFO) or the newest
-        (LIFO). A sale that closes part of a lot splits it, so a purchase sold in two parts is
-        two trades, and a sale of more units than are held opens a short trade that later
-        purchases close. The costs of a transaction are spread over its units, so a trade
-        carries the share of the costs of its entry and exit that belongs to its units.
+        Its round trips, every lot a transaction opened paired with the transaction that closed
+        it, with its profit and loss, return and duration, and the lots still held marked to the
+        latest closing price. The trades follow from the same lot matching as the realized
+        profit and loss of `get_transactions_overview`: a sale closes the oldest lots first
+        (FIFO) or the newest (LIFO). A sale that closes part of a lot splits it, so a purchase
+        sold in two parts is two trades, and a sale of more units than are held opens a short
+        trade that later purchases close. The costs of a transaction are spread over its units,
+        so a trade carries the share of the costs of its entry and exit that belongs to its
+        units.
 
         - Gross PnL = Size × (Exit Price − Entry Price) × Direction, with Direction 1 for a
           long and −1 for a short trade
@@ -3283,19 +3292,18 @@ class Portfolio:
         - Duration (Days) = Exit Date − Entry Date in calendar days, Duration (Periods) the
           number of trading days from the entry to the exit
 
-        For more information, see the following sources:
-
-        - vectorbt: Trades (https://github.com/polakowo/vectorbt), whose PnL and return are
-          defined the same way; this trade list is referenced against it.
-        - backtesting.py: Trade (https://github.com/kernc/backtesting.py) and backtrader:
-          TradeAnalyzer (https://github.com/mementum/backtrader).
-
         Also known as: round trips, closed trades, trade log, trade blotter.
 
+        Shares similar logic:
+        - vectorbt, Trades: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+        - backtesting.py, Trade: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Trade
+        - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
+
         Args:
-            method (str, optional): "FIFO" (First In, First Out) or "LIFO" (Last In, First Out),
-                which lots a sale closes first. The purchases of a day come before its sales,
-                unless the dates of the transactions include a time of day. Defaults to "FIFO".
+            method (str, optional): Which lots a sale closes first. Options are: "FIFO" (first in, first out: the
+                oldest lots close first), "LIFO" (last in, first out: the newest lots close first). Defaults to
+                "FIFO". The purchases of a day come before its sales, unless the dates of the transactions include a
+                time of day.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3740,12 +3748,13 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the statistics of the trades of the portfolio (`get_trades`): how many
-        trades there were, how many made money, how much they made and lost, the profit
-        factor, expectancy, System Quality Number and Kelly fraction, how long they lasted,
-        the longest winning and losing streaks and how much of the time a trade was held.
-        Every statistic but the counts, the Open PnL and the coverage is calculated on the
-        closed trades, in the order they closed.
+        Calculate the statistics of the trades of the portfolio (`get_trades`).
+
+        How many trades there were, how many made money, how much they made and lost, the profit
+        factor, expectancy, System Quality Number and Kelly fraction, how long they lasted, the
+        longest winning and losing streaks and how much of the time a trade was held. Every
+        statistic but the counts, the Open PnL and the coverage is calculated on the closed
+        trades, in the order they closed.
 
         - Win Rate = W = number of trades with PnL > 0 / number of closed trades
         - Payoff Ratio = R = mean(PnL⁺) / |mean(PnL⁻)|
@@ -3776,18 +3785,23 @@ class Portfolio:
         - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd edition, McGraw-Hill.
         - Kelly, J.L. (1956). "A New Interpretation of Information Rate." Bell System Technical
           Journal, 35(4), 917-926.
-        - Referenced against vectorbt's Trades.stats (https://github.com/polakowo/vectorbt),
-          backtesting.py's statistics (https://github.com/kernc/backtesting.py) and backtrader's
-          TradeAnalyzer and SQN (https://github.com/mementum/backtrader).
 
         Also known as: trade analysis, trade statistics, win rate, hit ratio, profit factor,
         System Quality Number.
 
+        Shares similar logic:
+        - vectorbt, Trades.stats: https://vectorbt.dev/api/portfolio/trades/#vectorbt.portfolio.trades.Trades
+        - vectorbt, Ranges.coverage (coverage): https://vectorbt.dev/api/generic/ranges/#vectorbt.generic.ranges.Ranges.coverage
+        - backtesting.py, Backtest.run (statistics): https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Backtest.run
+        - backtrader, TradeAnalyzer: https://www.backtrader.com/docu/analyzers-reference/#tradeanalyzer
+        - backtrader, SQN: https://www.backtrader.com/docu/analyzers-reference/#sqn
+
         Args:
-            method (str, optional): "FIFO" or "LIFO", which lots a sale closes first (see
-                `get_trades`). Defaults to "FIFO".
-            by (str | None, optional): "direction" for the long and short trades next to all of
-                them, "ticker" for every ticker next to all of them. Defaults to None, all trades
+            method (str, optional): Which lots a sale closes first (see get_trades). Options are: "FIFO" (first in,
+                first out: the oldest lots close first), "LIFO" (last in, first out: the newest lots close first).
+                Defaults to "FIFO".
+            by (str | None, optional): How the trades are split. Options are: "direction" (the long and short trades
+                next to all of them), "ticker" (every ticker next to all of them). Defaults to None, all trades
                 together.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
@@ -3877,17 +3891,15 @@ class Portfolio:
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ) -> pd.DataFrame:
         """
-        Calculate the timing of the positions of the portfolio as López de Prado describes
-        it: how often each position was flattened (sold to zero) or flipped (from long to
-        short or back), the number of bets these end, and the average holding period of
-        its units.
+        Calculate the timing of the positions of the portfolio as López de Prado describes it.
 
-        A bet is a position held from the moment it opens until it is flattened or flipped,
-        so the number of bets counts the independent positions taken in a ticker; a position
-        still held ends a bet on the latest date. The average holding period weighs the time
-        every unit was held by the units: each purchase moves the average entry time of the
-        position towards its date, and each sale closes units held since that average entry
-        time.
+        How often each position was flattened (sold to zero) or flipped (from long to short or
+        back), the number of bets these end, and the average holding period of its units. A bet
+        is a position held from the moment it opens until it is flattened or flipped, so the
+        number of bets counts the independent positions taken in a ticker; a position still held
+        ends a bet on the latest date. The average holding period weighs the time every unit was
+        held by the units: each purchase moves the average entry time of the position towards
+        its date, and each sale closes units held since that average entry time.
 
         - Average Entry Time_t = (Average Entry Time_t-1 × |p_t-1| + t × |Δp_t|) / |p_t| when
           the position grows
@@ -3990,15 +4002,16 @@ class Portfolio:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate how much each position added to the portfolio's return in every period
-        (week, month, quarter or year), so the contributions add up to the portfolio's
-        return of that period. Every day a position contributes its weight in the
-        portfolio at the previous close times its return, c_i,t = w_i,t-1 r_i,t, and over
-        a longer period the daily contributions are carried by the growth of the portfolio
-        since the period began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s), so they add up to the
-        compounded return of the portfolio (Bacon, 2008; PerformanceAnalytics'
-        to.period.contributions). It is `toolkit.portfolio.get_return_contributions` with
-        the weights of the positions as they moved from day to day.
+        Calculate how much each position added to the portfolio's return in every period.
+
+        The periods are weeks, months, quarters or years, and the contributions add up to the
+        portfolio's return of that period. Every day a position contributes its weight in the
+        portfolio at the previous close times its return, c_i,t = w_i,t-1 r_i,t, and over a
+        longer period the daily contributions are carried by the growth of the portfolio since
+        the period began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s), so they add up to the compounded
+        return of the portfolio (Bacon, 2008). It is
+        `toolkit.portfolio.get_return_contributions` with the weights of the positions as they
+        moved from day to day.
 
         The returns are the total returns of the assets (dividends reinvested) and the
         weights the Current Weight of the positions overview, so a purchase or a sale
@@ -4008,14 +4021,15 @@ class Portfolio:
 
         - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
           Attribution." 2nd edition, Wiley, chapter 5.
-        - PerformanceAnalytics: to.period.contributions
-          (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: contribution to return, return attribution by position.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), to.period.contributions: https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/to.period.contributions.R#L45
+
         Args:
-            period (str, optional): The period to add the contributions up over: daily,
-                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            period (str, optional): The period to add the contributions up over. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "monthly".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

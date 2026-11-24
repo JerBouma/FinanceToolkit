@@ -56,7 +56,9 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Black Scholes Model, a mathematical model used to estimate the price of European—style options.
+        Calculate the Black Scholes Model: what European calls and puts on each ticker are worth today, for a range
+        of strike prices and times to expiration, when the stock follows a lognormal process with a constant
+        volatility.
 
         The Black Scholes Model is a mathematical model used to estimate the price of European—style options.
         It is widely used by traders and investors to determine the theoretical value of an option, and to
@@ -101,8 +103,8 @@ class PricingOptions:
 
         Dividends are paid in cash on their ex-dividend dates, which the dividend yield q spreads evenly over the
         year. For short options that difference matters: an option that expires just after an ex-date loses the
-        whole dividend, one that expires just before it none of it. With dividends="escrowed" or
-        dividends="haug_haug_lewis" the dividend yield is replaced by the projected cash dividends: the latest
+        whole dividend, one that expires just before it none of it. With the escrowed or the Haug-Haug-Lewis
+        dividend model the dividend yield is replaced by the projected cash dividends: the latest
         dividend per share before the pricing date, repeated at the median interval between its last ex-dates
         (see options_model.get_projected_dividends), so a past pricing date only uses what was known on that date.
 
@@ -117,6 +119,10 @@ class PricingOptions:
         so the latter gives slightly higher prices when the dividends are large.
 
         Also known as: BSM, Black-Scholes-Merton, option pricing model, escrowed dividend model, discrete dividends.
+
+        Referenced against:
+        - QuantLib, AnalyticDividendEuropeanEngine (escrowed): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_dividend_european_engine.html
+        - QuantLib, CashDividendEuropeanEngine (Haug-Haug-Lewis): https://www.quantlib.org/reference/class_quant_lib_1_1_cash_dividend_european_engine.html
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -140,9 +146,9 @@ class PricingOptions:
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield. Only used with
             dividends="yield".
-            dividends (str, optional): How the dividends enter the price: "yield" (a continuous dividend yield),
-            "escrowed" (the projected cash dividends, escrowed model) or "haug_haug_lewis" (the projected cash
-            dividends, stock price dropping on each ex-date). Defaults to "yield".
+            dividends (str, optional): How the dividends enter the price. Options are: "yield" (a continuous
+            dividend yield), "escrowed" (the projected cash dividends, escrowed model), "haug_haug_lewis" (the
+            projected cash dividends, stock price dropping on each ex-date). Defaults to "yield".
             show_input_info (bool, optional): Whether to show the input information. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -334,23 +340,25 @@ class PricingOptions:
         ] = "cox_ross_rubinstein",
     ):
         """
-        Calculate the Binomial Option Pricing Model, a mathematical model used to estimate the price of European and
-        American style options. It does so by creating a binomial tree of price paths for the underlying asset, and
-        then working backwards through the tree to determine the price of the option at each node.
+        Calculate the Binomial Option Pricing Model: what European and American calls and puts on each ticker are
+        worth at every node of a binomial tree of stock prices, from the payoffs at expiration back to today.
+
+        It creates a binomial tree of price paths for the underlying asset and works backwards through the tree to
+        determine the price of the option at each node.
 
         The tree of Cox, Ross and Rubinstein (1979) is the default. The variants choose the up and down movements and
         the probability differently, which changes how fast and how smoothly the price converges as the number of
         time steps grows:
 
-        - Jarrow-Rudd (method="jarrow_rudd"): equal probabilities of 1/2, with the moves centred on the drift.
-        - Tian (method="tian"): matches the first three moments of the lognormal distribution in each step.
-        - Trigeorgis (method="trigeorgis"): equal steps in the logarithm of the price with the drift in the
+        - Jarrow-Rudd: equal probabilities of 1/2, with the moves centred on the drift.
+        - Tian: matches the first three moments of the lognormal distribution in each step.
+        - Trigeorgis: equal steps in the logarithm of the price with the drift in the
           probability, a tree that keeps its probability between 0 and 1 longer than Cox-Ross-Rubinstein.
-        - Leisen-Reimer (method="leisen_reimer"): centred on the strike so the price converges smoothly at a rate of
+        - Leisen-Reimer: centred on the strike so the price converges smoothly at a rate of
           1 / n² instead of oscillating at 1 / n, with the probabilities from the Peizer-Pratt inversion of the
           normal distribution.
-        - Exact inversion (method="exact_inversion"): the Leisen-Reimer tree with the exact inverse of the binomial distribution, of which
-          Joshi (2010) takes a fourth order expansion. It prices a European option at its Black-Scholes value at
+        - Exact inversion: the Leisen-Reimer tree with the exact inverse of the binomial distribution, of which Joshi
+          (2010) takes a fourth order expansion. It prices a European option at its Black-Scholes value at
           every number of steps and converges fastest for American options.
 
         The Leisen-Reimer and exact inversion trees need an odd number of time steps; an even number is raised by one (the
@@ -411,13 +419,19 @@ class PricingOptions:
         to Option Pricing", Journal of Futures Markets, 13(5), 563-577; Leisen, D. P. J., & Reimer, M. (1996),
         "Binomial Models for Option Valuation - Examining and Improving Convergence", Applied Mathematical Finance,
         3(4), 319-346; Joshi, M. S. (2010), "Achieving Higher Order Convergence for the Prices of European Options in
-        Binomial Trees", Mathematical Finance, 20(1), 89-103. Referenced against QuantLib's BinomialJRVanillaEngine,
-        BinomialTianVanillaEngine, BinomialTrigeorgisVanillaEngine, BinomialLRVanillaEngine and
-        BinomialJ4VanillaEngine (https://www.quantlib.org): the first four agree within 1e-9 and the J4 tree, Joshi's
-        expansion, lies within 1e-6 of the exact inverse at 101 steps. An equal probabilities tree that matches the
+        Binomial Trees", Mathematical Finance, 20(1), 89-103. The Jarrow-Rudd, Tian, Trigeorgis and
+        Leisen-Reimer trees agree with QuantLib's within 1e-9 and its J4 tree, Joshi's expansion, lies within 1e-6 of
+        the exact inverse at 101 steps. An equal probabilities tree that matches the
         mean and variance of the log price is the Jarrow-Rudd tree.
 
         Also known as: binomial tree, lattice model, option pricing, CRR, Leisen-Reimer, Jarrow-Rudd, Tian tree.
+
+        Referenced against:
+        - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -454,8 +468,10 @@ class PricingOptions:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
-            method (str, optional): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian", "trigeorgis",
-                "leisen_reimer" or "exact_inversion". Defaults to "cox_ross_rubinstein".
+            method (str, optional): The tree. Options are: "cox_ross_rubinstein" (Cox-Ross-Rubinstein),
+                "jarrow_rudd" (Jarrow-Rudd), "tian" (Tian), "trigeorgis" (Trigeorgis), "leisen_reimer"
+                (Leisen-Reimer), "exact_inversion" (exact inversion of the binomial distribution). Defaults to
+                "cox_ross_rubinstein".
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
@@ -623,10 +639,13 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
-        and American style options. It does so by creating a binomial tree of price paths for the underlying asset based
-        on the stock price, its volatility and the time to expiration: each step multiplies the price by
-        u = e^(σ * sqrt(Δt)) or by d = 1 / u. The stock price is then simulated based on these up and down movements.
+        Simulate the Stock Price based on the Binomial Model: the prices each ticker can reach after every
+        combination of up and down movements up to expiration.
+
+        The binomial model is a mathematical model used to estimate the price of European and American style
+        options. It creates a binomial tree of price paths for the underlying asset based on the stock price, its
+        volatility and the time to expiration: each step multiplies the price by u = e^(σ * sqrt(Δt)) or by
+        d = 1 / u. The stock price is then simulated based on these up and down movements.
 
         By default the most recent stock price is used, you can alter this by changing the start date. The volatility
         is the annualized standard deviation of the daily returns over the year before that date, so an earlier start
@@ -998,8 +1017,8 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Garman-Kohlhagen Model, a variant of the Black-Scholes model used
-        to price European-style options on foreign exchange (FX) rates.
+        Calculate the Garman-Kohlhagen Model: what European calls and puts on each currency pair are worth, the
+        Black-Scholes model with the foreign interest rate in the role of a dividend yield.
 
         Because holding foreign currency earns the foreign risk-free rate (analogous to a
         continuous dividend yield on a stock), the Garman-Kohlhagen model uses the
@@ -1177,13 +1196,13 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the price of a Binary (Digital) Option using the Black-Scholes
-        framework.
+        Calculate the price of a Binary (Digital) Option: what a payoff of all or nothing at expiration is worth, a
+        fixed cash amount or the stock itself when the option ends in the money, using the Black-Scholes framework.
 
         A binary option pays out a fixed amount if the option expires in-the-money and
-        nothing otherwise. Two variants are supported through the ``option_type``
-        parameter: "cash-or-nothing" (the default) pays a fixed cash amount and
-        "asset-or-nothing" pays the value of the underlying asset if the option expires
+        nothing otherwise. Two variants are supported: the cash-or-nothing option (the
+        default) pays a fixed cash amount and the asset-or-nothing option pays the value
+        of the underlying asset if the option expires
         in-the-money.
 
         The formula is as follows:
@@ -1211,8 +1230,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            option_type (str, optional): Either "cash-or-nothing" or "asset-or-nothing". Defaults to
-            "cash-or-nothing".
+            option_type (str, optional): The payoff. Options are: "cash-or-nothing" (a fixed cash amount),
+            "asset-or-nothing" (the value of the stock). Defaults to "cash-or-nothing".
             cash_payout (float, optional): The fixed cash amount paid out by a cash-or-nothing option when it
             expires in-the-money. Ignored for asset-or-nothing options. Defaults to 1.0.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -1383,10 +1402,13 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate American option prices with the QD+ method of Li (2010) and Andersen, Lake and Offengenden
-        (2016), the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999), the
-        closed-form approximations of Bjerksund and Stensland (2002 and 1993), finite differences, or the exact
-        value from the exercise boundary solved as a fixed point (Andersen, Lake and Offengenden, 2016).
+        Calculate American option prices: what calls and puts on each ticker that may be exercised at any time up to
+        expiration are worth, with the method of choice.
+
+        The methods are the QD+ method of Li (2010) and Andersen, Lake and Offengenden (2016), the quadratic
+        approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999), the closed-form approximations of
+        Bjerksund and Stensland (2002 and 1993), finite differences, and the exact value from the exercise boundary
+        solved as a fixed point (Andersen, Lake and Offengenden, 2016).
 
         Listed options on single stocks are American: they can be exercised at any time up to expiration, which
         makes an in-the-money put, or a call on a stock with a high dividend yield, worth more than the European
@@ -1479,14 +1501,24 @@ class PricingOptions:
         P., & Stensland, G. (2002), "Closed Form Valuation of American Options", Working paper, NHH; Bjerksund, P.,
         & Stensland, G. (1993), "Closed-Form Approximation of American Options", Scandinavian Journal of
         Management, 9, S87-S99, both as presented in Haug, E. G. (2007), "The Complete Guide to Option Pricing
-        Formulas" (2nd ed.), sections 3.1.4 and 3.1.3. Referenced against QuantLib's
-        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine,
-        QdFpAmericanEngine, FdBlackScholesVanillaEngine and BjerksundStenslandApproximationEngine
-        (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value and
-        finite_difference.black_scholes_fd (https://github.com/domokane/FinancePy).
+        Formulas" (2nd ed.), sections 3.1.4 and 3.1.3.
 
         Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+, QdFp,
         BS2002, Bjerksund-Stensland approximation.
+
+        Referenced against:
+        - QuantLib, QdPlusAmericanEngine (QD+): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_plus_american_engine.html
+        - QuantLib, BaroneAdesiWhaleyApproximationEngine (Barone-Adesi-Whaley): https://www.quantlib.org/reference/class_quant_lib_1_1_barone_adesi_whaley_approximation_engine.html
+        - QuantLib, JuQuadraticApproximationEngine (Ju-Zhong): https://www.quantlib.org/reference/class_quant_lib_1_1_ju_quadratic_approximation_engine.html
+        - QuantLib, QdFpAmericanEngine (QD fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_qd_fp_american_engine.html
+        - QuantLib, FdBlackScholesVanillaEngine (QD fixed point): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+        - QuantLib, FdBlackScholesVanillaEngine (Bjerksund-Stensland 2002): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+        - QuantLib, BjerksundStenslandApproximationEngine (Bjerksund-Stensland 1993): https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_approximation_engine.html
+
+        Shares similar logic:
+        - QuantLib, FdBlackScholesVanillaEngine (finite differences): https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
+        - FinancePy, black_scholes_fd (finite differences): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference.py#L318
+        - FinancePy, baw_value (Barone-Adesi-Whaley): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_analytic.py#L682
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -1741,7 +1773,8 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate European option prices in the constant elasticity of variance (CEV) model of Cox (1975), with the
+        Calculate European option prices in the constant elasticity of variance (CEV) model of Cox (1975): what
+        calls and puts on each ticker are worth when the volatility rises as the stock price falls, with the
         non-central chi-squared formula of Schroder (1989).
 
         In the CEV model the stock's volatility depends on its price, σ(S) = δ * S^(β - 1). With an elasticity β below
@@ -1773,9 +1806,12 @@ class PricingOptions:
         See: Cox, J. C. (1975), "Notes on Option Pricing I: Constant Elasticity of Variance Diffusions", working paper,
         Stanford University (reprinted in The Journal of Portfolio Management, 23(2), 1996); Schroder, M. (1989),
         "Computing the Constant Elasticity of Variance Option Pricing Formula", The Journal of Finance, 44(1),
-        211-219. Referenced against QuantLib's AnalyticCEVEngine (https://www.quantlib.org).
+        211-219.
 
         Also known as: CEV model, constant elasticity of variance, CEV option price, leverage effect skew.
+
+        Referenced against:
+        - QuantLib, AnalyticCEVEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/analyticcevengine.hpp#L62
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -1942,8 +1978,8 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Black (1976) model, the Black-Scholes model for European options on futures and forwards, with
-        each ticker's price taken as the futures price.
+        Calculate the Black (1976) model: what European calls and puts on futures and forwards are worth, the
+        Black-Scholes model with each ticker's price taken as the futures price.
 
         A futures price already contains the cost of carry of the underlying (interest, storage, dividends or the
         convenience yield of a commodity), so it grows at no rate under the risk-neutral measure and the option only
@@ -1967,10 +2003,14 @@ class PricingOptions:
         ``black_scholes_model.get_black_76_implied_volatility``.
 
         See: Black, F. (1976), "The Pricing of Commodity Contracts", Journal of Financial Economics, 3(1-2), 167-179.
-        Referenced against QuantLib's blackFormula (https://www.quantlib.org) and FinancePy's Black model
-        (https://github.com/domokane/FinancePy).
 
         Also known as: Black-76, Black's model, options on futures, options on forwards, commodity options.
+
+        Referenced against:
+        - QuantLib, blackFormula: https://www.quantlib.org/reference/namespace_quant_lib.html#adfe71f9b0b157cae6e4bd53faaa676af
+
+        Shares similar logic:
+        - FinancePy, Black: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black.py#L18
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2127,9 +2167,9 @@ class PricingOptions:
         sequence: Literal["pseudo_random", "sobol"] = "pseudo_random",
     ):
         """
-        Calculate European option prices through Monte Carlo simulation of Geometric
-        Brownian Motion (GBM) stock price paths, or American option prices by least-squares
-        Monte Carlo (Longstaff and Schwartz, 2001) with american_option=True.
+        Calculate option prices through Monte Carlo simulation: what European calls and puts on each ticker are
+        worth on simulated Geometric Brownian Motion (GBM) stock price paths, or American ones by least-squares
+        Monte Carlo (Longstaff and Schwartz, 2001).
 
         The Monte Carlo method prices an option by simulating a large number of possible
         future paths for the underlying stock price under the risk-neutral measure,
@@ -2151,7 +2191,7 @@ class PricingOptions:
         T is the time to expiration in years (days / 365) and Z is a standard normal random
         variable.
 
-        With american_option=True the option can be exercised at each of the time steps: stepping
+        An American option can be exercised at each of the time steps: stepping
         back from expiration, the discounted cash flows of the paths in the money are regressed
         on a constant and the weighted Laguerre polynomials e^(-x/2) * L_n(x), n = 0, 1, 2, of
         x = S(t) / K, and a path is exercised where its exercise value beats the fitted
@@ -2164,13 +2204,13 @@ class PricingOptions:
         Two variance reductions and quasi-random numbers narrow the standard error at the same
         number of paths (Glasserman, 2003, chapters 4 and 5):
 
-        - variance_reduction="antithetic": every path Z is paired with -Z (simulations must be
+        - Antithetic variates: every path Z is paired with -Z (simulations must be
           even) and the standard error comes from the averages of the pairs.
-        - variance_reduction="control_variate": Price = MEAN(Y - β * (X - E[X])), β = Cov(Y, X) /
+        - Control variate: Price = MEAN(Y - β * (X - E[X])), β = Cov(Y, X) /
           Var(X), with X the discounted stock price at expiration (E[X] = S * e^(-q * T)) for a
           European option and the discounted European payoff (E[X] its Black-Scholes price) for
           an American option.
-        - sequence="sobol": scrambled Sobol points with a Brownian bridge in 16 independently
+        - Sobol sequence: scrambled Sobol points with a Brownian bridge in 16 independently
           scrambled replications, whose spread gives the standard error; the error shrinks
           close to 1 / simulations rather than 1 / √simulations.
 
@@ -2181,21 +2221,24 @@ class PricingOptions:
         expiration, which with a seed gives the prices of simulating every expiry with that
         seed.
 
-        As it is a simulation, the result comes with sampling error. Set
-        ``show_standard_error=True`` to additionally return the standard error of each
-        estimate — as a rule of thumb, the true price lies within plus or minus 2 times
-        the standard error roughly 95% of the time. The seed makes the results reproducible;
-        without one (None) every call draws new paths.
+        As it is a simulation, the result comes with sampling error. Showing the standard error
+        additionally returns the standard error of each estimate — as a rule of thumb, the true
+        price lies within plus or minus 2 times the standard error roughly 95% of the time. The
+        seed makes the results reproducible; without one (None) every call draws new paths.
 
         See: Boyle, P. P. (1977), "Options: A Monte Carlo Approach", Journal of Financial
         Economics, 4(3), 323-338; Longstaff, F. A., & Schwartz, E. S. (2001), "Valuing American
         Options by Simulation: A Simple Least-Squares Approach", The Review of Financial Studies,
         14(1), 113-147; Glasserman, P. (2003), "Monte Carlo Methods in Financial Engineering",
-        Springer. Referenced against QuantLib's MCEuropeanEngine and MCAmericanEngine
-        (https://www.quantlib.org) and FinancePy's equity_lsmc
-        (https://github.com/domokane/FinancePy); their own random numbers give other draws.
+        Springer. The libraries below draw their own random numbers,
+        which give other paths.
 
         Also known as: Monte Carlo option pricing, simulation-based option pricing.
+
+        Shares similar logic:
+        - QuantLib, MCEuropeanEngine (European): https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_engine.html
+        - QuantLib, MCAmericanEngine (American): https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_american_engine.html
+        - FinancePy, equity_lsmc (American): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/equity_lsmc.py#L39
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2235,9 +2278,10 @@ class PricingOptions:
                 exist the result is returned in full. Defaults to None, which keeps every column.
             american_option (bool, optional): Whether to price American options by least-squares Monte
             Carlo, exercisable at each time step. Defaults to False.
-            variance_reduction (str | None, optional): None, "antithetic" or "control_variate". Defaults to None.
-            sequence (str, optional): "pseudo_random" or "sobol" (at least 32 simulations). Defaults to
-            "pseudo_random".
+            variance_reduction (str | None, optional): The variance reduction. Options are: None (none),
+            "antithetic" (antithetic variates), "control_variate" (control variate). Defaults to None.
+            sequence (str, optional): The random numbers. Options are: "pseudo_random" (pseudo-random numbers),
+            "sobol" (scrambled Sobol points, at least 32 simulations). Defaults to "pseudo_random".
 
         Returns:
             pd.DataFrame: Monte Carlo option values containing the tickers and strike prices as the index and the
@@ -2453,8 +2497,9 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a single-barrier (knock-in or knock-out, up
-        or down) European option using the Reiner & Rubinstein (1991) formulas.
+        Calculate the closed-form price of a barrier option: what a European option on each ticker is worth that
+        knocks in or out when the stock price touches a barrier, single (up or down) with the Reiner & Rubinstein
+        (1991) formulas, double, partial-time, soft or discretely watched.
 
         A barrier option is a path-dependent option whose payoff (and existence)
         depends on whether the underlying stock price touches a pre-specified barrier
@@ -2465,23 +2510,24 @@ class PricingOptions:
         - Down barrier: the barrier is below the current stock price.
         - Up barrier: the barrier is above the current stock price.
 
-        The barrier level is defined relative to the current stock price through
-        ``barrier_percentage``, e.g. a value of 0.9 sets the barrier at 90% of the
+        The barrier level is defined relative to the current stock price as a percentage,
+        e.g. a value of 0.9 sets the barrier at 90% of the
         current stock price (a sensible default for a down barrier).
 
         Besides the single barrier watched continuously over the whole life, the barrier can be:
 
-        - Double (barrier_direction="double"): a lower barrier at ``barrier_percentage`` and an upper barrier
-          at ``upper_barrier_percentage``; the knock-out pays only when the stock price stays between the two,
-          priced with the series of Ikeda and Kunitomo (1992) for flat barriers.
-        - Partial-time (barrier_window="start" or "end"): watched only during the first or the last
-          ``window_share`` of the life (Heynen & Kat, 1994). With an end window the option is also knocked out
-          (or in) when the stock price is beyond the barrier at the start of the window.
-        - Soft (soft_barrier_percentage): a band between ``barrier_percentage`` and
-          ``soft_barrier_percentage`` through which the option knocks out gradually (Hart & Ross, 1994): a soft
-          down-and-out pays the vanilla payoff times (min S - L) / (U - L), the share of the band the lowest price
-          did not reach, which is the average of the hard barrier prices over the band.
-        - Discretely watched (monitoring="daily", "weekly" or "monthly"): checked only at each close, which
+        - Double: a lower barrier and an upper barrier, each a percentage of the stock price;
+          the knock-out pays only when the stock price stays between the two, priced with the
+          series of Ikeda and Kunitomo (1992) for flat barriers.
+        - Partial-time: watched only during the first (a start window) or the last (an end
+          window) share of the life (Heynen & Kat, 1994). With an end window the option is also
+          knocked out (or in) when the stock price is beyond the barrier at the start of the
+          window.
+        - Soft: a band between the barrier and a second, soft barrier through which the option
+          knocks out gradually (Hart & Ross, 1994): a soft down-and-out pays the vanilla payoff
+          times (min S - L) / (U - L), the share of the band the lowest price did not reach,
+          which is the average of the hard barrier prices over the band.
+        - Discretely watched (daily, weekly or monthly): checked only at each close, which
           is priced by moving the barriers away from the stock price by e^(0.5826 * σ * √Δt), with Δt = 1/252,
           1/52 or 1/12 (Broadie, Glasserman & Kou, 1997). A daily barrier is crossed noticeably less often than
           a continuous one, so it is worth setting for a knock-out with a barrier close to the stock price.
@@ -2540,13 +2586,19 @@ class PricingOptions:
         253-274; Hart, I., & Ross, M. (1994), "Striking Continuity", Risk, 7(6), 51-56; Broadie, M., Glasserman,
         P., & Kou, S. (1997), "A Continuity Correction for Discrete Barrier Options", Mathematical Finance, 7(4),
         325-349; Haug, E. G. (2007), The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.17.
-        Referenced against QuantLib's AnalyticBarrierEngine, AnalyticDoubleBarrierEngine,
-        AnalyticPartialTimeBarrierOptionEngine and AnalyticSoftBarrierEngine (https://www.quantlib.org) and
-        FinancePy's EquityBarrierOption with observations per year (https://github.com/domokane/FinancePy).
 
         Also known as: knock-in option, knock-out option, down-and-out, down-and-in,
         up-and-out, up-and-in option, double barrier option, partial barrier option, window barrier option,
         soft barrier option, discrete barrier option.
+
+        Referenced against:
+        - QuantLib, AnalyticDoubleBarrierEngine (double): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_engine.html
+        - QuantLib, AnalyticPartialTimeBarrierOptionEngine (partial-time): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_partial_time_barrier_option_engine.html
+        - QuantLib, AnalyticSoftBarrierEngine (soft): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_soft_barrier_engine.html
+
+        Shares similar logic:
+        - QuantLib, AnalyticBarrierEngine (single): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_barrier_engine.html
+        - FinancePy, EquityBarrierOption (discretely watched): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_barrier_option.py#L28
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2558,21 +2610,25 @@ class PricingOptions:
             barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
             Defaults to 0.9 which equals 90% of the current stock price. A down barrier needs a value below 1
             and an up barrier a value above 1; otherwise the barrier is already breached.
-            barrier_direction (str, optional): "down", "up" or "double" (barrier_percentage is then the lower and
+            barrier_direction (str, optional): The side of the barrier. Options are: "down" (below the stock
+            price), "up" (above the stock price), "double" (barrier_percentage is then the lower and
             upper_barrier_percentage the upper barrier). Defaults to "down".
-            knock_type (str, optional): Either "in" or "out". Defaults to "out".
+            knock_type (str, optional): The knock. Options are: "in" (knock-in), "out" (knock-out). Defaults to
+            "out".
             rebate (float, optional): The fixed cash amount paid out if the option knocks out (or fails to knock
             in), for a single barrier watched over the whole life only. Defaults to 0.0.
-            upper_barrier_percentage (float, optional): The upper barrier of barrier_direction="double" as a
+            upper_barrier_percentage (float, optional): The upper barrier of a double barrier option as a
             percentage of the current stock price. Defaults to 1.1, 110% of the current stock price.
-            barrier_window (str, optional): When the barrier is watched: "full" (the whole life), "start" (the first
-            window_share of the life) or "end" (the last window_share of the life). Defaults to "full".
+            barrier_window (str, optional): When the barrier is watched. Options are: "full" (the whole life),
+            "start" (the first window_share of the life), "end" (the last window_share of the life). Defaults to
+            "full".
             window_share (float, optional): The share of the life a "start" or "end" window covers, above 0 and at
             most 1. Defaults to 0.5.
             soft_barrier_percentage (float | None, optional): The other edge of a soft barrier band (the first is
             barrier_percentage), on the same side of the stock price. Defaults to None, a hard barrier.
-            monitoring (str, optional): How often the barrier is checked: "continuous", "daily" (252 times a year),
-            "weekly" or "monthly". Defaults to "continuous".
+            monitoring (str, optional): How often the barrier is checked. Options are: "continuous"
+            (continuously), "daily" (252 times a year), "weekly" (52 times a year), "monthly" (12 times a year).
+            Defaults to "continuous".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -2858,32 +2914,34 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the price of an average price Asian option, of which the payoff depends on the average stock
-        price over the option's life: the geometric average in closed form (Kemna & Vorst, 1990) or the
-        arithmetic average, the kind that is traded, with the approximations of Turnbull and Wakeman (1991) or
-        Curran (1994), or a Monte Carlo simulation with the geometric option as control variate.
+        Calculate the price of an average price Asian option: what an option on each ticker is worth whose payoff
+        depends on the average stock price over its life rather than the price at expiration.
+
+        The geometric average is priced in closed form (Kemna & Vorst, 1990) and the arithmetic average, the kind
+        that is traded, with the approximations of Turnbull and Wakeman (1991) or Curran (1994), or a Monte Carlo
+        simulation with the geometric option as control variate.
 
         An Asian option's payoff, max(A - K, 0) for a call and max(K - A, 0) for a put, depends on the average
         A of the stock price rather than its price at expiration, which typically makes it cheaper than the
         equivalent vanilla option (the averaging reduces variance). The average is taken continuously, or over
-        a number of equally spaced fixings with ``fixings``, the first a 1/n-th of the life from now and the
+        a number of equally spaced fixings, the first a 1/n-th of the life from now and the
         last at expiration. The methods are:
 
-        - Geometric (method="geometric"): the geometric average of a lognormal price is lognormal, so this is
+        - Geometric: the geometric average of a lognormal price is lognormal, so this is
           a Black-Scholes option on it. It never exceeds the arithmetic average, so it is a lower bound for
           the arithmetic call and an upper bound for the arithmetic put.
-        - Turnbull-Wakeman (method="turnbull_wakeman"): takes the arithmetic average to be lognormal with its
+        - Turnbull-Wakeman: takes the arithmetic average to be lognormal with its
           exact first two moments. Fast and close at low volatilities and short maturities, but it loses
           accuracy as both grow (off by up to 0.8 on a stock price of 100 at 60% volatility over two years).
           For a continuous average that starts today, Levy (1992) matches the same two moments with a
           lognormal and gives the same price; the two differ only for an average that has already started.
-        - Curran (method="curran"): conditions on the geometric average, which is exact for the paths on which
+        - Curran: conditions on the geometric average, which is exact for the paths on which
           the geometric average ends above the strike (there A ≥ G ≥ K) and approximates the others. The most
           accurate of the approximations: within 0.05 of a simulation with 200,000 paths on a stock price of 100
           up to 60% volatility and two years, and within 0.002 at 15% volatility.
-        - Monte Carlo (method="monte_carlo"): simulates the arithmetic average along each path and corrects the
+        - Monte Carlo: simulates the arithmetic average along each path and corrects the
           simulation error with the geometric option, whose price is known, which makes it about 50 to 100
-          times more precise than a plain simulation. A continuous average is approximated by ``time_steps``
+          times more precise than a plain simulation. A continuous average is approximated by a number of
           fixings.
 
         The formula is as follows:
@@ -2924,14 +2982,22 @@ class PricingOptions:
         26(3), 377-389; Levy, E. (1992), "Pricing European Average Rate Currency Options", Journal of
         International Money and Finance, 11(5), 474-491; Curran, M. (1994), "Valuing Asian and Portfolio Options
         by Conditioning on the Geometric Mean Price", Management Science, 40(12), 1705-1711; Haug, E. G. (2007),
-        The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.20. Referenced against QuantLib's
-        AnalyticContinuousGeometricAveragePriceAsianEngine, AnalyticDiscreteGeometricAveragePriceAsianEngine,
-        TurnbullWakemanAsianEngine, ContinuousArithmeticAsianLevyEngine and MCDiscreteArithmeticAPEngine
-        (https://www.quantlib.org) and FinancePy's EquityAsianOption (value_curran, value_turnbull_wakeman and
-        value_geometric, https://github.com/domokane/FinancePy).
+        The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.20.
 
         Also known as: Asian option, average rate option, average price option, arithmetic Asian option,
         geometric Asian option.
+
+        Referenced against:
+        - QuantLib, AnalyticDiscreteGeometricAveragePriceAsianEngine (geometric, fixings): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_discrete_geometric_average_price_asian_engine.html
+        - QuantLib, TurnbullWakemanAsianEngine (Turnbull-Wakeman): https://www.quantlib.org/reference/class_quant_lib_1_1_turnbull_wakeman_asian_engine.html
+        - QuantLib, ContinuousArithmeticAsianLevyEngine (Turnbull-Wakeman, continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_continuous_arithmetic_asian_levy_engine.html
+        - QuantLib, MCDiscreteArithmeticAPEngine (Curran, Monte Carlo): https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
+
+        Shares similar logic:
+        - QuantLib, AnalyticContinuousGeometricAveragePriceAsianEngine (geometric, continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_geometric_average_price_asian_engine.html
+        - FinancePy, EquityAsianOption.value_geometric (geometric): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_asian_option.py#L180
+        - FinancePy, EquityAsianOption.value_turnbull_wakeman (Turnbull-Wakeman): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_asian_option.py#L332
+        - FinancePy, EquityAsianOption.value_curran (Curran): https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_asian_option.py#L256
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -2940,8 +3006,9 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            method (str, optional): The pricing method: "geometric" (the geometric average), or for the arithmetic
-            average "turnbull_wakeman", "curran" or "monte_carlo". Defaults to "geometric".
+            method (str, optional): The pricing method. Options are: "geometric" (the geometric average),
+            "turnbull_wakeman" (Turnbull-Wakeman, arithmetic average), "curran" (Curran, arithmetic average),
+            "monte_carlo" (Monte Carlo, arithmetic average). Defaults to "geometric".
             fixings (int | None, optional): The number of equally spaced fixings of the average, the last on the
             expiration date. Defaults to None, which averages continuously.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2958,8 +3025,8 @@ class PricingOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            simulations (int, optional): The number of simulated paths of method="monte_carlo". Defaults to 10,000.
-            time_steps (int, optional): The fixings that approximate a continuous average with method="monte_carlo"
+            simulations (int, optional): The number of simulated paths of the Monte Carlo method. Defaults to 10,000.
+            time_steps (int, optional): The fixings that approximate a continuous average with the Monte Carlo method
             (fixings, when given, take their place). Defaults to 100.
             seed (int | None, optional): The seed of the random number generator of the Monte Carlo method, which
             makes the results reproducible; None draws new paths on every call. Defaults to 0.
@@ -3172,17 +3239,18 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a lookback option, of which the payoff depends on the highest or lowest
-        stock price over the option's life, with the formulas of Conze and Viswanathan (1991) for a fixed strike,
-        Goldman, Sosin and Gatto (1979) for a floating strike and Heynen and Kat (1994) for a partial-time
-        lookback.
+        Calculate the closed-form price of a lookback option: what an option on each ticker is worth whose payoff
+        depends on the highest or lowest stock price over its life.
 
-        - Fixed strike (strike_type="fixed"): the call pays max(S_max - K, 0) and the put max(K - S_min, 0), the
+        The formulas are those of Conze and Viswanathan (1991) for a fixed strike, Goldman, Sosin and Gatto (1979)
+        for a floating strike and Heynen and Kat (1994) for a partial-time lookback.
+
+        - Fixed strike: the call pays max(S_max - K, 0) and the put max(K - S_min, 0), the
           best price reached against the strike.
-        - Floating strike (strike_type="floating"): the call pays S(T) - S_min, buying at the lowest price, and the
+        - Floating strike: the call pays S(T) - S_min, buying at the lowest price, and the
           put S_max - S(T), selling at the highest. It has no strike, so the result has a row per ticker.
-        - Partial-time (lookback_period below 1): the extreme is only watched during part of the life, the first
-          lookback_period of it for a floating strike and the last lookback_period for a fixed strike, which makes
+        - Partial-time (a lookback period below 1): the extreme is only watched during part of the life, the
+          first part for a floating strike and the last part for a fixed strike, which makes
           the option cheaper.
 
         The options start on the pricing date, so the highest and lowest price so far are the stock price.
@@ -3216,12 +3284,16 @@ class PricingOptions:
         the High", The Journal of Finance, 34(5), 1111-1127; Conze, A., & Viswanathan (1991), "Path Dependent
         Options: The Case of Lookback Options", The Journal of Finance, 46(5), 1893-1907; Heynen, R. C., & Kat, H.
         M. (1994), "Selective Memory", Risk, 7(11), 73-76; Haug, E. G. (2007), The Complete Guide to Option Pricing
-        Formulas, 2nd ed., section 4.15. Referenced against QuantLib's AnalyticContinuousFloatingLookbackEngine,
-        AnalyticContinuousFixedLookbackEngine, AnalyticContinuousPartialFloatingLookbackEngine and
-        AnalyticContinuousPartialFixedLookbackEngine (https://www.quantlib.org).
+        Formulas, 2nd ed., section 4.15.
 
         Also known as: lookback option, fixed strike lookback, floating strike lookback, partial lookback, hindsight
         option, no-regret option.
+
+        Referenced against:
+        - QuantLib, AnalyticContinuousFixedLookbackEngine (fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_fixed_lookback_engine.html
+        - QuantLib, AnalyticContinuousFloatingLookbackEngine (floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_floating_lookback_engine.html
+        - QuantLib, AnalyticContinuousPartialFixedLookbackEngine (partial fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_fixed_lookback_engine.html
+        - QuantLib, AnalyticContinuousPartialFloatingLookbackEngine (partial floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_floating_lookback_engine.html
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -3230,7 +3302,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            strike_type (str, optional): "fixed" or "floating". Defaults to "fixed".
+            strike_type (str, optional): The strike. Options are: "fixed" (fixed strike), "floating" (floating
+            strike). Defaults to "fixed".
             lookback_period (float, optional): The share of the life over which the extreme is watched, above 0 and
             at most 1: the start of the life for a floating strike and the end for a fixed strike. Defaults to 1,
             the whole life.
@@ -3414,8 +3487,10 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a one-touch, no-touch, double one-touch or double no-touch option with
-        the formulas of Reiner and Rubinstein (1991) for a single barrier and Hui (1996) for two barriers.
+        Calculate the closed-form price of a one-touch, no-touch, double one-touch or double no-touch option: what a
+        binary option on whether the stock price of each ticker touches a barrier before expiration is worth.
+
+        The formulas are those of Reiner and Rubinstein (1991) for a single barrier and Hui (1996) for two barriers.
 
         A touch option is a binary option on whether the stock price touches a barrier before expiration:
 
@@ -3460,28 +3535,35 @@ class PricingOptions:
         (1996), "One-Touch Double Barrier Binary Option Values", Applied Financial Economics, 6(4), 343-346;
         Broadie, M., Glasserman, P., & Kou, S. (1997), "A Continuity Correction for Discrete Barrier Options",
         Mathematical Finance, 7(4), 325-349; Haug, E. G. (2007), The Complete Guide to Option Pricing Formulas, 2nd
-        ed., section 4.19. Referenced against QuantLib's AnalyticDigitalAmericanEngine, AnalyticBinaryBarrierEngine
-        and AnalyticDoubleBarrierBinaryEngine (https://www.quantlib.org).
+        ed., section 4.19.
 
         Also known as: one-touch option, no-touch option, double one-touch, double no-touch, American digital
         option, barrier binary option, touch probability.
+
+        Referenced against:
+        - QuantLib, AnalyticDigitalAmericanEngine (one-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_digital_american_engine.html
+        - QuantLib, AnalyticBinaryBarrierEngine (no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_binary_barrier_engine.html
+        - QuantLib, AnalyticDoubleBarrierBinaryEngine (double one-touch, double no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_binary_engine.html
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
             start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
             ticker without a price on that day is left out with a warning. Defaults to None, which uses the
             last date of the historical data.
-            option_type (str, optional): The kind of touch option. Options are: "one-touch", "no-touch",
-            "double-one-touch" or "double-no-touch". Defaults to "one-touch".
+            option_type (str, optional): The kind of touch option. Options are: "one-touch" (one-touch),
+            "no-touch" (no-touch), "double-one-touch" (double one-touch), "double-no-touch" (double no-touch).
+            Defaults to "one-touch".
             barrier_percentage (float, optional): The barrier (the lower barrier of a double touch option) as a
             percentage of the current stock price. Defaults to 0.9, 90% of the current stock price.
             upper_barrier_percentage (float, optional): The upper barrier of a double touch option as a percentage of
             the current stock price. Defaults to 1.1, 110% of the current stock price.
-            payment (str, optional): When a one-touch option pays. Options are: "expiration" or "hit". The other touch options pay
-            at expiration. Defaults to "expiration".
+            payment (str, optional): When a one-touch option pays. Options are: "expiration" (at expiration),
+            "hit" (when the barrier is touched). The other touch options pay at expiration. Defaults to
+            "expiration".
             cash_payout (float, optional): The cash amount paid. Defaults to 1.0.
-            monitoring (str, optional): How often the barrier is checked: "continuous", "daily" (252 times a year),
-            "weekly" or "monthly". Defaults to "continuous".
+            monitoring (str, optional): How often the barrier is checked. Options are: "continuous"
+            (continuously), "daily" (252 times a year), "weekly" (52 times a year), "monthly" (12 times a year).
+            Defaults to "continuous".
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -3677,13 +3759,15 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a simple chooser option with the formula of Rubinstein (1991). A chooser
-        option lets the holder decide at the choice time whether it becomes a European call or a European put with
-        the same strike price and expiration, so it is worth at least as much as either and at most as much as the
-        straddle of both.
+        Calculate the closed-form price of a simple chooser option: what the right to decide at the choice time
+        whether the option on each ticker becomes a European call or a European put is worth, with the formula of
+        Rubinstein (1991).
 
-        The choice is made after choice_period of the life: at choice_period=0 the chooser is the larger of the
-        call and the put today, at choice_period=1 a straddle. By put-call parity at the choice time t the chooser
+        The call and the put share the strike price and expiration, so the chooser is worth at least as much as
+        either and at most as much as the straddle of both.
+
+        The choice is made after a share of the life, the choice period: at a choice period of 0 the chooser is
+        the larger of the call and the put today, at 1 a straddle. By put-call parity at the choice time t the chooser
         is a call on (K, T) plus a put on (K * e^(-(r - q)(T - t)), t), scaled by e^(-q(T - t)).
 
         The formula is as follows:
@@ -3704,11 +3788,15 @@ class PricingOptions:
         put_strike_price and put_time_to_expiration.
 
         See: Rubinstein, M. (1991), "Options for the Undecided", Risk, 4(4), 43; Haug, E. G. (2007), The Complete
-        Guide to Option Pricing Formulas, 2nd ed., section 4.10. Referenced against QuantLib's
-        AnalyticSimpleChooserEngine (https://www.quantlib.org) and FinancePy's EquityChooserOption
-        (https://github.com/domokane/FinancePy).
+        Guide to Option Pricing Formulas, 2nd ed., section 4.10.
 
         Also known as: chooser option, as-you-like-it option, pay now choose later option.
+
+        Referenced against:
+        - QuantLib, AnalyticSimpleChooserEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_simple_chooser_engine.html
+
+        Shares similar logic:
+        - FinancePy, EquityChooserOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_chooser_option.py#L67
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -3883,15 +3971,16 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the closed-form price of a forward-start option with the formula of Rubinstein (1990), of a cliquet
-        (ratchet) option, a series of them, or of their performance versions.
+        Calculate the closed-form price of a forward-start option: what a European option on each ticker is worth
+        whose strike is set later at a share of the stock price then, with the formula of Rubinstein (1990), or of a
+        cliquet (ratchet) option, a series of them, or of their performance versions.
 
-        - Forward-start (periods=1): a European option whose strike is set after start_period of the life to
+        - Forward-start (one period): a European option whose strike is set after the start period of the life to
           moneyness times the stock price then, paying max(S(T) - α * S(t1), 0) for a call.
-        - Cliquet (periods above 1): the time from the start to expiration is split into equal periods, and each
+        - Cliquet (more than one period): the time from the start to expiration is split into equal periods, and each
           period is a forward-start option whose strike is reset to moneyness times the stock price at its start and
-          whose payoff is paid at its end. With start_period=0 the first period starts today.
-        - Performance (performance=True): each period pays the return S(t(i+1)) / S(ti) beyond the moneyness
+          whose payoff is paid at its end. With a start period of 0 the first period starts today.
+        - Performance: each period pays the return S(t(i+1)) / S(ti) beyond the moneyness
           instead, max(S(t(i+1)) / S(ti) - α, 0) for a call, a decimal per unit of notional.
 
         The options have no strike today, so the result has a row per ticker.
@@ -3911,10 +4000,16 @@ class PricingOptions:
         performance option is a forward-start option divided by S only when r = q.
 
         See: Rubinstein, M. (1990), "Pay Now, Choose Later", Risk, 3(2); Haug, E. G. (2007), The Complete Guide to
-        Option Pricing Formulas, 2nd ed., section 4.6. Referenced against QuantLib's ForwardEuropeanEngine,
-        AnalyticCliquetEngine and AnalyticPerformanceEngine (https://www.quantlib.org).
+        Option Pricing Formulas, 2nd ed., section 4.6.
 
         Also known as: forward-start option, delayed option, cliquet option, ratchet option, performance option.
+
+        Referenced against:
+        - QuantLib, AnalyticCliquetEngine (cliquet): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cliquet_engine.html
+        - QuantLib, AnalyticPerformanceEngine (performance): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_performance_engine.html
+
+        Shares similar logic:
+        - QuantLib, ForwardEuropeanEngine (forward-start): https://www.quantlib.org/reference/class_quant_lib_1_1_forward_vanilla_engine.html
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -4095,8 +4190,8 @@ class PricingOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the net expiration profit and loss (P&L) profile of a multi-leg
-        option (and, optionally, stock) strategy across a range of stock prices.
+        Calculate the net expiration profit and loss (P&L) profile of a multi-leg option (and, optionally, stock)
+        strategy: what the combined position earns or loses at expiration across a range of stock prices.
 
         A strategy is expressed as a list of "legs". Each leg is a dictionary
         describing either an option position or a stock position:

@@ -46,21 +46,21 @@ class ProfitabilityModels:
 
         The Dupont analysis is a method used to dissect and understand the factors that drive a company's
         return on equity (ROE). It breaks down the ROE into three key components: Net Profit Margin, Asset
-        Turnover, and Equity Multiplier. The extended (five-factor) Dupont analysis, method="extended",
+        Turnover, and Equity Multiplier. The extended (five-factor) Dupont analysis
         splits the Net Profit Margin further into three separate drivers — the Tax Burden, the Interest
         Burden and the Operating Profit Margin — so that the effect of taxation, of financing costs and of
         operating performance on the return on equity can be read separately.
 
         The formula is as follows:
 
-        With method="standard":
+        For the standard (three-factor) analysis:
 
             - Net Profit Margin = Net Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
             - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
             - ROE = Net Profit Margin * Asset Turnover * Equity Multiplier
 
-        With method="extended":
+        For the extended (five-factor) analysis:
 
             - Interest Burden Ratio = Income Before Tax / Operating Income
             - Tax Burden Ratio = Net Income / Income Before Tax
@@ -93,8 +93,8 @@ class ProfitabilityModels:
                 of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM). The window counts calendar periods, so a period without a report makes it
                 NaN. Defaults to None.
-            method (str, optional): "standard" for the three-factor decomposition or "extended" for the
-                five-factor decomposition. Defaults to "standard".
+            method (str, optional): Options are: "standard" (the three-factor decomposition), "extended" (the
+                five-factor decomposition). Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -102,8 +102,8 @@ class ProfitabilityModels:
 
         Returns:
             pd.DataFrame: DataFrame containing Dupont analysis results, including Net Profit Margin, Asset
-                          Turnover, Equity Multiplier, and the calculated ROE values. With
-                          method="extended" the Interest Burden Ratio, Tax Burden Ratio and Operating
+                          Turnover, Equity Multiplier, and the calculated ROE values. In
+                          the extended analysis the Interest Burden Ratio, Tax Burden Ratio and Operating
                           Profit Margin take the place of the Net Profit Margin.
 
         Notes:
@@ -431,11 +431,12 @@ class ProfitabilityModels:
     ) -> pd.DataFrame:
         """
         The Return Decomposition splits the share price return over a window into the growth of
-        the Earnings per Share and the change of the Price-to-Earnings ratio (the multiple), and
-        adds the dividends paid over the window for the total return. It shows whether a share
-        rose because the company earned more or because investors paid more for the same
-        earnings, e.g. a share whose earnings beat expectations but whose price fell because its
-        multiple contracted.
+        the Earnings per Share and the change of the Price-to-Earnings ratio.
+
+        The ratio is the multiple, and it adds the dividends paid over the window for the total
+        return. It shows whether a share rose because the company earned more or because
+        investors paid more for the same earnings, e.g. a share whose earnings beat expectations
+        but whose price fell because its multiple contracted.
 
         Since the share price equals the Earnings per Share times the P/E ratio, the price
         relative over a window is the product of the earnings relative and the multiple
@@ -451,7 +452,7 @@ class ProfitabilityModels:
             - Dividend Return = Dividends per Share paid over the window / Price_t-lag
             - Total Return = Price Return + Dividend Return
 
-        With logarithmic=True the parts are log returns that add up:
+        In logarithmic form the parts are log returns that add up:
         ln(1 + Total Return) = ln(1 + EPS Growth) + ln(1 + P/E Change) + ln(1 + Dividends / Price_t).
 
         Also known as: earnings and multiple decomposition, P/E expansion and contraction,
@@ -486,9 +487,9 @@ class ProfitabilityModels:
         of each fiscal period, and the Earnings per Share is the Net Income over the weighted
         average (diluted) shares, as in `ratios.get_earnings_per_share`.
         - The P/E ratio has no meaning when the earnings are zero or negative, so the EPS Growth
-        and P/E Change are NaN when the Earnings per Share at either end of the window is not
-        positive. The Price Return, Dividend Return and Total Return remain; the growth of the
-        earnings themselves is `ratios.get_earnings_per_share(growth=True)`.
+          and P/E Change are NaN when the Earnings per Share at either end of the window is not
+          positive. The Price Return, Dividend Return and Total Return remain; the growth of the
+          earnings themselves is the growth of `ratios.get_earnings_per_share`.
         - Dividends are added as paid, without reinvestment, so the Total Return differs slightly
         from a return on the dividend-adjusted price.
         - The price is the close on the last trading day of each fiscal period (the filing day
@@ -605,8 +606,9 @@ class ProfitabilityModels:
     ) -> pd.DataFrame:
         """
         The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
-        revenue, using internally generated funds only, without having to raise additional equity
-        or increase its financial leverage.
+        revenue without new equity or more leverage.
+
+        It uses internally generated funds only.
 
         The formula is as follows:
 
@@ -707,8 +709,9 @@ class ProfitabilityModels:
     ) -> pd.DataFrame:
         """
         The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
-        revenue using only its retained earnings, without raising any external financing
-        (neither debt nor equity).
+        revenue using only its retained earnings.
+
+        It raises no external financing, neither debt nor equity.
 
         The formula is as follows:
 
@@ -818,12 +821,13 @@ class ProfitabilityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Damodaran's fundamental growth rate of operating income: the growth that a
-        company's reinvestment produces at its return on capital, with the reinvestment rate and
-        the sales-to-capital ratio it is built from. Where the sustainable growth rate grows the
-        equity with the retained net income, this grows the operating income with the capital
-        reinvested in the operations, the growth a discounted cash flow valuation of the firm
-        assumes.
+        Calculate Damodaran's fundamental growth rate of operating income.
+
+        It is the growth that a company's reinvestment produces at its return on capital, with
+        the reinvestment rate and the sales-to-capital ratio it is built from. Where the
+        sustainable growth rate grows the equity with the retained net income, this grows the
+        operating income with the capital reinvested in the operations, the growth a discounted
+        cash flow valuation of the firm assumes.
 
         The formula is as follows:
 
@@ -978,10 +982,11 @@ class ProfitabilityModels:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Rule of 40 score: the revenue growth plus the profit margin, the measure of
-        software and other subscription companies that trade growth against profitability. A score
-        of 40% (0.40) or more is seen as healthy: a company growing 30% a year should keep a margin
-        of at least 10%, one that grows 10% a margin of 30%.
+        Calculate the Rule of 40 score: the revenue growth plus the profit margin, the measure
+        of software and other subscription companies that trade growth against profitability.
+
+        A score of 40% (0.40) or more is seen as healthy: a company growing 30% a year should
+        keep a margin of at least 10%, one that grows 10% a margin of 30%.
 
         The formula is as follows:
 
@@ -1001,7 +1006,7 @@ class ProfitabilityModels:
         Also known as: Rule of 40, 40% rule, growth plus margin, SaaS rule of 40.
 
         Args:
-            margin (str, optional): The margin to add: "free_cash_flow" (Free Cash Flow / Revenue) or
+            margin (str, optional): The margin to add. Options are: "free_cash_flow" (Free Cash Flow / Revenue),
                 "ebitda" (EBITDA / Revenue). Defaults to "free_cash_flow".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.

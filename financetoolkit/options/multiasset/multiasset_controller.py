@@ -143,14 +143,16 @@ class MultiAssetOptions:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the price of an option to exchange a second asset (the benchmark by default) for each ticker,
-        an outperformance option, with the formula of Margrabe (1978). The option receives one share of the
-        ticker and delivers the number of units of the second asset that are worth exchange_ratio times the
-        ticker's price today, so at exchange_ratio=1 it pays at expiration what the ticker gained over the second
-        asset since today, if anything, per share of the ticker.
+        Calculate the price of an option to exchange a second asset (the benchmark by default) for each ticker, an
+        outperformance option: what the right to receive the ticker for the second asset at expiration is worth,
+        with the formula of Margrabe (1978).
+
+        The option receives one share of the ticker and delivers the number of units of the second asset that are
+        worth the exchange ratio times the ticker's price today, so at an exchange ratio of 1 it pays at expiration
+        what the ticker gained over the second asset since today, if anything, per share of the ticker.
 
         Measured in units of the second asset the payoff is a call on the ratio of the two prices, so the
-        risk-free rate drops out and the volatility is that of the ratio. With american_option=True the option
+        risk-free rate drops out and the volatility is that of the ratio. An American option
         may be exercised at any time, which is an American call on the ticker with the second asset as strike, a
         risk-free rate of q2 and a dividend yield of q1 (Bjerksund and Stensland, 1993), priced with the QD+
         exercise boundary and its integral (Li, 2010; Andersen, Lake and Offengenden, 2016), within about 0.1% of a
@@ -177,12 +179,17 @@ class MultiAssetOptions:
         See: Margrabe, W. (1978), "The Value of an Option to Exchange One Asset for Another", Journal of Finance,
         33(1), 177-186; Bjerksund, P. & Stensland, G. (1993), "American Exchange Options and a Put-Call
         Transformation: A Note", Journal of Business Finance & Accounting, 20(5), 761-764; Haug, E. G. (2007),
-        The Complete Guide to Option Pricing Formulas, 2nd ed., chapter 5. Referenced against QuantLib's
-        AnalyticEuropeanMargrabeEngine (https://www.quantlib.org), and the American value against a Leisen-Reimer
-        tree of 999 steps on the call it equals (QuantLib's AnalyticAmericanMargrabeEngine takes the
-        Bjerksund-Stensland (1993) approximation, a lower bound about 1% below it).
+        The Complete Guide to Option Pricing Formulas, 2nd ed., chapter 5. The American value is checked
+        against a Leisen-Reimer tree of 999 steps on the call it equals (QuantLib's AnalyticAmericanMargrabeEngine
+        takes the Bjerksund-Stensland (1993) approximation, a lower bound about 1% below it).
 
         Also known as: Margrabe option, exchange option, outperformance option, swap option.
+
+        Referenced against:
+        - QuantLib, AnalyticEuropeanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_european_margrabe_engine.html
+
+        Shares similar logic:
+        - QuantLib, AnalyticAmericanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_american_margrabe_engine.html
 
         Args:
             start_date (str | None, optional): The date whose prices, volatilities and correlation the values
@@ -292,11 +299,13 @@ class MultiAssetOptions:
     ):
         """
         Calculate the price of a European spread option of each ticker over a second asset (the benchmark by
-        default) with the closed-form approximation of Bjerksund and Stensland (2011) or of Kirk (1995). The
-        option is on one share of the ticker less the units of the second asset worth the same today, so the
+        default): what an option on how much the ticker gains over the second asset is worth, with the closed-form
+        approximation of Bjerksund and Stensland (2011) or of Kirk (1995).
+
+        The option is on one share of the ticker less the units of the second asset worth the same today, so the
         spread starts at 0 and the call pays max(S1 - S2 - K, 0) at expiration, where S1 - S2 is what the ticker
-        gained over the second asset per share. The strikes run from strike_price_range below to
-        strike_price_range above a spread of 0, as a share of the ticker's price.
+        gained over the second asset per share. The strikes run from the strike price range below to the strike
+        price range above a spread of 0, as a share of the ticker's price.
 
         The spread of two lognormal prices has no closed-form distribution. Kirk takes F2 + K as one lognormal
         price, and Bjerksund and Stensland exercise where F1 exceeds a boundary fitted to the exercise region,
@@ -328,10 +337,13 @@ class MultiAssetOptions:
         See: Kirk, E. (1995), "Correlation in the Energy Markets", in Managing Energy Price Risk, Risk
         Publications, 71-78; Bjerksund, P. & Stensland, G. (2014), "Closed Form Spread Option Valuation",
         Quantitative Finance, 14(10), 1785-1794; Haug, E. G. (2007), The Complete Guide to Option Pricing
-        Formulas, 2nd ed., chapter 5. Referenced against QuantLib's KirkEngine and
-        BjerksundStenslandSpreadEngine (https://www.quantlib.org).
+        Formulas, 2nd ed., chapter 5.
 
         Also known as: spread option, relative performance option, Kirk's approximation.
+
+        Referenced against:
+        - QuantLib, BjerksundStenslandSpreadEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_spread_engine.html
+        - QuantLib, KirkEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_kirk_engine.html
 
         Args:
             start_date (str | None, optional): The date whose prices, volatilities, correlation and rates the values
@@ -341,8 +353,8 @@ class MultiAssetOptions:
             second_ticker (str | None, optional): The second asset, "Benchmark" or one of the tickers (which is
             then left out of the rows). Defaults to None, which uses the benchmark.
             put_option (bool, optional): Whether the option is a put. Defaults to False.
-            method (str, optional): The approximation, "bjerksund_stensland" (Bjerksund and Stensland, 2011, the
-            more accurate) or "kirk" (Kirk, 1995). Defaults to "bjerksund_stensland".
+            method (str, optional): The approximation. Options are: "bjerksund_stensland" (Bjerksund and Stensland,
+            2011, the more accurate), "kirk" (Kirk, 1995). Defaults to "bjerksund_stensland".
             strike_price_range (float): The range of the strike prices around a spread of 0, as a share of the
             ticker's price, at most 0.5. Defaults to 0.25, which gives strikes from -25 to 25 for a price of 100.
             strike_step_size (float): The step size of the strike prices. Defaults to 5, which gives the strikes

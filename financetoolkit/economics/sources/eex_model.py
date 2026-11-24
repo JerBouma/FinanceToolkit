@@ -79,9 +79,10 @@ def _get_year(year: int) -> pd.DataFrame:
 
 def get_carbon_price(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the clearing price of the primary auctions of EU emission allowances, the
-    price of emitting one tonne of CO2 under the EU Emissions Trading System, daily from
-    2020. Only the years between the start and end date are retrieved.
+    Retrieves the clearing price of the primary auctions of EU emission allowances, the price of emitting one tonne of
+    CO2 under the EU Emissions Trading System, daily from 2020.
+
+    Only the years between the start and end date are retrieved.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).

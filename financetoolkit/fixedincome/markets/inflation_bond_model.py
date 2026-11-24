@@ -85,6 +85,9 @@ def get_reference_cpi(consumer_price_index: pd.Series, day: date) -> float:
     the reference CPI of 15 April 1996, from the CPI of January (154.40) and February 1996
     (154.90), is 154.63333.
 
+    Referenced against:
+    - QuantLib, CPI.laggedFixing: https://github.com/lballabio/QuantLib/blob/v1.44/ql/indexes/inflationindex.hpp#L39
+
     Args:
         consumer_price_index (pd.Series): The CPI-U, not seasonally adjusted, indexed by
             monthly period (see fill_unreported_months).
@@ -120,8 +123,9 @@ def get_index_ratio(reference_cpi: float, reference_cpi_dated_date: float) -> fl
     The Treasury's example: 154.65000 / 154.63333 = 1.000107803, which is an index ratio of
     1.00011.
 
-    Referenced against QuantLib's CPIBond and FinancePy's InflationBond (inflation_principal)
-    with the same interpolated reference CPI.
+    Shares similar logic:
+    - QuantLib, CPIBond: https://www.quantlib.org/reference/class_quant_lib_1_1_c_p_i_bond.html
+    - FinancePy, InflationBond.inflation_principal: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/inflation/InflationBond.py#L92
 
     Args:
         reference_cpi (float): The reference CPI of the day (see get_reference_cpi).
@@ -153,8 +157,8 @@ def get_inflation_adjusted_price(
 
     where P is the real clean price and A the real accrued interest per 100 of par.
 
-    Referenced against FinancePy's InflationBond (flat_price_from_yield_to_maturity and
-    inflation_accrued_interest).
+    Shares similar logic:
+    - FinancePy, InflationBond.flat_price_from_yield_to_maturity: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/inflation/InflationBond.py#L112
 
     Args:
         real_price (float): The real (quoted) clean price per 100 of par.

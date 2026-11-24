@@ -17,9 +17,9 @@ COUNTRY = "Brazil"
 
 def get_unemployment_rate() -> pd.DataFrame:
     """
-    Retrieves the Brazilian unemployment rate for people aged 14 and over from the
-    PNAD Contínua survey, from 2012. Each month is the average of the three months ending
-    in it, as the IBGE reports it.
+    Retrieves the Brazilian unemployment rate for people aged 14 and over from the PNAD Contínua survey, from 2012.
+
+    Each month is the average of the three months ending in it, as the IBGE reports it.
 
     Returns:
         pd.DataFrame: A single "Brazil" column with the rate as a decimal fraction of the

@@ -20,8 +20,8 @@ MINIMUM_DAYS = 7
 
 def get_mid_prices(chain: pd.DataFrame) -> pd.Series:
     """
-    The price of every option: the middle of the bid and ask when both are quoted, the
-    last traded price otherwise (e.g. outside market hours, when quotes are zero) for an
+    Calculate the price of every option: the middle of the bid and ask when both are quoted,
+    the last traded price otherwise (e.g. outside market hours, when quotes are zero) for an
     option that is still held or traded, which has an open interest or a volume above zero.
 
     An option without a two-sided quote, open interest or volume has no price: its last
@@ -60,8 +60,11 @@ def _positive_volatility(chain: pd.DataFrame) -> pd.Series:
 
 def get_put_call_ratio(calls: pd.DataFrame, puts: pd.DataFrame) -> pd.Series:
     """
-    The put-call ratio by volume and by open interest. A ratio above one means more puts
-    than calls are traded or held, usually read as hedging demand or bearish sentiment.
+    Calculate the put-call ratio by volume and by open interest: how many puts are traded or
+    held per call.
+
+    A ratio above one means more puts than calls are traded or held, usually read as hedging
+    demand or bearish sentiment.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, with Volume and Open Interest columns.
@@ -97,10 +100,11 @@ def get_put_call_ratio(calls: pd.DataFrame, puts: pd.DataFrame) -> pd.Series:
 
 def get_max_pain(calls: pd.DataFrame, puts: pd.DataFrame) -> float:
     """
-    The max pain strike: the expiry price at which the options outstanding would pay their
-    holders the least, the sum over all calls of OI x max(S - K, 0) and over all puts of
-    OI x max(K - S, 0) being smallest. Some traders expect the price to gravitate there as
-    expiry nears.
+    Calculate the max pain strike: the expiry price at which the options outstanding would
+    pay their holders the least, the sum over all calls of OI x max(S - K, 0) and over all
+    puts of OI x max(K - S, 0) being smallest.
+
+    Some traders expect the price to gravitate there as expiry nears.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Open Interest.
@@ -138,9 +142,10 @@ def get_gamma_exposure(
     dividend_yield: float = 0.0,
 ) -> pd.DataFrame:
     """
-    The dealer gamma exposure per strike: the dollar amount of shares market makers would
-    have to buy or sell for a 1% move in the underlying to stay delta-hedged, assuming they
-    are long the calls and short the puts that investors trade (the common convention):
+    Calculate the dealer gamma exposure per strike: the dollar amount of shares market
+    makers would have to buy or sell for a 1% move in the underlying to stay delta-hedged,
+    assuming they are long the calls and short the puts that investors trade (the common
+    convention):
 
         Gamma Exposure = ±Gamma x Open Interest x 100 x Price² x 0.01
 
@@ -210,9 +215,11 @@ def get_gamma_flip(
     points: int = 201,
 ) -> float:
     """
-    The gamma flip point: the price of the underlying at which the total dealer gamma
-    exposure over all expiries changes sign, found by recalculating the exposure over a
-    range of prices. Above it dealers dampen moves, below it they amplify them.
+    Calculate the gamma flip point: the price of the underlying at which the total dealer
+    gamma exposure over all expiries changes sign, found by recalculating the exposure over
+    a range of prices.
+
+    Above it dealers dampen moves, below it they amplify them.
 
     Args:
         expiries (list[tuple[pd.DataFrame, pd.DataFrame, float]]): Per expiry the calls, the
@@ -262,7 +269,7 @@ def get_at_the_money_volatility(
     calls: pd.DataFrame, puts: pd.DataFrame, stock_price: float
 ) -> float:
     """
-    The at-the-money implied volatility: the implied volatility of calls and puts
+    Calculate the at-the-money implied volatility: the implied volatility of calls and puts
     interpolated at the current price and averaged.
 
     Args:
@@ -298,7 +305,8 @@ def get_volatility_skew(
     dividend_yield: float = 0.0,
 ) -> pd.Series:
     """
-    The volatility skew of one expiry, measured on the 25-delta options:
+    Calculate the volatility skew of one expiry: how much more the market pays for downside
+    than for upside protection, measured on the 25-delta options:
 
     - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put): negative when puts are
       dearer than calls, the usual case for equities as investors pay for crash protection.
@@ -361,12 +369,13 @@ def get_implied_move(
     calls: pd.DataFrame, puts: pd.DataFrame, stock_price: float
 ) -> pd.Series:
     """
-    The move the options market expects up to an expiry: the price of the at-the-money
-    straddle (a call and a put at the strike closest to the current price) relative to the
-    price. The straddle prices the expected absolute move, √(2/π) ≈ 0.8 standard
-    deviations (Brenner and Subrahmanyam, 1988), so under a lognormal model about 57% of
-    outcomes fall within one implied move and one standard deviation is about 1.25 times
-    the straddle.
+    Calculate the move the options market expects up to an expiry: the price of the
+    at-the-money straddle (a call and a put at the strike closest to the current price)
+    relative to the price.
+
+    The straddle prices the expected absolute move, √(2/π) ≈ 0.8 standard deviations
+    (Brenner and Subrahmanyam, 1988), so under a lognormal model about 57% of outcomes fall
+    within one implied move and one standard deviation is about 1.25 times the straddle.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike.
@@ -418,11 +427,14 @@ def get_model_free_strip(
     risk_free_rate: float,
 ) -> tuple[pd.DataFrame, float]:
     """
-    The strikes of one expiry that the Cboe VIX and SKEW methodologies use, and the forward
-    price. The forward price follows from put-call parity at the strike where call and put
-    prices are closest, F = K + e^(RT) (C - P). K_0 is the first strike at or below the
-    forward; from there the puts below and the calls above are added strike by strike
-    while they have a bid, stopping after two consecutive strikes without one.
+    Calculate the strikes of one expiry that the Cboe VIX and SKEW methodologies use, and
+    the forward price: the out-of-the-money options with a bid around the forward that the
+    model-free measures sum over.
+
+    The forward price follows from put-call parity at the strike where call and put prices
+    are closest, F = K + e^(RT) (C - P). K_0 is the first strike at or below the forward;
+    from there the puts below and the calls above are added strike by strike while they have
+    a bid, stopping after two consecutive strikes without one.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Bid and Ask.
@@ -499,8 +511,9 @@ def get_out_of_the_money_prices(
     forward_price: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """
-    The out-of-the-money option prices Q(K_i) and the strike intervals ΔK_i that discretise
-    the integrals over option prices of the Cboe VIX and SKEW methodologies:
+    Calculate the out-of-the-money option prices Q(K_i) and the strike intervals ΔK_i: the
+    terms that discretise the integrals over option prices of the Cboe VIX and SKEW
+    methodologies:
 
         - K_0 = the highest strike at or below the forward price
         - Q(K_i) = the put price for K_i < K_0, the call price for K_i > K_0 and the average
@@ -558,8 +571,9 @@ def get_model_free_variance(
     risk_free_rate: float,
 ) -> tuple[float, float]:
     """
-    The model-free implied variance of one expiry, as in the Cboe VIX methodology: a
-    weighted sum of out-of-the-money option prices,
+    Calculate the model-free implied variance of one expiry, as in the Cboe VIX methodology:
+    the variance the option prices imply without a pricing model, a weighted sum of
+    out-of-the-money option prices,
 
         σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²,
 
@@ -607,8 +621,9 @@ def get_constant_maturity_volatility(
     target_days: int = 30,
 ) -> float:
     """
-    Interpolate the variances of two expiries to a constant maturity, as the Cboe does for
-    the 30-day VIX, and return it as an annualized volatility.
+    Calculate the constant maturity volatility: the variances of two expiries interpolated
+    to a constant maturity, as the Cboe does for the 30-day VIX, returned as an annualized
+    volatility.
 
     Args:
         near_variance (float): The annualized variance of the near expiry.
@@ -646,11 +661,13 @@ def get_risk_neutral_moments(
     time_to_expiration: float,
 ) -> pd.Series:
     """
-    The risk-neutral volatility, skewness and kurtosis of the log return up to an expiry,
-    from the prices of the quadratic, cubic and quartic contracts of Bakshi, Kapadia and
-    Madan (2003), each a strip of out-of-the-money options (Carr and Madan, 2001). With
-    R = ln(S_T / K_0), y_i = ln(K_i / K_0) and Q(K_i) and ΔK_i from
-    get_out_of_the_money_prices, the integrals over option prices are summed like the VIX:
+    Calculate the risk-neutral volatility, skewness and kurtosis of the log return up to an
+    expiry: the shape of the return distribution that option prices imply, from the prices
+    of the quadratic, cubic and quartic contracts of Bakshi, Kapadia and Madan (2003).
+
+    Each contract is a strip of out-of-the-money options (Carr and Madan, 2001). With R =
+    ln(S_T / K_0), y_i = ln(K_i / K_0) and Q(K_i) and ΔK_i from get_out_of_the_money_prices,
+    the integrals over option prices are summed like the VIX:
 
         - V = Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i²
         - W = Σ (6 y_i - 3 y_i²) Q(K_i) ΔK_i / K_i²
@@ -746,11 +763,13 @@ def get_cboe_skewness(
     time_to_expiration: float,
 ) -> float:
     """
-    The price of skewness S of one expiry as in the Cboe SKEW Index white paper (2010): the
-    risk-neutral skewness of the log return R = ln(S_T / F_0) from the prices P_1, P_2 and
-    P_3 of R, R² and R³, each a strip of out-of-the-money options. With y_i = ln(K_i / F_0),
-    Q(K_i) and ΔK_i from get_out_of_the_money_prices and K_0 the first strike at or below
-    the forward price F_0:
+    Calculate the price of skewness S of one expiry as in the Cboe SKEW Index white paper
+    (2010): the risk-neutral skewness of the log return R = ln(S_T / F_0), from the prices
+    P_1, P_2 and P_3 of R, R² and R³.
+
+    Each price is a strip of out-of-the-money options. With y_i = ln(K_i / F_0), Q(K_i) and
+    ΔK_i from get_out_of_the_money_prices and K_0 the first strike at or below the forward
+    price F_0:
 
         - P_1 = -e^(rT) Σ Q(K_i) ΔK_i / K_i² + ε_1
         - P_2 = e^(rT) Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i² + ε_2
@@ -825,8 +844,8 @@ def get_skew_index(
     target_days: int = 30,
 ) -> tuple[float, float]:
     """
-    Interpolate the skewness of two expiries to a constant maturity and turn it into an
-    index as the Cboe does for the SKEW Index:
+    Calculate the SKEW index: the skewness of two expiries interpolated to a constant
+    maturity and turned into an index as the Cboe does for the SKEW Index:
 
         - w = (T_next - T_target) / (T_next - T_near)
         - S = w S_near + (1 - w) S_next
@@ -863,8 +882,11 @@ def get_variance_swap_weights(
     time_to_expiration: float,
 ) -> np.ndarray:
     """
-    The number of options at each strike that replicates the log contract of a variance swap,
-    from Demeterfi, Derman, Kamal and Zou (1999), appendix A. The payoff
+    Calculate the variance swap weights: the number of options at each strike that
+    replicates the log contract of a variance swap, from Demeterfi, Derman, Kamal and Zou
+    (1999), appendix A.
+
+    The payoff
 
         - f(S_T) = (2/T) [(S_T - S*) / S* - ln(S_T / S*)]
 
@@ -921,9 +943,9 @@ def get_variance_swap_fair_strike(
     boundary_strike: float | None = None,
 ) -> float:
     """
-    The fair variance strike of a variance swap, the annualized variance that makes the swap
-    worth nothing today, replicated with the discrete strikes of Demeterfi, Derman, Kamal and
-    Zou (1999):
+    Calculate the fair variance strike of a variance swap: the annualized variance that
+    makes the swap worth nothing today, replicated with the discrete strikes of Demeterfi,
+    Derman, Kamal and Zou (1999):
 
         - K_var = (2/T) [ln(F / S*) - (F / S* - 1)] + e^(rT) [Σ w(K_p) P(K_p) + Σ w(K_c) C(K_c)]
 
@@ -935,6 +957,10 @@ def get_variance_swap_fair_strike(
     the midpoint rule, weights (2/T) ΔK / K², and approximates the first term by -(1/T)
     (F / K_0 - 1)². The weights here replicate the payoff exactly at every strike, so the two
     agree for finely spaced strikes and differ by the discretisation error otherwise.
+
+    Referenced against:
+    - QuantLib, ReplicatingVarianceSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_replicating_variance_swap_engine.html
+    - FinancePy, EquityVarianceSwap.fair_strike: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L102
 
     Args:
         strike_prices (np.ndarray): The strikes.
@@ -997,13 +1023,16 @@ def get_realized_variance(
     prices: pd.Series | pd.DataFrame, trading_days: int = 252
 ) -> float | pd.Series:
     """
-    The realized variance as a variance swap settles it: the annualized mean of the squared
-    daily log returns, without subtracting their mean,
+    Calculate the realized variance as a variance swap settles it: the annualized mean of
+    the squared daily log returns, without subtracting their mean,
 
         - σ²_realized = (A / N) Σ ln(S_i / S_(i-1))²
 
     with N the number of returns and A the trading days per year. Each column keeps its own
     history: missing prices are left out rather than counted as a zero return.
+
+    Shares similar logic:
+    - FinancePy, EquityVarianceSwap.realised_variance: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L223
 
     Args:
         prices (pd.Series | pd.DataFrame): The prices, one column per ticker.
@@ -1027,10 +1056,13 @@ def get_variance_swap_value(
     variance_notional: float = 1.0,
 ) -> float:
     """
-    The value of a variance swap to the buyer of variance (who receives the realized
-    variance and pays the strike) during its life, from Demeterfi, Derman, Kamal and Zou
-    (1999). The variance it settles on is the realized variance so far and the fair variance
-    of the remaining time, weighted by their share of the whole period:
+    Calculate the value of a variance swap to the buyer of variance (who receives the
+    realized variance and pays the strike) during its life: what the swap is worth from the
+    variance realized so far and the fair variance of the remaining time (Demeterfi, Derman,
+    Kamal and Zou, 1999).
+
+    The variance it settles on is the realized variance so far and the fair variance of the
+    remaining time, weighted by their share of the whole period:
 
         - Value = N e^(-r (T - t)) [(t / T) σ²_realized + ((T - t) / T) K_var(t, T) - K]
 
@@ -1042,6 +1074,9 @@ def get_variance_swap_value(
     N_vega, the profit of one volatility point (0.01 of decimal volatility) near the strike,
     translate to N = 100 N_vega / (2 sqrt(K)): a vega notional of 100,000 at a 20% strike is
     a variance notional of 25,000,000, which pays 102,500 when 21% is realized.
+
+    Referenced against:
+    - FinancePy, EquityVarianceSwap.value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L61
 
     Args:
         realized_variance (float): The annualized realized variance since the start.

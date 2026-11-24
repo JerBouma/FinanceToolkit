@@ -87,10 +87,12 @@ def get_exchange_option(
     american_option: bool = False,
 ) -> float:
     """
-    Calculate the price of an option to exchange the second asset for the first, which pays
-    max(S1 - S2, 0) at expiration, with the formula of Margrabe (1978). Measured in units of
-    the second asset, the payoff is a call on the ratio S1 / S2 with a strike of 1, so the
-    risk-free rate drops out and the volatility is that of the ratio:
+    Calculate the price of an option to exchange the second asset for the first: what the
+    right to receive the first asset for the second at expiration is worth, max(S1 - S2, 0),
+    with the formula of Margrabe (1978).
+
+    Measured in units of the second asset, the payoff is a call on the ratio S1 / S2 with a
+    strike of 1, so the risk-free rate drops out and the volatility is that of the ratio:
 
     - Exchange = S1 * e^(-q1 * T) * N(d1) - S2 * e^(-q2 * T) * N(d2)
     - σ = √(σ1² + σ2² - 2ρσ1σ2)
@@ -109,6 +111,12 @@ def get_exchange_option(
     the correlation of their returns, q1 and q2 their continuous dividend yields (or, for
     futures, the continuously compounded risk-free rate), T the time to expiration in years
     and N the standard normal distribution function.
+
+    Referenced against:
+    - QuantLib, AnalyticEuropeanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_european_margrabe_engine.html
+
+    Shares similar logic:
+    - QuantLib, AnalyticAmericanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_american_margrabe_engine.html
 
     Args:
         first_stock_price (float): The price of the asset received, S1.
@@ -140,11 +148,10 @@ def get_exchange_option(
         Another." Journal of Finance, 33(1), 177-186. Bjerksund, P., & Stensland, G. (1993).
         "American Exchange Options and a Put-Call Transformation: A Note." Journal of
         Business Finance & Accounting, 20(5), 761-764. Haug, E. G. (2007). The Complete Guide
-        to Option Pricing Formulas, 2nd ed., chapter 5. Referenced against QuantLib's
-        AnalyticEuropeanMargrabeEngine (https://www.quantlib.org), and the American value
-        against a Leisen-Reimer tree of 999 steps on the call it equals. QuantLib's
-        AnalyticAmericanMargrabeEngine takes the Bjerksund-Stensland (1993) approximation,
-        a lower bound about 1% below that value.
+        to Option Pricing Formulas, 2nd ed., chapter 5.
+        - The American value is checked against a Leisen-Reimer tree of 999 steps on the call
+          it equals. QuantLib's AnalyticAmericanMargrabeEngine takes the Bjerksund-Stensland
+          (1993) approximation, a lower bound about 1% below that value.
 
     As an example:
 
@@ -244,11 +251,13 @@ def get_spread_option(
     method: Literal["bjerksund_stensland", "kirk"] = "bjerksund_stensland",
 ) -> float:
     """
-    Calculate the price of a European spread option, which pays max(S1 - S2 - K, 0) for a call
-    and max(K - S1 + S2, 0) for a put at expiration, with the closed-form approximation of
-    Bjerksund and Stensland (2011) or of Kirk (1995). The spread of two lognormal prices has
-    no closed-form distribution; both approximations work on the forward prices
-    F1 = S1 * e^((r - q1) * T) and F2 = S2 * e^((r - q2) * T).
+    Calculate the price of a European spread option: what an option on the difference of two
+    asset prices is worth, max(S1 - S2 - K, 0) for a call and max(K - S1 + S2, 0) for a put
+    at expiration, with the closed-form approximation of Bjerksund and Stensland (2011) or
+    of Kirk (1995).
+
+    The spread of two lognormal prices has no closed-form distribution; both approximations
+    work on the forward prices F1 = S1 * e^((r - q1) * T) and F2 = S2 * e^((r - q2) * T).
 
     Kirk (1995) treats F2 + K as one lognormal price and prices an exchange option on it:
 
@@ -277,6 +286,10 @@ def get_spread_option(
     tenths where the exact value is close to 0 (0.42 against 0.00001 by Monte Carlo at
     F2 = 96.4 and K = -96), while Bjerksund and Stensland stay close (0.0).
 
+    Referenced against:
+    - QuantLib, BjerksundStenslandSpreadEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_spread_engine.html
+    - QuantLib, KirkEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_kirk_engine.html
+
     Args:
         first_stock_price (float): The price of the first asset, S1.
         second_stock_price (float): The price of the second asset, S2.
@@ -294,9 +307,9 @@ def get_spread_option(
         second_dividend_yield (float, optional): The continuous dividend yield of the second
             asset. Defaults to 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        method (str, optional): The approximation, "bjerksund_stensland" (Bjerksund and
-            Stensland, 2011, the more accurate) or "kirk" (Kirk, 1995). Defaults to
-            "bjerksund_stensland".
+        method (str, optional): The approximation. Options are: "bjerksund_stensland"
+            (Bjerksund and Stensland, 2011, the more accurate), "kirk" (Kirk, 1995). Defaults
+            to "bjerksund_stensland".
 
     Returns:
         float: The spread option value.
@@ -312,8 +325,7 @@ def get_spread_option(
         Price Risk, Risk Publications, 71-78. Bjerksund, P., & Stensland, G. (2014). "Closed
         Form Spread Option Valuation." Quantitative Finance, 14(10), 1785-1794 (working paper
         of 2006, revised 2011). Haug, E. G. (2007). The Complete Guide to Option Pricing
-        Formulas, 2nd ed., chapter 5. Referenced against QuantLib's KirkEngine and
-        BjerksundStenslandSpreadEngine (https://www.quantlib.org).
+        Formulas, 2nd ed., chapter 5.
 
     As an example:
 
@@ -462,9 +474,10 @@ def get_two_asset_correlation_option(
     put_option: bool = False,
 ) -> float:
     """
-    Calculate the price of a two-asset correlation option (Zhang, 1995), which pays the
-    second asset's call payoff S2 - K2 only where the first asset ends above its own strike
-    K1 as well, and the put payoff K2 - S2 only where both end below their strikes:
+    Calculate the price of a two-asset correlation option (Zhang, 1995): what the second
+    asset's call payoff S2 - K2 is worth when it is only paid where the first asset ends
+    above its own strike K1 as well, and the put payoff K2 - S2 only where both end below
+    their strikes:
 
     - Call = S2 * e^(-q2 * T) * M(y2 + σ2√T, y1 + ρσ2√T; ρ) - K2 * e^(-rT) * M(y2, y1; ρ)
     - Put = K2 * e^(-rT) * M(-y2, -y1; ρ) - S2 * e^(-q2 * T) * M(-y2 - σ2√T, -y1 - ρσ2√T; ρ)
@@ -477,6 +490,9 @@ def get_two_asset_correlation_option(
     and M the bivariate standard normal distribution function. y1 and y2 are the d2 terms of
     Black-Scholes, so N(y) is the risk-neutral probability that an asset ends beyond its
     strike, and the option is a vanilla option on S2 that is also knocked out by S1.
+
+    Referenced against:
+    - QuantLib, AnalyticTwoAssetCorrelationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_two_asset_correlation_engine.html
 
     Args:
         first_stock_price (float): The price of the first asset, S1, that decides whether
@@ -509,8 +525,7 @@ def get_two_asset_correlation_option(
     Notes:
         References: Zhang, P. G. (1995). "Correlation Digital Options." Journal of Financial
         Engineering, 3(1), 75-96. Haug, E. G. (2007). The Complete Guide to Option Pricing
-        Formulas, 2nd ed., chapter 5. Referenced against QuantLib's
-        AnalyticTwoAssetCorrelationEngine (https://www.quantlib.org).
+        Formulas, 2nd ed., chapter 5.
 
     As an example:
 
@@ -619,10 +634,13 @@ def get_rainbow_option(
     ] = "call_on_max",
 ) -> float:
     """
-    Calculate the price of a rainbow option on the better or the worse of two assets with the
-    formulas of Stulz (1982) and Johnson (1987). A call on the maximum (best-of call) pays
-    max(max(S1, S2) - K, 0), a call on the minimum (worst-of call) max(min(S1, S2) - K, 0),
-    and the puts max(K - max(S1, S2), 0) and max(K - min(S1, S2), 0):
+    Calculate the price of a rainbow option on the better or the worse of two assets: what a
+    best-of or worst-of call or put is worth, with the formulas of Stulz (1982) and Johnson
+    (1987).
+
+    A call on the maximum (best-of call) pays max(max(S1, S2) - K, 0), a call on the minimum
+    (worst-of call) max(min(S1, S2) - K, 0), and the puts max(K - max(S1, S2), 0) and max(K
+    - min(S1, S2), 0):
 
     - Call on Max = S1' * M(y1, d; ρ1) + S2' * M(y2, -d + σ√T; ρ2) - K' * (1 - M(-y1 + σ1√T, -y2 + σ2√T; ρ))
     - Call on Min = S1' * M(y1, -d; -ρ1) + S2' * M(y2, d - σ√T; -ρ2) - K' * M(y1 - σ1√T, y2 - σ2√T; ρ)
@@ -642,6 +660,12 @@ def get_rainbow_option(
     volatilities, ρ the correlation of the returns, T the time to expiration in years and M
     the bivariate standard normal distribution function.
 
+    Referenced against:
+    - QuantLib, StulzEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_stulz_engine.html
+
+    Shares similar logic:
+    - FinancePy, EquityRainbowOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_rainbow_option.py#L124
+
     Args:
         first_stock_price (float): The price of the first asset, S1.
         second_stock_price (float): The price of the second asset, S2.
@@ -657,9 +681,9 @@ def get_rainbow_option(
             asset. Defaults to 0.
         second_dividend_yield (float, optional): The continuous dividend yield of the second
             asset. Defaults to 0.
-        option_type (str, optional): "call_on_max" (best-of call), "call_on_min" (worst-of
-            call), "put_on_max" (best-of put) or "put_on_min" (worst-of put). Defaults to
-            "call_on_max".
+        option_type (str, optional): The payoff. Options are: "call_on_max" (best-of call),
+            "call_on_min" (worst-of call), "put_on_max" (best-of put), "put_on_min" (worst-of
+            put). Defaults to "call_on_max".
 
     Returns:
         float: The rainbow option value.
@@ -675,10 +699,9 @@ def get_rainbow_option(
         Assets: Analysis and Applications." Journal of Financial Economics, 10(2), 161-185.
         Johnson, H. (1987). "Options on the Maximum or the Minimum of Several Assets." Journal
         of Financial and Quantitative Analysis, 22(3), 277-283. Haug, E. G. (2007). The
-        Complete Guide to Option Pricing Formulas, 2nd ed., chapter 5. Referenced against
-        QuantLib's StulzEngine (https://www.quantlib.org) and FinancePy's EquityRainbowOption
-        (https://github.com/domokane/FinancePy). FinancePy reads the zero rates of its curves
-        annually compounded and uses them as continuous rates, so it agrees with these values
+        Complete Guide to Option Pricing Formulas, 2nd ed., chapter 5.
+        - FinancePy's EquityRainbowOption reads the zero rates of its curves annually
+          compounded and uses them as continuous rates, so it agrees with these values
         for rates and yields of e^r - 1 rather than r.
 
     As an example:
@@ -954,10 +977,12 @@ def get_basket_option(
     method: Literal["levy", "gentle"] = "levy",
 ) -> float:
     """
-    Calculate the closed-form approximation of a European basket option, which pays
-    max(B - K, 0) for a call and max(K - B, 0) for a put on the basket B = Σ w_i * S_i(T) of
-    lognormal prices at expiration. The sum of lognormal prices has no closed-form
-    distribution, so it is approximated by a lognormal one.
+    Calculate the closed-form approximation of a European basket option: what an option on a
+    weighted sum of lognormal stock prices is worth, max(B - K, 0) for a call and max(K - B,
+    0) for a put on the basket B = Σ w_i * S_i(T) at expiration.
+
+    The sum of lognormal prices has no closed-form distribution, so it is approximated by a
+    lognormal one.
 
     Levy (1992) matches the first two moments of the basket at expiration:
 
@@ -987,6 +1012,13 @@ def get_basket_option(
     by up to about 12%, so Levy is the default. Monte Carlo prices of the same basket, which the
     approximations can be checked against, come from get_monte_carlo_basket_option.
 
+    Referenced against:
+    - QuantLib, ChoiBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_choi_basket_engine.html
+
+    Shares similar logic:
+    - QuantLib, MCEuropeanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_basket_engine.html
+    - FinancePy, EquityBasketOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_basket_option.py#L30
+
     Args:
         stock_prices (np.ndarray | list[float]): The prices of the assets in the basket.
         weights (np.ndarray | list[float]): The number of units of each asset in the basket.
@@ -1002,8 +1034,8 @@ def get_basket_option(
         dividend_yields (np.ndarray | list[float] | None, optional): The continuous dividend
             yield of each asset. Defaults to None, which uses 0 for every asset.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        method (str, optional): The approximation, "levy" (Levy, 1992, moment matching) or
-            "gentle" (Gentle, 1993, geometric basket). Defaults to "levy".
+        method (str, optional): The approximation. Options are: "levy" (Levy, 1992, moment
+            matching), "gentle" (Gentle, 1993, geometric basket). Defaults to "levy".
 
     Returns:
         float: The basket option value.
@@ -1021,10 +1053,10 @@ def get_basket_option(
         References: Levy, E. (1992). "Pricing European Average Rate Currency Options."
         Journal of International Money and Finance, 11(5), 474-491. Gentle, D. (1993).
         "Basket Weaving." Risk, 6(6), 51-52. Haug, E. G. (2007). The Complete Guide to Option
-        Pricing Formulas, 2nd ed. Referenced against FinancePy's
-        EquityBasketOption (https://github.com/domokane/FinancePy), which matches the same two
-        moments as Levy, and against QuantLib's ChoiBasketEngine and MCEuropeanBasketEngine
-        (https://www.quantlib.org) for the accuracy of the approximations.
+        Pricing Formulas, 2nd ed.
+        - FinancePy's EquityBasketOption matches the same two moments as Levy; QuantLib's
+          ChoiBasketEngine and MCEuropeanBasketEngine show the accuracy of the
+          approximations.
 
     As an example:
 
@@ -1130,9 +1162,10 @@ def get_monte_carlo_basket_option(
     seed: int | None = 0,
 ) -> tuple[float, float]:
     """
-    Calculate the Monte Carlo price of a European basket option, which pays max(B - K, 0) for a
-    call and max(K - B, 0) for a put on the basket B = Σ w_i * S_i(T) at expiration, with
-    correlated lognormal prices and the geometric basket of Gentle (1993) as control variate.
+    Calculate the Monte Carlo price of a European basket option: what an option on a
+    weighted sum of correlated lognormal stock prices is worth, max(B - K, 0) for a call and
+    max(K - B, 0) for a put on the basket B = Σ w_i * S_i(T) at expiration, with the
+    geometric basket of Gentle (1993) as control variate.
 
     The prices at expiration are drawn in one step, correlated through the Cholesky factor L
     of the correlation matrix (L * Lᵀ = ρ). The geometric basket option on the same draws has
@@ -1154,6 +1187,13 @@ def get_monte_carlo_basket_option(
 
     The draws come from numpy's default generator (PCG64) seeded with seed, so a seed gives
     the same price on every platform up to the last digits of floating point arithmetic.
+
+    Referenced against:
+    - QuantLib, ChoiBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_choi_basket_engine.html
+
+    Shares similar logic:
+    - QuantLib, MCEuropeanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_basket_engine.html
+    - FinancePy, EquityBasketOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_basket_option.py#L30
 
     Args:
         stock_prices (np.ndarray | list[float]): The prices of the assets in the basket.
@@ -1185,9 +1225,9 @@ def get_monte_carlo_basket_option(
     Notes:
         References: Boyle, P., Broadie, M., & Glasserman, P. (1997). "Monte Carlo Methods for
         Security Pricing." Journal of Economic Dynamics and Control, 21(8-9), 1267-1321.
-        Gentle, D. (1993). "Basket Weaving." Risk, 6(6), 51-52. Referenced against QuantLib's
-        MCEuropeanBasketEngine (https://www.quantlib.org) and FinancePy's EquityBasketOption
-        (https://github.com/domokane/FinancePy); their own random numbers give other draws.
+        Gentle, D. (1993). "Basket Weaving." Risk, 6(6), 51-52.
+        - QuantLib's MCEuropeanBasketEngine and FinancePy's EquityBasketOption draw their own
+          random numbers, which give other paths.
 
     As an example:
 

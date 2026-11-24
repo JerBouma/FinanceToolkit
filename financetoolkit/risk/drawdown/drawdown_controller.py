@@ -45,7 +45,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Conditional Drawdown at Risk (CDaR) of an investment portfolio or asset's returns.
+        Calculate the Conditional Drawdown at Risk (CDaR) of an investment portfolio or asset's returns: the
+        average of the deepest drawdowns, those beyond the Drawdown at Risk.
 
         Conditional Drawdown at Risk (CDaR) extends the concept of Value at Risk and Conditional Value at
         Risk to the drawdown series instead of the return series. It is calculated as the average of the
@@ -53,7 +54,7 @@ class DrawdownRisk:
         distribution, giving insight into the depth of the most severe drawdowns an investment portfolio or
         asset could experience.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
         - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
@@ -70,14 +71,18 @@ class DrawdownRisk:
 
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - Riskfolio-Lib: RiskFunctions.CDaR_Rel and RiskFunctions.CDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.cdar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: CDaR, uncompounded CDaR, absolute CDaR.
 
+        Shares similar logic:
+        - Riskfolio-Lib, CDaR_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CDaR_Rel
+        - Riskfolio-Lib, CDaR_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CDaR_Abs
+        - skfolio, cdar: https://skfolio.org/generated/skfolio.measures.cdar.html
+        - PerformanceAnalytics (R), CDD: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L106
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability for the CDaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate CDaR within the specified period or for the entire
@@ -107,7 +112,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates CDaR for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of CDaR values using the specified `lag`.
+        - With growth, the method calculates the growth of CDaR values using the specified `lag`.
         - Riskfolio-Lib's CDaR_Rel and CDaR_Abs and skfolio's cdar take the exact tail average of Rockafellar and
         Uryasev (2002), which counts the drawdown at the boundary with a fraction, and report the loss as a
         positive number; the Toolkit averages the drawdowns up to the interpolated quantile, as its historic
@@ -213,12 +218,12 @@ class DrawdownRisk:
         The Maximum Drawdown of the whole history is a single number that depends on how long the history is.
         Goldberg and Mahmoud (2017) fix the length instead: the Maximum Drawdown of every path of `window`
         returns forms a distribution, and the CED is the tail average of it, as the CVaR is of the returns.
-        With window=21 on daily returns it reads as how deep the decline within a bad month gets, on average
+        With a window of 21 daily returns it reads as how deep the decline within a bad month gets, on average
         over the worst 5% of months. Where the Conditional Drawdown at Risk averages the drawdown of single
         days, the CED averages the worst decline of whole paths, and unlike the Maximum Drawdown it is a tail
         average, so a single crash moves it less and it does not grow with the length of the data.
 
-        The formula is as follows (with the default window=21 and alpha=0.05):
+        The formula is as follows (with the default window of 21 and alpha of 0.05):
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t, starting at 1 before the first return of each path
         - Maximum Drawdown(s) = min over t in [s, s + window) of Wealth(t) / max(1, max(Wealth(u) for u <= t)) - 1
@@ -236,13 +241,15 @@ class DrawdownRisk:
 
         - Goldberg, L.R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and Back Again." Mathematics
         and Financial Economics, 11(3), 275-297.
-        - RiskLabAI: backtest.conditional_expected_drawdown (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: CED, conditional expected drawdown, expected maximum drawdown in the tail.
 
+        Shares similar logic:
+        - RiskLabAI, conditional_expected_drawdown: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/RiskLabAI/backtest/robust_statistics.py#L88
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             window (int, optional): The length of each path in returns of `period`. Defaults to 21, a month of
                 trading days.
             alpha (float, optional): The tail probability for the CED calculation (e.g., 0.05 for the worst 5% of
@@ -346,7 +353,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Drawdown at Risk (DaR) of an investment portfolio or asset's returns.
+        Calculate the Drawdown at Risk (DaR) of an investment portfolio or asset's returns: how deep below its
+        high the asset is in all but the worst alpha share of the periods.
 
         The Drawdown at Risk is the Value at Risk of the drawdown series: the depth below the running peak
         that the asset was at or beyond in only an alpha share of the periods (5% for the default alpha). Where
@@ -356,7 +364,7 @@ class DrawdownRisk:
         for portfolio optimization: a fund manager whose clients leave after a deep drawdown cares about how
         often the portfolio is far below its high, not only about its volatility.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
         - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
@@ -373,14 +381,17 @@ class DrawdownRisk:
 
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - Riskfolio-Lib: RiskFunctions.DaR_Rel and RiskFunctions.DaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.drawdown_at_risk (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: DaR, drawdown quantile, uncompounded DaR, absolute DaR.
 
+        Shares similar logic:
+        - Riskfolio-Lib, DaR_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.DaR_Rel
+        - Riskfolio-Lib, DaR_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.DaR_Abs
+        - skfolio, drawdown_at_risk: https://skfolio.org/generated/skfolio.measures.drawdown_at_risk.html
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability for the DaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
@@ -410,7 +421,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the DaR
         for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of DaR values using the specified `lag`.
+        - With growth, the method calculates the growth of DaR values using the specified `lag`.
         - Riskfolio-Lib's DaR_Rel and DaR_Abs and skfolio's drawdown_at_risk take the order statistic at
         ceil(alpha * n) of the sorted drawdowns instead of the interpolated quantile and report the drawdown
         as a positive number; on three years of daily returns they differ by up to 1e-3.
@@ -473,17 +484,18 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Entropic Drawdown at Risk (EDaR) of an investment portfolio or asset's returns.
+        Calculate the Entropic Drawdown at Risk (EDaR) of an investment portfolio or asset's returns: the
+        tightest entropic bound on the deep drawdowns, between the CDaR and the Maximum Drawdown.
 
-        The Entropic Drawdown at Risk is the historic Entropic Value at Risk (see `get_entropic_value_at_risk`
-        with distribution="historic") of the drawdown series: the tightest bound on the drawdowns that follows
+        The Entropic Drawdown at Risk is the historic Entropic Value at Risk (the historic method of
+        `get_entropic_value_at_risk`) of the drawdown series: the tightest bound on the drawdowns that follows
         from the Chernoff inequality. It is at least as severe as the Drawdown at Risk and the Conditional
         Drawdown at Risk at the same alpha and at most as severe as the Maximum Drawdown, and as a coherent
         risk measure it is the drawdown counterpart of the EVaR in Cajas' (2021) entropic portfolio
         optimization. It weighs the deepest drawdowns more than the CDaR does, without resting on the single
         worst moment as the Maximum Drawdown does.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
         - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
@@ -502,14 +514,17 @@ class DrawdownRisk:
         SSRN Electronic Journal.
         - Ahmadi-Javid, A. (2012). "Entropic Value-at-Risk: A New Coherent Risk Measure." Journal of
         Optimization Theory and Applications, 155(3), 1105-1123.
-        - Riskfolio-Lib: RiskFunctions.EDaR_Rel and RiskFunctions.EDaR_Abs (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.edar (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: EDaR, entropic drawdown, uncompounded EDaR, absolute EDaR.
 
+        Referenced against:
+        - skfolio, edar: https://skfolio.org/generated/skfolio.measures.edar.html
+        - Riskfolio-Lib, EDaR_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Rel
+        - Riskfolio-Lib, EDaR_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EDaR_Abs
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability for the EDaR calculation (e.g., 0.05 for the 95%
             confidence level). Defaults to 0.05.
             compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
@@ -539,7 +554,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the EDaR
         for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of EDaR values using the specified `lag`.
+        - With growth, the method calculates the growth of EDaR values using the specified `lag`.
         - Equals Riskfolio-Lib's EDaR_Rel and EDaR_Abs and skfolio's edar, which report the drawdown as a
         positive number.
 
@@ -600,7 +615,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
+        Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns: the largest decline
+        from a high to a low, the worst loss an investor who bought at the top would have seen.
 
         Maximum Drawdown (MDD) is a risk management metric that quantifies the largest historical loss of
         an investment portfolio or asset experienced over a specified time horizon. It provides insights into
@@ -633,16 +649,24 @@ class DrawdownRisk:
         - Magdon-Ismail, M. and Atiya, A.F. (2004). "Maximum Drawdown." Risk Magazine, 17(10), 99-102.
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - empyrical: max_drawdown and roll_max_drawdown (https://github.com/stefan-jansen/empyrical-reloaded).
-        - Riskfolio-Lib: RiskFunctions.MDD_Rel and RiskFunctions.MDD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.max_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: max drawdown, peak-to-trough decline, rolling maximum drawdown, uncompounded drawdown,
         absolute drawdown.
 
+        Referenced against:
+        - skfolio, max_drawdown: https://skfolio.org/generated/skfolio.measures.max_drawdown.html
+        - Riskfolio-Lib, MDD_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Rel
+        - Riskfolio-Lib, MDD_Abs (uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.MDD_Abs
+
+        Shares similar logic:
+        - empyrical, max_drawdown: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L352
+        - empyrical, roll_max_drawdown (rolling): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L405
+        - PerformanceAnalytics (R), maxDrawdown: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L44
+        - quantstats, max_drawdown: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2677
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Maximum Drawdown within the specified period
             or for the entire period. Thus whether to look at the Maximum Drawdown within a specific year
             (if period = 'yearly') or look at the entirety of all years. Defaults to False.
@@ -672,11 +696,11 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates MMD for each
         asset in the Toolkit instance.
-        - Without `within_period`, the drawdown is measured on the returns of the chosen period, so
-        period="yearly" only compares year-end values: it is 0 when every year in the range closed at a
-        new high, even if prices fell within a year. Use period="daily" for the deepest decline, or
-        within_period=True for the deepest decline within each year.
-        - If `growth` is set to True, the method calculates the growth of MMD values using the specified `lag`.
+        - Without `within_period`, the drawdown is measured on the returns of the chosen period, so the
+        yearly period only compares year-end values: it is 0 when every year in the range closed at a
+        new high, even if prices fell within a year. Use the daily period for the deepest decline, or
+        the within-period version for the deepest decline within each year.
+        - With growth, the method calculates the growth of MMD values using the specified `lag`.
         - Equals empyrical's max_drawdown and roll_max_drawdown, Riskfolio-Lib's MDD_Rel and MDD_Abs and skfolio's
         max_drawdown, which report the decline as a positive number.
 
@@ -734,7 +758,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Maximum Drawdown Duration of an investment portfolio or asset's returns.
+        Calculate the Maximum Drawdown Duration of an investment portfolio or asset's returns: how many periods
+        the largest drawdown took from its peak to its lowest point.
 
         The Maximum Drawdown Duration is the number of periods between the peak and the lowest point
         of the largest drawdown, giving insight into how long the worst loss of value took to unfold.
@@ -749,9 +774,12 @@ class DrawdownRisk:
 
         Also known as: drawdown length.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), table.Drawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.Drawdowns.R#L54
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the duration within the specified period or
             for the entire period. Thus whether to look at the duration within a specific year (if period =
             'yearly') or look at the entirety of all years. Defaults to False.
@@ -775,7 +803,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the Maximum
         Drawdown Duration for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the duration values using the specified `lag`.
+        - With growth, the method calculates the growth of the duration values using the specified `lag`.
 
         As an example:
 
@@ -856,7 +884,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns.
+        Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns: how many
+        periods the asset took to climb back to its high after the bottom of its largest drawdown.
 
         The Maximum Drawdown Recovery Time is the number of periods it takes for the cumulative return
         to climb back to its previous peak after the lowest point of the largest drawdown. If the drawdown has not
@@ -871,9 +900,12 @@ class DrawdownRisk:
 
         Also known as: time to recovery, drawdown recovery.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), table.Drawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.Drawdowns.R#L54
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the recovery time within the specified period
             or for the entire period. Thus whether to look at the recovery time within a specific year (if
             period = 'yearly') or look at the entirety of all years. Defaults to False.
@@ -898,7 +930,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the Maximum
         Drawdown Recovery Time for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the recovery time values using the
+        - With growth, the method calculates the growth of the recovery time values using the
         specified `lag`.
 
         As an example:
@@ -988,10 +1020,10 @@ class DrawdownRisk:
         the stretches below 0 are the drawdowns that `get_drawdown_table` lists.
 
         Losses and gains are not symmetric: after a fall of 20% the asset needs a gain of 25% to be back
-        at its high, after a fall of 50% a gain of 100%. With recovery=True the series shows that gain,
+        at its high, after a fall of 50% a gain of 100%. The recovery version of the series shows that gain,
         the return needed from each period's value to get back to the running peak.
 
-        With deepest_since=True every period below the peak also gets the last earlier date with a
+        With the Deepest Since dates, every period below the peak also gets the last earlier date with a
         drawdown at least as deep, the familiar headline ("the deepest drawdown since April"), as
         `get_move_significance` gives the "largest since" date of a single move.
 
@@ -1009,9 +1041,14 @@ class DrawdownRisk:
         Also known as: underwater curve, underwater plot, drawdown curve, distance from the high, gain needed
         to recover, breakeven return, recovery return.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), Drawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Drawdowns.R#L3
+        - quantstats, to_drawdown_series: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2729
+        - skfolio, get_drawdowns: https://skfolio.org/generated/skfolio.measures.get_drawdowns.html
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             recovery (bool, optional): Whether to return the gain needed to get back to the running peak
                 (Recovery Needed) instead of the drawdown. Defaults to False.
             deepest_since (bool, optional): Whether to add the Deepest Since date of every period below the
@@ -1024,16 +1061,16 @@ class DrawdownRisk:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The drawdown per period as a negative decimal or, with recovery=True, the gain needed
-                as a positive decimal (0 at a new high), with time as the index. With deepest_since=True, the
+            pd.DataFrame: The drawdown per period as a negative decimal or, with recovery, the gain needed
+                as a positive decimal (0 at a new high), with time as the index. With deepest since, the
                 columns hold the measures (Drawdown or Recovery Needed, and Deepest Since, the date as text)
                 and the tickers.
 
         Notes:
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close
         and is NaN before it.
-        - A longer period only compares the closes of each period, so period="monthly" shows shallower
-        drawdowns than period="daily".
+        - A longer period only compares the closes of each period, so a monthly period shows shallower
+        drawdowns than a daily one.
         - Deepest Since is NaN at a high and when no earlier period in the data was as deep, which makes
         the drawdown the deepest since the start_date. Choose an early start_date for a long history.
 
@@ -1121,7 +1158,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        List the largest drawdowns of each asset with their peak, trough and recovery dates, depth and length.
+        List the largest drawdowns of each asset with their peak, trough and recovery dates, depth and length:
+        whether an asset has one bad episode or recurring ones, and how long they took to recover.
 
         Where the Maximum Drawdown gives only the single worst decline, the drawdown table shows the
         largest declines side by side: when each started (the last high before it), when it bottomed
@@ -1160,10 +1198,14 @@ class DrawdownRisk:
         Also known as: worst drawdowns, drawdown details, drawdown periods, gain needed to recover, recovery
         duration ratio, recovery return.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), table.Drawdowns: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.Drawdowns.R#L54
+        - quantstats, drawdown_details: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L3301
+
         Args:
             top (int, optional): The number of drawdowns per asset, deepest first. Defaults to 5.
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1183,7 +1225,7 @@ class DrawdownRisk:
         - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery, Length,
         Recovery Ratio or Recovery Return, in periods or calendar time (NaN); `get_drawdown_statistics` gives
         the state of that open drawdown. Its Recovery Needed is the gain from its trough; the gain
-        still needed from the latest value is the last row of `get_drawdown_series(recovery=True)`.
+        still needed from the latest value is the last Recovery Needed of `get_drawdown_series`.
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
         - The table depends on the window: a drawdown that started before the start date is measured from
         the first close of the window.
@@ -1288,19 +1330,24 @@ class DrawdownRisk:
 
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley & Sons,
         2nd edition.
-        - PerformanceAnalytics (R): AverageDrawdown, DrawdownDeviation, AverageLength and AverageRecovery
-        (https://github.com/braverock/PerformanceAnalytics).
-        - ffn: PerformanceStats.avg_drawdown and avg_drawdown_days (https://github.com/pmorissette/ffn).
-        - vectorbt: Drawdowns coverage, active_drawdown, active_duration, active_recovery, active_recovery_return,
-        active_recovery_duration, recovery_duration_ratio and recovery_return (https://github.com/polakowo/vectorbt).
 
         Also known as: drawdown summary, average drawdown, drawdown deviation, average drawdown length, average
         recovery time, average drawdown days, time under water, current drawdown, open drawdown, recovery
         duration ratio.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), AverageDrawdown: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L178
+        - PerformanceAnalytics (R), DrawdownDeviation: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L147
+        - PerformanceAnalytics (R), AverageRecovery: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L212
+        - PerformanceAnalytics (R), AverageLength: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L240
+        - ffn, PerformanceStats.avg_drawdown: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L377
+        - vectorbt, Drawdowns.active_drawdown: https://github.com/polakowo/vectorbt/blob/v1.2.1/vectorbt/generic/drawdowns.py#L407
+        - vectorbt, Drawdowns.recovery_duration_ratio: https://github.com/polakowo/vectorbt/blob/v1.2.1/vectorbt/generic/drawdowns.py#L392
+        - vectorbt, Drawdowns.recovery_return: https://github.com/polakowo/vectorbt/blob/v1.2.1/vectorbt/generic/drawdowns.py#L328
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1393,6 +1440,9 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
+        Calculate the Ulcer Index of an investment portfolio or asset's returns: how deep and how long its
+        drawdowns are, the root mean square of the declines from a recent high.
+
         The Ulcer Index is a financial metric used to assess the risk and volatility of an
         investment portfolio or asset. Developed by Peter Martin in the 1980s, the Ulcer Index
         is particularly useful for evaluating the downside risk and drawdowns associated with investments.
@@ -1422,19 +1472,25 @@ class DrawdownRisk:
         default 14-period lookback gives lower values than a since-inception high-water mark.
 
         Without compounding the drawdowns are the absolute declines of 1 plus the summed returns from their
-        high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones; without
-        a window it agrees with Riskfolio-Lib's UCI_Abs.
+        high, (Wealth(t) - Highest High(t)) with Wealth(t) = 1 + Σ Return(s), instead of the relative ones.
 
         For more information, see the following sources:
 
         - Martin, P.G. and McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John Wiley & Sons.
-        - Riskfolio-Lib: RiskFunctions.UCI_Rel and RiskFunctions.UCI_Abs (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: UI, drawdown risk, uncompounded ulcer index.
 
+        Referenced against:
+        - Riskfolio-Lib, UCI_Rel (compounded, no window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Rel
+        - Riskfolio-Lib, UCI_Abs (uncompounded, no window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Abs
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), UlcerIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UlcerIndex.R#L31
+        - quantstats, ulcer_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1829
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" for a quarterly Toolkit, otherwise "yearly".
             window (int | None, optional): The trailing lookback window used as the high-water
                 mark reference for each day's drawdown. Pass None for an expanding
                 (since-inception) high-water mark instead -- Martin's "Highest High"; a fixed
@@ -1460,7 +1516,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates UI for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of UI values using the specified `lag`.
+        - With growth, the method calculates the growth of UI values using the specified `lag`.
 
         As an example:
 
@@ -1529,6 +1585,9 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
+        Calculate the Pain Index of an investment portfolio or asset's returns: the average depth below its
+        high over every day of a period, the area under water per day.
+
         The Pain Index, developed by Zephyr Associates and described by Bacon (2013), measures the
         downside risk of an investment portfolio or asset as the average depth of its drawdowns over
         every day of a period, the days at a new high counting as a drawdown of 0.
@@ -1557,13 +1616,15 @@ class DrawdownRisk:
 
         - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley & Sons,
         chapter 5 (the Pain Index of Zephyr Associates).
-        - PerformanceAnalytics (R), `PainIndex`.
 
         Also known as: average drawdown, mean drawdown.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), PainIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/PainIndex.R#L38
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" for a quarterly Toolkit, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Pain Index values over time. Defaults
@@ -1583,7 +1644,7 @@ class DrawdownRisk:
         Notes:
         - The method retrieves the daily returns within each `period` and calculates the Pain Index for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the Pain Index values using the
+        - With growth, the method calculates the growth of the Pain Index values using the
         specified `lag`.
 
         As an example:
@@ -1655,7 +1716,8 @@ class DrawdownRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Average Drawdown of an investment portfolio or asset's returns.
+        Calculate the Average Drawdown of an investment portfolio or asset's returns: how deep a typical setback
+        is, or how far below its high the asset typically was.
 
         The Average Drawdown has two definitions. Bacon (2008), PerformanceAnalytics and ffn average the depth
         of the drawdown episodes: every decline from a high until the asset is back at it counts once, with its
@@ -1665,14 +1727,14 @@ class DrawdownRisk:
         average says how deep a typical setback is, the period average how far below its high the asset
         typically was. Both are less dominated by a single crash than the Maximum Drawdown.
 
-        The formula is as follows (with the default method="episode"):
+        The formula for the episode average, the default, is as follows:
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
         - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
         - Average Drawdown = Σ Trough(j) / d
 
         Where Trough(j) is the lowest Drawdown of the j-th of the d episodes below a high (one that has not
-        recovered by the end of the window included). With method="observation":
+        recovered by the end of the window included). The formula for the observation average is as follows:
 
         - Average Drawdown = Σ Drawdown(t) / n
 
@@ -1687,18 +1749,23 @@ class DrawdownRisk:
         2nd edition.
         - Chekhlov, A., Uryasev, S. and Zabarankin, M. (2005). "Drawdown Measure in Portfolio Optimization."
         International Journal of Theoretical and Applied Finance, 8(1), 13-58.
-        - PerformanceAnalytics (R): AverageDrawdown (https://github.com/braverock/PerformanceAnalytics).
-        - ffn: PerformanceStats.avg_drawdown (https://github.com/pmorissette/ffn).
-        - Riskfolio-Lib: RiskFunctions.ADD_Rel and RiskFunctions.ADD_Abs (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.average_drawdown (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: ADD, average drawdown depth, mean drawdown, uncompounded average drawdown.
 
+        Referenced against:
+        - skfolio, average_drawdown (observation): https://skfolio.org/generated/skfolio.measures.average_drawdown.html
+        - Riskfolio-Lib, ADD_Rel (observation, compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Rel
+        - Riskfolio-Lib, ADD_Abs (observation, uncompounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.ADD_Abs
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), AverageDrawdown (episode): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/maxDrawdown.R#L178
+        - ffn, PerformanceStats.avg_drawdown (episode): https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L377
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            method (str, optional): "episode" for the average depth of the drawdown episodes or "observation"
-            for the average drawdown of every period. Defaults to "episode".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
+            method (str, optional): The average. Options are: "episode" (the average depth of the drawdown
+            episodes), "observation" (the average drawdown of every period). Defaults to "episode".
             compound_returns (bool, optional): Whether to compound the returns into the wealth path the drawdowns are
             measured on, or to sum them (absolute drawdowns). Defaults to True.
             within_period (bool, optional): Whether to calculate the Average Drawdown within the specified period
@@ -1728,15 +1795,15 @@ class DrawdownRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the Average
         Drawdown for each asset in the Toolkit instance, each on its own returns.
-        - If `growth` is set to True, the method calculates the growth of the Average Drawdown values using the
+        - With growth, the method calculates the growth of the Average Drawdown values using the
         specified `lag`.
-        - method="episode" agrees with PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, method="observation"
-        Riskfolio-Lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown; PerformanceAnalytics and the Python
-        libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
-        geometric=FALSE divides the decline of 1 + the summed returns by its peak, where the uncompounded drawdown here
+        - The episode average agrees with PerformanceAnalytics' AverageDrawdown and ffn's avg_drawdown, the
+        observation average with Riskfolio-Lib's ADD_Rel and ADD_Abs and skfolio's average_drawdown;
+        PerformanceAnalytics and the Python libraries other than ffn report the drawdown as a positive number.
+        PerformanceAnalytics' arithmetic version divides the decline of 1 + the summed returns by its peak, where the uncompounded drawdown here
         (and in Riskfolio-Lib and skfolio) takes the absolute decline.
         - The Sterling Ratio of `toolkit.performance` averages the depths of the 3 deepest episodes only (Bacon's
-        Average Largest Drawdown); with at least as many as there are episodes it is method="episode".
+        Average Largest Drawdown); with at least as many as there are episodes it is the episode average.
 
         As an example:
 

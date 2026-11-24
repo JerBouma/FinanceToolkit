@@ -51,11 +51,11 @@ def get_par_to_zero_jacobian(
     bump: float = BASIS_POINT,
 ) -> pd.DataFrame:
     """
-    The Jacobian of the bootstrapped zero-coupon curve with respect to the par yields it is
-    bootstrapped from: how much the zero rate of every node of the curve moves per unit move
-    of each par yield, the others held fixed.
+    Calculate the Jacobian of the bootstrapped zero-coupon curve with respect to the par
+    yields it is bootstrapped from: how much the zero rate of every node of the curve moves
+    per unit move of each par yield, the others held fixed.
 
-    The zero curve is the one `curve_model.bootstrap_zero_rates` builds with `return_grid=True`:
+    The zero curve is the one `curve_model.bootstrap_zero_rates` builds on its full grid:
     the bills (maturities up to a year) keep their own zero rate and every coupon date beyond
     them gets the rate on which a bond paying the par yield interpolated linearly to that date
     prices at par. Its nodes depend on the maturities only, so every bumped curve has the same
@@ -78,8 +78,9 @@ def get_par_to_zero_jacobian(
             beyond a year, the bills in `bill_convention`) by maturity in years.
         frequency (int, optional): The coupons per year of the par bonds. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields are quoted, see
-            `curve_model.bill_yields_to_annual`: "bond-equivalent" (the US Treasury),
-            "act/365", "act/360" or None. Defaults to None.
+            `curve_model.bill_yields_to_annual`. Options are: "bond-equivalent" (the US
+            Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
+            `frequency` times a year). Defaults to None.
         bump (float, optional): The move of each par yield up and down (decimal). Defaults to
             0.0001 (1 basis point).
 
@@ -122,11 +123,13 @@ def get_par_rate_delta(
     bump: float = BASIS_POINT,
 ) -> pd.Series:
     """
-    The bucketed par-rate delta of a set of cash flows: the change in their present value when
-    one par yield of the curve rises by a basis point and the zero curve is bootstrapped again,
-    for every par yield. These are the sensitivities to the instruments a trader hedges with
-    (a 2-year note, a 10-year note), where `bond_model.get_key_rate_duration` bumps a zero rate
-    with a tent around it.
+    Calculate the bucketed par-rate delta of a set of cash flows: the change in their
+    present value when one par yield of the curve rises by a basis point and the zero curve
+    is bootstrapped again, for every par yield.
+
+    These are the sensitivities to the instruments a trader hedges with (a 2-year note, a
+    10-year note), where `bond_model.get_key_rate_duration` bumps a zero rate with a tent
+    around it.
 
     The delta follows from the chain rule through the par-to-zero Jacobian of the bootstrap
     rather than from a full rebuild per par yield:
@@ -148,9 +151,11 @@ def get_par_rate_delta(
     curve.
 
     For more information, see Darbyshire (2022), Pricing and Trading Interest Rate Derivatives,
-    3rd edition, chapters 7 and 8. Shares similar logic as rateslib's `Solver.delta`
-    (https://rateslib.com) and FinancePy's `par_rate_risk_report`
-    (https://github.com/domokane/FinancePy).
+    3rd edition, chapters 7 and 8.
+
+    Shares similar logic:
+    - rateslib, Solver.delta: https://rateslib.com/py/en/3.0.x/api/rateslib.solver.Solver.html#rateslib.solver.Solver.delta
+    - FinancePy, par_rate_risk_report: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L25
 
     Args:
         cash_flows (pd.Series): The cash flow amounts by payment time in years.
@@ -158,7 +163,9 @@ def get_par_rate_delta(
             `get_par_to_zero_jacobian`.
         frequency (int, optional): The coupons per year of the par bonds. Defaults to 2.
         bill_convention (str | None, optional): How the bill yields are quoted, see
-            `get_par_to_zero_jacobian`. Defaults to None.
+            `curve_model.bill_yields_to_annual`. Options are: "bond-equivalent" (the US
+            Treasury), "act/365" (Canada), "act/360" (Sweden), None (yields compounded
+            `frequency` times a year). Defaults to None.
         bump (float, optional): The move of each par yield for the Jacobian (decimal).
             Defaults to 0.0001 (1 basis point).
 
@@ -206,11 +213,13 @@ def get_forward_rate_delta(
     bump: float = BASIS_POINT,
 ) -> pd.Series:
     """
-    The bucketed forward-rate delta of a set of cash flows: the change in their present value
-    when the instantaneous forward rate over one bucket of maturities rises by a basis point,
-    for every bucket. Unlike a zero-rate bump, a forward bump also moves every discount factor
-    beyond the bucket by the same factor, so the deltas show where along the curve the forward
-    rates the cash flows depend on lie.
+    Calculate the bucketed forward-rate delta of a set of cash flows: the change in their
+    present value when the instantaneous forward rate over one bucket of maturities rises by
+    a basis point, for every bucket.
+
+    Unlike a zero-rate bump, a forward bump also moves every discount factor beyond the
+    bucket by the same factor, so the deltas show where along the curve the forward rates
+    the cash flows depend on lie.
 
     The instantaneous forward rate is continuously compounded, so raising it by h over the
     bucket (a, b] multiplies the discount factor of a payment at t by exp(-h * overlap), the
@@ -225,8 +234,10 @@ def get_forward_rate_delta(
     value change for a parallel shift of the continuously compounded zero rates.
 
     For more information, see Andersen and Piterbarg (2010), Interest Rate Modeling, volume 3,
-    chapter 26. Shares similar logic as FinancePy's `forward_rate_risk_report`
-    (https://github.com/domokane/FinancePy).
+    chapter 26.
+
+    Shares similar logic:
+    - FinancePy, forward_rate_risk_report: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L84
 
     Args:
         cash_flows (pd.Series): The cash flow amounts by payment time in years.
@@ -277,10 +288,12 @@ def get_parallel_shift_ladder(
     bump: float = BASIS_POINT,
 ) -> pd.DataFrame:
     """
-    The parallel shift ladder of a set of cash flows: their present value and profit or loss
-    when the whole zero-coupon curve shifts by each of a range of amounts, with the delta and
-    gamma at every shift. Where duration and convexity extrapolate from today's curve, the
-    ladder reprices at every shift, so it shows how far the second-order estimate holds.
+    Calculate the parallel shift ladder of a set of cash flows: their present value and
+    profit or loss when the whole zero-coupon curve shifts by each of a range of amounts,
+    with the delta and gamma at every shift.
+
+    Where duration and convexity extrapolate from today's curve, the ladder reprices at
+    every shift, so it shows how far the second-order estimate holds.
 
     The formula is as follows:
 
@@ -298,8 +311,10 @@ def get_parallel_shift_ladder(
     annual-pay bond at that yield.
 
     For more information, see Tuckman and Serrat (2022), Fixed Income Securities, 4th edition,
-    chapters 4 to 6. Shares similar logic as FinancePy's `parallel_shift_ladder_report`
-    (https://github.com/domokane/FinancePy).
+    chapters 4 to 6.
+
+    Shares similar logic:
+    - FinancePy, parallel_shift_ladder_report: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/market/curves/ibor_curve_risk_engine.py#L291
 
     Args:
         cash_flows (pd.Series): The cash flow amounts by payment time in years.

@@ -50,13 +50,14 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Tail Ratio of an investment portfolio or asset's returns.
+        Calculate the Tail Ratio: how large the best returns of an investment portfolio or asset are
+        compared with its worst returns.
 
         The Tail Ratio compares the size of the right (gain) tail to the left (loss) tail of the
         return distribution. A Tail Ratio above 1 indicates that best-case gains outsize worst-case
         losses.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows:
 
         - Tail Ratio = |Quantile(Returns, 1 - alpha)| / |Quantile(Returns, alpha)|
 
@@ -64,9 +65,13 @@ class DistributionRisk:
 
         Also known as: gain-to-pain tail ratio.
 
+        Shares similar logic:
+        - empyrical, tail_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1501
+        - quantstats, tail_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2192
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The percentile used to define each tail (e.g., 0.05 uses the 5th and
             95th percentile). Defaults to 0.05.
             within_period (bool, optional): Whether to calculate the Tail Ratio within the specified period or
@@ -96,7 +101,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates the Tail
         Ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of Tail Ratio values using the specified `lag`.
+        - With growth, the method calculates the growth of Tail Ratio values using the specified `lag`.
 
         As an example:
 
@@ -181,7 +186,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Skewness of an investment portfolio or asset's returns.
+        Calculate the Skewness: how asymmetric the returns of an investment portfolio or asset are,
+        negative when the large deviations from the mean are losses.
 
         Skewness is a statistical measure used in finance to assess the asymmetry in the distribution of
         returns for an investment portfolio or asset over a defined period. It offers valuable insights
@@ -195,14 +201,17 @@ class DistributionRisk:
 
         - Skewness = n / ((n - 1) * (n - 2)) * Σ ((Return - Mean) / Std)^3
 
-        Where n is the number of returns and Std the sample standard deviation (ddof=1), which is the
-        bias-adjusted sample skewness (G1) of pandas and Excel's SKEW.
+        Where n is the number of returns and Std the sample standard deviation (with n - 1 in the
+        denominator), which is the bias-adjusted sample skewness (G1) of pandas and Excel's SKEW.
 
         Also known as: return distribution asymmetry, tail skew.
 
+        Shares similar logic:
+        - scipy, skew: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skew.html
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Skewness within the specified period or for the
             entire period. Thus whether to look at the Skewness within a specific year (if period = 'yearly') or look
             at the entirety of all years. Defaults to False.
@@ -230,7 +239,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates Skew for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of Skewness values using the specified `lag`.
+        - With growth, the method calculates the growth of Skewness values using the specified `lag`.
         - Returns that do not vary (a constant price, such as a suspended stock) have no Skewness and give NaN.
 
         As an example:
@@ -316,7 +325,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Kurtosis of an investment portfolio or asset's returns.
+        Calculate the Kurtosis: how heavy the tails of the returns of an investment portfolio or asset
+        are, how likely extreme returns are compared with a normal distribution.
 
         Kurtosis is a statistical measure used in finance to evaluate the shape of the probability
         distribution of returns for an investment portfolio or asset over a defined time period.
@@ -329,27 +339,30 @@ class DistributionRisk:
         tool for comprehending the distribution characteristics of returns, offering insights
         into the potential for rare but significant events in the financial markets.
 
-        By default this is Pearson's kurtosis, which is 3 for a normal distribution; with `fisher=True`
-        it is the excess kurtosis, which is 0. Daily stock returns typically show an excess kurtosis of
+        By default this is Pearson's kurtosis, which is 3 for a normal distribution; Fisher's
+        definition gives the excess kurtosis, which is 0. Daily stock returns typically show an excess kurtosis of
         several points, and within a single year one exceptional day (an earnings shock, a market-wide
         gap) can push it above 10, so a high value often reflects one event rather than a persistently
         fat-tailed distribution.
 
-        The formula is as follows (with the default fisher=False):
+        The formula is as follows:
 
         - Kurtosis = Excess Kurtosis + 3
         - Excess Kurtosis = n(n + 1) / ((n - 1)(n - 2)(n - 3)) * Σ z^4 - 3(n - 1)^2 / ((n - 2)(n - 3))
         - z = (Return - Mean) / Std
 
-        Where n is the number of returns and Std the sample standard deviation (ddof=1), which is the
-        bias-adjusted sample excess kurtosis (G2) of pandas and Excel's KURT. With fisher=True the Excess
-        Kurtosis is returned.
+        Where n is the number of returns and Std the sample standard deviation (with n - 1 in the
+        denominator), which is the bias-adjusted sample excess kurtosis (G2) of pandas and Excel's KURT.
+        Fisher's definition returns the Excess Kurtosis.
 
         Also known as: tail heaviness, fat tails, leptokurtosis.
 
+        Shares similar logic:
+        - scipy, kurtosis: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kurtosis.html
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Kurtosis within the specified period or for the
             entire period. Thus whether to look at the Kurtosis within a specific year (if period = 'yearly') or look
             at the entirety of all years. Defaults to False.
@@ -379,7 +392,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves historical return data based on the specified `period` and calculates Kurtosis for each
         asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of Kurtosis values using the specified `lag`.
+        - With growth, the method calculates the growth of Kurtosis values using the specified `lag`.
         - Returns that do not vary (a constant price, such as a suspended stock) have no Kurtosis and give NaN.
 
         As an example:
@@ -462,7 +475,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Hill Estimator of the tail index of returns, per asset.
+        Calculate the Hill Estimator of the tail index of returns: how heavy the tail of each asset's
+        return distribution is, smaller for a heavier tail.
 
         Unlike the (finite-sample) Skewness and Kurtosis above, the Hill Estimator is
         a semi-parametric estimate of how heavy the tail of the return distribution
@@ -478,14 +492,14 @@ class DistributionRisk:
         stable, since a small `k` is noisy and a large `k` pulls in the center of the
         distribution.
 
-        The formula is as follows (with the default tail="left" and k=0.1):
+        The formula is as follows:
 
         - Hill Shape (xi) = (1 / k) * Σ (ln X_(i) - ln X_(k+1)) for i = 1, ..., k
         - Hill Tail Index = 1 / xi
         - Standard Error = Hill Tail Index / √k
 
         Where X_(1) >= X_(2) >= ... are the strictly positive losses (the negated returns, or the returns
-        themselves for tail="right") sorted from large to small, and k is the number of order statistics used:
+        themselves for the right tail) sorted from large to small, and k is the number of order statistics used:
         int(0.1 * the number of positive losses) by default, or `k` itself when it is an integer.
 
         For more information about the method, see the following paper:
@@ -496,8 +510,8 @@ class DistributionRisk:
         Also known as: Hill tail index estimator, Hill's estimator.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the estimator within the specified period
             or for the entire period. Defaults to False.
             Note that this requires intraday data when period = 'daily', since a
@@ -505,7 +519,7 @@ class DistributionRisk:
             k (int | float, optional): The number of upper order statistics to use. If a float in (0, 1)
             it is interpreted as the fraction of the strictly positive observations to use. A period
             without such observations reports NaN with 0 observations used. Defaults to 0.1 (the top 10%).
-            tail (str, optional): Which tail to estimate, one of "left" (the loss tail) or "right" (the
+            tail (str, optional): Which tail to estimate. Options are: "left" (the loss tail), "right" (the
             gain tail). Defaults to "left".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
@@ -580,8 +594,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Variance of an investment portfolio or asset's returns for a
-        given period based on the daily historical returns.
+        Calculate the Variance: how widely the daily returns of an investment portfolio or asset spread
+        around their mean in each period.
 
         Variance measures the spread or dispersion of returns around the mean. A higher
         Variance indicates more variability in the returns, while a lower Variance suggests
@@ -591,17 +605,18 @@ class DistributionRisk:
 
         - Variance = Var(Daily Returns within the period) * Trading Days per Period
 
-        Where Var is the sample variance (ddof=1) and the trading days per period are 252 / 52 (weekly),
-        252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). A ticker with returns on weekends, such as a
-        cryptocurrency, has a return on every calendar day and uses 365 days a year instead (365 / 52 weekly).
-        With `rolling`, the result is the sample variance of the last `rolling` returns of the chosen period
-        itself, without scaling.
+        Where Var is the sample variance (with n - 1 in the denominator) and the trading days per period are 252 / 52
+        (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). A ticker with returns on weekends, such as
+        a cryptocurrency, has a return on every calendar day and uses 365 days a year instead (365 / 52 weekly). With
+        `rolling`, the result is the sample variance of the last `rolling` returns of the chosen period itself,
+        without scaling.
 
         Also known as: dispersion, spread.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
-                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise
+                "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set,
             Variance is calculated over a rolling window of this many periods (e.g. period='monthly'
             and rolling=6 gives the rolling 6-month Variance) instead of one value per `period`.
@@ -624,7 +639,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves the daily historical return data and calculates the Variance for
         the specified `period` for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of Variance values using the specified `lag`.
+        - With growth, the method calculates the growth of Variance values using the specified `lag`.
 
         As an example:
 
@@ -689,8 +704,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Mean Absolute Deviation (MAD) of an investment portfolio or asset's
-        returns for a given period based on the daily historical returns.
+        Calculate the Mean Absolute Deviation (MAD): how far the daily returns of an investment
+        portfolio or asset lie from their mean on average in each period.
 
         MAD measures the average absolute distance of each return from the mean return. Unlike
         Variance and Volatility, it does not square the deviations, making it less sensitive to
@@ -703,8 +718,9 @@ class DistributionRisk:
         Where the returns are the n daily returns within each period, without scaling to the period length.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
-                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise
+                "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MAD values over time. Defaults to False.
@@ -723,7 +739,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves the daily historical return data and calculates the MAD for
         the specified `period` for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of MAD values using the specified `lag`.
+        - With growth, the method calculates the growth of MAD values using the specified `lag`.
 
         As an example:
 
@@ -789,8 +805,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Coefficient of Variation (CV) of an investment portfolio or asset's
-        returns for a given period based on the daily historical returns.
+        Calculate the Coefficient of Variation (CV): how large the spread of the daily returns of an
+        investment portfolio or asset is relative to their mean in each period.
 
         The Coefficient of Variation is the ratio of the standard deviation to the mean of
         returns, which normalizes dispersion relative to the average return. This makes it
@@ -807,13 +823,14 @@ class DistributionRisk:
         - Coefficient of Variation = Std(Daily Returns) / Mean(Daily Returns)
 
         Where both are taken over the daily returns within each period, with Std the sample standard deviation
-        (ddof=1), without scaling to the period length.
+        (with n - 1 in the denominator), without scaling to the period length.
 
         Also known as: relative standard deviation.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
-                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise
+                "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the CV values over time. Defaults to False.
@@ -832,7 +849,7 @@ class DistributionRisk:
         Notes:
         - The method retrieves the daily historical return data and calculates the CV for
         the specified `period` for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of CV values using the specified `lag`.
+        - With growth, the method calculates the growth of CV values using the specified `lag`.
 
         As an example:
 
@@ -919,8 +936,8 @@ class DistributionRisk:
         - Largest Since(t) = max(s < t : Return(s) <= Return(t)) if Return(t) < 0
         - Largest Since(t) = max(s < t : Return(s) >= Return(t)) if Return(t) > 0
 
-        The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated linearly as
-        in `get_value_at_risk`.
+        The volatility σ has n - 1 in the denominator and the quantile is the historic Value at Risk, interpolated
+        linearly as in `get_value_at_risk`.
 
         Each measure only uses the returns before the period itself, so a move is never part of
         the volatility or the history it is measured against (no look-ahead). Largest Since
@@ -931,8 +948,8 @@ class DistributionRisk:
         since, VaR exceedance, VaR breach ratio.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly,
-                quarterly, or yearly). Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             window (int | None, optional): The number of earlier returns the volatility is
                 measured over, which the percentile also needs at least. Defaults to None, which
                 uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
@@ -1049,8 +1066,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Autocorrelation Function (ACF) of each asset's daily returns for a
-        range of lags.
+        Calculate the Autocorrelation Function (ACF) of each asset's daily returns: how strongly a
+        return is related to the returns before it, for a range of lags.
 
         The ACF measures the correlation between a return series and a lagged version of
         itself. A significant ACF at a given lag indicates that returns are not fully
@@ -1065,6 +1082,9 @@ class DistributionRisk:
         Where r_t are the n daily returns (missing values dropped), the numerator runs over t = 1, ..., n - k,
         the denominator over all n returns, and k = 1, ..., `lags` (10 by default). A lag of n or more has
         no pairs of returns and is NaN.
+
+        Referenced against:
+        - statsmodels, acf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.acf.html
 
         Args:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
@@ -1137,8 +1157,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Hurst Exponent of each asset, a measure of long-term memory that
-        indicates whether the price is mean-reverting, trending, or a random walk.
+        Calculate the Hurst Exponent of each asset: its long-term memory, which shows whether the price
+        is mean-reverting, trending, or a random walk.
 
         The Hurst Exponent (H) is interpreted as follows:
 
@@ -1151,12 +1171,12 @@ class DistributionRisk:
         few years is within estimation noise rather than evidence of a tradable pattern, so the
         exponent is mostly of use to compare assets or periods (with `rolling`) with each other.
 
-        The methods are as follows (with the defaults):
+        The methods are as follows:
 
         - Generalized (Di Matteo, Aste and Dacorogna, 2005), on the log prices X = ln P:
           K_q(tau) = Mean(abs(d - Mean(d))^q) of the differences d = X_(t+tau) - X_t, and
           ln K_q(tau) = c + q * H(q) * ln tau, fitted by least squares over tau = 2, ..., 20.
-          With q = 2 this is the slope of the log standard deviation (ddof=0) of the lagged
+          With q = 2 this is the slope of the log standard deviation (with n in the denominator) of the lagged
           differences on the log lag. A list of q gives H(q) per q: for fat-tailed returns H(1)
           above H(2) points to multifractality.
         - Rescaled range (Hurst, 1951; Anis and Lloyd, 1976; Peters, 1994), on the log returns
@@ -1165,7 +1185,7 @@ class DistributionRisk:
           its average over the floor(N / n) windows, and H = 0.5 + slope of
           ln (R/S)(n) - ln E[R/S](n) on ln n, with E[R/S](n) = ((n - 0.5) / n) *
           Gamma((n - 1) / 2) / (Sqrt(pi) * Gamma(n / 2)) * Sum(Sqrt((n - i) / i), i = 1, ..., n - 1)
-          the expected rescaled range of independent returns. With corrected=False, H is the
+          the expected rescaled range of independent returns. Without the correction, H is the
           slope of ln (R/S)(n) on ln n.
         - Detrended fluctuation (Peng et al., 1994), on the log returns x: the profile
           Y_k = Sum(x_i - Mean(x)) is cut into windows of n, a straight line (a polynomial of
@@ -1188,19 +1208,26 @@ class DistributionRisk:
         - Peters, E.E. (1994). "Fractal Market Analysis." Wiley.
         - Peng, C.-K., Buldyrev, S.V., Havlin, S., Simons, M., Stanley, H.E. & Goldberger, A.L.
           (1994). "Mosaic organization of DNA nucleotides." Physical Review E, 49(2), 1685-1689.
-        - Referenced against nolds' mfhurst_dm, hurst_rs and dfa (https://github.com/CSchoel/nolds)
-          and antropy's detrended_fluctuation (https://github.com/raphaelvallat/antropy).
 
         Also known as: generalized Hurst exponent, GHE, R/S analysis, rescaled range, DFA,
         detrended fluctuation analysis, multifractal Hurst exponent.
 
+        Referenced against:
+        - nolds, hurst_rs (rescaled range): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1203
+        - nolds, dfa (detrended fluctuation): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1997
+
+        Shares similar logic:
+        - nolds, mfhurst_dm (generalized): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1695
+        - antropy, detrended_fluctuation (detrended fluctuation): https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L369
+
         Args:
             max_lag (int, optional): The maximum lag of the generalized method, included: the
                 regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
-            method (str, optional): "generalized", "rescaled_range" or "detrended_fluctuation".
-                Defaults to "generalized".
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
-                or yearly). Defaults to None, which uses "daily".
+            method (str, optional): The estimation method. Options are: "generalized" (generalized Hurst
+                exponent), "rescaled_range" (rescaled range), "detrended_fluctuation" (detrended fluctuation
+                analysis). Defaults to "generalized".
+            period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to None, which uses "daily".
             rolling (int | None, optional): The number of periods of a rolling window. Defaults to
                 None, which calculates one value over the full history of every asset.
             q (float | list[float], optional): The order of the moment of the generalized method,
@@ -1227,10 +1254,10 @@ class DistributionRisk:
         - The generalized method works on the log prices: their lagged differences are log returns
           over the lag, whose dispersion does not depend on the price level. The rescaled range
           and the detrended fluctuation work on the log returns, the differences of the log prices.
-        - The rescaled range equals nolds' hurst_rs with unbiased=False and fit="poly" and the
-          detrended fluctuation nolds' dfa with overlap=False and fit_exp="poly", for the same
-          window sizes. nolds' mfhurst_dm samples the differences without overlap, detrends the
-          series and averages over the largest lags 5 to 19, so it differs by about 0.01 to 0.03.
+        - The rescaled range equals nolds' hurst_rs without its unbiased standard deviation and with a polynomial fit,
+          and the detrended fluctuation nolds' dfa without overlapping windows and with a polynomial fit, for the same
+          window sizes. nolds' mfhurst_dm samples the differences without overlap, detrends the series and averages
+          over the largest lags 5 to 19, so it differs by about 0.01 to 0.03.
 
         As an example:
 
@@ -1361,15 +1388,19 @@ class DistributionRisk:
         - Petrosian, A. (1995). "Kolmogorov complexity of finite sequences and recognition of
           different preictal EEG patterns." Proceedings of the Eighth IEEE Symposium on
           Computer-Based Medical Systems, 212-217.
-        - Referenced against antropy's higuchi_fd, katz_fd and petrosian_fd
-          (https://github.com/raphaelvallat/antropy).
 
         Also known as: HFD, KFD, PFD, Higuchi fractal dimension, fractal roughness.
 
+        Referenced against:
+        - antropy, higuchi_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L232
+        - antropy, katz_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L104
+        - antropy, petrosian_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L14
+
         Args:
-            method (str, optional): "higuchi", "katz" or "petrosian". Defaults to "higuchi".
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
-                or yearly). Defaults to None, which uses "daily".
+            method (str, optional): The fractal dimension. Options are: "higuchi" (Higuchi), "katz" (Katz),
+                "petrosian" (Petrosian). Defaults to "higuchi".
+            period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to None, which uses "daily".
             rolling (int | None, optional): The number of periods of a rolling window. Defaults to
                 None, which calculates one value over the full history of every asset.
             kmax (int, optional): The largest step k of the Higuchi dimension. Defaults to 10.
@@ -1440,9 +1471,9 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Correlation Dimension of each asset's log returns by the
-        Grassberger-Procaccia algorithm: the dimension of the set that stretches of
-        `embedding` consecutive returns fill.
+        Calculate the Correlation Dimension of each asset's log returns by the Grassberger-Procaccia
+        algorithm: the dimension of the set that stretches of consecutive returns fill, low for a
+        deterministic process.
 
         A deterministic, chaotic process fills a set of a low dimension however many returns a
         stretch holds; for noise the dimension grows with the embedding dimension (close to it
@@ -1464,18 +1495,20 @@ class DistributionRisk:
 
         - Grassberger, P. & Procaccia, I. (1983). "Characterization of strange attractors."
           Physical Review Letters, 50(5), 346-349.
-        - Referenced against nolds' corr_dim (https://github.com/CSchoel/nolds).
 
         Also known as: D2, Grassberger-Procaccia dimension, correlation integral.
 
+        Shares similar logic:
+        - nolds, corr_dim: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1848
+
         Args:
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
-                or yearly). Defaults to None, which uses "daily".
+            period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to None, which uses "daily".
             embedding (int, optional): The embedding dimension m. Defaults to 10.
             delay (int, optional): The number of periods between the returns of a vector.
                 Defaults to 1.
             radii (list[float] | None, optional): The radii as multiples of the standard deviation
-                (ddof=1) of the returns. Defaults to None, which uses the radii at which C(r) lies
+                (with n - 1 in the denominator) of the returns. Defaults to None, which uses the radii at which C(r) lies
                 between 0.0001 and 0.01.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -1490,7 +1523,7 @@ class DistributionRisk:
         Notes:
         - Every pair of vectors is compared, so the time grows with the square of the number of
           returns: about 0.6 seconds for ten years of daily returns.
-        - With radii=, it equals a direct count of the pairs closer than every radius. nolds'
+        - With the radii given, it equals a direct count of the pairs closer than every radius. nolds'
           corr_dim also counts every vector as a pair with itself, which pulls its slope towards
           0 where few pairs are close (0 for ten daily returns at its default radii of 0.1 to 0.5
           standard deviations, at which there are hardly any pairs).
@@ -1546,8 +1579,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Lyapunov Exponent of each asset's log returns: the rate, per period, at
-        which nearby paths of the reconstructed dynamics move apart.
+        Calculate the Lyapunov Exponent of each asset's log returns: the rate, per period, at which
+        nearby paths of the reconstructed dynamics move apart, positive for a chaotic process.
 
         A positive largest exponent points to chaos, a sensitive dependence on the starting
         point that makes the series unpredictable beyond a few periods even if it were
@@ -1574,15 +1607,19 @@ class DistributionRisk:
           117-134.
         - Eckmann, J.-P., Kamphorst, S.O., Ruelle, D. & Ciliberto, S. (1986). "Liapunov exponents
           from time series." Physical Review A, 34(6), 4971-4979.
-        - Referenced against nolds' lyap_r and lyap_e (https://github.com/CSchoel/nolds).
 
         Also known as: largest Lyapunov exponent, LLE, Lyapunov spectrum, chaos exponent.
 
+        Referenced against:
+        - nolds, lyap_r (Rosenstein): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L117
+        - nolds, lyap_e (Eckmann): https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L400
+
         Args:
-            method (str, optional): "rosenstein" for the largest exponent or "eckmann" for the
-                spectrum. Defaults to "rosenstein".
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly,
-                or yearly). Defaults to None, which uses "daily".
+            method (str, optional): The algorithm. Options are: "rosenstein" (Rosenstein, Collins and De
+                Luca, the largest exponent), "eckmann" (Eckmann, Kamphorst, Ruelle and Ciliberto, the
+                spectrum). Defaults to "rosenstein".
+            period (str | None, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to None, which uses "daily".
             embedding (int, optional): The embedding dimension; for "eckmann", embedding - 1 must be
                 a multiple of matrix_dimension - 1. Defaults to 10.
             delay (int, optional): The number of periods between the returns of a vector of the
@@ -1613,7 +1650,8 @@ class DistributionRisk:
         - Every vector is compared with every other one, so the time grows with the square of the
           number of returns: about 1 second for the Rosenstein and 2 seconds for the Eckmann
           method on ten years of daily returns.
-        - The Rosenstein method equals nolds' lyap_r with the same lag, min_tsep and fit="poly".
+        - The Rosenstein method equals nolds' lyap_r with the same delay and minimum separation and a
+          polynomial fit.
           The Eckmann method multiplies the maps along each path i, i + m, i + 2m, ..., where
           nolds' lyap_e multiplies the maps of consecutive vectors; with m = 1 both are equal, and
           on the Hénon map (largest exponent 0.42) the paths here give 0.42 for m = 2 and 3, where
@@ -1691,7 +1729,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Lower (or Upper) Partial Moment of an investment portfolio or asset's returns.
+        Calculate the Lower (or Upper) Partial Moment: how often and how far the returns of an
+        investment portfolio or asset fall below (or rise above) a minimum acceptable return.
 
         A partial moment measures only one side of the return distribution: the lower partial moment
         averages the shortfalls below a minimum acceptable return (MAR) raised to a power, the order, and
@@ -1703,17 +1742,17 @@ class DistributionRisk:
         of the variance, and the ratio of an upper to a lower partial moment is the Omega Ratio (order 1)
         and the Upside Potential Ratio's building block.
 
-        The formula is as follows (with the default order=1, side="lower" and minimum_acceptable_return=0):
+        The formula is as follows:
 
         - Lower Partial Moment = Σ max(MAR - Return_t, 0)^order / n
         - Upper Partial Moment = Σ max(Return_t - MAR, 0)^order / n
 
         Where n is the number of all returns, so the returns on the other side of the MAR count as zero
-        rather than being left out. With order=0 the moment counts the returns strictly below (or above)
-        the MAR, as a share of all returns. With root=True the moment is raised to the power 1 / order,
-        which turns order 2 into the Downside Deviation (side="lower") or the Upside Deviation
-        (side="upper"). With minimum_acceptable_return="mean" the MAR is the mean of each sample, which
-        gives the semi-moments around the mean (order 2: the semi-variance with n in the denominator).
+        rather than being left out. Of order 0 the moment counts the returns strictly below (or above)
+        the MAR, as a share of all returns. Raised to the power 1 / order (its root), order 2 becomes the
+        Downside Deviation (the lower side) or the Upside Deviation (the upper side). With the mean of
+        each sample as the MAR it gives the semi-moments around the mean (order 2: the semi-variance with
+        n in the denominator).
 
         For more information, see the following sources:
 
@@ -1723,25 +1762,33 @@ class DistributionRisk:
         The American Economic Review, 67(2), 116-126.
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
         Sons, chapter 4 (Downside Potential, Downside and Upside Frequency, Upside Potential).
-        - Riskfolio-Lib: RiskFunctions.LPM (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.first_lower_partial_moment and measures.fourth_lower_partial_moment
-        (https://skfolio.org/api.html#module-skfolio.measures).
-        - PerformanceAnalytics (R): DownsidePotential, DownsideFrequency, UpsideFrequency, UpsideRisk and
-        lpm (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: LPM, UPM, downside potential, downside frequency, upside frequency, upside potential,
         shortfall probability, semi-moment.
 
+        Referenced against:
+        - Riskfolio-Lib, LPM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.LPM
+        - Riskfolio-Lib, SemiKurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiKurtosis
+        - skfolio, first_lower_partial_moment: https://skfolio.org/generated/skfolio.measures.first_lower_partial_moment.html
+        - skfolio, fourth_lower_partial_moment: https://skfolio.org/generated/skfolio.measures.fourth_lower_partial_moment.html
+
+        Shares similar logic:
+        - PerformanceAnalytics (R), DownsideFrequency: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideFrequency.R#L35
+        - PerformanceAnalytics (R), UpsideFrequency: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpsideFrequency.R#L35
+        - PerformanceAnalytics (R), UpsideRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpsideRisk.R#L54
+        - PerformanceAnalytics (R), DownsidePotential: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideDeviation.R#L166
+        - PerformanceAnalytics (R), lpm: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/lpm.R#L23
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             order (float, optional): The order of the moment, 0 or higher: 0 for the frequency, 1 for the
             potential, 2 for the variance and higher orders for the extremes. Defaults to 1.
             minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) per
             observation of the chosen `period` (e.g. per day), or "mean" for the mean of each sample.
             Defaults to 0.0.
-            side (str, optional): "lower" for the returns below the MAR, "upper" for those above it.
-            Defaults to "lower".
+            side (str, optional): The side of the MAR. Options are: "lower" (the returns below the MAR),
+            "upper" (the returns above it). Defaults to "lower".
             root (bool, optional): Whether to raise the moment to the power 1 / order, which needs an
             order above 0. Defaults to False.
             within_period (bool, optional): Whether to calculate the Partial Moment within the specified period or
@@ -1772,16 +1819,16 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Partial Moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Partial Moment values using the
+        - With growth, the method calculates the growth of the Partial Moment values using the
         specified `lag`.
         - The lower partial moment of order 1 agrees with PerformanceAnalytics' DownsidePotential and
-        Riskfolio-Lib's LPM(p=1), order 0 equals DownsideFrequency (UpsideFrequency with side="upper") and
-        side="upper" with order 1 and 2 equals UpsideRisk(stat="potential") and UpsideRisk(stat="variance").
-        - With minimum_acceptable_return="mean" order 1 and 4 agree with skfolio's first_lower_partial_moment
-        and fourth_lower_partial_moment. Riskfolio-Lib's LPM(p=2) divides by n - 1 instead of n and
+        Riskfolio-Lib's LPM of order 1, order 0 equals DownsideFrequency (UpsideFrequency on the upper side)
+        and the upper side of order 1 and 2 equals the potential and the variance of UpsideRisk.
+        - With the mean as the MAR, order 1 and 4 agree with skfolio's first_lower_partial_moment and
+        fourth_lower_partial_moment. Riskfolio-Lib's LPM of order 2 divides by n - 1 instead of n and
         takes the root, and PerformanceAnalytics' lpm divides by the number of returns below the
-        threshold. Riskfolio-Lib's SemiKurtosis is the square of order 4 with root=True and
-        minimum_acceptable_return="mean", and EvenSemiMoment(p) the (order 2p) moment to the power 1 / p.
+        threshold. Riskfolio-Lib's SemiKurtosis is the square of the root of order 4 around the mean, and
+        its EvenSemiMoment of p the (order 2p) moment to the power 1 / p.
 
         As an example:
 
@@ -1844,7 +1891,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate a Central Moment of an investment portfolio or asset's returns.
+        Calculate a Central Moment: the average deviation of the returns of an investment portfolio or
+        asset from their mean raised to a power, the spread, asymmetry or tails in the returns' own units.
 
         A central moment is the average deviation from the mean return raised to a power, the order. The
         second central moment is the (population) variance, the third measures the asymmetry of the return
@@ -1854,29 +1902,28 @@ class DistributionRisk:
         they are the building blocks of the moment-based risk measures of portfolio optimization, such as
         the square-root kurtosis.
 
-        The formula is as follows (with the default order=3):
+        The formula is as follows:
 
         - Central Moment = Σ (Return_t - Mean)^order / n
 
         Where Mean is the average return and n the number of returns of the sample (the population moment,
         without a bias adjustment).
 
-        For more information, see the following sources:
-
-        - Cajas, D. (2021). "Riskfolio-Lib Documentation: Risk Functions." (the square-root kurtosis and
-        even moments, https://riskfolio-lib.readthedocs.io/en/latest/risk.html).
-        - skfolio: measures.third_central_moment and measures.fourth_central_moment
-        (https://skfolio.org/api.html#module-skfolio.measures).
-        - Riskfolio-Lib: RiskFunctions.Kurtosis and RiskFunctions.EvenMoment
-        (https://github.com/dcajasn/Riskfolio-Lib).
-        - PerformanceAnalytics (R): centeredmoment (https://github.com/braverock/PerformanceAnalytics).
-
         Also known as: moment about the mean, third central moment, fourth central moment, square-root
         kurtosis (its square root for order 4).
 
+        Referenced against:
+        - skfolio, third_central_moment: https://skfolio.org/generated/skfolio.measures.third_central_moment.html
+        - skfolio, fourth_central_moment: https://skfolio.org/generated/skfolio.measures.fourth_central_moment.html
+        - Riskfolio-Lib, Kurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Kurtosis
+
+        Shares similar logic:
+        - Riskfolio-Lib, EvenMoment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EvenMoment
+        - PerformanceAnalytics (R), centeredmoment: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CoMoments.R#L127
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             order (int, optional): The order of the moment, an integer of 2 or higher. Defaults to 3.
             within_period (bool, optional): Whether to calculate the Central Moment within the specified period or
             for the entire period. Thus whether to look at the Central Moment within a specific year (if period =
@@ -1906,11 +1953,11 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Central Moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Central Moment values using the
+        - With growth, the method calculates the growth of the Central Moment values using the
         specified `lag`.
         - Order 3 and 4 agree with skfolio's third_central_moment and fourth_central_moment and
         PerformanceAnalytics' centeredmoment. Riskfolio-Lib's Kurtosis is the square root of order 4 and
-        its EvenMoment(p) the (order 2p) moment to the power 1 / p.
+        its EvenMoment of p the (order 2p) moment to the power 1 / p.
         - The moments of daily returns are small numbers (order 4 of a stock is about 1e-7), so use the
         rounding parameter to show them.
 
@@ -1969,7 +2016,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Worst Realization of an investment portfolio or asset's returns, the lowest return.
+        Calculate the Worst Realization: the lowest return of an investment portfolio or asset, the loss
+        on the worst day (or week, month) of the sample.
 
         The Worst Realization is the most conservative measure of the risk in the left tail: the loss on
         the worst day (or week, month) of the sample. It is the limit of the Value at Risk and Conditional
@@ -1989,14 +2037,16 @@ class DistributionRisk:
 
         - Young, M.R. (1998). "A Minimax Portfolio Selection Rule with Linear Programming Solution."
         Management Science, 44(5), 673-683.
-        - Riskfolio-Lib: RiskFunctions.WR (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.worst_realization (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: worst return, minimax risk, maximum loss.
 
+        Referenced against:
+        - Riskfolio-Lib, WR: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.WR
+        - skfolio, worst_realization: https://skfolio.org/generated/skfolio.measures.worst_realization.html
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Worst Realization within the specified period or
             for the entire period. Thus whether to look at the Worst Realization within a specific year (if period =
             'yearly') or look at the entirety of all years. Defaults to False.
@@ -2025,7 +2075,7 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Worst Realization for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Worst Realization values using the
+        - With growth, the method calculates the growth of the Worst Realization values using the
         specified `lag`.
         - Riskfolio-Lib's WR and skfolio's worst_realization report the loss as a positive number
         (-min(Return)); the Toolkit keeps the sign of the return.
@@ -2083,7 +2133,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Gini Mean Difference (GMD) of an investment portfolio or asset's returns.
+        Calculate the Gini Mean Difference (GMD): how far apart two returns of an investment portfolio or
+        asset lie on average, a measure of dispersion that does not square the deviations.
 
         The Gini Mean Difference is the average absolute difference between two returns drawn from the
         sample, a measure of dispersion that, unlike the standard deviation, does not square the
@@ -2106,14 +2157,19 @@ class DistributionRisk:
         American Economic Review, 72(1), 178-185.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - Riskfolio-Lib: RiskFunctions.GMD and OwaWeights.owa_gmd (https://github.com/dcajasn/Riskfolio-Lib).
-        - skfolio: measures.gini_mean_difference (https://skfolio.org/api.html#module-skfolio.measures).
 
         Also known as: GMD, Gini's mean difference, mean absolute difference.
 
+        Referenced against:
+        - Riskfolio-Lib, GMD: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.GMD
+        - skfolio, gini_mean_difference: https://skfolio.org/generated/skfolio.measures.gini_mean_difference.html
+
+        Shares similar logic:
+        - Riskfolio-Lib, owa_gmd: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_gmd
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Gini Mean Difference within the specified period or
             for the entire period. Thus whether to look at the Gini Mean Difference within a specific year (if period =
             'yearly') or look at the entirety of all years. Defaults to False.
@@ -2142,7 +2198,7 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Gini Mean Difference for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Gini Mean Difference values using the
+        - With growth, the method calculates the growth of the Gini Mean Difference values using the
         specified `lag`.
         - The result agrees with Riskfolio-Lib's GMD and skfolio's gini_mean_difference.
 
@@ -2201,7 +2257,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Tail Gini of an investment portfolio or asset's returns.
+        Calculate the Tail Gini: the loss in the worst tail of the returns of an investment portfolio or
+        asset, weighing the worst returns within that tail most.
 
         The Tail Gini of Furman, Wang and Zitikis (2017) measures the variability within the loss tail,
         the alpha share of the worst returns. Cajas (2021) writes it as a weighted average of the
@@ -2227,13 +2284,18 @@ class DistributionRisk:
         Shortfall, Capital Allocations, and Heavy-tailed Risks." Journal of Banking & Finance, 83, 70-84.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - Riskfolio-Lib: RiskFunctions.TG and OwaWeights.owa_tg (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: TG, Gini shortfall, tail Gini risk.
 
+        Referenced against:
+        - Riskfolio-Lib, TG: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TG
+
+        Shares similar logic:
+        - Riskfolio-Lib, owa_tg: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_tg
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             alpha (float, optional): The tail probability, between 0.0001 and 1. Defaults to 0.05.
             points (int, optional): The number of tail probabilities the Conditional Value at Risk
             is averaged over. Defaults to 100.
@@ -2265,7 +2327,7 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Tail Gini for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Tail Gini values using the
+        - With growth, the method calculates the growth of the Tail Gini values using the
         specified `lag`.
         - The result agrees with Riskfolio-Lib's TG with the opposite sign: Riskfolio-Lib reports the loss as
         a positive number. Its Conditional Value at Risk is the exact one of Rockafellar and Uryasev
@@ -2332,8 +2394,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate a Range measure of an investment portfolio or asset's returns: the distance between the
-        gain tail and the loss tail of the return distribution.
+        Calculate a Range measure: how far the gain tail of the returns of an investment portfolio or
+        asset lies from its loss tail.
 
         The Range is the distance between the best and the worst return. Cajas (2021) generalizes it to
         the tails: the VaR Range is the distance between the 1 - beta and the alpha quantile, the CVaR
@@ -2344,7 +2406,7 @@ class DistributionRisk:
         differently. The VaR Range at alpha = beta = 0.25 is the interquartile range. The EVaR Range does the
         same with the historic Entropic Value at Risk, the most severe of these tail measures.
 
-        The formula is as follows (with the default alpha=0.05 and beta=alpha):
+        The formula is as follows:
 
         - Range = max(Return) - min(Return)
         - VaR Range = Quantile(Return, 1 - beta) - Quantile(Return, alpha)
@@ -2354,24 +2416,32 @@ class DistributionRisk:
 
         Where the quantiles are interpolated linearly and the CVaR is the average of the returns beyond the
         quantile, as in the historic `get_value_at_risk` and `get_conditional_value_at_risk`, the Tail
-        Gini is that of `get_tail_gini` and the EVaR that of `get_entropic_value_at_risk` with
-        distribution="historic", each measured on the negated returns for the gains. The result is a
+        Gini is that of `get_tail_gini` and the EVaR the historic one of `get_entropic_value_at_risk`,
+        each measured on the negated returns for the gains. The result is a
         positive decimal.
 
         For more information, see the following sources:
 
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - Riskfolio-Lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG, RiskFunctions.TGRG and
-        RiskFunctions.EVRG (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: return range, VaR range, CVaR range, Tail Gini range, EVaR range, tail spread.
 
+        Referenced against:
+        - Riskfolio-Lib, RG (Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.RG
+        - Riskfolio-Lib, TGRG (Tail Gini Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TGRG
+        - Riskfolio-Lib, EVRG (EVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVRG
+
+        Shares similar logic:
+        - Riskfolio-Lib, VRG (VaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.VRG
+        - Riskfolio-Lib, CVRG (CVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CVRG
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
-            measure (str, optional): The range to calculate: "range", "var", "cvar", "tail_gini" or "evar".
-            Defaults to "range".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
+            measure (str, optional): The range to calculate. Options are: "range" (Range), "var" (VaR
+            Range), "cvar" (CVaR Range), "tail_gini" (Tail Gini Range), "evar" (EVaR Range). Defaults to
+            "range".
             alpha (float, optional): The tail probability of the losses, between 0 and 1 (between 0.0001
             and 1 for the Tail Gini). Defaults to 0.05.
             beta (float | None, optional): The tail probability of the gains. Defaults to None, which uses
@@ -2406,7 +2476,7 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Risk Range for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Risk Range values using the
+        - With growth, the method calculates the growth of the Risk Range values using the
         specified `lag`.
         - The Range, the Tail Gini Range and the EVaR Range agree with Riskfolio-Lib's RG, TGRG and EVRG.
         Riskfolio-Lib's VRG and CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
@@ -2477,7 +2547,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate an L-moment, or an L-moment ratio, of an investment portfolio or asset's returns.
+        Calculate an L-moment, or an L-moment ratio: the location, spread, asymmetry or tails of the
+        returns of an investment portfolio or asset, robust to a few extreme returns.
 
         L-moments (Hosking 1990) describe the location, scale and shape of a distribution as the ordinary
         moments do, but as linear combinations of the sorted returns rather than powers of the deviations.
@@ -2488,7 +2559,7 @@ class DistributionRisk:
         fourth to the second, the L-skewness and L-kurtosis, measure the asymmetry and the tails. For a
         normal distribution the L-skewness is 0 and the L-kurtosis 0.1226.
 
-        The formula is as follows (with the default order=2):
+        The formula is as follows:
 
         - L-moment λ_k = Σ_i w_i * Return_(i)
         - w_i = Σ_j (-1)^j * C(k - 1, j) * C(i - 1, k - 1 - j) * C(n - i, j) / (k * C(n, k))
@@ -2505,14 +2576,19 @@ class DistributionRisk:
         105-124.
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - Riskfolio-Lib: RiskFunctions.L_Moment and OwaWeights.owa_l_moment
-        (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: L-moments, L-scale, L-skewness, L-kurtosis, L-CV, linear moments.
 
+        Referenced against:
+        - Riskfolio-Lib, L_Moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment
+        - scipy, lmoment: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lmoment.html
+
+        Shares similar logic:
+        - Riskfolio-Lib, owa_l_moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             order (int, optional): The order k, an integer of 1 or higher (1 is the mean, 2 the L-scale,
             3 with ratio=True the L-skewness and 4 the L-kurtosis). Defaults to 2.
             ratio (bool, optional): Whether to return the L-moment ratio, which needs an order of 2 or
@@ -2545,10 +2621,10 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         L-moment for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
         or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the L-moment values using the
+        - With growth, the method calculates the growth of the L-moment values using the
         specified `lag`.
-        - The L-moments agree with Riskfolio-Lib's L_Moment and scipy's stats.lmoment(standardize=False), the
-        ratios scipy's stats.lmoment with standardize=True.
+        - The L-moments agree with Riskfolio-Lib's L_Moment and scipy's lmoment, and the ratios with the
+        standardized L-moments of scipy's lmoment.
         - A sample needs at least `order` returns, fewer give NaN.
 
         As an example:
@@ -2610,7 +2686,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the L-moment Convex Risk Measure of an investment portfolio or asset's returns.
+        Calculate the L-moment Convex Risk Measure: one risk figure for the spread, skew and tails of the
+        returns of an investment portfolio or asset, robust to outliers.
 
         Cajas (2023) combines the L-moments of order 2 up to `order` into one convex risk measure: a
         weighted sum of the L-scale, minus the L-moment of order 3 (so a negative skew adds risk), plus that
@@ -2620,15 +2697,15 @@ class DistributionRisk:
         It captures the dispersion, the skew and the tails of the returns in one figure that is as robust to
         outliers as the L-moments themselves.
 
-        The formula is as follows (with the default order=4 and method="msd"):
+        The formula is as follows:
 
         - L-moment Convex Risk Measure = Σ_k φ_k * (-1)^k * λ_k for k = 2, ..., order
         - Σ φ_k = 1, 0 <= φ_k <= max_weight and φ_k >= φ_(k+1)
 
-        Where λ_k is the L-moment of order k (`get_l_moment`) and the φ_k follow from `method`: "msd"
-        minimizes the squared differences between the neighbouring weights of the ordered weighted average,
-        "mss" the sum of its squared weights and "crra" sets φ_k in proportion to
-        Π_(i=1..k-1) (risk_aversion + i - 1) / k!, constant relative risk aversion, after which the ordered
+        Where λ_k is the L-moment of order k (`get_l_moment`) and the φ_k follow from the method: the minimum squared
+        differences method minimizes the squared differences between the neighbouring weights of the ordered weighted
+        average, the minimum sum of squares method the sum of its squared weights and the constant relative risk
+        aversion method sets φ_k in proportion to Π_(i=1..k-1) (risk_aversion + i - 1) / k!, after which the ordered
         weights are made non-decreasing. The result is a positive decimal.
 
         For more information, see the following sources:
@@ -2637,19 +2714,24 @@ class DistributionRisk:
         - Hosking, J.R.M. (1990). "L-moments: Analysis and Estimation of Distributions using Linear
         Combinations of Order Statistics." Journal of the Royal Statistical Society: Series B, 52(1),
         105-124.
-        - Riskfolio-Lib: RiskFunctions.L_Moment_CRM and OwaWeights.owa_l_moment_crm
-        (https://github.com/dcajasn/Riskfolio-Lib).
 
         Also known as: L-moment CRM, L-moment based convex risk measure.
 
+        Referenced against:
+        - Riskfolio-Lib, L_Moment_CRM (constant relative risk aversion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment_CRM
+
+        Shares similar logic:
+        - Riskfolio-Lib, owa_l_moment_crm: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#OwaWeights.owa_l_moment_crm
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             order (int, optional): The highest L-moment order, an integer of 2 or higher. Defaults to 4.
-            method (str, optional): How the L-moments are weighted: "msd", "mss" or "crra". Defaults to
-            "msd".
-            risk_aversion (float, optional): The risk aversion of method="crra", between 0 and 1.
-            Defaults to 0.5.
+            method (str, optional): How the L-moments are weighted. Options are: "msd" (minimum squared
+            differences), "mss" (minimum sum of squares), "crra" (constant relative risk aversion).
+            Defaults to "msd".
+            risk_aversion (float, optional): The risk aversion of the constant relative risk aversion
+            method, between 0 and 1. Defaults to 0.5.
             max_weight (float, optional): The largest weight of one L-moment for "msd" and "mss", between
             0 and 1. Defaults to 0.5.
             within_period (bool, optional): Whether to calculate the L-moment Convex Risk Measure within the specified
@@ -2680,16 +2762,18 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         L-moment Convex Risk Measure for each asset in the Toolkit instance, each on its own returns (a ticker that
         listed later or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the L-moment Convex Risk Measure values using
+        - With growth, the method calculates the growth of the L-moment Convex Risk Measure values using
         the specified `lag`.
-        - With method="crra" the result agrees with Riskfolio-Lib's L_Moment_CRM. For "msd" and "mss" the weights
+        - With constant relative risk aversion the result agrees with Riskfolio-Lib's L_Moment_CRM. For the
+        minimum squared differences and minimum sum of squares methods the weights
         solve a small convex program over the order - 1 weights with scipy (SLSQP) where Riskfolio-Lib uses
         cvxpy with the Clarabel solver; the Toolkit's weights meet the constraints exactly and match a
         tightly solved cvxpy program, while Clarabel's default tolerances leave Riskfolio-Lib's weights
-        slightly off, so the results differ in the fourth significant digit for "msd" and the second for
-        "mss". Riskfolio-Lib's maximum entropy method ("ME") is left out: the entropy it maximizes is
+        slightly off, so the results differ in the fourth significant digit for the minimum squared
+        differences and the second for the minimum sum of squares. Riskfolio-Lib's maximum entropy method is
+        left out: the entropy it maximizes is
         that of a bound which is the same for every set of weights, so its result depends on the solver.
-        - With order=3 and max_weight=0.5 no weights meet the constraints, which gives an error.
+        - With an order of 3 and a maximum weight of 0.5 no weights meet the constraints, which gives an error.
 
         As an example:
 
@@ -2751,7 +2835,8 @@ class DistributionRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Skewness-Kurtosis Ratio of an investment portfolio or asset's returns.
+        Calculate the Skewness-Kurtosis Ratio: how lopsided the returns of an investment portfolio or
+        asset are relative to how heavy their tails are, higher being better.
 
         The Skewness-Kurtosis Ratio (Bacon 2008) divides the skewness by the kurtosis, combining the two
         shape statistics an investor in fat-tailed assets cares about into one number: a positive skew is
@@ -2762,21 +2847,23 @@ class DistributionRisk:
 
         - Skewness-Kurtosis Ratio = Skewness / Kurtosis
 
-        Where the Skewness is that of `get_skewness` and the Kurtosis that of `get_kurtosis` with the
-        default fisher=False, Pearson's kurtosis (3 for a normal distribution), both the bias-adjusted
+        Where the Skewness is that of `get_skewness` and the Kurtosis that of `get_kurtosis`, Pearson's
+        kurtosis (3 for a normal distribution), both the bias-adjusted
         sample estimates.
 
         For more information, see the following sources:
 
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
         Sons, chapter 4.
-        - PerformanceAnalytics (R): SkewnessKurtosisRatio (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: skewness to kurtosis ratio.
 
+        Shares similar logic:
+        - PerformanceAnalytics (R), SkewnessKurtosisRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SkewnessKurtosisRatio.R#L31
+
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the Skewness-Kurtosis Ratio within the specified
             period or for the entire period. Thus whether to look at the Skewness-Kurtosis Ratio within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to False.
@@ -2805,7 +2892,7 @@ class DistributionRisk:
         - The method retrieves historical return data based on the specified `period` and calculates the
         Skewness-Kurtosis Ratio for each asset in the Toolkit instance, each on its own returns (a ticker that
         listed later or misses a date another ticker traded is measured on the returns it has).
-        - If `growth` is set to True, the method calculates the growth of the Skewness-Kurtosis Ratio values using
+        - With growth, the method calculates the growth of the Skewness-Kurtosis Ratio values using
         the specified `lag`.
         - PerformanceAnalytics' SkewnessKurtosisRatio divides the population (moment) skewness by the
         population kurtosis; the Toolkit uses its bias-adjusted sample estimates of both, as in

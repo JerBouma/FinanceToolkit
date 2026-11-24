@@ -15,8 +15,10 @@ def get_local_volatility(
     svi_parameters: dict[float, dict[str, float]],
 ) -> pd.DataFrame:
     """
-    Calculate the Dupire (1994) local volatility at every expiry of an SVI volatility surface,
-    from the total implied variance with the formula of Gatheral (2006, eq. 1.10).
+    Calculate the Dupire (1994) local volatility at every expiry of an SVI volatility
+    surface: the volatility of the stock at each price and time that reproduces every option
+    price of the surface, from the total implied variance with the formula of Gatheral
+    (2006, eq. 1.10).
 
     The local volatility σ_loc(K, T) is the volatility, as a function of the price and the
     time, of the only diffusion dS / S = (r - q) dt + σ_loc(S, t) dW that reprices every
@@ -45,8 +47,9 @@ def get_local_volatility(
     "The Volatility Surface: A Practitioner's Guide", Wiley, eq. 1.10; and Gatheral, J., &
     Jacquier, A. (2014), "Arbitrage-free SVI volatility surfaces", Quantitative Finance, 14(1).
 
-    Referenced against QuantLib's LocalVolSurface (https://www.quantlib.org) and FinancePy's
-    volatility_fns.ssvi_local_varg (https://github.com/domokane/FinancePy).
+    Referenced against:
+    - QuantLib, LocalVolSurface: https://www.quantlib.org/reference/class_quant_lib_1_1_local_vol_surface.html
+    - FinancePy, volatility_fns.ssvi_local_varg: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L318
 
     Args:
         log_moneyness (pd.Series | np.ndarray): The log-moneyness ln(K / F_T) at which to

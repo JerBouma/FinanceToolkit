@@ -51,7 +51,11 @@ def get_bond_forward_price(
     c_k the coupons paid d_k days from today. The difference P - Forward Price is the carry
     (the drop): positive when the coupon income exceeds the financing cost.
 
-    Referenced against QuantLib's BondForward and rateslib's FixedRateBond.fwd_from_repo.
+    Referenced against:
+    - QuantLib, BondForward: https://www.quantlib.org/reference/class_quant_lib_1_1_bond_forward.html
+
+    Shares similar logic:
+    - rateslib, FixedRateBond.fwd_from_repo: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FixedRateBond.html#rateslib.instruments.FixedRateBond.fwd_from_repo
 
     Args:
         clean_price (float): The clean price per 100 of par today.
@@ -99,8 +103,9 @@ def get_implied_repo_rate(
     repo rate until the forward date. Without coupons in between it is
     ((F + AI_T) / (P + AI_0) - 1) * 360 / d.
 
-    Referenced against rateslib's FixedRateBond.repo_from_fwd and FinancePy's BondFuture
-    (implied_repo_rate without coupons in between).
+    Shares similar logic:
+    - rateslib, FixedRateBond.repo_from_fwd: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FixedRateBond.html#rateslib.instruments.FixedRateBond.repo_from_fwd
+    - FinancePy, BondFuture.implied_repo_rate: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L288
 
     Args:
         clean_price (float): The clean price per 100 of par today.
@@ -132,13 +137,15 @@ def get_conversion_factor(
     coupon: float, years: int, months: int, maturity_rounding: str = "quarter"
 ) -> float:
     """
-    Calculate the conversion factor of a deliverable into a US Treasury futures contract with
-    CME Group's formula: the price per 1 of par of the deliverable at a yield of 6%,
-    compounded semi-annually, on the first day of the delivery month, with its time to
-    maturity rounded down (CME Group, 2022, "Calculating U.S. Treasury Futures Conversion
-    Factors"; Hull, 2022, ch. 6.2). The invoice the short receives is the futures price times
-    the conversion factor plus the accrued interest, so the factor puts deliverables of
-    different coupons and maturities on one scale.
+    Calculate the conversion factor of a deliverable into a US Treasury futures contract
+    with CME Group's formula: how many futures contracts' worth one deliverable bond is, the
+    price per 1 of par of the deliverable at a yield of 6%, compounded semi-annually, on the
+    first day of the delivery month, with its time to maturity rounded down (CME Group,
+    2022, "Calculating U.S. Treasury Futures Conversion Factors"; Hull, 2022, ch. 6.2).
+
+    The invoice the short receives is the futures price times the conversion factor plus the
+    accrued interest, so the factor puts deliverables of different coupons and maturities on
+    one scale.
 
     The formula is as follows:
 
@@ -156,15 +163,18 @@ def get_conversion_factor(
     years and 2 months has a conversion factor of 1.4623, an 8% coupon with 18 years and 4
     months 1.2199.
 
-    Referenced against FinancePy's BondFuture (conversion_factor) and rateslib's BondFuture
-    (cfs).
+    Referenced against:
+    - rateslib, BondFuture.cfs: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.cfs
+
+    Shares similar logic:
+    - FinancePy, BondFuture.conversion_factor: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L68
 
     Args:
         coupon (float): The annual coupon rate of the deliverable (decimal).
         years (int): The whole years from the first day of the delivery month to maturity.
         months (int): The whole months beyond those years (0 to 11), before rounding.
         maturity_rounding (str, optional): How the time to maturity is rounded down. Options
-            are: "quarter" (whole quarters) or "month" (whole months), see above. Defaults to
+            are: "quarter" (whole quarters), "month" (whole months), see above. Defaults to
             "quarter".
 
     Returns:
@@ -222,8 +232,11 @@ def get_futures_basis(
     the lowest net basis. The net basis is the value of the short's options on what and
     when to deliver, which this leaves out.
 
-    Referenced against FinancePy's BondFuture (gross_basis, net_basis, implied_repo_rate)
-    and rateslib's BondFuture (gross_basis, net_basis, implied_repo).
+    Shares similar logic:
+    - FinancePy, BondFuture.gross_basis: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L209
+    - FinancePy, BondFuture.net_basis: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L237
+    - rateslib, BondFuture.gross_basis: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.gross_basis
+    - rateslib, BondFuture.net_basis: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.net_basis
 
     Args:
         clean_price (float): The clean price of the deliverable per 100 of par.

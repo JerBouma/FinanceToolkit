@@ -237,10 +237,12 @@ def refused_value_problem(
         value = arguments.get(refusal["parameter"])
         # A list (such as the models of a comparison) is refused when one of its values is.
         values = value if isinstance(value, list | tuple) else [value]
+        # A switch (american_option=true) is refused by its value written in lower case.
         refused = [
-            item
+            item if isinstance(item, str) else str(item).lower()
             for item in values
-            if isinstance(item, str) and item.strip().lower() in refusal["values"]
+            if isinstance(item, str | bool)
+            and str(item).strip().lower() in refusal["values"]
         ]
         if method_name in refusal["methods"] and refused:
             return (

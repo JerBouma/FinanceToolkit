@@ -408,3 +408,66 @@ def test_inputs_are_validated():
         options_model.get_monte_carlo_option_price(
             *EUROPEAN, variance_reduction="importance"
         )
+
+
+@pytest.mark.parametrize(
+    ("variance_reduction", "sequence"),
+    [
+        (None, "pseudo_random"),
+        ("antithetic", "pseudo_random"),
+        ("control_variate", "pseudo_random"),
+        (None, "sobol"),
+    ],
+)
+@pytest.mark.parametrize("put_option", [False, True])
+def test_all_expirations_from_one_set_of_paths_equal_a_seeded_price_per_expiration(
+    variance_reduction, sequence, put_option
+):
+    """Scaling the same standardised shocks per expiration prices as simulating it with the seed."""
+    strikes = np.array([70.0, 95.0, 100.0, 130.0])
+    times = np.array([0.0, 1 / 365, 0.25, 1.0])
+    inputs = {
+        "stock_price": 100.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.25,
+        "dividend_yield": 0.02,
+        "put_option": put_option,
+        "simulations": 2_000,
+        "time_steps": 20,
+        "seed": 7,
+        "variance_reduction": variance_reduction,
+        "sequence": sequence,
+    }
+
+    prices, errors = options_model.get_monte_carlo_option_prices(
+        strike_prices=strikes, time_to_expiration=times, **inputs
+    )
+
+    assert prices.shape == errors.shape == (len(strikes), len(times))
+    for column, time in enumerate(times):
+        for row, strike in enumerate(strikes):
+            price, error = options_model.get_monte_carlo_option_price(
+                strike_price=float(strike), time_to_expiration=float(time), **inputs
+            )
+            assert prices[row, column] == pytest.approx(price, abs=1e-10)
+            assert errors[row, column] == pytest.approx(error, abs=1e-10)
+
+
+def test_the_standard_error_of_independent_paths_is_that_of_their_payoffs():
+    """The cumulative sums give the sample standard deviation of the payoffs over √n."""
+    rng = np.random.default_rng(1)
+    terminal = 100 * np.exp(rng.normal(0, 0.3, 5_001))
+    strikes = np.array([50.0, 99.5, 100.0, 140.0, 400.0])
+
+    for put_option in (False, True):
+        prices, errors = options_model._plain_monte_carlo_estimates(
+            terminal, strikes, 0.97, put_option
+        )
+        for strike, price, error in zip(strikes, prices, errors, strict=True):
+            payoffs = 0.97 * np.maximum(
+                (strike - terminal) if put_option else (terminal - strike), 0
+            )
+            assert price == pytest.approx(payoffs.mean(), abs=1e-10)
+            assert error == pytest.approx(
+                payoffs.std(ddof=1) / np.sqrt(payoffs.size), abs=1e-10
+            )

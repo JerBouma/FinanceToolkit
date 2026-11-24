@@ -45,7 +45,7 @@ SMALL_DEVIATION = 1e-7
 
 def _validate_volatility(volatility: float) -> None:
     """Raises a ValueError for a volatility that is not positive, which the formulas divide by."""
-    if volatility <= 0:
+    if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
 
@@ -89,15 +89,15 @@ def _expected_term(
     first = (intercept + slope * shifted_mean) / spread
 
     if side is None:
-        return scale * float(ndtr(first))
+        return scale * ndtr(first)
 
     second = side * (shifted_mean - cutoff) / np.sqrt(variance)
 
-    if np.isposinf(intercept):
-        return scale * float(ndtr(second))
+    if np.all(np.isposinf(intercept)):
+        return scale * ndtr(second)
 
-    return scale * float(
-        bivariate_normal_cdf(first, second, side * slope * np.sqrt(variance) / spread)
+    return scale * bivariate_normal_cdf(
+        first, second, side * slope * np.sqrt(variance) / spread
     )
 
 
@@ -110,14 +110,21 @@ def _expected_value(
 ) -> float:
     """
     The expectation of a sum of terms coefficient * e^(aY) * N(α + βY), each a tuple
-    (coefficient, a, α, β), over the region ηY > ηc (see _expected_term).
+    (coefficient, a, α, β), over the region ηY > ηc (see _expected_term). The inputs may be
+    arrays of one shape (a grid of strikes and expirations); a term is left out where its
+    coefficient is zero, where its expectation may not be defined.
     """
-    return sum(
-        coefficient
-        * _expected_term(mean, variance, power, intercept, slope, side, cutoff)
-        for coefficient, power, intercept, slope in terms
-        if coefficient != 0
-    )
+    value = 0.0
+    for coefficient, power, intercept, slope in terms:
+        if not np.any(coefficient != 0):
+            continue
+        term = coefficient * _expected_term(
+            mean, variance, power, intercept, slope, side, cutoff
+        )
+        value = value + (
+            np.where(coefficient != 0, term, 0.0) if np.ndim(coefficient) else term
+        )
+    return value
 
 
 def get_discrete_monitoring_barrier(
@@ -242,9 +249,14 @@ def _validate_asian(
     time_to_expiration: float,
     dividend_yield: float,
     fixings: int | None,
+    arrays: bool = False,
 ) -> None:
-    """Validates the inputs of the Asian option formulas."""
+    """
+    Validates the inputs of the Asian option formulas, which may be arrays for the formulas
+    that price a grid of strikes and expirations at once (arrays=True).
+    """
     validate_numeric_inputs(
+        arrays=arrays,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -262,15 +274,15 @@ def _validate_asian(
 
 
 def get_geometric_asian_option(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    dividend_yield: float = 0.0,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    risk_free_rate: float | np.ndarray,
+    volatility: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    dividend_yield: float | np.ndarray = 0.0,
     put_option: bool = False,
     fixings: int | None = None,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the closed-form price of a geometric-average price Asian option, averaged
     continuously (Kemna & Vorst, 1990) or over n equally spaced fixings.
@@ -287,19 +299,21 @@ def get_geometric_asian_option(
     With b = r - q. The continuous version equals exotics_model.get_asian_option.
 
     Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
-        risk_free_rate (float): The continuously compounded risk-free rate.
-        volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration in years.
-        dividend_yield (float): The continuous dividend yield. Defaults to 0.
+        stock_price (float | np.ndarray): The current stock price.
+        strike_price (float | np.ndarray): The option's strike price.
+        risk_free_rate (float | np.ndarray): The continuously compounded risk-free rate.
+        volatility (float | np.ndarray): The volatility of the stock.
+        time_to_expiration (float | np.ndarray): The time to expiration in years.
+        dividend_yield (float | np.ndarray): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
         fixings (int | None): The number of equally spaced fixings, the first a 1/n-th of
             the life from now and the last at expiration. Defaults to None, which averages
             continuously.
 
     Returns:
-        float: The geometric-average Asian option value.
+        float | np.ndarray: The geometric-average Asian option value, an array in the shape
+        of the inputs when any of them is an array (a grid of strikes and expirations is
+        priced in one call).
 
     Notes:
         Reference: Kemna, A. G. Z., & Vorst, A. C. F. (1990). "A Pricing Method for Options
@@ -313,10 +327,8 @@ def get_geometric_asian_option(
         time_to_expiration,
         dividend_yield,
         fixings,
+        arrays=True,
     )
-    if time_to_expiration <= 0:
-        return max((strike_price - stock_price) * (-1 if not put_option else 1), 0.0)
-
     mean, variance = _geometric_moments(
         stock_price,
         risk_free_rate - dividend_yield,
@@ -325,15 +337,21 @@ def get_geometric_asian_option(
         fixings,
     )
 
-    return float(
-        _lognormal_option(
-            np.exp(mean + 0.5 * variance),
-            variance,
-            strike_price,
-            np.exp(-risk_free_rate * time_to_expiration),
-            put_option,
+    with np.errstate(divide="ignore", invalid="ignore"):
+        value = np.where(
+            np.asarray(time_to_expiration) <= 0,
+            # At expiration the option pays its exercise value.
+            np.maximum((strike_price - stock_price) * (1 if put_option else -1), 0.0),
+            _lognormal_option(
+                np.exp(mean + 0.5 * variance),
+                variance,
+                strike_price,
+                np.exp(-risk_free_rate * time_to_expiration),
+                put_option,
+            ),
         )
-    )
+
+    return value if value.ndim else float(value)
 
 
 def _arithmetic_moments(
@@ -437,23 +455,26 @@ def get_turnbull_wakeman(
         time_to_expiration,
         dividend_yield,
         fixings,
+        arrays=True,
     )
     if time_to_expiration <= 0:
-        return max((strike_price - stock_price) * (1 if put_option else -1), 0.0)
+        payoff = np.maximum(
+            (strike_price - stock_price) * (1 if put_option else -1), 0.0
+        )
+        return float(payoff) if np.ndim(payoff) == 0 else payoff
 
     first, second = _arithmetic_moments(
         risk_free_rate - dividend_yield, volatility, time_to_expiration, fixings
     )
 
-    return float(
-        _lognormal_option(
-            stock_price * first,
-            np.log(second / first**2),
-            strike_price,
-            np.exp(-risk_free_rate * time_to_expiration),
-            put_option,
-        )
+    value = _lognormal_option(
+        stock_price * first,
+        np.log(second / first**2),
+        strike_price,
+        np.exp(-risk_free_rate * time_to_expiration),
+        put_option,
     )
+    return float(value) if np.ndim(value) == 0 else value
 
 
 def _curran_call(
@@ -483,35 +504,39 @@ def _curran_call(
     forward = float(np.sum(weights * expected_prices))
 
     # The geometric average at which the expected arithmetic average equals the strike,
-    # from the conditional means E[S(t_i) | G = K] to first order around G = K.
-    adjusted_strike = 2 * strike_price - np.sum(
+    # from the conditional means E[S(t_i) | G = K] to first order around G = K, with a row
+    # per strike price for a grid of strikes of one expiration.
+    strikes = np.asarray(strike_price, dtype=float)[..., None]
+    adjusted_strike = 2 * strikes[..., 0] - np.sum(
         weights
         * np.exp(
             log_means
-            + covariances / geometric_variance * (np.log(strike_price) - geometric_mean)
+            + covariances / geometric_variance * (np.log(strikes) - geometric_mean)
             + 0.5 * (log_variances - covariances**2 / geometric_variance)
-        )
+        ),
+        axis=-1,
     )
-
     # A non-positive adjusted strike puts the whole distribution above it: the average ends
     # above the strike for (almost) every path and the call is the forward minus the strike.
-    if adjusted_strike <= 0:
-        return (
-            float(discount_factor * (forward - strike_price)),
-            discount_factor * forward,
-        )
-
-    threshold = (geometric_mean - np.log(adjusted_strike)) / geometric_deviation
-    call = discount_factor * (
-        np.sum(
-            weights
-            * expected_prices
-            * ndtr(threshold + covariances / geometric_deviation)
-        )
-        - strike_price * ndtr(threshold)
+    positive = adjusted_strike > 0
+    threshold = (
+        geometric_mean - np.log(np.where(positive, adjusted_strike, 1.0))
+    ) / geometric_deviation
+    call = np.where(
+        positive,
+        discount_factor
+        * (
+            np.sum(
+                weights
+                * expected_prices
+                * ndtr(threshold[..., None] + covariances / geometric_deviation),
+                axis=-1,
+            )
+            - strike_price * ndtr(threshold)
+        ),
+        discount_factor * (forward - strike_price),
     )
-
-    return float(call), discount_factor * forward
+    return (float(call) if np.ndim(call) == 0 else call), discount_factor * forward
 
 
 def get_curran(
@@ -569,9 +594,13 @@ def get_curran(
         time_to_expiration,
         dividend_yield,
         fixings,
+        arrays=True,
     )
     if time_to_expiration <= 0:
-        return max((strike_price - stock_price) * (1 if put_option else -1), 0.0)
+        payoff = np.maximum(
+            (strike_price - stock_price) * (1 if put_option else -1), 0.0
+        )
+        return float(payoff) if np.ndim(payoff) == 0 else payoff
 
     if fixings is None:
         times = 0.5 * time_to_expiration * (_LEGENDRE_NODES + 1)
@@ -611,12 +640,12 @@ def get_curran(
     )
 
     if put_option:
-        return float(
+        put = (
             call
             - discounted_forward
             + strike_price * np.exp(-risk_free_rate * time_to_expiration)
         )
-
+        return float(put) if np.ndim(put) == 0 else put
     return call
 
 
@@ -844,17 +873,16 @@ def _evaluate_terms(
     (or huge), while their product is finite.
     """
     log_price = np.log(stock_price)
-    return float(
-        sum(
-            coefficient
-            * (
-                stock_price**power
-                if np.isposinf(intercept)
-                else np.exp(power * log_price + log_ndtr(intercept + slope * log_price))
-            )
-            for coefficient, power, intercept, slope in terms
+    value = sum(
+        coefficient
+        * np.where(
+            np.isposinf(intercept),
+            stock_price**power,
+            np.exp(power * log_price + log_ndtr(intercept + slope * log_price)),
         )
+        for coefficient, power, intercept, slope in terms
     )
+    return float(value) if np.ndim(value) == 0 else value
 
 
 def _lookback_value(
@@ -877,9 +905,9 @@ def _lookback_value(
         extreme = stock_price
         if fixed:
             extreme = (
-                min(stock_price, strike_price)
+                np.minimum(stock_price, strike_price)
                 if put_option
-                else max(stock_price, strike_price)
+                else np.maximum(stock_price, strike_price)
             )
         # The value is homogeneous of degree one in S, E and K, so it is taken for an extreme
         # of 1 and scaled back: the term in E^(2b/σ²) then needs no power of the extreme,
@@ -927,13 +955,11 @@ def _lookback_value(
             True,
             sign,
         )
-        return float(
-            np.exp(-risk_free_rate * start)
-            * (
-                _expected_value(own_extreme, mean, variance, sign, log_strike)
-                + _expected_value(strike_extreme, mean, variance, -sign, log_strike)
-            )
+        value = np.exp(-risk_free_rate * start) * (
+            _expected_value(own_extreme, mean, variance, sign, log_strike)
+            + _expected_value(strike_extreme, mean, variance, -sign, log_strike)
         )
+        return float(value) if np.ndim(value) == 0 else value
 
     return _partial_floating_lookback(
         stock_price,
@@ -1020,15 +1046,15 @@ def _partial_floating_lookback(
 
 def get_lookback_option(
     stock_price: float,
-    strike_price: float,
+    strike_price: float | np.ndarray,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
     strike_type: str = "fixed",
     lookback_period: float = 1.0,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of a lookback option, of which the payoff depends on the highest or
     lowest stock price over (part of) the option's life, for an option starting today.
@@ -1089,6 +1115,7 @@ def get_lookback_option(
         (1994). "Selective Memory." Risk, 7(11), 73-76.
     """
     validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -1109,7 +1136,30 @@ def get_lookback_option(
 
     fixed = strike_type == "fixed"
 
-    if time_to_expiration <= 0:
+    if np.ndim(strike_price) or np.ndim(time_to_expiration):
+        strike_price, time_to_expiration = np.broadcast_arrays(
+            np.asarray(strike_price, dtype=float),
+            np.asarray(time_to_expiration, dtype=float),
+        )
+        if lookback_period < 1 and not fixed:
+            # The partial-time floating strike integrates per option.
+            return np.vectorize(get_lookback_option, otypes=[float])(
+                stock_price,
+                strike_price,
+                risk_free_rate,
+                volatility,
+                time_to_expiration,
+                dividend_yield,
+                put_option,
+                strike_type,
+                lookback_period,
+            )
+    # The full-life formulas are evaluated on a whole grid at once, with the options at
+    # expiration (worth their payoff) priced a year out and replaced below.
+    expired = np.asarray(time_to_expiration) <= 0
+    if np.ndim(expired):
+        time_to_expiration = np.where(expired, 1.0, time_to_expiration)
+    elif time_to_expiration <= 0:
         if not fixed:
             return 0.0
         return max((strike_price - stock_price) * (1 if put_option else -1), 0.0)
@@ -1138,7 +1188,7 @@ def get_lookback_option(
 
     # The partial-time formulas integrate powers e^(2bx/σ²) over the lognormal price at t1,
     # which overflow once 2|b|/σ² reaches the hundreds (a volatility of about 1% at b = 4%).
-    if not np.isfinite(value):
+    if not np.all(np.isfinite(value)):
         raise ValueError(
             f"The partial-time lookback can not be evaluated at a volatility of {volatility!r}: "
             f"2|r - q| / σ² = {2 * abs(cost_of_carry) / volatility**2:,.0f} overflows its "
@@ -1146,22 +1196,29 @@ def get_lookback_option(
             "takes any volatility."
         )
 
-    return value
+    if np.ndim(expired):
+        payoff = (
+            np.maximum((strike_price - stock_price) * (1 if put_option else -1), 0.0)
+            if fixed
+            else 0.0
+        )
+        return np.where(expired, payoff, value)
+    return float(value)
 
 
 def _double_barrier_integral(
     stock_price: float,
-    strike_price: float,
+    strike_price: float | np.ndarray,
     lower_barrier: float,
     upper_barrier: float,
     cost_of_carry: float,
     volatility: float,
-    time_to_expiration: float,
-    lower_limit: float,
-    upper_limit: float,
+    time_to_expiration: float | np.ndarray,
+    lower_limit: float | np.ndarray,
+    upper_limit: float | np.ndarray,
     stock_weight: float,
     strike_weight: float,
-) -> float:
+) -> float | np.ndarray:
     """
     The undiscounted expectation of (stock_weight * S(T) - strike_weight * K) over the paths
     that stay between the barriers and end between lower_limit and upper_limit, with the
@@ -1173,21 +1230,26 @@ def _double_barrier_integral(
     - p(x) = Σ_n [e^(2nZν / σ²) * f(x - 2nZ) - e^(2ν(l - nZ) / σ²) * f(x - 2l + 2nZ)]
 
     The sum is taken over n = -N, ..., N with N large enough that the next image lies twelve
-    standard deviations of x beyond the corridor.
+    standard deviations of x beyond the corridor at the longest expiration. The strikes,
+    expirations and limits are arrays of one shape, priced at once (or numbers, for one
+    option).
     """
-    if upper_limit <= lower_limit:
-        return 0.0
-
-    deviation = volatility * np.sqrt(time_to_expiration)
+    scalar = np.ndim(time_to_expiration) == 0
+    strike_price, time_to_expiration, lower_limit, upper_limit = (
+        np.atleast_1d(np.asarray(value, dtype=float))
+        for value in (strike_price, time_to_expiration, lower_limit, upper_limit)
+    )
+    deviation = (volatility * np.sqrt(time_to_expiration))[:, None]
     drift = cost_of_carry - 0.5 * volatility**2
     lower = np.log(lower_barrier / stock_price)
     width = np.log(upper_barrier / lower_barrier)
-    low = np.log(lower_limit / stock_price)
-    high = np.log(upper_limit / stock_price)
-    images = int(min(np.ceil(6 * deviation / width) + 2, 1_000))
+    low = np.log(lower_limit / stock_price)[:, None]
+    high = np.log(upper_limit / stock_price)[:, None]
+    images = int(min(np.ceil(6 * np.max(deviation, initial=0.0) / width) + 2, 1_000))
     steps = np.arange(-images, images + 1)
+    time = time_to_expiration[:, None]
 
-    value = 0.0
+    value = np.zeros(time_to_expiration.shape)
     for shifts, weights, side in (
         (2 * steps * width, 2 * steps * width * drift / volatility**2, 1.0),
         (
@@ -1196,37 +1258,35 @@ def _double_barrier_integral(
             -1.0,
         ),
     ):
-        mean = shifts + drift * time_to_expiration
-        stock_part = np.exp(shifts + cost_of_carry * time_to_expiration) * (
-            ndtr((high - mean - volatility**2 * time_to_expiration) / deviation)
-            - ndtr((low - mean - volatility**2 * time_to_expiration) / deviation)
+        mean = shifts + drift * time
+        stock_part = np.exp(shifts + cost_of_carry * time) * (
+            ndtr((high - mean - volatility**2 * time) / deviation)
+            - ndtr((low - mean - volatility**2 * time) / deviation)
         )
         strike_part = ndtr((high - mean) / deviation) - ndtr((low - mean) / deviation)
-        value += side * float(
-            np.sum(
-                np.exp(weights)
-                * (
-                    stock_weight * stock_price * stock_part
-                    - strike_weight * strike_price * strike_part
-                )
-            )
+        part = (
+            stock_weight * stock_price * stock_part
+            - strike_weight * strike_price[:, None] * strike_part
         )
+        # An image far beyond the corridor adds nothing, also where its weight overflows.
+        value += side * np.sum(np.where(part == 0, 0.0, np.exp(weights) * part), axis=1)
 
-    return value
+    value = np.where(upper_limit <= lower_limit, 0.0, value)
+    return float(value[0]) if scalar else value
 
 
 def get_double_barrier_option(
     stock_price: float,
-    strike_price: float,
+    strike_price: float | np.ndarray,
     lower_barrier: float,
     upper_barrier: float,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
     knock_type: str = "out",
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of a double barrier (knock-out or knock-in) European option with flat,
     continuously watched barriers, with the formula of Ikeda and Kunitomo (1992).
@@ -1251,18 +1311,20 @@ def get_double_barrier_option(
 
     Args:
         stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
+        strike_price (float | np.ndarray): The option's strike price, or an array of them.
         lower_barrier (float): The lower barrier L, below the stock price.
         upper_barrier (float): The upper barrier U, above the stock price.
         risk_free_rate (float): The continuously compounded risk-free rate.
         volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration in years.
+        time_to_expiration (float | np.ndarray): The time to expiration in years, or an
+            array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
         knock_type (str): "out" or "in". Defaults to "out".
 
     Returns:
-        float: The double barrier option value.
+        float | np.ndarray: The double barrier option value, an array in the shape of the
+        strike prices and expirations when either is an array.
 
     Raises:
         ValueError: if knock_type is not "in" or "out", the lower barrier is not below the
@@ -1275,13 +1337,16 @@ def get_double_barrier_option(
     """
     validate_numeric_inputs(
         stock_price=stock_price,
-        strike_price=strike_price,
         lower_barrier=lower_barrier,
         upper_barrier=upper_barrier,
         risk_free_rate=risk_free_rate,
         volatility=volatility,
-        time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
+    )
+    validate_numeric_inputs(
+        arrays=True,
+        strike_price=strike_price,
+        time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
     if knock_type not in ("in", "out"):
@@ -1293,60 +1358,67 @@ def get_double_barrier_option(
 
     sign = -1 if put_option else 1
     cost_of_carry = risk_free_rate - dividend_yield
-    vanilla = (
+    strike_prices, times = np.broadcast_arrays(
+        np.asarray(strike_price, dtype=float),
+        np.asarray(time_to_expiration, dtype=float),
+    )
+    shape = strike_prices.shape
+    strike_prices, times = strike_prices.ravel(), times.ravel()
+    expired = times <= 0
+
+    # get_black_scholes gives the exercise value at expiration.
+    vanilla = np.asarray(
         get_black_scholes(
             stock_price,
-            strike_price,
+            strike_prices,
             risk_free_rate,
             volatility,
-            time_to_expiration,
+            times,
             dividend_yield,
             put_option,
-        )
-        if time_to_expiration > 0
-        else max(sign * (stock_price - strike_price), 0.0)
+        ),
+        dtype=float,
     )
 
     inside = lower_barrier < stock_price < upper_barrier
 
-    if not inside or time_to_expiration <= 0:
-        knock_out = vanilla if inside else 0.0
-    elif put_option:
-        knock_out = np.exp(
-            -risk_free_rate * time_to_expiration
-        ) * _double_barrier_integral(
-            stock_price,
-            strike_price,
-            lower_barrier,
-            upper_barrier,
-            cost_of_carry,
-            volatility,
-            time_to_expiration,
-            lower_barrier,
-            min(strike_price, upper_barrier),
-            -1.0,
-            -1.0,
-        )
+    if not inside:
+        knock_out = np.zeros(times.shape)
     else:
-        knock_out = np.exp(
-            -risk_free_rate * time_to_expiration
-        ) * _double_barrier_integral(
-            stock_price,
-            strike_price,
-            lower_barrier,
-            upper_barrier,
-            cost_of_carry,
-            volatility,
-            time_to_expiration,
-            max(strike_price, lower_barrier),
-            upper_barrier,
-            1.0,
-            1.0,
-        )
+        knock_out = vanilla.copy()
+        if not expired.all():
+            alive = ~expired
+            with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                knock_out[alive] = np.exp(
+                    -risk_free_rate * times[alive]
+                ) * _double_barrier_integral(
+                    stock_price,
+                    strike_prices[alive],
+                    lower_barrier,
+                    upper_barrier,
+                    cost_of_carry,
+                    volatility,
+                    times[alive],
+                    (
+                        np.full(alive.sum(), float(lower_barrier))
+                        if put_option
+                        else np.maximum(strike_prices[alive], lower_barrier)
+                    ),
+                    (
+                        np.minimum(strike_prices[alive], upper_barrier)
+                        if put_option
+                        else np.full(alive.sum(), float(upper_barrier))
+                    ),
+                    float(sign),
+                    float(sign),
+                )
 
-    knock_out = max(float(knock_out), 0.0)
+    knock_out = np.maximum(knock_out, 0.0)
+    value = (
+        knock_out if knock_type == "out" else np.maximum(vanilla - knock_out, 0.0)
+    ).reshape(shape)
 
-    return knock_out if knock_type == "out" else max(float(vanilla) - knock_out, 0.0)
+    return value if value.ndim else float(value)
 
 
 def _barrier_terms(
@@ -1434,12 +1506,22 @@ def _knock_out_terms(
     """
     sign = -1 if put_option else 1
     direction = 1 if barrier_direction == "down" else -1
-    beyond = strike_price > barrier
+    beyond = np.asarray(strike_price > barrier)
 
-    combinations = _KNOCK_OUT_COMBINATIONS[(put_option, barrier_direction, beyond)]
-
+    # The weight of each term where the strike lies beyond the barrier and where it does
+    # not, so that an array of strikes on both sides takes its combination per strike.
     terms = []
-    for name, weight in combinations.items():
+    for name in "ABCD":
+        weight = np.where(
+            beyond,
+            _KNOCK_OUT_COMBINATIONS[(put_option, barrier_direction, True)].get(name, 0),
+            _KNOCK_OUT_COMBINATIONS[(put_option, barrier_direction, False)].get(
+                name, 0
+            ),
+        )
+        if not weight.any():
+            continue
+        weight = weight if weight.ndim else int(weight)
         terms.extend(
             (weight * coefficient, power, intercept, slope)
             for coefficient, power, intercept, slope in _barrier_terms(
@@ -1459,18 +1541,18 @@ def _knock_out_terms(
 
 def get_partial_time_barrier_option(
     stock_price: float,
-    strike_price: float,
+    strike_price: float | np.ndarray,
     barrier: float,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
     barrier_direction: str = "down",
     knock_type: str = "out",
     barrier_window: str = "start",
     window_share: float = 0.5,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of a partial-time single barrier option (Heynen & Kat, 1994), whose
     barrier is only watched during part of the option's life: from today to t1 (a "start"
@@ -1495,11 +1577,12 @@ def get_partial_time_barrier_option(
 
     Args:
         stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
+        strike_price (float | np.ndarray): The option's strike price, or an array of them.
         barrier (float): The barrier level.
         risk_free_rate (float): The continuously compounded risk-free rate.
         volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration in years.
+        time_to_expiration (float | np.ndarray): The time to expiration in years, or an
+            array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
         barrier_direction (str): "down" or "up". Defaults to "down".
@@ -1511,7 +1594,8 @@ def get_partial_time_barrier_option(
             t1 = (1 - window_share) * T for an end window. Defaults to 0.5.
 
     Returns:
-        float: The partial-time barrier option value.
+        float | np.ndarray: The partial-time barrier option value, an array in the shape of
+        the strike prices and expirations when either is an array.
 
     Raises:
         ValueError: if a choice is not one of its values, window_share is not in (0, 1] or
@@ -1524,13 +1608,16 @@ def get_partial_time_barrier_option(
     """
     validate_numeric_inputs(
         stock_price=stock_price,
-        strike_price=strike_price,
         barrier=barrier,
         risk_free_rate=risk_free_rate,
         volatility=volatility,
-        time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
         window_share=window_share,
+    )
+    validate_numeric_inputs(
+        arrays=True,
+        strike_price=strike_price,
+        time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
     if barrier_direction not in ("down", "up"):
@@ -1548,22 +1635,70 @@ def get_partial_time_barrier_option(
             f"window_share must be above 0 and at most 1, received {window_share!r}."
         )
 
+    strike_prices, times = np.broadcast_arrays(
+        np.asarray(strike_price, dtype=float),
+        np.asarray(time_to_expiration, dtype=float),
+    )
+    shape = strike_prices.shape
+    strike_prices, times = strike_prices.ravel(), times.ravel()
     arguments = {
         "stock_price": stock_price,
-        "strike_price": strike_price,
         "barrier": barrier,
         "risk_free_rate": risk_free_rate,
         "volatility": volatility,
-        "time_to_expiration": time_to_expiration,
         "dividend_yield": dividend_yield,
         "put_option": put_option,
         "barrier_direction": barrier_direction,
     }
-    # A barrier watched over the whole life is a regular barrier option.
-    if window_share >= 1 or time_to_expiration <= 0:
-        return float(get_barrier_option(**arguments, knock_type=knock_type))
 
-    vanilla = float(
+    # A barrier watched over the whole life is a regular barrier option, as is one at
+    # expiration.
+    value = np.asarray(
+        get_barrier_option(
+            **arguments,
+            strike_price=strike_prices,
+            time_to_expiration=times,
+            knock_type=knock_type,
+        ),
+        dtype=float,
+    ).reshape(-1)
+    partial = (times > 0) if window_share < 1 else np.zeros(times.shape, dtype=bool)
+
+    if partial.any():
+        value[partial] = _partial_time_barrier_values(
+            **arguments,
+            strike_price=strike_prices[partial],
+            time_to_expiration=times[partial],
+            knock_type=knock_type,
+            barrier_window=barrier_window,
+            window_share=window_share,
+        )
+
+    value = value.reshape(shape)
+
+    return value if value.ndim else float(value)
+
+
+@np.errstate(divide="ignore", invalid="ignore", over="ignore")
+def _partial_time_barrier_values(
+    stock_price: float,
+    strike_price: np.ndarray,
+    barrier: float,
+    risk_free_rate: float,
+    volatility: float,
+    time_to_expiration: np.ndarray,
+    dividend_yield: float,
+    put_option: bool,
+    barrier_direction: str,
+    knock_type: str,
+    barrier_window: str,
+    window_share: float,
+) -> np.ndarray:
+    """
+    The partial-time barrier option values of get_partial_time_barrier_option for arrays of
+    strike prices and times to expiration above zero, with a window share below one.
+    """
+    vanilla = np.asarray(
         get_black_scholes(
             stock_price,
             strike_price,
@@ -1572,7 +1707,8 @@ def get_partial_time_barrier_option(
             time_to_expiration,
             dividend_yield,
             put_option,
-        )
+        ),
+        dtype=float,
     )
     direction = 1 if barrier_direction == "down" else -1
     breached = direction * stock_price <= direction * barrier
@@ -1583,7 +1719,7 @@ def get_partial_time_barrier_option(
 
     if barrier_window == "start":
         if breached:
-            knock_out = 0.0
+            knock_out = np.zeros(time_to_expiration.shape)
         else:
             middle = window_share * time_to_expiration
             remaining = time_to_expiration - middle
@@ -1640,24 +1776,24 @@ def get_partial_time_barrier_option(
             log_barrier,
         )
 
-    knock_out = min(max(float(knock_out), 0.0), vanilla)
+    knock_out = np.minimum(np.maximum(knock_out, 0.0), vanilla)
 
     return knock_out if knock_type == "out" else vanilla - knock_out
 
 
 def get_soft_barrier_option(
     stock_price: float,
-    strike_price: float,
+    strike_price: float | np.ndarray,
     first_barrier: float,
     second_barrier: float,
     risk_free_rate: float,
     volatility: float,
-    time_to_expiration: float,
+    time_to_expiration: float | np.ndarray,
     dividend_yield: float = 0.0,
     put_option: bool = False,
     barrier_direction: str = "down",
     knock_type: str = "out",
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of a soft barrier option (Hart & Ross, 1994), which knocks in or out
     gradually as the stock price moves through a band of barriers [L, U] instead of at once
@@ -1678,19 +1814,21 @@ def get_soft_barrier_option(
 
     Args:
         stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
+        strike_price (float | np.ndarray): The option's strike price, or an array of them.
         first_barrier (float): One edge of the band of barriers.
         second_barrier (float): The other edge of the band.
         risk_free_rate (float): The continuously compounded risk-free rate.
         volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration in years.
+        time_to_expiration (float | np.ndarray): The time to expiration in years, or an
+            array of them (broadcast against the strike prices).
         dividend_yield (float): The continuous dividend yield. Defaults to 0.
         put_option (bool): Whether the option is a put option. Defaults to False.
         barrier_direction (str): "down" or "up". Defaults to "down".
         knock_type (str): "out" or "in". Defaults to "out".
 
     Returns:
-        float: The soft barrier option value.
+        float | np.ndarray: The soft barrier option value, an array in the shape of the
+        strike prices and expirations when either is an array.
 
     Raises:
         ValueError: if barrier_direction or knock_type is not one of its values or volatility
@@ -1703,13 +1841,16 @@ def get_soft_barrier_option(
     """
     validate_numeric_inputs(
         stock_price=stock_price,
-        strike_price=strike_price,
         first_barrier=first_barrier,
         second_barrier=second_barrier,
         risk_free_rate=risk_free_rate,
         volatility=volatility,
-        time_to_expiration=time_to_expiration,
         dividend_yield=dividend_yield,
+    )
+    validate_numeric_inputs(
+        arrays=True,
+        strike_price=strike_price,
+        time_to_expiration=time_to_expiration,
     )
     _validate_volatility(volatility)
     if barrier_direction not in ("down", "up"):
@@ -1721,10 +1862,8 @@ def get_soft_barrier_option(
 
     arguments = {
         "stock_price": stock_price,
-        "strike_price": strike_price,
         "risk_free_rate": risk_free_rate,
         "volatility": volatility,
-        "time_to_expiration": time_to_expiration,
         "dividend_yield": dividend_yield,
         "put_option": put_option,
         "barrier_direction": barrier_direction,
@@ -1732,69 +1871,128 @@ def get_soft_barrier_option(
     lower, upper = sorted((first_barrier, second_barrier))
 
     if upper == lower:
-        return float(
-            get_barrier_option(**arguments, barrier=lower, knock_type=knock_type)
+        return get_barrier_option(
+            **arguments,
+            strike_price=strike_price,
+            time_to_expiration=time_to_expiration,
+            barrier=lower,
+            knock_type=knock_type,
         )
 
-    # At expiration the knock-out pays the vanilla payoff times the share of the band not reached.
-    if time_to_expiration <= 0:
-        vanilla = max((strike_price - stock_price) * (1 if put_option else -1), 0.0)
-        alive = (
-            stock_price - lower if barrier_direction == "down" else upper - stock_price
-        ) / (upper - lower)
-        knock_out = vanilla * min(max(alive, 0.0), 1.0)
-        return knock_out if knock_type == "out" else vanilla - knock_out
+    strike_prices, times = np.broadcast_arrays(
+        np.asarray(strike_price, dtype=float),
+        np.asarray(time_to_expiration, dtype=float),
+    )
+    shape = strike_prices.shape
+    strike_prices, times = strike_prices.ravel()[:, None], times.ravel()[:, None]
+    direction = 1 if barrier_direction == "down" else -1
 
     # The hard barrier price has kinks at the strike (the formula changes) and at the stock
     # price (the barrier is breached beyond it), so each smooth piece gets its own points, on
     # which the knock-out is one combination of the terms A to D, evaluated for all at once.
-    edges = np.unique(np.clip([lower, upper, strike_price, stock_price], lower, upper))
-    direction = 1 if barrier_direction == "down" else -1
+    # The pieces lie between the band edges, the strike and the stock price in order; a piece
+    # of zero width (a strike outside the band) adds nothing.
+    edges = np.sort(
+        np.clip(
+            np.hstack(
+                np.broadcast_arrays(lower, upper, strike_prices, float(stock_price))
+            ),
+            lower,
+            upper,
+        ),
+        axis=1,
+    )
     term_inputs = {
         "phi": -1 if put_option else 1,
         "eta": direction,
         "stock_price": stock_price,
-        "strike_price": strike_price,
+        "strike_price": strike_prices,
         "risk_free_rate": risk_free_rate,
         "cost_of_carry": risk_free_rate - dividend_yield,
         "volatility": volatility,
-        "time_to_expiration": time_to_expiration,
+        "time_to_expiration": times,
     }
-    knock_out = 0.0
-    for left, right in zip(edges[:-1], edges[1:], strict=True):
-        middle = 0.5 * (left + right)
-        # Beyond the stock price the barrier is breached and the knock-out is worth nothing.
-        if direction * middle >= direction * stock_price:
-            continue
-        barriers = left + 0.5 * (right - left) * (_LEGENDRE_NODES + 1)
-        combination = _KNOCK_OUT_COMBINATIONS[
-            (put_option, barrier_direction, strike_price > middle)
-        ]
-        # Some knock-outs are worth nothing on a whole piece (an up-and-out call struck above it).
-        if not combination:
-            continue
-        prices = sum(
-            weight * _barrier_term(**term_inputs, barrier=barriers, term=name)
-            for name, weight in combination.items()
-        )
-        knock_out += 0.5 * (right - left) * float(np.dot(_LEGENDRE_WEIGHTS, prices))
-    knock_out /= upper - lower
+    knock_out = np.zeros(strike_prices.shape)
 
-    if knock_type == "out":
-        return knock_out
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        for piece in range(edges.shape[1] - 1):
+            left, right = edges[:, [piece]], edges[:, [piece + 1]]
+            middle = 0.5 * (left + right)
+            # Beyond the stock price the barrier is breached and the knock-out is worth nothing.
+            alive = (right > left) & (direction * middle < direction * stock_price)
+            if not alive.any():
+                continue
+            barriers = left + 0.5 * (right - left) * (_LEGENDRE_NODES + 1)
+            prices = 0.0
+            for name in "ABCD":
+                weight = np.where(
+                    strike_prices > middle,
+                    _KNOCK_OUT_COMBINATIONS[(put_option, barrier_direction, True)].get(
+                        name, 0
+                    ),
+                    _KNOCK_OUT_COMBINATIONS[(put_option, barrier_direction, False)].get(
+                        name, 0
+                    ),
+                )
+                if weight.any():
+                    prices = prices + np.where(
+                        weight != 0,
+                        weight
+                        * _barrier_term(**term_inputs, barrier=barriers, term=name),
+                        0.0,
+                    )
+            # Some knock-outs are worth nothing on a whole piece (an up-and-out call struck
+            # above it).
+            if np.ndim(prices) == 0:
+                continue
+            knock_out += np.where(
+                alive, 0.5 * (right - left) * (prices @ _LEGENDRE_WEIGHTS)[:, None], 0.0
+            )
 
-    vanilla = float(
-        get_black_scholes(
-            stock_price,
-            strike_price,
-            risk_free_rate,
-            volatility,
-            time_to_expiration,
-            dividend_yield,
-            put_option,
-        )
+        knock_out = (knock_out / (upper - lower)).ravel()
+
+        if knock_type == "in":
+            knock_out = (
+                np.asarray(
+                    get_black_scholes(
+                        stock_price,
+                        strike_prices.ravel(),
+                        risk_free_rate,
+                        volatility,
+                        times.ravel(),
+                        dividend_yield,
+                        put_option,
+                    ),
+                    dtype=float,
+                )
+                - knock_out
+            )
+
+    # At expiration the knock-out pays the vanilla payoff times the share of the band not
+    # reached.
+    vanilla = np.maximum(
+        (strike_prices.ravel() - stock_price) * (1 if put_option else -1), 0.0
     )
-    return vanilla - knock_out
+    alive_share = min(
+        max(
+            (
+                stock_price - lower
+                if barrier_direction == "down"
+                else upper - stock_price
+            )
+            / (upper - lower),
+            0.0,
+        ),
+        1.0,
+    )
+    at_expiration = vanilla * alive_share
+    value = np.where(
+        times.ravel() <= 0,
+        at_expiration if knock_type == "out" else vanilla - at_expiration,
+        knock_out,
+    ).reshape(shape)
+
+    return value if value.ndim else float(value)
 
 
 def get_touch_option(

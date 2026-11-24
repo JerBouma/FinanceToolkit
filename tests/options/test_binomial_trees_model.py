@@ -1,5 +1,6 @@
 """Binomial Trees Model Tests"""
 
+import numpy as np
 import pytest
 from scipy.special import betainc, ndtr
 
@@ -198,3 +199,116 @@ def test_the_exact_inversion_of_a_tail_far_below_double_precision():
     probability, complement = binomial_trees_model._exact_binomial_inversion(25, 5)
     assert probability == 1
     assert betainc(3, 3, complement) == pytest.approx(ndtr(-25), rel=1e-12)
+
+
+def _backward_induction(
+    stock_price,
+    strike_price,
+    years,
+    timesteps,
+    rate,
+    up,
+    down,
+    probability,
+    put,
+    american,
+):
+    """A plain scalar backward induction of a recombining tree, node by node."""
+    discount = np.exp(-rate * years / timesteps)
+    sign = -1 if put else 1
+    values = [
+        max(
+            sign
+            * (stock_price * down**downs * up ** (timesteps - downs) - strike_price),
+            0,
+        )
+        for downs in range(timesteps + 1)
+    ]
+    for step in range(timesteps - 1, -1, -1):
+        values = [
+            discount
+            * (probability * values[downs] + (1 - probability) * values[downs + 1])
+            for downs in range(step + 1)
+        ]
+        if american:
+            values = [
+                max(
+                    value,
+                    sign
+                    * (stock_price * down**downs * up ** (step - downs) - strike_price),
+                )
+                for downs, value in enumerate(values)
+            ]
+    return values[0]
+
+
+@pytest.mark.parametrize("method", ["cox_ross_rubinstein", "tian", "leisen_reimer"])
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize("american_option", [False, True])
+def test_the_trees_of_all_strikes_at_once_match_a_scalar_backward_induction(
+    method, put_option, american_option
+):
+    strikes = np.arange(80.0, 125.0, 5.0)
+    timesteps = 21
+    trees, ups, downs, probabilities = binomial_trees_model.get_option_payoff_trees(
+        stock_price=100.0,
+        strike_prices=strikes,
+        years=0.75,
+        timesteps=timesteps,
+        risk_free_rate=0.04,
+        volatility=0.3,
+        dividend_yield=0.01,
+        put_option=put_option,
+        american_option=american_option,
+        method=method,
+    )
+
+    assert trees.shape == (len(strikes), timesteps + 1, timesteps + 1)
+    # Node k exists from step k on.
+    assert np.isnan(trees[:, 1, 0]).all()
+    assert not np.isnan(trees[:, 1, 1]).any()
+    for position, strike in enumerate(strikes):
+        assert trees[position, 0, 0] == pytest.approx(
+            _backward_induction(
+                100.0,
+                strike,
+                0.75,
+                timesteps,
+                0.04,
+                ups[position],
+                downs[position],
+                probabilities[position],
+                put_option,
+                american_option,
+            ),
+            abs=1e-10,
+        )
+        single = binomial_trees_model.get_option_payoffs(
+            100.0,
+            float(strike),
+            0.75,
+            timesteps,
+            0.04,
+            0.3,
+            0.01,
+            put_option,
+            american_option,
+            method=method,
+        )
+        np.testing.assert_array_equal(single.to_numpy(), trees[position])
+
+
+def test_a_grid_of_more_option_values_than_the_cap_is_refused(monkeypatch):
+    from financetoolkit.options import helpers
+
+    prices = __import__("pandas").Series({"AAPL": 200.0})
+    monkeypatch.setattr(helpers, "MAX_OPTION_VALUES", 1_000)
+
+    # 41 strikes of 200 ± 10% in steps of 1, with 24 expirations each.
+    assert (
+        len(helpers.define_strike_prices(["AAPL"], prices, 1, 0.1, 24)["AAPL"]) == 41
+    )  # noqa: PLR2004
+    with pytest.raises(
+        ValueError, match="41 strike prices with 25 values each, 1,025 option values"
+    ):
+        helpers.define_strike_prices(["AAPL"], prices, 1, 0.1, values_per_strike=25)

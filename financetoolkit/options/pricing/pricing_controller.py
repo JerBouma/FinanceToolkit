@@ -216,6 +216,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -523,9 +524,11 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A tree per strike holds (timesteps + 1)² values.
+            values_per_strike=(timesteps + 1) ** 2,
         )
 
-        binomial_trees: dict[str, dict[float, pd.DataFrame]] = {}
+        binomial_trees: dict[str, tuple[list[float], np.ndarray]] = {}
         binomial_trees_statistics: dict[str, dict[float, dict[str, float]]] = {
             "Up Movement": {},
             "Down Movement": {},
@@ -536,45 +539,47 @@ class PricingOptions:
         dividend_yield_value: dict[str, float] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            binomial_trees[ticker] = {}
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
 
-            for strike_price in strike_prices:
-                dividend_yield_value[ticker] = (
-                    dividend_yield
-                    if dividend_yield is not None
-                    else self._dividend_yield_on(ticker, start_date)
-                )
-
-                tree = binomial_trees_model.get_option_payoffs(
-                    stock_price=stock_price.loc[ticker],
-                    strike_price=strike_price,
+            # The trees of every strike at once, as a strikes × nodes × steps array.
+            trees, up_movements, down_movements, probabilities = (
+                binomial_trees_model.get_option_payoff_trees(
+                    stock_price=float(stock_price.loc[ticker]),
+                    strike_prices=np.asarray(strike_prices, dtype=float),
                     years=time_to_expiration,
                     timesteps=timesteps,
-                    risk_free_rate=risk_free_rate,
-                    volatility=volatility.loc[ticker],
-                    dividend_yield=dividend_yield_value[ticker],
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    dividend_yield=float(dividend_yield_value[ticker]),
                     put_option=put_option,
                     american_option=american_option,
-                    show_input_info=show_input_info,
                     method=method,
                 )
+            )
+            binomial_trees[ticker] = (strike_prices, trees)
 
-                if show_input_info:
-                    # The Leisen-Reimer and exact inversion trees are centred on the strike, so their movements
-                    # and probability differ per strike and are shown for each.
+            if show_input_info:
+                # The Leisen-Reimer and exact inversion trees are centred on the strike, so their movements
+                # and probability differ per strike and are shown for each.
+                for position, strike_price in enumerate(strike_prices):
                     label = (
                         f"{ticker} at a strike of {strike_price:g}"
                         if method in ("leisen_reimer", "exact_inversion")
                         else ticker
                     )
-                    (
-                        tree,
-                        binomial_trees_statistics["Up Movement"][label],
-                        binomial_trees_statistics["Down Movement"][label],
-                        binomial_trees_statistics["Risk Neutral Probability"][label],
-                    ) = tree
-
-                binomial_trees[ticker][strike_price] = tree
+                    binomial_trees_statistics["Up Movement"][label] = float(
+                        up_movements[position]
+                    )
+                    binomial_trees_statistics["Down Movement"][label] = float(
+                        down_movements[position]
+                    )
+                    binomial_trees_statistics["Risk Neutral Probability"][label] = (
+                        float(probabilities[position])
+                    )
 
         binomial_trees_df = helpers.create_binomial_tree_dataframe(
             binomial_tree_dictionary=binomial_trees,
@@ -907,6 +912,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -924,40 +930,35 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            for strike_price in strike_prices:
-                parity_gap[ticker][strike_price] = {}
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "risk_free_rate": risk_free_rate,
+                "dividend_yield": dividend_yield_value[ticker],
+            }
 
-                for time_to_expiration in time_to_expiration_list:
-                    call_price = black_scholes_model.get_black_scholes(
-                        stock_price=stock_price.loc[ticker],
+            def parity(strike_price, time_to_expiration, inputs=inputs, ticker=ticker):
+                # The call and put of every strike price and expiration on arrays at once.
+                call_price, put_price = (
+                    black_scholes_model.get_black_scholes(
+                        **inputs,
                         strike_price=strike_price,
-                        risk_free_rate=risk_free_rate,
                         volatility=volatility.loc[ticker],
                         time_to_expiration=time_to_expiration,
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=False,
+                        put_option=put,
                     )
-                    put_price = black_scholes_model.get_black_scholes(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        time_to_expiration=time_to_expiration,
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=True,
-                    )
+                    for put in (False, True)
+                )
+                return black_scholes_model.get_put_call_parity(
+                    **inputs,
+                    strike_price=strike_price,
+                    time_to_expiration=time_to_expiration,
+                    call_price=call_price,
+                    put_price=put_price,
+                )
 
-                    parity_gap[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_put_call_parity(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            call_price=call_price,
-                            put_price=put_price,
-                        )
-                    )
+            parity_gap[ticker] = helpers.evaluate_on_grid(
+                parity, strike_prices, time_to_expiration_list
+            )
 
         parity_gap_df = helpers.create_greek_dataframe(
             greek_dictionary=parity_gap,
@@ -1112,6 +1113,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1121,23 +1123,20 @@ class PricingOptions:
         garman_kohlhagen: dict[str, dict[float, dict[float, float]]] = {}
 
         for ticker, strike_prices in strike_prices_per_ticker.items():
-            garman_kohlhagen[ticker] = {}
-
-            for strike_price in strike_prices:
-                garman_kohlhagen[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    garman_kohlhagen[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_garman_kohlhagen(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            foreign_risk_free_rate=foreign_risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            put_option=put_option,
-                        )
-                    )
+            # Every strike price and time to expiration in one call on arrays.
+            garman_kohlhagen[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: black_scholes_model.get_garman_kohlhagen(
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    foreign_risk_free_rate=foreign_risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    time_to_expiration=time_to_expiration,
+                    put_option=put_option,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         garman_kohlhagen_df = helpers.create_greek_dataframe(
             greek_dictionary=garman_kohlhagen,
@@ -1302,6 +1301,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1319,23 +1319,22 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            for strike_price in strike_prices:
-                binary_option[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    binary_option[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_binary_option(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            option_type=option_type,
-                            cash_payout=cash_payout,
-                        )
-                    )
+            # Every strike price and time to expiration in one call on arrays.
+            binary_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: black_scholes_model.get_binary_option(
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    time_to_expiration=time_to_expiration,
+                    dividend_yield=dividend_yield_value[ticker],
+                    put_option=put_option,
+                    option_type=option_type,
+                    cash_payout=cash_payout,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         binary_option_df = helpers.create_greek_dataframe(
             greek_dictionary=binary_option,
@@ -1366,230 +1365,6 @@ class PricingOptions:
         return binary_option_df
 
     @handle_errors
-    def get_bjerksund_stensland(
-        self,
-        start_date: str | None = None,
-        put_option: bool = False,
-        method: Literal["2002", "1993"] = "2002",
-        strike_price_range: float = 0.25,
-        strike_step_size: float = 5,
-        expiration_time_range: int = 30,
-        risk_free_rate: float | None = None,
-        dividend_yield: float | None = None,
-        show_input_info: bool = False,
-        rounding: int | None = None,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate American option prices using the Bjerksund-Stensland (2002)
-        closed-form analytical approximation, or the original 1993 version with method="1993".
-
-        Unlike European options, American options can be exercised at any time up to
-        and including expiration, which normally requires a numerical approach such as
-        the Binomial Tree model (see ``get_binomial_model``). The Bjerksund-Stensland
-        model instead derives a closed-form approximation by assuming the early-exercise
-        boundary is flat in steps: once the stock price crosses the trigger price,
-        immediate exercise is assumed optimal. The option's life is split at
-        t1 = ½(√5 - 1) * T into two periods, each with its own flat trigger price, which
-        brings the price closer to the exact American value than a single flat trigger.
-
-        The formula is as follows (for a call, with cost of carry b = r - q smaller than r):
-
-        - β = (0.5 - b / σ²) + √((b / σ² - 0.5)² + 2r / σ²)
-        - B∞ = β / (β - 1) * K
-        - B0 = MAX(K, r / (r - b) * K)
-        - h(t) = -(b * t + 2σ√t) * K² / ((B∞ - B0) * B0)
-        - I(t) = B0 + (B∞ - B0) * (1 - e^h(t)), with I1 = I(t1) and I2 = I(T)
-        - Call = MAX(Approximation, European Black-Scholes Call, MAX(S - K, 0)), where the Approximation is
-          S - K when S ≥ I2 and otherwise combines univariate (first period) and bivariate (both periods)
-          normal terms, see ``black_scholes_model.get_bjerksund_stensland``
-        - Put (S, K, T, r, b, σ) = Call (K, S, T, r - b, -b, σ), the put-call transformation
-
-        The 1993 version (method="1993") keeps one flat trigger price over the option's whole life, which is
-        faster and slightly further below the exact American value:
-
-        - h(T) = -(b * T + 2σ√T) * B0 / (B∞ - B0)
-        - I = B0 + (B∞ - B0) * (1 - e^h(T)), α = (I - K) * I^(-β)
-        - Call = α * S^β - α * φ(S, T, β, I, I) + φ(S, T, 1, I, I) - φ(S, T, 1, K, I) - K * φ(S, T, 0, I, I) +
-          K * φ(S, T, 0, K, I), with φ the univariate knock-out claim of ``black_scholes_model._phi``
-
-        Where S is the stock price (the traded close on the pricing date), K is the strike
-        price, r is the continuously compounded risk-free rate, q is the continuous dividend
-        yield (ln(1 + dividend yield)), σ is the annualized volatility (the standard deviation
-        of the daily returns over the trailing 252 trading days times √252) and T is the time
-        to expiration in years (days / 365).
-
-        When b ≥ r early exercise of a call is not optimal and the value is the Black-Scholes
-        price (floored at the exercise value). Where the boundary I2 falls to or below the
-        strike, a 1,000-step binomial tree prices the option instead. At zero days to
-        expiration the value is the exercise value.
-
-        See: Bjerksund, P., & Stensland, G. (2002), "Closed Form Valuation of American
-        Options", Working paper, NHH, and Bjerksund, P., & Stensland, G. (1993), "Closed-Form
-        Approximation of American Options", Scandinavian Journal of Management, 9, S87-S99, as
-        presented in Haug, E. G. (2007), "The Complete Guide to Option Pricing Formulas" (2nd ed.),
-        sections 3.1.4 and 3.1.3. The 1993 version is referenced against QuantLib's
-        BjerksundStenslandApproximationEngine (https://www.quantlib.org). For the Barone-Adesi-Whaley,
-        Ju-Zhong and QD+ approximations, see ``get_american_option``.
-
-        Also known as: BS2002, Bjerksund-Stensland approximation, American option
-        approximation.
-
-        Args:
-            start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
-            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
-            last date of the historical data.
-            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
-            it will calculate the call option price.
-            method (str, optional): The version of the approximation: "2002" (two flat trigger prices) or "1993"
-            (one flat trigger price). Defaults to "2002".
-            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
-            25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
-            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
-            expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
-            expirations of 1 to 29 days.
-            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
-            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
-            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
-            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded rate.
-            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
-            uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
-            as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
-                time to expiration columns for each ticker and strike price. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Bjerksund-Stensland American option values containing the tickers and strike prices as
-            the index and the time to expiration as the columns.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["VZ"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        bjerksund_stensland = toolkit.options.get_bjerksund_stensland(
-            strike_price_range=0.15, strike_step_size=1, expiration_time_range=91
-        )
-
-        bjerksund_stensland.loc["VZ", ["2026-01-30", "2026-03-01", "2026-03-31"]]
-        ```
-
-        Which returns:
-
-        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
-        |---------------:|-------------:|-------------:|-------------:|
-        |             34 |       6.73   |       6.73   |       6.73   |
-        |             35 |       5.73   |       5.73   |       5.7418 |
-        |             36 |       4.73   |       4.7531 |       4.8237 |
-        |             37 |       3.741  |       3.8479 |       3.9723 |
-        |             38 |       2.8271 |       3.0221 |       3.2026 |
-        |             39 |       2.0122 |       2.2963 |       2.5249 |
-        |             40 |       1.3365 |       1.684  |       1.9446 |
-        |             41 |       0.8218 |       1.1896 |       1.4622 |
-        |             42 |       0.465  |       0.8084 |       1.073  |
-        |             43 |       0.2413 |       0.5282 |       0.7684 |
-        |             44 |       0.1146 |       0.3318 |       0.537  |
-        |             45 |       0.0498 |       0.2004 |       0.3664 |
-        """
-        if method not in ("2002", "1993"):
-            raise ValueError(f'method must be "2002" or "1993", received {method!r}.')
-
-        start_date = self._pricing_date(start_date)
-        stock_price = self._prices.loc[start_date]
-        volatility = self._volatility.loc[start_date]
-
-        risk_free_rate = (
-            risk_free_rate
-            if risk_free_rate is not None
-            else self._risk_free_rate.loc[start_date]
-        )
-
-        strike_prices_per_ticker = helpers.define_strike_prices(
-            tickers=self._tickers,
-            stock_price=stock_price,
-            strike_step_size=strike_step_size,
-            strike_price_range=strike_price_range,
-        )
-
-        time_to_expiration_list = [
-            time / 365 for time in range(0, expiration_time_range)
-        ]
-
-        bjerksund_stensland: dict[str, dict[float, dict[float, float]]] = {}
-        dividend_yield_value: dict[str, float] = {}
-
-        for ticker, strike_prices in strike_prices_per_ticker.items():
-            bjerksund_stensland[ticker] = {}
-            dividend_yield_value[ticker] = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, start_date)
-            )
-
-            for strike_price in strike_prices:
-                bjerksund_stensland[ticker][strike_price] = {}
-
-                for time_to_expiration in time_to_expiration_list:
-                    bjerksund_stensland[ticker][strike_price][time_to_expiration] = (
-                        black_scholes_model.get_bjerksund_stensland(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            method=method,
-                        )
-                    )
-
-        bjerksund_stensland_df = helpers.create_greek_dataframe(
-            greek_dictionary=bjerksund_stensland,
-            start_date=start_date,
-        )
-
-        bjerksund_stensland_df = bjerksund_stensland_df.pipe(
-            apply_rounding, rounding if rounding is not None else self._rounding
-        )
-
-        if standardize:
-            bjerksund_stensland_df = calculate_standardization(
-                dataset=bjerksund_stensland_df,
-                rounding=rounding if rounding is not None else self._rounding,
-                axis="columns",
-            )
-
-        if show_input_info:
-            helpers.show_input_info(
-                start_date=self._daily_historical.index[0],
-                end_date=self._daily_historical.index[-1],
-                stock_prices=stock_price,
-                volatility=volatility,
-                risk_free_rate=risk_free_rate,
-                dividend_yield=dividend_yield_value,
-            )
-
-        return bjerksund_stensland_df
-
-    @handle_errors
     def get_american_option(
         self,
         start_date: str | None = None,
@@ -1600,6 +1375,8 @@ class PricingOptions:
             "ju_zhong",
             "qd_fixed_point",
             "finite_difference",
+            "bjerksund_stensland",
+            "bjerksund_stensland_1993",
         ] = "qd_plus",
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
@@ -1613,34 +1390,40 @@ class PricingOptions:
     ):
         """
         Calculate American option prices with the QD+ method of Li (2010) and Andersen, Lake and Offengenden
-        (2016), the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999), or the
-        exact value from the exercise boundary solved as a fixed point (Andersen, Lake and Offengenden, 2016).
+        (2016), the quadratic approximations of Barone-Adesi and Whaley (1987) and Ju and Zhong (1999), the
+        closed-form approximations of Bjerksund and Stensland (2002 and 1993), finite differences, or the exact
+        value from the exercise boundary solved as a fixed point (Andersen, Lake and Offengenden, 2016).
 
         Listed options on single stocks are American: they can be exercised at any time up to expiration, which
         makes an in-the-money put, or a call on a stock with a high dividend yield, worth more than the European
         option the Black-Scholes model prices. These methods value that early exercise right without a tree:
 
-        - Barone-Adesi-Whaley (method="barone_adesi_whaley"): the early exercise premium is a power of S, fitted
-          to the exercise value at the critical stock price S*, found numerically. Fast, and within about 1% of the
-          exact value for most options, but several percent off for maturities of a year or more.
-        - Ju-Zhong (method="ju_zhong"): Barone-Adesi-Whaley with a correction for the term it drops, which
-          divides the premium by 1 - χ(S), a quadratic in ln(S / S*). As fast and within about 0.3% for most
-          options.
-        - QD+ (method="qd_plus"): the European price plus the early exercise premium integrated over the exercise
+        - QD+ (the default): the European price plus the early exercise premium integrated over the exercise
           boundary, with the boundary at each time to expiration from the QD+ equation of Li (2010). The most
-          accurate of the three, within 0.3% of the exact value across typical inputs, and slower.
-        - QD fixed point (method="qd_fixed_point"): the same integral with the boundary that solves the integral
-          equation of Kim (1990), iterated as a fixed point from the QD+ boundary until it changes less than 1e-12.
-          It converges to the exact American value, within about 1e-6 (1e-8 for most options), at about 30 to 150
-          ms per price, so it is the slowest and best suited to a few strikes and expirations.
-        - Finite differences (method="finite_difference"): the Black-Scholes equation solved backwards from
-          expiration with Crank-Nicolson (Rannacher start-up) on a grid of 1,000 steps in ln(S / K) and at least 400
-          time steps (4 per expiration day beyond 100 days), with the exercise constraint solved at every step by
-          Brennan and Schwartz (1977). As V(S, K, τ) = K * v(S / K, τ), one solve gives every strike, and the
-          expirations are solved in groups whose longest is at most four times their shortest, each on a grid sized
-          for it, so that an expiration a day away is as precise as one months away: within about 1e-3 of the exact
-          value for a stock price of 100 (7.3e-4 at most from a day to a quarter at volatilities up to 100%; the error
-          scales with the price), see ``finite_difference_model.get_finite_difference_option_values``.
+          accurate of the approximations, within 0.3% of the exact value across typical inputs, and slower.
+        - Barone-Adesi-Whaley: the early exercise premium is a power of S, fitted to the exercise value at the
+          critical stock price S*, found numerically. Fast, and within about 1% of the exact value for most options,
+          but several percent off for maturities of a year or more.
+        - Ju-Zhong: Barone-Adesi-Whaley with a correction for the term it drops, which divides the premium by
+          1 - χ(S), a quadratic in ln(S / S*). As fast and within about 0.3% for most options.
+        - QD fixed point: the QD+ integral with the boundary that solves the integral equation of Kim (1990),
+          iterated as a fixed point from the QD+ boundary until it changes less than 1e-12. It converges to the
+          exact American value, within about 1e-6 (1e-8 for most options), at about 30 to 150 ms per price, so it
+          is the slowest and best suited to a few strikes and expirations.
+        - Finite differences: the Black-Scholes equation solved backwards from expiration with Crank-Nicolson
+          (Rannacher start-up) on a grid of 1,000 steps in ln(S / K) and at least 400 time steps (4 per expiration
+          day beyond 100 days), with the exercise constraint solved at every step by Brennan and Schwartz (1977). As
+          V(S, K, τ) = K * v(S / K, τ), one solve gives every strike, and the expirations are solved in groups whose
+          longest is at most four times their shortest, each on a grid sized for it, so that an expiration a day
+          away is as precise as one months away: within about 1e-3 of the exact value for a stock price of 100
+          (7.3e-4 at most from a day to a quarter at volatilities up to 100%; the error scales with the price), see
+          ``finite_difference_model.get_finite_difference_option_values``.
+        - Bjerksund-Stensland (2002): a closed form that assumes the early exercise boundary is flat in steps:
+          once the stock price crosses the trigger price, immediate exercise is assumed optimal. The option's life
+          is split at t1 = ½(√5 - 1) * T into two periods, each with its own flat trigger price, which brings the
+          price closer to the exact American value than a single flat trigger.
+        - Bjerksund-Stensland (1993): the original version, with one flat trigger price over the option's whole
+          life, which is faster and slightly further below the exact American value.
 
         The formulas are as follows, with φ = 1 for a call and -1 for a put:
 
@@ -1657,6 +1440,25 @@ class PricingOptions:
         - Finite differences: V_τ = σ²/2 * V_xx + (r - q - σ²/2) * V_x - r * V on x = ln(S / K), stepped with
           (I - Δτ/2 * L) * V(τ + Δτ) = (I + Δτ/2 * L) * V(τ) subject to V ≥ φ * (S - K)
 
+        The Bjerksund-Stensland formulas are as follows (for a call, with cost of carry b = r - q smaller than r):
+
+        - β = (0.5 - b / σ²) + √((b / σ² - 0.5)² + 2r / σ²)
+        - B∞ = β / (β - 1) * K
+        - B0 = MAX(K, r / (r - b) * K)
+        - h(t) = -(b * t + 2σ√t) * K² / ((B∞ - B0) * B0)
+        - I(t) = B0 + (B∞ - B0) * (1 - e^h(t)), with I1 = I(t1) and I2 = I(T)
+        - Call (2002) = MAX(Approximation, European Black-Scholes Call, MAX(S - K, 0)), where the Approximation is
+          S - K when S ≥ I2 and otherwise combines univariate (first period) and bivariate (both periods)
+          normal terms, see ``black_scholes_model.get_bjerksund_stensland``
+        - Put (S, K, T, r, b, σ) = Call (K, S, T, r - b, -b, σ), the put-call transformation
+
+        The 1993 version keeps one flat trigger price over the option's whole life:
+
+        - h(T) = -(b * T + 2σ√T) * B0 / (B∞ - B0)
+        - I = B0 + (B∞ - B0) * (1 - e^h(T)), α = (I - K) * I^(-β)
+        - Call (1993) = α * S^β - α * φ(S, T, β, I, I) + φ(S, T, 1, I, I) - φ(S, T, 1, K, I) - K * φ(S, T, 0, I, I) +
+          K * φ(S, T, 0, K, I), with φ the univariate knock-out claim of ``black_scholes_model._phi``
+
         Where each formula holds on the side of S* (or of the boundary B(T)) where holding the option is optimal,
         and the option is worth its exercise value φ * (S - K) beyond it. S is the stock price (the traded close on
         the pricing date), K is the strike price, r is the continuously compounded risk-free rate, q is the
@@ -1667,8 +1469,10 @@ class PricingOptions:
         exercise boundary of a put with τ years to expiration (see ``american_model.get_qd_plus``).
 
         A call on a stock without dividends is never exercised early and a put at a non-positive rate neither;
-        these are worth the Black-Scholes price, floored at the exercise value. At zero days to expiration the
-        value is the exercise value. For the Bjerksund-Stensland approximations, see ``get_bjerksund_stensland``.
+        these are worth the Black-Scholes price, floored at the exercise value. With Bjerksund-Stensland, a call
+        whose cost of carry b is at least r is likewise worth the Black-Scholes price, and where the boundary I2
+        falls to or below the strike, a 1,000-step binomial tree prices the option instead. At zero days to
+        expiration the value is the exercise value.
 
         See: Barone-Adesi, G., & Whaley, R. E. (1987), "Efficient Analytic Approximation of American Option
         Values", The Journal of Finance, 42(2), 301-320; Ju, N., & Zhong, R. (1999), "An Approximate Formula for
@@ -1677,12 +1481,18 @@ class PricingOptions:
         Derivatives Research, 13(1), 75-99; Andersen, L., Lake, M., & Offengenden, D. (2016), "High-Performance
         American Option Pricing", Journal of Computational Finance, 20(1), 39-87; Kim, I. J. (1990), "The Analytic
         Valuation of American Options", The Review of Financial Studies, 3(4), 547-572; Brennan, M. J., & Schwartz,
-        E. S. (1977), "The Valuation of American Put Options", The Journal of Finance, 32(2), 449-462. Referenced
-        against QuantLib's BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine,
-        QdFpAmericanEngine and FdBlackScholesVanillaEngine (https://www.quantlib.org) and FinancePy's
-        black_scholes_analytic.baw_value and finite_difference.black_scholes_fd (https://github.com/domokane/FinancePy).
+        E. S. (1977), "The Valuation of American Put Options", The Journal of Finance, 32(2), 449-462; Bjerksund,
+        P., & Stensland, G. (2002), "Closed Form Valuation of American Options", Working paper, NHH; Bjerksund, P.,
+        & Stensland, G. (1993), "Closed-Form Approximation of American Options", Scandinavian Journal of
+        Management, 9, S87-S99, both as presented in Haug, E. G. (2007), "The Complete Guide to Option Pricing
+        Formulas" (2nd ed.), sections 3.1.4 and 3.1.3. Referenced against QuantLib's
+        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine,
+        QdFpAmericanEngine, FdBlackScholesVanillaEngine and BjerksundStenslandApproximationEngine
+        (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value and
+        finite_difference.black_scholes_fd (https://github.com/domokane/FinancePy).
 
-        Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+, QdFp.
+        Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+, QdFp,
+        BS2002, Bjerksund-Stensland approximation.
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
@@ -1691,8 +1501,11 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            method (str, optional): The method: "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point" or
-            "finite_difference". Defaults to "qd_plus".
+            method (str, optional): The pricing method. Options are: "qd_plus" (QD+), "barone_adesi_whaley"
+            (Barone-Adesi-Whaley), "ju_zhong" (Ju-Zhong), "qd_fixed_point" (QD fixed point), "finite_difference"
+            (Crank-Nicolson finite differences), "bjerksund_stensland" (Bjerksund-Stensland 2002, two flat trigger
+            prices) and "bjerksund_stensland_1993" (Bjerksund-Stensland 1993, one flat trigger price). Defaults to
+            "qd_plus".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1765,10 +1578,12 @@ class PricingOptions:
             "ju_zhong",
             "qd_fixed_point",
             "finite_difference",
+            "bjerksund_stensland",
+            "bjerksund_stensland_1993",
         ):
             raise ValueError(
-                'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point" or '
-                f'"finite_difference", received {method!r}.'
+                'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point", "finite_difference", '
+                f'"bjerksund_stensland" or "bjerksund_stensland_1993", received {method!r}.'
             )
 
         start_date = self._pricing_date(start_date)
@@ -1786,6 +1601,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -1825,11 +1641,55 @@ class PricingOptions:
                 }
                 continue
 
-            american_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: american_model.get_american_option(
+            if method == "qd_plus":
+                # Every strike price and expiration at once: the boundary of each expiration
+                # is solved once, for all expirations together, and scaled to every strike.
+                american_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration: american_model.get_qd_plus(
                         stock_price=float(stock_price.loc[ticker]),
-                        strike_price=float(strike_price),
+                        strike_price=strike_price,
+                        risk_free_rate=float(risk_free_rate),
+                        volatility=float(volatility.loc[ticker]),
+                        time_to_expiration=time_to_expiration,
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
+            if method in ("bjerksund_stensland", "bjerksund_stensland_1993"):
+                # The closed forms evaluate every strike price and expiration on arrays.
+                american_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration, ticker=ticker: (
+                        black_scholes_model.get_bjerksund_stensland(
+                            stock_price=float(stock_price.loc[ticker]),
+                            strike_price=strike_price,
+                            risk_free_rate=float(risk_free_rate),
+                            volatility=float(volatility.loc[ticker]),
+                            time_to_expiration=time_to_expiration,
+                            dividend_yield=float(dividend_yield_value[ticker]),
+                            put_option=put_option,
+                            method=(
+                                "1993"
+                                if method == "bjerksund_stensland_1993"
+                                else "2002"
+                            ),
+                        )
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
+            # The quadratic approximations solve their critical price once per expiration and
+            # evaluate every strike at once; the QD fixed point is priced per option.
+            american_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration, ticker=ticker: (
+                    american_model.get_american_option(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=strike_price,
                         risk_free_rate=float(risk_free_rate),
                         volatility=float(volatility.loc[ticker]),
                         time_to_expiration=time_to_expiration,
@@ -1837,10 +1697,10 @@ class PricingOptions:
                         put_option=put_option,
                         method=method,
                     )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         american_option_df = helpers.create_greek_dataframe(
             greek_dictionary=american_option,
@@ -2012,6 +1872,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2198,6 +2059,7 @@ class PricingOptions:
             stock_price=futures_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2320,7 +2182,10 @@ class PricingOptions:
 
         All strike prices of an expiry are priced on the same simulated paths (common
         random numbers), which keeps the prices consistent across strikes and means the
-        paths are simulated once per expiry rather than once per strike.
+        paths are simulated once per expiry rather than once per strike. The European
+        expiries share one set of standardised shocks, each scaled to its own time to
+        expiration, which with a seed gives the prices of simulating every expiry with that
+        seed.
 
         As it is a simulation, the result comes with sampling error. Set
         ``show_standard_error=True`` to additionally return the standard error of each
@@ -2443,6 +2308,15 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A value from paths of the variance reductions or Sobol points evaluates every
+            # path per strike: about 0.4 milliseconds a value at 10,000 paths, so it counts as
+            # a value per 1,000 paths. The plain estimate sorts the paths once per expiration.
+            values_per_strike=expiration_time_range
+            * (
+                1
+                if variance_reduction is None and sequence == "pseudo_random"
+                else -(-simulations // 1_000)
+            ),
         )
 
         time_to_expiration_list = [
@@ -2467,26 +2341,50 @@ class PricingOptions:
                 monte_carlo_price[ticker][strike_price] = {}
                 monte_carlo_error[ticker][strike_price] = {}
 
+            inputs = {
+                "stock_price": float(stock_price.loc[ticker]),
+                "strike_prices": np.asarray(strike_prices, dtype=float),
+                "risk_free_rate": float(risk_free_rate),
+                "volatility": float(volatility.loc[ticker]),
+                "dividend_yield": float(dividend_yield_value[ticker]),
+                "put_option": put_option,
+                "simulations": simulations,
+                "time_steps": time_steps,
+                "seed": seed,
+                "variance_reduction": variance_reduction,
+                "sequence": sequence,
+            }
+
+            if not american_option:
+                # Every strike and expiry is priced on one set of simulated paths, scaled to
+                # each expiry, which with a seed gives the same prices as simulating per
+                # strike and expiry.
+                prices, standard_errors = options_model.get_monte_carlo_option_prices(
+                    **inputs, time_to_expiration=np.asarray(time_to_expiration_list)
+                )
+                monte_carlo_price[ticker] = {
+                    strike_price: dict(
+                        zip(time_to_expiration_list, map(float, row), strict=True)
+                    )
+                    for strike_price, row in zip(strike_prices, prices, strict=True)
+                }
+                monte_carlo_error[ticker] = {
+                    strike_price: dict(
+                        zip(time_to_expiration_list, map(float, row), strict=True)
+                    )
+                    for strike_price, row in zip(
+                        strike_prices, standard_errors, strict=True
+                    )
+                }
+                continue
+
             # Every strike is priced on the same simulated paths of an expiry, which with
             # a seed gives the same prices as simulating per strike, once per expiry.
             for time_to_expiration in time_to_expiration_list:
                 prices, standard_errors = (
-                    monte_carlo_model.get_longstaff_schwartz_option_prices
-                    if american_option
-                    else options_model.get_monte_carlo_option_prices
-                )(
-                    stock_price=float(stock_price.loc[ticker]),
-                    strike_prices=np.asarray(strike_prices, dtype=float),
-                    risk_free_rate=float(risk_free_rate),
-                    volatility=float(volatility.loc[ticker]),
-                    time_to_expiration=time_to_expiration,
-                    dividend_yield=float(dividend_yield_value[ticker]),
-                    put_option=put_option,
-                    simulations=simulations,
-                    time_steps=time_steps,
-                    seed=seed,
-                    variance_reduction=variance_reduction,
-                    sequence=sequence,
+                    monte_carlo_model.get_longstaff_schwartz_option_prices(
+                        **inputs, time_to_expiration=time_to_expiration
+                    )
                 )
                 for strike_price, price, standard_error in zip(
                     strike_prices, prices, standard_errors, strict=True
@@ -2832,6 +2730,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -2875,55 +2774,50 @@ class PricingOptions:
                 "knock_type": knock_type,
             }
 
-            for strike_price in strike_prices:
-                barrier_option[ticker][strike_price] = {}
+            def barrier_value(
+                strike_price, time_to_expiration, inputs=inputs, barriers=barriers
+            ):
+                # Every strike price and time to expiration in one call on arrays.
+                arguments = {
+                    **inputs,
+                    "strike_price": strike_price,
+                    "time_to_expiration": time_to_expiration,
+                }
+                if barrier_direction == "double":
+                    return path_dependent_model.get_double_barrier_option(
+                        **arguments,
+                        lower_barrier=barriers[0],
+                        upper_barrier=barriers[1],
+                    )
+                if barrier_window != "full":
+                    return path_dependent_model.get_partial_time_barrier_option(
+                        **arguments,
+                        barrier=barriers[0],
+                        barrier_direction=barrier_direction,
+                        barrier_window=barrier_window,
+                        window_share=window_share,
+                    )
+                if soft_barrier_percentage is not None:
+                    return path_dependent_model.get_soft_barrier_option(
+                        **arguments,
+                        first_barrier=barriers[0],
+                        second_barrier=barriers[2],
+                        barrier_direction=barrier_direction,
+                    )
+                return exotics_model.get_barrier_option(
+                    **arguments,
+                    barrier=(
+                        barriers[0]
+                        if interval
+                        else stock_price.loc[ticker] * barrier_percentage
+                    ),
+                    barrier_direction=barrier_direction,
+                    rebate=rebate,
+                )
 
-                for time_to_expiration in time_to_expiration_list:
-                    arguments = {
-                        **inputs,
-                        "strike_price": float(strike_price),
-                        "time_to_expiration": time_to_expiration,
-                    }
-                    if barrier_direction == "double":
-                        value = path_dependent_model.get_double_barrier_option(
-                            **arguments,
-                            lower_barrier=barriers[0],
-                            upper_barrier=barriers[1],
-                        )
-                    elif barrier_window != "full":
-                        value = path_dependent_model.get_partial_time_barrier_option(
-                            **arguments,
-                            barrier=barriers[0],
-                            barrier_direction=barrier_direction,
-                            barrier_window=barrier_window,
-                            window_share=window_share,
-                        )
-                    elif soft_barrier_percentage is not None:
-                        value = path_dependent_model.get_soft_barrier_option(
-                            **arguments,
-                            first_barrier=barriers[0],
-                            second_barrier=barriers[2],
-                            barrier_direction=barrier_direction,
-                        )
-                    else:
-                        value = exotics_model.get_barrier_option(
-                            stock_price=stock_price.loc[ticker],
-                            strike_price=strike_price,
-                            barrier=(
-                                barriers[0]
-                                if interval
-                                else stock_price.loc[ticker] * barrier_percentage
-                            ),
-                            risk_free_rate=risk_free_rate,
-                            volatility=volatility.loc[ticker],
-                            time_to_expiration=time_to_expiration,
-                            dividend_yield=dividend_yield_value[ticker],
-                            put_option=put_option,
-                            barrier_direction=barrier_direction,
-                            knock_type=knock_type,
-                            rebate=rebate,
-                        )
-                    barrier_option[ticker][strike_price][time_to_expiration] = value
+            barrier_option[ticker] = helpers.evaluate_on_grid(
+                barrier_value, strike_prices, time_to_expiration_list
+            )
 
         barrier_option_df = helpers.create_greek_dataframe(
             greek_dictionary=barrier_option,
@@ -3163,6 +3057,11 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            # A Monte Carlo value evaluates every path with its control variate per strike:
+            # about 1 millisecond a value at 10,000 paths, so it counts as a value per 500
+            # paths.
+            values_per_strike=expiration_time_range
+            * (-(-simulations // 500) if method == "monte_carlo" else 1),
         )
 
         time_to_expiration_list = [
@@ -3187,6 +3086,28 @@ class PricingOptions:
                 "put_option": put_option,
             }
 
+            if method == "geometric":
+                # Every strike price and time to expiration in one call on arrays.
+                asian_option[ticker] = helpers.evaluate_on_grid(
+                    lambda strike_price, time_to_expiration, inputs=inputs: (
+                        exotics_model.get_asian_option(
+                            **inputs,
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                        )
+                        if fixings is None
+                        else path_dependent_model.get_geometric_asian_option(
+                            **inputs,
+                            strike_price=strike_price,
+                            time_to_expiration=time_to_expiration,
+                            fixings=fixings,
+                        )
+                    ),
+                    strike_prices,
+                    time_to_expiration_list,
+                )
+                continue
+
             for time_to_expiration in time_to_expiration_list:
                 if method == "monte_carlo":
                     # Every strike is priced on the same simulated paths of an expiry.
@@ -3204,25 +3125,21 @@ class PricingOptions:
                         )
                     continue
 
-                for strike_price in strike_prices:
-                    if method == "geometric" and fixings is None:
-                        value = exotics_model.get_asian_option(
-                            **inputs,
-                            strike_price=float(strike_price),
-                            time_to_expiration=time_to_expiration,
-                        )
-                    else:
-                        value = {
-                            "geometric": path_dependent_model.get_geometric_asian_option,
-                            "turnbull_wakeman": path_dependent_model.get_turnbull_wakeman,
-                            "curran": path_dependent_model.get_curran,
-                        }[method](
-                            **inputs,
-                            strike_price=float(strike_price),
-                            time_to_expiration=time_to_expiration,
-                            fixings=fixings,
-                        )
-                    asian_option[ticker][strike_price][time_to_expiration] = value
+                # The moments (Turnbull-Wakeman) and the conditioning on the geometric
+                # average (Curran) of an expiration are shared by all its strikes.
+                values = {
+                    "turnbull_wakeman": path_dependent_model.get_turnbull_wakeman,
+                    "curran": path_dependent_model.get_curran,
+                }[method](
+                    **inputs,
+                    strike_price=np.asarray(strike_prices, dtype=float),
+                    time_to_expiration=time_to_expiration,
+                    fixings=fixings,
+                )
+                for strike_price, value in zip(strike_prices, values, strict=True):
+                    asian_option[ticker][strike_price][time_to_expiration] = float(
+                        value
+                    )
 
         asian_option_df = helpers.create_greek_dataframe(
             greek_dictionary=asian_option,
@@ -3424,6 +3341,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -3450,19 +3368,13 @@ class PricingOptions:
             }
 
             # A floating strike has no strike price, so it is priced once per expiration.
-            lookback_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: path_dependent_model.get_lookback_option(
-                        **inputs,
-                        strike_price=float(strike_price),
-                        time_to_expiration=time_to_expiration,
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in (
-                    strike_prices if strike_type == "fixed" else [inputs["stock_price"]]
-                )
-            }
+            lookback_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike, time, inputs=inputs: path_dependent_model.get_lookback_option(
+                    **inputs, strike_price=strike, time_to_expiration=time
+                ),
+                strike_prices if strike_type == "fixed" else [inputs["stock_price"]],
+                time_to_expiration_list,
+            )
 
         if strike_type == "fixed":
             lookback_option_df = helpers.create_greek_dataframe(
@@ -3914,6 +3826,7 @@ class PricingOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         time_to_expiration_list = [
@@ -3936,18 +3849,17 @@ class PricingOptions:
                 "dividend_yield": float(dividend_yield_value[ticker]),
             }
 
-            chooser_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: compound_model.get_chooser_option(
-                        **inputs,
-                        strike_price=float(strike_price),
-                        time_to_expiration=time_to_expiration,
-                        choice_time=choice_period * time_to_expiration,
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+            # Every strike price and time to expiration in one call on arrays.
+            chooser_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration, inputs=inputs: compound_model.get_chooser_option(
+                    **inputs,
+                    strike_price=strike_price,
+                    time_to_expiration=time_to_expiration,
+                    choice_time=choice_period * time_to_expiration,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         chooser_option_df = helpers.create_greek_dataframe(
             greek_dictionary=chooser_option,

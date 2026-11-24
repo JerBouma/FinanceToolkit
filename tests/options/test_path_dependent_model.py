@@ -460,3 +460,179 @@ def test_lookback_options_tend_to_the_deterministic_path_at_a_low_volatility():
         path_dependent_model.get_lookback_option(
             100, 95, 0.05, 1e-3, 1, 0.01, lookback_period=0.5
         )
+
+
+GRID_STRIKES, GRID_TIMES = np.meshgrid(
+    np.arange(60.0, 150.0, 10.0), np.array([0, 1, 30, 182, 365]) / 365, indexing="ij"
+)
+
+
+def _per_option(function, **inputs):
+    """The formula evaluated once per strike and expiration of the grid."""
+    return np.array(
+        [
+            [
+                function(
+                    strike_price=float(strike), time_to_expiration=float(time), **inputs
+                )
+                for strike, time in zip(row_k, row_t, strict=True)
+            ]
+            for row_k, row_t in zip(GRID_STRIKES, GRID_TIMES, strict=True)
+        ]
+    )
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize("knock_type", ["in", "out"])
+@pytest.mark.parametrize(
+    ("barrier_direction", "barrier"), [("down", 90.0), ("up", 112.0)]
+)
+def test_barrier_variants_on_a_grid_equal_the_price_per_option(
+    put_option, knock_type, barrier_direction, barrier
+):
+    common = {
+        "stock_price": 100.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.3,
+        "dividend_yield": 0.02,
+        "put_option": put_option,
+        "knock_type": knock_type,
+    }
+    cases = [
+        (
+            exotics_model.get_barrier_option,
+            {
+                **common,
+                "barrier": barrier,
+                "barrier_direction": barrier_direction,
+                "rebate": 2.0,
+            },
+        ),
+        (
+            path_dependent_model.get_double_barrier_option,
+            {**common, "lower_barrier": 90.0, "upper_barrier": 112.0},
+        ),
+        (
+            path_dependent_model.get_soft_barrier_option,
+            {
+                **common,
+                "first_barrier": barrier,
+                "second_barrier": barrier
+                * (0.95 if barrier_direction == "down" else 1.05),
+                "barrier_direction": barrier_direction,
+            },
+        ),
+    ] + [
+        (
+            path_dependent_model.get_partial_time_barrier_option,
+            {
+                **common,
+                "barrier": barrier,
+                "barrier_direction": barrier_direction,
+                "barrier_window": window,
+                "window_share": 0.4,
+            },
+        )
+        for window in ("start", "end")
+    ]
+
+    for function, inputs in cases:
+        grid = function(
+            strike_price=GRID_STRIKES, time_to_expiration=GRID_TIMES, **inputs
+        )
+        assert grid.shape == GRID_STRIKES.shape
+        np.testing.assert_allclose(
+            grid, _per_option(function, **inputs), rtol=0, atol=1e-10
+        )
+        assert isinstance(
+            function(strike_price=100.0, time_to_expiration=0.5, **inputs), float
+        )
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize("fixings", [None, 12])
+def test_geometric_asian_options_on_a_grid_equal_the_price_per_option(
+    put_option, fixings
+):
+    inputs = {
+        "stock_price": 100.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.3,
+        "dividend_yield": 0.02,
+        "put_option": put_option,
+    }
+
+    np.testing.assert_allclose(
+        path_dependent_model.get_geometric_asian_option(
+            strike_price=GRID_STRIKES,
+            time_to_expiration=GRID_TIMES,
+            fixings=fixings,
+            **inputs,
+        ),
+        _per_option(
+            path_dependent_model.get_geometric_asian_option, fixings=fixings, **inputs
+        ),
+        rtol=0,
+        atol=1e-12,
+    )
+    if fixings is None:
+        np.testing.assert_allclose(
+            exotics_model.get_asian_option(
+                strike_price=GRID_STRIKES[:, 1:],
+                time_to_expiration=GRID_TIMES[:, 1:],
+                **inputs,
+            ),
+            _per_option(path_dependent_model.get_geometric_asian_option, **inputs)[
+                :, 1:
+            ],
+            rtol=0,
+            atol=1e-12,
+        )
+
+
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize("strike_type", ["fixed", "floating"])
+@pytest.mark.parametrize("lookback_period", [1.0, 0.5])
+def test_lookback_options_on_a_grid_equal_the_price_per_option(
+    put_option, strike_type, lookback_period
+):
+    inputs = {
+        "stock_price": 100.0,
+        "risk_free_rate": 0.05,
+        "volatility": 0.3,
+        "dividend_yield": 0.02,
+        "put_option": put_option,
+        "strike_type": strike_type,
+        "lookback_period": lookback_period,
+    }
+
+    np.testing.assert_allclose(
+        path_dependent_model.get_lookback_option(
+            strike_price=GRID_STRIKES, time_to_expiration=GRID_TIMES, **inputs
+        ),
+        _per_option(path_dependent_model.get_lookback_option, **inputs),
+        rtol=0,
+        atol=1e-10,
+    )
+
+
+@pytest.mark.parametrize(
+    "function",
+    [path_dependent_model.get_turnbull_wakeman, path_dependent_model.get_curran],
+)
+@pytest.mark.parametrize("put_option", [False, True])
+@pytest.mark.parametrize("fixings", [None, 1, 12])
+def test_arithmetic_asian_approximations_on_strikes_equal_the_price_per_option(
+    function, put_option, fixings
+):
+    """All strikes of an expiration at once, including the deep in-the-money strikes of
+    Curran's non-positive adjusted strike."""
+    strikes = np.arange(20.0, 200.0, 5.0)
+    for time in (0.0, 1 / 365, 0.5, 2.0):
+        inputs = (0.05, 0.3, time, 0.02, put_option, fixings)
+        np.testing.assert_allclose(
+            function(100.0, strikes, *inputs),
+            [function(100.0, float(strike), *inputs) for strike in strikes],
+            rtol=0,
+            atol=1e-10,
+        )

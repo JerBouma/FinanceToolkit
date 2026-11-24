@@ -43,6 +43,7 @@ from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.registry.tools_model import UtilityToolRegistry
 from financetoolkit.mcp_server.setup import setup_model
+from financetoolkit.options import helpers as options_helpers
 from financetoolkit.utilities import requests_model
 from financetoolkit.utilities.logger_model import (
     add_redaction,
@@ -330,6 +331,13 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         skip_params=configuration["skip_params"],
         init_handled_params=configuration["init_handled_params"],
     )
+
+    # The option grids of a call (strike prices times expirations per ticker) are capped in
+    # the package; the server lowers the cap to what it computes within its time limit.
+    if option_values := configuration.get("parameter_limits", {}).get("option_values"):
+        options_helpers.MAX_OPTION_VALUES = min(
+            options_helpers.MAX_OPTION_VALUES, int(option_values)
+        )
 
     toolkit_registry = ToolRegistry(
         mcp=mcp,

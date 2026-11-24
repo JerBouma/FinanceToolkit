@@ -406,3 +406,31 @@ def test_the_invalid_inputs_are_refused():
         compound_model.get_chooser_option(100, 100, 0.05, 0, 0.5, 0.25)
     with pytest.raises(TypeError, match="stock_price"):
         compound_model.get_chooser_option("100", 100, 0.05, 0.3, 0.5, 0.25)
+
+
+@pytest.mark.parametrize("choice_share", [0.0, 0.5, 1.0])
+def test_a_simple_chooser_on_a_grid_equals_the_price_per_option(choice_share):
+    strikes, times = np.meshgrid(
+        np.arange(70.0, 135.0, 5.0), np.array([0, 1, 30, 182, 365]) / 365, indexing="ij"
+    )
+    inputs = {**QUANTLIB, **DIVIDEND}
+
+    grid = compound_model.get_chooser_option(
+        strike_price=strikes,
+        time_to_expiration=times,
+        choice_time=choice_share * times,
+        **inputs,
+    )
+    per_option = np.array(
+        [
+            compound_model.get_chooser_option(
+                strike_price=float(strike),
+                time_to_expiration=float(time),
+                choice_time=choice_share * float(time),
+                **inputs,
+            )
+            for strike, time in zip(strikes.ravel(), times.ravel(), strict=True)
+        ]
+    ).reshape(strikes.shape)
+
+    np.testing.assert_allclose(grid, per_option, rtol=0, atol=1e-12)

@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import numpy as np
-from scipy.stats import norm
+from scipy.special import ndtr
 
 from financetoolkit.options.helpers import validate_numeric_inputs
 
@@ -50,9 +50,9 @@ def _barrier_term(
         )
         return phi * stock_price * np.exp(
             (cost_of_carry - risk_free_rate) * time_to_expiration
-        ) * norm.cdf(phi * x1) - phi * strike_price * np.exp(
+        ) * ndtr(phi * x1) - phi * strike_price * np.exp(
             -risk_free_rate * time_to_expiration
-        ) * norm.cdf(
+        ) * ndtr(
             phi * x1 - phi * volatility_time
         )
 
@@ -62,9 +62,9 @@ def _barrier_term(
         )
         return phi * stock_price * np.exp(
             (cost_of_carry - risk_free_rate) * time_to_expiration
-        ) * norm.cdf(phi * x2) - phi * strike_price * np.exp(
+        ) * ndtr(phi * x2) - phi * strike_price * np.exp(
             -risk_free_rate * time_to_expiration
-        ) * norm.cdf(
+        ) * ndtr(
             phi * x2 - phi * volatility_time
         )
 
@@ -75,7 +75,7 @@ def _barrier_term(
         )
         return phi * stock_price * np.exp(
             (cost_of_carry - risk_free_rate) * time_to_expiration
-        ) * (barrier / stock_price) ** (2 * (mu + 1)) * norm.cdf(
+        ) * (barrier / stock_price) ** (2 * (mu + 1)) * ndtr(
             eta * y1
         ) - phi * strike_price * np.exp(
             -risk_free_rate * time_to_expiration
@@ -83,7 +83,7 @@ def _barrier_term(
             barrier / stock_price
         ) ** (
             2 * mu
-        ) * norm.cdf(
+        ) * ndtr(
             eta * y1 - eta * volatility_time
         )
 
@@ -91,7 +91,7 @@ def _barrier_term(
     y2 = np.log(barrier / stock_price) / volatility_time + (1 + mu) * volatility_time
     return phi * stock_price * np.exp(
         (cost_of_carry - risk_free_rate) * time_to_expiration
-    ) * (barrier / stock_price) ** (2 * (mu + 1)) * norm.cdf(
+    ) * (barrier / stock_price) ** (2 * (mu + 1)) * ndtr(
         eta * y2
     ) - phi * strike_price * np.exp(
         -risk_free_rate * time_to_expiration
@@ -99,25 +99,25 @@ def _barrier_term(
         barrier / stock_price
     ) ** (
         2 * mu
-    ) * norm.cdf(
+    ) * ndtr(
         eta * y2 - eta * volatility_time
     )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
 def get_barrier_option(
-    stock_price: float,
-    strike_price: float,
-    barrier: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    dividend_yield: float = 0.0,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    barrier: float | np.ndarray,
+    risk_free_rate: float | np.ndarray,
+    volatility: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    dividend_yield: float | np.ndarray = 0.0,
     put_option: bool = False,
     barrier_direction: str = "down",
     knock_type: str = "out",
-    rebate: float = 0.0,
-) -> float:
+    rebate: float | np.ndarray = 0.0,
+) -> float | np.ndarray:
     """
     Calculate the closed-form price of a single-barrier (knock-in or knock-out, up or
     down) European option using the Reiner & Rubinstein (1991) formulas.
@@ -148,28 +148,32 @@ def get_barrier_option(
     to whichever leg does not survive, so it is added to both legs rather than split
     between them and the sum then exceeds the vanilla price.
 
+    The numeric inputs may be arrays, which price a grid of strikes and expirations in one
+    call with the same values as one call per combination.
+
     Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
-        barrier (float): The barrier level. Should be below stock_price when
+        stock_price (float | np.ndarray): The current stock price.
+        strike_price (float | np.ndarray): The option's strike price.
+        barrier (float | np.ndarray): The barrier level. Should be below stock_price when
             barrier_direction is "down" and above stock_price when barrier_direction is
             "up".
-        risk_free_rate (float): The risk-free interest rate.
-        volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration of the option.
-        dividend_yield (float): The dividend yield of the stock. Defaults to 0.
+        risk_free_rate (float | np.ndarray): The risk-free interest rate.
+        volatility (float | np.ndarray): The volatility of the stock.
+        time_to_expiration (float | np.ndarray): The time to expiration of the option.
+        dividend_yield (float | np.ndarray): The dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not.
         barrier_direction (str): Either "down" or "up". Defaults to "down".
         knock_type (str): Either "in" or "out". Defaults to "out".
-        rebate (float): The fixed cash amount paid out (a) immediately for a knock-out
+        rebate (float | np.ndarray): The fixed cash amount paid out (a) immediately for a knock-out
             option if/when the barrier is breached, or (b) at expiration for a knock-in
             option that never breaches the barrier. Defaults to 0.
 
     Returns:
-        float: The Barrier Option value.
+        float | np.ndarray: The Barrier Option value, an array in the shape of the inputs
+        when any of them is an array.
 
     Raises:
-        TypeError: if any of the numeric inputs is not a float or int.
+        TypeError: if any of the numeric inputs is not a float, int or np.ndarray.
         ValueError: if barrier_direction is not "down"/"up", knock_type is not
         "in"/"out" or volatility is not positive.
 
@@ -178,6 +182,7 @@ def get_barrier_option(
         Risk Magazine, 4(8), 28-35.
     """
     validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         barrier=barrier,
@@ -197,7 +202,7 @@ def get_barrier_option(
         raise ValueError(f"knock_type must be 'in' or 'out', received {knock_type!r}.")
 
     # The barrier terms divide by the variance, which a constant price does not have.
-    if volatility <= 0:
+    if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
     cost_of_carry = risk_free_rate - dividend_yield
@@ -234,36 +239,38 @@ def get_barrier_option(
         rebate
         * np.exp(-risk_free_rate * time_to_expiration)
         * (
-            norm.cdf(eta * x2 - eta * volatility_time)
+            ndtr(eta * x2 - eta * volatility_time)
             - (barrier / stock_price) ** (2 * mu)
-            * norm.cdf(eta * y2 - eta * volatility_time)
+            * ndtr(eta * y2 - eta * volatility_time)
         )
     )
     F = rebate * (
-        (barrier / stock_price) ** (mu + lambda_) * norm.cdf(eta * z)
+        (barrier / stock_price) ** (mu + lambda_) * ndtr(eta * z)
         + (barrier / stock_price) ** (mu - lambda_)
-        * norm.cdf(eta * z - 2 * eta * lambda_ * volatility_time)
+        * ndtr(eta * z - 2 * eta * lambda_ * volatility_time)
     )
 
-    in_the_money_barrier_side = strike_price > barrier
-
+    # The formula per option, barrier direction and knock type, as the value with the strike
+    # above the barrier and the value with the strike at or below it.
     if not put_option:
         if barrier_direction == "down" and knock_type == "in":
-            value = (A - B + D + E) if not in_the_money_barrier_side else (C + E)
+            beyond, other = C + E, A - B + D + E
         elif barrier_direction == "down" and knock_type == "out":
-            value = (B - D + F) if not in_the_money_barrier_side else (A - C + F)
+            beyond, other = A - C + F, B - D + F
         elif barrier_direction == "up" and knock_type == "in":
-            value = (A + E) if in_the_money_barrier_side else (B - C + D + E)
+            beyond, other = A + E, B - C + D + E
         else:  # up-and-out
-            value = F if in_the_money_barrier_side else (A - B + C - D + F)
+            beyond, other = F, A - B + C - D + F
     elif barrier_direction == "down" and knock_type == "in":
-        value = (B - C + D + E) if in_the_money_barrier_side else (A + E)
+        beyond, other = B - C + D + E, A + E
     elif barrier_direction == "down" and knock_type == "out":
-        value = (A - B + C - D + F) if in_the_money_barrier_side else F
+        beyond, other = A - B + C - D + F, F
     elif barrier_direction == "up" and knock_type == "in":
-        value = (A - B + D + E) if in_the_money_barrier_side else (C + E)
+        beyond, other = A - B + D + E, C + E
     else:  # up-and-out
-        value = (B - D + F) if in_the_money_barrier_side else (A - C + F)
+        beyond, other = B - D + F, A - C + F
+
+    value = np.where(strike_price > barrier, beyond, other)
 
     # The formulas assume the barrier has not been reached yet. Once it has, a knock-out
     # option is gone and pays its rebate, and a knock-in option is a regular option;
@@ -274,36 +281,41 @@ def get_barrier_option(
         else stock_price >= barrier
     )
 
-    if breached and knock_type == "out":
-        value = rebate
-    elif breached:
+    if knock_type == "out":
+        value = np.where(breached, rebate, value)
+    elif np.any(breached):
         d1 = (
             np.log(stock_price / strike_price)
             + (cost_of_carry + volatility**2 / 2) * time_to_expiration
         ) / volatility_time
         d2 = d1 - volatility_time
-        value = phi * (
-            stock_price
-            * np.exp((cost_of_carry - risk_free_rate) * time_to_expiration)
-            * norm.cdf(phi * d1)
-            - strike_price
-            * np.exp(-risk_free_rate * time_to_expiration)
-            * norm.cdf(phi * d2)
+        value = np.where(
+            breached,
+            phi
+            * (
+                stock_price
+                * np.exp((cost_of_carry - risk_free_rate) * time_to_expiration)
+                * ndtr(phi * d1)
+                - strike_price
+                * np.exp(-risk_free_rate * time_to_expiration)
+                * ndtr(phi * d2)
+            ),
+            value,
         )
 
-    return value
+    return value if np.ndim(value) else float(value)
 
 
 @np.errstate(divide="ignore", invalid="ignore")
 def get_asian_option(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    dividend_yield: float = 0.0,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    risk_free_rate: float | np.ndarray,
+    volatility: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    dividend_yield: float | np.ndarray = 0.0,
     put_option: bool = False,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the closed-form price of a geometric-average Asian option using the
     Kemna & Vorst (1990) formula.
@@ -347,10 +359,11 @@ def get_asian_option(
         put_option (bool): Whether the option is a put option or not.
 
     Returns:
-        float: The geometric-average Asian Option value.
+        float | np.ndarray: The geometric-average Asian Option value, an array in the shape
+        of the inputs when any of them is an array.
 
     Raises:
-        TypeError: if any of the numeric inputs is not a float or int.
+        TypeError: if any of the numeric inputs is not a float, int or np.ndarray.
 
     Notes:
         Reference: Kemna, A. G. Z., & Vorst, A. C. F. (1990). "A Pricing Method for
@@ -358,6 +371,7 @@ def get_asian_option(
         113-129.
     """
     validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -378,18 +392,16 @@ def get_asian_option(
     d2 = d1 - adjusted_volatility * np.sqrt(time_to_expiration)
 
     if put_option:
-        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(
+        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(
             -d2
         ) - stock_price * np.exp(
             (adjusted_cost_of_carry - risk_free_rate) * time_to_expiration
-        ) * norm.cdf(
+        ) * ndtr(
             -d1
         )
 
     return stock_price * np.exp(
         (adjusted_cost_of_carry - risk_free_rate) * time_to_expiration
-    ) * norm.cdf(d1) - strike_price * np.exp(
-        -risk_free_rate * time_to_expiration
-    ) * norm.cdf(
+    ) * ndtr(d1) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(
         d2
     )

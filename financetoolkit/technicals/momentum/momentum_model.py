@@ -168,11 +168,12 @@ def get_williams_percent_r(
     Returns:
         pd.Series: Williams %R values.
     """
-    highest_high = prices_high.rolling(window=window).max()
-    lowest_low = prices_low.rolling(window=window).min()
+    # %R is the Fast Stochastic %K moved down by 100: -(HH - C) / (HH - LL) = (C - LL) / (HH - LL) - 1.
+    stochastic_k = get_stochastic_oscillator(
+        prices_high, prices_low, prices_close, window, smooth_window=1
+    )["Stochastic %K"]
 
-    percent_r = -((highest_high - prices_close) / (highest_high - lowest_low)) * 100
-    return percent_r
+    return (stochastic_k - 100).rename(None)
 
 
 def get_aroon_indicator(
@@ -567,7 +568,9 @@ def get_percentage_price_oscillator(
     short_average = MOVING_AVERAGES[moving_average](prices_close, short_window)
     long_average = MOVING_AVERAGES[moving_average](prices_close, long_window)
 
-    ppo = (short_average - long_average) / long_average
+    # A long-term average of zero, such as that of a volume series without any volume, has no
+    # oscillator rather than an infinite one.
+    ppo = (short_average - long_average) / long_average.where(long_average != 0)
     signal_line = get_exponential_moving_average(ppo, signal_window)
 
     return pd.concat(
@@ -644,22 +647,10 @@ def get_percentage_volume_oscillator(
             f"moving_average must be exponential or simple, not {moving_average}."
         )
 
-    average = (
-        get_exponential_moving_average
-        if moving_average == "exponential"
-        else get_moving_average
-    )
-    short_average = average(volumes, short_window)
-    long_average = average(volumes, long_window)
-
-    pvo = (short_average - long_average) / long_average.where(long_average != 0)
-    signal_line = get_exponential_moving_average(pvo, signal_window)
-
-    return pd.concat(
-        [pvo, signal_line, pvo - signal_line],
-        keys=["Percentage Volume Oscillator", "Signal Line", "Histogram"],
-        axis=1,
-    )
+    # The PVO is the Percentage Price Oscillator of the volume.
+    return get_percentage_price_oscillator(
+        volumes, short_window, long_window, signal_window, moving_average
+    ).rename(columns={"Percentage Price Oscillator": "Percentage Volume Oscillator"})
 
 
 def get_detrended_price_oscillator(

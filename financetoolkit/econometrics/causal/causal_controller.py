@@ -474,7 +474,7 @@ class CausalEconometrics:
         For more information about the method, see
         `causal_inference_model.get_propensity_score_matching`.
 
-        Derives a binary "treatment" indicator the same way `get_logistic_regression`
+        Derives a binary "treatment" indicator the same way `get_binary_choice_regression`
         derives its binary outcome: 1 if `treatment_ticker`'s return in a given period
         exceeds `treatment_threshold` (0.0, i.e. a positive return, by default), else 0.
         This lets PSM answer e.g. "on periods where `treatment_ticker` has an

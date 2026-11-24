@@ -1441,7 +1441,7 @@ class Toolkit:
 
         toolkit = Toolkit(["AAPL", "TSLA"], api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
+        toolkit.econometrics.get_unit_root_test(period='yearly')
         ```
         """
         from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415

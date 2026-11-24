@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import pandas as pd
 
 from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
@@ -74,7 +76,7 @@ class RegressionEconometrics:
         Under the classical assumptions (linearity, no perfect multicollinearity, homoskedastic
         and uncorrelated errors) OLS is the Best Linear Unbiased Estimator (Gauss-Markov). The
         coefficients stay unbiased when the errors are heteroskedastic, but the classical
-        standard errors do not: check with `get_breusch_pagan_test` or `get_white_test` and,
+        standard errors do not: check with `get_heteroskedasticity_test` and,
         if needed, refit with a robust `cov_type` such as "HC1" (or "HC3" for small samples),
         or "HAC" when the errors are also autocorrelated.
 
@@ -103,7 +105,7 @@ class RegressionEconometrics:
             one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
             (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
             (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `maxlags`).
-            Use `get_breusch_pagan_test`/`get_white_test` to check for heteroskedasticity and
+            Use `get_heteroskedasticity_test` to check for heteroskedasticity and
             `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
             (e.g. a coarser time bucket derived from the return index, to correct for
@@ -223,7 +225,7 @@ class RegressionEconometrics:
         regression itself with the feasible GLS procedure of Wooldridge (2016): the
         logarithm of the squared OLS residuals is regressed on the independent tickers, and
         each period's weight is 1 / exp(fitted value), the inverse of its estimated error
-        variance. Use `get_breusch_pagan_test` or `get_white_test` to establish whether
+        variance. Use `get_heteroskedasticity_test` to establish whether
         heteroskedasticity is present before choosing WLS over OLS.
 
         For more information about the feasible weights, see the following book:
@@ -470,7 +472,7 @@ class RegressionEconometrics:
         )
 
     @handle_errors
-    def get_logistic_regression(
+    def get_binary_choice_regression(
         self,
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
@@ -478,18 +480,22 @@ class RegressionEconometrics:
         period: str | None = None,
         column: str = "Return",
         add_constant: bool = True,
+        method: Literal["logit", "probit"] = "logit",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Logistic Regression (Logit model) of whether `dependent_ticker`'s return is
-        positive on `independent_tickers`.
+        Fit a binary choice regression of whether `dependent_ticker`'s return is positive on
+        `independent_tickers`, the Logistic Regression (method="logit") or the Probit
+        Regression (method="probit").
 
         The dependent variable is turned into a binary outcome (1 when the return is
         positive, 0 otherwise) and the model estimates the probability of that outcome
-        through the logistic (sigmoid) function, which maps any value onto the 0 to 1 range.
+        through a link function that maps any value onto the 0 to 1 range: the logistic
+        (sigmoid) function for the Logit model and the standard normal cumulative
+        distribution function for the Probit model.
 
-        The formula is as follows:
+        The formula for method="logit" is as follows:
 
         - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
         - P(yₜ = 1 | xₜ) = 1 / (1 + exp(-xₜ'β)), with xₜ the independent tickers' `column` plus a
@@ -497,27 +503,38 @@ class RegressionEconometrics:
         - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Logit)
         - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
 
-        The model is fitted by Maximum Likelihood. Coefficients are log-odds: a one-unit
-        increase in an independent ticker changes the log-odds of a positive return by that
-        coefficient, holding the others fixed, so a positive coefficient means a higher
-        probability of a positive return. This answers "does this asset tend to be up when
-        the others move this way" rather than "by how much", which is what `get_ols`
-        estimates. `get_probit_regression` is the closely related alternative with a normal
-        instead of a logistic link.
+        The formula for method="probit" is as follows:
+
+        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
+        - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
+        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Probit)
+        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
+
+        Where `Φ` is the standard normal CDF. Both models are fitted by Maximum Likelihood. Logit
+        coefficients are log-odds: a one-unit increase in an independent ticker changes the
+        log-odds of a positive return by that coefficient, holding the others fixed, so a positive
+        coefficient means a higher probability of a positive return. A positive Probit coefficient
+        also means a higher probability of a positive return, but its size is not a log-odds
+        ratio. In practice Probit and Logit give very similar fitted probabilities; Probit is the
+        convention in parts of the econometrics literature and underlies two-step estimators such
+        as the Heckman selection correction. Both answer "does this asset tend to be up when the
+        others move this way" rather than "by how much", which is what `get_ols` estimates.
 
         The coefficients are per unit of the independent ticker's return, and a unit is a
-        return of 100%: a coefficient of 90 on the benchmark means the log-odds of an up
+        return of 100%: a Logit coefficient of 90 on the benchmark means the log-odds of an up
         period rise by about 0.9 for every 1% the benchmark moves. With returns of the same
         period as regressors the model describes co-movement and predicts nothing; a
         forecast needs regressors known in advance, such as the returns of the previous
         period.
 
-        For more information about the method, see the following paper:
+        For more information about the methods, see the following papers:
 
         - Berkson, J. (1944). "Application of the Logistic Function to Bio-Assay." Journal of
         the American Statistical Association, 39(227), 357-365.
+        - Bliss, C.I. (1934). "The Method of Probits." Science, 79(2037), 38-39.
 
-        Also known as: logit model, logit regression.
+        Also known as: logistic regression, logit model, logit regression, probit regression,
+        probit model, binary response model.
 
         Args:
             dependent_ticker (str | None, optional): The dependent asset (whose
@@ -534,6 +551,8 @@ class RegressionEconometrics:
             column (str, optional): The historical data column to derive returns from. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
+            method (str, optional): The link function, "logit" for the Logistic Regression or
+            "probit" for the Probit Regression. Defaults to "logit".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -564,7 +583,7 @@ class RegressionEconometrics:
         )
 
         # AAPL (the first ticker) is dependent; the Benchmark is independent
-        toolkit.econometrics.get_logistic_regression(include_benchmark=True)
+        toolkit.econometrics.get_binary_choice_regression(include_benchmark=True)
         ```
 
         Which returns:
@@ -574,6 +593,9 @@ class RegressionEconometrics:
         | Intercept |       -0.0275 |       0.15   |       -0.1836 |    0.8543 |
         | Benchmark |      164.846  |      25.4127 |        6.4868 |    0      |
         """
+        if method not in ("logit", "probit"):
+            raise ValueError("Method must be logit or probit.")
+
         period = period if period else "daily"
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
@@ -586,124 +608,12 @@ class RegressionEconometrics:
 
         direction = (returns[dependent_ticker] > 0).astype(float)
 
-        result = regression_model.get_logistic_regression(
-            direction, returns[independent_tickers], add_constant=add_constant
+        model = (
+            regression_model.get_probit_regression
+            if method == "probit"
+            else regression_model.get_logistic_regression
         )
-
-        return apply_rounding(
-            regression_model.binary_regression_summary_table(result),
-            rounding if rounding is not None else self._rounding,
-        )
-
-    @handle_errors
-    def get_probit_regression(
-        self,
-        dependent_ticker: str | None = None,
-        independent_tickers: str | list[str] | None = None,
-        include_benchmark: bool = False,
-        period: str | None = None,
-        column: str = "Return",
-        add_constant: bool = True,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Fit a Probit Regression of whether `dependent_ticker`'s return is positive on
-        `independent_tickers`.
-
-        As with `get_logistic_regression`, the dependent variable is turned into a binary
-        outcome (1 when the return is positive, 0 otherwise). The probability of that outcome
-        is modelled through the standard normal cumulative distribution function instead of
-        the logistic function.
-
-        The formula is as follows:
-
-        - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
-        - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
-        - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Probit)
-        - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
-
-        Where `Phi` is the standard normal CDF. The model is fitted by Maximum Likelihood. A
-        positive coefficient means a higher probability of a positive return, but the size of
-        a coefficient is not a log-odds ratio as in the Logit model. In practice Probit and
-        Logit give very similar fitted probabilities; Probit is the convention in parts of the
-        econometrics literature and underlies two-step estimators such as the Heckman
-        selection correction.
-
-        For more information about the method, see the following paper:
-
-        - Bliss, C.I. (1934). "The Method of Probits." Science, 79(2037), 38-39.
-
-        Also known as: probit model.
-
-        Args:
-            dependent_ticker (str | None, optional): The dependent asset (whose
-            up/down direction is predicted). Defaults to None, meaning the Toolkit
-            instance's first ticker.
-            independent_tickers (str | list[str] | None, optional): The independent
-            (predictor) asset(s). Defaults to None, meaning every other ticker in
-            the Toolkit instance besides `dependent_ticker`.
-            include_benchmark (bool, optional): Whether to include "Benchmark" in the
-            default independent ticker(s) (has no effect when independent_tickers is given
-            explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
-            column (str, optional): The historical data column to derive returns from. Defaults to
-            "Return".
-            add_constant (bool, optional): Whether to include an intercept. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
-            indexed by regressor name.
-
-        Notes:
-        - The dependent variable is derived as `1` if the dependent ticker's return in the given
-        period is positive, `0` otherwise -- this method predicts the *direction*, not the
-        magnitude, of the dependent asset's return.
-        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["TSLA", "QQQ"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        # TSLA (the first ticker) is dependent; QQQ is independent
-        toolkit.econometrics.get_probit_regression()
-        ```
-
-        Which returns:
-
-        |           |   Coefficient |   Std. Error |   z-Statistic |   P-Value |
-        |:----------|--------------:|-------------:|--------------:|----------:|
-        | Intercept |       -0.0848 |       0.0913 |       -0.9294 |    0.3527 |
-        | QQQ       |       78.1324 |      11.1444 |        7.0109 |    0      |
-        """
-        period = period if period else "daily"
-        dependent_ticker, independent_tickers = self._resolve_dependent_independent(
-            dependent_ticker=dependent_ticker,
-            independent_tickers=independent_tickers,
-            include_benchmark=include_benchmark,
-        )
-        returns = self._get_series_column(
-            period, column, [dependent_ticker, *independent_tickers]
-        )
-
-        direction = (returns[dependent_ticker] > 0).astype(float)
-
-        result = regression_model.get_probit_regression(
+        result = model(
             direction, returns[independent_tickers], add_constant=add_constant
         )
 

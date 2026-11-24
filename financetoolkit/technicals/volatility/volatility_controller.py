@@ -31,7 +31,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class VolatilityTechnicals:
     """
-    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range (also normalized, and the average day range), Chaikin's volatility, the relative volatility index, the mass index, the Supertrend and the Profit Maximizer, the Chandelier Exit, the Chande Kroll Stop, the Keltner channels and aberration bands, the Donchian channels, the acceleration bands, the adaptive price zone, the price distance, Elder's market thermometer, the squeeze momentum, the signal-to-noise ratio, the price bands, the volatility cone and the standard deviation channel.
+    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range (also normalized, and the average day range), Chaikin's volatility, the relative volatility index, the mass index, the Supertrend and the Profit Maximizer, the Chandelier Exit, the Chande Kroll Stop, the Keltner channels and aberration bands, the Donchian channels, the acceleration bands, the adaptive price zone, the price distance, Elder's market thermometer, the squeeze momentum, the signal-to-noise ratio, the price bands (`get_bollinger_bands(method="price_bands")`), the volatility cone and the standard deviation channel.
     """
 
     @handle_errors
@@ -277,7 +277,9 @@ class VolatilityTechnicals:
             period=period, close_column=close_column, window=window
         )
 
-        price_bands = self.get_price_bands(period=period, close_column=close_column)
+        price_bands = self.get_bollinger_bands(
+            period=period, close_column=close_column, method="price_bands"
+        )
         for band in ["Upper", "Middle", "Lower"]:
             volatility_indicators[f"Price Band {band}"] = price_bands[f"{band} Band"]
 
@@ -337,6 +339,8 @@ class VolatilityTechnicals:
         window: int = 20,
         num_std_dev: float = 2,
         moving_average: str = "simple",
+        fast_window: int = 2,
+        method: Literal["standard", "price_bands"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -344,18 +348,33 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Bollinger Bands for a given price series.
+        Calculate the Bollinger Bands for a given price series, or with method="price_bands" the
+        Price Bands.
 
         Bollinger Bands are a volatility indicator that consists of three lines: an upper band,
         a middle band (simple moving average), and a lower band. The upper and lower bands are
         calculated as the moving average plus and minus a specified number of standard deviations,
         respectively.
 
-        The formula is as follows:
+        Price Bands are a variant of the Bollinger Bands whose width comes from the distance
+        between the moving average and a fast moving average of the price, rather than from the
+        distance between the price and the moving average. The fast average filters out the noise
+        of single periods, so a spike widens the bands less than it widens the Bollinger Bands,
+        and the bands react to sustained moves away from the average instead.
+
+        The formula for method="standard" is as follows:
 
         - Middle Band = SMA(Close, Window), or another moving average with `moving_average`
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
+
+        The formula for method="price_bands" is as follows:
+
+        - Middle Band = SMA(Close, window), or another moving average with `moving_average`
+        - Deviation = Middle Band — SMA(Close, fast_window)
+        - Width = Population Standard Deviation(Deviation, window)
+        - Upper Band = Middle Band + num_std_dev * Width
+        - Lower Band = Middle Band — num_std_dev * Width
 
         The standard deviation is the *population* standard deviation (dividing by n), as
         Bollinger himself specifies and as TA-Lib and StockCharts both define it, not
@@ -365,15 +384,20 @@ class VolatilityTechnicals:
         larger move, without saying in which direction. A close at or beyond a band is not a sell
         or buy signal by itself, since prices can walk along a band in a trend. The defaults are
         Bollinger's own setting, a 20-period average with 2 standard deviations, as on most
-        charting platforms.
+        charting platforms. The Price Bands are read the same way, but since their width follows
+        the smoothed price, they are narrower than the Bollinger Bands of the same window and a
+        close outside them is more common.
 
         For more information, see the following sources:
 
         - Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
         - Referenced against TA-Lib's BBANDS (https://ta-lib.org/functions/bbands.html).
         - pandas-ta-classic: bbands (https://github.com/xgboosted/pandas-ta-classic).
+        - The Price Bands are defined by Brian G. Peterson in TTR's PBands, after the bands of
+          Bollinger (2001), and referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
 
-        Also known as: Bollinger Bands, BB, volatility bands, price channels.
+        Also known as: Bollinger Bands, BB, volatility bands, price channels, PBands, price bands,
+        smoothed Bollinger Bands.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -381,13 +405,19 @@ class VolatilityTechnicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average. Defaults to 20.
+                The number of periods (time intervals) over which to calculate the moving average
+                and the standard deviation. Defaults to 20, as in TTR's PBands.
             num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
-            moving_average (str, optional): The moving average of the middle band, one of the
-                window-only methods of `get_moving_average`: "simple", "exponential", "double_exponential",
+            moving_average (str, optional): The moving average of the middle band (and, with
+                method="price_bands", of the fast average), one of the window-only methods of
+                `get_moving_average`: "simple", "exponential", "double_exponential",
                 "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
                 "fibonacci" or "pascal". Defaults to "simple", Bollinger's own.
+            fast_window (int, optional): The number of periods of the fast moving average, with
+                method="price_bands" only. Defaults to 2.
+            method (str, optional): "standard" for the Bollinger Bands or "price_bands" for the
+                Price Bands, whose width comes from the fast moving average. Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the bands.
@@ -404,16 +434,22 @@ class VolatilityTechnicals:
 
         Returns:
             pd.Series or pd.DataFrame:
-            Bollinger Bands (upper, middle, lower).
+            The Close and the Bollinger Bands or Price Bands (upper, middle, lower), in price units.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
-          Bollinger Bands for each asset in the Toolkit instance.
+          Bollinger Bands or Price Bands for each asset in the Toolkit instance.
         - The bands agree with TA-Lib's BBANDS with a simple moving average (`matype=0`), and with the
           exponential, weighted, double exponential, triple exponential and triangular averages its
           `matype` 1 to 5. The standard deviation stays the one around the simple average of the
           window, as in TA-Lib, whatever the middle band.
-        - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
+        - The standard deviation of the Price Bands is the population one (dividing by `window`), as
+          in TTR's PBands. The Price Bands start on period 2 * `window` — 2.
+        - TTR's PBands can also centre the bands (`centered=TRUE`), which adds the moving average
+          of the deviation divided by the width to the middle band. That adds a number of standard
+          deviations to a price, so the shift does not scale with the price, and the Toolkit
+          leaves it out.
+        - If `growth` is set to True, the method calculates the growth of the bands
           using the specified `lag`.
 
         As an example:
@@ -441,6 +477,8 @@ class VolatilityTechnicals:
         | 2025-12-30 | 156.329 |      154.744 |       156.124 |      157.504 |
         | 2025-12-31 | 156.852 |      154.759 |       156.171 |      157.582 |
         """
+        if method not in ("standard", "price_bands"):
+            raise ValueError("Method must be standard or price_bands.")
         if period not in [
             "intraday",
             "daily",
@@ -461,17 +499,31 @@ class VolatilityTechnicals:
 
         historical_data = self._historical_data[period]
 
-        bollinger_bands = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            volatility_model.get_bollinger_bands,
-            window,
-            num_std_dev,
-            moving_average,
-        ).loc[self._start_date : self._end_date]
+        if method == "price_bands":
+            # The Close next to the bands, as the Bollinger Bands return it.
+            bollinger_bands = calculate_per_ticker(
+                historical_data,
+                [close_column],
+                lambda prices, *args: volatility_model.get_price_bands(
+                    prices, *args
+                ).assign(Close=prices),
+                window,
+                num_std_dev,
+                fast_window,
+                moving_average,
+            )
+        else:
+            bollinger_bands = calculate_per_ticker(
+                historical_data,
+                [close_column],
+                volatility_model.get_bollinger_bands,
+                window,
+                num_std_dev,
+                moving_average,
+            )
 
         return finalize_dataset(
-            dataset=bollinger_bands,
+            dataset=bollinger_bands.loc[self._start_date : self._end_date],
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -3310,164 +3362,6 @@ class VolatilityTechnicals:
 
         return finalize_dataset(
             dataset=signal_to_noise_ratio,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_price_bands(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 20,
-        num_std_dev: float = 2,
-        fast_window: int = 2,
-        moving_average: str = "simple",
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Price Bands for a given price series.
-
-        Price Bands are a variant of the Bollinger Bands whose width comes from the distance
-        between the moving average and a fast moving average of the price, rather than from the
-        distance between the price and the moving average. The fast average filters out the noise
-        of single periods, so a spike widens the bands less than it widens the Bollinger Bands,
-        and the bands react to sustained moves away from the average instead.
-
-        The formula is as follows:
-
-        - Middle Band = SMA(Close, window), or another moving average with `moving_average`
-        - Deviation = Middle Band — SMA(Close, fast_window)
-        - Width = Population Standard Deviation(Deviation, window)
-        - Upper Band = Middle Band + num_std_dev * Width
-        - Lower Band = Middle Band — num_std_dev * Width
-
-        The bands are read like the Bollinger Bands: narrow bands mark a quiet market and a close
-        beyond a band a move that stands out from the recent ones. Since the width follows the
-        smoothed price, the bands are narrower than the Bollinger Bands of the same window and
-        a close outside them is more common.
-
-        For more information, see the following sources:
-
-        - The measure is defined by Brian G. Peterson in TTR's PBands, after the bands of
-          Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
-        - Referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
-
-        Also known as: PBands, price bands, smoothed Bollinger Bands.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods of the moving average and the standard
-                deviation. Defaults to 20, as in TTR's PBands.
-            num_std_dev (float, optional): The number of standard deviations of the bands.
-                Defaults to 2.
-            fast_window (int, optional): The number of periods of the fast moving average.
-                Defaults to 2.
-            moving_average (str, optional): The moving average of both averages, one of the
-                window-only methods of `get_moving_average`: "simple", "exponential", "double_exponential",
-                "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
-                "fibonacci" or "pascal". Defaults to "simple".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the bands.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Price Bands (upper, middle, lower), in price units.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          Price Bands for each asset in the Toolkit instance.
-        - The standard deviation is the population one (dividing by `window`), as in TTR's PBands
-          and in the Bollinger Bands. The bands start on period 2 * `window` — 2.
-        - TTR's PBands can also centre the bands (`centered=TRUE`), which adds the moving average
-          of the deviation divided by the width to the middle band. That adds a number of standard
-          deviations to a price, so the shift does not scale with the price, and the Toolkit
-          leaves it out.
-        - If `growth` is set to True, the method calculates the growth of the Price Bands using
-          the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_price_bands().xs("AAPL", level=1, axis="columns").tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   Lower Band |   Middle Band |   Upper Band |
-        |:-----------|-------------:|--------------:|-------------:|
-        | 2025-12-24 |      265.165 |       276.19  |      287.214 |
-        | 2025-12-26 |      264.91  |       275.983 |      287.056 |
-        | 2025-12-29 |      264.762 |       275.729 |      286.697 |
-        | 2025-12-30 |      264.769 |       275.23  |      285.691 |
-        | 2025-12-31 |      265.325 |       274.516 |      283.708 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        price_bands = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            volatility_model.get_price_bands,
-            window,
-            num_std_dev,
-            fast_window,
-            moving_average,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=price_bands,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

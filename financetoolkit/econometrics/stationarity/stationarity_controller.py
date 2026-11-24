@@ -75,26 +75,50 @@ class StationarityEconometrics:
 
     @handle_portfolio
     @handle_errors
-    def get_augmented_dickey_fuller(
+    def get_unit_root_test(
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        max_lag: int | None = None,
+        method: Literal[
+            "augmented_dickey_fuller", "phillips_perron", "zivot_andrews"
+        ] = "augmented_dickey_fuller",
         regression: str = "c",
+        max_lag: int | None = None,
+        lags: int | None = None,
+        trim: float = 0.15,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Augmented Dickey-Fuller (ADF) test for a unit root, per asset.
+        Calculate a test for a unit root, per asset: the Augmented Dickey-Fuller (ADF) test
+        (method="augmented_dickey_fuller"), the Phillips-Perron (PP) test (method="phillips_perron")
+        or the Zivot-Andrews test, which allows for a single structural break at an unknown
+        (endogenously estimated) date (method="zivot_andrews").
 
-        The test regresses the first difference of the series on its own lagged level and
-        `p` lags of its own first difference. The null hypothesis is that the series has a
-        unit root (is a random walk, not mean-reverting); the alternative is that it is
-        stationary. This is a standard first step before modeling a price series or spread
-        with mean-reverting methods, since those methods assume stationarity.
+        All three test the same null hypothesis: the series has a unit root (is a random walk,
+        not mean-reverting); the alternative is that it is stationary. This is a standard first
+        step before modeling a price series or spread with mean-reverting methods, since those
+        methods assume stationarity. `get_kpss_test` is the complement with the null and the
+        alternative swapped.
 
-        The formula is as follows:
+        The ADF test regresses the first difference of the series on its own lagged level and
+        `p` lags of its own first difference. The Phillips-Perron test instead corrects for
+        heteroskedasticity and serial correlation in the errors nonparametrically via a
+        Newey-West long-run variance estimate, rather than by adding lagged-difference terms to
+        the regression, so PP and ADF should broadly agree on the same series.
+
+        The ADF and PP tests assume the deterministic component of the series (its constant
+        and/or trend) is stable throughout the sample. If a series instead has a single one-time
+        break -- e.g. a permanent level shift or a change in trend slope, such as a stock split,
+        spin-off, or a structural shift in the business -- the ordinary ADF test is biased
+        towards not rejecting the unit root even for a genuinely (trend-)stationary series with
+        a break. The Zivot-Andrews test corrects for this by adding a break dummy to the ADF
+        regression and choosing, for each asset, the break date that is most favorable to the
+        stationary alternative -- which is why it needs its own (more negative) critical values
+        rather than the ordinary ADF ones.
+
+        The formula for method="augmented_dickey_fuller" is as follows:
 
         - ΔYₜ = α + γ·Yₜ₋₁ + Σ(i=1..p) δᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close by default)
           and regression="c" (the default); "ct" adds a trend β·t and "n" drops α
@@ -102,22 +126,67 @@ class StationarityEconometrics:
         - p = the number of lags that minimises the AIC, searched from 0 up to `max_lag`, which defaults to
           min(ceil(12·(n / 100)^(1/4)), (n - 5) // 3)
 
-        For more information about the method, see the following paper:
+        The formula for method="phillips_perron" is as follows:
+
+        - Yₜ = α + ρ·Yₜ₋₁ + uₜ fitted by OLS on the `column` level (Adj Close by default), with
+          regression="c" (the default); "ct" adds a trend β·t
+        - t_ρ = (ρ̂ - 1) / SE(ρ̂), γ₀ = Σûₜ² / n and s² = Σûₜ² / (n - k), with k the number of coefficients
+        - λ² = γ₀ + 2·Σ(j=1..l) (1 - j / (l + 1))·γⱼ, with γⱼ = (1 / n)·Σ(t=j+1..n) ûₜ·ûₜ₋ⱼ and l = `lags`,
+          which defaults to int(12·(n / 100)^(1/4))
+        - Z_t = √(γ₀ / λ²)·t_ρ - (λ² - γ₀) / (2·λ·s)·n·SE(ρ̂)
+        - The p-value is the MacKinnon (1994) approximation of the Dickey-Fuller distribution and the unit
+          root is rejected at 5% when it is below 0.05, as in the ADF test; the critical values are the
+          finite-sample MacKinnon (2010) ones for the number of observations
+
+        The formula for method="zivot_andrews" is as follows:
+
+        - ΔYₜ = μ + θ·DUₜ + β·t + α·Yₜ₋₁ + Σ(i=1..p) cᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close
+          by default) and DUₜ = 1 after the break date T_B and 0 before it (regression="c", the default)
+        - regression="t" replaces θ·DUₜ by a trend break γ·DTₜ, with DTₜ = t - T_B after the break and 0
+          before it, and regression="ct" includes both
+        - ZA = min over T_B of α̂ / SE(α̂), searching every break date outside the first and last `trim`
+          (15% by default) of the sample
+        - p = the number of lags that minimises the AIC, up to `max_lag` (same default as the ADF test)
+
+        For more information about the methods, see the following papers:
 
         - Dickey, D.A. and Fuller, W.A. (1979). "Distribution of the Estimators for
         Autoregressive Time Series with a Unit Root." Journal of the American Statistical
         Association, 74(366a), 427-431.
+        - Phillips, P.C.B., & Perron, P. (1988). "Testing for a Unit Root in Time Series
+        Regression." Biometrika, 75(2), 335-346.
+        - Zivot, E., & Andrews, D.W.K. (1992). "Further Evidence on the Great Crash,
+        the Oil-Price Shock, and the Unit-Root Hypothesis." Journal of Business &
+        Economic Statistics, 10(3), 251-270.
+        - Perron, P. (1989). "The Great Crash, the Oil Price Shock, and the Unit Root
+        Hypothesis." Econometrica, 57(6), 1361-1401.
 
-        Also known as: ADF test, unit root test, stationarity test.
+        Also known as: ADF test, augmented Dickey-Fuller test, PP test, Z_t test, ZA test,
+        structural break unit root test, stationarity test.
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            max_lag (int, optional): The maximum number of lagged differences to consider. Defaults to
+            method (str, optional): The test, "augmented_dickey_fuller" for the Augmented Dickey-Fuller
+            test, "phillips_perron" for the Phillips-Perron test or "zivot_andrews" for the
+            Zivot-Andrews test with a structural break. Defaults to "augmented_dickey_fuller".
+            regression (str, optional): Which deterministic terms to include. For
+            "augmented_dickey_fuller" one of "n" (none), "c" (constant) or "ct" (constant and trend);
+            for "phillips_perron" one of "c" or "ct" ("n" is not supported, see
+            `econometrics.unitroot_model.get_phillips_perron_test` for why); for "zivot_andrews"
+            which break to allow for, one of "c" (a break in the level/intercept), "t" (a break in
+            the trend slope) or "ct" (both). Defaults to "c".
+            max_lag (int, optional): The maximum number of lagged differences to consider in the AIC
+            lag search of "augmented_dickey_fuller" and "zivot_andrews" (which selects a single lag
+            length and reuses it for every break date). Not used with "phillips_perron". Defaults to
             the Schwert (1989) rule of thumb, capped at (n - 5) // 3 for short samples.
-            regression (str, optional): Which deterministic terms to include, one of "n" (none), "c"
-            (constant) or "ct" (constant and trend). Defaults to "c".
+            lags (int, optional): The truncation lag for the Newey-West long-run variance estimate of
+            "phillips_perron"; not used by the other methods. Defaults to None, meaning the Schwert
+            (1989) rule ceil(12 * (n / 100) ** 0.25), capped for short samples as the ADF lag search is.
+            trim (float, optional): The fraction of observations excluded from the candidate break
+            date search at the start and end of the sample, for "zivot_andrews" only. Must be in
+            [0, 1/3). Defaults to 0.15.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -128,13 +197,18 @@ class StationarityEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The ADF statistic, its p-value, lags used, observations used, 1%/5%/10%
-            critical values, and whether the unit root is rejected at the 5% level, per asset.
-            An asset with fewer than 10 observations has NaN values.
+            pd.DataFrame: The test statistic ("ADF Statistic", "Phillips-Perron Statistic" or
+            "Zivot-Andrews Statistic"), its p-value, the lags used (the Newey-West truncation lag for
+            Phillips-Perron), the observations used, the 1%/5%/10% critical values, and whether the
+            unit root is rejected at the 5% level, per asset. The Zivot-Andrews test adds the
+            (0-indexed) position of the selected break date within the used sample ("Break Index").
+            With the ADF test an asset with fewer than 10 observations has NaN values.
 
         Notes:
-        - The method retrieves historical price data based on the specified `period` and runs the ADF
-        test for each asset in the Toolkit instance.
+        - The method retrieves historical price data based on the specified `period` and runs the
+        chosen test for each asset in the Toolkit instance.
+        - The Phillips-Perron p-value is MacKinnon's (1994) approximation and its critical values the
+        finite-sample MacKinnon (2010) ones.
         - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
@@ -149,7 +223,7 @@ class StationarityEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_augmented_dickey_fuller()
+        toolkit.econometrics.get_unit_root_test()
         ```
 
         Which returns:
@@ -165,23 +239,47 @@ class StationarityEconometrics:
         | Critical Value 10%    |   -2.56792  |   -2.56791 |   -2.56791  |
         | Reject Unit Root (5%) |    0        |    0       |    0        |
         """
+        if method not in (
+            "augmented_dickey_fuller",
+            "phillips_perron",
+            "zivot_andrews",
+        ):
+            raise ValueError(
+                "Method must be augmented_dickey_fuller, phillips_perron or zivot_andrews."
+            )
+
         period = period if period else "daily"
         prices = self._filter_benchmark(
             self._get_series_column(period, column),
             include_benchmark=include_benchmark,
         )
 
-        result = pd.DataFrame(
-            {
+        # Each test keeps its own lag parameter: the ADF and Zivot-Andrews tests search the
+        # lag length by AIC up to max_lag, Phillips-Perron takes the Newey-West truncation lag.
+        if method == "phillips_perron":
+            values = {
+                ticker: unitroot_model.get_phillips_perron_test(
+                    prices[ticker], regression=regression, lags=lags
+                )
+                for ticker in prices.columns
+            }
+        elif method == "zivot_andrews":
+            values = {
+                ticker: unitroot_model.get_zivot_andrews_test(
+                    prices[ticker], max_lag=max_lag, regression=regression, trim=trim
+                )
+                for ticker in prices.columns
+            }
+        else:
+            values = {
                 ticker: unitroot_model.get_augmented_dickey_fuller(
                     prices[ticker], max_lag=max_lag, regression=regression
                 )
                 for ticker in prices.columns
             }
-        )
 
         return apply_rounding(
-            result, rounding if rounding is not None else self._rounding
+            pd.DataFrame(values), rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
@@ -199,9 +297,9 @@ class StationarityEconometrics:
         """
         Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test for stationarity, per asset.
 
-        KPSS is the natural complement to the Augmented Dickey-Fuller test: where the ADF null
-        hypothesis is that the series HAS a unit root, the KPSS null hypothesis is that the
-        series IS stationary, with a unit root as the alternative. Running both together is
+        KPSS is the natural complement to the Augmented Dickey-Fuller test (`get_unit_root_test`):
+        where the ADF null hypothesis is that the series HAS a unit root, the KPSS null hypothesis
+        is that the series IS stationary, with a unit root as the alternative. Running both together is
         standard practice to triangulate a confident conclusion -- ADF rejecting a unit root
         and KPSS failing to reject stationarity together give a confident stationarity
         conclusion, while the two tests disagreeing flags an ambiguous case.
@@ -301,250 +399,6 @@ class StationarityEconometrics:
             result, rounding if rounding is not None else self._rounding
         )
 
-    @handle_portfolio
-    @handle_errors
-    def get_phillips_perron_test(
-        self,
-        period: str | None = None,
-        column: str = "Adj Close",
-        regression: str = "c",
-        lags: int | None = None,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the Phillips-Perron (PP) test for a unit root, per asset.
-
-        Phillips-Perron tests the same null hypothesis as the Augmented Dickey-Fuller test (a
-        unit root), but corrects for heteroskedasticity and serial correlation in the errors
-        nonparametrically via a Newey-West long-run variance estimate, rather than by adding
-        lagged-difference terms to the regression as ADF does. PP and ADF should broadly agree
-        on the same series since they test the same null with different correction methods.
-
-        The formula is as follows:
-
-        - Yₜ = α + ρ·Yₜ₋₁ + uₜ fitted by OLS on the `column` level (Adj Close by default), with
-          regression="c" (the default); "ct" adds a trend β·t
-        - t_ρ = (ρ̂ - 1) / SE(ρ̂), γ₀ = Σûₜ² / n and s² = Σûₜ² / (n - k), with k the number of coefficients
-        - λ² = γ₀ + 2·Σ(j=1..l) (1 - j / (l + 1))·γⱼ, with γⱼ = (1 / n)·Σ(t=j+1..n) ûₜ·ûₜ₋ⱼ and l = `lags`,
-          which defaults to int(12·(n / 100)^(1/4))
-        - Z_t = √(γ₀ / λ²)·t_ρ - (λ² - γ₀) / (2·λ·s)·n·SE(ρ̂)
-        - The p-value is the MacKinnon (1994) approximation of the Dickey-Fuller distribution and the unit
-          root is rejected at 5% when it is below 0.05, as in the ADF test; the critical values are the
-          finite-sample MacKinnon (2010) ones for the number of observations
-
-        For more information about the method, see the following paper:
-
-        - Phillips, P.C.B., & Perron, P. (1988). "Testing for a Unit Root in Time Series
-        Regression." Biometrika, 75(2), 335-346.
-
-        Also known as: PP test, Z_t test.
-
-        Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
-            column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            regression (str, optional): Which deterministic term to include, one of "c" (constant) or
-            "ct" (constant and trend). Defaults to "c". Note "n" (no constant) is not supported, see
-            `econometrics.unitroot_model.get_phillips_perron_test` for why.
-            lags (int, optional): The truncation lag for the Newey-West long-run variance estimate.
-            Defaults to None, meaning the Schwert (1989) rule ceil(12 * (n / 100) ** 0.25), capped
-            for short samples as the ADF lag search is.
-            include_benchmark (bool, optional): Whether to include "Benchmark" among the
-            assets tested. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: The Phillips-Perron Z_t statistic, its MacKinnon (1994) p-value, truncation
-            lag used, observations used, the finite-sample MacKinnon (2010) 1%/5%/10% critical values,
-            and whether the unit root is rejected at the 5% level, per asset.
-
-        Notes:
-        - The method retrieves historical price data based on the specified `period` and runs the
-        Phillips-Perron test for each asset in the Toolkit instance.
-        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["GCUSD", "SIUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.econometrics.get_phillips_perron_test()
-        ```
-
-        Which returns:
-
-        |                           |     GCUSD |     SIUSD |
-        |:--------------------------|----------:|----------:|
-        | Phillips-Perron Statistic |    3.3901 |    4.5297 |
-        | P-Value                   |    1      |    1      |
-        | Lags Used                 |   23      |   23      |
-        | Observations              | 1300      | 1300      |
-        | Critical Value 1%         |   -3.4354 |   -3.4354 |
-        | Critical Value 5%         |   -2.8638 |   -2.8638 |
-        | Critical Value 10%        |   -2.568  |   -2.568  |
-        | Reject Unit Root (5%)     |    0      |    0      |
-        """
-        period = period if period else "daily"
-        prices = self._filter_benchmark(
-            self._get_series_column(period, column),
-            include_benchmark=include_benchmark,
-        )
-
-        result = pd.DataFrame(
-            {
-                ticker: unitroot_model.get_phillips_perron_test(
-                    prices[ticker], regression=regression, lags=lags
-                )
-                for ticker in prices.columns
-            }
-        )
-
-        return apply_rounding(
-            result, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_zivot_andrews_test(
-        self,
-        period: str | None = None,
-        column: str = "Adj Close",
-        max_lag: int | None = None,
-        regression: str = "c",
-        trim: float = 0.15,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the Zivot-Andrews test for a unit root, per asset, allowing for a
-        single structural break at an unknown (endogenously estimated) date.
-
-        The (A)DF/KPSS/PP tests above all assume the deterministic component of the
-        series (its constant and/or trend) is stable throughout the sample. If a
-        series instead has a single one-time break -- e.g. a permanent level shift or
-        a change in trend slope, such as a stock split, spin-off, or a structural
-        shift in the business -- the ordinary ADF test is biased towards not
-        rejecting the unit root even for a genuinely (trend-)stationary series with a
-        break. The Zivot-Andrews test corrects for this by adding a break dummy to
-        the ADF regression and choosing, for each asset, the break date that is most
-        favorable to the stationary alternative -- which is why it needs its own
-        (more negative) critical values rather than the ordinary ADF ones.
-
-        The formula is as follows:
-
-        - ΔYₜ = μ + θ·DUₜ + β·t + α·Yₜ₋₁ + Σ(i=1..p) cᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close
-          by default) and DUₜ = 1 after the break date T_B and 0 before it (regression="c", the default)
-        - regression="t" replaces θ·DUₜ by a trend break γ·DTₜ, with DTₜ = t - T_B after the break and 0
-          before it, and regression="ct" includes both
-        - ZA = min over T_B of α̂ / SE(α̂), searching every break date outside the first and last `trim`
-          (15% by default) of the sample
-        - p = the number of lags that minimises the AIC, up to `max_lag` (same default as
-          `get_augmented_dickey_fuller`)
-
-        For more information about the method, see the following papers:
-
-        - Zivot, E., & Andrews, D.W.K. (1992). "Further Evidence on the Great Crash,
-        the Oil-Price Shock, and the Unit-Root Hypothesis." Journal of Business &
-        Economic Statistics, 10(3), 251-270.
-        - Perron, P. (1989). "The Great Crash, the Oil Price Shock, and the Unit Root
-        Hypothesis." Econometrica, 57(6), 1361-1401.
-
-        Also known as: ZA test, structural break unit root test.
-
-        Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
-            column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            max_lag (int, optional): The maximum number of lagged differences to consider when
-            selecting the (single, reused) lag length. Defaults to the Schwert (1989) rule of thumb,
-            capped at (n - 5) // 3 for short samples.
-            regression (str, optional): Which break to allow for, one of "c" (a break in the
-            level/intercept), "t" (a break in the trend slope) or "ct" (both). Defaults to "c".
-            trim (float, optional): The fraction of observations excluded from the candidate break
-            date search at the start and end of the sample. Must be in [0, 1/3). Defaults to 0.15.
-            include_benchmark (bool, optional): Whether to include "Benchmark" among the
-            assets tested. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: The Zivot-Andrews statistic, its p-value, the (0-indexed) position of the
-            selected break date within the used sample, the number of lags and observations used,
-            the 1%/5%/10% critical values, and whether the unit root is rejected at the 5% level, per
-            asset.
-
-        Notes:
-        - The method retrieves historical price data based on the specified `period` and runs the
-        Zivot-Andrews test for each asset in the Toolkit instance.
-        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["CLUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.econometrics.get_zivot_andrews_test()
-        ```
-
-        Which returns:
-
-        |                         |       CLUSD |
-        |:------------------------|------------:|
-        | Zivot-Andrews Statistic |   -4.1369   |
-        | P-Value                 |    0.271885 |
-        | Break Index             |  243        |
-        | Observations            | 1280        |
-        | Lags Used               |   10        |
-        | Critical Value 1%       |   -5.27644  |
-        | Critical Value 5%       |   -4.81067  |
-        | Critical Value 10%      |   -4.56618  |
-        | Reject Unit Root (5%)   |    0        |
-        """
-        period = period if period else "daily"
-        prices = self._filter_benchmark(
-            self._get_series_column(period, column),
-            include_benchmark=include_benchmark,
-        )
-
-        result = pd.DataFrame(
-            {
-                ticker: unitroot_model.get_zivot_andrews_test(
-                    prices[ticker], max_lag=max_lag, regression=regression, trim=trim
-                )
-                for ticker in prices.columns
-            }
-        )
-
-        return apply_rounding(
-            result, rounding if rounding is not None else self._rounding
-        )
-
     @handle_errors
     def get_engle_granger_cointegration(
         self,
@@ -581,7 +435,7 @@ class StationarityEconometrics:
         - EG = γ̂ / SE(γ̂), compared with the MacKinnon (1994, 2010) cointegration critical values and
           p-values for two variables
         - p = the number of lags that minimises the AIC, up to `max_lag` (same default as
-          `get_augmented_dickey_fuller`)
+          `get_unit_root_test`)
 
         For more information about the method, see the following paper:
 
@@ -1043,7 +897,7 @@ class StationarityEconometrics:
         The formula is as follows, with Xₜ the log of the `column` (Adj Close by default):
 
         - For d = 0, 0.1, ..., 1 (`step`): X̃ = FFD(X, d) of `get_fractional_difference` with the
-          weight threshold (0.01 by default) and the ADF test on X̃ with `get_augmented_dickey_fuller`
+          weight threshold (0.01 by default) and the ADF test on X̃ with `get_unit_root_test`
           (constant, lags by AIC up to `max_lag`, 1 by default), as in López de Prado's Snippet 5.4
         - d* = the smallest d whose ADF p-value is below 1 - confidence (0.05 by default), refined
           in steps of step / 10 between the last d that fails and the first that passes

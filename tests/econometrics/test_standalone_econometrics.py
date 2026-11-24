@@ -19,7 +19,7 @@ def monthly_rates():
 def test_standalone_econometrics_on_any_data(monthly_rates):
     econometrics = Econometrics(data=monthly_rates, changes="difference")
 
-    adf = econometrics.get_augmented_dickey_fuller()
+    adf = econometrics.get_unit_root_test()
     assert list(adf.columns) == ["United States", "Germany"]
     # The series are analyzed at the dates they are observed: 240 months.
     assert adf.loc["Observations"].max() <= 240  # noqa: PLR2004
@@ -27,7 +27,7 @@ def test_standalone_econometrics_on_any_data(monthly_rates):
     ols = econometrics.get_ols(dependent_ticker="Germany", column="Level")
     assert ols.loc["United States", "Coefficient"] == pytest.approx(0.5, abs=0.05)
 
-    yearly = econometrics.get_augmented_dickey_fuller(period="yearly", column="Change")
+    yearly = econometrics.get_unit_root_test(period="yearly", column="Change")
     assert yearly.loc["Observations"].max() < 20  # noqa: PLR2004
 
 
@@ -98,7 +98,7 @@ def test_standalone_mixed_monthly_and_daily_series():
     # Every series is tested on its own observations, not only on the dates both share.
     jarque_bera = econometrics.get_jarque_bera_test()
     assert jarque_bera.loc["P-Value"].notna().all()
-    adf = econometrics.get_augmented_dickey_fuller(column="Level", max_lag=0)
+    adf = econometrics.get_unit_root_test(column="Level", max_lag=0)
     assert adf.loc["Observations", "Daily"] == len(days) - 1
     assert adf.loc["Observations", "Monthly"] == 71  # noqa: PLR2004
 

@@ -106,7 +106,7 @@ def call_econometrics(**arguments):
 
 def test_an_econometrics_call_analyzes_other_indicators(indicator_answers):
     answer = call_econometrics(
-        indicator="get_augmented_dickey_fuller",
+        indicator="get_unit_root_test",
         series="macroeconomics:get_inflation_rate:USA,Germany",
         start_date="2010-01-01",
     )

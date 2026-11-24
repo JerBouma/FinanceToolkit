@@ -1486,3 +1486,35 @@ def test_get_optimal_trading_rule(recorder, econometrics_module):
             rounding=2,
         )
     )
+
+
+def test_move_significance_of_the_toolkit_measures_each_return(econometrics_module):
+    from financetoolkit.risk import risk_model
+
+    significance = econometrics_module.get_move_significance(
+        window=20, include_benchmark=True
+    )
+
+    measures = significance.columns.get_level_values(0).unique().tolist()
+    assert measures == [
+        "Return",
+        "Volatility Multiple",
+        "VaR Multiple",
+        "Percentile",
+        "Largest Since",
+    ]
+    assert "Benchmark" in significance.columns.get_level_values(1)
+
+    returns = econometrics_module._historical_data["daily"]["Return"]
+    ticker = returns.columns[0]
+    expected = risk_model.get_move_significance(returns[ticker].dropna(), 20)
+    expected = expected.loc[significance.index]
+
+    pd.testing.assert_series_equal(
+        significance[("Volatility Multiple", ticker)],
+        expected["Volatility Multiple"],
+        check_names=False,
+        check_dtype=False,
+        atol=1e-4,
+    )
+    assert (significance[("Largest Since", ticker)].dropna() < "9999").all()

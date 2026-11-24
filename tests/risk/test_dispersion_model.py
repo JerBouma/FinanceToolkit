@@ -187,7 +187,7 @@ def test_measures_per_period_and_rolling():
     assert rolling.iloc[10] == pytest.approx(
         dispersion_model.get_gini_mean_difference(RETURNS.iloc[6:11])
     )
-    semi = risk_model.get_rolling_downside_deviation(RETURNS, 8, "mean")
+    semi = risk_model.get_downside_deviation(RETURNS, "mean", window=8)
     assert semi.iloc[12] == pytest.approx(
         risk_model.get_downside_deviation(RETURNS.iloc[5:13], "mean")
     )

@@ -677,9 +677,9 @@ def get_skewness_kurtosis_ratio(
         pd.Series | pd.DataFrame | float: The ratio, NaN where the kurtosis is undefined.
     """
     if window_size:
-        return risk_model.get_rolling_skewness(
-            returns, window_size
-        ) / risk_model.get_rolling_kurtosis(returns, window_size, fisher=False)
+        return risk_model.get_skewness(
+            returns, window=window_size
+        ) / risk_model.get_kurtosis(returns, fisher=False, window=window_size)
 
     return risk_model.get_skewness(returns) / risk_model.get_kurtosis(
         returns, fisher=False

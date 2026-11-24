@@ -71,7 +71,7 @@ def test_new_methods_on_the_toolkit(econometrics_module):
     parameters = econometrics_module.get_dcc_garch(parameters=True)
     assert "DCC Alpha" in parameters.index
 
-    pairs = econometrics_module.get_pairs_trading(window=60)
+    pairs = econometrics_module.get_pairs_trading(rolling=60)
     assert pairs.index.names == ["Dependent", "Independent"]
     assert {"Hedge Ratio", "Half-Life", "Cointegration P-Value"} <= set(pairs.columns)
     series = econometrics_module.get_pairs_trading(time_series=True)

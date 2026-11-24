@@ -681,7 +681,7 @@ class DynamicsEconometrics:
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int | None = None,
+        rolling: int | None = None,
         entry_z_score: float = 2.0,
         exit_z_score: float = 0.5,
         log_prices: bool = True,
@@ -722,7 +722,7 @@ class DynamicsEconometrics:
         - yₜ = c + h·xₜ + sₜ, fitted by OLS on the dates both have, with yₜ and xₜ the (log, by
           default) `column` levels (Adj Close by default): h the Hedge Ratio, c the Intercept and
           sₜ the Spread
-        - Z-Scoreₜ = (sₜ - mean(s)) / std(s) (ddof=1), over the full sample or a rolling `window`
+        - Z-Scoreₜ = (sₜ - mean(s)) / std(s) (ddof=1), over the full sample or a rolling window
         - Signal: -1 from Z > `entry_z_score` until Z < `exit_z_score`, +1 from Z < -`entry_z_score`
           until Z > -`exit_z_score`, 0 otherwise (2.0 and 0.5 by default)
         - Half-Life = -ln(2) / ln(1 + λ), with λ from Δsₜ = a + λ·sₜ₋₁ + εₜ (infinite when λ is (nearly)
@@ -748,8 +748,9 @@ class DynamicsEconometrics:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
                 yearly). Defaults to "daily".
             column (str, optional): The price column. Defaults to "Adj Close".
-            window (int | None, optional): The rolling window of the z-score. Defaults to
-                None, which uses the full sample.
+            rolling (int | None, optional): The number of periods of a rolling window for the
+                mean and standard deviation of the z-score. Defaults to None, which uses the full
+                sample.
             entry_z_score (float, optional): The z-score at which a position is opened.
                 Defaults to 2.0.
             exit_z_score (float, optional): The z-score whose crossing on the way back closes
@@ -788,7 +789,7 @@ class DynamicsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_pairs_trading(window=60)
+        toolkit.econometrics.get_pairs_trading(rolling=60)
         ```
 
         Which returns:
@@ -805,7 +806,7 @@ class DynamicsEconometrics:
             (ticker_a, ticker_b): pairs_trading_model.get_pairs_trading(
                 prices[ticker_a],
                 prices[ticker_b],
-                window=window,
+                window=rolling,
                 entry=entry_z_score,
                 exit_=exit_z_score,
                 log_prices=log_prices,

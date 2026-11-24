@@ -160,9 +160,9 @@ def _get_out_of_sample_estimates(
             estimate = column_returns.rolling(window=window).std(ddof=1)
         elif method == "historic":
             estimate = (
-                var_model.get_rolling_var_historic(column_returns, alpha, window)
+                var_model.get_var_historic(column_returns, alpha, window=window)
                 if measure == "var"
-                else cvar_model.get_rolling_cvar_historic(column_returns, alpha, window)
+                else cvar_model.get_cvar_historic(column_returns, alpha, window=window)
             )
         elif method == "gaussian":
             # The gaussian estimate only needs the mean and the sample standard deviation, which
@@ -433,7 +433,7 @@ class ValueAtRiskRisk:
             )
         elif rolling:
             returns = self._historical_data[period]["Return"]
-            value_at_risk = var_model.get_rolling_var_historic(returns, alpha, rolling)
+            value_at_risk = var_model.get_var_historic(returns, alpha, window=rolling)
         else:
             returns = self._get_returns(period, within_period)
 
@@ -717,7 +717,7 @@ class ValueAtRiskRisk:
                 (
                     estimators["garch"](returns, tail)
                     if method == "garch"
-                    else cvar_model.get_rolling_cvar_historic(returns, tail, rolling)
+                    else cvar_model.get_cvar_historic(returns, tail, window=rolling)
                 )
                 for tail in alphas
             ]

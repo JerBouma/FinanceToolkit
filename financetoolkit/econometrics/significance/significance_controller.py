@@ -81,7 +81,7 @@ class SignificanceEconometrics:
         least as low ("the lowest since"), next to its change since the first observation and the
         highest and lowest values of the range with their dates and the change from them.
 
-        Where `get_move_significance` (Risk) measures how unusual a move is, this measures how
+        Where `get_move_significance` measures how unusual a move is, this measures how
         unusual a level is, which is the question for rates and macroeconomic series: a 10-year
         yield of 5.13% is "the highest since May 2002" when no month since then was as high, and
         an unemployment rate can be the lowest in decades without any single large move. Through
@@ -284,9 +284,17 @@ class SignificanceEconometrics:
         the date of the last move at least as large in the same direction ("the largest one-day
         rise since").
 
-        This is `get_move_significance` (Risk) for any series rather than the returns of the
-        Toolkit's tickers: when the Econometrics data takes differences as its changes, a yield,
-        rate or spread moves in points, so a rise of the 2-year Treasury yield from 4.56% to 4.73% is a
+        A return only says how far a price moved, not whether that is a lot for the asset: a 3%
+        day is ordinary for a volatile growth stock and exceptional for a utility or an index.
+        Dividing the change by the volatility of the changes before it (the "sigma" of a move)
+        makes moves comparable across series and calm or turbulent markets, the percentile says
+        how many earlier moves were smaller, and "largest since" gives the familiar headline
+        ("the biggest one-day fall since March 2020"). Through the Toolkit the changes are the
+        returns of its tickers (total returns from Adj Close, compounded within each period for a
+        period other than daily), and of the benchmark when it is included, so the Toolkit's
+        Econometrics gives the significance of every return. With `Econometrics(data=...)` it
+        measures any series, and when the data takes differences as its changes a yield, rate or
+        spread moves in points, so a rise of the 2-year Treasury yield from 4.56% to 4.73% is a
         move of 0.0017, measured against the earlier daily moves of the same yield. Where
         `get_level_significance` asks how unusual a level is, this asks how unusual a change is.
 

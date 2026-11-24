@@ -544,10 +544,13 @@ def get_pain_index(
     return drawdowns.abs().mean()
 
 
-def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+@by_own_trading_days(rolling_only=True)
+def get_skewness(
+    returns: pd.Series | pd.DataFrame, window: int | None = None
+) -> pd.Series | pd.DataFrame:
     """
     Calculate the skewness of returns: whether large moves are more often gains (positive) or
-    losses (negative).
+    losses (negative), over the whole sample or within every rolling window.
 
     Shares similar logic:
     - scipy, skew: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skew.html
@@ -555,12 +558,20 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
 
     Args:
         returns (pd.Series | pd.Dataframe): A single index dataframe or series
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the skewness over all returns (per period for a 'within
+            period' index).
 
     Returns:
-        pd.Series | pd.Dataframe: Skewness of the dataset, NaN for a series without
-        variation (e.g. a constant price), whose shape is undefined, or with fewer than
-        three returns.
+        pd.Series | pd.Dataframe: Skewness of the dataset, or with a window the skewness at the
+        end of every window with time as index. NaN for a series or window without variation
+        (e.g. a constant price), whose shape is undefined, or with fewer than three returns.
     """
+    if window is not None:
+        windows = returns.rolling(window=window)
+
+        return windows.skew().mask(windows.max() == windows.min())
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -585,12 +596,14 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days(rolling_only=True)
 def get_kurtosis(
-    returns: pd.Series | pd.DataFrame, fisher: bool = True
+    returns: pd.Series | pd.DataFrame, fisher: bool = True, window: int | None = None
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the kurtosis of returns: how fat the tails of their distribution are, how
-    often extreme moves occur compared with a normal distribution.
+    often extreme moves occur compared with a normal distribution, over the whole sample or
+    within every rolling window.
 
     Shares similar logic:
     - scipy, kurtosis: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kurtosis.html
@@ -603,12 +616,21 @@ def get_kurtosis(
         definition (normal distribution equals 3.0). The two differ by exactly 3,
         since both are computed from the same bias-corrected (sample) estimator that
         `get_skewness` also uses. Defaults to True.
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the kurtosis over all returns (per period for a 'within
+            period' index).
 
     Returns:
-        pd.Series | pd.Dataframe: Kurtosis of the dataset, NaN for a series without
-        variation (e.g. a constant price), whose shape is undefined, or with fewer than
-        four returns.
+        pd.Series | pd.Dataframe: Kurtosis of the dataset, or with a window the kurtosis at the
+        end of every window with time as index. NaN for a series or window without variation
+        (e.g. a constant price), whose shape is undefined, or with fewer than four returns.
     """
+    if window is not None:
+        windows = returns.rolling(window=window)
+        rolling_kurtosis = windows.kurt().mask(windows.max() == windows.min())
+
+        return rolling_kurtosis if fisher else rolling_kurtosis + 3
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -639,37 +661,53 @@ def get_kurtosis(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days(rolling_only=True)
 def get_variance(
     returns: pd.Series | pd.DataFrame,
     period: str,
     groups: pd.Series | np.ndarray | None = None,
+    window: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Variance of returns for a given period from the daily returns: how widely
-    the returns spread around their mean, scaled to a week, month, quarter or year.
+    Calculate the Variance of returns: how widely the returns spread around their mean, per
+    week, month, quarter or year from the daily returns, or within every rolling window of
+    returns of that period.
 
-    The daily Variance is scaled to the given period by multiplying it with the
-    number of daily returns within that period: 252 a year for a ticker that trades on
+    Without a window, the daily Variance is scaled to the given period by multiplying it with
+    the number of daily returns within that period: 252 a year for a ticker that trades on
     weekdays (e.g. 252 / 52 for weekly) and 365 a year for one that also trades on
     weekends, such as a cryptocurrency (e.g. 365 / 52 for weekly), see
-    `helpers.get_days_per_period`.
+    `helpers.get_days_per_period`. With a window, the returns are already returns of the
+    given period, so their variance is the Variance per period and is not scaled any further.
+
+    The formula is as follows:
+
+        - Variance = Var(Daily Return) × Daily Returns per Period
+        - Rolling Variance = Var(Period Return) over the last window of periods
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns, or with a
+        window of returns of the given period.
         period (str): The period to calculate the Variance for. Options are: "weekly", "monthly", "quarterly",
-        "yearly". Only used to look up the scaling multiplier
-        when `groups` is not provided.
+        "yearly". Without a window only used to look up the scaling multiplier when `groups` is
+        not provided; with a window the period the returns are given in.
         groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
         per row of `returns`, to group by instead of deriving calendar periods from
         `returns.index` via `.asfreq()`. Use this when `returns` does not have a
-        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
-        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes). Only applies
+        without a window. Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
+        window (int | None, optional): The number of observations of a rolling window, in
+            periods. Defaults to None, which calculates the Variance per period from the daily
+            returns.
 
     Returns:
         pd.Series | pd.DataFrame: Variance values with time (or `groups`) as the
         index.
     """
     validate_period(period)
+
+    if window is not None:
+        return returns.rolling(window=window).var()
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -684,91 +722,58 @@ def get_variance(
     return returns.groupby(dates).var() * days_per_period
 
 
-@by_own_trading_days
-def get_rolling_variance(
-    returns: pd.Series | pd.DataFrame, period: str, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Variance of returns of a given period: how widely the returns of
-    every rolling window spread around their mean.
-
-    The variance of returns of the given period is already the Variance per period, the
-    unit get_variance reports as well, so it is not scaled any further.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
-        period (str): The period the returns are given in and to scale the Variance for.
-        Options are: "weekly", "monthly", "quarterly", "yearly".
-        window_size (int): The size of the rolling window, in number of periods.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Variance values with time as the index.
-    """
-    validate_period(period)
-
-    return returns.rolling(window=window_size).var()
-
-
-@by_own_trading_days
-def get_rolling_volatility(
-    returns: pd.Series | pd.DataFrame, period: str, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Volatility of returns of a given period: the standard deviation of
-    the returns of every rolling window.
-
-    The standard deviation of returns of the given period is already the Volatility per
-    period, the unit get_volatility reports as well, so it is not scaled any further.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
-        period (str): The period the returns are given in and to scale the Volatility for.
-        Options are: "weekly", "monthly", "quarterly", "yearly".
-        window_size (int): The size of the rolling window, in number of periods.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Volatility values with time as the index.
-    """
-    validate_period(period)
-
-    return returns.rolling(window=window_size).std()
-
-
+@by_own_trading_days(rolling_only=True)
 def get_volatility(
     returns: pd.Series | pd.DataFrame,
     period: str,
     groups: pd.Series | np.ndarray | None = None,
+    window: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Volatility of returns for a given period from the daily returns: the
-    standard deviation of the returns, scaled to a week, month, quarter or year.
+    Calculate the Volatility of returns: the standard deviation of the returns, per week,
+    month, quarter or year from the daily returns, or within every rolling window of returns
+    of that period.
 
-    The daily Volatility is scaled to the given period by multiplying it with the
-    square root of the number of daily returns within that period: 252 a year for a
+    Without a window, the daily Volatility is scaled to the given period by multiplying it
+    with the square root of the number of daily returns within that period: 252 a year for a
     ticker that trades on weekdays (e.g. SQRT(252 / 52) for weekly) and 365 a year for
     one that also trades on weekends, such as a cryptocurrency (e.g. SQRT(365 / 52) for
-    weekly), see `helpers.get_days_per_period`.
+    weekly), see `helpers.get_days_per_period`. With a window, the returns are already
+    returns of the given period, so their standard deviation is the Volatility per period and
+    is not scaled any further.
+
+    The formula is as follows:
+
+        - Volatility = Standard Deviation(Daily Return) × SQRT(Daily Returns per Period)
+        - Rolling Volatility = Standard Deviation(Period Return) over the last window of periods
 
     Shares similar logic:
     - PerformanceAnalytics (R), StdDev.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/StdDev.annualized.R#L50
     - empyrical, annual_volatility: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L487
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns, or with a
+        window of returns of the given period.
         period (str): The period to calculate the Volatility for. Options are: "weekly", "monthly", "quarterly",
-        "yearly". Only used to look up the scaling multiplier
-        when `groups` is not provided.
+        "yearly". Without a window only used to look up the scaling multiplier when `groups` is
+        not provided; with a window the period the returns are given in.
         groups (pd.Series | np.ndarray | None, optional): Explicit group labels, one
         per row of `returns`, to group by instead of deriving calendar periods from
         `returns.index` via `.asfreq()`. Use this when `returns` does not have a
-        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes).
-        Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
+        DatetimeIndex/PeriodIndex (e.g. a plain Series of simulated outcomes). Only applies
+        without a window. Defaults to None, which requires a DatetimeIndex/PeriodIndex on `returns`.
+        window (int | None, optional): The number of observations of a rolling window, in
+            periods. Defaults to None, which calculates the Volatility per period from the daily
+            returns.
 
     Returns:
         pd.Series | pd.DataFrame: Volatility values with time (or `groups`) as the
         index.
     """
     validate_period(period)
+
+    if window is not None:
+        return returns.rolling(window=window).std()
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -839,15 +844,26 @@ def get_conditional_drawdown_at_risk(
     alpha: float,
     method: str = "return",
     compound_returns: bool = True,
+    window: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Conditional Drawdown at Risk (CDaR) of returns: the average of the deepest
-    drawdowns, those beyond the Drawdown at Risk.
+    drawdowns, those beyond the Drawdown at Risk, over the whole sample or within every
+    rolling window.
 
     CDaR extends the concept of Value at Risk and Conditional Value at Risk to the drawdown
     series instead of the return series. The Drawdown at Risk (DaR) is the alpha-quantile of
     the drawdown distribution and CDaR is the average of the drawdowns that are at least as
     severe as the DaR.
+
+    The formula is as follows:
+
+        - Drawdown = Wealth / Running Peak of Wealth - 1
+        - CDaR = Mean(Drawdown | Drawdown <= DaR), with DaR the alpha-quantile of the drawdowns
+
+    With a window, the cumulative return path is rebuilt from scratch within each window
+    (rebased to 1 at the start of the window) so that the CDaR reflects only the drawdowns that
+    occurred within that window.
 
     Shares similar logic:
     - Riskfolio-Lib, CDaR_Rel (compounded): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CDaR_Rel
@@ -867,6 +883,9 @@ def get_conditional_drawdown_at_risk(
         compound_returns (bool, optional): Only for method="return". Whether to compound the
         returns; without compounding the drawdowns are the absolute declines of the summed
         returns from their peak (Riskfolio-Lib's CDaR_Abs). Defaults to True.
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the CDaR over all returns (per period for a 'within
+            period' index).
 
     Returns:
         pd.Series | pd.DataFrame: CDaR values as float if returns is a pd.Series,
@@ -876,6 +895,37 @@ def get_conditional_drawdown_at_risk(
         ValueError: If `method` is not one of "return" or "level".
     """
     check_option("method", method, ("return", "level"))
+
+    if window is not None:
+
+        def _cdar(windows):
+            if method == "level":
+                drawdowns = windows - np.maximum.accumulate(windows, axis=1)
+            elif not compound_returns:
+                cum_returns = np.cumsum(windows, axis=1)
+                # Each window starts from a sum of 0, see get_wealth_and_peak.
+                drawdowns = cum_returns - np.maximum(
+                    np.maximum.accumulate(cum_returns, axis=1), 0
+                )
+            else:
+                cum_returns = np.cumprod(1 + windows, axis=1)
+                # Each window starts from a wealth of 1, see get_wealth_and_peak.
+                drawdowns = (
+                    cum_returns
+                    / np.maximum(np.maximum.accumulate(cum_returns, axis=1), 1)
+                    - 1
+                )
+
+            drawdown_at_risk = np.percentile(
+                drawdowns, alpha * 100, axis=1, keepdims=True
+            )
+
+            # The value at the percentile is always in the tail, so no window has an empty one.
+            return np.nanmean(
+                np.where(drawdowns <= drawdown_at_risk, drawdowns, np.nan), axis=1
+            )
+
+        return apply_to_stacked_windows(returns, window, _cdar)
 
     if (
         isinstance(returns, pd.DataFrame)
@@ -915,17 +965,22 @@ def get_conditional_drawdown_at_risk(
     )
 
 
+@by_own_trading_days(rolling_only=True)
 def get_tail_ratio(
-    returns: pd.Series | pd.DataFrame, alpha: float
+    returns: pd.Series | pd.DataFrame, alpha: float, window: int | None = None
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Tail Ratio of returns: how large the best-case gains are compared with the
-    worst-case losses.
+    worst-case losses, over the whole sample or within every rolling window.
 
     The Tail Ratio compares the size of the right (gain) tail to the left (loss) tail of the
     return distribution. It is calculated as the absolute value of the (1 - alpha)-th percentile
     of returns divided by the absolute value of the alpha-th percentile of returns. A Tail Ratio
     above 1 indicates that best-case gains outsize worst-case losses.
+
+    The formula is as follows:
+
+        - Tail Ratio = |Quantile(Return, 1 - alpha)| / |Quantile(Return, alpha)|
 
     Shares similar logic:
     - empyrical, tail_ratio: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1501
@@ -935,11 +990,20 @@ def get_tail_ratio(
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         alpha (float): The percentile used to define each tail (e.g., 0.05 uses the 5th and
         95th percentile).
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the Tail Ratio over all returns.
 
     Returns:
         pd.Series | pd.DataFrame: Tail Ratio values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    if window is not None:
+        rolling = returns.rolling(window=window)
+        right_tail = rolling.quantile(1 - alpha, interpolation="linear")
+        left_tail = rolling.quantile(alpha, interpolation="linear")
+
+        return drop_non_finite(right_tail.abs() / left_tail.abs())
+
     if not isinstance(returns, pd.DataFrame | pd.Series):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -951,95 +1015,6 @@ def get_tail_ratio(
         return abs(right_tail) / abs(left_tail) if left_tail != 0 else np.nan
 
     return drop_non_finite(right_tail.abs() / left_tail.abs())
-
-
-@by_own_trading_days
-def get_rolling_tail_ratio(
-    returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Tail Ratio of returns: how large the best-case gains are compared
-    with the worst-case losses within every rolling window.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        alpha (float): The percentile used to define each tail (e.g., 0.05 uses the 5th and
-        95th percentile).
-        window_size (int): The size of the rolling window.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Tail Ratio values with time as index.
-    """
-
-    rolling = returns.rolling(window=window_size)
-    right_tail = rolling.quantile(1 - alpha, interpolation="linear")
-    left_tail = rolling.quantile(alpha, interpolation="linear")
-
-    return drop_non_finite(right_tail.abs() / left_tail.abs())
-
-
-@by_own_trading_days
-def get_rolling_conditional_drawdown_at_risk(
-    returns: pd.Series | pd.DataFrame,
-    alpha: float,
-    window_size: int,
-    method: str = "return",
-    compound_returns: bool = True,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Conditional Drawdown at Risk (CDaR) of returns: the average of the
-    deepest drawdowns within every rolling window.
-
-    Within each rolling window, the cumulative return path is rebuilt from scratch (rebased to 1
-    at the start of the window) so that the CDaR reflects only the drawdowns that occurred within
-    that window.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
-        (method="return") or of raw levels (method="level").
-        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
-        window_size (int): The size of the rolling window.
-        method (str, optional): The kind of input. Options are: "return" (rebuilds the
-        cumulative return path within each window), "level" (uses the raw level values
-        within each window directly). Use the level version when `returns` is not
-        a genuine percentage return (e.g. a series that can be zero or negative).
-        Defaults to "return".
-        compound_returns (bool, optional): Only for method="return". Whether to compound the
-        returns within each window. Defaults to True.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling CDaR values with time as index.
-
-    Raises:
-        ValueError: If `method` is not one of "return" or "level".
-    """
-    check_option("method", method, ("return", "level"))
-
-    def _cdar(windows):
-        if method == "level":
-            drawdowns = windows - np.maximum.accumulate(windows, axis=1)
-        elif not compound_returns:
-            cum_returns = np.cumsum(windows, axis=1)
-            # Each window starts from a sum of 0, see get_wealth_and_peak.
-            drawdowns = cum_returns - np.maximum(
-                np.maximum.accumulate(cum_returns, axis=1), 0
-            )
-        else:
-            cum_returns = np.cumprod(1 + windows, axis=1)
-            # Each window starts from a wealth of 1, see get_wealth_and_peak.
-            drawdowns = (
-                cum_returns / np.maximum(np.maximum.accumulate(cum_returns, axis=1), 1)
-                - 1
-            )
-
-        drawdown_at_risk = np.percentile(drawdowns, alpha * 100, axis=1, keepdims=True)
-
-        # The value at the percentile is always in the tail, so no window has an empty one.
-        return np.nanmean(
-            np.where(drawdowns <= drawdown_at_risk, drawdowns, np.nan), axis=1
-        )
-
-    return apply_to_stacked_windows(returns, window_size, _cdar)
 
 
 def _drawdown_trough(
@@ -1485,58 +1460,16 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])
 
 
-@by_own_trading_days
-def get_rolling_skewness(
-    returns: pd.Series | pd.DataFrame, window_size: int
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Skewness of returns: whether the large moves of every rolling window
-    are more often gains or losses.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        window_size (int): The size of the rolling window.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Skewness values with time as index, NaN for a
-        window without variation, as in `get_skewness`.
-    """
-    windows = returns.rolling(window=window_size)
-
-    return windows.skew().mask(windows.max() == windows.min())
-
-
-@by_own_trading_days
-def get_rolling_kurtosis(
-    returns: pd.Series | pd.DataFrame, window_size: int, fisher: bool = True
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Kurtosis of returns: how fat the tails of the returns of every
-    rolling window are.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        window_size (int): The size of the rolling window.
-        fisher (bool, optional): Whether to use Fisher's definition of kurtosis (kurtosis = 0.0
-        for a normal distribution) instead of Pearson's (kurtosis = 3.0 for a normal
-        distribution). The two differ by exactly 3, as in `get_kurtosis`. Defaults to True.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Kurtosis values with time as index, NaN for a
-        window without variation, as in `get_kurtosis`.
-    """
-    windows = returns.rolling(window=window_size)
-    rolling_kurtosis = windows.kurt().mask(windows.max() == windows.min())
-
-    return rolling_kurtosis if fisher else rolling_kurtosis + 3
-
-
+@by_own_trading_days(rolling_only=True)
 def get_downside_deviation(
-    returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float | str = 0.0
+    returns: pd.Series | pd.DataFrame,
+    minimum_acceptable_return: float | str = 0.0,
+    window: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Downside Deviation of returns: how large and frequent the shortfalls below a
-    minimum acceptable return (MAR) are, the square root of their average square.
+    minimum acceptable return (MAR) are, the square root of their average square, over the
+    whole sample or within every rolling window.
 
     This is the second order lower partial moment used as the denominator of the Sortino
     ratio.
@@ -1548,9 +1481,9 @@ def get_downside_deviation(
 
         Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
 
-    Below each sample's own mean it is the semi-deviation (Markowitz 1959), divided by N - 1 as the sample variance
-    is, since the mean is
-    estimated from the same returns:
+    Below each sample's (or window's) own mean it is the semi-deviation (Markowitz 1959),
+    divided by N - 1 as the sample variance is, since the mean is estimated from the same
+    returns:
 
         Semi-Deviation = sqrt((1 / (N - 1)) * sum(min(Return - Mean, 0)^2))
 
@@ -1562,9 +1495,7 @@ def get_downside_deviation(
 
     Referenced against:
     - Riskfolio-Lib, SemiDeviation (around the mean): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiDeviation
-        Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
     - skfolio, semi_deviation (around the mean): https://skfolio.org/generated/skfolio.measures.semi_deviation.html
-        Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), DownsideDeviation: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideDeviation.R#L104
@@ -1575,11 +1506,37 @@ def get_downside_deviation(
         minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as
         the threshold below which returns are considered downside, or "mean" for the semi-deviation
         below the mean. Defaults to 0.0.
+        window (int | None, optional): The number of observations of a rolling window. Defaults
+            to None, which calculates the Downside Deviation over all returns (per period for a
+            'within period' index).
 
     Returns:
         pd.Series | pd.DataFrame: Downside Deviation values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
+    if window is not None:
+        if minimum_acceptable_return == "mean":
+            return apply_to_stacked_windows(
+                returns,
+                window,
+                lambda windows: np.sqrt(
+                    (
+                        np.minimum(windows - windows.mean(axis=1, keepdims=True), 0)
+                        ** 2
+                    ).sum(axis=1)
+                    / (window - 1)
+                ),
+            )
+
+        return get_partial_moment(
+            returns,
+            order=2,
+            minimum_acceptable_return=minimum_acceptable_return,
+            root=True,
+            window_size=window,
+            minimum_observations=1,
+        )
+
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             periods = returns.index.get_level_values(0).unique()
@@ -1626,55 +1583,6 @@ def get_downside_deviation(
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
-
-
-@by_own_trading_days
-def get_rolling_downside_deviation(
-    returns: pd.Series | pd.DataFrame,
-    window_size: int,
-    minimum_acceptable_return: float | str = 0.0,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Downside Deviation of returns: how large and frequent the shortfalls
-    below a minimum acceptable return (MAR) are within every rolling window.
-
-    The formula is as follows:
-
-        Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
-
-    Below the mean of each window it is the semi-deviation, divided by N - 1 (see
-    `get_downside_deviation`).
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        window_size (int): The size of the rolling window.
-        minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as
-        the threshold below which returns are considered downside, or "mean" for the semi-deviation
-        below the mean. Defaults to 0.0.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Downside Deviation values with time as index.
-    """
-    if minimum_acceptable_return == "mean":
-        return apply_to_stacked_windows(
-            returns,
-            window_size,
-            lambda windows: np.sqrt(
-                (np.minimum(windows - windows.mean(axis=1, keepdims=True), 0) ** 2).sum(
-                    axis=1
-                )
-                / (window_size - 1)
-            ),
-        )
-
-    return get_partial_moment(
-        returns,
-        order=2,
-        minimum_acceptable_return=minimum_acceptable_return,
-        root=True,
-        window_size=window_size,
-        minimum_observations=1,
-    )
 
 
 def get_partial_moment(
@@ -1809,30 +1717,43 @@ def get_volatility_skewness(
     return apply_to_observations(returns, volatility_skewness, window_size)
 
 
+@by_own_trading_days(rolling_only=True)
 def get_excess_volatility(
     returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series | pd.DataFrame,
     period: str,
+    window: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Excess Volatility of returns for a given period from the daily returns: the
-    standard deviation of the returns above the risk free rate, scaled to the period.
+    Calculate the Excess Volatility of returns: the standard deviation of the returns above the
+    risk free rate, per week, month, quarter or year from the daily returns, or within every
+    rolling window of returns of that period.
 
-    The Excess Volatility is the Volatility of the Excess Return, i.e. the daily return
-    minus the risk free rate, scaled to the given period in the same way as the Volatility
-    (see get_volatility).
+    The Excess Volatility is the Volatility of the Excess Return, i.e. the return minus the
+    risk free rate, scaled to the given period in the same way as the Volatility (see
+    get_volatility): without a window the daily excess returns are scaled to the period, with
+    a window the excess returns of the period are not scaled any further.
+
+    The formula is as follows:
+
+        - Excess Volatility = Volatility(Return - Risk Free Rate)
 
     Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
-        risk_free_rate (pd.Series | pd.DataFrame): The daily risk free rate, a Series
-        subtracted from every column or a DataFrame with the rate per column (the rate
-        each ticker earns per return of its own calendar).
+        returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns, or with a
+        window of returns of the given period.
+        risk_free_rate (pd.Series | pd.DataFrame): The risk free rate on the dates of the
+        returns (daily, or of the given period with a window), a Series subtracted from every
+        column or a DataFrame with the rate per column (the rate each ticker earns per return
+        of its own calendar).
         period (str): The period to calculate the Excess Volatility for. Options are: "weekly", "monthly",
         "quarterly", "yearly".
+        window (int | None, optional): The number of observations of a rolling window, in
+            periods. Defaults to None, which calculates the Excess Volatility per period from
+            the daily returns.
 
     Returns:
         pd.Series | pd.DataFrame: Excess Volatility values with time as the index, resampled
-        to the given period.
+        to the given period without a window.
     """
     excess_returns = (
         returns - risk_free_rate
@@ -1840,39 +1761,7 @@ def get_excess_volatility(
         else returns.sub(risk_free_rate, axis=0)
     )
 
-    return get_volatility(excess_returns, period)
-
-
-@by_own_trading_days
-def get_rolling_excess_volatility(
-    returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series | pd.DataFrame,
-    period: str,
-    window_size: int,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the rolling Excess Volatility of returns of a given period: the standard
-    deviation of the returns above the risk free rate within every rolling window.
-
-    Args:
-        returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
-        risk_free_rate (pd.Series | pd.DataFrame): The risk free rate for the given period, a
-        Series subtracted from every column or a DataFrame with the rate per column (the rate
-        each ticker earns over its own dates in each period).
-        period (str): The period the returns are given in and to scale the Excess Volatility for.
-        Options are: "weekly", "monthly", "quarterly", "yearly".
-        window_size (int): The size of the rolling window, in number of periods.
-
-    Returns:
-        pd.Series | pd.DataFrame: Rolling Excess Volatility values with time as index.
-    """
-    excess_returns = (
-        returns - risk_free_rate
-        if isinstance(risk_free_rate, pd.DataFrame)
-        else returns.sub(risk_free_rate, axis=0)
-    )
-
-    return get_rolling_volatility(excess_returns, period, window_size)
+    return get_volatility(excess_returns, period, window=window)
 
 
 def get_mean_absolute_deviation(

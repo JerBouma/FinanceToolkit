@@ -20,7 +20,6 @@ from financetoolkit.utilities.error_model import (
 )
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
-    PERIODS_PER_YEAR,
     apply_rounding,
     finalize_dataset,
 )
@@ -150,7 +149,7 @@ class DistributionRisk:
 
         if rolling:
             returns = self._historical_data[period]["Return"]
-            tail_ratio = risk_model.get_rolling_tail_ratio(returns, alpha, rolling)
+            tail_ratio = risk_model.get_tail_ratio(returns, alpha, window=rolling)
         else:
             returns = self._get_returns(period, within_period)
 
@@ -288,7 +287,7 @@ class DistributionRisk:
 
         if rolling:
             returns = self._historical_data[period]["Return"]
-            skewness = risk_model.get_rolling_skewness(returns, rolling)
+            skewness = risk_model.get_skewness(returns, window=rolling)
         else:
             returns = self._get_returns(period, within_period)
 
@@ -441,7 +440,7 @@ class DistributionRisk:
 
         if rolling:
             returns = self._historical_data[period]["Return"]
-            kurtosis = risk_model.get_rolling_kurtosis(returns, rolling, fisher=fisher)
+            kurtosis = risk_model.get_kurtosis(returns, fisher=fisher, window=rolling)
         else:
             returns = self._get_returns(period, within_period)
 
@@ -672,7 +671,7 @@ class DistributionRisk:
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
-            variance = risk_model.get_rolling_variance(period_returns, period, rolling)
+            variance = risk_model.get_variance(period_returns, period, window=rolling)
         else:
             returns = self._historical_data["daily"]["Return"]
             variance = risk_model.get_variance(returns, period)
@@ -897,163 +896,6 @@ class DistributionRisk:
             lag=lag,
             rounding=rounding,
             standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_move_significance(
-        self,
-        period: str = "daily",
-        window: int | None = None,
-        alpha: float = 0.05,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate how unusual each move of an investment portfolio or asset is: the return in
-        units of its trailing volatility and of its trailing Value at Risk, its percentile among
-        the earlier moves and the date of the last move at least as large in the same direction.
-
-        A return only says how far a price moved, not whether that is a lot for the asset: a 3%
-        day is ordinary for a volatile growth stock and exceptional for a utility or an index.
-        Dividing the return by the volatility of the returns before it (the "sigma" of a move)
-        makes moves comparable across assets and calm or turbulent markets, the percentile says
-        how many earlier moves were smaller, and "largest since" gives the familiar headline
-        ("the biggest one-day fall since March 2020"). The VaR Multiple measures the move against
-        the historic Value at Risk of the same earlier returns instead of their standard deviation,
-        so it does not assume normal returns: a fall with a VaR Multiple below -1 is a VaR
-        exceedance, worse than the loss the trailing VaR expected on all but a share alpha of days. When the
-        trailing quantile is not a loss (every earlier return was a gain or nearly so), the VaR Multiple is NaN.
-        Ties count half, as in `get_level_significance`.
-
-        The formula is as follows:
-
-        - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1))
-        - VaR Multiple(t) = Return(t) / |Quantile(Return(t - window), ..., Return(t - 1); alpha)|
-        - Percentile(t) = (Count(|Return(s)| < |Return(t)|, s < t) + 0.5 · Count(|Return(s)| = |Return(t)|, s < t)) / Count(s < t)
-        - Largest Since(t) = max(s < t : Return(s) <= Return(t)) if Return(t) < 0
-        - Largest Since(t) = max(s < t : Return(s) >= Return(t)) if Return(t) > 0
-
-        The volatility σ has n - 1 in the denominator and the quantile is the historic Value at Risk, interpolated
-        linearly as in `get_value_at_risk`.
-
-        Each measure only uses the returns before the period itself, so a move is never part of
-        the volatility or the history it is measured against (no look-ahead). Largest Since
-        compares falls with falls and rises with rises, as a headline does: a 6% fall is the
-        largest fall since the last fall of 6% or more, whatever the rises in between.
-
-        Also known as: sigma move, standardized return, biggest move since, return z-score, worst day
-        since, VaR exceedance, VaR breach ratio.
-
-        Args:
-            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
-                "quarterly", "yearly". Defaults to "daily".
-            window (int | None, optional): The number of earlier returns the volatility is
-                measured over, which the percentile also needs at least. Defaults to None, which
-                uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
-                monthly, quarterly or yearly returns).
-            alpha (float, optional): The tail probability of the trailing historic Value at Risk
-                the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
-            rounding (int | None, optional): The number of decimals to round the results to.
-                Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Return, Volatility Multiple, VaR Multiple, Percentile and Largest Since
-            (the date as text) per asset, with time as the index and the measures and tickers as the column
-            levels.
-
-        Notes:
-        - The returns are total returns (Adj Close), compounded within each period for a period
-          other than daily.
-        - `get_value_at_risk` reports the VaR as a return (negative for a loss); the VaR Multiple
-          divides by its size, so its sign is the move's, like the Volatility Multiple.
-        - The history a move is compared with starts at the Toolkit's start_date: the volatility,
-          the VaR and the percentile are NaN until `window` returns are available, and Largest Since is
-          NaN when no earlier move in the data was as large, which makes the move the largest
-          since the start_date. Choose an early start_date for a long history.
-        - Each ticker uses its own history, so a ticker that listed later starts later.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["NVDA", "KO"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2015-01-01",
-            end_date="2025-12-31",
-        )
-
-        significance = toolkit.risk.get_move_significance()
-
-        significance.loc["2025-01-27"].unstack(level=0)
-        ```
-
-        Which returns:
-
-        |           |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
-        |:----------|---------:|----------------------:|---------------:|-------------:|:----------------|
-        | NVDA      |  -0.1697 |               -5.0682 |        -3.4613 |       0.9976 | 2020-03-16      |
-        | KO        |   0.0315 |                3.8515 |         2.3126 |       0.981  | 2022-11-10      |
-        | Benchmark |  -0.0141 |               -1.76   |        -1.026  |       0.8632 | 2025-01-10      |
-        """
-        validate_alpha(alpha)
-        check_period(period, ["daily", "weekly", "monthly", "quarterly", "yearly"])
-
-        window = window if window else max(PERIODS_PER_YEAR[period], 20)
-
-        if window < 2:  # noqa: PLR2004
-            raise ValueError(
-                "The window needs at least 2 returns to measure a volatility."
-            )
-        if not 0 < alpha < 1:
-            raise InvalidArgumentError(
-                "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
-            )
-
-        returns = self._historical_data[period]["Return"]
-
-        move_significance = pd.concat(
-            {
-                ticker: risk_model.get_move_significance(returns[ticker], window, alpha)
-                for ticker in returns.columns
-            },
-            axis=1,
-        ).swaplevel(1, 0, axis=1)
-
-        # The measures in reading order, each with the tickers in the Toolkit's order.
-        move_significance = move_significance[
-            pd.MultiIndex.from_product(
-                [
-                    [
-                        "Return",
-                        "Volatility Multiple",
-                        "VaR Multiple",
-                        "Percentile",
-                        "Largest Since",
-                    ],
-                    returns.columns,
-                ]
-            )
-        ]
-
-        move_significance = move_significance.loc[
-            self._start_date : self._end_date
-        ].dropna(how="all", axis=0)
-
-        return finalize_dataset(
-            dataset=move_significance,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            rounding=rounding,
             axis="rows",
             apply_slice=False,
         )

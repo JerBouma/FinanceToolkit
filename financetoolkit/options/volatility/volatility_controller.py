@@ -1955,6 +1955,7 @@ class VolatilityOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # The weekdays after the pricing date up to and including each expiration.

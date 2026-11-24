@@ -76,6 +76,23 @@ responses:
 # with the limit, before anything is collected.
 # ──────────────────────────────────────────────────────────────────────────────
 parameter_limits:
+  # The most option values per ticker of an option grid: strike prices times expirations,
+  # times the nodes of a binomial tree, and for a Monte Carlo price with a variance
+  # reduction or Sobol points one value per 1,000 paths (per 500 for Monte Carlo Asian
+  # options). The server lowers the package's cap (MAX_OPTION_VALUES in options/helpers.py)
+  # to this value at startup. The slowest methods at 750,000 values (10,001 strikes of a
+  # price of 5,000 in steps of 0.5 over 75 expirations) take about 47 seconds per ticker for
+  # a QD+ put, 48 for a Bjerksund-Stensland put, 39 for a soft barrier, 25 for the control
+  # variate Monte Carlo price; the closed forms on arrays (Black-Scholes, Greeks, barriers,
+  # lookbacks, Asian approximations, quadratic American approximations) take 2 to 30.
+  option_values: 750000
+  # The most items of a list parameter, per parameter or as indicator.parameter. The Heston
+  # calibration solves the implied volatility of every quote of each expiration and fits
+  # them together, like the volatility surfaces (about 2.5 seconds per expiration for two
+  # tickers): twelve expirations, as number_of_expirations of the surfaces.
+  lengths:
+    get_heston_parameters.expiration_dates: 12
+    get_heston_parameters.expiration_months: 12
   maximums:
     # Every simulated draw is a row of the answer, with a column per ticker.
     n_simulations: 10000
@@ -98,13 +115,6 @@ parameter_limits:
     strike_price_range: 0.5
     expiration_time_range: 366
     number_of_strikes: 1000
-    # QD+ solves the exercise boundary once per expiration and integrates the premium per
-    # strike, about 0.26 milliseconds a price: 365 expirations of the widest range at a step
-    # of 5 take about 4 seconds per ticker near 200 and two minutes near 6,000 (the S&P 500
-    # index); 90 keep the latter within 30 seconds. The CEV and Black-76 grids are evaluated
-    # on arrays (Black-76 as fast as Black-Scholes, the CEV about 1 to 30 microseconds a
-    # price), so 365 expirations stay within about 15 seconds per ticker at that price.
-    get_american_option.expiration_time_range: 91
     # Each expiration, holding, page, contract or day is a download of its own.
     number_of_expirations: 24
     holdings: 500
@@ -115,7 +125,7 @@ parameter_limits:
     # Resampling, optimization and model orders, each a fit or a loop of its own.
     n_bootstrap: 1000
     # Simulated paths of the bubble tests' critical values, each as costly as the test; 2,000
-    # is the default, as in Phillips, Shi and Yu (2015).
+    # is the default, as in Phillips, Shi and Yu (2015). See products for the years.
     replications: 2000
     # Lagged differences of the bubble tests' ADF regressions: with lags every window is a
     # small linear solve rather than a closed form, and the simulation repeats it per path.
@@ -136,7 +146,9 @@ parameter_limits:
     # outgrow the precision of the integer programme.
     portfolio_value: 10000000000
     max_breaks: 10
-    regimes: 5
+    # A Markov switching fit searches the likelihood from several starts: ten years of daily
+    # returns take about 28 seconds per ticker with three regimes and 70 with four.
+    regimes: 3
     forecast_steps: 365
     periods: 100
     project_periods: 100
@@ -312,17 +324,68 @@ parameter_limits:
     # Monte Carlo Asian options simulate a price at each fixing of every path.
     - parameters: [simulations, fixings]
       maximum: 5000000
-    # Monte Carlo Asian options and option prices simulate their paths again for every
-    # expiration day: 10,000 paths of 100 steps over 91 days take about 12 seconds for two
-    # tickers and over 366 days about 48. The closed-form methods of get_asian_option do not
-    # simulate, but the products can not tell the methods apart.
-    - parameters: [simulations, time_steps, expiration_time_range]
-      maximum: 400000000
-    - parameters: [simulations, fixings, expiration_time_range]
+    # Monte Carlo Asian options simulate their paths again for every expiration day, a
+    # price at each fixing (or each time step without fixings). The closed-form methods of
+    # get_asian_option do not simulate, so the product applies to method='monte_carlo' only.
+    # 10,000 paths of 100 fixings over 365 expirations take about 29 seconds per ticker for
+    # one strike; the option_values cap covers the strikes. The Monte Carlo option price draws
+    # its paths once for all expirations (50,000 paths over 365 expirations and 1,001 strikes
+    # take about 3 seconds), so it needs no product with the expirations.
+    - methods: [get_asian_option]
+      when: {method: [monte_carlo]}
+      parameters: [simulations, "fixings|time_steps", expiration_time_range]
       maximum: 400000000
     # 10,000 paths of ten years of monthly steps by default.
     - parameters: [paths, steps_per_year, years]
       maximum: 5000000
+    # The rolling GARCH VaR, backtests and forecast tests refit their model every refit_every
+    # returns over the years of the range: four years of daily returns with a refit every 21
+    # returns (48 refits) take 2.2 to 8.2 seconds per ticker (GARCH(1, 1), GJR-GARCH with
+    # Student-t innovations and the GARCH model of the GBM forecast), up to 0.17 seconds a
+    # refit. At most 0.5 (ten and a half years with a refit every 21 returns, 126 refits)
+    # keeps them within about 25 seconds per ticker.
+    - methods: [get_value_at_risk, get_conditional_value_at_risk, get_var_backtest, get_acerbi_szekely_test]
+      when: {distribution: [garch]}
+      parameters: [range_years, "1/refit_every"]
+      maximum: 0.5
+      hint: "Please use a shorter range (start_date and end_date) or a larger refit_every."
+    - methods: [get_berkowitz_test, get_hong_li_test]
+      when: {model: [garch]}
+      parameters: [range_years, "1/refit_every"]
+      maximum: 0.5
+      hint: "Please use a shorter range (start_date and end_date) or a larger refit_every."
+    - methods: [get_model_confidence_set]
+      parameters: [range_years, "1/refit_every"]
+      maximum: 0.5
+      hint: "Please use a shorter range (start_date and end_date) or a larger refit_every."
+    # The bubble tests fit a regression for every pair of window start and end, per series and
+    # per simulated path of the critical values: ten years of weekly prices with the default
+    # 2,000 replications take about 24 seconds per ticker, growing with the square of the
+    # years. At most 400,000 (about 14 years at 2,000 replications) keeps them within about
+    # 50 seconds.
+    - methods: [get_bubble_test, get_bubble_episodes]
+      parameters: [range_years, range_years, replications]
+      maximum: 400000
+      hint: "Please use a shorter range (start_date and end_date) or fewer replications."
+    # An ARIMA fit searches the likelihood over p + q coefficients in a state space model:
+    # ten years of daily prices take about 17 seconds per ticker with p = q = 5 and 96 with
+    # p = q = 10.
+    - methods: [get_arima_forecast]
+      parameters: [p, q]
+      maximum: 25
+      hint: "Please use smaller orders p and q, such as p=5 and q=5 or less."
+    # The forecast cone simulates simulations × horizon returns in chunks: 100,000 paths of
+    # a year (25 million returns) take about a second per ticker.
+    - methods: [get_forecast_cone]
+      parameters: [simulations, horizon]
+      maximum: 1000000000
+    # The estimation uncertainty bootstraps the returns of all tickers together and
+    # re-estimates every ticker in each simulation: 20,000 simulations of 50 tickers over
+    # five years of daily returns take about 25 seconds.
+    - methods: [get_estimation_uncertainty]
+      parameters: [simulations, tickers]
+      maximum: 1000000
+      hint: "Please use fewer simulations or tickers."
     # GARCH simulations: 10,000 paths of 10 steps per ticker by default.
     - parameters: [paths, time_steps]
       maximum: 5000000

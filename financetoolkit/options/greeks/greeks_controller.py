@@ -571,6 +571,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -766,6 +767,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -964,6 +966,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -1162,6 +1165,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -1353,6 +1357,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -1541,6 +1546,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -1735,6 +1741,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -2141,6 +2148,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -2320,6 +2328,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -2510,6 +2519,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -2710,6 +2720,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -2903,6 +2914,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -3094,6 +3106,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -3287,6 +3300,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -3478,6 +3492,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -3828,6 +3843,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -4013,6 +4029,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -4200,6 +4217,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1
@@ -4383,6 +4401,7 @@ class GreeksOptions:
             stock_price=stock_price,
             strike_step_size=strike_step_size,
             strike_price_range=strike_price_range,
+            values_per_strike=expiration_time_range,
         )
 
         # This creates a list of time to expiration values from 0 to time_range, with a step size of 1

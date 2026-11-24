@@ -342,9 +342,9 @@ def test_a_switch_is_refused_by_its_value():
     assert refused_value_problem("get_a", {"american_option": False}, limits) is None
 
 
-def test_option_grids_are_limited_in_strikes_and_american_expirations(captured):
+def test_option_grids_are_limited_in_strikes(captured):
     # A strike step below the 0.5 of listed options multiplies the strikes of every option
-    # grid, and QD+ prices every strike and expiration of the American grid.
+    # grid; the option values of a grid are capped in the package (see the test below).
     answer = call(
         "options",
         indicator="get_black_scholes_model",
@@ -352,20 +352,13 @@ def test_option_grids_are_limited_in_strikes_and_american_expirations(captured):
         strike_step_size=0.01,
     )
     assert "`strike_step_size` must be at least 0.5" in answer
-    answer = call(
-        "options",
-        indicator="get_american_option",
-        tickers="AAPL",
-        expiration_time_range=366,
-    )
-    assert "`expiration_time_range` may be at most 91" in answer
     assert not captured
 
     call(
         "options",
         indicator="get_american_option",
         tickers="AAPL",
-        expiration_time_range=91,
+        expiration_time_range=366,
         strike_step_size=0.5,
     )
     call(
@@ -375,3 +368,154 @@ def test_option_grids_are_limited_in_strikes_and_american_expirations(captured):
         "get_american_option",
         "get_cev_model",
     ]
+
+
+def test_a_product_applies_only_to_its_indicators_and_values():
+    limits = {
+        "products": [
+            {
+                "methods": ["get_asian_option"],
+                "when": {"method": ["monte_carlo"]},
+                "parameters": ["simulations", "fixings|time_steps"],
+                "maximum": 1000,
+            }
+        ]
+    }
+    defaults = {"simulations": 100, "time_steps": 100, "method": "geometric"}
+
+    # The closed forms take the same simulations and steps without simulating them.
+    assert size_limit_problem({}, defaults, limits, "get_asian_option") is None
+    answer = size_limit_problem(
+        {"method": "Monte_Carlo"}, defaults, limits, "get_asian_option"
+    )
+    assert "`simulations` times `time_steps` may be at most 1,000" in answer
+    assert (
+        size_limit_problem({"method": "monte_carlo"}, defaults, limits, "get_b") is None
+    )
+
+
+def test_a_product_takes_the_first_given_of_its_alternatives():
+    limits = {
+        "products": [
+            {"parameters": ["simulations", "fixings|time_steps"], "maximum": 1000}
+        ]
+    }
+    defaults = {"simulations": 100, "time_steps": 100, "fixings": None}
+
+    # Left out (None), the fixings fall back to the steps: 100 × 100.
+    assert "`time_steps`" in size_limit_problem({}, defaults, limits)
+    assert size_limit_problem({"fixings": 5}, defaults, limits) is None
+    assert "`fixings`" in size_limit_problem({"fixings": 50}, defaults, limits)
+
+
+def test_a_product_divides_by_a_divisor_and_names_it():
+    limits = {
+        "products": [{"parameters": ["range_years", "1/refit_every"], "maximum": 1}]
+    }
+
+    answer = size_limit_problem({"range_years": 10, "refit_every": 5}, {}, limits)
+    assert "the years from start_date to end_date times 1 / `refit_every`" in answer
+    assert "or a larger `refit_every`" in answer
+    assert (
+        size_limit_problem({"range_years": 10, "refit_every": 21}, {}, limits) is None
+    )
+    # A refit every 0 returns is never within the limit.
+    assert size_limit_problem({"range_years": 1, "refit_every": 0}, {}, limits)
+
+
+def test_the_years_of_the_range_count_in_the_limits_only(captured):
+    # Twenty-five years of daily returns refitted every 21 returns is 300 refits per ticker.
+    answer = call(
+        "risk",
+        indicator="get_var_backtest",
+        tickers="AAPL",
+        distribution="garch",
+        start_date="2000-01-01",
+        end_date="2025-01-01",
+    )
+    assert "the years from start_date to end_date times 1 / `refit_every`" in answer
+    assert "a larger refit_every" in answer
+    assert not captured
+    # The historical VaR does not refit a model.
+    call(
+        "risk",
+        indicator="get_var_backtest",
+        tickers="AAPL",
+        start_date="2000-01-01",
+        end_date="2025-01-01",
+    )
+    assert captured
+
+    call(
+        "risk",
+        indicator="get_var_backtest",
+        tickers="AAPL",
+        start_date="2000-01-01",
+        end_date="2025-01-01",
+        distribution="garch",
+        refit_every=63,
+    )
+    assert "range_years" not in captured[-1][1]
+
+
+def test_the_number_of_tickers_counts_in_the_limits_only(captured):
+    tickers = ",".join(f"T{number}" for number in range(20))
+
+    answer = call(
+        "portfolio",
+        indicator="get_estimation_uncertainty",
+        tickers=tickers,
+        simulations=100_000,
+    )
+    assert (
+        "`simulations` times the number of tickers may be at most 1,000,000" in answer
+    )
+    assert not captured
+
+    call(
+        "portfolio",
+        indicator="get_estimation_uncertainty",
+        tickers=tickers,
+        simulations=10_000,
+    )
+    assert captured[-1][1]["simulations"] == 10_000  # noqa: PLR2004
+    # The count is not passed on: the provider receives the tickers themselves.
+    assert captured[-1][1]["tickers"] == tickers.split(",")
+
+
+def test_a_list_is_limited_in_length():
+    limits = {"lengths": {"get_a.expiration_dates": 2}}
+
+    answer = size_limit_problem(
+        {"expiration_dates": "2026-01-01,2026-02-01,2026-03-01"}, {}, limits, "get_a"
+    )
+    assert "`expiration_dates` may list at most 2 values" in answer
+    assert (
+        size_limit_problem(
+            {"expiration_dates": ["2026-01-01", "2026-02-01"]}, {}, limits, "get_a"
+        )
+        is None
+    )
+    assert (
+        size_limit_problem(
+            {"expiration_dates": "2026-01-01,2026-02-01,2026-03-01"},
+            {},
+            limits,
+            "get_b",
+        )
+        is None
+    )
+
+
+def test_the_server_caps_the_option_values_of_a_grid():
+    import yaml
+
+    from financetoolkit.options import helpers
+
+    with open(
+        mcp_controller.pathlib.Path(mcp_controller.__file__).parent / "config.yaml",
+        encoding="utf-8",
+    ) as file:
+        configured = yaml.safe_load(file)["parameter_limits"]["option_values"]
+
+    assert configured == helpers.MAX_OPTION_VALUES

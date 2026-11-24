@@ -8,7 +8,6 @@ import pandas as pd
 from scipy.interpolate import CubicSpline
 from scipy.optimize import brentq
 from scipy.special import log_ndtr, ndtr
-from scipy.stats import norm
 
 from financetoolkit.options.helpers import validate_numeric_inputs
 
@@ -132,13 +131,13 @@ def get_black_scholes(
     d2 = get_d2(d1, volatility, time_to_expiration)
 
     if put_option:
-        value = strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(
+        value = strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(
             -d2
-        ) - stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(-d1)
+        ) - stock_price * np.exp(-dividend_yield * time_to_expiration) * ndtr(-d1)
     else:
-        value = stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(
+        value = stock_price * np.exp(-dividend_yield * time_to_expiration) * ndtr(
             d1
-        ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
+        ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(d2)
 
     # At expiration the option is worth its intrinsic value. The formula gets there for
     # every price except the strike itself, where d1 is 0 / 0.
@@ -411,21 +410,15 @@ def get_garman_kohlhagen(
     d2 = get_d2(d1=d1, volatility=volatility, time_to_expiration=time_to_expiration)
 
     if put_option:
-        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(
+        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(
             -d2
-        ) - stock_price * np.exp(
-            -foreign_risk_free_rate * time_to_expiration
-        ) * norm.cdf(
+        ) - stock_price * np.exp(-foreign_risk_free_rate * time_to_expiration) * ndtr(
             -d1
         )
 
-    return stock_price * np.exp(
-        -foreign_risk_free_rate * time_to_expiration
-    ) * norm.cdf(d1) - strike_price * np.exp(
-        -risk_free_rate * time_to_expiration
-    ) * norm.cdf(
-        d2
-    )
+    return stock_price * np.exp(-foreign_risk_free_rate * time_to_expiration) * ndtr(
+        d1
+    ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(d2)
 
 
 def get_black_76(
@@ -682,23 +675,20 @@ def get_binary_option(
     if option_type == "cash-or-nothing":
         if put_option:
             return (
-                cash_payout
-                * np.exp(-risk_free_rate * time_to_expiration)
-                * norm.cdf(-d2)
+                cash_payout * np.exp(-risk_free_rate * time_to_expiration) * ndtr(-d2)
             )
 
-        return cash_payout * np.exp(-risk_free_rate * time_to_expiration) * norm.cdf(d2)
+        return cash_payout * np.exp(-risk_free_rate * time_to_expiration) * ndtr(d2)
 
     # asset-or-nothing
     if put_option:
-        return (
-            stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(-d1)
-        )
+        return stock_price * np.exp(-dividend_yield * time_to_expiration) * ndtr(-d1)
 
-    return stock_price * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(d1)
+    return stock_price * np.exp(-dividend_yield * time_to_expiration) * ndtr(d1)
 
 
-def _bivariate_normal_cdf(x: float, y: float, correlation: float) -> float:
+@np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
+def _bivariate_normal_cdf(x, y, correlation):
     """
     Calculates the cumulative bivariate standard normal distribution M(x, y; rho), the
     probability that two standard normal variables with correlation rho are below x and y.
@@ -706,114 +696,133 @@ def _bivariate_normal_cdf(x: float, y: float, correlation: float) -> float:
     It uses the Gauss-Legendre quadrature of Genz (2004), as written out by West (2005),
     which is accurate to about 1e-15. A general multivariate normal routine is far slower,
     and the Bjerksund-Stensland (2002) approximation needs sixteen evaluations per price.
-    The univariate normal distribution is evaluated with scipy.special.ndtr, which equals
-    norm.cdf without its per-call overhead.
+    The inputs may be arrays: every element takes the branch and number of points its own
+    correlation calls for, so a grid of strikes and expirations is evaluated in one call
+    with the same values as one call per element.
 
     See: Genz, A. (2004), "Numerical Computation of Rectangular Bivariate and Trivariate
     Normal and t Probabilities", Statistics and Computing, 14, 251-260, and West, G.
     (2005), "Better Approximations to Cumulative Normal Functions", Wilmott Magazine, 70-76.
 
     Args:
-        x (float): The upper limit of the first variable.
-        y (float): The upper limit of the second variable.
-        correlation (float): The correlation between the two variables, from -1 to 1.
+        x (float | np.ndarray): The upper limit of the first variable.
+        y (float | np.ndarray): The upper limit of the second variable.
+        correlation (float | np.ndarray): The correlation between the two variables, from
+            -1 to 1.
 
     Returns:
-        float: The probability P(X < x, Y < y).
+        float | np.ndarray: The probability P(X < x, Y < y).
     """
-    absolute_correlation = abs(correlation)
+    x, y, correlation = np.broadcast_arrays(
+        np.asarray(x, dtype=float),
+        np.asarray(y, dtype=float),
+        np.asarray(correlation, dtype=float),
+    )
+    h, k, rho = -x.ravel(), -y.ravel(), correlation.ravel()
+    absolute_correlation = np.abs(rho)
+    probability = np.empty(h.shape)
 
     # More quadrature points as the correlation, and so the curvature of the integrand, grows.
-    if absolute_correlation < 0.3:  # noqa: PLR2004
-        number_of_points = 3
-    elif absolute_correlation < 0.75:  # noqa: PLR2004
-        number_of_points = 6
-    else:
-        number_of_points = 10
-
-    nodes, weights = _GAUSS_LEGENDRE[number_of_points]
-
-    h, k = -x, -y
-    hk = h * k
-    probability = 0.0
-
-    if absolute_correlation < 0.925:  # noqa: PLR2004
-        if absolute_correlation > 0:
-            hs = (h * h + k * k) / 2
-            arcsine = np.arcsin(correlation)
-            for sign in (-1, 1):
-                sine = np.sin(arcsine * (sign * nodes + 1) / 2)
-                probability += np.sum(
-                    weights * np.exp((sine * hk - hs) / (1 - sine * sine))
-                )
-            probability = probability * arcsine / (4 * np.pi)
-
-        return float(probability + ndtr(-h) * ndtr(-k))
-
+    number_of_points = np.where(
+        absolute_correlation < 0.3,  # noqa: PLR2004
+        3,
+        np.where(absolute_correlation < 0.75, 6, 10),  # noqa: PLR2004
+    )
     # A correlation close to one in absolute value is integrated in a transformed variable,
-    # since the integrand above becomes singular as rho approaches +1 or -1.
-    if correlation < 0:
-        k, hk = -k, -hk
+    # since the integrand of the other branch becomes singular as rho approaches +1 or -1.
+    near_one = absolute_correlation >= 0.925  # noqa: PLR2004
 
-    if absolute_correlation < 1:
-        one_minus_rho_squared = (1 - correlation) * (1 + correlation)
+    for points in (3, 6, 10):
+        nodes, weights = _GAUSS_LEGENDRE[points]
+
+        if (low := (number_of_points == points) & ~near_one).any():
+            h_low, k_low, rho_low = h[low], k[low], rho[low]
+            hk = (h_low * k_low)[:, None]
+            hs = ((h_low * h_low + k_low * k_low) / 2)[:, None]
+            arcsine = np.arcsin(rho_low)
+            integral = np.zeros(h_low.shape)
+            for sign in (-1, 1):
+                sine = np.sin(arcsine[:, None] * (sign * nodes + 1) / 2)
+                integral = integral + np.sum(
+                    weights * np.exp((sine * hk - hs) / (1 - sine * sine)), axis=1
+                )
+            integral = np.where(rho_low != 0, integral * arcsine / (4 * np.pi), 0.0)
+            probability[low] = integral + ndtr(-h_low) * ndtr(-k_low)
+
+        if not (high := (number_of_points == points) & near_one).any():
+            continue
+
+        h_high, rho_high = h[high], rho[high]
+        k_high = np.where(rho_high < 0, -k[high], k[high])
+        hk = h_high * k_high
+        integral = np.zeros(h_high.shape)
+        inside = np.abs(rho_high) < 1
+
+        one_minus_rho_squared = (1 - rho_high) * (1 + rho_high)
         a = np.sqrt(one_minus_rho_squared)
-        bs = (h - k) ** 2
+        bs = (h_high - k_high) ** 2
         c = (4 - hk) / 8
         d = (12 - hk) / 16
         exponent = -(bs / one_minus_rho_squared + hk) / 2
-
-        if exponent > -100:  # noqa: PLR2004
-            probability = (
-                a
-                * np.exp(exponent)
-                * (
-                    1
-                    - c * (bs - one_minus_rho_squared) * (1 - d * bs / 5) / 3
-                    + c * d * one_minus_rho_squared**2 / 5
-                )
-            )
-        if -hk < 100:  # noqa: PLR2004
-            b = np.sqrt(bs)
-            probability -= (
-                np.exp(-hk / 2)
-                * np.sqrt(2 * np.pi)
-                * ndtr(-b / a)
-                * b
-                * (1 - c * bs * (1 - d * bs / 5) / 3)
-            )
-
-        a = a / 2
+        integral = np.where(
+            inside & (exponent > -100),  # noqa: PLR2004
+            a
+            * np.exp(exponent)
+            * (
+                1
+                - c * (bs - one_minus_rho_squared) * (1 - d * bs / 5) / 3
+                + c * d * one_minus_rho_squared**2 / 5
+            ),
+            integral,
+        )
+        b = np.sqrt(bs)
+        integral = np.where(
+            inside & (-hk < 100),  # noqa: PLR2004
+            integral
+            - np.exp(-hk / 2)
+            * np.sqrt(2 * np.pi)
+            * ndtr(-b / a)
+            * b
+            * (1 - c * bs * (1 - d * bs / 5) / 3),
+            integral,
+        )
+        half = (a / 2)[:, None]
         for sign in (-1, 1):
-            xs = (a * (sign * nodes + 1)) ** 2
+            xs = (half * (sign * nodes + 1)) ** 2
             rs = np.sqrt(1 - xs)
-            exponent = -(bs / xs + hk) / 2
-            probability += np.sum(
-                np.where(
-                    exponent > -100,  # noqa: PLR2004
-                    a
-                    * weights
-                    * np.exp(exponent)
-                    * (
-                        np.exp(-hk * (1 - rs) / (2 * (1 + rs))) / rs
-                        - (1 + c * xs * (1 + d * xs))
+            exponent = -(bs[:, None] / xs + hk[:, None]) / 2
+            integral = integral + np.where(
+                inside,
+                np.sum(
+                    np.where(
+                        exponent > -100,  # noqa: PLR2004
+                        half
+                        * weights
+                        * np.exp(exponent)
+                        * (
+                            np.exp(-hk[:, None] * (1 - rs) / (2 * (1 + rs))) / rs
+                            - (1 + c[:, None] * xs * (1 + d[:, None] * xs))
+                        ),
+                        0.0,
                     ),
-                    0.0,
-                )
+                    axis=1,
+                ),
+                0.0,
             )
-        probability = -probability / (2 * np.pi)
+        integral = np.where(inside, -integral / (2 * np.pi), 0.0)
 
-    if correlation > 0:
-        return float(probability + ndtr(-max(h, k)))
+        probability[high] = np.where(
+            rho_high > 0,
+            integral + ndtr(-np.maximum(h_high, k_high)),
+            -integral + np.where(k_high > h_high, ndtr(k_high) - ndtr(h_high), 0.0),
+        )
 
-    probability = -probability
-    if k > h:
-        probability += ndtr(k) - ndtr(h)
+    probability = probability.reshape(x.shape)
 
-    return float(probability)
+    return probability if probability.ndim else float(probability)
 
 
-def _power_times_probability(base: float, exponent: float, probability: float) -> float:
+def _power_times_probability(base, exponent, probability):
     """
     Helper function that returns base^exponent * probability in log space. In the
     Bjerksund-Stensland approximation the exponent grows like 1 / σ², so at low volatility
@@ -821,17 +830,20 @@ def _power_times_probability(base: float, exponent: float, probability: float) -
     product is finite and small, which the separate factors (inf * 0) would lose.
 
     Args:
-        base (float): The positive base of the power.
-        exponent (float): The exponent of the power.
-        probability (float): The (non-negative) probability the power multiplies.
+        base (float | np.ndarray): The positive base of the power.
+        exponent (float | np.ndarray): The exponent of the power.
+        probability (float | np.ndarray): The (non-negative) probability the power
+            multiplies.
 
     Returns:
-        float: The product base^exponent * probability.
+        float | np.ndarray: The product base^exponent * probability.
     """
-    if probability <= 0:
-        return 0.0
-
-    return float(np.exp(exponent * np.log(base) + np.log(probability)))
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        return np.where(
+            probability <= 0,
+            0.0,
+            np.exp(exponent * np.log(base) + np.log(probability)),
+        )
 
 
 def _phi(
@@ -897,12 +909,8 @@ def _phi(
 
     # Both powers are taken in log space: S^γ and (I / S)^κ overflow at low volatility (γ and
     # κ grow like 1 / σ²) while the normal probabilities they multiply underflow.  # noqa: E501
-    return float(
-        np.exp(lambda_ + gamma * np.log(stock_price / scale_price))
-        * (
-            ndtr(d1)
-            - np.exp(kappa * np.log(boundary_price / stock_price) + log_ndtr(d2))
-        )
+    return np.exp(lambda_ + gamma * np.log(stock_price / scale_price)) * (
+        ndtr(d1) - np.exp(kappa * np.log(boundary_price / stock_price) + log_ndtr(d2))
     )
 
 
@@ -996,19 +1004,18 @@ def _psi(
     kappa = 2 * cost_of_carry / volatility**2 + (2 * gamma - 1)
 
     # The powers are combined with their probabilities in log space, see ``_phi``.
-    return float(
-        np.exp(lambda_ * time_to_expiration + gamma * np.log(stock_price / scale_price))
-        * (
-            _bivariate_normal_cdf(-e1, -f1, correlation)
-            - _power_times_probability(
-                i2 / stock_price, kappa, _bivariate_normal_cdf(-e2, -f2, correlation)
-            )
-            - _power_times_probability(
-                i1 / stock_price, kappa, _bivariate_normal_cdf(-e3, -f3, -correlation)
-            )
-            + _power_times_probability(
-                i1 / i2, kappa, _bivariate_normal_cdf(-e4, -f4, -correlation)
-            )
+    return np.exp(
+        lambda_ * time_to_expiration + gamma * np.log(stock_price / scale_price)
+    ) * (
+        _bivariate_normal_cdf(-e1, -f1, correlation)
+        - _power_times_probability(
+            i2 / stock_price, kappa, _bivariate_normal_cdf(-e2, -f2, correlation)
+        )
+        - _power_times_probability(
+            i1 / stock_price, kappa, _bivariate_normal_cdf(-e3, -f3, -correlation)
+        )
+        + _power_times_probability(
+            i1 / i2, kappa, _bivariate_normal_cdf(-e4, -f4, -correlation)
         )
     )
 
@@ -1061,42 +1068,28 @@ def _american_call_binomial_value(
     return float(values[0])
 
 
-def _bjerksund_stensland_call(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    cost_of_carry: float,
-    volatility: float,
-    time_to_expiration: float,
-) -> float:
+def _bjerksund_stensland_bounds(
+    stock_price: np.ndarray,
+    strike_price: np.ndarray,
+    risk_free_rate: np.ndarray,
+    cost_of_carry: np.ndarray,
+    volatility: np.ndarray,
+    time_to_expiration: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Prices an American call option using the Bjerksund-Stensland (2002) closed-form
-    approximation with a two-step flat early-exercise boundary. Puts are priced through
-    the put-call transformation applied by get_bjerksund_stensland. The value is floored
-    at the European price and the exercise value, and a binomial tree takes over where the
-    boundary falls to or below the strike.
-
-    Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
-        risk_free_rate (float): The risk-free interest rate.
-        cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
-            dividend_yield.
-        volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration of the option.
-
-    Returns:
-        float: The value of the American call option.
+    Helper function that returns the inputs of the Bjerksund-Stensland call approximations
+    as arrays of one shape, the exercise value max(S — K, 0), the generalized Black-Scholes
+    price of the European call with the same cost of carry (through the dividend yield
+    q = r — b), and the elements where early exercise can pay: before expiration and with a
+    cost of carry below the risk-free rate. Both values are lower bounds of the American
+    call, which elsewhere equals the larger of the two (the exercise value at expiration).
+    Early exercise is not optimal when the cost of carry is at least the risk-free rate,
+    except with a negative risk-free rate, where paying the strike later costs more than
+    paying it now and deep in-the-money calls are exercised; the exercise value floors the
+    price there.
     """
-    if time_to_expiration <= 0:
-        # At expiration the option is worth its exercise value; the formulas divide by σ√t.
-        return max(stock_price - strike_price, 0.0)
-
-    exercise_value = max(stock_price - strike_price, 0.0)
-
-    # The generalized Black-Scholes price of the European call with the same cost of carry,
-    # through the dividend yield q = r — b. The American value is never below it.
-    european_value = float(
+    exercise_value = np.maximum(stock_price - strike_price, 0.0)
+    european_value = np.asarray(
         get_black_scholes(
             stock_price=stock_price,
             strike_price=strike_price,
@@ -1104,29 +1097,124 @@ def _bjerksund_stensland_call(
             volatility=volatility,
             time_to_expiration=time_to_expiration,
             dividend_yield=risk_free_rate - cost_of_carry,
-        )
+        ),
+        dtype=float,
     )
+    early = (time_to_expiration > 0) & (cost_of_carry < risk_free_rate)
 
-    if cost_of_carry >= risk_free_rate:
-        # Early exercise is not optimal when the cost of carry is at least the risk-free rate,
-        # except with a negative risk-free rate, where paying the strike later costs more
-        # than paying it now and deep in-the-money calls are exercised; the exercise value
-        # floors the price there.  # noqa: E501
-        return max(european_value, exercise_value)
+    return exercise_value, european_value, early
+
+
+def _bjerksund_stensland_floor(
+    value: np.ndarray,
+    boundary: np.ndarray,
+    stock_price: np.ndarray,
+    strike_price: np.ndarray,
+    risk_free_rate: np.ndarray,
+    cost_of_carry: np.ndarray,
+    volatility: np.ndarray,
+    time_to_expiration: np.ndarray,
+    european_value: np.ndarray,
+    exercise_value: np.ndarray,
+) -> np.ndarray:
+    """
+    Helper function that turns the formula values of a Bjerksund-Stensland call into prices.
+    At or above the (last) boundary immediate exercise is optimal, and extreme inputs can
+    leave the approximation undefined, where the European price is the closest lower bound.
+    The flat-boundary approximation is a lower bound that can fall below the European price
+    (high volatility, long maturities) or the exercise value, both lower bounds of an
+    American option, so the result is floored at both. The boundary function is built for
+    I > K: with a negative cost of carry and low volatility (b * T + 2σ√T < 0) or a
+    non-positive risk-free rate it falls to or below the strike, where the approximation
+    would exercise options that are out of the money, and a binomial tree prices those
+    options instead.
+    """
+    value = np.where(
+        np.isfinite(value) & (stock_price < boundary), value, european_value
+    )
+    value = np.maximum(np.maximum(value, european_value), exercise_value)
+
+    for index in np.flatnonzero(~np.isfinite(boundary) | (boundary <= strike_price)):
+        value[index] = max(
+            _american_call_binomial_value(
+                stock_price=stock_price[index],
+                strike_price=strike_price[index],
+                risk_free_rate=risk_free_rate[index],
+                cost_of_carry=cost_of_carry[index],
+                volatility=volatility[index],
+                time_to_expiration=time_to_expiration[index],
+            ),
+            european_value[index],
+            exercise_value[index],
+        )
+
+    return value
+
+
+def _bjerksund_stensland_call(
+    stock_price: np.ndarray,
+    strike_price: np.ndarray,
+    risk_free_rate: np.ndarray,
+    cost_of_carry: np.ndarray,
+    volatility: np.ndarray,
+    time_to_expiration: np.ndarray,
+) -> np.ndarray:
+    """
+    Prices American call options using the Bjerksund-Stensland (2002) closed-form
+    approximation with a two-step flat early-exercise boundary. Puts are priced through
+    the put-call transformation applied by get_bjerksund_stensland. The value is floored
+    at the European price and the exercise value, and a binomial tree takes over where the
+    boundary falls to or below the strike. Every input is an array of the same shape, so
+    a grid of strikes and expirations is priced at once.
+
+    Args:
+        stock_price (np.ndarray): The current stock price.
+        strike_price (np.ndarray): The option's strike price.
+        risk_free_rate (np.ndarray): The risk-free interest rate.
+        cost_of_carry (np.ndarray): The cost of carry, defined as risk_free_rate minus
+            dividend_yield.
+        volatility (np.ndarray): The volatility of the stock.
+        time_to_expiration (np.ndarray): The time to expiration of the option.
+
+    Returns:
+        np.ndarray: The value of the American call options.
+    """
+    inputs = (
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
+    )
+    exercise_value, european_value, early = _bjerksund_stensland_bounds(*inputs)
+    value = np.maximum(european_value, exercise_value)
+
+    if not early.any():
+        return value
+
+    # The elements where early exercise can pay, priced by the approximation.
+    (
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
+    ) = (array[early] for array in inputs)
 
     # The boundary steps at the golden-ratio point of the option's life, the split that
     # Bjerksund and Stensland (2002) found to give the most accurate prices.
     first_time = 0.5 * (np.sqrt(5) - 1) * time_to_expiration
-
     beta = (0.5 - cost_of_carry / volatility**2) + np.sqrt(
         (cost_of_carry / volatility**2 - 0.5) ** 2 + 2 * risk_free_rate / volatility**2
     )
     b_infinity = beta / (beta - 1) * strike_price
-    b_zero = max(
+    b_zero = np.maximum(
         strike_price, risk_free_rate / (risk_free_rate - cost_of_carry) * strike_price
     )
 
-    def boundary(time: float) -> float:
+    def boundary(time: np.ndarray) -> np.ndarray:
         h_time = (
             -(cost_of_carry * time + 2 * volatility * np.sqrt(time))
             * strike_price**2
@@ -1137,34 +1225,7 @@ def _bjerksund_stensland_call(
     first_boundary = boundary(first_time)
     second_boundary = boundary(time_to_expiration)
 
-    if not np.isfinite(second_boundary) or second_boundary <= strike_price:
-        # The boundary function is built for I > K. With a negative cost of carry and low
-        # volatility (b * T + 2σ√T < 0) or a non-positive risk-free rate it falls to or
-        # below the strike, where the approximation would exercise options that are out of
-        # the money; a binomial tree prices the option instead.  # noqa: E501
-        return max(
-            _american_call_binomial_value(
-                stock_price=stock_price,
-                strike_price=strike_price,
-                risk_free_rate=risk_free_rate,
-                cost_of_carry=cost_of_carry,
-                volatility=volatility,
-                time_to_expiration=time_to_expiration,
-            ),
-            european_value,
-            exercise_value,
-        )
-
-    if stock_price >= second_boundary:
-        # Immediate exercise is optimal.
-        return max(exercise_value, european_value)
-
-    def phi(
-        gamma: float,
-        trigger_price: float,
-        boundary_price: float,
-        scale_price: float = 1.0,
-    ) -> float:
+    def phi(gamma, trigger_price, boundary_price, scale_price=1.0) -> np.ndarray:
         return _phi(
             stock_price=stock_price,
             time_to_expiration=first_time,
@@ -1177,7 +1238,7 @@ def _bjerksund_stensland_call(
             scale_price=scale_price,
         )
 
-    def psi(gamma: float, trigger_price: float, scale_price: float = 1.0) -> float:
+    def psi(gamma, trigger_price, scale_price=1.0) -> np.ndarray:
         return _psi(
             stock_price=stock_price,
             time_to_expiration=time_to_expiration,
@@ -1196,8 +1257,7 @@ def _bjerksund_stensland_call(
     # volatility β is large and S^β and I^(—β) overflow and underflow on their own.  # noqa: E501
     first_premium = first_boundary - strike_price
     second_premium = second_boundary - strike_price
-
-    value = (
+    approximation = (
         second_premium * (stock_price / second_boundary) ** beta
         - second_premium
         * phi(beta, second_boundary, second_boundary, scale_price=second_boundary)
@@ -1214,68 +1274,78 @@ def _bjerksund_stensland_call(
         + strike_price * psi(0, strike_price)
     )
 
-    if not np.isfinite(value):
-        # Extreme inputs can still leave the approximation undefined; the European price is
-        # then the closest lower bound of the American value.  # noqa: E501
-        value = european_value
+    value[early] = _bjerksund_stensland_floor(
+        approximation,
+        second_boundary,
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
+        european_value[early],
+        exercise_value[early],
+    )
 
-    # The flat-boundary approximation is a lower bound that can fall below the European
-    # price (high volatility, long maturities) or the exercise value, both lower bounds of
-    # an American option, so the result is floored at both.
-    return float(max(value, european_value, exercise_value))
+    return value
 
 
 def _bjerksund_stensland_1993_call(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    cost_of_carry: float,
-    volatility: float,
-    time_to_expiration: float,
-) -> float:
+    stock_price: np.ndarray,
+    strike_price: np.ndarray,
+    risk_free_rate: np.ndarray,
+    cost_of_carry: np.ndarray,
+    volatility: np.ndarray,
+    time_to_expiration: np.ndarray,
+) -> np.ndarray:
     """
-    Prices an American call option using the Bjerksund-Stensland (1993) closed-form
+    Prices American call options using the Bjerksund-Stensland (1993) closed-form
     approximation with one flat early-exercise boundary over the option's life. Puts are
     priced through the put-call transformation applied by get_bjerksund_stensland. The
     value is floored at the European price and the exercise value, and a binomial tree takes
-    over where the boundary falls to or below the strike, as in the 2002 version.
+    over where the boundary falls to or below the strike, as in the 2002 version. Every
+    input is an array of the same shape.
 
     Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
-        risk_free_rate (float): The risk-free interest rate.
-        cost_of_carry (float): The cost of carry, defined as risk_free_rate minus
+        stock_price (np.ndarray): The current stock price.
+        strike_price (np.ndarray): The option's strike price.
+        risk_free_rate (np.ndarray): The risk-free interest rate.
+        cost_of_carry (np.ndarray): The cost of carry, defined as risk_free_rate minus
             dividend_yield.
-        volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration of the option.
+        volatility (np.ndarray): The volatility of the stock.
+        time_to_expiration (np.ndarray): The time to expiration of the option.
 
     Returns:
-        float: The value of the American call option.
+        np.ndarray: The value of the American call options.
     """
-    if time_to_expiration <= 0:
-        return max(stock_price - strike_price, 0.0)
-
-    exercise_value = max(stock_price - strike_price, 0.0)
-    european_value = float(
-        get_black_scholes(
-            stock_price=stock_price,
-            strike_price=strike_price,
-            risk_free_rate=risk_free_rate,
-            volatility=volatility,
-            time_to_expiration=time_to_expiration,
-            dividend_yield=risk_free_rate - cost_of_carry,
-        )
+    inputs = (
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
     )
+    exercise_value, european_value, early = _bjerksund_stensland_bounds(*inputs)
+    value = np.maximum(european_value, exercise_value)
 
-    if cost_of_carry >= risk_free_rate:
-        # Early exercise is not optimal, see _bjerksund_stensland_call.
-        return max(european_value, exercise_value)
+    if not early.any():
+        return value
+
+    (
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
+    ) = (array[early] for array in inputs)
 
     beta = (0.5 - cost_of_carry / volatility**2) + np.sqrt(
         (cost_of_carry / volatility**2 - 0.5) ** 2 + 2 * risk_free_rate / volatility**2
     )
     b_infinity = beta / (beta - 1) * strike_price
-    b_zero = max(
+    b_zero = np.maximum(
         strike_price, risk_free_rate / (risk_free_rate - cost_of_carry) * strike_price
     )
     # The single flat boundary I = B0 + (B∞ — B0) * (1 — e^h(T)), with the 1993 h(T).
@@ -1289,26 +1359,7 @@ def _bjerksund_stensland_1993_call(
     )
     boundary = b_zero + (b_infinity - b_zero) * (1 - np.exp(h_time))
 
-    if not np.isfinite(boundary) or boundary <= strike_price:
-        # The approximation would exercise options that are out of the money, see
-        # _bjerksund_stensland_call.
-        return max(
-            _american_call_binomial_value(
-                stock_price=stock_price,
-                strike_price=strike_price,
-                risk_free_rate=risk_free_rate,
-                cost_of_carry=cost_of_carry,
-                volatility=volatility,
-                time_to_expiration=time_to_expiration,
-            ),
-            european_value,
-            exercise_value,
-        )
-
-    if stock_price >= boundary:
-        return max(exercise_value, european_value)
-
-    def phi(gamma: float, trigger_price: float, scale_price: float = 1.0) -> float:
+    def phi(gamma, trigger_price, scale_price=1.0) -> np.ndarray:
         return _phi(
             stock_price=stock_price,
             time_to_expiration=time_to_expiration,
@@ -1324,7 +1375,7 @@ def _bjerksund_stensland_1993_call(
     # α * S^β and α * φ(β) written as (I — K) * (S / I)^β and (I — K) * φ(β) / I^β, which
     # stay finite at low volatility, see _bjerksund_stensland_call.
     premium = boundary - strike_price
-    value = (
+    approximation = (
         premium * (stock_price / boundary) ** beta
         - premium * phi(beta, boundary, scale_price=boundary)
         + phi(1, boundary)
@@ -1333,23 +1384,33 @@ def _bjerksund_stensland_1993_call(
         + strike_price * phi(0, strike_price)
     )
 
-    if not np.isfinite(value):
-        value = european_value
+    value[early] = _bjerksund_stensland_floor(
+        approximation,
+        boundary,
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        cost_of_carry,
+        volatility,
+        time_to_expiration,
+        european_value[early],
+        exercise_value[early],
+    )
 
-    return float(max(value, european_value, exercise_value))
+    return value
 
 
 @np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore")
 def get_bjerksund_stensland(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    dividend_yield: float = 0.0,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    risk_free_rate: float | np.ndarray,
+    volatility: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    dividend_yield: float | np.ndarray = 0.0,
     put_option: bool = False,
     method: str = "2002",
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of an American option using the Bjerksund-Stensland (2002)
     closed-form analytical approximation, or with method="1993" the original version with
@@ -1409,22 +1470,26 @@ def get_bjerksund_stensland(
     of the money, and a 1,000-step binomial tree prices the option instead.
 
     Args:
-        stock_price (float): The current stock price.
-        strike_price (float): The option's strike price.
-        risk_free_rate (float): The continuously compounded risk-free interest rate.
-        volatility (float): The volatility of the stock.
-        time_to_expiration (float): The time to expiration of the option, in years.
-            At zero the option is worth its exercise value.
-        dividend_yield (float): The continuous dividend yield of the stock. Defaults to 0.
+        stock_price (float | np.ndarray): The current stock price.
+        strike_price (float | np.ndarray): The option's strike price.
+        risk_free_rate (float | np.ndarray): The continuously compounded risk-free interest
+            rate.
+        volatility (float | np.ndarray): The volatility of the stock.
+        time_to_expiration (float | np.ndarray): The time to expiration of the option, in
+            years. At zero the option is worth its exercise value.
+        dividend_yield (float | np.ndarray): The continuous dividend yield of the stock.
+            Defaults to 0.
         put_option (bool): Whether the option is a put option or not. Defaults to False.
         method (str): The version of the approximation, "2002" (two flat boundaries) or
             "1993" (one flat boundary). Defaults to "2002".
 
     Returns:
-        float: The Bjerksund-Stensland approximation of the American option value.
+        float | np.ndarray: The Bjerksund-Stensland approximation of the American option
+        value, an array in the shape of the inputs when any of them is an array (a grid of
+        strikes and expirations is priced in one call).
 
     Raises:
-        TypeError: if any of the numeric inputs is not a float or int.
+        TypeError: if any of the numeric inputs is not a float, int or np.ndarray.
         ValueError: if volatility is not positive or method is not "2002" or "1993".
 
     Notes:
@@ -1448,6 +1513,7 @@ def get_bjerksund_stensland(
         prices of Haug (2007) and a finite-difference American price are.
     """
     validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -1457,7 +1523,7 @@ def get_bjerksund_stensland(
     )
 
     # The exercise boundary divides by the variance, which a constant price does not have.
-    if volatility <= 0:
+    if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
     if method not in ("2002", "1993"):
@@ -1468,27 +1534,40 @@ def get_bjerksund_stensland(
         if method == "2002"
         else _bjerksund_stensland_1993_call
     )
-    cost_of_carry = risk_free_rate - dividend_yield
-
-    if put_option:
-        # American put via P(S, K, T, r, b, v) = C(K, S, T, r - b, -b, v).
-        return call(
-            stock_price=strike_price,
-            strike_price=stock_price,
-            risk_free_rate=risk_free_rate - cost_of_carry,
-            cost_of_carry=-cost_of_carry,
-            volatility=volatility,
-            time_to_expiration=time_to_expiration,
+    (
+        stock_price,
+        strike_price,
+        risk_free_rate,
+        volatility,
+        time_to_expiration,
+        dividend_yield,
+    ) = np.broadcast_arrays(
+        *(
+            np.asarray(value, dtype=float)
+            for value in (
+                stock_price,
+                strike_price,
+                risk_free_rate,
+                volatility,
+                time_to_expiration,
+                dividend_yield,
+            )
         )
-
-    return call(
-        stock_price=stock_price,
-        strike_price=strike_price,
-        risk_free_rate=risk_free_rate,
-        cost_of_carry=cost_of_carry,
-        volatility=volatility,
-        time_to_expiration=time_to_expiration,
     )
+    shape = stock_price.shape
+    cost_of_carry = (risk_free_rate - dividend_yield).ravel()
+
+    # American put via P(S, K, T, r, b, v) = C(K, S, T, r - b, -b, v).
+    value = call(
+        stock_price=(strike_price if put_option else stock_price).ravel(),
+        strike_price=(stock_price if put_option else strike_price).ravel(),
+        risk_free_rate=risk_free_rate.ravel() - (cost_of_carry if put_option else 0.0),
+        cost_of_carry=-cost_of_carry if put_option else cost_of_carry,
+        volatility=volatility.ravel(),
+        time_to_expiration=time_to_expiration.ravel(),
+    ).reshape(shape)
+
+    return value if value.ndim else float(value)
 
 
 # The points of the log price grid and of the Gauss-Hermite rule with which the Haug, Haug

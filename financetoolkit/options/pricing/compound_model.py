@@ -22,7 +22,7 @@ _SEARCH_WIDTH = 60.0
 
 def _validate_volatility(volatility: float) -> None:
     """Raises a ValueError for a volatility that is not positive, which the formulas divide by."""
-    if volatility <= 0:
+    if np.any(np.asarray(volatility) <= 0):
         raise ValueError(f"volatility must be positive, received {volatility!r}.")
 
 
@@ -155,16 +155,16 @@ def _option_beyond(
 
 
 def get_chooser_option(
-    stock_price: float,
-    strike_price: float,
-    risk_free_rate: float,
-    volatility: float,
-    time_to_expiration: float,
-    choice_time: float,
-    dividend_yield: float = 0.0,
+    stock_price: float | np.ndarray,
+    strike_price: float | np.ndarray,
+    risk_free_rate: float | np.ndarray,
+    volatility: float | np.ndarray,
+    time_to_expiration: float | np.ndarray,
+    choice_time: float | np.ndarray,
+    dividend_yield: float | np.ndarray = 0.0,
     put_strike_price: float | None = None,
     put_time_to_expiration: float | None = None,
-) -> float:
+) -> float | np.ndarray:
     """
     Calculate the price of a chooser option, which lets the holder decide at the choice time
     whether it becomes a European call or a European put (Rubinstein, 1991).
@@ -208,7 +208,8 @@ def get_chooser_option(
             complex chooser in years. Defaults to None, which uses time_to_expiration.
 
     Returns:
-        float: The chooser option value.
+        float | np.ndarray: The chooser option value. The inputs of a simple chooser may be
+        arrays (a grid of strikes and expirations), which give an array in their shape.
 
     Raises:
         ValueError: If volatility is not positive or choice_time is not between 0 and the
@@ -254,7 +255,11 @@ def get_chooser_option(
     (6.1071, 6.0507)
     ```
     """
+    # A simple chooser has a closed form, which prices arrays of strikes, expirations and
+    # choice times (a grid) in one call.
+    simple = put_strike_price is None and put_time_to_expiration is None
     validate_numeric_inputs(
+        arrays=simple,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -264,33 +269,75 @@ def get_chooser_option(
         dividend_yield=dividend_yield,
     )
     _validate_volatility(volatility)
+
     put_strike = strike_price if put_strike_price is None else put_strike_price
     put_expiration = (
         time_to_expiration if put_time_to_expiration is None else put_time_to_expiration
     )
     validate_numeric_inputs(
-        put_strike_price=put_strike, put_time_to_expiration=put_expiration
+        arrays=simple,
+        put_strike_price=put_strike,
+        put_time_to_expiration=put_expiration,
     )
-    if not 0 <= choice_time <= min(time_to_expiration, put_expiration):
+
+    if not (
+        np.all(np.asarray(choice_time) >= 0)
+        and np.all(choice_time <= np.minimum(time_to_expiration, put_expiration))
+    ):
         raise ValueError(
             "choice_time must be at least 0 and at most the earliest expiration, "
             f"received {choice_time!r}."
         )
 
     inputs = {"risk_free_rate": risk_free_rate, "volatility": volatility}
-    call = float(
+    call = np.asarray(
         get_black_scholes(
             stock_price,
             strike_price,
             time_to_expiration=time_to_expiration,
             dividend_yield=dividend_yield,
             **inputs,
-        )
+        ),
+        dtype=float,
     )
+
+    if simple or (put_strike == strike_price and put_expiration == time_to_expiration):
+        # At a choice time of 0 the chooser is the larger of the call and the put. Later,
+        # the put leg is a put on K * e^(-(r - q)(T - t)) expiring at t, scaled by
+        # e^(-q(T - t)).
+        remaining = time_to_expiration - choice_time
+        with np.errstate(divide="ignore", invalid="ignore"):
+            value = np.where(
+                np.asarray(choice_time) == 0,
+                np.maximum(
+                    call,
+                    get_black_scholes(
+                        stock_price,
+                        put_strike,
+                        time_to_expiration=put_expiration,
+                        dividend_yield=dividend_yield,
+                        put_option=True,
+                        **inputs,
+                    ),
+                ),
+                call
+                + np.exp(-dividend_yield * remaining)
+                * get_black_scholes(
+                    stock_price,
+                    strike_price
+                    * np.exp(-(risk_free_rate - dividend_yield) * remaining),
+                    time_to_expiration=choice_time,
+                    dividend_yield=dividend_yield,
+                    put_option=True,
+                    **inputs,
+                ),
+            )
+
+        return value if value.ndim else float(value)
 
     if choice_time == 0:
         return max(
-            call,
+            float(call),
             float(
                 get_black_scholes(
                     stock_price,
@@ -301,20 +348,6 @@ def get_chooser_option(
                     **inputs,
                 )
             ),
-        )
-
-    if put_strike == strike_price and put_expiration == time_to_expiration:
-        # The put leg is a put on K * e^(-(r - q)(T - t)) expiring at t, scaled by e^(-q(T - t)).
-        remaining = time_to_expiration - choice_time
-        return call + float(np.exp(-dividend_yield * remaining)) * float(
-            get_black_scholes(
-                stock_price,
-                strike_price * np.exp(-(risk_free_rate - dividend_yield) * remaining),
-                time_to_expiration=choice_time,
-                dividend_yield=dividend_yield,
-                put_option=True,
-                **inputs,
-            )
         )
 
     def call_minus_put(price: float) -> float:

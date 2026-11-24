@@ -20,6 +20,11 @@ logger = logger_model.get_logger()
 # binomial model has a tree of its own), so a grid of a high share price in small steps
 # would not fit in memory.
 MAX_STRIKES = 10_000
+# The most option values per ticker, strike prices times expirations (or the nodes of a
+# binomial tree): the closed forms take about a microsecond a value on arrays, but QD+, the
+# Monte Carlo price and the table of the answer grow with every value. A server that answers
+# within a time limit sets a lower value at startup.
+MAX_OPTION_VALUES = 10_000_000
 
 
 def define_strike_prices(
@@ -27,6 +32,7 @@ def define_strike_prices(
     stock_price: pd.DataFrame,
     strike_step_size: float,
     strike_price_range: float,
+    values_per_strike: int = 1,
 ):
     """
     Define strike prices for each ticker in the tickers list. The strike prices run from
@@ -42,6 +48,10 @@ def define_strike_prices(
         stock_price (pd.DataFrame): the current stock price for each ticker.
         strike_step_size (float): the strike step size, a whole number (5) or a fraction (2.5).
         strike_price_range (float): the strike price range as a fraction of the price.
+        values_per_strike (int, optional): the values calculated per strike price, such as
+            the number of expirations (times the nodes of a tree, or a weight for the Monte
+            Carlo values that evaluate every path), which with the strikes may be at most
+            MAX_OPTION_VALUES per ticker. Defaults to 1.
 
     Returns:
         dict: a dictionary of strike prices for each ticker, without the tickers that have no
@@ -100,6 +110,15 @@ def define_strike_prices(
             lowest_step = highest_step = max(round(price / strike_step_size), 1)
 
         strikes = np.arange(lowest_step, highest_step + 1) * strike_step_size
+
+        if (option_values := len(strikes) * values_per_strike) > MAX_OPTION_VALUES:
+            raise ValueError(
+                f"{ticker} would have {len(strikes):,} strike prices with {values_per_strike:,} "
+                f"values each, {option_values:,} option values; at most {MAX_OPTION_VALUES:,} "
+                "can be calculated per ticker. Please use a larger strike_step_size, a smaller "
+                "strike_price_range, or fewer expirations (expiration_time_range), tree "
+                "steps (timesteps) or simulations."
+            )
 
         strike_prices_per_ticker[ticker] = (
             [int(round(strike)) for strike in strikes]
@@ -181,7 +200,7 @@ def create_expiration_dataframe(
 
 
 def create_binomial_tree_dataframe(
-    binomial_tree_dictionary: dict[str, dict[float, pd.DataFrame]],
+    binomial_tree_dictionary: dict[str, tuple[list[float], np.ndarray]],
     start_date: str | pd.Period,
     time_to_expiration: float,
 ):
@@ -190,8 +209,10 @@ def create_binomial_tree_dataframe(
     over time (up to the time of expiration).
 
     Args:
-        binomial_tree_dictionary (dict[str, dict[float, pd.DataFrame]]): a dictionary
-        containing the binomial tree for each ticker, strike price and expiration date.
+        binomial_tree_dictionary (dict[str, tuple[list[float], np.ndarray]]): the strike
+        prices of each ticker and their binomial trees, as an array of strikes × nodes ×
+        steps in which node k has k down movements (see
+        binomial_trees_model.get_option_payoff_trees).
         start_date (str | pd.Period): the date the tree starts from, which labels the
         first column.
         time_to_expiration (float): the time to expiration in years, which sets the date
@@ -201,15 +222,17 @@ def create_binomial_tree_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
         and strike price.
     """
-    binomial_tree_dataframe = pd.DataFrame.from_dict(
-        {
-            (ticker, strike_price, movement): values
-            for ticker, strike_prices in binomial_tree_dictionary.items()
-            for strike_price, movements in strike_prices.items()
-            for movement, values in movements.T.items()
-        },
-        orient="index",
-    )
+    frames = []
+    for ticker, (strike_prices, trees) in binomial_tree_dictionary.items():
+        steps = trees.shape[1] - 1
+        movements = ["D" * downs + "U" * (steps - downs) for downs in range(steps + 1)]
+        frames.append(
+            pd.DataFrame(
+                trees.reshape(-1, trees.shape[2]),
+                index=pd.MultiIndex.from_product([[ticker], strike_prices, movements]),
+            )
+        )
+    binomial_tree_dataframe = pd.concat(frames) if frames else pd.DataFrame()
 
     start_date_string = pd.to_datetime(str(start_date))
     end_date_string = pd.to_datetime(
@@ -360,6 +383,11 @@ def show_input_info(
     logger.info("Risk Free Rate: %s%%", round(risk_free_rate * 100, 2))
 
 
+# The most combinations of strike price and expiration evaluate_on_grid passes to a formula at
+# once.
+GRID_CHUNK_SIZE = 100_000
+
+
 def evaluate_on_grid(
     function: Callable[[Any, Any], Any],
     strike_prices: list[float],
@@ -386,7 +414,21 @@ def evaluate_on_grid(
     grid_times = np.tile(np.asarray(times, dtype=float), len(strikes))
 
     try:
-        values = np.asarray(function(grid_strikes, grid_times), dtype=float)
+        # In chunks, so the intermediate arrays of a formula (such as the images of a double
+        # barrier) stay small on the widest grids.
+        values = np.concatenate(
+            [
+                np.asarray(
+                    function(
+                        grid_strikes[start : start + GRID_CHUNK_SIZE],
+                        grid_times[start : start + GRID_CHUNK_SIZE],
+                    ),
+                    dtype=float,
+                ).reshape(-1)
+                for start in range(0, len(grid_strikes), GRID_CHUNK_SIZE)
+            ]
+            or [np.empty(0)]
+        )
         if values.shape != grid_strikes.shape:
             raise ValueError("The formula does not return a value per combination.")
     except (ValueError, TypeError):
@@ -642,20 +684,26 @@ def simulation_groups(simulations: int, sequence: str, antithetic: bool) -> np.n
     return np.arange(simulations) // (2 if antithetic else 1)
 
 
-def monte_carlo_estimate(values: np.ndarray, groups: np.ndarray) -> tuple[float, float]:
+def monte_carlo_estimate(values: np.ndarray, groups: np.ndarray):
     """
     Returns the Monte Carlo estimate, the average of the values of the paths, and its
     standard error from the spread of the means of the independent groups of paths
     (ddof=1).
 
     Args:
-        values (np.ndarray): The discounted payoff of every path.
-        groups (np.ndarray): The group of every path (simulation_groups).
+        values (np.ndarray): The discounted payoff of every path, or a matrix with a row of
+            them per option priced on the same paths.
+        groups (np.ndarray): The group of every path (simulation_groups), in order.
 
     Returns:
-        tuple[float, float]: The estimate and its standard error.
+        tuple[float, float] | tuple[np.ndarray, np.ndarray]: The estimate and its standard
+        error, per row for a matrix.
     """
     counts = np.bincount(groups)
+    if values.ndim == 2:  # noqa: PLR2004
+        starts = np.flatnonzero(np.r_[True, groups[1:] != groups[:-1]])
+        means = np.add.reduceat(values, starts, axis=1) / counts
+        return values.mean(axis=1), means.std(axis=1, ddof=1) / np.sqrt(counts.size)
     means = np.bincount(groups, weights=values) / counts
     return float(values.mean()), float(means.std(ddof=1) / np.sqrt(means.size))
 
@@ -670,7 +718,8 @@ def control_variate(
     - Y_i - β * (X_i - E[X]), β = Cov(Y, X) / Var(X)
 
     Args:
-        values (np.ndarray): The discounted payoff of every path, Y.
+        values (np.ndarray): The discounted payoff of every path, Y, or a matrix with a row
+            of them per option priced on the same paths (each with its own β).
         control (np.ndarray): The control of every path, X.
         expected_control (float): The expected value of the control, E[X].
 
@@ -681,6 +730,15 @@ def control_variate(
     variance = control.var(ddof=1)
     if variance <= 0:
         return values
+    if values.ndim == 2:  # noqa: PLR2004
+        deviations = control - control.mean()
+        beta = (
+            (values - values.mean(axis=1, keepdims=True))
+            @ deviations
+            / (control.size - 1)
+            / variance
+        )
+        return values - beta[:, None] * (control - expected_control)
     beta = np.cov(values, control, ddof=1)[0, 1] / variance
     return values - beta * (control - expected_control)
 

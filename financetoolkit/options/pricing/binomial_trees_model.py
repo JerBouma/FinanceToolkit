@@ -505,71 +505,153 @@ def get_option_payoffs(
         fourth order (his J4 tree); this tree takes the exact inverse, which prices a European
         option at its Black-Scholes value and lies within 1e-6 of the J4 tree at 101 steps.
     """
-    up_movement, down_movement, risk_neutral_probability = calculate_tree_movements(
-        method=method,
+    trees, up_movements, down_movements, probabilities = get_option_payoff_trees(
         stock_price=stock_price,
-        strike_price=strike_price,
-        risk_free_rate=risk_free_rate,
-        dividend_yield=dividend_yield,
-        volatility=volatility,
+        strike_prices=np.array([strike_price], dtype=float),
         years=years,
         timesteps=timesteps,
-    )
-
-    stock_prices = calculate_stock_prices(
-        stock_price=stock_price,
-        up_movement=up_movement,
-        down_movement=down_movement,
-        period_length=timesteps,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        dividend_yield=dividend_yield,
+        put_option=put_option,
+        american_option=american_option,
+        method=method,
     )
 
     option_payoffs = pd.DataFrame(
-        np.nan, index=stock_prices.index, columns=stock_prices.columns
+        trees[0],
+        index=[
+            "D" * downs + "U" * (timesteps - downs) for downs in range(timesteps + 1)
+        ],
     )
 
-    if put_option:
-        option_payoffs.iloc[:, -1] = [
-            get_put_option_payoffs(stock_price=stock_price, strike_price=strike_price)
-            for stock_price in stock_prices.iloc[:, -1]
-        ]
-    else:
-        option_payoffs.iloc[:, -1] = [
-            get_call_option_payoffs(stock_price=stock_price, strike_price=strike_price)
-            for stock_price in stock_prices.iloc[:, -1]
-        ]
-
-    periods = len(option_payoffs.columns)
-
-    # Row k at column i has (i - k) ups and k downs; shift(-1) gives the down-child.
-    for i in range(periods - 2, -1, -1):
-        option_value = calculate_option_value(
-            up_option_payoff=option_payoffs.iloc[:, i + 1],
-            down_option_payoff=option_payoffs.iloc[:, i + 1].shift(-1),
-            risk_free_rate=risk_free_rate,
-            time_to_expiration=years,
-            timestep=timesteps,
-            risk_neutral_probability=risk_neutral_probability,
+    if show_input_info:
+        return (
+            option_payoffs,
+            float(up_movements[0]),
+            float(down_movements[0]),
+            float(probabilities[0]),
         )
 
+    return option_payoffs
+
+
+def get_option_payoff_trees(
+    stock_price: float,
+    strike_prices: np.ndarray,
+    years: float,
+    timesteps: int,
+    risk_free_rate: float,
+    volatility: float,
+    dividend_yield: float = 0,
+    put_option: bool = False,
+    american_option: bool = False,
+    method: str = "cox_ross_rubinstein",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculates the binomial trees of European or American options for an array of strike
+    prices at once, with numpy backward induction over a strikes × nodes array (see
+    get_option_payoffs for the trees).
+
+    Row k of a tree holds the node with k down movements: at step i it is the price after
+    min(i, k) downs followed by the ups, S * d^min(i, k) * u^max(i — k, 0), and the option
+    value there is defined for k ≤ i (NaN beyond, where the node does not exist yet). Going
+    back from expiration, the value at (k, i) is e^(—rΔt) * (p * V(k, i + 1) + (1 — p) *
+    V(k + 1, i + 1)), and for an American option at least the exercise value at the node.
+
+    Args:
+        stock_price (float): Current stock price.
+        strike_prices (np.ndarray): The option strike prices.
+        years (float): Time to expiration in years.
+        timesteps (int): Number of time steps.
+        risk_free_rate (float): Risk-free interest rate.
+        volatility (float): Volatility of the underlying stock.
+        dividend_yield (float, optional): Dividend yield. Defaults to 0.
+        put_option (bool, optional): Whether the options are put options. Defaults to False.
+        american_option (bool, optional): Whether the options are American options.
+            Defaults to False.
+        method (str, optional): The tree (see calculate_tree_movements). Defaults to
+            "cox_ross_rubinstein".
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: The option values as an array
+            of strikes × nodes × steps, and the up movement, down movement and risk-neutral
+            probability per strike (the same for every strike, except for the trees centred
+            on the strike).
+    """
+    strike_prices = np.asarray(strike_prices, dtype=float)
+
+    # Only the Leisen-Reimer and exact inversion trees depend on the strike.
+    centred = method in ("leisen_reimer", "exact_inversion")
+    movements = np.array(
+        [
+            calculate_tree_movements(
+                method=method,
+                stock_price=stock_price,
+                strike_price=strike_price,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield,
+                volatility=volatility,
+                years=years,
+                timesteps=timesteps,
+            )
+            for strike_price in (strike_prices if centred else strike_prices[:1])
+        ]
+    ).reshape(-1, 3)
+    movements = np.broadcast_to(movements, (len(strike_prices), 3))
+    up_movement, down_movement, probability = (
+        movements[:, [0]],
+        movements[:, [1]],
+        movements[:, [2]],
+    )
+
+    # The checks of calculate_stock_prices.
+    if timesteps > MAX_TIMESTEPS:
+        raise ValueError(
+            f"A tree of {timesteps:,} time steps is too large; use at most "
+            f"{MAX_TIMESTEPS:,}."
+        )
+    if np.any(up_movement == down_movement):
+        raise ValueError(
+            "The up and down movement are equal, which happens when the volatility or the "
+            "time to expiration is zero. The tree cannot be constructed in that case."
+        )
+
+    # The stock price at every node, multiplied step by step as calculate_stock_prices does:
+    # row k moves down for its first k steps and up after.
+    downs = np.arange(timesteps + 1)
+    stock_prices = np.empty((len(strike_prices), timesteps + 1, timesteps + 1))
+    stock_prices[:, :, 0] = stock_price
+    for step in range(1, timesteps + 1):
+        stock_prices[:, :, step] = stock_prices[:, :, step - 1] * np.where(
+            step <= downs, down_movement, up_movement
+        )
+
+    sign = -1 if put_option else 1
+    strikes = strike_prices[:, None]
+    discount = np.exp(-risk_free_rate * years / timesteps)
+
+    values = np.full(stock_prices.shape, np.nan)
+    values[:, :, -1] = np.maximum(sign * (stock_prices[:, :, -1] - strikes), 0)
+
+    for step in range(timesteps - 1, -1, -1):
+        later = values[:, :, step + 1]
+        # The down-child of row k is row k + 1, which the last row does not have.
+        down_values = np.concatenate(
+            [later[:, 1:], np.full((len(strike_prices), 1), np.nan)], axis=1
+        )
+        option_value = discount * (
+            probability * later + (1 - probability) * down_values
+        )
         if american_option:
             # Compare early exercise against this node's price, not the price at t=0.
-            if put_option:
-                exercise_value = get_put_option_payoffs(
-                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
-                )
-            else:
-                exercise_value = get_call_option_payoffs(
-                    stock_price=stock_prices.iloc[:, i], strike_price=strike_price
-                )
+            option_value = np.maximum(
+                option_value,
+                np.maximum(sign * (stock_prices[:, :, step] - strikes), 0),
+            )
+        values[:, :, step] = option_value
 
-            option_payoffs.iloc[:, i] = np.maximum(option_value, exercise_value)
-        else:
-            option_payoffs.iloc[:, i] = option_value
-
-    if show_input_info:
-        return option_payoffs, up_movement, down_movement, risk_neutral_probability
-
-    return option_payoffs
+    return values, up_movement[:, 0], down_movement[:, 0], probability[:, 0]
 
 
 def get_strategy_payoff(

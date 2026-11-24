@@ -352,7 +352,7 @@ def test_the_reason_a_referenced_indicator_has_no_values_is_given(monkeypatch):
     monkeypatch.setattr(ToolkitProvider, "call_method", failing)
 
     answer = call_econometrics(
-        indicator="get_rolling_median",
+        indicator="get_percentile",
         series="momentum:get_relative_strength_index:AAPL:method=bogus",
     )
 

@@ -195,7 +195,7 @@ def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
     # The slow EGARCH fit, which the risk tool refuses by value.
     answer = call(
         "econometrics",
-        indicator="get_rolling_median",
+        indicator="get_percentile",
         series="risk:get_garch:AAPL:method=egarch",
     )
     assert "`method='egarch'` is not available on this server" in answer
@@ -204,7 +204,7 @@ def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
     # A forecast far over the maximum horizon.
     answer = call(
         "econometrics",
-        indicator="get_rolling_median",
+        indicator="get_percentile",
         series="risk:get_garch_forecast:AAPL:forecast_steps=999999",
     )
     assert "`forecast_steps` may be at most 1,000 on this server" in answer
@@ -220,7 +220,7 @@ def test_series_references_are_held_to_the_limits_of_their_own_tool(captured):
 
     call(
         "econometrics",
-        indicator="get_rolling_median",
+        indicator="get_percentile",
         series="risk:get_garch_forecast:AAPL:method=gjr:forecast_steps=10",
     )
     assert captured[-1][1]["method"] == "gjr"

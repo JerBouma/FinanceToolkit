@@ -123,3 +123,19 @@ def test_invalid_inputs(log_prices):
         fractional_model.get_fractional_weights(-0.5, size=10)
     with pytest.raises(ValueError):
         fractional_model.get_minimum_fractional_difference(log_prices, confidence=95)
+
+
+def test_fixed_width_window_longer_than_the_series_gives_no_values():
+    # At d = 0.4 and 1e-5 the window spans about 1,460 weights: 757 observations hold no
+    # full window, so no value is computed from a window cut short at the series length.
+    log_prices = pd.Series(np.log(100) + np.cumsum(np.full(757, 0.001)))
+    result = fractional_model.get_fractional_difference(log_prices, d=0.4)
+
+    assert len(result) == len(log_prices) and result.isna().all()
+
+    # A window that fits exactly gives exactly one value.
+    width = len(fractional_model.get_fractional_weights(0.4, threshold=1e-3))
+    fits = fractional_model.get_fractional_difference(
+        log_prices.iloc[:width], d=0.4, threshold=1e-3
+    )
+    assert fits.notna().sum() == 1

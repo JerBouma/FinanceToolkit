@@ -2428,17 +2428,37 @@ def get_calmar_ratio(
 
 
 @by_own_trading_days
-def get_average_drawdown(
+def get_average_largest_drawdown(
     returns: pd.Series | pd.DataFrame,
+    largest_drawdowns: int = 3,
     method: str = "return",
-) -> pd.Series | pd.DataFrame:
+) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Average Drawdown of returns, i.e. the mean of all pointwise negative
-    drawdowns in the cumulative return series.
+    Calculate the Average Largest Drawdown D_Lar of returns (Bacon, 2008), the mean depth of
+    the d deepest drawdowns, each measured from its peak to its trough.
+
+    The formula is as follows:
+
+        - D_Lar = Σ_(j=1..d) Trough_j / d
+
+    Where Trough_1 <= Trough_2 <= ... are the depths of the drawdown episodes (runs of
+    observations below the running peak, an episode that has not recovered by the end
+    included), deepest first, as in `risk_model.get_drawdown_table`, and d is
+    `largest_drawdowns`, or the number of episodes when there are fewer. d = 1 gives the
+    Maximum Drawdown, and a d at least the number of episodes the average depth of all of
+    them (Bacon's Average Drawdown).
+
+    For more information, see the following source:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns
-        (method="return") or of raw levels (method="level").
+        (method="return") or of raw levels (method="level"), optionally with a (period, date)
+        index for a value per period.
+        largest_drawdowns (int, optional): The number d of deepest drawdowns averaged.
+        Defaults to 3.
         method (str, optional): Either "return" (default), which measures percentage
         drawdowns of the compounded return series, or "level", which measures
         absolute drawdowns of the raw level series directly -- use this when
@@ -2446,77 +2466,101 @@ def get_average_drawdown(
         or negative). Defaults to "return".
 
     Returns:
-        pd.Series | pd.DataFrame: Average Drawdown values as float if returns is a
-        pd.Series, otherwise as pd.Series or pd.DataFrame with time as index.
+        pd.Series | pd.DataFrame | float: The Average Largest Drawdown, negative (0 without a
+        drawdown, NaN without returns), as a float for a Series, per column for a DataFrame and
+        per period and column with a (period, date) index.
 
     Raises:
-        ValueError: If `method` is not one of "return" or "level".
+        ValueError: If `method` is not one of "return" or "level", or `largest_drawdowns` is
+        below 1.
     """
     if method not in ("return", "level"):
         raise ValueError("method must be 'return' or 'level'.")
+    if largest_drawdowns < 1:
+        raise ValueError(
+            f"largest_drawdowns must be at least 1, received {largest_drawdowns}."
+        )
 
-    if (
-        isinstance(returns, pd.DataFrame)
-        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
-    ):
-        periods = returns.index.get_level_values(0).unique()
-        period_data_list = []
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            periods = returns.index.get_level_values(0).unique()
 
-        for sub_period in periods:
-            period_data = get_average_drawdown(returns.loc[sub_period], method=method)
-            period_data.name = sub_period
+            return pd.DataFrame(
+                {
+                    sub_period: get_average_largest_drawdown(
+                        returns.loc[sub_period], largest_drawdowns, method
+                    )
+                    for sub_period in periods
+                }
+            ).T
 
-            if not period_data.empty:
-                period_data_list.append(period_data)
+        return pd.Series(
+            {
+                column: get_average_largest_drawdown(
+                    returns[column], largest_drawdowns, method
+                )
+                for column in returns.columns
+            },
+            dtype=float,
+        )
 
-        average_drawdown = pd.concat(period_data_list, axis=1)
+    values = returns.dropna()
 
-        return average_drawdown.T
+    if values.empty:
+        return np.nan
 
     if method == "level":
-        drawdowns = returns - returns.cummax()
+        drawdowns = values - values.cummax()
     else:
-        wealth, peak = get_wealth_and_peak(returns)
+        wealth, peak = get_wealth_and_peak(values)
         drawdowns = wealth / peak - 1
 
-    return drawdowns[drawdowns < 0].mean()
+    troughs = np.sort(drawdown_model.get_drawdown_troughs(drawdowns.to_numpy()))
+
+    return float(troughs[:largest_drawdowns].mean()) if len(troughs) else 0.0
 
 
 def get_sterling_ratio(
     returns: pd.Series | pd.DataFrame,
-    average_drawdown: pd.Series | pd.DataFrame,
+    average_largest_drawdown: pd.Series | pd.DataFrame,
     adjustment: float = 0.1,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Sterling Ratio of returns.
+    Calculate the Sterling Ratio of returns as Bacon (2008) defines it: the return per unit of
+    the Average Largest Drawdown plus a fixed adjustment.
 
     The formula is as follows:
 
-        - Sterling Ratio = Return / (|Drawdown| + Adjustment)
+        - Sterling Ratio = Return / (|D_Lar| + Adjustment)
 
-    Bacon (2008) uses the Average Drawdown as the drawdown, PerformanceAnalytics
-    (SterlingRatio, after Kestner, 1996) the Maximum Drawdown over the whole sample with
-    the annualized return over that sample; the formula serves both.
+    Where D_Lar is the Average Largest Drawdown, the mean depth of the d deepest drawdowns
+    (peak to trough, see `get_average_largest_drawdown`), and the Adjustment conventionally
+    10%. With d = 1, D_Lar is the Maximum Drawdown, which is the Sterling Ratio of
+    PerformanceAnalytics (SterlingRatio, with the annualized return over the whole sample).
+    The original form of Deane Sterling Jones, popularised by Kestner (1996), divides the
+    compound annual return of the last three years by the average of the maximum drawdown of
+    each of those years plus 10% instead: an average of annual maxima, whereas D_Lar averages
+    the deepest drawdowns wherever they fall.
 
     For more information, see the following sources:
 
-    - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
     - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
-    2nd edition, John Wiley & Sons, p. 89.
+    2nd edition, John Wiley & Sons.
+    - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
     - PerformanceAnalytics: SterlingRatio (https://github.com/braverock/PerformanceAnalytics).
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
-        average_drawdown (pd.Series | pd.DataFrame): The corresponding Average Drawdown values,
-        or the Maximum Drawdown for the PerformanceAnalytics definition.
-        adjustment (float, optional): The fixed adjustment added to the average drawdown,
+        average_largest_drawdown (pd.Series | pd.DataFrame): The corresponding Average Largest
+        Drawdown values (or Maximum Drawdown values for d = 1).
+        adjustment (float, optional): The fixed adjustment added to the drawdown,
         conventionally 0.1 (10%). Defaults to 0.1.
 
     Returns:
         pd.Series | pd.DataFrame: A Series or DataFrame of Sterling ratios with time as index
         and assets as columns.
     """
-    return (returns / (average_drawdown.abs() + adjustment)).dropna(how="all")
+    return (returns / (average_largest_drawdown.abs() + adjustment)).dropna(how="all")
 
 
 @by_own_trading_days
@@ -5486,8 +5530,12 @@ def get_sharpe_ratio_difference(
         np.nan, index=["Sharpe Difference", "Standard Error", "Z-Statistic", "P-Value"]
     )
 
-    # The Ledoit-Wolf covariance scales by n / (n - 4), the number of moments estimated.
-    if n < 5:  # noqa: PLR2004
+    # The Ledoit-Wolf covariance scales by n / (n - 4), the number of moments estimated. A
+    # series without variation (up to rounding, 1e-14 per observation) has no Sharpe ratio:
+    # its standard deviation would be rounding noise.
+    if n < 5 or np.any(  # noqa: PLR2004
+        np.ptp(values, axis=0) <= n * 1e-14 * np.abs(values).max(axis=0)
+    ):
         return result
 
     if method == "memmel":

@@ -37,6 +37,38 @@ HONG_LI_PANELS_PER_BANDWIDTH = 5
 # The Hong-Li test needs a few pairs per lag to estimate their joint density.
 MINIMUM_OBSERVATIONS_FOR_HONG_LI_TEST = 20
 
+# A bandwidth within rounding of zero (1e-14 per observation) means PITs without variation.
+HONG_LI_ROUNDING = 1e-14
+
+# The joint cumulants of the Hong-Li statistics Q(1), ..., Q(10) under the null, per number of
+# observations: the mean κ₁, variance κ₂ and third cumulant κ₃ of one Q(j), the covariance κ₁₁
+# of two, and the joint third cumulants κ₂₁ = E[(Q(i) - κ₁)² (Q(j) - κ₁)] and κ₁₁₁ (three
+# different lags), in the order κ₁, κ₂, κ₁₁, κ₃, κ₂₁, κ₁₁₁. Each row averages 3,000 seeded
+# simulations of independent uniform PITs (1,500 at 3,000 observations and 1,000 at 5,000)
+# over the 10 lags and their pairs and triples, smoothed by a quadratic in ln n over the grid,
+# weighted by the square root of the simulations (see `get_hong_li_p_value`). The simulations
+# integrate with 4 rather than 8 Gauss-Legendre nodes per panel, which moves a statistic by
+# less than 1e-4.
+HONG_LI_NULL_GRID = np.array(
+    [50, 100, 175, 250, 350, 500, 750, 1000, 1500, 2000, 3000, 5000]
+)
+HONG_LI_NULL_CUMULANTS = np.array(
+    [
+        [-0.0412, 1.5386, 0.8223, 1.7922, 1.2043, 1.1058],
+        [-0.0238, 1.5496, 0.8036, 1.5328, 1.0492, 0.9896],
+        [-0.0124, 1.5490, 0.7810, 1.3421, 0.9291, 0.8941],
+        [-0.0065, 1.5442, 0.7630, 1.2294, 0.8549, 0.8323],
+        [-0.0017, 1.5365, 0.7435, 1.1293, 0.7866, 0.7735],
+        [0.0024, 1.5251, 0.7202, 1.0298, 0.7159, 0.7106],
+        [0.0058, 1.5078, 0.6902, 0.9250, 0.6378, 0.6382],
+        [0.0075, 1.4929, 0.6668, 0.8560, 0.5839, 0.5864],
+        [0.0087, 1.4681, 0.6308, 0.7663, 0.5098, 0.5127],
+        [0.0089, 1.4478, 0.6031, 0.7080, 0.4587, 0.4598],
+        [0.0080, 1.4154, 0.5609, 0.6334, 0.3887, 0.3847],
+        [0.0051, 1.3682, 0.5028, 0.5519, 0.3039, 0.2888],
+    ]
+)
+
 
 def get_diebold_mariano_test(
     actual: pd.Series | pd.DataFrame,
@@ -886,6 +918,69 @@ def _boundary_kernel(x: np.ndarray, y: np.ndarray, bandwidth: float) -> np.ndarr
     return kernel / mass[:, None]
 
 
+def get_hong_li_p_value(statistic: float, observations: int, lags: int = 1) -> float:
+    """
+    Calculate the p-value of a Hong-Li statistic Q(j) (lags=1) or of the portmanteau W over
+    `lags` lags from its distribution under the null, simulated on independent uniform PITs.
+
+    Under the null the PITs are independent and uniform, whatever the model, so the
+    distribution of the statistics only depends on the number of observations n and of lags
+    p. It is far from the standard normal distribution of the asymptotic theory: on
+    1,000 observations every Q(j) has a standard deviation of about 1.2 and a skewness of
+    about 0.4, and two Q(j) are correlated by about 0.45 because they share the kernel
+    estimate of the marginal density of the same PITs, so W has a standard deviation of
+    about 1.8 (p = 4); with the standard normal distribution W rejects at 5% about 17% to
+    20% of the time. The Q(j) are exchangeable (the same distribution for every lag and the
+    same dependence between every pair), so their joint cumulants up to the third, simulated
+    for a grid of n with 10 lags (HONG_LI_NULL_CUMULANTS), give those of W for every p:
+
+    - E[W] = √p κ₁
+    - Var(W) = κ₂ + (p - 1) κ₁₁
+    - κ₃(W) = (κ₃ + 3 (p - 1) κ₂₁ + (p - 1)(p - 2) κ₁₁₁) / √p
+    - P-Value = P(X > W), with X the Pearson type III (gamma) distribution with that mean,
+      variance and skewness κ₃(W) / Var(W)^1.5
+
+    Where κ₁ is the mean of a Q(j), κ₂ its variance, κ₁₁ the covariance of two, κ₃ the third
+    cumulant of one, κ₂₁ the joint cumulant E[(Q(i) - κ₁)² (Q(j) - κ₁)] and κ₁₁₁ that of three
+    different lags. The cumulants are interpolated linearly in ln n between the grid points
+    and held at the ends of the grid (50 and 5,000 observations): below 50 the
+    approximation is rough, and above 5,000 the statistics move slowly towards the standard
+    normal distribution, so the cumulants of 5,000 observations give p-values that are on
+    the conservative side.
+
+    Args:
+        statistic (float): The statistic Q(j) or W.
+        observations (int): The number of PITs n.
+        lags (int, optional): The number of lags p of W, 1 for a Q(j). Defaults to 1.
+
+    Returns:
+        float: The p-value, the probability of a statistic at least as large under the null.
+    """
+    if not np.isfinite(statistic):
+        return np.nan
+
+    log_observations = np.log(
+        np.clip(observations, HONG_LI_NULL_GRID[0], HONG_LI_NULL_GRID[-1])
+    )
+    mean, variance, covariance, third, pair, triple = (
+        float(np.interp(log_observations, np.log(HONG_LI_NULL_GRID), cumulant))
+        for cumulant in HONG_LI_NULL_CUMULANTS.T
+    )
+    portmanteau_variance = variance + (lags - 1) * covariance
+    portmanteau_third = (
+        third + 3 * (lags - 1) * pair + (lags - 1) * (lags - 2) * triple
+    ) / np.sqrt(lags)
+
+    return float(
+        stats.pearson3.sf(
+            statistic,
+            portmanteau_third / portmanteau_variance**1.5,
+            loc=np.sqrt(lags) * mean,
+            scale=np.sqrt(portmanteau_variance),
+        )
+    )
+
+
 def get_hong_li_test(
     pit: pd.Series | pd.DataFrame, lags: int = 4
 ) -> pd.Series | pd.DataFrame:
@@ -908,10 +1003,16 @@ def get_hong_li_test(
     - M(j) = ∫_0^1 ∫_0^1 (g_j(x_1, x_2) - 1)^2 dx_1 dx_2
     - A_h = [(h^-1 - 2) ∫ k^2(u) du + 2 ∫_0^1 ∫_(-1)^b k_b^2(u) du db]^2 - 1, with k_b = k / ∫_(-1)^b k(v) dv
     - V_0 = 2 [∫_(-1)^1 (∫_(-1)^1 k(u + v) k(v) dv)^2 du]^2
-    - Q(j) = h ((n - j) M(j) - A_h) / √V_0, standard normal under the null
-    - W = Σ_(j=1..p) Q(j) / √p, the portmanteau statistic over p = `lags` lags, standard normal under the null
+    - Q(j) = h ((n - j) M(j) - A_h) / √V_0, standard normal under the null as n grows
+    - W = Σ_(j=1..p) Q(j) / √p, the portmanteau statistic over p = `lags` lags, standard normal
+      under the null as n grows
 
-    Only large values reject (the upper tail): the p-values are P(N(0, 1) > statistic).
+    Only large values reject (the upper tail). The standard normal distribution is reached
+    slowly, so the p-values come from the distribution of the statistics simulated under the
+    null for the same number of observations and lags (see `get_hong_li_p_value`): on
+    simulated independent uniform PITs W (p = 4) then rejects at 5% about 4.3% of the time at
+    500 observations and 4.4% at 1,000, where the standard normal distribution gives 18% and
+    17%.
 
     For more information about the method, see the following papers:
 
@@ -928,16 +1029,19 @@ def get_hong_li_test(
 
     Returns:
         pd.Series | pd.DataFrame: The statistic Q(j) and its p-value for every lag, the
-        portmanteau W and its p-value, the bandwidth and the number of observations.
+        portmanteau W and its p-value, the bandwidth and the number of observations; NaN
+        with fewer than 20 observations or PITs without variation.
 
     Notes:
         Referenced against `HLTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
         as its documentation defines it. (n - j) M(j) has an expected value of about A_h
         under the null, so A_h enters multiplied by h, the scale of the statistic; without
         it the statistic centres far below zero (around -60 on 1,000 independent uniform
-        draws). Simulated independent uniforms give Q(1) a mean of about 0 and a standard
-        deviation of about 1.2 at 500 to 2,000 observations, so read the p-values as a
-        guide. The integral is a Gauss-Legendre rule on panels of a fifth of the bandwidth.
+        draws). Simulated independent uniforms give every Q(j) a mean of about 0 and a
+        standard deviation of about 1.2 at 500 to 2,000 observations, and W one of about 1.8
+        (p = 4), which the simulated null distribution of the p-values takes into account.
+        rugarch's HLTest compares the statistics with the standard normal distribution. The
+        integral is a Gauss-Legendre rule on panels of a fifth of the bandwidth.
     """
     if lags < 1:
         raise ValueError(f"The test needs at least 1 lag, not {lags}.")
@@ -953,22 +1057,29 @@ def get_hong_li_test(
     n = len(values)
     names = [f"Q({lag})" for lag in range(1, lags + 1)]
 
+    nan_result = pd.Series(
+        {
+            **{
+                f"{name} {kind}": np.nan
+                for name in names
+                for kind in ("Statistic", "P-Value")
+            },
+            "W Statistic": np.nan,
+            "W P-Value": np.nan,
+            "Bandwidth": np.nan,
+            "Observations": n,
+        }
+    )
+
     if n < max(MINIMUM_OBSERVATIONS_FOR_HONG_LI_TEST, lags + 2):
-        return pd.Series(
-            {
-                **{
-                    f"{name} {kind}": np.nan
-                    for name in names
-                    for kind in ("Statistic", "P-Value")
-                },
-                "W Statistic": np.nan,
-                "W P-Value": np.nan,
-                "Bandwidth": np.nan,
-                "Observations": n,
-            }
-        )
+        return nan_result
 
     bandwidth = float(np.std(values, ddof=1) * n ** (-1 / 6))
+
+    # PITs without variation give a bandwidth of 0 (or one of rounding noise), for which the
+    # kernel and the integration panels do not exist.
+    if not bandwidth > n * HONG_LI_ROUNDING:
+        return nan_result
     squared, boundary, variance = _hong_li_constants()
     centring = ((1 / bandwidth - 2) * squared + 2 * boundary) ** 2 - 1
 
@@ -1003,11 +1114,11 @@ def get_hong_li_test(
         statistic = bandwidth * (pairs * distance - centring) / np.sqrt(variance)
         statistics.append(statistic)
         result[f"{name} Statistic"] = statistic
-        result[f"{name} P-Value"] = float(stats.norm.sf(statistic))
+        result[f"{name} P-Value"] = get_hong_li_p_value(statistic, n, 1)
 
     portmanteau = float(np.sum(statistics) / np.sqrt(lags))
     result["W Statistic"] = portmanteau
-    result["W P-Value"] = float(stats.norm.sf(portmanteau))
+    result["W P-Value"] = get_hong_li_p_value(portmanteau, n, lags)
     result["Bandwidth"] = bandwidth
     result["Observations"] = n
 
@@ -1244,6 +1355,11 @@ def get_model_confidence_set(
     and "R" are the statistics "max" and "range" here, and `mcsTest` of R's rugarch
     (https://cran.r-project.org/package=rugarch). Like arch, the variance of each t_ij of
     "range" is that of the bootstrap averages with 1 added to its zero diagonal.
+
+    In samples of a few hundred periods the "range" statistic eliminates a model too often:
+    with four models of equal expected loss over 250 periods (500 resamples) it eliminated at
+    least one about 14% of the time at alpha = 0.1 and 8% at alpha = 0.05, and arch's MCS about
+    12% and 6%, where "max" stays close to alpha (8% and 5%). Prefer "max" for short samples.
 
     Args:
         losses (pd.DataFrame): The loss of every model (a column) at every period (a row), such

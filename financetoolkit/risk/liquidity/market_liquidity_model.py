@@ -1453,8 +1453,11 @@ def get_vpin(
         buckets (int, optional): The number of buckets n VPIN is the mean over. Defaults to 50,
         as in the paper.
         bucket_volume (float | None, optional): The volume V of a bucket. Defaults to None,
-        which takes the mean daily Volume of each asset over the data, so that a bucket
-        holds about a day of trading and VPIN spans about `buckets` days.
+        which takes the mean daily Volume of each asset over its first `window` days, the
+        days before the first one classified, so that a bucket holds about a day of trading,
+        VPIN spans about `buckets` days and no value uses the volume of later days. Easley,
+        López de Prado and O'Hara (2012) also fix V in advance, at a fiftieth of the average
+        daily volume.
         window (int, optional): The number of days the standard deviation of the price
         changes of the classification is taken over. Defaults to 50.
         degrees_of_freedom (float | None, optional): The degrees of freedom of a Student-t
@@ -1491,7 +1494,9 @@ def get_vpin(
         data.iloc[:, 0], data.iloc[:, 1], window, degrees_of_freedom
     )
     vpin = pd.Series(np.nan, index=data.index, name=prices.name)
-    size = bucket_volume if bucket_volume else data.iloc[:, 1].mean()
+    # The mean Volume of the first `window` days, the days before the first classified one,
+    # so the volume clock is fixed in advance (as in the paper) and no VPIN uses later volume.
+    size = bucket_volume if bucket_volume else data.iloc[:window, 1].mean()
 
     # The days that fill the buckets: classified and with volume (a day without volume adds nothing to a bucket).  # noqa: E501
     filled = buy_volume.notna() & (data.iloc[:, 1] > 0)

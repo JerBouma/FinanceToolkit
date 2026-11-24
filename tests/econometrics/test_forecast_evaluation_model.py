@@ -664,3 +664,43 @@ def test_hong_li_test_is_centred_under_the_null_and_rejects_dependence():
             "W Statistic"
         ]
     )
+
+
+def test_hong_li_p_values_follow_the_simulated_null_distribution():
+    rng = np.random.default_rng(21)
+    results = pd.DataFrame(
+        [
+            forecast_evaluation_model.get_hong_li_test(pd.Series(rng.random(300)), 4)
+            for _ in range(40)
+        ]
+    )
+
+    # Under the null the p-values are uniform: W, with a standard deviation of about 1.8,
+    # rejects about 18% of the time at 5% against the standard normal distribution.
+    assert results["W P-Value"].mean() == pytest.approx(0.5, abs=0.15)
+    assert (results["W P-Value"] < 0.05).mean() < 0.15
+    assert results["W Statistic"].std() > 1.3
+
+    # The p-value of a Q(j) is that of W with one lag, and the p-values fall as W rises.
+    first = results.iloc[0]
+    assert first["Q(1) P-Value"] == pytest.approx(
+        forecast_evaluation_model.get_hong_li_p_value(first["Q(1) Statistic"], 300, 1)
+    )
+    p_values = [
+        forecast_evaluation_model.get_hong_li_p_value(statistic, 1000, 4)
+        for statistic in (-2.0, 0.0, 2.0, 6.0)
+    ]
+    assert p_values == sorted(p_values, reverse=True)
+    # A larger W is needed with more lags, since the Q(j) are correlated.
+    assert forecast_evaluation_model.get_hong_li_p_value(
+        3.0, 1000, 10
+    ) > forecast_evaluation_model.get_hong_li_p_value(3.0, 1000, 1)
+    assert np.isnan(forecast_evaluation_model.get_hong_li_p_value(np.nan, 1000, 4))
+
+
+def test_hong_li_test_is_nan_for_pits_without_variation():
+    # A bandwidth of 0 would ask for an integration grid of infinitely many panels.
+    for constant in (np.full(300, 0.5), np.zeros(300)):
+        result = forecast_evaluation_model.get_hong_li_test(pd.Series(constant), 4)
+        assert result.drop("Observations").isna().all()
+        assert result["Observations"] == 300

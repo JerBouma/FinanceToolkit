@@ -1656,6 +1656,55 @@ def get_standardized_expectation(
         return float(np.sum(values * density * EXPECTATION_WEIGHTS))
 
 
+def get_standardized_raw_moments(
+    distribution: str = "normal", parameters: tuple[float, ...] = (), order: int = 8
+) -> np.ndarray:
+    """
+    Calculates the raw moments E[z^k], k = 0, ..., `order`, of a standardized innovation
+    distribution (mean 0 and Variance 1).
+
+    The normal moments are exact (0 for an odd k and (k - 1)!! for an even k); the other
+    distributions are expectations over EXPECTATION_GRID (see `get_standardized_expectation`),
+    which match the closed forms of the Student-t and the GED to four decimals up to the 8th
+    moment.
+
+    Args:
+        distribution (str, optional): The distribution. Defaults to "normal".
+        parameters (Sequence[float], optional): Its Shape (and Skew). Defaults to ().
+        order (int, optional): The highest moment. Defaults to 8.
+
+    Returns:
+        np.ndarray: E[z^0] to E[z^order], NaN for a moment the distribution does not have (the
+        k-th moment of a Student-t, skewed or not, with a Shape of at most k).
+    """
+    powers = np.arange(order + 1)
+
+    if distribution == "normal":
+        # (k - 1)!! for an even k: 1, 1, 3, 15, 105, ...
+        return np.array(
+            [0.0 if k % 2 else float(np.prod(np.arange(k - 1, 0, -2))) for k in powers]
+        )
+
+    student_t = distribution in ("t", "skewt", "skewt_fernandez_steel")
+
+    return np.array(
+        [
+            (
+                math.nan
+                if student_t and parameters[0] <= k
+                else (
+                    1.0
+                    if k == 0
+                    else get_standardized_expectation(
+                        EXPECTATION_GRID**k, distribution, parameters
+                    )
+                )
+            )
+            for k in powers
+        ]
+    )
+
+
 def get_standardized_moments(
     distribution: str = "normal", parameters: tuple[float, ...] = ()
 ) -> tuple[float, float]:

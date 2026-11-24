@@ -13,6 +13,10 @@ from financetoolkit.helpers import delay_embedding
 # The most pairwise distances held in memory at once (32 MB of float64).
 DISTANCE_BLOCK = 4_000_000
 
+# A series whose range is within rounding of its size (1e-14 per observation) has no
+# variation: the windows would hold rounding noise and give a spurious exponent.
+ROUNDING_PER_OBSERVATION = 1e-14
+
 
 def get_generalized_hurst_exponent(
     data: pd.Series | np.ndarray, max_lag: int = 20, q: float = 2.0
@@ -215,10 +219,15 @@ def get_rescaled_range_hurst_exponent(
             Defaults to True.
 
     Returns:
-        float: The Hurst exponent, NaN when fewer than two window sizes have a value.
+        float: The Hurst exponent, NaN when fewer than two window sizes have a value or the
+        changes do not vary.
     """
     values = np.asarray(data, dtype=float)
     values = values[np.isfinite(values)]
+    if len(values) == 0 or np.ptp(values) <= len(
+        values
+    ) * ROUNDING_PER_OBSERVATION * np.abs(values).max(initial=0.0):
+        return np.nan
     sizes = np.asarray(
         get_window_sizes(len(values)) if window_sizes is None else window_sizes,
         dtype=np.int64,
@@ -300,10 +309,15 @@ def get_detrended_fluctuation(
             Defaults to 1.
 
     Returns:
-        float: The scaling exponent alpha, NaN when fewer than two window sizes have a value.
+        float: The scaling exponent alpha, NaN when fewer than two window sizes have a value or
+        the changes do not vary.
     """
     values = np.asarray(data, dtype=float)
     values = values[np.isfinite(values)]
+    if len(values) == 0 or np.ptp(values) <= len(
+        values
+    ) * ROUNDING_PER_OBSERVATION * np.abs(values).max(initial=0.0):
+        return np.nan
     profile = np.cumsum(values - values.mean())
     sizes = np.asarray(
         get_window_sizes(len(values)) if window_sizes is None else window_sizes,
@@ -587,6 +601,9 @@ def get_mean_period(data: pd.Series | np.ndarray) -> int:
     """
     values = np.asarray(data, dtype=float)
     values = values[np.isfinite(values)]
+    # A series of one value or none has no frequencies.
+    if len(values) < 2:  # noqa: PLR2004
+        return 1
     power = np.abs(np.fft.rfft(values - values.mean())) ** 2
     frequencies = np.fft.rfftfreq(len(values))
     if power[1:].sum() <= 0:
@@ -648,7 +665,8 @@ def get_largest_lyapunov_exponent(
             Defaults to 20.
 
     Returns:
-        float: The largest Lyapunov exponent per period.
+        float: The largest Lyapunov exponent per period, NaN for a series too short to follow
+        its pairs (or without values).
     """
     values = np.asarray(data, dtype=float)
     values = values[np.isfinite(values)]

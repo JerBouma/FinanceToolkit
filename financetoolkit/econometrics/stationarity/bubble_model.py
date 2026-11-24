@@ -197,7 +197,7 @@ def simulate_bubble_critical_values(
     observations: int,
     minimum_window: int,
     lags: int = 0,
-    replications: int = 500,
+    replications: int = 2000,
     seed: int = 0,
     levels: tuple[float, ...] = CONFIDENCE_LEVELS,
 ) -> dict[str, np.ndarray]:
@@ -218,7 +218,7 @@ def simulate_bubble_critical_values(
         observations (int): The number of observations T.
         minimum_window (int): The smallest window in observations.
         lags (int, optional): The number of lagged differences. Defaults to 0.
-        replications (int, optional): The number of simulated paths. Defaults to 500.
+        replications (int, optional): The number of simulated paths. Defaults to 2,000.
         seed (int, optional): The seed of the random numbers. Defaults to 0.
         levels (tuple[float, ...], optional): The confidence levels. Defaults to (0.90, 0.95, 0.99).
 
@@ -258,7 +258,7 @@ def get_bubble_test(
     method: str = "gsadf",
     lags: int = 0,
     minimum_window: int | None = None,
-    replications: int = 500,
+    replications: int = 2000,
     seed: int = 0,
 ) -> pd.Series:
     """
@@ -282,7 +282,9 @@ def get_bubble_test(
         minimum_window (int | None, optional): The smallest window in observations. Defaults to
             None, floor((0.01 + 1.8 / √T)·T).
         replications (int, optional): The number of simulated paths for the critical values.
-            Defaults to 500.
+            Defaults to 2,000, as in Phillips, Shi and Yu (2015): the simulated critical values
+            serve every series of the same length, so with 500 paths the size of the test at 5%
+            ranges from about 3.5% to 7% depending on the seed.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -309,7 +311,12 @@ def get_bubble_test(
     )
     name = method.upper()
     critical_values = simulated[f"{name} Critical Values"]
-    p_value = float(np.mean(simulated[name] >= statistic))
+    # A series without variation (or without values) has no statistic, and no p-value.
+    p_value = (
+        float(np.mean(simulated[name] >= statistic))
+        if np.isfinite(statistic)
+        else np.nan
+    )
 
     return pd.Series(
         {
@@ -334,7 +341,7 @@ def get_bubble_episodes(
     minimum_window: int | None = None,
     confidence: float = 0.95,
     minimum_duration: int | None = None,
-    replications: int = 500,
+    replications: int = 2000,
     seed: int = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -358,7 +365,7 @@ def get_bubble_episodes(
         confidence (float, optional): The confidence of the critical values. Defaults to 0.95.
         minimum_duration (int | None, optional): The fewest observations of an episode. Defaults
             to None, round(log(T)).
-        replications (int, optional): The number of simulated paths. Defaults to 500.
+        replications (int, optional): The number of simulated paths. Defaults to 2,000.
         seed (int, optional): The seed of the simulation. Defaults to 0.
 
     Returns:
@@ -556,23 +563,32 @@ def get_chow_dickey_fuller_test(
         99% critical values, the observations and whether the series turns explosive at the 5%
         level.
     """
-    statistics = get_chow_dickey_fuller_statistics(series, trim).dropna()
     data = series.dropna()
+    first = int(np.floor(trim * len(data)))
 
-    if statistics.empty:
+    # The regression over the T - 1 changes needs a degree of freedom besides δ.
+    too_short = len(data) <= 2  # noqa: PLR2004
+    if too_short or min(len(data) - 1 - first, len(data) - 2) < first:
         raise ValueError("The series is too short for the trimmed break dates.")
+
+    statistics = get_chow_dickey_fuller_statistics(series, trim).dropna()
 
     simulated = simulate_chow_dickey_fuller_critical_values(
         len(data), trim, replications, seed
     )
     critical_values = np.quantile(simulated, CONFIDENCE_LEVELS)
-    statistic = float(statistics.max())
+    # A series without variation has no statistic on any break date, and no p-value.
+    statistic = float(statistics.max()) if not statistics.empty else np.nan
 
     return pd.Series(
         {
             "SDFC Statistic": statistic,
-            "Break Date": statistics.idxmax(),
-            "P-Value": float(np.mean(simulated >= statistic)),
+            "Break Date": statistics.idxmax() if not statistics.empty else np.nan,
+            "P-Value": (
+                float(np.mean(simulated >= statistic))
+                if np.isfinite(statistic)
+                else np.nan
+            ),
             "Critical Value 10%": critical_values[0],
             "Critical Value 5%": critical_values[1],
             "Critical Value 1%": critical_values[2],

@@ -1566,9 +1566,12 @@ class ValueAtRiskRisk:
         of a model without memory (b_hat below 1 means breaches cluster). CVaR_t is the Conditional Value at Risk of
         the same window and distribution and Volatility_t the standard deviation (ddof=1) of the window (the
         volatility forecast with distribution="garch"); the McNeil-Frey p-value is the share of `n_bootstrap`
-        resamples of the residuals less their mean whose statistic is at least as large (one-sided). The Kupiec,
-        Christoffersen and duration statistics are compared with a χ² distribution with one degree of freedom
-        and the conditional coverage statistic with two.
+        resamples of the residuals less their mean whose statistic is at least as large (one-sided). The Kupiec
+        and Christoffersen statistics are compared with a χ² distribution with one degree of freedom and the
+        conditional coverage statistic with two. The duration p-value is a Monte Carlo p-value, as Christoffersen
+        and Pelletier (2004) use: (1 + the number of statistics at least as large) / 1,000 over 999 random
+        orderings of the same breaches, the exact distribution under the null given the number of breaches (the
+        χ² distribution rejects a correct 5% VaR over 1,000 periods about 9% of the time at 5%).
 
         With distribution="garch", VaR_t = Mu + Volatility_t * F^-1(alpha) and CVaR_t = Mu + Volatility_t *
         E[z | z <= F^-1(alpha)] come from the GARCH-family model `garch_method` with innovations
@@ -1663,8 +1666,8 @@ class ValueAtRiskRisk:
 
         |                  |   EURUSD |   USDJPY |   GBPUSD |   Benchmark |
         |:-----------------|---------:|---------:|---------:|------------:|
-        | Kupiec Statistic |   8.3686 |   1.8323 |   2.2039 |      0.0836 |
-        | P-Value          |   0.0038 |   0.1759 |   0.1377 |      0.7725 |
+        | Kupiec Statistic |   2.0936 |   1.8323 |   0.0402 |      0.1736 |
+        | P-Value          |   0.1479 |   0.1759 |   0.841  |      0.677  |
         """
         period = period if period else "daily"
         tests = (

@@ -1229,9 +1229,10 @@ class LiquidityRisk:
             pd.DataFrame: VPIN between 0 and 1, with the dates as the index and the assets as columns.
 
         Notes:
-        - The volume of a bucket is the mean daily Volume of the asset over the data of the Toolkit, so a bucket
-        holds about a day of trading. It sets the length of the volume clock; the classification and VPIN of a
-        day otherwise use the data up to that day only.
+        - The volume of a bucket is the mean daily Volume of the asset over its first `window` days, the days
+        before the first one classified, so a bucket holds about a day of trading at the start of the data and the
+        volume clock is fixed in advance, as in the paper. Every VPIN thus uses the data up to its day only; when
+        the volume grows over the years, the buckets fill faster and VPIN spans fewer days.
         - A day that fills more than the rest of a bucket carries its excess volume into the next bucket with its
         own buy share, as in the paper, so every bucket holds the same volume.
         - VPIN is updated on the day a bucket completes and kept on the days in between; it is NaN until the
@@ -1259,11 +1260,11 @@ class LiquidityRisk:
 
         | Date       |   SNAP |   ETSY |   LYFT |   Benchmark |
         |:-----------|-------:|-------:|-------:|------------:|
-        | 2025-06-24 | 0.3767 | 0.5349 | 0.4046 |      0.2362 |
-        | 2025-06-25 | 0.3715 | 0.5349 | 0.4046 |      0.2376 |
-        | 2025-06-26 | 0.3662 | 0.535  | 0.4079 |      0.2277 |
-        | 2025-06-27 | 0.3903 | 0.5428 | 0.4059 |      0.2315 |
-        | 2025-06-30 | 0.371  | 0.5324 | 0.4059 |      0.2435 |
+        | 2025-06-24 | 0.2988 | 0.5868 | 0.4158 |      0.2241 |
+        | 2025-06-25 | 0.3125 | 0.5908 | 0.4132 |      0.2323 |
+        | 2025-06-26 | 0.3138 | 0.6208 | 0.4149 |      0.2339 |
+        | 2025-06-27 | 0.3097 | 0.6293 | 0.4178 |      0.2457 |
+        | 2025-06-30 | 0.3153 | 0.6162 | 0.4109 |      0.2541 |
         """
         vpin = market_liquidity_model.get_vpin(
             self._get_prices("Adj Close"),

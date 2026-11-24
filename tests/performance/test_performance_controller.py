@@ -10,6 +10,7 @@ from scipy import stats
 
 from financetoolkit.performance import performance_model
 from financetoolkit.performance.performance_controller import Performance
+from financetoolkit.risk import risk_model
 
 
 def test_collect_all_metrics(recorder, performance_module):
@@ -759,20 +760,29 @@ def test_get_calmar_ratio_divides_the_year_by_its_maximum_drawdown(
     )
 
 
-def test_get_sterling_ratio_divides_the_year_by_its_adjusted_average_drawdown(
+def test_get_sterling_ratio_divides_the_year_by_its_average_largest_drawdown(
     performance_module,
 ):
-    drawdowns = _drawdowns(_daily_returns_in(performance_module, "MSFT", "2022"))
-    year_return = _year_return(performance_module, "MSFT", "2022")
+    daily = _daily_returns_in(performance_module, "AAPL", "2020")
+    year_return = _year_return(performance_module, "AAPL", "2020")
 
-    for adjustment in (0.1, 0.0):
+    for largest, adjustment in ((3, 0.1), (3, 0.0), (5, 0.1), (1, 0.1)):
         result = performance_module.get_sterling_ratio(
-            adjustment=adjustment, rounding=None
+            adjustment=adjustment, largest_drawdowns=largest, rounding=None
         )
-        assert result.loc["2022", "MSFT"] == pytest.approx(
-            year_return / (abs(drawdowns[drawdowns < 0].mean()) + adjustment),
-            abs=5e-5,
+        # Bacon's D_Lar: the mean depth of the deepest drawdowns from peak to trough.
+        table = risk_model.get_drawdown_table(daily.to_frame("AAPL"), top=largest)
+        assert result.loc["2020", "AAPL"] == pytest.approx(
+            year_return / (abs(table["Drawdown"].mean()) + adjustment), abs=5e-5
         )
+
+    # One drawdown is the deepest: the maximum drawdown of the year.
+    assert performance_module.get_sterling_ratio(
+        largest_drawdowns=1, adjustment=0.0, rounding=None
+    ).loc["2020", "AAPL"] == pytest.approx(
+        performance_module.get_calmar_ratio(rounding=None).loc["2020", "AAPL"],
+        abs=5e-5,
+    )
 
 
 def test_get_burke_ratio_has_the_sign_of_the_excess_return(performance_module):
@@ -1426,6 +1436,15 @@ def test_get_calmar_and_sterling_ratio_annualized(recorder, performance_module):
     recorder.capture(calmar_ratio)
     recorder.capture(
         performance_module.get_sterling_ratio(method="annualized", adjustment=0.05)
+    )
+    # With one drawdown, D_Lar is the maximum drawdown: PerformanceAnalytics' SterlingRatio,
+    # which is the Calmar ratio with the adjustment added to the drawdown.
+    pd.testing.assert_series_equal(
+        performance_module.get_sterling_ratio(
+            method="annualized", adjustment=0.0, largest_drawdowns=1, rounding=None
+        ),
+        performance_module.get_calmar_ratio(method="annualized", rounding=None),
+        check_names=False,
     )
 
     # The default per-period ratios are unchanged by the method parameter.

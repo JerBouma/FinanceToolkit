@@ -388,16 +388,23 @@ def test_get_rachev_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_rachev_ratio(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_treynor_mazuy_model(recorder, performance_module):
-    recorder.capture(performance_module.get_treynor_mazuy_model())
-    recorder.capture(performance_module.get_treynor_mazuy_model(period="quarterly"))
-    recorder.capture(performance_module.get_treynor_mazuy_model(growth=True))
-
-
-def test_get_henriksson_merton_model(recorder, performance_module):
-    recorder.capture(performance_module.get_henriksson_merton_model())
-    recorder.capture(performance_module.get_henriksson_merton_model(period="quarterly"))
-    recorder.capture(performance_module.get_henriksson_merton_model(growth=True))
+def test_get_market_timing_model(recorder, performance_module):
+    recorder.capture(performance_module.get_market_timing_model())
+    recorder.capture(performance_module.get_market_timing_model(period="quarterly"))
+    recorder.capture(performance_module.get_market_timing_model(growth=True))
+    recorder.capture(
+        performance_module.get_market_timing_model(method="henriksson_merton")
+    )
+    recorder.capture(
+        performance_module.get_market_timing_model(
+            method="henriksson_merton", period="quarterly"
+        )
+    )
+    recorder.capture(
+        performance_module.get_market_timing_model(
+            method="henriksson_merton", growth=True
+        )
+    )
 
 
 def test_get_returns_cumulative_keeps_the_first_period(performance_module):

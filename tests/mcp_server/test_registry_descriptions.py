@@ -256,7 +256,7 @@ def test_every_stated_number_of_metrics_is_the_same():
         "financetoolkit/mcp_server/mcpb/pyproject.toml",
     ]
     # A total is a number of at least 300 followed by "+" and, within a few words, what it
-    # counts; the counts of single modules (140+ ratios, 150+ indicators) are smaller. A
+    # counts; the counts of single modules (130+ ratios, 150+ indicators) are smaller. A
     # thousands separator (1,000+) states the same number as 1000+.
     pattern = re.compile(
         r"(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d{3,})\+"

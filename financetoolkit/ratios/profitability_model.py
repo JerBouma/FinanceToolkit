@@ -543,23 +543,6 @@ def get_return_on_capital_employed(
     return operating_income / (total_assets - total_current_liabilities)
 
 
-def get_net_income_per_ebt(
-    net_income: pd.Series | pd.DataFrame, income_tax_expense: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the net income per earnings before taxes (EBT), a profitability ratio that
-    measures the net income generated for each dollar of EBT.
-
-    Args:
-        net_income (float or pd.Series): Net income of the company.
-        income_tax_expense (float or pd.Series): Income tax expense of the company.
-
-    Returns:
-        float | pd.Series: The net income per EBT value.
-    """
-    return net_income / (net_income + income_tax_expense)
-
-
 def get_free_cash_flow_operating_cash_flow_ratio(
     free_cash_flow: pd.Series | pd.DataFrame,
     operating_cash_flow: pd.Series | pd.DataFrame,
@@ -620,47 +603,9 @@ def get_tax_burden_ratio(
         income_before_tax (float or pd.Series): Income before tax of the company.
 
     Returns:
-        float | pd.Series: The NIperEBT value.
+        float | pd.Series: The tax burden ratio value.
     """
     return net_income / income_before_tax
-
-
-def get_EBT_to_EBIT(
-    earnings_before_tax: pd.Series | pd.DataFrame,
-    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the EBT to EBIT, which is the ratio of a company's earnings before tax to its earnings before
-    interest and taxes, indicating how much of a company's earnings are generated before paying interest on debt.
-
-    Args:
-        earnings_before_tax (float or pd.Series): Earnings before tax of the company.
-        earnings_before_interest_and_taxes (float or pd.Series): Earnings before interest and taxes of the company.
-
-    Returns:
-        float | pd.Series: The EBTperEBIT value.
-    """
-    return earnings_before_tax / earnings_before_interest_and_taxes
-
-
-def get_EBIT_to_revenue(
-    earnings_before_interest_and_taxes: pd.Series | pd.DataFrame,
-    revenue: pd.Series | pd.DataFrame,
-) -> pd.Series | pd.DataFrame:
-    """
-    Calculate the EBITperRevenue, which is the ratio of a company's earnings
-    before interest and taxes to its revenue, indicating how much profit a
-    company generates from its operations before paying interest on debt
-    and taxes on its earnings.
-
-    Args:
-        earnings_before_interest_and_taxes (float or pd.Series): Earnings before interest and taxes of the company.
-        revenue (float or pd.Series): Revenue of the company.
-
-    Returns:
-        float | pd.Series: The EBITperRevenue value.
-    """
-    return earnings_before_interest_and_taxes / revenue
 
 
 def get_cash_tax_rate(

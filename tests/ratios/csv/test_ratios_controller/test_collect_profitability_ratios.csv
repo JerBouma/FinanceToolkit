@@ -19,10 +19,7 @@ AAPL,Financial Leverage,,-0.962,-0.7966,-0.7768
 AAPL,Return on Capital Employed,0.3034,0.4831,0.6009,0.5514
 AAPL,Return on Tangible Assets,,0.2806,0.2836,0.275
 AAPL,Income Quality Ratio,1.4052,1.0988,1.2239,1.1397
-AAPL,Net Income per EBT,0.8557,0.867,0.838,0.8528
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,0.9094,0.8935,0.9123,0.9009
-AAPL,EBT to EBIT Ratio,0.9589,0.9764,0.976,0.9666
-AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.307
 AAPL,Cash Tax Rate,0.1416,0.2324,0.1643,0.1642
 AAPL,Tax Rate Divergence,-0.0027,0.0994,0.0023,0.017
 AAPL,Gross Profitability,0.3241,0.4354,0.4841,0.4797
@@ -52,10 +49,7 @@ MSFT,Financial Leverage,,-0.5262,-0.3852,-0.2992
 MSFT,Return on Capital Employed,0.2313,0.2852,0.3091,0.2876
 MSFT,Return on Tangible Assets,,0.2324,0.2587,0.2331
 MSFT,Income Quality Ratio,1.3702,1.2525,1.2241,1.2103
-MSFT,Net Income per EBT,0.8349,0.8617,0.8689,0.8102
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,0.7455,0.7313,0.7317,0.6791
-MSFT,EBT to EBIT Ratio,0.9534,0.9681,0.9759,0.9784
-MSFT,EBIT to Revenue,0.389,0.437,0.4326,0.4307
 MSFT,Cash Tax Rate,0.0,0.0,0.0,0.0
 MSFT,Tax Rate Divergence,-0.1651,-0.1383,-0.1311,-0.1898
 MSFT,Gross Profitability,0.3217,0.3471,0.3717,0.3545

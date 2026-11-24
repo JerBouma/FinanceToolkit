@@ -227,10 +227,6 @@ def test_get_return_on_capital_employed(recorder, ratios_module):
     recorder.capture(ratios_module.get_return_on_capital_employed())
 
 
-def test_get_net_income_per_ebt(recorder, ratios_module):
-    recorder.capture(ratios_module.get_net_income_per_ebt())
-
-
 def test_get_free_cash_flow_operating_cash_flow_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_free_cash_flow_operating_cash_flow_ratio())
 
@@ -241,14 +237,6 @@ def test_get_tax_burden_ratio(recorder, ratios_module):
 
 def test_get_interest_coverage_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_interest_coverage_ratio())
-
-
-def test_get_EBT_to_EBIT(recorder, ratios_module):
-    recorder.capture(ratios_module.get_EBT_to_EBIT())
-
-
-def test_get_EBIT_to_revenue(recorder, ratios_module):
-    recorder.capture(ratios_module.get_EBIT_to_revenue())
 
 
 def test_get_debt_to_assets_ratio(recorder, ratios_module):

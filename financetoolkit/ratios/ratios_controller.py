@@ -93,10 +93,7 @@ FACTOR_COLLECTIONS = {
         "get_return_on_capital_employed",
         "get_return_on_tangible_assets",
         "get_income_quality_ratio",
-        "get_net_income_per_ebt",
         "get_free_cash_flow_operating_cash_flow_ratio",
-        "get_EBT_to_EBIT",
-        "get_EBIT_to_revenue",
         "get_cash_tax_rate",
         "get_tax_rate_divergence",
         "get_gross_profitability",
@@ -318,10 +315,7 @@ class Ratios:
         | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
         | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
-        | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
         | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
-        | EBT to EBIT Ratio                           |  0.9764 |  0.976  |  0.9666 |   1      |   1      |
-        | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         """
@@ -5926,10 +5920,7 @@ class Ratios:
         | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
         | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
-        | Net Income per EBT                          |  0.867  |  0.838  |  0.8528 |   0.7591 |   0.8439 |
         | Free Cash Flow to Operating Cash Flow Ratio |  0.8935 |  0.9123 |  0.9009 |   0.9201 |   0.8859 |
-        | EBT to EBIT Ratio                           |  0.9764 |  0.976  |  0.9666 |   1      |   1      |
-        | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         | Gross Profitability                         |  0.4354 |  0.4841 |  0.4797 |   0.495  |   0.5434 |
@@ -6007,17 +5998,8 @@ class Ratios:
             profitability_ratios_dict["Income Quality Ratio"] = (
                 self.get_income_quality_ratio(trailing=trailing)
             )
-            profitability_ratios_dict["Net Income per EBT"] = (
-                self.get_net_income_per_ebt(trailing=trailing)
-            )
             profitability_ratios_dict["Free Cash Flow to Operating Cash Flow Ratio"] = (
                 self.get_free_cash_flow_operating_cash_flow_ratio(trailing=trailing)
-            )
-            profitability_ratios_dict["EBT to EBIT Ratio"] = self.get_EBT_to_EBIT(
-                trailing=trailing
-            )
-            profitability_ratios_dict["EBIT to Revenue"] = self.get_EBIT_to_revenue(
-                trailing=trailing
             )
             profitability_ratios_dict["Cash Tax Rate"] = self.get_cash_tax_rate(
                 trailing=trailing
@@ -6265,7 +6247,7 @@ class Ratios:
         Restructuring charges and impairments are included, so a single weak year should be
         checked for one-off items before comparing with peers.
 
-        Also known as: operating income margin, operating profit margin.
+        Also known as: operating income margin, operating profit margin, EBIT margin, EBIT to revenue.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -6702,7 +6684,7 @@ class Ratios:
 
         - Interest Burden Ratio = Income Before Tax / Operating Income
 
-        Also known as: interest burden, DuPont interest burden.
+        Also known as: interest burden, DuPont interest burden, EBT to EBIT ratio, EBT/EBIT, pre-tax income to EBIT.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -8402,115 +8384,6 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
-    def get_net_income_per_ebt(
-        self,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        compound: bool = False,
-        standardize: bool = False,
-        trailing: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate the net income per earnings before taxes (EBT), a profitability ratio that measures
-        the net income generated for each dollar of EBT.
-
-        The net income per earnings before taxes (EBT) ratio helps evaluate the extent to which a company's net
-        income is generated from its operating activities before considering the impact of income taxes. It gives
-        insights into how effectively a company generates profit relative to its taxable income.
-
-        The formula is as follows:
-
-        - Net Income per EBT = Net Income / (Net Income + Income Tax Expense)
-
-        Earnings before tax is reconstructed from the income statement as Net Income
-        plus Income Tax Expense rather than read from the reported Income Before Tax
-        line, so this can differ slightly from `get_tax_burden_ratio` when a company
-        reports minority interests or discontinued operations below the tax line.
-
-        Also known as: net income to pre-tax income.
-
-        Args:
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            compound (bool, optional): Whether the growth is the compound annual growth rate over
-                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            trailing (int, optional): The number of periods to sum flows (income and cash flow
-                statement items) over, with balance sheet items averaged over the same number of
-                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. The window counts calendar periods,
-                so a period without a report makes it NaN. Defaults to None, which uses
-                single-period flows (per quarter and not annualized with quarterly data).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Net income per earnings before taxes (EBT) values.
-
-        Notes:
-        - The method retrieves historical data and calculates the net income per EBT for each asset in
-        the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using
-        the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["SAP.DE", "SIE.DE", "ASML.AS"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.ratios.get_net_income_per_ebt()
-        ```
-
-        Which returns:
-
-        |         |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:--------|-------:|-------:|-------:|-------:|-------:|
-        | ASML.AS | 0.8521 | 0.8529 | 0.8452 | 0.8184 | 0.8268 |
-        | SAP.DE  | 0.7576 | 0.6123 | 0.7791 | 0.6593 | 0.7087 |
-        | SIE.DE  | 0.7387 | 0.576  | 0.7535 | 0.7816 | 0.7935 |
-        """
-        if trailing:
-            net_income_per_ebt = profitability_model.get_net_income_per_ebt(
-                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
-                trailing_sum(
-                    self._income_statement.loc[:, "Income Tax Expense", :], trailing
-                ),
-            )
-        else:
-            net_income_per_ebt = profitability_model.get_net_income_per_ebt(
-                self._income_statement.loc[:, "Net Income", :],
-                self._income_statement.loc[:, "Income Tax Expense", :],
-            )
-
-        return finalize_dataset(
-            dataset=net_income_per_ebt,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            compound=compound,
-            rounding=rounding,
-            standardize=standardize,
-        )
-
-    @handle_portfolio
-    @handle_errors
     def get_free_cash_flow_operating_cash_flow_ratio(
         self,
         rounding: int | None = None,
@@ -8755,7 +8628,7 @@ class Ratios:
 
         - Tax Burden Ratio = Net Income / Income Before Tax
 
-        Also known as: tax efficiency ratio.
+        Also known as: tax efficiency ratio, net income per EBT, net income to pre-tax income.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -8823,236 +8696,6 @@ class Ratios:
 
         return finalize_dataset(
             dataset=tax_burden_ratio,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            compound=compound,
-            rounding=rounding,
-            standardize=standardize,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_EBT_to_EBIT(
-        self,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        compound: bool = False,
-        standardize: bool = False,
-        trailing: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate the EBT to EBIT ratio, which shows how much of a company's earnings before
-        interest and taxes (EBIT) is left after interest expense.
-
-        A ratio close to 1 means interest takes little of the operating profit; a lower ratio
-        means a heavier interest load. Taxes play no part in the ratio. Unlike
-        `get_interest_burden_ratio`, which uses the reported income before tax and operating
-        income, both figures here are rebuilt from net income, income tax expense and interest
-        expense.
-
-        The formula is as follows:
-
-        - EBT to EBIT = (Net Income + Income Tax Expense) / (Net Income + Income Tax Expense + Interest Expense)
-
-        Also known as: EBT/EBIT, pre-tax income to EBIT.
-
-        Args:
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            compound (bool, optional): Whether the growth is the compound annual growth rate over
-                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            trailing (int, optional): The number of periods to sum flows (income and cash flow
-                statement items) over, with balance sheet items averaged over the same number of
-                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. The window counts calendar periods,
-                so a period without a report makes it NaN. Defaults to None, which uses
-                single-period flows (per quarter and not annualized with quarterly data).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: EBT to EBIT ratio values.
-
-        Notes:
-        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["HLT", "MAR", "CHH"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.ratios.get_EBT_to_EBIT()
-        ```
-
-        Which returns:
-
-        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:----|-------:|-------:|-------:|-------:|-------:|
-        | CHH | 0.8894 | 0.9085 | 0.8403 | 0.819  | 0.8331 |
-        | HLT | 0.5865 | 0.8067 | 0.7838 | 0.7577 | 0.7697 |
-        | MAR | 0.7375 | 0.8854 | 0.8567 | 0.8193 | 0.8075 |
-        """
-        if trailing:
-            EBT_to_EBIT = profitability_model.get_EBT_to_EBIT(
-                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
-                + trailing_sum(
-                    self._income_statement.loc[:, "Income Tax Expense", :], trailing
-                ),
-                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
-                + trailing_sum(
-                    self._income_statement.loc[:, "Income Tax Expense", :], trailing
-                )
-                + trailing_sum(
-                    self._income_statement.loc[:, "Interest Expense", :], trailing
-                ),
-            )
-        else:
-            EBT_to_EBIT = profitability_model.get_EBT_to_EBIT(
-                self._income_statement.loc[:, "Net Income", :]
-                + self._income_statement.loc[:, "Income Tax Expense", :],
-                self._income_statement.loc[:, "Net Income", :]
-                + self._income_statement.loc[:, "Income Tax Expense", :]
-                + self._income_statement.loc[:, "Interest Expense", :],
-            )
-
-        return finalize_dataset(
-            dataset=EBT_to_EBIT,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            compound=compound,
-            rounding=rounding,
-            standardize=standardize,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_EBIT_to_revenue(
-        self,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        compound: bool = False,
-        standardize: bool = False,
-        trailing: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate the EBIT per Revenue, which is the ratio of a company's earnings
-        before interest and taxes to its revenue, indicating how much profit a
-        company generates from its operations before paying interest on debt
-        and taxes on its earnings.
-
-        The EBIT to Revenue ratio measures the company's ability to generate profit
-        before financing costs and taxes relative to its revenue. EBIT is rebuilt from
-        the bottom of the income statement (net income plus income tax expense plus
-        interest expense), the same EBIT as in `get_EBT_to_EBIT`. It therefore includes
-        non-operating income and expenses such as interest income, investment gains
-        and other income, which is why it differs from the operating margin
-        (`get_operating_margin`), which divides the reported operating income by
-        revenue. A higher ratio indicates that a larger portion of the company's
-        revenue is converted into profit before interest and taxes.
-
-        The formula is as follows:
-
-        - EBIT to Revenue = (Net Income + Income Tax Expense + Interest Expense) / Revenue
-
-        Also known as: EBIT margin.
-
-        Args:
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            compound (bool, optional): Whether the growth is the compound annual growth rate over
-                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            trailing (int, optional): The number of periods to sum flows (income and cash flow
-                statement items) over, with balance sheet items averaged over the same number of
-                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. The window counts calendar periods,
-                so a period without a report makes it NaN. Defaults to None, which uses
-                single-period flows (per quarter and not annualized with quarterly data).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: EBIT to Revenue ratio values.
-
-        Notes:
-        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["LMT", "GD", "NOC"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.ratios.get_EBIT_to_revenue()
-        ```
-
-        Which returns:
-
-        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:----|-------:|-------:|-------:|-------:|-------:|
-        | GD  | 0.1119 | 0.1123 | 0.1037 | 0.1034 | 0.1031 |
-        | LMT | 0.1211 | 0.1107 | 0.1334 | 0.1021 | 0.0938 |
-        | NOC | 0.2662 | 0.1733 | 0.0736 | 0.1374 | 0.1366 |
-        """
-        if trailing:
-            EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
-                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
-                + trailing_sum(
-                    self._income_statement.loc[:, "Income Tax Expense", :], trailing
-                )
-                + trailing_sum(
-                    self._income_statement.loc[:, "Interest Expense", :], trailing
-                ),
-                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
-            )
-        else:
-            EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
-                self._income_statement.loc[:, "Net Income", :]
-                + self._income_statement.loc[:, "Income Tax Expense", :]
-                + self._income_statement.loc[:, "Interest Expense", :],
-                self._income_statement.loc[:, "Revenue", :],
-            )
-
-        return finalize_dataset(
-            dataset=EBIT_to_revenue,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

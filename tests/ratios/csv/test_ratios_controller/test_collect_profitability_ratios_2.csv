@@ -59,18 +59,9 @@ AAPL,Return on Tangible Assets,Lag 3,,,,
 AAPL,Income Quality Ratio,Lag 1,,-0.218,0.1138,-0.0688
 AAPL,Income Quality Ratio,Lag 2,,,-0.129,0.0372
 AAPL,Income Quality Ratio,Lag 3,,,,-0.189
-AAPL,Net Income per EBT,Lag 1,,0.0132,-0.0335,0.0177
-AAPL,Net Income per EBT,Lag 2,,,-0.0208,-0.0163
-AAPL,Net Income per EBT,Lag 3,,,,-0.0034
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,Lag 1,,-0.0175,0.0211,-0.0126
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,Lag 2,,,0.0032,0.0083
 AAPL,Free Cash Flow to Operating Cash Flow Ratio,Lag 3,,,,-0.0094
-AAPL,EBT to EBIT Ratio,Lag 1,,0.0182,-0.0004,-0.0096
-AAPL,EBT to EBIT Ratio,Lag 2,,,0.0178,-0.01
-AAPL,EBT to EBIT Ratio,Lag 3,,,,0.008
-AAPL,EBIT to Revenue,Lag 1,,0.1997,0.0121,-0.008
-AAPL,EBIT to Revenue,Lag 2,,,0.2143,0.0041
-AAPL,EBIT to Revenue,Lag 3,,,,0.2046
 AAPL,Cash Tax Rate,Lag 1,,0.6414,-0.293,-0.0006
 AAPL,Cash Tax Rate,Lag 2,,,0.1605,-0.2935
 AAPL,Cash Tax Rate,Lag 3,,,,0.1597
@@ -158,18 +149,9 @@ MSFT,Return on Tangible Assets,Lag 3,,,,
 MSFT,Income Quality Ratio,Lag 1,,-0.0859,-0.0227,-0.0112
 MSFT,Income Quality Ratio,Lag 2,,,-0.1067,-0.0336
 MSFT,Income Quality Ratio,Lag 3,,,,-0.1167
-MSFT,Net Income per EBT,Lag 1,,0.0321,0.0083,-0.0675
-MSFT,Net Income per EBT,Lag 2,,,0.0407,-0.0598
-MSFT,Net Income per EBT,Lag 3,,,,-0.0296
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,Lag 1,,-0.0191,0.0006,-0.0719
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,Lag 2,,,-0.0185,-0.0714
 MSFT,Free Cash Flow to Operating Cash Flow Ratio,Lag 3,,,,-0.0891
-MSFT,EBT to EBIT Ratio,Lag 1,,0.0154,0.0082,0.0026
-MSFT,EBT to EBIT Ratio,Lag 2,,,0.0236,0.0107
-MSFT,EBT to EBIT Ratio,Lag 3,,,,0.0262
-MSFT,EBIT to Revenue,Lag 1,,0.1234,-0.0099,-0.0044
-MSFT,EBIT to Revenue,Lag 2,,,0.1123,-0.0143
-MSFT,EBIT to Revenue,Lag 3,,,,0.1074
 MSFT,Cash Tax Rate,Lag 1,,,,
 MSFT,Cash Tax Rate,Lag 2,,,,
 MSFT,Cash Tax Rate,Lag 3,,,,

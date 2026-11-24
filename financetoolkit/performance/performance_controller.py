@@ -5665,7 +5665,7 @@ class Performance:
         benchmark return was positive (empyrical), and P is the number of days in a year (252, 365 for a ticker
         that trades on weekends). A Timing Ratio above 1 means the asset moved more with the market when it rose
         than when it fell, the asymmetry a successful market timer shows; Henriksson and Merton (1981) test the
-        same asymmetry with one regression (see `get_henriksson_merton_model`).
+        same asymmetry with one regression (see `get_market_timing_model(method="henriksson_merton")`).
 
         For more information, see the following sources:
 
@@ -6065,7 +6065,7 @@ class Performance:
         Notes:
         - Equals quantstats' r_squared on the same returns. Each ticker is paired with the benchmark on the days
         both have a return.
-        - The R Squared of `get_henriksson_merton_model` and `get_treynor_mazuy_model` includes their timing term,
+        - The R Squared of `get_market_timing_model` includes its timing term,
         so it is at least this one.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
@@ -8993,9 +8993,10 @@ class Performance:
 
     @handle_portfolio
     @handle_errors
-    def get_treynor_mazuy_model(
+    def get_market_timing_model(
         self,
         period: str | None = None,
+        method: Literal["treynor_mazuy", "henriksson_merton"] = "treynor_mazuy",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -9003,29 +9004,52 @@ class Performance:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Treynor-Mazuy market timing model for each asset in the Toolkit
-        instance.
+        Calculate a market timing model for each asset in the Toolkit instance, the Treynor-Mazuy
+        model (default) or the Henriksson-Merton model.
 
         Jensen's Alpha and Beta from a plain CAPM regression cannot distinguish
         stock-picking skill (selectivity) from market-timing skill (shifting exposure
-        ahead of market moves). The Treynor-Mazuy model adds a quadratic term in the
-        benchmark excess return to the regression: a manager who successfully increases
-        (decreases) market exposure ahead of up (down) markets will show a return profile
-        that curves upward as a function of the benchmark return, captured by a positive
-        quadratic coefficient (Gamma).
+        ahead of market moves). Both models add a timing term in the benchmark excess
+        return to the regression.
 
-        The formula is as follows:
+        The Treynor-Mazuy model (method="treynor_mazuy") adds a quadratic term: a manager
+        who successfully increases (decreases) market exposure ahead of up (down) markets
+        will show a return profile that curves upward as a function of the benchmark
+        return, captured by a positive quadratic coefficient (Gamma). The formula is as follows:
 
         - Excess Return = Alpha + Beta * Benchmark Excess Return + Gamma * Benchmark Excess Return^2 + Residuals
 
         Gamma > 0 indicates positive market-timing ability; Gamma <= 0 indicates no
         timing ability.
 
-        Also known as: Treynor-Mazuy quadratic timing model, TM model.
+        The Henriksson-Merton model (method="henriksson_merton") models timing as a piecewise
+        (rather than quadratic) change in Beta: a "down-market" Beta and an "up-market" Beta.
+        The formula is as follows:
+
+        - Excess Return = Alpha + Beta * Benchmark Excess Return +
+          Up Market Beta * max(Benchmark Excess Return, 0) + Residuals
+
+        Beta is the "down-market" Beta (the portfolio's market exposure when the
+        benchmark excess return is negative), and Beta + Up Market Beta is the
+        "up-market" Beta. Up Market Beta > 0 indicates positive market-timing ability;
+        Up Market Beta <= 0 indicates no timing ability.
+
+        For more information, see the following sources:
+
+        - Treynor, J., & Mazuy, K. (1966). "Can Mutual Funds Outguess the Market?" Harvard
+        Business Review, 44(4), 131-136.
+        - Henriksson, R.D., & Merton, R.C. (1981). "On Market Timing and Investment
+        Performance II: Statistical Procedures for Evaluating Forecasting Skills." Journal of
+        Business, 54(4), 513-533.
+
+        Also known as: Treynor-Mazuy quadratic timing model, TM model, Henriksson-Merton
+        piecewise timing model, HM model, market timing regression.
 
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
+            method (str, optional): "treynor_mazuy" for the quadratic timing term (Gamma) or
+                "henriksson_merton" for the piecewise timing term (Up Market Beta). Defaults to "treynor_mazuy".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -9039,13 +9063,14 @@ class Performance:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Alpha, Beta, Gamma and R Squared values, with a Multi Index of
+            pd.DataFrame: Alpha, Beta, Gamma (method="treynor_mazuy") or Up Market Beta
+            (method="henriksson_merton") and R Squared values, with a Multi Index of
             (ticker, parameter) as the columns.
 
         Notes:
-        - Daily and weekly Treynor-Mazuy results are not an option as there would be too few
+        - Daily and weekly results are not an option as there would be too few
         observations within each period to run a meaningful regression.
-        - The method retrieves historical data and performs a quadratic regression for each asset
+        - The method retrieves historical data and performs the regression for each asset
         in the Toolkit instance, within each period.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
@@ -9061,7 +9086,7 @@ class Performance:
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_treynor_mazuy_model().xs("ARKK", level=0, axis=1)
+        toolkit.performance.get_market_timing_model().xs("ARKK", level=0, axis=1)
         ```
 
         Which returns:
@@ -9073,107 +9098,8 @@ class Performance:
         | 2023 |  0.0015 | 2.2614 | -14.8854 |      0.529  |
         | 2024 | -0.001  | 2.1368 |  -3.1566 |      0.5658 |
         | 2025 |  0.0006 | 1.8994 |  -1.3437 |      0.6767 |
-        """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-        excess_return = self._get_column(period, "Excess Return", within_period=True)
-        benchmark_excess_return = self._get_column(
-            period, "Excess Return", within_period=True, benchmark=True
-        )
 
-        logger.info("Calculating Treynor-Mazuy Market Timing Model")
-
-        regression_results: dict[str, pd.DataFrame] = {}
-
-        for ticker in self._tickers_with_returns:
-            ticker_results: dict = {}
-
-            for sub_period in excess_return.index.get_level_values(0).unique():
-                asset_excess = excess_return.loc[sub_period, ticker]
-                benchmark_excess = benchmark_excess_return.loc[sub_period]
-
-                result, _ = performance_model.get_treynor_mazuy_model(
-                    asset_excess, benchmark_excess
-                )
-                ticker_results[sub_period] = result
-
-            regression_results[ticker] = pd.DataFrame.from_dict(
-                ticker_results, orient="index"
-            )
-
-        treynor_mazuy_model = pd.concat(regression_results, axis=1)
-
-        return finalize_dataset(
-            dataset=treynor_mazuy_model,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-            dropna=True,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_henriksson_merton_model(
-        self,
-        period: str | None = None,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ):
-        """
-        Calculate the Henriksson-Merton market timing model for each asset in the
-        Toolkit instance.
-
-        Like the Treynor-Mazuy model (see `get_treynor_mazuy_model`), this separates
-        market-timing skill from selectivity, but models timing as a piecewise (rather
-        than quadratic) change in Beta: a "down-market" Beta and an "up-market" Beta.
-
-        The formula is as follows:
-
-        - Excess Return = Alpha + Beta * Benchmark Excess Return +
-          Up Market Beta * max(Benchmark Excess Return, 0) + Residuals
-
-        Beta is the "down-market" Beta (the portfolio's market exposure when the
-        benchmark excess return is negative), and Beta + Up Market Beta is the
-        "up-market" Beta. Up Market Beta > 0 indicates positive market-timing ability;
-        Up Market Beta <= 0 indicates no timing ability.
-
-        Also known as: Henriksson-Merton piecewise timing model, HM model.
-
-        Args:
-            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
-                initialised with quarterly=True, otherwise "yearly".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame: Alpha, Beta, Up Market Beta and R Squared values, with a Multi Index of
-            (ticker, parameter) as the columns.
-
-        Notes:
-        - Daily and weekly Henriksson-Merton results are not an option as there would be too few
-        observations within each period to run a meaningful regression.
-        - The method retrieves historical data and performs a piecewise regression for each asset
-        in the Toolkit instance, within each period.
-        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-
-        As an example:
+        With the Henriksson-Merton model:
 
         ```python
         from financetoolkit import Toolkit
@@ -9185,7 +9111,7 @@ class Performance:
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_henriksson_merton_model().xs("FBCG", level=0, axis=1)
+        toolkit.performance.get_market_timing_model(method="henriksson_merton").xs("FBCG", level=0, axis=1)
         ```
 
         Which returns:
@@ -9198,13 +9124,22 @@ class Performance:
         | 2024 |  0      | 1.4674 |           0.0496 |      0.8536 |
         | 2025 |  0.0002 | 1.3907 |          -0.0759 |      0.8893 |
         """
+        if method not in ("treynor_mazuy", "henriksson_merton"):
+            raise ValueError("Method must be treynor_mazuy or henriksson_merton.")
+
+        timing_model = (
+            performance_model.get_treynor_mazuy_model
+            if method == "treynor_mazuy"
+            else performance_model.get_henriksson_merton_model
+        )
+
         period = period if period else "quarterly" if self._quarterly else "yearly"
         excess_return = self._get_column(period, "Excess Return", within_period=True)
         benchmark_excess_return = self._get_column(
             period, "Excess Return", within_period=True, benchmark=True
         )
 
-        logger.info("Calculating Henriksson-Merton Market Timing Model")
+        logger.info("Calculating the %s Market Timing Model", method)
 
         regression_results: dict[str, pd.DataFrame] = {}
 
@@ -9215,19 +9150,17 @@ class Performance:
                 asset_excess = excess_return.loc[sub_period, ticker]
                 benchmark_excess = benchmark_excess_return.loc[sub_period]
 
-                result, _ = performance_model.get_henriksson_merton_model(
-                    asset_excess, benchmark_excess
-                )
+                result, _ = timing_model(asset_excess, benchmark_excess)
                 ticker_results[sub_period] = result
 
             regression_results[ticker] = pd.DataFrame.from_dict(
                 ticker_results, orient="index"
             )
 
-        henriksson_merton_model = pd.concat(regression_results, axis=1)
+        market_timing_model = pd.concat(regression_results, axis=1)
 
         return finalize_dataset(
-            dataset=henriksson_merton_model,
+            dataset=market_timing_model,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

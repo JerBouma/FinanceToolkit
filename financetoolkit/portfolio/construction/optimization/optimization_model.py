@@ -1138,7 +1138,7 @@ def get_covariance_matrix(
         pd.DataFrame: The covariance matrix per period.
     """
     if method == "sample":
-        return returns.cov()
+        return performance_model.get_covariance_matrix(returns)
     if method == "ledoit_wolf":
         return get_ledoit_wolf_covariance(returns)[0]
     if method == "ledoit_wolf_constant_correlation":

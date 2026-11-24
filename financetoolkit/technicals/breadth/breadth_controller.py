@@ -28,7 +28,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class BreadthTechnicals:
     """
-    Breadth and volume indicators: the McClellan oscillator, advancers and decliners, on-balance volume (and Archer's version), the price volume trend, the accumulation/distribution line (Chaikin's and Williams'), the Chaikin oscillator and money flow (and Twiggs money flow), the Klinger volume oscillator, the market facilitation index, the ease of movement, the negative and positive volume index (`get_volume_index`), relative volume, the volume flow indicator, finite volume elements, the volume zone oscillator, the cumulative force index, price-volume and its rank, buying and selling pressure, the volume profile, TRIN, new highs and lows and the market breadth.
+    Breadth and volume indicators: the McClellan oscillator, advancers and decliners, on-balance volume (and Archer's version), the price volume trend, the accumulation/distribution line (Chaikin's and Williams'), the Chaikin oscillator and money flow (and Twiggs money flow), the Klinger volume oscillator, the market facilitation index, the ease of movement, the negative and positive volume index (`get_volume_index`), relative volume, the volume flow indicator, finite volume elements, the volume zone oscillator, the cumulative force index (`get_force_index(method="cumulative")`), price-volume and its rank, buying and selling pressure, the volume profile, TRIN, new highs and lows and the market breadth.
     """
 
     @handle_errors
@@ -198,8 +198,8 @@ class BreadthTechnicals:
         breadth_indicators["Volume Zone Oscillator"] = self.get_volume_zone_oscillator(
             period=period, close_column=close_column
         )
-        breadth_indicators["Cumulative Force Index"] = self.get_cumulative_force_index(
-            period=period, close_column=close_column
+        breadth_indicators["Cumulative Force Index"] = self.get_force_index(
+            period=period, close_column=close_column, method="cumulative"
         )
         # The value traded is a market value, so it keeps the traded close.
         breadth_indicators["Price Volume"] = self.get_price_volume(period=period)
@@ -2801,144 +2801,6 @@ class BreadthTechnicals:
 
         return finalize_dataset(
             dataset=volume_zone_oscillator,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_cumulative_force_index(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 10,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Cumulative Force Index (CFI) for a given price series.
-
-        The Cumulative Force Index is the running total of Elder's Force Index: each period's change in
-        price times its volume, smoothed with an exponential moving average, added up over time. Where
-        On-Balance Volume adds the whole volume of an up close however small the move, the force weights
-        the volume with the size of the move, so a heavy session that barely moves price adds little. With
-        a window of 1 there is no smoothing and it is the Weighted On-Balance Volume.
-
-        The formula is as follows:
-
-        - Force(t) = (Close(t) — Close(t-1)) * Volume(t)
-        - CFI(t) = CFI(t-1) + EMA(Force, window)(t), starting on the start date
-
-        As with On-Balance Volume, the level depends on the start date and the number of shares traded;
-        only the direction and the divergences from price carry meaning.
-
-        For more information, see the following sources:
-
-        - Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money Management." John Wiley & Sons.
-        - Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta), by
-          Peerchemist, which defines the cumulative form and the Weighted On-Balance Volume.
-
-        Also known as: CFI, Cumulative Force Index, Weighted On-Balance Volume, WOBV (with a window of 1).
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): The number of periods for the EMA of the force. Defaults to 10; 1 gives
-                the Weighted On-Balance Volume.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the indicator values.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Cumulative Force Index values, in price times volume.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the Cumulative
-          Force Index for each asset in the Toolkit instance, as a running total from the start date.
-        - With `window=1` it agrees with finta's WOBV. With a larger window every change agrees with that of finta's
-          CFI once the EMAs have converged (after about 200 periods), but the EMA starts from the simple
-          average of its first `window` values while finta's averages from the first value, and the
-          running total keeps the difference of the warm-up as a constant offset.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_cumulative_force_index().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |        AAPL |        MSFT |    Benchmark |
-        |:-----------|------------:|------------:|-------------:|
-        | 2025-12-24 | 1.00878e+10 | 4.01004e+09 | -7.25881e+09 |
-        | 2025-12-26 | 1.00897e+10 | 4.02693e+09 | -7.17338e+09 |
-        | 2025-12-29 | 1.00927e+10 | 4.03955e+09 | -7.13125e+09 |
-        | 2025-12-30 | 1.00924e+10 | 4.05084e+09 | -7.10392e+09 |
-        | 2025-12-31 | 1.00862e+10 | 4.04921e+09 | -7.14965e+09 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        # A running total starts at the start date, not at the earlier prices.
-        historical_data = self._historical_data[period].loc[self._start_date :]
-
-        cumulative_force_index = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            breadth_model.get_cumulative_force_index,
-            window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=cumulative_force_index,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

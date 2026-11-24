@@ -111,6 +111,13 @@ def test_get_force_index(recorder, technical_module):
     recorder.capture(technical_module.get_force_index())
     recorder.capture(technical_module.get_force_index(growth=True))
     recorder.capture(technical_module.get_force_index(growth=True, lag=[1, 2, 3]))
+    recorder.capture(technical_module.get_force_index(method="cumulative").round(0))
+    recorder.capture(
+        technical_module.get_force_index(method="cumulative", window=1).round(0)
+    )
+    recorder.capture(
+        technical_module.get_force_index(method="cumulative", period="weekly").round(0)
+    )
 
 
 def test_get_ultimate_oscillator(recorder, technical_module):
@@ -291,6 +298,15 @@ def test_get_true_strength_index(recorder, technical_module):
     recorder.capture(
         technical_module.get_true_strength_index(growth=True, lag=[1, 2, 3])
     )
+    recorder.capture(technical_module.get_true_strength_index(method="ergodic"))
+    recorder.capture(
+        technical_module.get_true_strength_index(
+            method="ergodic", long_window=25, short_window=13, signal_window=7
+        )
+    )
+    recorder.capture(
+        technical_module.get_true_strength_index(method="ergodic", period="weekly")
+    )
 
 
 def test_get_balance_of_power(recorder, technical_module):
@@ -319,13 +335,14 @@ def test_get_awesome_oscillator(recorder, technical_module):
     recorder.capture(
         technical_module.get_awesome_oscillator(growth=True, lag=[1, 2, 3])
     )
-
-
-def test_get_accelerator_oscillator(recorder, technical_module):
-    recorder.capture(technical_module.get_accelerator_oscillator())
-    recorder.capture(technical_module.get_accelerator_oscillator(signal_window=3))
+    recorder.capture(technical_module.get_awesome_oscillator(method="accelerator"))
     recorder.capture(
-        technical_module.get_accelerator_oscillator(growth=True, lag=[1, 2, 3])
+        technical_module.get_awesome_oscillator(method="accelerator", signal_window=3)
+    )
+    recorder.capture(
+        technical_module.get_awesome_oscillator(
+            method="accelerator", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
@@ -381,6 +398,17 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands())
     recorder.capture(technical_module.get_bollinger_bands(growth=True))
     recorder.capture(technical_module.get_bollinger_bands(growth=True, lag=[1, 2, 3]))
+    recorder.capture(technical_module.get_bollinger_bands(method="price_bands"))
+    recorder.capture(
+        technical_module.get_bollinger_bands(
+            method="price_bands", window=10, num_std_dev=1.5, fast_window=3
+        )
+    )
+    recorder.capture(
+        technical_module.get_bollinger_bands(
+            method="price_bands", growth=True, lag=[1, 2]
+        )
+    )
 
 
 def test_get_bollinger_percent_b_and_bandwidth(recorder, technical_module):
@@ -640,16 +668,6 @@ def test_get_stochastic_momentum_index(recorder, technical_module):
     recorder.capture(technical_module.get_stochastic_momentum_index(period="weekly"))
 
 
-def test_get_smi_ergodic_indicator(recorder, technical_module):
-    recorder.capture(technical_module.get_smi_ergodic_indicator())
-    recorder.capture(
-        technical_module.get_smi_ergodic_indicator(
-            long_window=25, short_window=13, signal_window=7
-        )
-    )
-    recorder.capture(technical_module.get_smi_ergodic_indicator(period="weekly"))
-
-
 def test_get_schaff_trend_cycle(recorder, technical_module):
     recorder.capture(technical_module.get_schaff_trend_cycle())
     recorder.capture(
@@ -893,14 +911,6 @@ def test_get_volume_zone_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_volume_zone_oscillator(growth=True))
 
 
-def test_get_cumulative_force_index(recorder, technical_module):
-    recorder.capture(technical_module.get_cumulative_force_index().round(0))
-    recorder.capture(technical_module.get_cumulative_force_index(window=1).round(0))
-    recorder.capture(
-        technical_module.get_cumulative_force_index(period="weekly").round(0)
-    )
-
-
 def test_get_price_volume(recorder, technical_module):
     recorder.capture(technical_module.get_price_volume().round(0))
     recorder.capture(technical_module.get_price_volume(signed=True).round(0))
@@ -1010,7 +1020,8 @@ def test_conventional_default_windows():
 
     macd = defaults(Technicals.get_moving_average_convergence_divergence)
     assert (macd["short_window"], macd["long_window"]) == (12, 26)
-    assert defaults(Technicals.get_force_index)["window"] == 13
+    # The window depends on the method: 13 for the Force Index and 10 for its running total.
+    assert defaults(Technicals.get_force_index)["window"] is None
     # The windows depend on the method: 20 and 10 for the Keltner Channels.
     keltner = defaults(Technicals.get_keltner_channels)
     assert (keltner["window"], keltner["atr_window"], keltner["atr_multiplier"]) == (
@@ -1537,14 +1548,6 @@ def test_get_signal_to_noise_ratio(recorder, technical_module):
     )
 
 
-def test_get_price_bands(recorder, technical_module):
-    recorder.capture(technical_module.get_price_bands())
-    recorder.capture(
-        technical_module.get_price_bands(window=10, num_std_dev=1.5, fast_window=3)
-    )
-    recorder.capture(technical_module.get_price_bands(growth=True, lag=[1, 2]))
-
-
 def test_get_trend_detection_index(recorder, technical_module):
     recorder.capture(technical_module.get_trend_detection_index())
     recorder.capture(technical_module.get_trend_detection_index(window=10, multiple=3))
@@ -1607,7 +1610,7 @@ def test_ttr_indicator_defaults():
     assert defaults(Technicals.get_trend_detection_index)["window"] == 20
     dvi = defaults(Technicals.get_dv_intermediate_oscillator)
     assert (dvi["window"], dvi["magnitude_weight"]) == (252, 0.8)
-    bands = defaults(Technicals.get_price_bands)
+    bands = defaults(Technicals.get_bollinger_bands)
     assert (bands["window"], bands["num_std_dev"], bands["fast_window"]) == (20, 2, 2)
 
 

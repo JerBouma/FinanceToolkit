@@ -120,7 +120,7 @@ class EconometricsBase:
 
         econometrics = Econometrics(data=unemployment, changes='difference')
 
-        econometrics.get_augmented_dickey_fuller()
+        econometrics.get_unit_root_test()
         ```
 
         Which returns:

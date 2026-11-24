@@ -7,6 +7,7 @@ from typing import Literal
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
+from financetoolkit.technicals.breadth import breadth_model
 from financetoolkit.technicals.cycle import cycle_model
 from financetoolkit.technicals.helpers import calculate_per_ticker
 from financetoolkit.technicals.momentum import momentum_model
@@ -308,8 +309,8 @@ class MomentumTechnicals:
         momentum_indicators["Awesome Oscillator"] = self.get_awesome_oscillator(
             period=period, close_column=close_column
         )
-        momentum_indicators["Accelerator Oscillator"] = self.get_accelerator_oscillator(
-            period=period, close_column=close_column
+        momentum_indicators["Accelerator Oscillator"] = self.get_awesome_oscillator(
+            period=period, close_column=close_column, method="accelerator"
         )
 
         vortex_indicator = self.get_vortex_indicator(
@@ -392,8 +393,8 @@ class MomentumTechnicals:
             stochastic_momentum_index["Signal Line"]
         )
 
-        smi_ergodic_indicator = self.get_smi_ergodic_indicator(
-            period=period, close_column=close_column
+        smi_ergodic_indicator = self.get_true_strength_index(
+            period=period, close_column=close_column, method="ergodic"
         )
 
         momentum_indicators["SMI Ergodic Indicator"] = smi_ergodic_indicator[
@@ -1209,7 +1210,8 @@ class MomentumTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 13,
+        window: int | None = None,
+        method: Literal["standard", "cumulative"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1217,31 +1219,53 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Force Index for a given price series.
+        Calculate the Force Index for a given price series, or with method="cumulative" the
+        Cumulative Force Index (CFI).
 
-        The Force Index is an indicator that measures the strength behind price movements.
+        The Force Index of Elder measures the strength behind price movements: each period's
+        change in price times its volume, smoothed with an exponential moving average. The
+        Cumulative Force Index is its running total. Where On-Balance Volume adds the whole
+        volume of an up close however small the move, the force weights the volume with the
+        size of the move, so a heavy session that barely moves price adds little. With a window
+        of 1 there is no smoothing and the Cumulative Force Index is the Weighted On-Balance
+        Volume.
 
-        The formula is as follows:
+        The formula for method="standard" is as follows:
 
         - Raw Force Index = (Close — Close(1)) * Volume
         - Force Index = EMA(Raw Force Index, window)
+
+        The formula for method="cumulative" is as follows:
+
+        - Force(t) = (Close(t) — Close(t-1)) * Volume(t)
+        - CFI(t) = CFI(t-1) + EMA(Force, window)(t), starting on the start date
+
+        As with On-Balance Volume, the level of the Cumulative Force Index depends on the start
+        date and the number of shares traded; only the direction and the divergences from price
+        carry meaning.
 
         For more information, see the following sources:
 
         - Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money Management." John Wiley &
           Sons.
         - Referenced against TA-Lib's EFI (https://ta-lib.org/functions/efi.html).
+        - Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta), by
+          Peerchemist, which defines the cumulative form and the Weighted On-Balance Volume.
 
-        Also known as: FI, Elder's Force Index.
+        Also known as: FI, Elder's Force Index, EFI, CFI, Cumulative Force Index, Weighted On-Balance
+        Volume, WOBV (with method="cumulative" and a window of 1).
 
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
-            window (int, optional): The number of periods of the EMA that smooths the raw
-                Force Index. Defaults to 13, Elder's setting for the trend (2 is his setting
-                for timing entries).
+            window (int | None, optional): The number of periods of the EMA that smooths the raw
+                Force Index. Defaults to None, which is 13 with method="standard", Elder's setting
+                for the trend (2 is his setting for timing entries), and 10 with
+                method="cumulative"; 1 gives the Weighted On-Balance Volume.
+            method (str, optional): "standard" for the Force Index or "cumulative" for its running
+                total from the start date, the Cumulative Force Index. Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1257,12 +1281,19 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Force Index values.
+            pd.Series or pd.DataFrame: Force Index or Cumulative Force Index values, in price times
+            volume.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the Force Index values for each asset in the Toolkit instance.
+          the Force Index values for each asset in the Toolkit instance; with method="cumulative"
+          as a running total from the start date.
         - The Force Index agrees with TA-Lib's EFI.
+        - With method="cumulative" and `window=1` it agrees with finta's WOBV. With a larger window
+          every change agrees with that of finta's CFI once the EMAs have converged (after about
+          200 periods), but the EMA starts from the simple average of its first `window` values
+          while finta's averages from the first value, and the running total keeps the difference
+          of the warm-up as a constant offset.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1291,6 +1322,8 @@ class MomentumTechnicals:
         | 2025-12-30 |  223430           |  2.75431e+07 |
         | 2025-12-31 |      -3.35421e+06 | -2.98818e+07 |
         """
+        if method not in ("standard", "cumulative"):
+            raise ValueError("Method must be standard or cumulative.")
         if period not in [
             "intraday",
             "daily",
@@ -1309,17 +1342,24 @@ class MomentumTechnicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
-
-        force_index = calculate_per_ticker(
-            historical_data,
-            [close_column, "Volume"],
-            momentum_model.get_force_index,
-            window,
-        ).loc[self._start_date : self._end_date]
+        if method == "cumulative":
+            # A running total starts at the start date, not at the earlier prices.
+            force_index = calculate_per_ticker(
+                self._historical_data[period].loc[self._start_date :],
+                [close_column, "Volume"],
+                breadth_model.get_cumulative_force_index,
+                window if window is not None else 10,
+            )
+        else:
+            force_index = calculate_per_ticker(
+                self._historical_data[period],
+                [close_column, "Volume"],
+                momentum_model.get_force_index,
+                window if window is not None else 13,
+            )
 
         return finalize_dataset(
-            dataset=force_index,
+            dataset=force_index.loc[self._start_date : self._end_date],
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -3141,9 +3181,10 @@ class MomentumTechnicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        long_window: int = 25,
-        short_window: int = 13,
-        signal_window: int = 7,
+        long_window: int | None = None,
+        short_window: int | None = None,
+        signal_window: int | None = None,
+        method: Literal["standard", "ergodic"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3151,7 +3192,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the True Strength Index (TSI) for a given price series.
+        Calculate the True Strength Index (TSI) for a given price series, or with
+        method="ergodic" the SMI Ergodic Indicator and Oscillator.
 
         The True Strength Index of Blau (1995, "Momentum, Direction, and Divergence") smooths
         the one-period price change twice with Exponential Moving Averages and divides it by
@@ -3159,36 +3201,62 @@ class MomentumTechnicals:
         noise while lagging less than a single long average, and the division bounds the
         result between -100 (every change down) and +100 (every change up).
 
-        The formula is as follows:
+        The SMI Ergodic Indicator, also of Blau (1995), is the True Strength Index with short
+        smoothing periods, and its signal line an EMA of the indicator. The SMI Ergodic
+        Oscillator, the histogram, is the difference between the two, in the way the MACD
+        histogram is the MACD line minus its signal line.
+
+        The formula for method="standard" is as follows:
 
         - Momentum = Close(t) — Close(t - 1)
         - TSI = 100 * EMA(EMA(Momentum, long_window), short_window) / EMA(EMA(|Momentum|, long_window), short_window)
         - Signal Line = EMA(TSI, signal_window)
 
-        Blau smooths over 25 and then 13 periods; the 7-period signal line is the one StockCharts
-        uses. The TSI crossing zero means the smoothed momentum has turned, crossing its signal
+        The formula for method="ergodic" is as follows:
+
+        - Momentum = Close(t) — Close(t - 1)
+        - Smoothed Momentum = EMA(EMA(Momentum, long_window), short_window)
+        - Smoothed Absolute Momentum = EMA(EMA(|Momentum|, long_window), short_window)
+        - SMI Ergodic Indicator = 100 * Smoothed Momentum / Smoothed Absolute Momentum
+        - Signal Line = EMA(SMI Ergodic Indicator, signal_window)
+        - Histogram (SMI Ergodic Oscillator) = SMI Ergodic Indicator — Signal Line
+
+        Blau smooths the TSI over 25 and then 13 periods; the 7-period signal line is the one
+        StockCharts uses. The common parameters of the SMI Ergodic Indicator are 20, 5 and 5.
+        The TSI crossing zero means the smoothed momentum has turned, crossing its signal
         line is the faster trigger, and readings beyond about +25 or -25 are read as overbought
-        or oversold. Like the RSI it is on a scale of -100 to 100 rather than a decimal.
+        or oversold. Blau trades the direction of the SMI Ergodic Oscillator: a turn up from
+        below zero is a buy signal, a turn down from above zero a sell signal. Like the RSI both
+        are on a scale of -100 to 100 rather than a decimal.
 
         For more information, see the following sources:
 
+        - Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
         - Referenced against TA-Lib's TSI (https://ta-lib.org/functions/tsi.html).
+        - pandas-ta-classic: smi (https://github.com/xgboosted/pandas-ta-classic).
 
-        Also known as: TSI, double smoothed momentum.
+        Also known as: TSI, double smoothed momentum, SMI Ergodic, SMIIO, SMI Ergodic Oscillator,
+        ergodic oscillator.
 
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
-            long_window (int, optional): The number of periods of the first EMA of the price
-                change. Defaults to 25.
-            short_window (int, optional): The number of periods of the second EMA. Defaults to 13.
-            signal_window (int, optional): The number of periods of the EMA of the TSI that gives
-                the signal line. Defaults to 7.
+            long_window (int | None, optional): The number of periods of the first EMA of the price
+                change. Defaults to None, which is 25 with method="standard" and 20 with
+                method="ergodic".
+            short_window (int | None, optional): The number of periods of the second EMA. Defaults
+                to None, which is 13 with method="standard" and 5 with method="ergodic".
+            signal_window (int | None, optional): The number of periods of the EMA of the indicator
+                that gives the signal line. Defaults to None, which is 7 with method="standard" and 5
+                with method="ergodic".
+            method (str, optional): "standard" for the True Strength Index and its signal line, or
+                "ergodic" for the SMI Ergodic Indicator, its signal line and the histogram (the SMI
+                Ergodic Oscillator). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the TSI and signal line.
+            growth (bool, optional): Whether to calculate the growth of the indicator lines.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
                 Defaults to 1.
@@ -3201,20 +3269,23 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: True Strength Index and Signal Line values, between -100
-            and 100.
+            pd.Series or pd.DataFrame: True Strength Index and Signal Line values, or with
+            method="ergodic" the SMI Ergodic Indicator, Signal Line and Histogram (the SMI Ergodic
+            Oscillator) values, between -100 and 100.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the True Strength Index for each asset in the Toolkit instance.
+          the True Strength Index or the SMI Ergodic lines for each asset in the Toolkit instance.
         - Every EMA is seeded with the simple average of its first values and is missing
-          before it, as in TA-Lib and StockCharts, so the TSI starts `long_window` +
-          `short_window` - 1 periods after the first price and the signal line
+          before it, as in TA-Lib and StockCharts, so the indicator starts `long_window` +
+          `short_window` - 1 periods after the first price and the signal line (and histogram)
           `signal_window` - 1 periods later.
-        - A stretch without any price change leaves the TSI missing.
-        - The TSI agrees with TA-Lib's TSI, which has no signal line.
-        - If `growth` is set to True, the method calculates the growth of the TSI and signal
-          line using the specified `lag`.
+        - A stretch without any price change leaves the indicator missing.
+        - The TSI agrees with TA-Lib's TSI, which has no signal line, with either set of windows.
+          The three SMI Ergodic columns agree with pandas-ta-classic's smi times 100, as
+          pandas-ta-classic uses a scale of -1 to 1.
+        - If `growth` is set to True, the method calculates the growth of the indicator lines
+          using the specified `lag`.
 
         As an example:
 
@@ -3241,6 +3312,8 @@ class MomentumTechnicals:
         | 2025-12-30 |       -9.1285 |               -5.9526 |
         | 2025-12-31 |       -8.3772 |               -6.1233 |
         """
+        if method not in ("standard", "ergodic"):
+            raise ValueError("Method must be standard or ergodic.")
         if period not in [
             "intraday",
             "daily",
@@ -3259,12 +3332,24 @@ class MomentumTechnicals:
                 )
             close_column = "Close"
 
+        # Blau's windows for the TSI and the common ones of the SMI Ergodic Indicator.
+        default_windows = (20, 5, 5) if method == "ergodic" else (25, 13, 7)
+        long_window = long_window if long_window is not None else default_windows[0]
+        short_window = short_window if short_window is not None else default_windows[1]
+        signal_window = (
+            signal_window if signal_window is not None else default_windows[2]
+        )
+
         historical_data = self._historical_data[period]
 
         true_strength_index = calculate_per_ticker(
             historical_data,
             [close_column],
-            momentum_model.get_true_strength_index,
+            (
+                momentum_model.get_smi_ergodic_indicator
+                if method == "ergodic"
+                else momentum_model.get_true_strength_index
+            ),
             long_window,
             short_window,
             signal_window,
@@ -3670,6 +3755,8 @@ class MomentumTechnicals:
         close_column: str = "Adj Close",
         short_window: int = 5,
         long_window: int = 34,
+        signal_window: int = 5,
+        method: Literal["standard", "accelerator"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3677,36 +3764,63 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Awesome Oscillator (AO) for a given price series.
+        Calculate the Awesome Oscillator (AO) for a given price series, or with
+        method="accelerator" the Accelerator/Decelerator Oscillator (AC).
 
         The Awesome Oscillator measures market momentum by comparing a short-term and a
         long-term Simple Moving Average of the median price (the midpoint of each period's high
-        and low, rather than the closing price). It was developed by Bill Williams as part of
-        his broader "Trading Chaos" collection of momentum indicators.
+        and low, rather than the closing price). The Accelerator Oscillator is the Awesome
+        Oscillator minus its own 5-period Simple Moving Average: where the Awesome Oscillator
+        measures the momentum of the median price, the Accelerator Oscillator measures how that
+        momentum changes, on Bill Williams' premise that momentum changes direction before price
+        does. Both were developed by Bill Williams as part of his "Trading Chaos" collection of
+        momentum indicators.
 
-        The formula is as follows:
+        The formula for method="standard" is as follows:
 
         - Median Price = (High + Low) / 2
         - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
 
+        The formula for method="accelerator" is as follows:
+
+        - Median Price = (High + Low) / 2
+        - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
+        - AC = AO — SMA(AO, signal_window)
+
+        A cross of the AO above zero occurs exactly when the short-window SMA of the median
+        price crosses above the long-window SMA, and vice versa for a cross below zero. Williams
+        reads the AC by the colour of its bars: two rising bars in a row above zero (three below
+        zero) are a buy signal, two falling bars below zero (three above zero) a sell signal.
+
         For more information, see the following sources:
 
-        - Referenced against TA-Lib's AO (https://ta-lib.org/functions/ao.html).
+        - Williams, B. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your
+          Profits." Wiley.
+        - Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in Stocks, Bonds, and
+          Commodities." Wiley.
+        - Referenced against TA-Lib's AO (https://ta-lib.org/functions/ao.html) and AC
+          (https://ta-lib.org/functions/ac.html).
 
-        Also known as: AO, Bill Williams Awesome Oscillator.
+        Also known as: AO, Bill Williams Awesome Oscillator, AC, Accelerator Oscillator,
+        Acceleration/Deceleration Oscillator, AC oscillator.
 
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
             short_window (int, optional): The number of periods for the short-term SMA of the
                 median price. Defaults to 5.
             long_window (int, optional): The number of periods for the long-term SMA of the
                 median price. Defaults to 34.
+            signal_window (int, optional): The number of periods for the SMA of the Awesome
+                Oscillator, with method="accelerator" only. Defaults to 5.
+            method (str, optional): "standard" for the Awesome Oscillator or "accelerator" for the
+                Accelerator Oscillator. Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the AO.
+            growth (bool, optional): Whether to calculate the growth of the oscillator.
                 Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation.
                 Defaults to 1.
@@ -3719,19 +3833,19 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Awesome Oscillator (AO) values.
+            pd.Series or pd.DataFrame: Awesome Oscillator (AO) or Accelerator Oscillator (AC)
+            values, in price units.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the AO for each asset in the Toolkit instance.
-        - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
-          Williams' indicators, it is a practitioner-developed tool rather than one derived from
-          a published financial paper. The standard textbook source is Williams, B. (1995).
-          "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." Wiley.
-        - A cross of the AO above zero occurs exactly when the short-window SMA of the median
-          price crosses above the long-window SMA, and vice versa for a cross below zero.
-        - The AO agrees with TA-Lib's AO.
-        - If `growth` is set to True, the method calculates the growth of the AO
+          the AO or AC for each asset in the Toolkit instance.
+        - There is no academic journal citation for the Awesome and Accelerator Oscillators.
+          Like most of Bill Williams' indicators, they are practitioner-developed tools rather
+          than ones derived from a published financial paper; the standard textbook sources are
+          Williams' books above.
+        - The AO agrees with TA-Lib's AO, and the AC with TA-Lib's AC; the AC starts
+          `long_window` + `signal_window` — 2 periods after the first price.
+        - If `growth` is set to True, the method calculates the growth of the oscillator
           using the specified `lag`.
 
         As an example:
@@ -3759,6 +3873,8 @@ class MomentumTechnicals:
         | 2025-12-30 |  -6.6618 |     11.0505 |
         | 2025-12-31 |  -5.546  |     10.5955 |
         """
+        if method not in ("standard", "accelerator"):
+            raise ValueError("Method must be standard or accelerator.")
         if period not in [
             "intraday",
             "daily",
@@ -3779,159 +3895,26 @@ class MomentumTechnicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        awesome_oscillator = calculate_per_ticker(
-            historical_data,
-            ["High", "Low"],
-            momentum_model.get_awesome_oscillator,
-            short_window,
-            long_window,
-        ).loc[self._start_date : self._end_date]
-        return finalize_dataset(
-            dataset=awesome_oscillator,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_accelerator_oscillator(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        short_window: int = 5,
-        long_window: int = 34,
-        signal_window: int = 5,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Accelerator/Decelerator Oscillator (AC) for a given price series.
-
-        The Accelerator Oscillator is the Awesome Oscillator minus its own 5-period Simple Moving Average.
-        Where the Awesome Oscillator measures the momentum of the median price, the Accelerator Oscillator
-        measures how that momentum changes, on Bill Williams' premise that momentum changes direction
-        before price does.
-
-        The formula is as follows:
-
-        - Median Price = (High + Low) / 2
-        - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
-        - AC = AO — SMA(AO, signal_window)
-
-        Williams reads the AC by the colour of its bars: two rising bars in a row above zero (three below
-        zero) are a buy signal, two falling bars below zero (three above zero) a sell signal.
-
-        For more information, see the following sources:
-
-        - Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in Stocks, Bonds, and
-          Commodities." Wiley.
-        - Referenced against TA-Lib's AC (https://ta-lib.org/functions/ac.html).
-
-        Also known as: AC, Acceleration/Deceleration Oscillator, AC oscillator.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
-                for dividends in the same way.
-            short_window (int, optional): The number of periods for the short-term SMA of the
-                median price. Defaults to 5.
-            long_window (int, optional): The number of periods for the long-term SMA of the
-                median price. Defaults to 34.
-            signal_window (int, optional): The number of periods for the SMA of the Awesome
-                Oscillator. Defaults to 5.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the indicator values.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: Accelerator Oscillator (AC) values, in price units.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the AC for each asset in the Toolkit instance.
-        - The AC agrees with TA-Lib's AC and starts `long_window` + `signal_window` — 2 periods after the
-          first price.
-        - If `growth` is set to True, the method calculates the growth of the AC
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_accelerator_oscillator().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    AAPL |   MSFT |   Benchmark |
-        |:-----------|--------:|-------:|------------:|
-        | 2025-12-24 | -1.0828 | 5.4289 |      3.1912 |
-        | 2025-12-26 |  0.0054 | 4.1326 |      4.2287 |
-        | 2025-12-29 |  0.2951 | 2.6361 |      3.6645 |
-        | 2025-12-30 |  0.3866 | 1.8419 |      2.5872 |
-        | 2025-12-31 |  0.5151 | 1.2335 |      0.8882 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+        if method == "accelerator":
+            awesome_oscillator = calculate_per_ticker(
+                historical_data,
+                ["High", "Low"],
+                momentum_model.get_accelerator_oscillator,
+                short_window,
+                long_window,
+                signal_window,
             )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._get_historical_data(period, close_column)
-
-        accelerator_oscillator = calculate_per_ticker(
-            historical_data,
-            ["High", "Low"],
-            momentum_model.get_accelerator_oscillator,
-            short_window,
-            long_window,
-            signal_window,
-        ).loc[self._start_date : self._end_date]
+        else:
+            awesome_oscillator = calculate_per_ticker(
+                historical_data,
+                ["High", "Low"],
+                momentum_model.get_awesome_oscillator,
+                short_window,
+                long_window,
+            )
 
         return finalize_dataset(
-            dataset=accelerator_oscillator,
+            dataset=awesome_oscillator.loc[self._start_date : self._end_date],
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -5816,155 +5799,6 @@ class MomentumTechnicals:
 
         return finalize_dataset(
             dataset=stochastic_momentum_index,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_smi_ergodic_indicator(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        long_window: int = 20,
-        short_window: int = 5,
-        signal_window: int = 5,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the SMI Ergodic Indicator and Oscillator for a given price series.
-
-        The SMI Ergodic Indicator of Blau (1995) is the True Strength Index with short smoothing
-        periods, and its signal line an EMA of the indicator. The SMI Ergodic Oscillator, the
-        histogram, is the difference between the two, in the way the MACD histogram is the MACD
-        line minus its signal line. Blau trades the direction of the oscillator: a turn up from
-        below zero is a buy signal, a turn down from above zero a sell signal.
-
-        The formula is as follows:
-
-        - Momentum = Close(t) — Close(t - 1)
-        - Smoothed Momentum = EMA(EMA(Momentum, long_window), short_window)
-        - Smoothed Absolute Momentum = EMA(EMA(|Momentum|, long_window), short_window)
-        - SMI Ergodic Indicator = 100 * Smoothed Momentum / Smoothed Absolute Momentum
-        - Signal Line = EMA(SMI Ergodic Indicator, signal_window)
-        - Histogram (SMI Ergodic Oscillator) = SMI Ergodic Indicator — Signal Line
-
-        The common parameters are 20, 5 and 5. Like the TSI it is on a scale of -100 to 100.
-
-        For more information, see the following sources:
-
-        - Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
-        - pandas-ta-classic: smi (https://github.com/xgboosted/pandas-ta-classic).
-
-        Also known as: SMI Ergodic, SMIIO, SMI Ergodic Oscillator, ergodic oscillator.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            long_window (int, optional): The number of periods of the first EMA of the price
-                change. Defaults to 20.
-            short_window (int, optional): The number of periods of the second EMA. Defaults to 5.
-            signal_window (int, optional): The number of periods of the EMA of the indicator that
-                gives the signal line. Defaults to 5.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the SMI Ergodic lines.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series or pd.DataFrame: SMI Ergodic Indicator, Signal Line and Histogram (the SMI
-            Ergodic Oscillator) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates
-          the SMI Ergodic lines for each asset in the Toolkit instance.
-        - The indicator is `get_true_strength_index` with these windows and agrees with TA-Lib's TSI with them; all
-          three columns agree with pandas-ta-classic's smi times 100, as pandas-ta-classic uses a scale
-          of -1 to 1.
-        - Every EMA is seeded with the simple average of its first values and is missing before it, so the
-          indicator starts `long_window` + `short_window` - 1 periods after the first price and the
-          signal line and histogram `signal_window` - 1 periods later.
-        - If `growth` is set to True, the method calculates the growth of the SMI Ergodic lines
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2024-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_smi_ergodic_indicator().xs("AAPL", level=1, axis="columns").tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   Histogram |   SMI Ergodic Indicator |   Signal Line |
-        |:-----------|------------:|------------------------:|--------------:|
-        | 2025-12-24 |     -0.8219 |                -10.3614 |       -9.5395 |
-        | 2025-12-26 |      0.3046 |                 -9.0825 |       -9.3872 |
-        | 2025-12-29 |      1.2553 |                 -7.5042 |       -8.7595 |
-        | 2025-12-30 |      0.6996 |                 -7.7102 |       -8.4097 |
-        | 2025-12-31 |     -1.1757 |                -10.1733 |       -8.9976 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        smi_ergodic_indicator = calculate_per_ticker(
-            historical_data,
-            [close_column],
-            momentum_model.get_smi_ergodic_indicator,
-            long_window,
-            short_window,
-            signal_window,
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=smi_ergodic_indicator,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 
@@ -688,7 +690,7 @@ class TestingEconometrics:
         """
         Shared helper that fits the OLS regression of `dependent_ticker` on
         `independent_tickers` used internally by every post-estimation diagnostic
-        below (`get_breusch_pagan_test`, `get_white_test`, `get_durbin_watson_test`,
+        below (`get_heteroskedasticity_test`, `get_durbin_watson_test`,
         `get_ramsey_reset_test`, `get_chow_test`) -- each of these tests operates on
         an already-fitted regression result dict (see `specification_tests_model`),
         so the controller's job is simply to assemble that same fit `get_ols` itself
@@ -711,7 +713,7 @@ class TestingEconometrics:
         )
 
     @handle_errors
-    def get_breusch_pagan_test(
+    def get_heteroskedasticity_test(
         self,
         dependent_ticker: str | None = None,
         independent_tickers: str | list[str] | None = None,
@@ -719,43 +721,59 @@ class TestingEconometrics:
         period: str | None = None,
         column: str = "Return",
         add_constant: bool = True,
+        method: Literal["breusch_pagan", "white"] = "breusch_pagan",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Breusch-Pagan test for heteroskedasticity of a regression of
-        `dependent_ticker` on `independent_tickers`.
+        Calculate a test for heteroskedasticity of a regression of `dependent_ticker` on
+        `independent_tickers`, the Breusch-Pagan test (method="breusch_pagan") or White's test
+        (method="white").
 
         OLS standard errors assume that the residual variance is constant
-        (homoskedasticity). The test regresses the squared residuals of the regression on the
-        original independent tickers and checks whether they explain any of the residual
+        (homoskedasticity). Both tests regress the squared residuals of the regression on
+        functions of the independent tickers and check whether they explain any of the residual
         variance, by testing whether the R-squared of that auxiliary regression is
-        significantly different from zero.
+        significantly different from zero. The Breusch-Pagan test uses only the original
+        independent tickers. White's test is the more general version: its auxiliary regression
+        uses each ticker, its square and every pairwise cross-product, so it also catches
+        non-linear forms of heteroskedasticity.
 
-        The formula is as follows:
+        The formula for method="breusch_pagan" is as follows:
 
         - Auxiliary regression: e_t^2 = a_0 + a' * x_t + v_t, with e_t the OLS residuals and x_t the
           independent tickers' `column` (Return by default)
         - LM = n * R^2_auxiliary (Koenker's studentized form, the statsmodels default)
 
-        This is the studentized statistic of Koenker (1981), which does not assume normally
-        distributed errors. It is asymptotically chi-squared distributed with `k - 1` degrees
-        of freedom under the null hypothesis of homoskedasticity, where `k` is the number of parameters of the
-        auxiliary regression. A low p-value means the residual variance moves with the
-        independent tickers (for example, errors grow when the market moves more), so the
-        regression's standard errors, t-statistics and p-values are unreliable even though
-        the coefficients themselves remain unbiased. Remedies are a robust `cov_type` in
-        `get_ols` or `get_wls`. `get_white_test` is a more general alternative that also
-        catches non-linear forms of heteroskedasticity.
+        The formula for method="white" is as follows:
 
-        For more information about the method, see the following paper:
+        - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
+        - LM = n * R^2_auxiliary, chi-squared with as many degrees of freedom as the auxiliary
+          regression has terms besides a_0
+        - e_t are the OLS residuals and x_it the independent tickers' `column` (Return by default)
+
+        The Breusch-Pagan statistic is the studentized statistic of Koenker (1981), which does not
+        assume normally distributed errors. It is asymptotically chi-squared distributed with `k - 1`
+        degrees of freedom under the null hypothesis of homoskedasticity, where `k` is the number of
+        parameters of the auxiliary regression. For both tests a low p-value means the residual
+        variance moves with the independent tickers (for example, errors grow when the market moves
+        more), so the regression's standard errors, t-statistics and p-values are unreliable even
+        though the coefficients themselves remain unbiased. Remedies are a robust `cov_type` in
+        `get_ols` or `get_wls`. Because it also detects non-linear patterns in the residual variance,
+        White's test makes fewer assumptions than Breusch-Pagan, at the cost of power when there are
+        many independent tickers, since the number of auxiliary terms grows quadratically.
+
+        For more information about the method, see the following papers:
 
         - Breusch, T.S., & Pagan, A.R. (1979). "A Simple Test for Heteroscedasticity and
         Random Coefficient Variation." Econometrica, 47(5), 1287-1294.
         - Koenker, R. (1981). "A Note on Studentizing a Test for Heteroscedasticity."
         Journal of Econometrics, 17(1), 107-112.
+        - White, H. (1980). "A Heteroskedasticity-Consistent Covariance Matrix Estimator and a
+        Direct Test for Heteroskedasticity." Econometrica, 48(4), 817-838.
 
-        Also known as: BP test, Breusch-Pagan-Godfrey test.
+        Also known as: BP test, Breusch-Pagan test, Breusch-Pagan-Godfrey test, White test, White's
+        general test, heteroscedasticity test.
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -771,6 +789,8 @@ class TestingEconometrics:
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept in the underlying
             regression. Defaults to True.
+            method (str, optional): The test, "breusch_pagan" for the Breusch-Pagan test (Koenker's
+            studentized form) or "white" for White's test. Defaults to "breusch_pagan".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -779,8 +799,8 @@ class TestingEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether homoskedasticity is
-            rejected at the 5% level.
+            pd.Series: The LM statistic ("Breusch-Pagan Statistic" or "White Statistic"), its p-value,
+            and whether homoskedasticity is rejected at the 5% level.
 
         As an example:
 
@@ -795,7 +815,7 @@ class TestingEconometrics:
         )
 
         # CAT (the first ticker) is dependent; DE is independent
-        toolkit.econometrics.get_breusch_pagan_test()
+        toolkit.econometrics.get_heteroskedasticity_test()
         ```
 
         Which returns:
@@ -806,6 +826,9 @@ class TestingEconometrics:
         | P-Value                      |  0.9096 |
         | Reject Homoskedasticity (5%) |  0      |
         """
+        if method not in ("breusch_pagan", "white"):
+            raise ValueError("Method must be breusch_pagan or white.")
+
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
             dependent_ticker=dependent_ticker,
             independent_tickers=independent_tickers,
@@ -816,112 +839,11 @@ class TestingEconometrics:
             dependent_ticker, independent_tickers, period, column, add_constant
         )
 
-        test_result = specification_tests_model.get_breusch_pagan_test(result)
-
-        return apply_rounding(
-            test_result, rounding if rounding is not None else self._rounding
+        test_result = (
+            specification_tests_model.get_white_test(result)
+            if method == "white"
+            else specification_tests_model.get_breusch_pagan_test(result)
         )
-
-    @handle_errors
-    def get_white_test(
-        self,
-        dependent_ticker: str | None = None,
-        independent_tickers: str | list[str] | None = None,
-        include_benchmark: bool = False,
-        period: str | None = None,
-        column: str = "Return",
-        add_constant: bool = True,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series:
-        """
-        Calculate White's test for heteroskedasticity of a regression of `dependent_ticker` on
-        `independent_tickers`.
-
-        A more general version of `get_breusch_pagan_test`. Instead of regressing the squared
-        residuals on only the original independent tickers, the auxiliary regression uses
-        each ticker, its square and every pairwise cross-product.
-
-        The formula is as follows:
-
-        - e_t^2 = a_0 + SUM_i(a_i * x_it) + SUM_i(b_i * x_it^2) + SUM_{i<j}(c_ij * x_it * x_jt) + v_t
-        - LM = n * R^2_auxiliary, chi-squared with as many degrees of freedom as the auxiliary
-          regression has terms besides a_0
-        - e_t are the OLS residuals and x_it the independent tickers' `column` (Return by default)
-
-        The null hypothesis is homoskedasticity (constant residual variance). A low p-value means the
-        regression's standard errors are unreliable and a robust `cov_type` should be used.
-        Because it also detects non-linear patterns in the residual variance, White's test
-        makes fewer assumptions than Breusch-Pagan, at the cost of power when there are many
-        independent tickers, since the number of auxiliary terms grows quadratically.
-
-        For more information about the method, see the following paper:
-
-        - White, H. (1980). "A Heteroskedasticity-Consistent Covariance Matrix Estimator and a
-        Direct Test for Heteroskedasticity." Econometrica, 48(4), 817-838.
-
-        Also known as: White's general test.
-
-        Args:
-            dependent_ticker (str | None, optional): The dependent (predicted) asset.
-            Defaults to None, meaning the Toolkit instance's first ticker.
-            independent_tickers (str | list[str] | None, optional): The independent
-            (predictor) asset(s). Defaults to None, meaning every other ticker in
-            the Toolkit instance besides `dependent_ticker`.
-            include_benchmark (bool, optional): Whether to include "Benchmark" in the
-            default independent ticker(s) (has no effect when independent_tickers is given
-            explicitly). Defaults to False.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly).
-            Defaults to "daily".
-            column (str, optional): The historical data column to regress on. Defaults to "Return".
-            add_constant (bool, optional): Whether to include an intercept in the underlying
-            regression. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to
-            None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series: White's LM statistic, its p-value, and whether homoskedasticity is rejected at
-            the 5% level.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["GS", "MS"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        # GS (the first ticker) is dependent; MS is independent
-        toolkit.econometrics.get_white_test()
-        ```
-
-        Which returns:
-
-        |                              |   Value |
-        |:-----------------------------|--------:|
-        | White Statistic              | 11.5102 |
-        | P-Value                      |  0.0032 |
-        | Reject Homoskedasticity (5%) |  1      |
-        """
-        dependent_ticker, independent_tickers = self._resolve_dependent_independent(
-            dependent_ticker=dependent_ticker,
-            independent_tickers=independent_tickers,
-            include_benchmark=include_benchmark,
-        )
-
-        result = self._get_ols_result(
-            dependent_ticker, independent_tickers, period, column, add_constant
-        )
-
-        test_result = specification_tests_model.get_white_test(result)
 
         return apply_rounding(
             test_result, rounding if rounding is not None else self._rounding

@@ -359,7 +359,7 @@ class ForecastingEconometrics:
         `get_impulse_response_function` and `get_variance_decomposition` summarise that, and
         `get_granger_causality` tests whether one ticker helps predict another. A VAR assumes
         stationary series, so returns are generally more suitable than prices (see
-        `get_augmented_dickey_fuller`).
+        `get_unit_root_test`).
 
         For more information about the method, see the following paper:
 
@@ -806,19 +806,19 @@ class ForecastingEconometrics:
         )
 
     @handle_errors
-    def get_rmse(
+    def get_forecast_error(
         self,
         period: str | None = None,
         column: str = "Return",
         include_benchmark: bool = False,
+        method: Literal["rmse", "mae"] = "rmse",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Root Mean Squared Error (RMSE) between every unordered pair
-        of tickers' series in the Toolkit instance.
-
-        Also known as: RMSD (Root Mean Squared Deviation).
+        Calculate the forecast error between every unordered pair of tickers' series in the
+        Toolkit instance, the Root Mean Squared Error (method="rmse") or the Mean Absolute Error
+        (method="mae").
 
         This controller method compares two ASSETS' series directly, treating one as a naive
         "forecast" proxy for the other -- a simple, tracking-error style measure of
@@ -828,16 +828,30 @@ class ForecastingEconometrics:
         rather than one asset as a naive proxy for another, use
         `get_out_of_sample_validation` instead.
 
-        For a fund against its index the RMSE comes close to the tracking error but is not
-        the same: the tracking error (`Performance.get_tracking_error`) is the Standard
-        Deviation of the return differences, which leaves out their average, while the RMSE
-        includes it. The RMSE is per period, so a daily figure is usually multiplied by the
-        square root of 252 to annualize it.
-
-        The formula is as follows:
+        The formula for method="rmse" is as follows:
 
         - RMSE = √((1 / n)·Σ(aₜ - bₜ)²), with aₜ and bₜ the two tickers' `column` (Return by default) on
           the n dates where both have data
+
+        The formula for method="mae" is as follows:
+
+        - MAE = (1 / n)·Σ|aₜ - bₜ|, with aₜ and bₜ the two tickers' `column` (Return by default) on the
+          n dates where both have data
+
+        Both are expressed in the units of the series itself (e.g. a return difference) and
+        answer "how far apart are the two series in a typical period"; a lower value means the
+        two tickers track each other more closely. The RMSE squares the differences and is
+        therefore dominated by a few large gaps, while in the MAE every difference counts in
+        proportion to its size, so the MAE is robust to occasional outliers.
+
+        For a fund against its index the RMSE comes close to the tracking error but is not
+        the same: the tracking error (`Performance.get_tracking_error`) is the Standard
+        Deviation of the return differences, which leaves out their average, while the RMSE
+        includes it. Both are per period, so a daily RMSE is usually multiplied by the
+        square root of 252 to annualize it.
+
+        Also known as: RMSE, RMSD (Root Mean Squared Deviation), MAE, MAD (Mean Absolute
+        Deviation), forecast accuracy.
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -846,6 +860,8 @@ class ForecastingEconometrics:
             "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             tickers paired up. Defaults to False.
+            method (str, optional): The error measure, "rmse" for the Root Mean Squared Error or
+            "mae" for the Mean Absolute Error. Defaults to "rmse".
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -854,7 +870,8 @@ class ForecastingEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series: The RMSE, indexed by unordered `(Ticker A, Ticker B)` pair.
+            pd.Series: The RMSE or the MAE (named "RMSE" or "MAE"), indexed by unordered
+            `(Ticker A, Ticker B)` pair.
 
         As an example:
 
@@ -868,7 +885,7 @@ class ForecastingEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rmse(include_benchmark=True)
+        toolkit.econometrics.get_forecast_error(include_benchmark=True)
         ```
 
         Which returns:
@@ -879,123 +896,33 @@ class ForecastingEconometrics:
         | ('IVV', 'Benchmark') | 0.0009 |
         | ('VOO', 'Benchmark') | 0.001  |
         """
+        if method not in ("rmse", "mae"):
+            raise ValueError("Method must be rmse or mae.")
+
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
 
+        error = (
+            forecast_evaluation_model.get_mae
+            if method == "mae"
+            else forecast_evaluation_model.get_rmse
+        )
         values = {
-            (ticker_a, ticker_b): forecast_evaluation_model.get_rmse(
-                returns[ticker_a], returns[ticker_b]
-            )
+            (ticker_a, ticker_b): error(returns[ticker_a], returns[ticker_b])
             for ticker_a, ticker_b in self._all_unordered_pairs(
                 include_benchmark=include_benchmark
             )
         }
 
-        if not values:
-            raise ValueError(
-                "The RMSE compares two series, a forecast and the actual values, so it "
-                "needs at least two tickers (or include_benchmark=True for the benchmark)."
-            )
-
-        result = pd.Series(values, name="RMSE")
-        result.index = result.index.set_names(["Ticker A", "Ticker B"])
-
-        return apply_rounding(
-            result, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_errors
-    def get_mae(
-        self,
-        period: str | None = None,
-        column: str = "Return",
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.Series:
-        """
-        Calculate the Mean Absolute Error (MAE) between every unordered pair of tickers'
-        series in the Toolkit instance.
-
-        MAE is the average absolute difference between two series.
-
-        The formula is as follows:
-
-        - MAE = (1 / n)·Σ|aₜ - bₜ|, with aₜ and bₜ the two tickers' `column` (Return by default) on the
-          n dates where both have data
-
-        It is expressed in the units of the series itself (e.g. a return difference) and
-        answers "how far apart are the two series in a typical period". Every difference counts
-        in proportion to its size, so unlike `get_rmse`, which squares the differences and is
-        therefore dominated by a few large gaps, MAE is robust to occasional outliers. A
-        lower value means the two tickers track each other more closely.
-
-        This method compares two assets directly, for example how closely a fund tracks its
-        index or how two related stocks move together, rather than an asset against a model's
-        forecast; see `get_rmse` for the reasoning, and `get_out_of_sample_validation` for
-        evaluating actual forecasts.
-
-        Also known as: MAD (Mean Absolute Deviation).
-
-        Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
-            column (str, optional): The historical data column to compare. Defaults to
-            "Return".
-            include_benchmark (bool, optional): Whether to include "Benchmark" among the
-            tickers paired up. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the
-            results to. Defaults to None.
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.Series: The MAE, indexed by unordered `(Ticker A, Ticker B)` pair.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            ["GLD", "IAU", "GLDM"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.econometrics.get_mae()
-        ```
-
-        Which returns:
-
-        |                 |    MAE |
-        |:----------------|-------:|
-        | ('GLD', 'IAU')  | 0.0002 |
-        | ('GLD', 'GLDM') | 0.0003 |
-        | ('IAU', 'GLDM') | 0.0003 |
-        """
-        period = period if period else "daily"
-        returns = self._get_series_column(period, column)
-
-        values = {
-            (ticker_a, ticker_b): forecast_evaluation_model.get_mae(
-                returns[ticker_a], returns[ticker_b]
-            )
-            for ticker_a, ticker_b in self._all_unordered_pairs(
-                include_benchmark=include_benchmark
-            )
-        }
+        name = method.upper()
 
         if not values:
             raise ValueError(
-                "The MAE compares two series, a forecast and the actual values, so it "
+                f"The {name} compares two series, a forecast and the actual values, so it "
                 "needs at least two tickers (or include_benchmark=True for the benchmark)."
             )
 
-        result = pd.Series(values, name="MAE")
+        result = pd.Series(values, name=name)
         result.index = result.index.set_names(["Ticker A", "Ticker B"])
 
         return apply_rounding(

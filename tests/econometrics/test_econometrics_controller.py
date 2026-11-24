@@ -60,28 +60,42 @@ def test_within_period_daily_requires_intraday(econometrics_module):
     ).empty
 
 
-def test_get_augmented_dickey_fuller(recorder, econometrics_module):
+def test_get_unit_root_test(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_unit_root_test(period="quarterly"))
     recorder.capture(
-        econometrics_module.get_augmented_dickey_fuller(period="quarterly")
+        econometrics_module.get_unit_root_test(period="monthly", regression="n")
     )
     recorder.capture(
-        econometrics_module.get_augmented_dickey_fuller(
-            period="monthly", regression="n"
+        econometrics_module.get_unit_root_test(
+            period="quarterly", method="phillips_perron"
         )
     )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(
+            period="monthly", method="phillips_perron", regression="ct"
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(period="weekly", method="zivot_andrews")
+    )
+    recorder.capture(
+        econometrics_module.get_unit_root_test(
+            period="weekly", method="zivot_andrews", regression="ct"
+        )
+    )
+
+
+def test_get_unit_root_test_rejects_an_unknown_method(econometrics_module, monkeypatch):
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+
+    with pytest.raises(ValueError, match="augmented_dickey_fuller"):
+        econometrics_module.get_unit_root_test(method="kpss")
 
 
 def test_get_kpss_test(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_kpss_test(period="quarterly"))
     recorder.capture(
         econometrics_module.get_kpss_test(period="monthly", regression="ct")
-    )
-
-
-def test_get_phillips_perron_test(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_phillips_perron_test(period="quarterly"))
-    recorder.capture(
-        econometrics_module.get_phillips_perron_test(period="monthly", regression="ct")
     )
 
 
@@ -119,13 +133,6 @@ def test_get_johansen_cointegration_include_benchmark(recorder, econometrics_mod
 def test_get_granger_causality(recorder, econometrics_module):
     recorder.capture(
         econometrics_module.get_granger_causality(period="weekly", max_lag=3)
-    )
-
-
-def test_get_zivot_andrews_test(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_zivot_andrews_test(period="weekly"))
-    recorder.capture(
-        econometrics_module.get_zivot_andrews_test(period="weekly", regression="ct")
     )
 
 
@@ -211,18 +218,15 @@ def test_get_gls(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_gls(omega, period="weekly"))
 
 
-def test_get_logistic_regression(recorder, econometrics_module):
+def test_get_binary_choice_regression(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_logistic_regression(
+        econometrics_module.get_binary_choice_regression(
             independent_tickers=["MSFT", "Benchmark"], period="weekly"
         )
     )
-
-
-def test_get_probit_regression(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_probit_regression(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
+        econometrics_module.get_binary_choice_regression(
+            independent_tickers=["MSFT", "Benchmark"], period="weekly", method="probit"
         )
     )
 
@@ -356,18 +360,15 @@ def test_get_hausman_wu_test_reversed_dependent_and_suspect(
     )
 
 
-def test_get_breusch_pagan_test(recorder, econometrics_module):
+def test_get_heteroskedasticity_test(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_breusch_pagan_test(
+        econometrics_module.get_heteroskedasticity_test(
             independent_tickers=["MSFT", "Benchmark"], period="weekly"
         )
     )
-
-
-def test_get_white_test(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_white_test(
-            independent_tickers=["MSFT", "Benchmark"], period="weekly"
+        econometrics_module.get_heteroskedasticity_test(
+            independent_tickers=["MSFT", "Benchmark"], period="weekly", method="white"
         )
     )
 
@@ -640,12 +641,11 @@ def test_get_vecm_forecast_invalid_k_ar_diff(econometrics_module):
     assert result.empty
 
 
-def test_get_rmse(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rmse(period="quarterly"))
-
-
-def test_get_mae(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_mae(period="quarterly"))
+def test_get_forecast_error(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_forecast_error(period="quarterly"))
+    recorder.capture(
+        econometrics_module.get_forecast_error(period="quarterly", method="mae")
+    )
 
 
 def test_get_out_of_sample_validation_arima(recorder, econometrics_module):
@@ -831,10 +831,10 @@ def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
     )
 
     for method, kwargs in [
-        ("get_augmented_dickey_fuller", {"period": "weekly"}),
+        ("get_unit_root_test", {"period": "weekly"}),
         ("get_kpss_test", {"period": "weekly"}),
-        ("get_phillips_perron_test", {"period": "weekly"}),
-        ("get_zivot_andrews_test", {"period": "monthly"}),
+        ("get_unit_root_test", {"period": "weekly", "method": "phillips_perron"}),
+        ("get_unit_root_test", {"period": "monthly", "method": "zivot_andrews"}),
         ("get_arch_lm_test", {}),
         ("get_jarque_bera_test", {}),
         ("get_ljung_box_test", {}),
@@ -849,11 +849,17 @@ def test_per_ticker_statistics_ignore_a_younger_ticker(econometrics_module):
         )
         assert not result["MSFT"].equals(original["MSFT"]), method
 
-    for method in ("get_two_sample_t_test", "get_rmse", "get_mae"):
+    for method, kwargs in [
+        ("get_two_sample_t_test", {}),
+        ("get_forecast_error", {"method": "rmse"}),
+        ("get_forecast_error", {"method": "mae"}),
+    ]:
         original = getattr(econometrics_module, method)(
-            include_benchmark=True, rounding=None
+            include_benchmark=True, rounding=None, **kwargs
         )
-        result = getattr(younger, method)(include_benchmark=True, rounding=None)
+        result = getattr(younger, method)(
+            include_benchmark=True, rounding=None, **kwargs
+        )
         pd.testing.assert_series_equal(
             pd.Series(result.loc[("AAPL", "Benchmark")]),
             pd.Series(original.loc[("AAPL", "Benchmark")]),

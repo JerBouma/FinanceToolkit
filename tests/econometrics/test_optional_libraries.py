@@ -26,7 +26,7 @@ ols = econometrics.get_ols()
 print("ols", ols.shape[0], int(ols["Coefficient"].notna().sum()))
 
 try:
-    econometrics.get_augmented_dickey_fuller()
+    econometrics.get_unit_root_test()
     print("adf", "no error")
 except ImportError as error:
     print("adf", error)

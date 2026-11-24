@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 from scipy import signal
 
 from financetoolkit.helpers import delay_embedding
@@ -948,3 +949,65 @@ def get_hjorth_parameters(data: pd.Series | np.ndarray) -> pd.Series:
     return pd.Series(
         [variance, mobility, complexity, crossings], index=names, dtype=float
     )
+
+
+def get_share_entropy(
+    data: pd.Series | np.ndarray,
+    window: int | None = None,
+    base: float = 2.0,
+    normalize: bool = False,
+) -> np.ndarray | float:
+    """
+    Calculate the Share Entropy of a series: the Shannon entropy of its values taken as shares
+    of their sum, which is highest when the values are equal and falls as they spread out.
+
+    For prices, a lower entropy points to a larger move within the window. The entropy is at
+    its maximum, log(n), when all n values are equal; in base 2 it is measured in bits.
+
+    The formula is as follows:
+
+    - P(i) = x(i) / Sum(x), over the n values of the window
+    - Entropy = -Sum(P * log_base(P))
+    - Normalized Entropy = -Sum(P * ln(P)) / ln(n)
+
+    Also known as: ENTP, Shannon entropy of the prices, information entropy.
+
+    Reference: Shannon, C.E. (1948). "A Mathematical Theory of Communication." Bell System
+    Technical Journal, 27(3), 379-423.
+
+    Referenced against:
+    - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
+
+    Notes:
+        - The rolling entropy equals pandas-ta-classic's entropy (window 10, base 2).
+        - The shares are only probabilities for positive values, such as prices: a window
+          with a negative value or a sum of 0 has no entropy.
+
+    Args:
+        data (pd.Series | np.ndarray): The series, e.g. prices.
+        window (int | None): The number of values of a rolling window. Defaults to None,
+            which takes every value and returns one number.
+        base (float): The base of the logarithm. Defaults to 2.0, in bits.
+        normalize (bool): Whether to divide the entropy by its maximum, log(n), so it lies
+            between 0 and 1 whatever the base. Defaults to False.
+
+    Returns:
+        np.ndarray | float: The entropy of every window, the first on the window's last
+        value, or one number without a window.
+    """
+    values = np.asarray(data, dtype=float)
+    length = window if window is not None else len(values)
+
+    if not 0 < length <= len(values):
+        return np.array([]) if window is not None else np.nan
+
+    windows = sliding_window_view(values, length)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        shares = windows / windows.sum(axis=1, keepdims=True)
+        terms = np.where(shares == 0, 0.0, -shares * np.log(shares))
+        entropy = terms.sum(axis=1) / np.log(length if normalize else base)
+    entropy = np.where(
+        (shares < 0).any(axis=1) | ~np.isfinite(entropy), np.nan, entropy
+    )
+
+    return entropy if window is not None else float(entropy[-1])

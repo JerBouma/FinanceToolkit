@@ -345,9 +345,7 @@ def get_ui(
 
     Referenced against:
     - Riskfolio-Lib, UCI_Rel (compounded, no rolling window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Rel
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
     - Riskfolio-Lib, UCI_Abs (uncompounded, no rolling window): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.UCI_Abs
-        Test: tests/risk/test_drawdown_model.py::test_drawdown_measures_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), UlcerIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UlcerIndex.R#L31
@@ -1562,9 +1560,7 @@ def get_downside_deviation(
 
     Referenced against:
     - Riskfolio-Lib, SemiDeviation (around the mean): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiDeviation
-        Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
     - skfolio, semi_deviation (around the mean): https://skfolio.org/generated/skfolio.measures.semi_deviation.html
-        Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), DownsideDeviation: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideDeviation.R#L104
@@ -1703,13 +1699,9 @@ def get_partial_moment(
 
     Referenced against:
     - skfolio, first_lower_partial_moment (order 1, around the mean): https://skfolio.org/generated/skfolio.measures.first_lower_partial_moment.html
-        Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
     - skfolio, fourth_lower_partial_moment (order 4, around the mean): https://skfolio.org/generated/skfolio.measures.fourth_lower_partial_moment.html
-        Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
     - Riskfolio-Lib, LPM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.LPM
-        Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
     - Riskfolio-Lib, SemiKurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiKurtosis
-        Test: tests/risk/test_dispersion_model.py::test_partial_moments_match_references
 
     Shares similar logic:
     - PerformanceAnalytics (R), DownsideFrequency (order 0): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideFrequency.R#L35
@@ -2031,7 +2023,6 @@ def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
 
     Referenced against:
     - statsmodels, acf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.acf.html
-        Test: tests/risk/test_risk_model.py::test_get_autocorrelation_is_missing_at_lags_without_pairs
 
     Args:
         data (pd.Series): A Series of values (e.g. returns or prices) to calculate the

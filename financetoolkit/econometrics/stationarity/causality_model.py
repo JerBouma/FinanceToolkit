@@ -50,7 +50,6 @@ def get_granger_causality(
 
     Referenced against:
     - statsmodels, grangercausalitytests: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.grangercausalitytests.html
-        Test: tests/econometrics/test_reference_validation.py::test_granger_causality
 
     Args:
         series_a (pd.Series): The series being predicted (the dependent series).

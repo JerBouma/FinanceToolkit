@@ -299,15 +299,10 @@ def get_discount_factors(
 
     Referenced against:
     - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
 
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
@@ -359,15 +354,10 @@ def get_instantaneous_forward_rates(
 
     Referenced against:
     - QuantLib, ZeroCurve (linear_zero): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, DiscountCurve (log_linear): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_discount_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, NaturalCubicZeroCurve (natural_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, MonotonicCubicZeroCurve (monotone_cubic): https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_zero_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
     - QuantLib, PiecewiseYieldCurve with ConvexMonotone (monotone_convex): https://www.quantlib.org/reference/class_quant_lib_1_1_convex_monotone.html
-        Test: tests/fixedincome/test_curve_construction.py::test_interpolation_against_quantlib
 
     Args:
         maturities (np.ndarray | list): The maturities of the curve in years, above 0.
@@ -425,11 +415,8 @@ def bootstrap_zero_curve(
 
     Referenced against:
     - QuantLib, PiecewiseYieldCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_piecewise_yield_curve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
     - QuantLib, FixedRateBondHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond_helper.html
-        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
     - QuantLib, DepositRateHelper: https://www.quantlib.org/reference/class_quant_lib_1_1_deposit_rate_helper.html
-        Test: tests/fixedincome/test_curve_construction.py::test_bootstrap_against_quantlib
 
     Args:
         maturities (np.ndarray | list): The maturities in years; at least one of a year or

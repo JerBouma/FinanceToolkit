@@ -169,9 +169,7 @@ class StationarityEconometrics:
 
         Referenced against:
         - statsmodels, adfuller (Augmented Dickey-Fuller test): https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
-            Test: tests/econometrics/test_reference_validation.py::test_augmented_dickey_fuller_and_kpss
         - arch, PhillipsPerron (Phillips-Perron test): https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.PhillipsPerron.html
-            Test: tests/econometrics/test_reference_validation.py::test_phillips_perron_matches_arch
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -459,7 +457,6 @@ class StationarityEconometrics:
 
         Referenced against:
         - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
-            Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -699,7 +696,6 @@ class StationarityEconometrics:
 
         Referenced against:
         - statsmodels, grangercausalitytests: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.grangercausalitytests.html
-            Test: tests/econometrics/test_reference_validation.py::test_granger_causality
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -1112,7 +1108,6 @@ class StationarityEconometrics:
         - RiskLabAI, get_gsadf_statistic: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L486
         - RiskLabAI, simulate_psy_critical_values: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L607
         - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
-            Test: tests/econometrics/test_bubble_model.py::test_window_statistic_matches_statsmodels
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to

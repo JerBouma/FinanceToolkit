@@ -837,7 +837,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, AROON: https://ta-lib.org/functions/aroon.html
-            Test: tests/technical/test_momentum_model.py::test_aroon_oscillator_matches_talib
         - TA-Lib, AROONOSC: https://ta-lib.org/functions/aroonosc.html
 
         Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC, trend strength.
@@ -1236,7 +1235,6 @@ class MomentumTechnicals:
         Referenced against:
         - TA-Lib, EFI: https://ta-lib.org/functions/efi.html
         - finta, CFI (cumulative Force Index): https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1585
-            Test: tests/technical/test_breadth_model.py::test_cumulative_force_index_matches_finta
         - finta, WOBV (cumulative Force Index): https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1506
 
         Also known as: FI, Elder's Force Index, EFI, CFI, Cumulative Force Index, Weighted On-Balance
@@ -1534,7 +1532,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, PVO: https://ta-lib.org/functions/pvo.html
-            Test: tests/technical/test_momentum_model.py::test_simple_percentage_volume_oscillator_matches_talib
         - pandas-ta-classic, vosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vosc.py#L12
         - Tulip Indicators, vosc: https://tulipindicators.org/vosc
 
@@ -1814,9 +1811,7 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, ADX: https://ta-lib.org/functions/adx.html
-            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
         - TA-Lib, ADXR: https://ta-lib.org/functions/adxr.html
-            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
         Also known as: ADX, trend strength indicator, ADXR, Average Directional Movement Rating,
         Average Directional Movement Index Rating.
@@ -1972,7 +1967,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, PLUS_DM: https://ta-lib.org/functions/plus_dm.html
-            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
         - TA-Lib, MINUS_DM: https://ta-lib.org/functions/minus_dm.html
         - TA-Lib, PLUS_DI: https://ta-lib.org/functions/plus_di.html
         - TA-Lib, MINUS_DI: https://ta-lib.org/functions/minus_di.html
@@ -2437,10 +2431,8 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, STOCHF: https://ta-lib.org/functions/stochf.html
-            Test: tests/technical/test_momentum_model.py::test_slow_stochastic_oscillator_matches_talib
         - TA-Lib, STOCH: https://ta-lib.org/functions/stoch.html
         - TA-Lib, STOCHRSI: https://ta-lib.org/functions/stochrsi.html
-            Test: tests/technical/test_momentum_model.py::test_stochastic_relative_strength_index_matches_talib
 
         Also known as: stochastic oscillator, percent K, percent D, fast stochastic, slow
         stochastic, Stochastic RSI, StochRSI, Stoch RSI.
@@ -2652,16 +2644,11 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, MACD: https://ta-lib.org/functions/macd.html
-            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
-            Test: tests/technical/test_momentum_model.py::test_moving_average_convergence_divergence_variants_match_talib
         - TA-Lib, MACDEXT: https://ta-lib.org/functions/macdext.html
         - TA-Lib, MACDFIX: https://ta-lib.org/functions/macdfix.html
         - pandas-ta-classic, vwmacd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/vwmacd.py#L12
-            Test: tests/technical/test_momentum_model.py::test_volume_weighted_macd_matches_pandas_ta_classic
         - TA-Lib, APO: https://ta-lib.org/functions/apo.html
-            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
         - TA-Lib, PPO: https://ta-lib.org/functions/ppo.html
-            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
 
         Shares similar logic:
         - finta, VW_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L575
@@ -2950,9 +2937,7 @@ class MomentumTechnicals:
         Referenced against:
         - TA-Lib, RSI: https://ta-lib.org/functions/rsi.html
         - TA-Lib, CRSI (ConnorsRSI): https://ta-lib.org/functions/crsi.html
-            Test: tests/technical/test_momentum_model.py::test_connors_relative_strength_index_matches_talib
         - pandas-ta-classic, lrsi (Laguerre RSI): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/lrsi.py#L29
-            Test: tests/technical/test_cycle_model.py::test_laguerre_relative_strength_index_matches_pandas_ta
         - TA-Lib, IMI (Intraday Momentum Index): https://ta-lib.org/functions/imi.html
 
         Shares similar logic:
@@ -3202,7 +3187,6 @@ class MomentumTechnicals:
         Referenced against:
         - TA-Lib, TSI: https://ta-lib.org/functions/tsi.html
         - pandas-ta-classic, smi (SMI Ergodic Indicator): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smi.py#L13
-            Test: tests/technical/test_momentum_model.py::test_smi_ergodic_indicator_matches_pandas_ta_classic
 
         Also known as: TSI, double smoothed momentum, SMI Ergodic, SMIIO, SMI Ergodic Oscillator,
         ergodic oscillator.
@@ -4323,7 +4307,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, CHOP: https://ta-lib.org/functions/chop.html
-            Test: tests/technical/test_momentum_model.py::test_choppiness_index_with_the_true_range_box_matches_talib
         - TA-Lib, CHOPTR: https://ta-lib.org/functions/choptr.html
 
         Also known as: CHOP, CHOPTR, Choppiness Index.
@@ -4896,7 +4879,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, COPPOCK: https://ta-lib.org/functions/coppock.html
-            Test: tests/technical/test_momentum_model.py::test_coppock_curve_matches_talib
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -5043,7 +5025,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, FISHER: https://ta-lib.org/functions/fisher.html
-            Test: tests/technical/test_momentum_model.py::test_fisher_transform_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, fisher: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fisher.py#L36
@@ -5329,7 +5310,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, KDJ: https://ta-lib.org/functions/kdj.html
-            Test: tests/technical/test_momentum_model.py::test_kdj_indicator_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, kdj: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/kdj.py#L17
@@ -5479,7 +5459,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, PSO: https://ta-lib.org/functions/pso.html
-            Test: tests/technical/test_momentum_model.py::test_premier_stochastic_oscillator_matches_talib
 
         Also known as: PSO, Premier Stochastic.
 
@@ -5623,7 +5602,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, SMI: https://ta-lib.org/functions/smi.html
-            Test: tests/technical/test_momentum_model.py::test_stochastic_momentum_index_matches_talib
 
         Also known as: SMI, Blau's stochastic momentum.
 
@@ -5775,7 +5753,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, STC: https://ta-lib.org/functions/stc.html
-            Test: tests/technical/test_momentum_model.py::test_schaff_trend_cycle_matches_talib_once_the_seeds_decayed
 
         Shares similar logic:
         - pandas-ta-classic, stc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/stc.py#L100
@@ -5932,7 +5909,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, WAVETREND: https://ta-lib.org/functions/wavetrend.html
-            Test: tests/technical/test_momentum_model.py::test_wavetrend_oscillator_matches_talib
 
         Shares similar logic:
         - finta, WTO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1802
@@ -6082,7 +6058,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, DOSC: https://ta-lib.org/functions/dosc.html
-            Test: tests/technical/test_momentum_model.py::test_derivative_oscillator_matches_talib
 
         Also known as: DOSC, Brown's Derivative Oscillator.
 
@@ -6230,7 +6205,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, SI: https://ta-lib.org/functions/si.html
-            Test: tests/technical/test_momentum_model.py::test_swing_index_matches_talib
         - TA-Lib, ASI: https://ta-lib.org/functions/asi.html
 
         Also known as: SI, ASI, Wilder Swing Index, Accumulation Swing Index.
@@ -6653,7 +6627,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, inertia: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/inertia.py#L61
-            Test: tests/technical/test_momentum_model.py::test_inertia_matches_pandas_ta_classic
 
         Also known as: INERTIA, Dorsey Inertia.
 
@@ -6792,7 +6765,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, bias: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/bias.py#L12
-            Test: tests/technical/test_momentum_model.py::test_bias_matches_pandas_ta_classic
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -6926,7 +6898,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, brar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/brar.py#L18
-            Test: tests/technical/test_momentum_model.py::test_brar_matches_pandas_ta_classic
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -7056,7 +7027,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, pgo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/pgo.py#L14
-            Test: tests/technical/test_momentum_model.py::test_pretty_good_oscillator_matches_pandas_ta_classic
 
         Also known as: PGO, Pretty Good Oscillator.
 
@@ -7185,7 +7155,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, psl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/psl.py#L19
-            Test: tests/technical/test_momentum_model.py::test_psychological_line_matches_pandas_ta_classic
 
         Args:
             period (str, optional): The time period to consider for historical data. Options are:
@@ -7456,7 +7425,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, amat: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/amat.py#L15
-            Test: tests/technical/test_momentum_model.py::test_archer_moving_average_trends_matches_pandas_ta_classic
 
         Also known as: AMAT, Archer Moving Averages Trends.
 
@@ -7594,7 +7562,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - pandas-ta-classic, ttm_trend: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/ttm_trend.py#L12
-            Test: tests/technical/test_momentum_model.py::test_ttm_trend_matches_pandas_ta_classic
 
         Also known as: TTM Trend, TTM_TRND.
 
@@ -7723,7 +7690,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, CTI: https://ta-lib.org/functions/cti.html
-            Test: tests/technical/test_momentum_model.py::test_correlation_trend_indicator_matches_talib
         - pandas-ta-classic, cti: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cti.py#L12
 
         Also known as: CTI, correlation trend, Ehlers correlation trend indicator.
@@ -7854,7 +7820,6 @@ class MomentumTechnicals:
 
         Referenced against:
         - TA-Lib, FOSC: https://ta-lib.org/functions/fosc.html
-            Test: tests/technical/test_momentum_model.py::test_forecast_oscillator_matches_talib
         - Tulip Indicators, fosc: https://tulipindicators.org/fosc
 
         Shares similar logic:

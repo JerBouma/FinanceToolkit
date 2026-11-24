@@ -195,7 +195,6 @@ def get_chooser_option(
 
     Referenced against:
     - QuantLib, AnalyticSimpleChooserEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_simple_chooser_engine.html
-        Test: tests/options/test_compound_model.py::test_the_simple_chooser_matches_quantlib
 
     Shares similar logic:
     - FinancePy, EquityChooserOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_chooser_option.py#L67
@@ -441,7 +440,6 @@ def get_compound_option(
 
     Referenced against:
     - QuantLib, AnalyticCompoundOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_compound_option_engine.html
-        Test: tests/options/test_compound_model.py::test_the_compound_options_match_quantlib_and_their_integral
 
     Shares similar logic:
     - FinancePy, EquityCompoundOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_compound_option.py#L26
@@ -608,7 +606,6 @@ def get_forward_start_option(
 
     Referenced against:
     - QuantLib, ForwardEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_vanilla_engine.html
-        Test: tests/options/test_compound_model.py::test_the_forward_start_options_match_quantlib
 
     Shares similar logic:
     - FinancePy, EquityForwardStartOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_forward_start_option.py#L32
@@ -729,9 +726,7 @@ def get_cliquet_option(
 
     Referenced against:
     - QuantLib, AnalyticCliquetEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cliquet_engine.html
-        Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
     - QuantLib, AnalyticPerformanceEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_performance_engine.html
-        Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -858,9 +853,7 @@ def get_extendible_option(
 
     Referenced against:
     - QuantLib, AnalyticHolderExtensibleOptionEngine (holder-extendible): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_holder_extensible_option_engine.html
-        Test: tests/options/test_compound_model.py::test_the_holder_extendible_call_matches_quantlib
     - QuantLib, AnalyticWriterExtensibleOptionEngine (writer-extendible): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_writer_extensible_option_engine.html
-        Test: tests/options/test_compound_model.py::test_the_writer_extendible_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -1096,9 +1089,7 @@ def get_quanto_option(
 
     Referenced against:
     - QuantLib, QuantoEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_quanto_engine.html
-        Test: tests/options/test_compound_model.py::test_the_quanto_options_match_quantlib
     - QuantLib, QuantoForwardEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_quanto_engine.html
-        Test: tests/options/test_compound_model.py::test_the_quanto_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price in the foreign currency.

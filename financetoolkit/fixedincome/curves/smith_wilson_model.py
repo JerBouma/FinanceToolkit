@@ -100,7 +100,6 @@ def get_smith_wilson_curve(
 
     Referenced against:
     - rateslib, SmithWilsonCurve: https://rateslib.com/py/en/3.0.x/api/rateslib.curves.SmithWilsonCurve.html
-        Test: tests/fixedincome/test_curve_construction.py::test_smith_wilson_against_rateslib
 
     Args:
         cash_flow_times (np.ndarray | list): The times of the cash flows in years, after 0.

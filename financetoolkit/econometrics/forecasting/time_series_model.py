@@ -356,7 +356,6 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
 
     Referenced against:
     - statsmodels, VAR: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VAR.html
-        Test: tests/econometrics/test_reference_validation.py::test_var_forecast
 
     Args:
         data (pd.DataFrame): One column per series (e.g. several assets' returns),
@@ -618,7 +617,6 @@ def get_impulse_response_function(
 
     Referenced against:
     - statsmodels, VARResults.irf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.irf.html
-        Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
     Args:
         var_result (dict): A fitted VAR result dict, from `get_var_forecast`.
@@ -756,7 +754,6 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
 
     Referenced against:
     - statsmodels, VARResults.fevd: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.fevd.html
-        Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
     Args:
         var_result (dict): A fitted VAR result dict, from `get_var_forecast`.

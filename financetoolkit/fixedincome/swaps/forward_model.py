@@ -52,7 +52,6 @@ def get_forward_rate_agreement(
 
     Referenced against:
     - QuantLib, ForwardRateAgreement: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_rate_agreement.html
-        Test: tests/fixedincome/test_swap_model.py::test_forward_rate_agreement_matches_quantlib
 
     Shares similar logic:
     - FinancePy, IborFRA: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_fra.py#L23
@@ -135,7 +134,6 @@ def get_futures_convexity_adjustment(
 
     Referenced against:
     - FinancePy, IborFuture.convexity: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_future.py#L106
-        Test: tests/fixedincome/test_swap_model.py::test_futures_convexity_adjustment_matches_financepy
 
     Shares similar logic:
     - QuantLib, HullWhite.convexityBias: https://www.quantlib.org/reference/class_quant_lib_1_1_hull_white.html
@@ -212,7 +210,6 @@ def get_fx_forward_rate(
 
     Referenced against:
     - rateslib, forward_fx: https://rateslib.com/py/en/3.0.x/api/rateslib.fx.forward_fx.html
-        Test: tests/fixedincome/test_swap_model.py::test_fx_forward_rate_matches_rateslib
 
     Shares similar logic:
     - QuantLib, FxForward: https://www.quantlib.org/reference/class_quant_lib_1_1_fx_forward.html
@@ -278,7 +275,6 @@ def get_equity_forward(
 
     Referenced against:
     - FinancePy, EquityForward: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_forward.py#L19
-        Test: tests/fixedincome/test_swap_model.py::test_equity_forward_matches_financepy
 
     Shares similar logic:
     - QuantLib, EquityTotalReturnSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_equity_total_return_swap.html

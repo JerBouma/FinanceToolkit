@@ -87,8 +87,6 @@ def get_reference_cpi(consumer_price_index: pd.Series, day: date) -> float:
 
     Referenced against:
     - QuantLib, CPI.laggedFixing: https://github.com/lballabio/QuantLib/blob/v1.44/ql/indexes/inflationindex.hpp#L39
-        Test:
-            tests/fixedincome/test_treasury_markets_model.py::test_reference_cpi_and_index_ratio_follow_the_treasury_example
 
     Args:
         consumer_price_index (pd.Series): The CPI-U, not seasonally adjusted, indexed by

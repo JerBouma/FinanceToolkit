@@ -90,7 +90,6 @@ def get_zero_coupon_inflation_swap_rate(
 
     Referenced against:
     - QuantLib, ZeroCouponInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_zero_coupon_inflation_swap_rate_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates (decimals),
@@ -256,7 +255,6 @@ def get_year_on_year_inflation_swap_rate(
 
     Referenced against:
     - QuantLib, YearOnYearInflationSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_year_on_year_inflation_swap_rate_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates
@@ -448,9 +446,7 @@ def get_forward_inflation_index(
 
     Referenced against:
     - QuantLib, ZeroInflationIndex: https://www.quantlib.org/reference/class_quant_lib_1_1_zero_inflation_index.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
     - QuantLib, MultiplicativePriceSeasonality: https://www.quantlib.org/reference/class_quant_lib_1_1_multiplicative_price_seasonality.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_forward_inflation_index_matches_quantlib_seasonality
 
     Args:
         base_index (float): The index of the base month, such as the latest published CPI or
@@ -567,11 +563,8 @@ def get_inflation_swap_value(
 
     Referenced against:
     - QuantLib, ZeroCouponInflationSwap (zero-coupon): https://www.quantlib.org/reference/class_quant_lib_1_1_zero_coupon_inflation_swap.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
     - QuantLib, YearOnYearInflationSwap (year-on-year): https://www.quantlib.org/reference/class_quant_lib_1_1_year_on_year_inflation_swap.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
     - QuantLib, DiscountingSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_discounting_swap_engine.html
-        Test: tests/fixedincome/test_inflation_swap_model.py::test_inflation_swap_value_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates

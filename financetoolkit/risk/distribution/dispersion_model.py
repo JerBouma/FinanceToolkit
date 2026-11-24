@@ -299,11 +299,8 @@ def get_central_moment(
 
     Referenced against:
     - skfolio, third_central_moment: https://skfolio.org/generated/skfolio.measures.third_central_moment.html
-        Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
     - skfolio, fourth_central_moment: https://skfolio.org/generated/skfolio.measures.fourth_central_moment.html
-        Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
     - Riskfolio-Lib, Kurtosis: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Kurtosis
-        Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -339,9 +336,7 @@ def get_worst_realization(
 
     Referenced against:
     - Riskfolio-Lib, WR: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.WR
-        Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
     - skfolio, worst_realization: https://skfolio.org/generated/skfolio.measures.worst_realization.html
-        Test: tests/risk/test_dispersion_model.py::test_central_moments_and_worst_realization
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -376,9 +371,7 @@ def get_gini_mean_difference(
 
     Referenced against:
     - Riskfolio-Lib, GMD: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.GMD
-        Test: tests/risk/test_dispersion_model.py::test_gini_mean_difference_matches_references
     - skfolio, gini_mean_difference: https://skfolio.org/generated/skfolio.measures.gini_mean_difference.html
-        Test: tests/risk/test_dispersion_model.py::test_gini_mean_difference_matches_references
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -411,7 +404,6 @@ def get_tail_gini(
 
     Referenced against:
     - Riskfolio-Lib, TG: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TG
-        Test: tests/risk/test_dispersion_model.py::test_tail_gini_matches_riskfolio
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -457,9 +449,7 @@ def get_l_moment(
 
     Referenced against:
     - Riskfolio-Lib, L_Moment: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment
-        Test: tests/risk/test_dispersion_model.py::test_l_moments_match_riskfolio_and_scipy
     - scipy, lmoment: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.lmoment.html
-        Test: tests/risk/test_dispersion_model.py::test_l_moments_match_riskfolio_and_scipy
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -515,7 +505,6 @@ def get_l_moment_risk_measure(
 
     Referenced against:
     - Riskfolio-Lib, L_Moment_CRM (constant relative risk aversion): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.L_Moment_CRM
-        Test: tests/risk/test_dispersion_model.py::test_l_moment_risk_measure
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -583,11 +572,8 @@ def get_risk_range(
 
     Referenced against:
     - Riskfolio-Lib, RG (Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.RG
-        Test: tests/risk/test_dispersion_model.py::test_risk_range_matches_riskfolio_and_the_toolkit_var
     - Riskfolio-Lib, TGRG (Tail Gini Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.TGRG
-        Test: tests/risk/test_dispersion_model.py::test_risk_range_matches_riskfolio_and_the_toolkit_var
     - Riskfolio-Lib, EVRG (EVaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVRG
-        Test: tests/risk/test_dispersion_model.py::test_get_risk_range_evar
 
     Shares similar logic:
     - Riskfolio-Lib, VRG (VaR Range): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.VRG

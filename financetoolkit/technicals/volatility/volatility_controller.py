@@ -1177,13 +1177,13 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
+        - Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script.
+
         Referenced against:
         - TA-Lib, SUPERTREND: https://ta-lib.org/functions/supertrend.html
 
         Shares similar logic:
         - pandas-ta-classic, pmax (Profit Maximizer): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/pmax.py#L51
-
-        - Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script.
 
         Also known as: Supertrend, SuperTrend, PMax, Profit Maximizer.
 

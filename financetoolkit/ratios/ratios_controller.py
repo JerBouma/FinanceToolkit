@@ -19288,6 +19288,30 @@ class Ratios:
         own history: a ticker without a ratio or a return in a period is left out of that
         period only.
 
+        For more information, see the following sources:
+
+        - Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio Management." 2nd ed. McGraw-Hill,
+          for the information coefficient.
+        - Qian, E., Hua, R. and Sorensen, E. (2007). "Quantitative Equity Portfolio Management."
+          Chapman & Hall/CRC, for the factor-weighted portfolio and the demeaned and group-neutral returns.
+        - Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period 1945-1964." Journal of
+          Finance, 23(2), for the alpha.
+        - MacKinlay, A.C. (1997). "Event Studies in Economics and Finance." Journal of Economic
+          Literature, 35(1), for the event returns.
+
+        Referenced against:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, mean_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L80
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+        - alphalens, factor_weights: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L131
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, factor_alpha_beta: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L265
+        - alphalens, quantile_turnover: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L575
+        - alphalens, factor_rank_autocorrelation: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L620
+
+        Shares similar logic:
+        - alphalens, average_cumulative_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L758
+
         Args:
             metrics (str | list[str], optional): A ratio method name, e.g.
                 "get_price_to_earnings_ratio", a list of them, or a collection. Options for the collections
@@ -19371,16 +19395,7 @@ class Ratios:
             - The cumulative returns split the capital over as many portfolios as the horizon
               has periods, started on consecutive periods and each rebalanced once per
               horizon; a value shows when its holding period ends, so the series starts at 1.
-            - The IC is that of Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio
-              Management." 2nd ed. McGraw-Hill; the factor-weighted portfolio, the demeaned
-              and group-neutral returns that of Qian, E., Hua, R. and Sorensen, E. (2007).
-              "Quantitative Equity Portfolio Management." Chapman & Hall/CRC; the alpha that
-              of Jensen, M.C. (1968). "The Performance of Mutual Funds in the Period
-              1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
-              (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
-              35(1).
-            - Referenced against alphalens-reloaded
-              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
+            - Where it differs from alphalens: its top minus bottom
               spread is half of the one here (a gross exposure of one rather than two), it
               drops a period and ticker without every horizon's return where each horizon
               here uses its own, and its event returns average the single-period returns at

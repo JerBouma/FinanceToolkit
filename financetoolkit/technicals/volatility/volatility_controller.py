@@ -52,11 +52,14 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects various volatility indicators based on the provided data.
+        Collect the volatility indicators of every ticker in one table: how widely the prices move and the bands and
+        channels around them.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14. The Bollinger Bands and their %B and BandWidth keep their own
                 window of 20 periods (with 2 standard deviations), as defined by Bollinger, and
@@ -86,8 +89,8 @@ class VolatilityTechnicals:
         - The method calculates several volatility-based indicators for each asset in the Toolkit instance.
         - The Standard Deviation Channel is left out: it is fitted over the whole date range at
           once, so its values depend on later prices.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -345,8 +348,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Bollinger Bands for a given price series, or with method="price_bands" the
-        Price Bands.
+        Calculate the Bollinger Bands or the Price Bands: bands around a moving average, a number of standard
+        deviations wide, which show how high or low the price is relative to its recent volatility.
 
         Bollinger Bands are a volatility indicator that consists of three lines: an upper band,
         a middle band (simple moving average), and a lower band. The upper and lower bands are
@@ -359,13 +362,13 @@ class VolatilityTechnicals:
         of single periods, so a spike widens the bands less than it widens the Bollinger Bands,
         and the bands react to sustained moves away from the average instead.
 
-        The formula for method="standard" is as follows:
+        The formula for the Bollinger Bands is as follows:
 
         - Middle Band = SMA(Close, Window), or another moving average with `moving_average`
         - Upper Band = Middle Band + (Num Std Dev * Std Dev)
         - Lower Band = Middle Band — (Num Std Dev * Std Dev)
 
-        The formula for method="price_bands" is as follows:
+        The formula for the Price Bands is as follows:
 
         - Middle Band = SMA(Close, window), or another moving average with `moving_average`
         - Deviation = Middle Band — SMA(Close, short_window)
@@ -388,17 +391,24 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
-        - Referenced against TA-Lib's BBANDS (https://ta-lib.org/functions/bbands.html).
-        - pandas-ta-classic: bbands (https://github.com/xgboosted/pandas-ta-classic).
         - The Price Bands are defined by Brian G. Peterson in TTR's PBands, after the bands of
           Bollinger (2001), and referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
+
+        Referenced against:
+        - TA-Lib, BBANDS: https://ta-lib.org/functions/bbands.html
+        - TTR (R), PBands (Price Bands): https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/priceBands.R#L68
+
+        Shares similar logic:
+        - pandas-ta-classic, bbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/bbands.py#L48
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels, PBands, price bands,
         smoothed Bollinger Bands.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
@@ -408,14 +418,18 @@ class VolatilityTechnicals:
                 Defaults to 2.
             moving_average (str, optional): The moving average of the middle band (and, with
                 method="price_bands", of the fast average), one of the window-only methods of
-                `get_moving_average`: "simple", "exponential", "double_exponential",
-                "triple_exponential", "zero_lag", "wilder", "triangular", "weighted", "hull", "sine",
-                "fibonacci" or "pascal". Defaults to "simple", Bollinger's own.
+                `get_moving_average`. Options are: "simple" (Simple Moving Average), "exponential" (Exponential
+                Moving Average), "double_exponential" (Double Exponential Moving Average),
+                "triple_exponential" (Triple Exponential Moving Average), "zero_lag" (Zero Lag Exponential
+                Moving Average), "wilder" (Wilder's Moving Average), "triangular" (Triangular Moving Average),
+                "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "sine" (Sine Weighted Moving
+                Average), "fibonacci" (Fibonacci Weighted Moving Average), "pascal" (Pascal Weighted Moving
+                Average). Defaults to "simple", Bollinger's own.
             short_window (int, optional): The number of periods of the fast moving average, with
                 method="price_bands" only. Defaults to 2.
-            method (str, optional): The variant of the bands. Options are: "standard" (the Bollinger
-                Bands) or "price_bands" (the Price Bands, whose width comes from the fast moving
-                average). Defaults to "standard".
+            method (str, optional): The variant of the bands. Options are: "standard" (the Bollinger Bands),
+                "price_bands" (the Price Bands, whose width comes from the fast moving average). Defaults to
+                "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the bands.
@@ -437,9 +451,9 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Bollinger Bands or Price Bands for each asset in the Toolkit instance.
-        - The bands agree with TA-Lib's BBANDS with a simple moving average (`matype=0`), and with the
-          exponential, weighted, double exponential, triple exponential and triangular averages its
-          `matype` 1 to 5. The standard deviation stays the one around the simple average of the
+        - The bands agree with TA-Lib's BBANDS with a simple moving average, and with the exponential,
+          weighted, double exponential, triple exponential and triangular averages its moving average
+          types 1 to 5. The standard deviation stays the one around the simple average of the
           window, as in TA-Lib, whatever the middle band.
         - The standard deviation of the Price Bands is the population one (dividing by `window`), as
           in TTR's PBands. The Price Bands start on period 2 * `window` — 2.
@@ -447,8 +461,8 @@ class VolatilityTechnicals:
           of the deviation divided by the width to the middle band. That adds a number of standard
           deviations to a price, so the shift does not scale with the price, and the Toolkit
           leaves it out.
-        - If `growth` is set to True, the method calculates the growth of the bands
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the bands
+          over the given lag.
 
         As an example:
 
@@ -539,7 +553,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Bollinger %B and BandWidth for a given price series.
+        Calculate the Bollinger %B and BandWidth: where the close lies within the Bollinger Bands and how wide the
+        bands are, which show overbought and oversold levels and squeezes of volatility.
 
         Bollinger (2001, "Bollinger on Bollinger Bands") derived two indicators from his bands.
         %B places the close within the bands: 0 is on the lower band, 0.5 on the middle band and
@@ -562,16 +577,18 @@ class VolatilityTechnicals:
         Squeeze, which often precedes a larger move without saying in which direction; %B above
         1 or below 0 shows a close outside the bands, which in a trend can last for weeks.
 
-        For more information, see the following sources:
-
-        - Referenced against TA-Lib's PERCENTB and BBW (https://ta-lib.org/functions/percentb.html,
-          https://ta-lib.org/functions/bbw.html).
-
         Also known as: Percent B, %b, Bollinger Band Width, BBW, Bollinger Squeeze.
 
+        Referenced against:
+        - TA-Lib, PERCENTB: https://ta-lib.org/functions/percentb.html
+            Test: tests/technical/test_volatility_model.py::test_bollinger_percent_b_and_bandwidth_match_talib
+        - TA-Lib, BBW: https://ta-lib.org/functions/bbw.html
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods of the moving average and standard deviation.
@@ -600,10 +617,10 @@ class VolatilityTechnicals:
           %B and BandWidth for each asset in the Toolkit instance.
         - A window of identical prices gives bands without width, which leaves %B missing and
           BandWidth at 0.
-        - With a simple moving average (`matype=0`), %B agrees with TA-Lib's PERCENTB and BandWidth
+        - With a simple moving average, %B agrees with TA-Lib's PERCENTB and BandWidth
           agrees with TA-Lib's BBW divided by 100, since TA-Lib's BBW is in percent.
-        - If `growth` is set to True, the method calculates the growth of %B and BandWidth
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of %B and BandWidth
+          over the given lag.
 
         As an example:
 
@@ -676,7 +693,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the True Range (TR) for a given price series.
+        Calculate the True Range (TR): the range of a period including any gap from the previous close, the basic
+        measure of how far the price moved.
 
         The True Range (TR) is a measure of market volatility that considers the differences
         between the high and low prices and the previous closing price. It provides insights
@@ -689,13 +707,17 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - Referenced against TA-Lib's TRANGE (https://ta-lib.org/functions/trange.html).
+
+        Referenced against:
+        - TA-Lib, TRANGE: https://ta-lib.org/functions/trange.html
 
         Also known as: TR, true range.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -721,8 +743,8 @@ class VolatilityTechnicals:
           True Range for each asset in the Toolkit instance.
         - The True Range agrees with TA-Lib's TRANGE from the second period on. The first period, which
           has no previous close, is High — Low here and empty in TA-Lib.
-        - If `growth` is set to True, the method calculates the growth of the True Range
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the True Range
+          over the given lag.
 
         As an example:
 
@@ -794,27 +816,27 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Average True Range (ATR) of a given price series, normalized by the close
-        (NATR) or as the Average Day Range (ADR).
+        Calculate the Average True Range (ATR), normalised by the close (NATR) or as the Average Day Range (ADR):
+        the average range of the periods, a measure of how much the price moves.
 
         The Average True Range (ATR) is a technical indicator that measures the volatility
         of an asset's price movements over a specified number of periods. It provides insights
         into the potential price range of an asset, which can help traders and investors make
-        more informed decisions. The Normalized Average True Range (method="normalized") is the
+        more informed decisions. The Normalized Average True Range is the
         Average True Range divided by the close, so the average range is a share of the price:
         unlike the ATR, which is in price units, it compares across stocks with different prices
         and over periods in which the price changed a lot. The Average Day Range
-        (method="day_range") is the simple average of the High — Low range: unlike the Average True
+        is the simple average of the High — Low range: unlike the Average True
         Range it leaves out the gaps between periods, so it measures how far the price moves within
         a period, a basis for intraday targets and stops (for example a stop half an ADR away).
 
         The formula is as follows, per method:
 
-        - "standard": TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
+        - Average True Range: TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
           and ATR = Wilder's Smoothed Moving Average of TR over `window` periods
-        - "normalized": NATR = ATR(window) / Close, where the ATR uses Wilder's smoothing; 0.02 is
+        - Normalized Average True Range: NATR = ATR(window) / Close, where the ATR uses Wilder's smoothing; 0.02 is
           an average range of 2% of the close
-        - "day_range": ADR = SMA(High — Low, window)
+        - Average Day Range: ADR = SMA(High — Low, window)
 
         The ATR is in price units, which makes it the common basis for stop distances (for example
         two ATRs below the entry) and for sizing positions to equal risk. For the same reason it
@@ -825,15 +847,22 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - Referenced against TA-Lib's ATR (https://ta-lib.org/functions/atr.html).
         - Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True Range."
           Technical Analysis of Stocks & Commodities, 24(5).
-        - Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
-        - pandas-ta-classic: natr (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: natr (https://tulipindicators.org/natr).
         - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical
           Service, whose channel is the average day range around the typical price.
-        - Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
+
+        Referenced against:
+        - TA-Lib, ATR: https://ta-lib.org/functions/atr.html
+            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
+        - TA-Lib, NATR: https://ta-lib.org/functions/natr.html
+            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
+        - TA-Lib, ADR: https://ta-lib.org/functions/adr.html
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+
+        Shares similar logic:
+        - pandas-ta-classic, natr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/natr.py#L20
+        - Tulip Indicators, natr: https://tulipindicators.org/natr
 
         Also known as: ATR, volatility indicator, NATR, normalized average true range, ATR percent,
         ATRP, ADR, average day range, average daily range, average high-low range.
@@ -846,8 +875,10 @@ class VolatilityTechnicals:
         one period later).
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -864,17 +895,16 @@ class VolatilityTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "standard" for the ATR, "normalized" for the NATR (a decimal of
-                the close) or "day_range" for the Average Day Range. Defaults to "standard".
+            method (str, optional): Options are: "standard" (the ATR), "normalized" (the NATR, a decimal of the
+                close), "day_range" (the Average Day Range). Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: ATR values per ticker in price units, or their growth (if growth is True).
-                With method="normalized" the NATR as decimals and with method="day_range" the ADR in
-                price units.
+            pd.DataFrame: ATR values per ticker in price units, or their growth when growth is requested.
+                For the NATR the values are decimals and for the ADR price units.
 
         Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
@@ -882,10 +912,10 @@ class VolatilityTechnicals:
         - Because the True Range starts on the first period, the ATR starts one period before
           TA-Lib's ATR and differs from it until the two converge (within 0.01% after about 80
           periods with the default window).
-        - "normalized": the ATR is the one above (the StockCharts seeding), so the NATR starts one
+        - Normalized Average True Range: the ATR is the one above (the StockCharts seeding), so the NATR starts one
           period before TA-Lib's NATR and equals it, divided by 100, once the seeds have converged
           (within 1e-8 after about 150 periods with the default window).
-        - "day_range": equals TA-Lib's ADR.
+        - Average Day Range: equals TA-Lib's ADR.
 
         As an example:
 
@@ -964,7 +994,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Mass Index for a given price series.
+        Calculate the Mass Index: the sum of the ratios of an exponential moving average of the high-low range to
+        its own average, which signals a reversal when the range widens and then narrows.
 
         The Mass Index, developed by Donald Dorsey, looks for reversals in the width of the trading
         range rather than in price. It divides an EMA of the High — Low range by an EMA of that EMA,
@@ -986,13 +1017,17 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks & Commodities, 10(6), 265-267.
-        - Referenced against TA-Lib's MASSI (https://ta-lib.org/functions/massi.html).
+
+        Referenced against:
+        - TA-Lib, MASSI: https://ta-lib.org/functions/massi.html
 
         Also known as: Mass Index, MI. See `volatility_model.get_mass_index` for the references.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The close the high and low are taken on the basis of.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -1021,8 +1056,8 @@ class VolatilityTechnicals:
         - Both EMAs are seeded with the simple average of their first values, as in TA-Lib and on
           StockCharts, so the first Mass Index is on period 2 × (`ema_window` — 1) + `sum_window`,
           the 41st with the default windows. The Mass Index agrees with TA-Lib's MASSI.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1099,8 +1134,11 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Supertrend indicator for a given price series, of the price or of its moving
-        average (the Profit Maximizer).
+        Calculate the Supertrend or the Profit Maximizer: a trailing stop that shows the direction of the trend and
+        flips when it is crossed.
+
+        The stop is a multiple of the Average True Range away from the price, or for the Profit Maximizer from its
+        moving average.
 
         The Supertrend indicator plots a single trailing line that flips between sitting
         below price (in an uptrend) and above price (in a downtrend). The line is built from
@@ -1111,7 +1149,7 @@ class VolatilityTechnicals:
         Supertrend both a trend filter (the flip direction signals a trend change) and a
         trailing stop-loss level.
 
-        The Profit Maximizer (method="profit_maximizer") applies the Supertrend's trailing logic to
+        The Profit Maximizer applies the Supertrend's trailing logic to
         a moving average instead of the price: two stops a multiple of the Average True Range below
         and above an Exponential Moving Average of the median price, each of which only tightens
         while the average stays on its side. The trend turns down when the average falls below the
@@ -1143,15 +1181,21 @@ class VolatilityTechnicals:
 
         For more information, see the following sources:
 
-        - Referenced against TA-Lib's SUPERTREND (https://ta-lib.org/functions/supertrend.html).
+        Referenced against:
+        - TA-Lib, SUPERTREND: https://ta-lib.org/functions/supertrend.html
+
+        Shares similar logic:
+        - pandas-ta-classic, pmax (Profit Maximizer): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/pmax.py#L51
+
         - Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script.
-        - pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
 
         Also known as: Supertrend, SuperTrend, PMax, Profit Maximizer.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1170,8 +1214,8 @@ class VolatilityTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "standard" for the Supertrend or "profit_maximizer" for the
-                Profit Maximizer (PMax). Defaults to "standard".
+            method (str, optional): Options are: "standard" (the Supertrend), "profit_maximizer" (the Profit
+                Maximizer, PMax). Defaults to "standard".
             atr_window (int, optional): The number of periods of the Average True Range of the
                 Profit Maximizer. Only used when method="profit_maximizer". Defaults to 10, as
                 defined by Ozbilgic.
@@ -1183,7 +1227,7 @@ class VolatilityTechnicals:
         Returns:
             pd.Series or pd.DataFrame:
             Supertrend (the trailing indicator line) and Trend Direction (1 for an uptrend
-            and -1 for a downtrend) values, or with method="profit_maximizer" PMax (the active
+            and -1 for a downtrend) values, or for the Profit Maximizer PMax (the active
             stop, in price units) and Trend Direction.
 
         Notes:
@@ -1198,11 +1242,11 @@ class VolatilityTechnicals:
           Supertrend starts one period before TA-Lib's SUPERTREND and differs from it until the two
           converge (within 0.01% after about 40 periods with the defaults). The Trend Direction
           agrees with TA-Lib's `trend` from TA-Lib's first value.
-        - "profit_maximizer": this follows Ozbilgic's script (EMA of the median price, Wilder's ATR,
+        - Profit Maximizer: this follows Ozbilgic's script (EMA of the median price, Wilder's ATR,
           starting in an uptrend). pandas-ta-classic's pmax averages the close and turns the trend on
           the close instead of the average, so it differs by design.
-        - If `growth` is set to True, the method calculates the growth of the Supertrend and
-          Trend Direction values using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Supertrend and
+          Trend Direction values over the given lag.
 
         As an example:
 
@@ -1281,7 +1325,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chandelier Exit for a given price series.
+        Calculate the Chandelier Exit: a trailing stop a multiple of the Average True Range below the highest high
+        (or above the lowest low), which keeps a trade open while the trend lasts.
 
         The Chandelier Exit, developed by Chuck Le Beau, is a trailing stop set a multiple of the
         Average True Range away from the most extreme price of the last `window` periods: the long
@@ -1307,9 +1352,14 @@ class VolatilityTechnicals:
           Market." Business One Irwin.
         - Elder, A. (2002). "Come Into My Trading Room." John Wiley & Sons, which popularised the exit.
 
+        Shares similar logic:
+        - TA-Lib, CE: https://ta-lib.org/functions/ce.html
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1342,8 +1392,8 @@ class VolatilityTechnicals:
         - Because the ATR is seeded as on StockCharts, the first exits differ from those built on
           TA-Lib's ATR, which starts the True Range on the second period, until the two converge
           (within 0.01% after about 80 periods with the defaults).
-        - If `growth` is set to True, the method calculates the growth of the Long Exit and Short Exit
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Long Exit and Short Exit
+          over the given lag.
 
         As an example:
 
@@ -1420,7 +1470,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Keltner Channels for a given price series, or the Aberration bands.
+        Calculate the Keltner Channels or the Aberration bands: bands a multiple of the Average True Range above and
+        below an average of the price, which show breakouts and overbought and oversold levels.
 
         The Keltner Channels consist of three lines: a middle line, the Exponential Moving Average
         (EMA) of the closing prices, and an upper and a lower line a multiple of the Average True
@@ -1432,14 +1483,14 @@ class VolatilityTechnicals:
         - Upper Line = Middle Line + multiplier * ATR(atr_window)
         - Lower Line = Middle Line — multiplier * ATR(atr_window), where the ATR uses Wilder's smoothing.
 
-        With method="original" the channel is Keltner's own: a simple average of the typical price
+        Keltner's original channel is a simple average of the typical price
         with the average High — Low range on either side.
 
         - Middle Line = SMA((High + Low + Close) / 3, window)
         - Upper Line = Middle Line + multiplier * SMA(High — Low, window)
         - Lower Line = Middle Line — multiplier * SMA(High — Low, window)
 
-        With method="aberration" the channel is the Aberration bands, which place one Average True
+        The Aberration bands place one Average True
         Range above and below a short simple average of the typical price. They come from Keith
         Fitschen's Aberration breakout system, which buys a close above the upper band and sells a
         close below the lower band.
@@ -1451,19 +1502,24 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Keltner, C.W. (1960). "How to Make Money in Commodities." The Keltner Statistical Service.
-        - Referenced against TA-Lib's KC (https://ta-lib.org/functions/kc.html).
-        - ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
-          original_version=True is the original channel.
         - Fitschen, K. (2013). "Building Reliable Trading Systems." John Wiley & Sons, on the
           Aberration system (1993), to which the Aberration bands are attributed; no definitive
           source of the formula exists.
-        - pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, KC: https://ta-lib.org/functions/kc.html
+        - ta, KeltnerChannel: https://github.com/bukosabino/ta/blob/0.11.0/ta/volatility.py#L183
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+        - pandas-ta-classic, aberration (Aberration): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/aberration.py#L14
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: Keltner Channels, KC, ATR-based bands, volatility channels, ABER, Aberration, Aberration bands.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1477,9 +1533,9 @@ class VolatilityTechnicals:
             multiplier (float, optional): Multiplier for ATR (or, for the original channel, the
                 average range) to determine channel width. Defaults to 2; Keltner's original channel
                 uses 1. Not used by "aberration", whose bands sit one ATR away.
-            method (str, optional): "exponential" for the EMA of the close with ATR bands (StockCharts),
-                "original" for Keltner's simple average of the typical price with average range
-                bands or "aberration" for the Aberration bands. Defaults to "exponential".
+            method (str, optional): The channels. Options are: "exponential" (the EMA of the close with ATR
+                bands, as StockCharts), "original" (Keltner's simple average of the typical price with average
+                range bands), "aberration" (the Aberration bands). Defaults to "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the channels.
@@ -1496,7 +1552,7 @@ class VolatilityTechnicals:
 
         Returns:
             pd.Series or pd.DataFrame: Keltner Channels ("Upper Line", "Middle Line" and "Lower
-            Line"), or with method="aberration" the "Upper Band", "Middle Band" and "Lower Band", in
+            Line"), or for the Aberration bands the "Upper Band", "Middle Band" and "Lower Band", in
             price units.
 
         Notes:
@@ -1507,10 +1563,11 @@ class VolatilityTechnicals:
           channels differ throughout (by about 0.3% on daily data).
         - The original channel uses `window` for both averages (Keltner used 10 days with one
           average range, a multiplier of 1) and no ATR, so `atr_window` does not apply. With
-          a multiplier of 1 it agrees with ta's KeltnerChannel with original_version=True.
-        - "aberration": the ATR is that of `get_average_true_range`; pandas-ta-classic seeds its ATR
+          a multiplier of 1 it agrees with ta's KeltnerChannel in its original version.
+        - Aberration bands: the ATR is that of `get_average_true_range`; pandas-ta-classic seeds its ATR
           one period later and its bands equal these once the seeds have converged.
-        - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the channels over the given lag.
+        - ta's KeltnerChannel defaults to Keltner's original channel.
 
         As an example:
 
@@ -1600,7 +1657,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Donchian Channels for a given price series.
+        Calculate the Donchian Channels: the highest high and the lowest low of the previous periods, whose
+        breakouts signal the start of a trend.
 
         Donchian Channels plot the highest high and lowest low over the `window` periods
         *preceding* the current one, with the middle line being the average of the two. They
@@ -1621,13 +1679,18 @@ class VolatilityTechnicals:
         - Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial Analysts Journal, 16(6),
           133-142.
         - Kaufman, P.J. (2013). "Trading Systems and Methods." 5th ed. Wiley.
-        - Referenced against TA-Lib's DONCHIAN (https://ta-lib.org/functions/donchian.html).
+
+        Referenced against:
+        - TA-Lib, DONCHIAN: https://ta-lib.org/functions/donchian.html
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: Donchian Channels, price channel breakout.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the Donchian Channels.
@@ -1656,8 +1719,8 @@ class VolatilityTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates Donchian Channels
           for each asset in the Toolkit instance.
         - TA-Lib's DONCHIAN includes the current period, so each channel here agrees with TA-Lib's of the
-          previous period; with include_current=True it agrees with TA-Lib's DONCHIAN.
-        - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
+          previous period; including the current period, it agrees with TA-Lib's DONCHIAN.
+        - When growth is requested, the method calculates the growth of the channels over the given lag.
 
         As an example:
 
@@ -1728,7 +1791,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Retrieves the Volatility Cone for the specified period and assets.
+        Calculate the Volatility Cone for the specified period: the range of the historical annualised realised
+        volatility over several windows, which shows whether the current volatility is high or low for each window.
 
         The Volatility Cone summarizes the distribution of historical annualized realized
         volatility over a range of rolling windows, showing how the current realized
@@ -1774,8 +1838,10 @@ class VolatilityTechnicals:
         Args:
             windows (list[int] | None, optional): The rolling windows (in periods) to
                 calculate realized volatility for. Defaults to [10, 20, 30, 60, 90, 120].
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1884,7 +1950,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Chaikin's Volatility of a given price series.
+        Calculate Chaikin's Volatility: the percentage change of the average high-low range over a window, which
+        shows whether the range is widening or narrowing.
 
         Chaikin's Volatility is the rate of change of an Exponential Moving Average of the High —
         Low range: how much wider or narrower the average range is than `roc_window` periods ago.
@@ -1902,15 +1969,22 @@ class VolatilityTechnicals:
 
         - Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed. McGraw-Hill,
           "Chaikin's Volatility".
-        - Referenced against TA-Lib's CVI (https://ta-lib.org/functions/cvi.html).
-        - pandas-ta-classic: cvi (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: cvi (https://tulipindicators.org/cvi).
+
+        Referenced against:
+        - TA-Lib, CVI: https://ta-lib.org/functions/cvi.html
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+
+        Shares similar logic:
+        - pandas-ta-classic, cvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/cvi.py#L12
+        - Tulip Indicators, cvi: https://tulipindicators.org/cvi
 
         Also known as: CV, CVI, Chaikin Volatility Indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2014,7 +2088,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate Dorsey's Relative Volatility Index (RVI) of a given price series.
+        Calculate Dorsey's Relative Volatility Index (RVI): the standard deviation of the up periods against that of
+        the down periods, from 0 to 100, which shows the direction of volatility.
 
         The Relative Volatility Index is built like the Relative Strength Index, but measures the
         direction of volatility instead of the size of price changes: on a period that closes
@@ -2038,16 +2113,23 @@ class VolatilityTechnicals:
           Commodities, 11(6).
         - Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical Analysis of
           Stocks & Commodities, 13(9).
-        - Referenced against TA-Lib's RVI and RVIR (https://ta-lib.org/functions/rvi.html,
-          https://ta-lib.org/functions/rvir.html).
-        - pandas-ta-classic: rvi (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, RVI: https://ta-lib.org/functions/rvi.html
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+        - TA-Lib, RVIR: https://ta-lib.org/functions/rvir.html
+
+        Shares similar logic:
+        - pandas-ta-classic, rvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/rvi.py#L61
 
         Also known as: RVI, RVIR, Relative Volatility Index. Not to be confused with the Relative
         Vigor Index (`get_relative_vigor_index`).
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2055,9 +2137,8 @@ class VolatilityTechnicals:
                 as defined by Dorsey.
             std_window (int, optional): The number of periods of the standard deviation. Defaults
                 to 10, as defined by Dorsey.
-            method (str, optional): "original" for the RVI of the close (Dorsey, 1993) or "refined"
-                for the average of the RVI of the highs and the lows (Dorsey, 1995). Defaults to
-                "original".
+            method (str, optional): Options are: "original" (the RVI of the close; Dorsey, 1993), "refined" (the
+                average of the RVI of the highs and the lows; Dorsey, 1995). Defaults to "original".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the RVI.
@@ -2165,7 +2246,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Headley's Acceleration Bands of a given price series.
+        Calculate Headley's Acceleration Bands: bands around a moving average that widen with the range of the
+        candles, whose breakouts show an accelerating trend.
 
         Acceleration Bands place an envelope around a simple average of the close whose width
         follows the High — Low range of each period relative to its price. Headley used a close
@@ -2183,14 +2265,19 @@ class VolatilityTechnicals:
 
         - Headley, P. (2002). "Big Trends in Trading: Strategies to Master Major Market Moves."
           John Wiley & Sons.
-        - Referenced against TA-Lib's ACCBANDS (https://ta-lib.org/functions/accbands.html).
-        - pandas-ta-classic: accbands (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, ACCBANDS: https://ta-lib.org/functions/accbands.html
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+        - pandas-ta-classic, accbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/accbands.py#L17
 
         Also known as: ACCBANDS, Price Headley's Acceleration Bands.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2292,7 +2379,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chande Kroll Stop of a given price series.
+        Calculate the Chande Kroll Stop: a long and a short stop a multiple of the Average True Range from the
+        recent extremes, which shows where a trend would be broken.
 
         The Chande Kroll Stop is a pair of trailing stops a multiple of the Average True Range from
         the extreme price of the last `window` periods, smoothed a second time by taking the
@@ -2311,15 +2399,22 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." John Wiley & Sons.
-        - Referenced against TA-Lib's CKSP (https://ta-lib.org/functions/cksp.html).
-        - pandas-ta-classic: cksp (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, CKSP: https://ta-lib.org/functions/cksp.html
+            Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, cksp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cksp.py#L12
 
         Also known as: CKSP, Chande Kroll stop loss. Chande and Kroll call the high stop the "stop
         short" and the low stop the "stop long".
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2425,7 +2520,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Leibfarth's Adaptive Price Zone (APZ) of a given price series.
+        Calculate Leibfarth's Adaptive Price Zone (APZ): bands around a double-smoothed exponential moving average
+        that adapt to the range, which show turning points in a sideways market.
 
         The Adaptive Price Zone is a band around a fast, double-smoothed Exponential Moving Average
         of the close, with a width that is the same double-smoothed average of the High — Low
@@ -2446,13 +2542,17 @@ class VolatilityTechnicals:
 
         - Leibfarth, L. (2006). "Trading With An Adaptive Price Zone." Technical Analysis of
           Stocks & Commodities, 24(9).
-        - finta: TA.APZ (https://github.com/peerchemist/finta).
+
+        Shares similar logic:
+        - finta, APZ: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1907
 
         Also known as: APZ, Adaptive Price Zone.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2555,7 +2655,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Price Distance of a given price series.
+        Calculate the Price Distance: the distance the price travelled within each period, including the gap from
+        the previous close, a measure of how much the price moves.
 
         The Price Distance estimates how far the price travelled within a period: twice the High —
         Low range (down to the low and up to the high, or the reverse), less the open-to-close
@@ -2568,13 +2669,18 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - ProRealCode, "Price Distance" indicator.
-        - pandas-ta-classic: pdist (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, pdist: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/pdist.py#L17
+            Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
         Also known as: PDIST, price distance volatility.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2669,7 +2775,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Elder's Market Thermometer of a given price series.
+        Calculate Elder's Market Thermometer: how far each period's range pushes outside that of the previous
+        period, which shows how hot or quiet the market is.
 
         The Market Thermometer measures how far each period's range pushes outside the previous
         one: the larger of the rise of the high above the previous high and the fall of the low
@@ -2686,13 +2793,17 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - Elder, A. (2002). "Come Into My Trading Room." John Wiley & Sons.
-        - pandas-ta-classic: thermo (https://github.com/xgboosted/pandas-ta-classic).
+
+        Shares similar logic:
+        - pandas-ta-classic, thermo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/thermo.py#L18
 
         Also known as: THERMO, Elder's thermometer, market temperature.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2793,7 +2904,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Squeeze Momentum (TTM Squeeze) of a given price series.
+        Calculate the Squeeze Momentum (TTM Squeeze): whether the Bollinger Bands lie inside the Keltner Channels (a
+        squeeze of volatility) and the momentum that shows the direction of the breakout.
 
         The squeeze compares two volatility bands around the same simple average of the close:
         Bollinger Bands, which follow the standard deviation, and a Keltner Channel, which follows
@@ -2815,21 +2927,29 @@ class VolatilityTechnicals:
         With the default multipliers 2, 1.5 and 1 (the wide, normal and narrow channels of the TTM
         Squeeze Pro), the Squeeze is 0 without a squeeze and 1, 2 or 3 for a low, normal or high
         compression. Carter's original squeeze (a Keltner Channel of 1.5) is on from 2;
-        `keltner_multipliers=[1.5]` returns it as 1 (on) or 0 (off).
+        a single Keltner multiplier of 1.5 returns it as 1 (on) or 0 (off).
 
         For more information, see the following sources:
 
         - Carter, J.F. (2005). "Mastering the Trade." McGraw-Hill, chapter 11.
         - LazyBear (2014). "Squeeze Momentum Indicator." TradingView script.
-        - Referenced against TA-Lib's SQZMOM (https://ta-lib.org/functions/sqzmom.html).
-        - pandas-ta-classic: squeeze and squeeze_pro (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: TA.SQZMI (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, SQZMOM: https://ta-lib.org/functions/sqzmom.html
+            Test: tests/technical/test_volatility_model.py::test_squeeze_momentum_matches_talib
+        - pandas-ta-classic, squeeze: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze.py#L94
+
+        Shares similar logic:
+        - pandas-ta-classic, squeeze_pro: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze_pro.py#L17
+        - finta, SQZMI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1941
 
         Also known as: TTM Squeeze, Squeeze Pro, SQZ, SQZMOM, squeeze momentum indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2859,7 +2979,7 @@ class VolatilityTechnicals:
                 Channels the Bollinger Bands lie inside).
 
         Notes:
-        - The Momentum agrees with TA-Lib's SQZMOM and pandas-ta-classic's `squeeze(lazybear=True)`.
+        - The Momentum agrees with TA-Lib's SQZMOM and pandas-ta-classic's `squeeze` in LazyBear's form.
           The Squeeze agrees with TA-Lib's squeeze output, with 0 instead of -1 for no squeeze. It starts
           on the `window`-th period, while TA-Lib reports it from the first Momentum on.
         - The Keltner Channel here is LazyBear's (a simple average of the close and of the True
@@ -2943,9 +3063,10 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Standard Deviation Channel of a price series: one least-squares line
-        through all prices of the Toolkit's date range (or the last `window` of them), with
-        bands at a number of standard deviations of the prices above and below it.
+        Calculate the Standard Deviation Channel: a least-squares line through the prices with bands a number of
+        standard deviations above and below it.
+
+        The line runs through all prices of the Toolkit's date range, or the last `window` of them.
 
         The channel shows the trend of the whole period and how far the prices stray from it: a
         price near an outer band lies far from the trend of the period. It is the thinkorswim
@@ -2963,14 +3084,18 @@ class VolatilityTechnicals:
         For more information, see the following sources:
 
         - thinkorswim (TD Ameritrade). thinkScript studies StDevAll and InertiaAll.
-        - Referenced against pandas-ta-classic's tos_stdevall
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, tos_stdevall: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/tos_stdevall.py#L15
+            Test: tests/technical/test_volatility_model.py::test_standard_deviation_channel_matches_pandas_ta_classic
 
         Also known as: standard deviation channel, StDevAll, linear regression channel, regression bands.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int | None, optional): The number of latest periods the line is fitted over,
@@ -3002,8 +3127,8 @@ class VolatilityTechnicals:
         - The line is fitted over the whole period at once, so every value depends on the later prices of the
           period and the channel is redrawn when the date range changes. It describes a period and is not a
           signal that was known at the time, which is why `collect_volatility_indicators` leaves it out.
-        - If `growth` is set to True, the method calculates the growth of the Standard Deviation Channel
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Standard Deviation Channel
+          over the given lag.
 
         As an example:
 
@@ -3079,7 +3204,8 @@ class VolatilityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Signal-to-Noise Ratio (SNR) for a given price series.
+        Calculate the Signal-to-Noise Ratio (SNR): the net move of the close over a window divided by the Average
+        True Range, which shows how cleanly the price trends.
 
         The Signal-to-Noise Ratio divides the net move of the close over the window (the signal)
         by the Average True Range over the same window (the noise). A ratio of 5 means the price
@@ -3101,13 +3227,17 @@ class VolatilityTechnicals:
 
         - Skeggs, J. and Hill, A. (2015). "Back in Black Part 2: The Opportunity Set for Trend
           Following." Man AHL.
-        - Referenced against TTR's SNR (https://cran.r-project.org/package=TTR), by Peter Carl.
+
+        Referenced against:
+        - TTR (R), SNR: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/SNR.R#L47
 
         Also known as: SNR, signal to noise ratio, trend strength ratio.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way.
@@ -3139,8 +3269,8 @@ class VolatilityTechnicals:
           SNR once the seeds of the averages have converged (within 0.01% after about 100
           periods with the default window).
         - A window without any range (an ATR of 0) has no ratio.
-        - If `growth` is set to True, the method calculates the growth of the Signal-to-Noise
-          Ratio using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Signal-to-Noise
+          Ratio over the given lag.
 
         As an example:
 

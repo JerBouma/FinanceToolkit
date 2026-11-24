@@ -24,7 +24,8 @@ MINIMUM_TEST_OBSERVATIONS = 10
 
 def default_max_lag(observations: int) -> int:
     """
-    The largest lag the automatic lag search of a unit root or cointegration test may try.
+    Calculate the largest lag the automatic lag search of a unit root or cointegration test
+    may try.
 
     statsmodels' default, 12 * (n / 100) ** (1 / 4) (Schwert, 1989), leaves a short sample
     with more lagged differences than it can estimate: 16 quarterly observations allow 8
@@ -55,8 +56,9 @@ def get_adf_regression(
 ) -> tuple[float, int, int, float] | None:
     """
     Calculate the statistic of the Augmented Dickey-Fuller test with the lag chosen by the
-    Akaike Information Criterion, as `statsmodels.tsa.stattools.adfuller` with
-    autolag="AIC" does, from one QR decomposition for the whole lag search.
+    Akaike Information Criterion, from one QR decomposition for the whole lag search.
+
+    It gives the lag and statistic of statsmodels' adfuller with its AIC lag search.
 
     statsmodels fits a regression for every candidate lag 0 to `max_lag` on the common
     sample (the observations left after the largest lag), each through a pseudo-inverse.
@@ -74,11 +76,15 @@ def get_adf_regression(
     sample, with the lagged level as the last column, where its t-statistic is
     z_last x sign(R_last) / sigma, with sigma^2 = RSS / (n - p).
 
+    Referenced against:
+    - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
+        Test: tests/econometrics/test_unitroot_model.py::test_get_adf_regression_matches_statsmodels_adfuller
+
     Args:
         values (np.ndarray): The series, without missing values.
         max_lag (int): The largest lag the search tries.
-        regression (str, optional): The deterministic terms, "n" (none), "c" (constant) or
-            "ct" (constant and trend). Defaults to "c".
+        regression (str, optional): The deterministic terms. Options are: "n" (none), "c"
+            (constant), "ct" (constant and trend). Defaults to "c".
 
     Returns:
         tuple[float, int, int, float] | None: The ADF statistic, the lag used, the number of
@@ -154,10 +160,12 @@ def get_augmented_dickey_fuller(
     series: pd.Series, max_lag: int | None = None, regression: str = "c"
 ) -> pd.Series:
     """
-    Calculate the Augmented Dickey-Fuller (ADF) test for a unit root, as
-    `statsmodels.tsa.stattools.adfuller` does, with the lag search of `get_adf_regression`
-    (the same lag and statistic from one decomposition) and statsmodels' MacKinnon p-values
-    and critical values.
+    Calculate the Augmented Dickey-Fuller (ADF) test: whether a series has a unit root, so
+    that it wanders like a random walk, or is stationary and reverts to its mean.
+
+    The test gives the results of statsmodels' adfuller, with the lag search of
+    `get_adf_regression` (the same lag and statistic from one decomposition) and statsmodels'
+    MacKinnon p-values and critical values.
 
     The test regresses the first difference of the series on its own lagged level and
     `p` lags of its own first difference:
@@ -182,13 +190,17 @@ def get_augmented_dickey_fuller(
 
     Also known as: ADF test, unit root test, stationarity test.
 
+    Referenced against:
+    - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
+        Test: tests/econometrics/test_reference_validation.py::test_augmented_dickey_fuller_and_kpss
+
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
         max_lag (int, optional): The maximum number of lagged differences to consider. Defaults to the
         Schwert (1989) rule of thumb, ceil(12 * (n / 100) ** 0.25), capped at (n - 5) // 3 so that
         short samples keep enough degrees of freedom.
-        regression (str, optional): Which deterministic terms to include, one of "n" (none), "c"
-        (constant) or "ct" (constant and trend). Defaults to "c".
+        regression (str, optional): Which deterministic terms to include. Options are: "n"
+        (none), "c" (constant), "ct" (constant and trend). Defaults to "c".
 
     Returns:
         pd.Series: The ADF statistic, its p-value, the number of lags used, the number of
@@ -273,13 +285,13 @@ def get_kpss_test(
     series: pd.Series, regression: str = "c", lags: int | None = None
 ) -> pd.Series:
     """
-    Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test for stationarity, via
-    `statsmodels.tsa.stattools.kpss`.
+    Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test: whether a series is
+    stationary, around a constant or a trend, rather than having a unit root.
 
-    KPSS is the natural complement to the Augmented Dickey-Fuller test: where the ADF
+    The test runs statsmodels' kpss. KPSS is the natural complement to the Augmented Dickey-Fuller test: where the ADF
     null hypothesis is that the series HAS a unit root, the KPSS null hypothesis is
     that the series IS stationary (around a constant, or around a deterministic trend
-    if `regression="ct"`), with a unit root as the alternative. Running both tests
+    in the trend version), with a unit root as the alternative. Running both tests
     together is standard practice to triangulate a confident conclusion:
 
     - ADF rejects a unit root AND KPSS fails to reject stationarity -> confident the
@@ -309,8 +321,8 @@ def get_kpss_test(
 
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
-        regression (str, optional): Which deterministic term to remove before testing, one of
-        "c" (constant, tests level-stationarity around a mean) or "ct" (constant and trend,
+        regression (str, optional): Which deterministic term to remove before testing. Options
+        are: "c" (constant, tests level-stationarity around a mean), "ct" (constant and trend,
         tests trend-stationarity). Defaults to "c".
         lags (int, optional): The truncation lag for the long-run variance estimate. Defaults
         to `statsmodels`' automatic (Hobijn, Franses & Ooms, 2004) bandwidth selection.
@@ -378,7 +390,8 @@ def get_phillips_perron_test(
     series: pd.Series, regression: str = "c", lags: int | None = None
 ) -> pd.Series:
     """
-    Calculate the Phillips-Perron (PP) test for a unit root.
+    Calculate the Phillips-Perron (PP) test: whether a series has a unit root, with a
+    nonparametric correction for autocorrelated and heteroskedastic errors.
 
     Phillips-Perron tests the same null hypothesis as the Augmented Dickey-Fuller
     test (a unit root, i.e. non-stationarity), but corrects for heteroskedasticity
@@ -389,11 +402,7 @@ def get_phillips_perron_test(
     correction methods, and disagreement can flag that the ADF lag choice or the PP
     truncation lag is sensitive to the specific series at hand.
 
-    Neither `statsmodels` nor `linearmodels` ships a Phillips-Perron implementation
-    (the `arch` package does, but that is a separate, unrelated optional dependency
-    this codebase does not otherwise use) -- this is the one test in this module that
-    is built here, with the Dickey-Fuller auxiliary regression fit by
-    `least_squares_model.fit_least_squares`.
+    The Dickey-Fuller auxiliary regression is fit by `least_squares_model.fit_least_squares`.
 
     The test runs the simple (non-augmented) Dickey-Fuller regression:
 
@@ -418,12 +427,9 @@ def get_phillips_perron_test(
     critical values for `n` observations of MacKinnon (2010) and the approximate p-value
     of MacKinnon (1994), via `statsmodels.tsa.adfvalues.mackinnoncrit` and `mackinnonp`.
 
-    This implementation was cross-checked (matching to 5+ decimal places) against the
-    independent `arch.unitroot.PhillipsPerron` reference implementation (with the same
-    truncation lag) for both `regression="c"` and `regression="ct"`. Only "c" and "ct"
-    are supported -- a "n" (no constant) specification does not match the same reference
-    to reasonable precision, so it is deliberately left unimplemented rather than offered
-    unverified.
+    The test is available with a constant and with a constant and trend; the version without
+    a constant does not match the reference (arch) to reasonable precision, so it is left out
+    rather than offered unverified.
 
     For more information about the method, see the following paper:
 
@@ -436,11 +442,15 @@ def get_phillips_perron_test(
 
     Also known as: PP test, Z_t test.
 
+    Referenced against:
+    - arch, PhillipsPerron: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.PhillipsPerron.html
+        Test: tests/econometrics/test_reference_validation.py::test_phillips_perron_matches_arch
+
     Args:
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
-        regression (str, optional): Which deterministic term to include, one of "c" (constant)
-        or "ct" (constant and trend). Defaults to "c". "n" (no constant) is not supported, see
-        above.
+        regression (str, optional): Which deterministic term to include. Options are: "c"
+        (constant), "ct" (constant and trend). Defaults to "c". "n" (no constant) is not
+        supported, see above.
         lags (int, optional): The truncation lag for the Newey-West long-run variance estimate.
         Defaults to None, meaning the Schwert (1989) rule ceil(12 * (n / 100) ** 0.25) with `n`
         the length of the series, capped for short samples exactly as the ADF lag search is
@@ -539,11 +549,10 @@ def get_zivot_andrews_test(
     trim: float = 0.15,
 ) -> pd.Series:
     """
-    Calculate the Zivot-Andrews test for a unit root, allowing for a single
-    structural break at an unknown (endogenously estimated) date, via
-    `statsmodels.tsa.stattools.zivot_andrews`.
+    Calculate the Zivot-Andrews test: whether a series has a unit root, allowing for a single
+    structural break at an unknown (endogenously estimated) date.
 
-    The (A)DF test above assumes the deterministic component of the series (its
+    The test runs statsmodels' zivot_andrews. The (A)DF test above assumes the deterministic component of the series (its
     constant and/or trend) is stable throughout the sample. If a series instead has
     a single one-time break -- e.g. a permanent level shift or a change in trend
     slope -- the ordinary ADF test is biased towards not rejecting the unit root
@@ -569,8 +578,8 @@ def get_zivot_andrews_test(
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
         max_lag (int, optional): The maximum number of lagged differences to consider. Defaults
         to the Schwert (1989) rule of thumb, capped at (n - 5) // 3 for short samples.
-        regression (str, optional): Which break to allow for, one of "c" (a break in the level/
-        intercept), "t" (a break in the trend slope) or "ct" (both). Defaults to "c".
+        regression (str, optional): Which break to allow for. Options are: "c" (a break in the
+        level/intercept), "t" (a break in the trend slope), "ct" (both). Defaults to "c".
         trim (float, optional): The fraction of observations excluded from the candidate break
         date search at the start and end of the sample, since a break too close to either end
         cannot be reliably distinguished from a unit root. Must be in [0, 1/3). Defaults to 0.15.

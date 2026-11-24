@@ -18,9 +18,11 @@ MINIMUM_PERIODS = 2
 
 def fama_macbeth_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Risk Premium, Standard Error, t-Statistic, P-Value)
-    from a `get_fama_macbeth_regression` result dict, indexed by factor name (plus
-    "Intercept" if present).
+    Build the risk premium table of a Fama-MacBeth regression: the Risk Premium, Standard
+    Error, t-Statistic and P-Value of every factor.
+
+    The table takes a `get_fama_macbeth_regression` result dict and is indexed by factor
+    name (plus "Intercept" if present).
 
     Args:
         result (dict): A fitted Fama-MacBeth result dict, as returned by
@@ -45,10 +47,8 @@ def get_fama_macbeth_regression(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit a Fama-MacBeth (1973) two-pass cross-sectional regression of `returns` on
-    `factors` -- the standard procedure for estimating factor risk premia and testing
-    whether a proposed risk factor is actually priced in the cross-section of asset
-    returns.
+    Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: the risk premium of every
+    factor, and whether it is priced in the cross-section of asset returns.
 
     Also known as: two-pass regression, Fama-MacBeth procedure.
 
@@ -80,6 +80,9 @@ def get_fama_macbeth_regression(
     - Fama, E.F. & MacBeth, J.D. (1973). "Risk, Return, and Equilibrium: Empirical
       Tests." Journal of Political Economy, 81(3), 607-636.
     - Cochrane, J.H. (2005). "Asset Pricing." Princeton University Press, Chapter 12.
+
+    Shares similar logic:
+    - linearmodels, FamaMacBeth: https://bashtage.github.io/linearmodels/panel/panel/linearmodels.panel.model.FamaMacBeth.html
 
     Args:
         returns (pd.DataFrame): One column per asset, one row per period -- the
@@ -118,6 +121,8 @@ def get_fama_macbeth_regression(
       before each cross-sectional regression. The fixed-beta version is standard
       practice and materially simpler, at the cost of not letting betas drift over
       time within the sample.
+    - Unlike linearmodels' FamaMacBeth, which runs the cross-sectional regressions on given
+      regressors, the first pass here estimates the betas from the returns.
     - Verified by simulating a synthetic single-factor model with a known risk
       premium and confirming the estimated `risk_premia` recovers it closely, and by
       confirming a zero-premium (pure noise) factor's estimated risk premium is not

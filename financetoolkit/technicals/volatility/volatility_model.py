@@ -25,7 +25,8 @@ def get_true_range(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
 ) -> pd.Series:
     """
-    Calculate the True Range (TR) of a given price series.
+    Calculate the True Range (TR): the range of a period including any gap from the previous close, the basic
+    measure of how far the price moved.
 
     The True Range is the greatest of three measures of a single period's price movement,
     designed to capture gaps between periods (e.g. an overnight gap) that a plain
@@ -42,7 +43,8 @@ def get_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's TRANGE (https://ta-lib.org/functions/trange.html).
+    Referenced against:
+    - TA-Lib, TRANGE: https://ta-lib.org/functions/trange.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -68,7 +70,8 @@ def get_wilder_moving_average(
     values: pd.Series | pd.DataFrame, window: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Wilder's Smoothed Moving Average of a given series.
+    Calculate Wilder's Smoothed Moving Average: an exponential moving average with a smoothing factor of one over
+    the window, which smooths slowly and is used in Wilder's indicators.
 
     Wilder's smoothing is the specific recursive smoothing method J. Welles Wilder Jr. used
     for every one of his original indicators (the Relative Strength Index, the Average True
@@ -92,6 +95,9 @@ def get_wilder_moving_average(
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    Shares similar logic:
+    - TA-Lib, RMA: https://ta-lib.org/functions/rma.html
 
     Args:
         values (pd.Series | pd.DataFrame): Series (or DataFrame with one column per ticker)
@@ -171,7 +177,8 @@ def get_average_true_range(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Average True Range (ATR) of a given price series.
+    Calculate the Average True Range (ATR): the average range of the periods, gaps included, a measure of how much
+    the price moves.
 
     The Average True Range measures volatility by smoothing the True Range (a single
     period's price movement that also accounts for gaps between periods) with Wilder's
@@ -187,7 +194,9 @@ def get_average_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's ATR (https://ta-lib.org/functions/atr.html).
+    Referenced against:
+    - TA-Lib, ATR: https://ta-lib.org/functions/atr.html
+        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
 
     Notes:
         - This follows the StockCharts convention: the first period, which has no previous
@@ -217,7 +226,8 @@ def get_mass_index(
     prices_high: pd.Series, prices_low: pd.Series, ema_window: int, sum_window: int
 ) -> pd.Series:
     """
-    Calculate the Mass Index of a given price series.
+    Calculate the Mass Index: the sum of the ratios of an exponential moving average of the high-low range to its
+    own average, which signals a reversal when the range widens and then narrows.
 
     The Mass Index looks for reversals in the width of the trading range rather than in
     price. It divides an EMA of the High - Low range by an EMA of that EMA, which is above
@@ -240,7 +250,8 @@ def get_mass_index(
     Reference: Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks &
     Commodities, 10(6). The calculation follows StockCharts ChartSchool, "Mass Index".
 
-    Referenced against TA-Lib's MASSI (https://ta-lib.org/functions/massi.html).
+    Referenced against:
+    - TA-Lib, MASSI: https://ta-lib.org/functions/massi.html
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
@@ -277,7 +288,8 @@ def get_supertrend(
     multiplier: float = 3.0,
 ) -> pd.DataFrame:
     """
-    Calculate the Supertrend indicator for a given price series.
+    Calculate the Supertrend: a trailing stop a multiple of the Average True Range away from the median price, which
+    shows the direction of the trend and flips when the price crosses it.
 
     The Supertrend indicator plots a single trailing line that flips between sitting below
     price (in an uptrend) and above price (in a downtrend). The line is built from two bands
@@ -300,6 +312,9 @@ def get_supertrend(
       versa)
 
     Also known as: Supertrend, SuperTrend.
+
+    Referenced against:
+    - TA-Lib, SUPERTREND: https://ta-lib.org/functions/supertrend.html
 
     Notes:
         - There is no academic journal citation for Supertrend. Like the Parabolic SAR, it is
@@ -437,7 +452,8 @@ def get_chandelier_exit(
     multiplier: float,
 ) -> pd.DataFrame:
     """
-    Calculate the Chandelier Exit of a given price series.
+    Calculate the Chandelier Exit: a trailing stop a multiple of the Average True Range below the highest high (or
+    above the lowest low), which keeps a trade open while the trend lasts.
 
     The Chandelier Exit is a trailing stop set a multiple of the Average True Range away
     from the most extreme price of the last `window` periods, so the stop "hangs" from the
@@ -459,6 +475,9 @@ def get_chandelier_exit(
     Analysis of the Futures Market." Business One Irwin; popularized in Elder, A. (2002).
     "Come Into My Trading Room." John Wiley & Sons. The calculation follows StockCharts
     ChartSchool, "Chandelier Exit".
+
+    Shares similar logic:
+    - TA-Lib, CE: https://ta-lib.org/functions/ce.html
 
     Notes:
         - The ATR is `get_average_true_range`: Wilder's smoothing of the True Range, the
@@ -504,7 +523,8 @@ def get_keltner_channels(
     method: str = "exponential",
 ) -> pd.DataFrame:
     """
-    Calculate the Keltner Channels for a given price series.
+    Calculate the Keltner Channels: bands a multiple of the Average True Range above and below an exponential moving
+    average, which show breakouts and overbought and oversold levels.
 
     Keltner Channels plot a volatility-based envelope around an Exponential Moving Average of
     price, with the envelope width set by a multiple of the Average True Range rather than a
@@ -518,7 +538,7 @@ def get_keltner_channels(
     - Upper Line = Middle Line + multiplier * ATR(atr_window)
     - Lower Line = Middle Line - multiplier * ATR(atr_window)
 
-    With `method="original"`, the channel is Keltner's own, centred on a simple average of
+    Keltner's original channel is centred on a simple average of
     the typical price with the average daily range as its width:
 
     - Typical Price = (High + Low + Close) / 3
@@ -535,11 +555,10 @@ def get_keltner_channels(
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
     envelope, the default here) was popularized by Linda Bradford Raschke in the 1980s.
 
-    Referenced against TA-Lib's KC (https://ta-lib.org/functions/kc.html), which
-    centres the channel on an EMA of the typical price instead of the close.
-
-    ta: volatility.KeltnerChannel (https://github.com/bukosabino/ta), whose default
-    `original_version=True` is the original channel.
+    Referenced against:
+    - TA-Lib, KC: https://ta-lib.org/functions/kc.html
+    - ta, KeltnerChannel: https://github.com/bukosabino/ta/blob/0.11.0/ta/volatility.py#L183
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
@@ -547,8 +566,10 @@ def get_keltner_channels(
         - The EMA is seeded with the Simple Moving Average of the first `window` closes (see
           `overlap_model.get_exponential_moving_average`), so the channel starts on period
           `window` - 1 or `atr_window` - 1, whichever is later.
-        - The original channel agrees with ta's `KeltnerChannel(window, original_version=True)`
-          with a `multiplier` of 1; it starts on period `window` - 1.
+        - The original channel agrees with ta's `KeltnerChannel` in its original version with the same
+          window and a `multiplier` of 1; it starts on period `window` - 1.
+        - TA-Lib's KC centres the channel on an exponential moving average of the typical price instead of the
+          close.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -558,9 +579,9 @@ def get_keltner_channels(
         atr_window (int): Number of periods for ATR calculation.
         multiplier (float): Multiplier for ATR (or, for the original channel, the
             average range) to determine channel width.
-        method (str): "exponential" for the EMA of the close with ATR bands, or "original"
-            for Keltner's simple average of the typical price with average range bands.
-            Defaults to "exponential".
+        method (str): The channels. Options are: "exponential" (the EMA of the close with ATR bands),
+            "original" (Keltner's simple average of the typical price with average range bands). Defaults to
+            "exponential".
 
     Returns:
         pd.DataFrame: Keltner Channels (upper, middle, lower).
@@ -594,7 +615,8 @@ def get_donchian_channels(
     include_current: bool = False,
 ) -> pd.DataFrame:
     """
-    Calculate the Donchian Channels of a given price series.
+    Calculate the Donchian Channels: the highest high and the lowest low of the previous periods, whose breakouts
+    signal the start of a trend.
 
     Donchian Channels plot the highest high and lowest low over the `window` periods
     *preceding* the current one, with the middle line being the average of the two. They
@@ -614,8 +636,9 @@ def get_donchian_channels(
     Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
-    Referenced against TA-Lib's DONCHIAN (https://ta-lib.org/functions/donchian.html),
-    which includes the current period.
+    Referenced against:
+    - TA-Lib, DONCHIAN: https://ta-lib.org/functions/donchian.html
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The current period is deliberately excluded from the lookback. StockCharts states
@@ -626,10 +649,11 @@ def get_donchian_channels(
           silently disables the indicator's primary use as a breakout signal.
         - Because the channel is built entirely from prior periods, it uses no information
           from the current bar and is safe to compare the current bar's price against.
-        - With `include_current=True` the window ends on the current period, which equals
+        - Including the current period, the window ends on the current period, which equals
           TA-Lib's DONCHIAN, pandas-ta-classic's donchian and ta's DonchianChannel (the
           channel then traces the extremes, as used for the squeeze momentum and the
           Ichimoku lines, rather than a breakout level).
+        - TA-Lib's DONCHIAN includes the current period.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -664,7 +688,8 @@ def get_volatility_cone(
     periods_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> pd.DataFrame:
     """
-    Calculate the Volatility Cone of a given price series.
+    Calculate the Volatility Cone: the range of the historical annualised realised volatility over several windows,
+    which shows whether the current volatility is high or low for each window.
 
     The Volatility Cone summarizes the distribution of historical annualized realized
     volatility over a range of rolling windows, showing how the current realized
@@ -737,7 +762,8 @@ def get_bollinger_bands(
     moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
-    Calculate the Bollinger Bands of a given price series.
+    Calculate the Bollinger Bands: a moving average with bands a number of standard deviations above and below it,
+    which show how high or low the price is relative to its recent volatility.
 
     Bollinger Bands plot an envelope around a Simple Moving Average of price, with the
     envelope width set to a multiple of the rolling standard deviation of price over the
@@ -756,7 +782,11 @@ def get_bollinger_bands(
 
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
-    Referenced against TA-Lib's BBANDS (https://ta-lib.org/functions/bbands.html).
+    Referenced against:
+    - TA-Lib, BBANDS: https://ta-lib.org/functions/bbands.html
+
+    Shares similar logic:
+    - pandas-ta-classic, bbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/bbands.py#L48
 
     Notes:
         - The rolling standard deviation uses the *population* convention (dividing by n,
@@ -774,8 +804,14 @@ def get_bollinger_bands(
         prices (pd.Series): Series of prices.
         window (int): Number of periods for the moving average.
         num_std_dev (float): Number of standard deviations for the bands.
-        moving_average (str): The moving average of the middle band, one of
-            `MOVING_AVERAGES` (the window-only methods of `get_moving_average`). Defaults to "simple".
+        moving_average (str): The moving average of the middle band, one of `MOVING_AVERAGES` (the window-only
+            methods of `get_moving_average`). Options are: "simple" (Simple Moving Average),
+            "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential Moving
+            Average), "triple_exponential" (Triple Exponential Moving Average), "zero_lag" (Zero Lag Exponential
+            Moving Average), "wilder" (Wilder's Moving Average), "triangular" (Triangular Moving Average),
+            "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "sine" (Sine Weighted Moving
+            Average), "fibonacci" (Fibonacci Weighted Moving Average), "pascal" (Pascal Weighted Moving
+            Average). Defaults to "simple".
 
     Returns:
         pd.DataFrame: Bollinger Bands (upper, middle, lower).
@@ -802,7 +838,8 @@ def get_bollinger_percent_b_and_bandwidth(
     prices: pd.Series, window: int, num_std_dev: float
 ) -> pd.DataFrame:
     """
-    Calculate the Bollinger %B and BandWidth of a given price series.
+    Calculate the Bollinger %B and BandWidth: where the close lies within the Bollinger Bands and how wide the bands
+    are, which show overbought and oversold levels and squeezes of volatility.
 
     Bollinger derived two indicators from his bands. %B places the close within the bands:
     0 is on the lower band, 0.5 on the middle band and 1 on the upper band, with values
@@ -824,8 +861,10 @@ def get_bollinger_percent_b_and_bandwidth(
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill, chapters
     7 (%b) and 8 (BandWidth).
 
-    Referenced against TA-Lib's PERCENTB and BBW
-    (https://ta-lib.org/functions/percentb.html, https://ta-lib.org/functions/bbw.html).
+    Referenced against:
+    - TA-Lib, PERCENTB: https://ta-lib.org/functions/percentb.html
+        Test: tests/technical/test_volatility_model.py::test_bollinger_percent_b_and_bandwidth_match_talib
+    - TA-Lib, BBW: https://ta-lib.org/functions/bbw.html
 
     Notes:
         - The bands are those of `get_bollinger_bands`: a Simple Moving Average with the
@@ -856,7 +895,8 @@ def get_normalized_average_true_range(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Normalized Average True Range (NATR) of a given price series.
+    Calculate the Normalized Average True Range (NATR): the Average True Range as a share of the close, which
+    compares volatility across tickers of different prices.
 
     The Average True Range is in price units, so it does not compare across securities with
     different prices or over long periods in which the price changed a lot. Dividing it by
@@ -875,7 +915,13 @@ def get_normalized_average_true_range(
     Reference: Forman, J. (2006). "Cross-Market Evaluations With Normalized Average True
     Range." Technical Analysis of Stocks & Commodities, 24(5).
 
-    Referenced against TA-Lib's NATR (https://ta-lib.org/functions/natr.html).
+    Referenced against:
+    - TA-Lib, NATR: https://ta-lib.org/functions/natr.html
+        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, natr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/natr.py#L20
+    - Tulip Indicators, natr: https://tulipindicators.org/natr
 
     Notes:
         - The ATR is `get_average_true_range` (the StockCharts seeding), so the NATR starts
@@ -902,7 +948,8 @@ def get_average_day_range(
     prices_high: pd.Series, prices_low: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Average Day Range (ADR) of a given price series.
+    Calculate the Average Day Range (ADR): the average high-low range over a window, how much the price usually
+    moves within a period.
 
     The Average Day Range is the simple average of the High - Low range over `window`
     periods. Unlike the Average True Range it ignores gaps between periods, so it measures
@@ -918,7 +965,9 @@ def get_average_day_range(
     average range is the width of Keltner's original channel (Keltner, C.W. (1960). "How
     to Make Money in Commodities." The Keltner Statistical Service).
 
-    Referenced against TA-Lib's ADR (https://ta-lib.org/functions/adr.html).
+    Referenced against:
+    - TA-Lib, ADR: https://ta-lib.org/functions/adr.html
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - Equals TA-Lib's ADR.
@@ -938,7 +987,8 @@ def get_chaikin_volatility(
     prices_high: pd.Series, prices_low: pd.Series, window: int, roc_window: int
 ) -> pd.Series:
     """
-    Calculate Chaikin's Volatility of a given price series.
+    Calculate Chaikin's Volatility: the percentage change of the average high-low range over a window, which shows
+    whether the range is widening or narrowing.
 
     Chaikin's Volatility measures how fast the trading range widens or narrows: it is the
     rate of change of an Exponential Moving Average of the High - Low range. Chaikin read a
@@ -958,7 +1008,13 @@ def get_chaikin_volatility(
     Reference: Chaikin, M.; described in Achelis, S.B. (2000). "Technical Analysis from A
     to Z." 2nd ed. McGraw-Hill.
 
-    Referenced against TA-Lib's CVI (https://ta-lib.org/functions/cvi.html).
+    Referenced against:
+    - TA-Lib, CVI: https://ta-lib.org/functions/cvi.html
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+
+    Shares similar logic:
+    - pandas-ta-classic, cvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/cvi.py#L12
+    - Tulip Indicators, cvi: https://tulipindicators.org/cvi
 
     Notes:
         - The EMA is seeded with the Simple Moving Average of its first `window` ranges, as
@@ -984,7 +1040,8 @@ def get_relative_volatility_index(
     prices: pd.Series, window: int, std_window: int
 ) -> pd.Series:
     """
-    Calculate Dorsey's Relative Volatility Index (RVI) of a given price series.
+    Calculate Dorsey's Relative Volatility Index (RVI): the standard deviation of the up periods against that of the
+    down periods, from 0 to 100, which shows the direction of volatility.
 
     The Relative Volatility Index is built like the Relative Strength Index, but measures
     the direction of volatility instead of price changes: on a period that closes higher,
@@ -1010,8 +1067,13 @@ def get_relative_volatility_index(
     Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical Analysis of
     Stocks & Commodities, 13(9).
 
-    Referenced against TA-Lib's RVI and RVIR (https://ta-lib.org/functions/rvi.html,
-    https://ta-lib.org/functions/rvir.html).
+    Referenced against:
+    - TA-Lib, RVI: https://ta-lib.org/functions/rvi.html
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+    - TA-Lib, RVIR: https://ta-lib.org/functions/rvir.html
+
+    Shares similar logic:
+    - pandas-ta-classic, rvi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/rvi.py#L61
 
     Notes:
         - Equals TA-Lib's RVI on the close and, averaged over the highs and lows, TA-Lib's
@@ -1052,7 +1114,8 @@ def get_acceleration_bands(
     multiplier: float,
 ) -> pd.DataFrame:
     """
-    Calculate Headley's Acceleration Bands of a given price series.
+    Calculate Headley's Acceleration Bands: bands around a moving average that widen with the range of the candles,
+    whose breakouts show an accelerating trend.
 
     Acceleration Bands place an envelope around a simple average of the close whose width
     grows with the relative High - Low range of each period. Headley used a close outside
@@ -1071,7 +1134,10 @@ def get_acceleration_bands(
     Reference: Headley, P. (2002). "Big Trends in Trading: Strategies to Master Major Market
     Moves." John Wiley & Sons.
 
-    Referenced against TA-Lib's ACCBANDS (https://ta-lib.org/functions/accbands.html).
+    Referenced against:
+    - TA-Lib, ACCBANDS: https://ta-lib.org/functions/accbands.html
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
+    - pandas-ta-classic, accbands: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/accbands.py#L17
 
     Notes:
         - Equals TA-Lib's ACCBANDS (multiplier 4) and pandas-ta-classic's accbands.
@@ -1108,7 +1174,8 @@ def get_chande_kroll_stop(
     stop_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Chande Kroll Stop of a given price series.
+    Calculate the Chande Kroll Stop: a long and a short stop a multiple of the Average True Range from the recent
+    extremes, which shows where a trend would be broken.
 
     The Chande Kroll Stop is a pair of trailing stops a multiple of the Average True Range
     from the extreme price of the last `window` periods, smoothed a second time by taking
@@ -1131,13 +1198,18 @@ def get_chande_kroll_stop(
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." John Wiley &
     Sons.
 
-    Referenced against TA-Lib's CKSP (https://ta-lib.org/functions/cksp.html).
+    Referenced against:
+    - TA-Lib, CKSP: https://ta-lib.org/functions/cksp.html
+        Test: tests/technical/test_volatility_model.py::test_atr_based_volatility_indicators_converge_to_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, cksp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cksp.py#L12
 
     Notes:
         - The ATR is `get_average_true_range` (the StockCharts seeding), so the stops start
           one period before TA-Lib's CKSP and equal them once the seeds have converged.
-        - pandas-ta-classic's cksp with `tvmode=True` uses the same defaults (10, 1, 9);
-          with `tvmode=False` it uses a simple average of the True Range with 3 ATRs and
+        - pandas-ta-classic's cksp in its TradingView mode uses the same defaults (10, 1, 9);
+          otherwise it uses a simple average of the True Range with 3 ATRs and
           20 periods.
 
     Args:
@@ -1179,7 +1251,8 @@ def get_adaptive_price_zone(
     multiplier: float,
 ) -> pd.DataFrame:
     """
-    Calculate Leibfarth's Adaptive Price Zone (APZ) of a given price series.
+    Calculate Leibfarth's Adaptive Price Zone (APZ): bands around a double-smoothed exponential moving average that
+    adapt to the range, which show turning points in a sideways market.
 
     The Adaptive Price Zone is a band around a fast, double-smoothed Exponential Moving
     Average of the close, with a width that is the same double-smoothed average of the
@@ -1201,7 +1274,8 @@ def get_adaptive_price_zone(
     Reference: Leibfarth, L. (2006). "Trading With An Adaptive Price Zone." Technical
     Analysis of Stocks & Commodities, 24(9).
 
-    finta: TA.APZ (https://github.com/peerchemist/finta).
+    Shares similar logic:
+    - finta, APZ: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1907
 
     Notes:
         - Each EMA is seeded with the simple average of its first ceil(sqrt(window))
@@ -1266,7 +1340,8 @@ def get_aberration(
     atr_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Aberration bands of a given price series.
+    Calculate the Aberration bands: bands one Average True Range above and below a short average of the typical
+    price, whose breakouts are the signals of Fitschen's Aberration system.
 
     The Aberration bands place one Average True Range above and below a short simple
     average of the typical price. They come from Keith Fitschen's Aberration trading
@@ -1287,7 +1362,9 @@ def get_aberration(
     exists. Fitschen describes his breakout systems in Fitschen, K. (2013).
     "Building Reliable Trading Systems." John Wiley & Sons.
 
-    pandas-ta-classic: aberration (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, aberration: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/aberration.py#L14
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - The ATR is `get_average_true_range` (Wilder's smoothing with the StockCharts
@@ -1330,7 +1407,8 @@ def get_profit_maximizer(
     multiplier: float,
 ) -> pd.DataFrame:
     """
-    Calculate the Profit Maximizer (PMax) of a given price series.
+    Calculate the Profit Maximizer (PMax): a trailing stop a multiple of the Average True Range from an exponential
+    moving average of the median price, which shows the trend and flips less often than the Supertrend.
 
     The Profit Maximizer applies the Supertrend's trailing logic to a moving average instead
     of the price: two stops a multiple of the Average True Range below and above an
@@ -1355,7 +1433,8 @@ def get_profit_maximizer(
     Reference: Ozbilgic, K. (2020). "Profit Maximizer - PMax." TradingView script by
     KivancOzbilgic, a practitioner indicator without a published source.
 
-    pandas-ta-classic: pmax (https://github.com/xgboosted/pandas-ta-classic).
+    Shares similar logic:
+    - pandas-ta-classic, pmax: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/pmax.py#L51
 
     Notes:
         - This follows Ozbilgic's script: the EMA (seeded with a simple average) of the
@@ -1433,7 +1512,8 @@ def get_price_distance(
     prices_close: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the Price Distance of a given price series.
+    Calculate the Price Distance: the distance the price travelled within each period, including the gap from the
+    previous close, a measure of how much the price moves.
 
     The Price Distance estimates the distance the price travelled within a period: twice
     the High - Low range (down to the low and up to the high, or the reverse), less the
@@ -1449,7 +1529,9 @@ def get_price_distance(
     Reference: ProRealCode, "Price Distance" indicator, a practitioner measure without a
     published source.
 
-    pandas-ta-classic: pdist (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, pdist: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/pdist.py#L17
+        Test: tests/technical/test_volatility_model.py::test_volatility_indicators_match_reference_libraries
 
     Notes:
         - Equals pandas-ta-classic's pdist; the first period has no previous close and no
@@ -1475,7 +1557,8 @@ def get_market_thermometer(
     prices_high: pd.Series, prices_low: pd.Series, window: int
 ) -> pd.DataFrame:
     """
-    Calculate Elder's Market Thermometer of a given price series.
+    Calculate Elder's Market Thermometer: how far each period's range pushes outside that of the previous period,
+    which shows how hot or quiet the market is.
 
     The Market Thermometer measures how far each period's range pushes outside the previous
     period's: the larger of the rise of the high above the previous high and the fall of the
@@ -1494,7 +1577,8 @@ def get_market_thermometer(
     Reference: Elder, A. (2002). "Come Into My Trading Room." John Wiley & Sons, which
     uses a 22-day EMA.
 
-    pandas-ta-classic: thermo (https://github.com/xgboosted/pandas-ta-classic).
+    Shares similar logic:
+    - pandas-ta-classic, thermo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/thermo.py#L18
 
     Notes:
         - Only a higher high or a lower low raises the temperature, and an inside period (a
@@ -1534,7 +1618,8 @@ def get_squeeze_momentum(
     keltner_multipliers: list[float],
 ) -> pd.DataFrame:
     """
-    Calculate the Squeeze Momentum (TTM Squeeze) of a given price series.
+    Calculate the Squeeze Momentum (TTM Squeeze): whether the Bollinger Bands lie inside the Keltner Channels (a
+    squeeze of volatility) and the momentum that shows the direction of the breakout.
 
     The squeeze compares two volatility bands around the same simple average of the close:
     Bollinger Bands, which widen and narrow with the standard deviation, and a Keltner
@@ -1564,11 +1649,18 @@ def get_squeeze_momentum(
     Squeeze). The momentum follows LazyBear's "Squeeze Momentum Indicator" TradingView
     script (2014).
 
-    Referenced against TA-Lib's SQZMOM (https://ta-lib.org/functions/sqzmom.html).
+    Referenced against:
+    - TA-Lib, SQZMOM: https://ta-lib.org/functions/sqzmom.html
+        Test: tests/technical/test_volatility_model.py::test_squeeze_momentum_matches_talib
+    - pandas-ta-classic, squeeze: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze.py#L94
+
+    Shares similar logic:
+    - pandas-ta-classic, squeeze_pro: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/squeeze_pro.py#L17
+    - finta, SQZMI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1941
 
     Notes:
         - The momentum agrees with TA-Lib's SQZMOM and pandas-ta-classic's
-          `squeeze(lazybear=True)`. The Squeeze agrees with TA-Lib's squeeze output with 0 instead
+          `squeeze` in LazyBear's form. The Squeeze agrees with TA-Lib's squeeze output with 0 instead
           of -1 for no squeeze; its Keltner Channel is LazyBear's simple average of the True
           Range, not `get_keltner_channels`.
         - The Bollinger standard deviation is the population one (ddof=0), as in
@@ -1622,9 +1714,10 @@ def get_standard_deviation_channel(
     num_std_dev: float | list[float] | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the Standard Deviation Channel of a price series: one least-squares line
-    through all prices of the period (or the last `window` of them), with bands at a number
-    of standard deviations of the prices above and below it.
+    Calculate the Standard Deviation Channel: a least-squares line through the prices with bands a number of
+    standard deviations above and below it.
+
+    The line runs through all prices of the period, or the last `window` of them.
 
     The channel shows the trend of the whole period and how far the prices stray from it: a
     price near an outer band lies far from the trend of the period. It is the thinkorswim
@@ -1642,8 +1735,9 @@ def get_standard_deviation_channel(
 
     Reference: thinkorswim (TD Ameritrade). thinkScript studies StDevAll and InertiaAll.
 
-    Referenced against pandas-ta-classic's tos_stdevall
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, tos_stdevall: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/tos_stdevall.py#L15
+        Test: tests/technical/test_volatility_model.py::test_standard_deviation_channel_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's tos_stdevall, with the sample standard deviation of
@@ -1703,7 +1797,8 @@ def get_signal_to_noise_ratio(
     window: int,
 ) -> pd.Series:
     """
-    Calculate the Signal-to-Noise Ratio (SNR) of a given price series.
+    Calculate the Signal-to-Noise Ratio (SNR): the net move of the close over a window divided by the Average True
+    Range, which shows how cleanly the price trends.
 
     The Signal-to-Noise Ratio divides the net move of the close over the window (the signal)
     by the Average True Range over the same window (the noise). A ratio of 5 means the price
@@ -1722,7 +1817,8 @@ def get_signal_to_noise_ratio(
     Reference: Skeggs, J. and Hill, A. (2015). "Back in Black Part 2: The Opportunity Set for
     Trend Following." Man AHL.
 
-    Referenced against TTR's SNR (https://cran.r-project.org/package=TTR), by Peter Carl.
+    Referenced against:
+    - TTR (R), SNR: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/SNR.R#L47
 
     Notes:
         - The ATR is `get_average_true_range`, whose first True Range is High - Low (the
@@ -1756,7 +1852,8 @@ def get_price_bands(
     moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
-    Calculate the Price Bands of a given price series.
+    Calculate the Price Bands: bands around a moving average whose width comes from its distance to a fast moving
+    average of the price, so they react to sustained moves rather than single spikes.
 
     Price Bands are a variant of the Bollinger Bands whose width comes from the distance between
     the moving average and a fast moving average of the price, rather than from the distance
@@ -1777,7 +1874,8 @@ def get_price_bands(
     Reference: the measure is defined by Brian G. Peterson in TTR's PBands, after the bands of
     Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
-    Referenced against TTR's PBands (https://cran.r-project.org/package=TTR).
+    Referenced against:
+    - TTR (R), PBands: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/priceBands.R#L68
 
     Notes:
         - The standard deviation is the population one (dividing by `window`), as in TTR's
@@ -1795,8 +1893,14 @@ def get_price_bands(
             Defaults to 20.
         num_std_dev (float): Number of standard deviations of the bands. Defaults to 2.
         short_window (int): Number of periods of the fast moving average. Defaults to 2.
-        moving_average (str): The moving average of both averages, one of `MOVING_AVERAGES`
-            (the window-only methods of `get_moving_average`). Defaults to "simple".
+        moving_average (str): The moving average of both averages, one of `MOVING_AVERAGES` (the window-only
+            methods of `get_moving_average`). Options are: "simple" (Simple Moving Average),
+            "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential Moving
+            Average), "triple_exponential" (Triple Exponential Moving Average), "zero_lag" (Zero Lag Exponential
+            Moving Average), "wilder" (Wilder's Moving Average), "triangular" (Triangular Moving Average),
+            "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "sine" (Sine Weighted Moving
+            Average), "fibonacci" (Fibonacci Weighted Moving Average), "pascal" (Pascal Weighted Moving
+            Average). Defaults to "simple".
 
     Returns:
         pd.DataFrame: Price Bands (upper, middle, lower).

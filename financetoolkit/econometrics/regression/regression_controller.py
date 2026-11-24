@@ -48,8 +48,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit an Ordinary Least Squares (OLS) regression of `dependent_ticker` on
-        `independent_tickers`, using the selected `column` (returns by default) of each ticker.
+        Fit an Ordinary Least Squares (OLS) regression: how the dependent ticker moves with the
+        independent tickers, such as a beta against an index, on the returns by default.
 
         OLS estimates the coefficients that minimise the sum of squared residuals, i.e. the
         line (or plane) that best explains the dependent ticker from the independent tickers.
@@ -58,18 +58,18 @@ class RegressionEconometrics:
 
         - β̂ = (X'X)⁻¹X'y, with y the dependent ticker's `column` (Return by default) and X the
           independent tickers' `column` plus a constant column (when a constant is added)
-        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust")
-        - Cov(β̂) = (X'X)⁻¹·(Σ ωₜ·xₜxₜ')·(X'X)⁻¹ for "HC0" to "HC3", with ωₜ = eₜ² (HC0),
+        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (non-robust)
+        - Cov(β̂) = (X'X)⁻¹·(Σ ωₜ·xₜxₜ')·(X'X)⁻¹ for HC0 to HC3, with ωₜ = eₜ² (HC0),
           eₜ²·n / (n - k) (HC1), eₜ² / (1 - hₜ) (HC2) or eₜ² / (1 - hₜ)² (HC3) and hₜ = xₜ'(X'X)⁻¹xₜ
-        - Cov(β̂) = (X'X)⁻¹·(Σₜ gₜgₜ' + Σⱼ (1 - j / (L + 1))·Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ'))·(X'X)⁻¹ for "HAC",
-          with gₜ = xₜeₜ and L = `lags`; "cluster" sums gₜ within each cluster and scales the
+        - Cov(β̂) = (X'X)⁻¹·(Σₜ gₜgₜ' + Σⱼ (1 - j / (L + 1))·Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ'))·(X'X)⁻¹ for HAC,
+          with gₜ = xₜeₜ and L = `lags`; the cluster-robust covariance sums gₜ within each cluster and scales the
           sandwich by G / (G - 1)·(n - 1) / (n - k), with G the number of clusters
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
-          for cov_type="nonrobust" and from the standard normal distribution for the robust
-          estimators ("HC0" to "HC3", "cluster" and "HAC"), which are asymptotic results
+          for the non-robust covariance and from the standard normal distribution for the robust
+          estimators (HC0 to HC3, cluster-robust and HAC), which are asymptotic results
         - R² = 1 - e'e / Σ(yₜ - mean(y))²
 
-        The "HAC" covariance is the Newey-West (Bartlett) estimator without a small-sample
+        The HAC covariance is the Newey-West (Bartlett) estimator without a small-sample
         degrees-of-freedom correction (statsmodels' default), so its standard errors are
         slightly smaller than those of software that scales them by n / (n - k).
 
@@ -82,8 +82,8 @@ class RegressionEconometrics:
         and uncorrelated errors) OLS is the Best Linear Unbiased Estimator (Gauss-Markov). The
         coefficients stay unbiased when the errors are heteroskedastic, but the classical
         standard errors do not: check with `get_heteroskedasticity_test` and,
-        if needed, refit with a robust `cov_type` such as "HC1" (or "HC3" for small samples),
-        or "HAC" when the errors are also autocorrelated.
+        if needed, refit with a robust covariance such as HC1 (or HC3 for small samples), or
+        HAC when the errors are also autocorrelated.
 
         For more information about the HAC covariance, see the following paper:
 
@@ -92,6 +92,10 @@ class RegressionEconometrics:
         55(3), 703-708.
 
         Also known as: linear regression, least squares regression.
+
+        Referenced against:
+        - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+            Test: tests/econometrics/test_reference_validation.py::test_ols_inference_and_robust_covariances
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -106,10 +110,11 @@ class RegressionEconometrics:
                 "daily".
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
-            cov_type (str, optional): Which covariance estimator to use for the standard errors --
-            one of "nonrobust" (classical, assumes homoskedastic errors), "HC0"/"HC1"/"HC2"/"HC3"
-            (heteroskedasticity-robust), "cluster" (cluster-robust, requires `clusters`) or "HAC"
-            (Newey-West, heteroskedasticity-and-autocorrelation-consistent, uses `lags`).
+            cov_type (str, optional): Which covariance estimator to use for the standard errors.
+            Options are: "nonrobust" (classical, assumes homoskedastic errors), "HC0", "HC1",
+            "HC2", "HC3" (heteroskedasticity-robust), "cluster" (cluster-robust, requires
+            `clusters`), "HAC" (Newey-West, heteroskedasticity-and-autocorrelation-consistent,
+            uses `lags`).
             Use `get_heteroskedasticity_test` to check for heteroskedasticity and
             `get_ljung_box_test` to check for autocorrelation first. Defaults to "nonrobust".
             clusters (pd.Series | None, optional): The cluster label for each observation
@@ -205,8 +210,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Weighted Least Squares (WLS) regression of `dependent_ticker` on
-        `independent_tickers`.
+        Fit a Weighted Least Squares (WLS) regression: OLS of the dependent ticker on the
+        independent tickers that gives noisier periods less weight.
 
         When the error variance differs across observations (heteroskedasticity) with a known
         or estimable structure, `Var(e_i) = sigma^2 / w_i`, OLS remains unbiased but is no
@@ -217,16 +222,16 @@ class RegressionEconometrics:
         The formula is as follows:
 
         - β̂ = (X'WX)⁻¹X'Wy, with W = diag(weights), the same as OLS of √wₜ·yₜ on √wₜ·xₜ
-        - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (cov_type="nonrobust")
+        - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (non-robust)
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
-          for cov_type="nonrobust" and from the standard normal distribution for the robust
-          estimators; "HAC" is the Newey-West estimator without a small-sample correction
+          for the non-robust covariance and from the standard normal distribution for the robust
+          estimators; HAC is the Newey-West estimator without a small-sample correction
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
           `column` plus a constant, on the dates where the returns and `weights` all have data
 
         With equal weights WLS reduces to OLS. A typical use is down-weighting periods of
         high volatility, so that a few turbulent periods do not dominate the estimated
-        relationship. By default (weights="feasible") the weights are estimated from the
+        relationship. By default the weights are estimated from the
         regression itself with the feasible GLS procedure of Wooldridge (2016): the
         logarithm of the squared OLS residuals is regressed on the independent tickers, and
         each period's weight is 1 / exp(fitted value), the inverse of its estimated error
@@ -239,6 +244,10 @@ class RegressionEconometrics:
         edition, Section 8.4. Cengage Learning.
 
         Also known as: weighted regression, feasible WLS.
+
+        Referenced against:
+        - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
+            Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
         Args:
             weights (pd.Series | str, optional): The (positive) weight of each observation,
@@ -361,8 +370,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Generalized Least Squares (GLS) regression of `dependent_ticker` on
-        `independent_tickers`, given a known error covariance structure `omega`.
+        Fit a Generalized Least Squares (GLS) regression: least squares of the dependent ticker
+        on the independent tickers that accounts for errors that are correlated over time.
 
         GLS generalises WLS to an arbitrary error covariance matrix `Var(e) = sigma^2 * Omega`.
         Where WLS only corrects for heteroskedasticity (a diagonal `Omega`), GLS also
@@ -377,7 +386,7 @@ class RegressionEconometrics:
           `column` plus a constant (when a constant is added)
 
         Under a correctly specified `Omega` this is the most efficient linear unbiased
-        estimator. By default (omega="ar1") `Omega` is estimated from the regression itself
+        estimator. By default `Omega` is estimated from the regression itself
         as an AR(1) error structure, eₜ = ρ·eₜ₋₁ + uₜ: ρ is the slope of the OLS residuals on
         their own lag and Ωᵢⱼ = ρ^|i - j|, which makes this the Prais-Winsten estimator. Any
         other structure can be supplied as `omega`. `get_durbin_watson_test` helps establish
@@ -391,6 +400,10 @@ class RegressionEconometrics:
         Cowles Commission Discussion Paper No. 383.
 
         Also known as: GLS, Prais-Winsten.
+
+        Referenced against:
+        - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
+            Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
         Args:
             omega (pd.DataFrame | str, optional): The (symmetric, positive-definite) error
@@ -490,9 +503,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a binary choice regression of whether `dependent_ticker`'s return is positive on
-        `independent_tickers`, the Logistic Regression (method="logit") or the Probit
-        Regression (method="probit").
+        Fit a binary choice regression: how the probability that the dependent ticker's return is
+        positive depends on the independent tickers, with the Logistic or the Probit Regression.
 
         The dependent variable is turned into a binary outcome (1 when the return is
         positive, 0 otherwise) and the model estimates the probability of that outcome
@@ -500,7 +512,7 @@ class RegressionEconometrics:
         (sigmoid) function for the Logit model and the standard normal cumulative
         distribution function for the Probit model.
 
-        The formula for method="logit" is as follows:
+        The formula for the Logistic Regression is as follows:
 
         - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
         - P(yₜ = 1 | xₜ) = 1 / (1 + exp(-xₜ'β)), with xₜ the independent tickers' `column` plus a
@@ -508,7 +520,7 @@ class RegressionEconometrics:
         - β̂ = argmax Σ[yₜ·ln(pₜ) + (1 - yₜ)·ln(1 - pₜ)], solved by Newton-Raphson (statsmodels Logit)
         - Pseudo R² = 1 - ln L(β̂) / ln L₀ (McFadden), with L₀ the likelihood of a constant-only model
 
-        The formula for method="probit" is as follows:
+        The formula for the Probit Regression is as follows:
 
         - yₜ = 1 if the dependent ticker's `column` (Return by default) is above 0, else 0
         - P(yₜ = 1 | xₜ) = Φ(xₜ'β), with xₜ the independent tickers' `column` plus a constant
@@ -556,8 +568,8 @@ class RegressionEconometrics:
             column (str, optional): The historical data column to derive returns from. Defaults to
             "Return".
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
-            method (str, optional): The link function, "logit" for the Logistic Regression or
-            "probit" for the Probit Regression. Defaults to "logit".
+            method (str, optional): The link function. Options are: "logit" (Logistic
+            Regression), "probit" (Probit Regression). Defaults to "logit".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -641,8 +653,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Quantile Regression of `dependent_ticker` on `independent_tickers` at quantile
-        `tau`.
+        Fit a Quantile Regression: how a quantile of the dependent ticker, such as its worst 5% of
+        returns, depends on the independent tickers.
 
         Where OLS estimates how the average (conditional mean) of the dependent ticker depends
         on the independent tickers, Quantile Regression estimates how a chosen quantile of it
@@ -656,16 +668,16 @@ class RegressionEconometrics:
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
           `column` plus a constant (when a constant is added)
         - SE(β̂): statsmodels' kernel sandwich estimator (Epanechnikov kernel, Hall-Sheather bandwidth),
-          or, when `n_bootstrap` > 0, the standard deviation (ddof=1) of β̂ over `n_bootstrap`
+          or, with bootstrap replicates, the standard deviation (ddof=1) of β̂ over the B
           resampled-pairs fits
 
-        With `tau = 0.5` this is the median regression, which is far less sensitive to
+        At the median (a quantile of 0.5) this is the median regression, which is far less sensitive to
         outliers than OLS. Fitting at several quantiles (e.g. 0.05, 0.5 and 0.95) shows how
         the whole distribution of returns responds to the independent tickers, for example
         whether an asset's sensitivity to the market is larger in sell-offs (low quantiles)
         than in normal periods, which is directly relevant for downside risk.
 
-        Comparing the coefficients at a low `tau` with those at `tau=0.5`, or with the
+        Comparing the coefficients at a low quantile with those at the median, or with the
         betas from `get_ols`, shows whether the sensitivity to the market rises in
         sell-offs. The table has no p-values: a coefficient more than about two standard
         errors from zero is significant at the 5% level.
@@ -767,10 +779,11 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: `asset_tickers` is
-        treated as the cross-section of test assets, `factor_tickers` as the risk factor(s)
-        whose risk premia are estimated -- the standard procedure for testing whether a
-        proposed risk factor is actually priced.
+        Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: the risk premium of every
+        factor ticker, and whether it is priced across the asset tickers.
+
+        The asset tickers are the cross-section of test assets and the factor tickers the risk
+        factors whose risk premia are estimated.
 
         The method runs in two passes:
 
@@ -839,7 +852,7 @@ class RegressionEconometrics:
         Notes:
         - The cross-sectional second pass needs strictly more assets than factors
         (plus an intercept, when a constant is added) to be identified -- with only a
-        couple of Toolkit tickers loaded, either pass `add_constant=False` or (better)
+        couple of Toolkit tickers loaded, either leave out the constant or (better)
         construct the Toolkit with many tickers, since Fama-MacBeth is fundamentally a
         many-asset cross-sectional technique (dozens of assets is typical in practice),
         not a limitation of this method's implementation.
@@ -1067,9 +1080,8 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Fixed Effects ("within") estimator explaining a panel of
-        `dependent_tickers` (the entities) by a regressor `x`, controlling for
-        entity-specific (and/or time-specific) fixed effects.
+        Fit a Fixed Effects ("within") estimator: how a panel of dependent tickers moves with a
+        regressor within every ticker, after removing what is specific to each ticker or date.
 
         Also known as: within estimator, FE, least squares dummy variable (LSDV)
         estimator.
@@ -1085,8 +1097,8 @@ class RegressionEconometrics:
         to every entity at each date (e.g. a market benchmark, mirroring a
         Fama-French-style factor regression).
         - `independent_column`: a PER-ENTITY regressor -- each entity's own value
-        of a *different* historical data column (e.g. does `"Volume"` explain
-        `"Return"`, across the panel).
+        of a *different* historical data column (e.g. does the volume explain the
+        return, across the panel).
 
         Fixed Effects removes any purely entity-specific, time-invariant
         characteristic (e.g. a stock's typical risk premium) before estimating the
@@ -1096,8 +1108,8 @@ class RegressionEconometrics:
 
         The formula is as follows:
 
-        - ỹᵢₜ = yᵢₜ - mean_t(yᵢₜ) and x̃ᵢₜ = xᵢₜ - mean_t(xᵢₜ) (entity_effects=True, the default);
-          time_effects=True also removes each date's mean (two-way fixed effects)
+        - ỹᵢₜ = yᵢₜ - mean_t(yᵢₜ) and x̃ᵢₜ = xᵢₜ - mean_t(xᵢₜ) (entity effects, the default); time
+          effects also remove each date's mean (two-way fixed effects)
         - β̂_FE = (X̃'X̃)⁻¹X̃'ỹ, without a separate constant (linearmodels PanelOLS, unadjusted covariance)
         - Entity Effect: αᵢ = mean_t(yᵢₜ - xᵢₜ'β̂_FE); Time Effect: λₜ = mean_i(yᵢₜ - xᵢₜ'β̂_FE)
         - yᵢₜ is each dependent ticker's `column` (Return by default)
@@ -1215,9 +1227,9 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Random Effects estimator explaining a panel of `dependent_tickers`
-        (the entities) by a regressor `x`, via Swamy-Arora feasible Generalized
-        Least Squares.
+        Fit a Random Effects estimator: how a panel of dependent tickers moves with a regressor
+        when every ticker's own effect is random and unrelated to it, by Swamy-Arora feasible
+        Generalized Least Squares.
 
         Also known as: RE, GLS panel estimator, Swamy-Arora estimator.
 
@@ -1332,9 +1344,9 @@ class RegressionEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Hausman specification test comparing a Fixed Effects and a
-        Random Effects fit of `dependent_tickers` (the panel of entities) on a
-        regressor `x`.
+        Calculate the Hausman specification test: whether the Fixed Effects and Random Effects
+        fits of a panel of dependent tickers differ by more than chance, so that Random Effects is
+        inconsistent.
 
         Also known as: Hausman specification test, fixed versus random effects test.
 
@@ -1351,14 +1363,14 @@ class RegressionEconometrics:
 
         - H = (β̂_FE - β̂_RE)'·[Var(β̂_FE) - Var(β̂_RE)]⁻¹·(β̂_FE - β̂_RE), over the k slope coefficients
           the two models share (a pseudo-inverse when the difference is singular)
-        - With variance="efficient" Var(β̂_FE) is scaled by s²_RE / s²_FE, with variance="consistent"
-          Var(β̂_RE) by s²_FE / s²_RE, so both rest on one disturbance variance (Stata's sigmamore and
+        - With the efficient variance Var(β̂_FE) is scaled by s²_RE / s²_FE, with the consistent
+          variance Var(β̂_RE) by s²_FE / s²_RE, so both rest on one disturbance variance (Stata's sigmamore and
           sigmaless)
         - H is chi-squared with k degrees of freedom; Random Effects is rejected when the p-value is
           below 0.05
         - A negative H means that Var(β̂_FE) - Var(β̂_RE) is not positive definite in the sample: the
-          P-Value and the preference are then NaN, and the "efficient" or "consistent" variance gives
-          a statistic
+          P-Value and the preference are then NaN, and the efficient or consistent variance gives a
+          statistic
         - β̂_FE comes from `get_fixed_effects` with entity effects only and β̂_RE from `get_random_effects`
 
         Args:
@@ -1377,9 +1389,10 @@ class RegressionEconometrics:
             column. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             entities. Defaults to False.
-            variance (str, optional): The variances compared: "separate" (each model's own),
-            "efficient" (both based on the residual variance of Random Effects) or "consistent"
-            (both based on the residual variance of Fixed Effects). Defaults to "separate".
+            variance (str, optional): The variances compared. Options are: "separate" (each
+            model's own), "efficient" (both based on the residual variance of Random Effects),
+            "consistent" (both based on the residual variance of Fixed Effects). Defaults to
+            "separate".
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

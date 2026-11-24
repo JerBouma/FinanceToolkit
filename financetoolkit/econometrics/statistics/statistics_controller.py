@@ -60,11 +60,12 @@ class StatisticsEconometrics:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE and TSF
-          (https://ta-lib.org/functions/linearreg.html).
-        - pandas-ta-classic: linreg (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: linreg, linregslope, linregintercept and tsf
-          (https://tulipindicators.org/linreg).
+
+        Referenced against:
+        - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
+            Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
+        - Tulip Indicators, linreg: https://tulipindicators.org/linreg
+        - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
         Also known as: LINEARREG, linear regression indicator, end-point moving average, least squares moving average,
         LSMA, TSF, time series forecast, linear regression slope, intercept, angle.
@@ -152,8 +153,9 @@ class StatisticsEconometrics:
     ) -> pd.DataFrame:
         """
         Calculate the Slope of a price series: the average change in price per period over a
-        window, the rise over the run between the price `window` periods ago and the latest
-        price.
+        window.
+
+        The slope is the rise over the run between the price a window ago and the latest price.
 
         The formula is as follows:
 
@@ -164,10 +166,9 @@ class StatisticsEconometrics:
         the window count: the least-squares slope, which uses every price of the window, is the
         Slope of `get_linear_regression`.
 
-        For more information, see the following sources:
-
-        - Referenced against pandas-ta-classic's slope
-          (https://github.com/xgboosted/pandas-ta-classic).
+        Referenced against:
+        - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
+            Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
         Also known as: slope, rise over run, average change per period, angle.
 
@@ -196,8 +197,8 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Slope for each asset, each
           over the dates it has a value. The first value needs a full window of data from the start date.
-        - The slope agrees with pandas-ta-classic's slope and the angle its slope with as_angle=True and
-          to_degrees=True (pandas-ta-classic gives radians unless asked for degrees).
+        - The slope agrees with pandas-ta-classic's slope, also as an angle in degrees (pandas-ta-classic
+          gives radians unless asked for degrees).
         - The slope is in price per period, so it does not compare across securities with different share
           prices.
 
@@ -259,7 +260,7 @@ class StatisticsEconometrics:
         The correlation is +1 when the two series move up and down together in a straight-line
         relation, -1 when they move in opposite directions and around 0 when they are unrelated.
         By default it correlates the returns, so it shows whether the moves of two assets go
-        together over the window. On price levels (column="Adj Close"), two series that both
+        together over the window. On price levels (the adjusted close), two series that both
         trend have a high correlation even when their daily moves are unrelated, so it then shows
         whether two prices follow the same course over the window rather than whether their
         returns are related.
@@ -274,8 +275,11 @@ class StatisticsEconometrics:
 
         - Pearson, K. (1895). "Notes on Regression and Inheritance in the Case of Two Parents."
           Proceedings of the Royal Society of London, 58, 240-242.
-        - Referenced against TA-Lib's CORREL (https://ta-lib.org/functions/correl.html).
-        - pandas-ta-classic: correl (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
+        - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
         Also known as: CORREL, Pearson correlation coefficient, rolling correlation, correlation with the benchmark.
 
@@ -310,7 +314,7 @@ class StatisticsEconometrics:
           `against` over the dates both have a value, so a cryptocurrency's weekends do not count against
           a stock.
         - The correlation agrees with TA-Lib's CORREL and pandas-ta-classic's correl, which take the series as
-          given; TA-Lib's default compares the high with the low (column="High", against="Low").
+          given; TA-Lib's default compares the high with the low.
         - A window in which either series is flat has no correlation and is missing, where TA-Lib and pandas-ta-
           classic give 0.
 
@@ -408,9 +412,12 @@ class StatisticsEconometrics:
         For more information, see the following sources:
 
         - Tukey, J.W. (1977). "Exploratory Data Analysis." Addison-Wesley, for running medians.
-        - Referenced against TA-Lib's MEDIAN (https://ta-lib.org/functions/median.html).
-        - pandas-ta-classic: median (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: SMM (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
+        - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
+        - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
         Also known as: MEDIAN, moving median, simple moving median, SMM.
 
@@ -499,18 +506,21 @@ class StatisticsEconometrics:
 
         The formula is as follows, per method:
 
-        - "nearest_rank": the k-th smallest price of the window, k = ceil(percentile * window)
+        - Nearest rank: the k-th smallest price of the window, k = ceil(percentile * window)
           (Hyndman and Fan's definition 1)
-        - "linear": interpolated between the two prices around position percentile * (window - 1)
+        - Linear: interpolated between the two prices around position percentile * (window - 1)
           of the sorted window, counting from 0 (Hyndman and Fan's definition 7)
 
         For more information, see the following sources:
 
         - Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages." The
           American Statistician, 50(4), 361-365.
-        - Referenced against TA-Lib's PERCENTILE
-          (https://ta-lib.org/functions/percentile.html).
-        - pandas-ta-classic: quantile (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
+        - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
 
         Also known as: PERCENTILE, quantile, rolling quantile, moving percentile.
 
@@ -523,7 +533,9 @@ class StatisticsEconometrics:
             window (int, optional): The number of periods. Defaults to 100.
             percentile (float, optional): The percentile as a decimal between 0 and 1. Defaults
                 to 0.5.
-            method (str, optional): "nearest_rank" or "linear". Defaults to "nearest_rank".
+            method (str, optional): The percentile definition. Options are: "nearest_rank" (Hyndman
+                and Fan's definition 1), "linear" (Hyndman and Fan's definition 7). Defaults to
+                "nearest_rank".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -596,8 +608,8 @@ class StatisticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Percent Rank of a price series: the share of the previous `window` prices
-        that are lower than the latest price.
+        Calculate the Percent Rank of a price series: the share of the prices of the window
+        before it that are lower than the latest price.
 
         A Percent Rank of 1 means the price is above every price of the window, a new high for
         the window, and 0 that it is at or below all of them. It ranks the price within its
@@ -611,8 +623,10 @@ class StatisticsEconometrics:
 
         - Connors, L., Alvarez, C. & Radtke, M. (2012). "An Introduction to ConnorsRSI."
           Connors Research Trading Strategy Series.
-        - Referenced against TA-Lib's PERCENTRANK
-          (https://ta-lib.org/functions/percentrank.html).
+
+        Referenced against:
+        - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
+            Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
         Also known as: PERCENTRANK, percentile rank, percent rank.
 
@@ -709,10 +723,9 @@ class StatisticsEconometrics:
 
         with the sample standard deviation (ddof=1).
 
-        For more information, see the following sources:
-
-        - Referenced against pandas-ta-classic's zscore
-          (https://github.com/xgboosted/pandas-ta-classic).
+        Referenced against:
+        - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
         Also known as: z-score, standard score, ZSCORE, normalized price.
 
@@ -813,9 +826,13 @@ class StatisticsEconometrics:
 
         - Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic Trends."
           Commodities, October 1980.
-        - Referenced against TA-Lib's AVGDEV (https://ta-lib.org/functions/avgdev.html).
-        - pandas-ta-classic: mad and md (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: md (https://tulipindicators.org/md).
+
+        Referenced against:
+        - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
+        - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
+        - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
+        - Tulip Indicators, md: https://tulipindicators.org/md
 
         Also known as: AVGDEV, average deviation, mean deviation, MAD, MD.
 
@@ -901,8 +918,11 @@ class StatisticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the rolling Standard Error of the mean of a price series: the standard
-        deviation of the window divided by the square root of the number of periods.
+        Calculate the rolling Standard Error of the mean of a price series: how uncertain the
+        moving average is as an estimate of the mean price.
+
+        The standard error is the standard deviation of the window divided by the square root
+        of the number of periods.
 
         It is the uncertainty of the moving average as an estimate of the mean price of the
         window: the moving average plus and minus two standard errors spans roughly where that
@@ -914,11 +934,12 @@ class StatisticsEconometrics:
 
         with the sample standard deviation (ddof=1).
 
-        For more information, see the following sources:
+        Referenced against:
+        - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
 
-        - Referenced against pandas-ta-classic's stderr
-          (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: stderr (https://tulipindicators.org/stderr).
+        Shares similar logic:
+        - Tulip Indicators, stderr: https://tulipindicators.org/stderr
 
         Also known as: STDERR, standard error of the mean, SEM.
 
@@ -945,8 +966,8 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Standard Error for each
           asset, each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The standard error agrees with pandas-ta-classic's stderr. Tulip Indicators' stderr uses the population
-          standard deviation (ddof=0), which is sqrt((window - 1) / window) times this value.
+        - The standard error agrees with pandas-ta-classic's stderr. Unlike this, Tulip Indicators' stderr uses
+          the population standard deviation (ddof=0), which is sqrt((window - 1) / window) times this value.
 
         As an example:
 
@@ -1017,8 +1038,10 @@ class StatisticsEconometrics:
 
         - Shannon, C.E. (1948). "A Mathematical Theory of Communication." Bell System Technical
           Journal, 27(3), 379-423.
-        - Referenced against pandas-ta-classic's entropy
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
+            Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
 
         Also known as: ENTP, Shannon entropy, information entropy.
 
@@ -1153,9 +1176,9 @@ class StatisticsEconometrics:
           of the encoded returns, L_i one more than the longest match of the symbols from
           position i with the i symbols before it, in bits per symbol.
 
-        The last three encode the returns into symbols first (`encoding`): "binary" (1 for a
-        rise, 0 for a fall, returns of 0 left out), "quantile" (the decile of the return with
-        bins=10) or "sigma" (the bucket of one standard deviation the return falls in).
+        The last three encode the returns into symbols first: binary (1 for a rise, 0 for a
+        fall, returns of 0 left out), by quantile (the decile of the return with 10 bins) or
+        by sigma (the bucket of one standard deviation the return falls in).
 
         For more information, see the following sources:
 
@@ -1176,22 +1199,41 @@ class StatisticsEconometrics:
           entropy estimation for stationary processes and random fields, with applications to
           English text." IEEE Transactions on Information Theory, 44(3), 1319-1327.
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.
-        - Referenced against nolds' sampen (https://github.com/CSchoel/nolds), antropy's
-          sample_entropy, app_entropy, perm_entropy, spectral_entropy and svd_entropy
-          (https://github.com/raphaelvallat/antropy).
+
+        Referenced against:
+        - nolds, sampen: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L699
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+        - antropy, sample_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L740
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+        - antropy, app_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L638
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+        - antropy, perm_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L143
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+        - antropy, spectral_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L315
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+        - antropy, svd_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L437
+            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+
+        Shares similar logic:
+        - RiskLabAI, plug_in_entropy_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/plug_in.py#L10
+        - RiskLabAI, lempel_ziv_entropy: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/lempel_ziv.py#L6
+        - RiskLabAI, kontoyiannis_entropy: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/kontoyiannis.py#L57
 
         Also known as: SampEn, ApEn, ordinal pattern entropy, spectral entropy, SVD entropy,
         plug-in entropy, LZ entropy, Kontoyiannis entropy, entropy features.
 
         Args:
-            method (str, optional): The entropy, "sample", "approximate", "permutation",
-                "spectral", "svd", "shannon", "lempel_ziv" or "kontoyiannis". Defaults to "sample".
+            method (str, optional): The entropy. Options are: "sample" (Sample Entropy),
+                "approximate" (Approximate Entropy), "permutation" (Permutation Entropy),
+                "spectral" (Spectral Entropy), "svd" (SVD Entropy), "shannon" (Shannon entropy
+                rate), "lempel_ziv" (Lempel-Ziv entropy), "kontoyiannis" (Kontoyiannis entropy).
+                Defaults to "sample".
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
                 yearly). Defaults to None, which uses "daily".
-            column (str, optional): The historical data column the entropy is calculated on:
-                "Return" for the returns (the changes of the series), "Adj Close" for the prices
-                (the series as given with `Econometrics(data=...)`) or "Close" for the traded
-                prices. Defaults to "Return".
+            column (str, optional): The historical data column the entropy is calculated on.
+                Options are: "Return" (the returns, the changes of the series), "Adj Close" (the
+                prices, the series as given with `Econometrics(data=...)`), "Close" (the traded
+                prices). Defaults to "Return".
             window (int | None, optional): The number of periods of a rolling window. Defaults to
                 None, which calculates one value over the full history of every series.
             order (int | None, optional): The template length m of the sample and approximate
@@ -1204,11 +1246,14 @@ class StatisticsEconometrics:
                 as a multiple of the standard deviation (ddof=1). Defaults to 0.2.
             normalize (bool, optional): Whether to divide the permutation, spectral and SVD
                 entropy by their maximum, so they lie between 0 and 1. Defaults to True.
-            estimator (str, optional): The power spectrum of the spectral entropy, "periodogram"
-                or "welch" (segments of 256 periods with a Hann window). Defaults to "periodogram".
+            estimator (str, optional): The power spectrum of the spectral entropy. Options are:
+                "periodogram" (the periodogram), "welch" (segments of 256 periods with a Hann
+                window). Defaults to "periodogram".
             encoding (str, optional): The encoding of the Shannon, Lempel-Ziv and Kontoyiannis
-                entropy, "binary", "quantile" or "sigma". Defaults to "binary".
-            bins (int, optional): The number of quantiles of the "quantile" encoding. Defaults to 10.
+                entropy. Options are: "binary" (the direction), "quantile" (the quantile of the
+                return), "sigma" (the standard deviation bucket of the return). Defaults to
+                "binary".
+            bins (int, optional): The number of quantiles of the quantile encoding. Defaults to 10.
             word_length (int, optional): The number of symbols per word of the Shannon entropy.
                 Defaults to 1.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
@@ -1234,7 +1279,7 @@ class StatisticsEconometrics:
           ten years of daily returns, and about 2 seconds for a rolling window of a year over ten
           years (6 seconds for a window of two years).
         - The sample entropy is NaN when no two templates match (a very short series), where
-          nolds and antropy give infinity. The tolerance uses the sample standard deviation
+          nolds and antropy give infinity. Unlike antropy, the tolerance uses the sample standard deviation
           (ddof=1) and includes a distance of exactly r, as in Richman and Moorman.
         - The Shannon entropy counts every overlapping word, the last one included.
 
@@ -1355,8 +1400,8 @@ class StatisticsEconometrics:
         - c(N) = the number of phrases of the Lempel-Ziv (1976) parsing of the N symbols
         - Normalized c(N) = c(N) * log_k(N) / N
 
-        with k the number of possible symbols: 2 for the "binary" encoding, `bins` for the
-        "quantile" encoding and the number of distinct symbols for the "sigma" encoding.
+        with k the number of possible symbols: 2 for the binary encoding, the number of bins for
+        the quantile encoding and the number of distinct symbols for the sigma encoding.
 
         For more information, see the following sources:
 
@@ -1365,7 +1410,10 @@ class StatisticsEconometrics:
         - Kaspar, F. & Schuster, H.G. (1987). "Easily calculable measure for the complexity of
           spatiotemporal patterns." Physical Review A, 36(2), 842-848.
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.
-        - Referenced against antropy's lziv_complexity (https://github.com/raphaelvallat/antropy).
+
+        Referenced against:
+        - antropy, lziv_complexity: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L915
+            Test: tests/econometrics/test_entropy_model.py::test_lempel_ziv_complexity_equals_antropy
 
         Also known as: LZ complexity, LZ76, Lempel-Ziv-Welch complexity, LZC.
 
@@ -1377,10 +1425,11 @@ class StatisticsEconometrics:
                 with `Econometrics(data=...)`) or "Close" for the traded prices. Defaults to "Return".
             window (int | None, optional): The number of periods of a rolling window. Defaults to
                 None, which calculates one value over the full history of every series.
-            encoding (str, optional): "binary" (1 for a positive and 0 for a negative value, values of
-                0 left out), "quantile" (the quantile of the value) or "sigma" (the bucket of one
-                standard deviation the value falls in). Defaults to "binary".
-            bins (int, optional): The number of quantiles of the "quantile" encoding. Defaults to 10.
+            encoding (str, optional): The encoding. Options are: "binary" (1 for a positive and 0 for
+                a negative value, values of 0 left out), "quantile" (the quantile of the value),
+                "sigma" (the bucket of one standard deviation the value falls in). Defaults to
+                "binary".
+            bins (int, optional): The number of quantiles of the quantile encoding. Defaults to 10.
             normalize (bool, optional): Whether to normalize the number of phrases by N / log_k(N).
                 Defaults to True.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
@@ -1484,8 +1533,10 @@ class StatisticsEconometrics:
 
         - Hjorth, B. (1970). "EEG analysis based on time domain properties."
           Electroencephalography and Clinical Neurophysiology, 29(3), 306-310.
-        - Referenced against antropy's hjorth_params and num_zerocross
-          (https://github.com/raphaelvallat/antropy).
+
+        Referenced against:
+        - antropy, hjorth_params: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L1126
+        - antropy, num_zerocross: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L1033
 
         Also known as: Hjorth activity, Hjorth mobility, Hjorth complexity, zero-crossing rate.
 
@@ -1515,7 +1566,7 @@ class StatisticsEconometrics:
         Notes:
         - Each asset is measured over the dates it has a value. With a window, the first value
           needs a full window of data from the start date.
-        - antropy uses the population variance (ddof=0), which changes the Mobility and
+        - Unlike this, antropy uses the population variance (ddof=0), which changes the Mobility and
           Complexity by less than 0.1% for 1,000 observations, and counts a value of 0 as
           positive in its zero crossings.
 

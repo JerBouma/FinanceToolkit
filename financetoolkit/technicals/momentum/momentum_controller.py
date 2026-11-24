@@ -50,11 +50,14 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects various momentum indicators based on the provided data.
+        Collect the momentum indicators of every ticker in one table: how fast and how strongly the prices move, and
+        whether they are overbought or oversold.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -78,8 +81,8 @@ class MomentumTechnicals:
 
         Notes:
         - The method calculates various momentum indicators for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -562,7 +565,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Money Flow Index (MFI) for a given price series.
+        Calculate the Money Flow Index (MFI): how strongly money flows into or out of a security, using price and
+        volume.
 
         The Money Flow Index is a momentum indicator that measures the strength and
         direction of money flowing in and out of a security by considering both price
@@ -576,13 +580,17 @@ class MomentumTechnicals:
 
         - Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow." Technical Analysis of Stocks &
           Commodities, 7(3), 76-77.
-        - Referenced against TA-Lib's MFI (https://ta-lib.org/functions/mfi.html).
+
+        Referenced against:
+        - TA-Lib, MFI: https://ta-lib.org/functions/mfi.html
 
         Also known as: MFI, volume-weighted RSI.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -609,8 +617,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the MFI values for each asset in the Toolkit instance.
         - The MFI agrees with TA-Lib's MFI.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -683,7 +691,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Williams Percent R (Williams %R) for a given price series.
+        Calculate the Williams Percent R (Williams %R): where the close lies within the high-low range of a window,
+        from 0 (at the high) to -100 (at the low), to show overbought and oversold levels.
 
         The Williams %R is a momentum indicator that measures the level of the close price
         relative to the high-low range over a certain number of periods.
@@ -695,13 +704,17 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading Commodities." Windsor Books.
-        - Referenced against TA-Lib's WILLR (https://ta-lib.org/functions/willr.html).
+
+        Referenced against:
+        - TA-Lib, WILLR: https://ta-lib.org/functions/willr.html
 
         Also known as: Williams percent R, overbought oversold oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -728,8 +741,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Williams %R values for each asset in the Toolkit instance.
         - Williams %R agrees with TA-Lib's WILLR.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -802,7 +815,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Aroon Indicator for a given price series.
+        Calculate the Aroon Indicator: how many periods ago the highest high and the lowest low of a window were,
+        which shows whether a trend is starting and how strong it is.
 
         The Aroon Indicator is an oscillator that measures the strength of a trend and the
         likelihood of its continuation or reversal.
@@ -820,14 +834,19 @@ class MomentumTechnicals:
 
         - Chande, T.S. (1995). "The Time Price Oscillator." Technical Analysis of Stocks & Commodities, 13(9),
           369-374.
-        - Referenced against TA-Lib's AROON (https://ta-lib.org/functions/aroon.html).
-        - Referenced against TA-Lib's AROONOSC (https://ta-lib.org/functions/aroonosc.html).
+
+        Referenced against:
+        - TA-Lib, AROON: https://ta-lib.org/functions/aroon.html
+            Test: tests/technical/test_momentum_model.py::test_aroon_oscillator_matches_talib
+        - TA-Lib, AROONOSC: https://ta-lib.org/functions/aroonosc.html
 
         Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC, trend strength.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for calculating the Aroon Indicator.
@@ -854,8 +873,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Aroon Indicator values for each asset in the Toolkit instance.
         - Aroon Up and Aroon Down agree with TA-Lib's AROON, and the Aroon Oscillator TA-Lib's AROONOSC.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -926,7 +945,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Commodity Channel Index (CCI) for a given price series.
+        Calculate the Commodity Channel Index (CCI): how far the typical price lies from its average, in units of
+        its mean deviation, to show cyclical turns and overbought and oversold levels.
 
         The Commodity Channel Index is an oscillator that measures the current price level
         relative to an average price level over a specified period.
@@ -939,13 +959,17 @@ class MomentumTechnicals:
 
         - Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic Trends." Commodities, October
           1980; reprinted in Technical Analysis of Stocks & Commodities, 1(5), 120-122.
-        - Referenced against TA-Lib's CCI (https://ta-lib.org/functions/cci.html).
+
+        Referenced against:
+        - TA-Lib, CCI: https://ta-lib.org/functions/cci.html
 
         Also known as: CCI, cyclical trend indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -974,8 +998,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the CCI values for each asset in the Toolkit instance.
         - With the default `constant` of 0.015, the CCI agrees with TA-Lib's CCI.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1048,7 +1072,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Relative Vigor Index (RVI) for a given price series.
+        Calculate the Relative Vigor Index (RVI): how strongly the close ends above the open relative to the range,
+        which shows the conviction behind a move.
 
         The Relative Vigor Index measures the conviction behind a move by comparing where each
         period closes relative to its open with the period's full high-low range: in an uptrend
@@ -1074,8 +1099,10 @@ class MomentumTechnicals:
         Also known as: RVI, RVGI, vigor index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close", in which case the open, high and
                 low prices are adjusted for dividends in the same way.
@@ -1101,8 +1128,8 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the RVI values for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1176,8 +1203,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Force Index for a given price series, or with method="cumulative" the
-        Cumulative Force Index (CFI).
+        Calculate the Force Index or the Cumulative Force Index (CFI): the price change times the volume, smoothed
+        (and added up over time for the CFI), which shows the force of the buyers or sellers behind a move.
 
         The Force Index of Elder measures the strength behind price movements: each period's
         change in price times its volume, smoothed with an exponential moving average. The
@@ -1187,12 +1214,12 @@ class MomentumTechnicals:
         of 1 there is no smoothing and the Cumulative Force Index is the Weighted On-Balance
         Volume.
 
-        The formula for method="standard" is as follows:
+        The formula for the Force Index is as follows:
 
         - Raw Force Index = (Close — Close(1)) * Volume
         - Force Index = EMA(Raw Force Index, window)
 
-        The formula for method="cumulative" is as follows:
+        The formula for the Cumulative Force Index is as follows:
 
         - Force(t) = (Close(t) — Close(t-1)) * Volume(t)
         - CFI(t) = CFI(t-1) + EMA(Force, window)(t), starting on the start date
@@ -1205,24 +1232,29 @@ class MomentumTechnicals:
 
         - Elder, A. (1993). "Trading for a Living: Psychology, Trading Tactics, Money Management." John Wiley &
           Sons.
-        - Referenced against TA-Lib's EFI (https://ta-lib.org/functions/efi.html).
-        - Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta), by
-          Peerchemist, which defines the cumulative form and the Weighted On-Balance Volume.
+
+        Referenced against:
+        - TA-Lib, EFI: https://ta-lib.org/functions/efi.html
+        - finta, CFI (cumulative Force Index): https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1585
+            Test: tests/technical/test_breadth_model.py::test_cumulative_force_index_matches_finta
+        - finta, WOBV (cumulative Force Index): https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1506
 
         Also known as: FI, Elder's Force Index, EFI, CFI, Cumulative Force Index, Weighted On-Balance
-        Volume, WOBV (with method="cumulative" and a window of 1).
+        Volume, WOBV (the Cumulative Force Index with a window of 1).
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int | None, optional): The number of periods of the EMA that smooths the raw
                 Force Index. Defaults to None, which is 13 with method="standard", Elder's setting
                 for the trend (2 is his setting for timing entries), and 10 with
                 method="cumulative"; 1 gives the Weighted On-Balance Volume.
-            method (str, optional): "standard" for the Force Index or "cumulative" for its running
-                total from the start date, the Cumulative Force Index. Defaults to "standard".
+            method (str, optional): The index. Options are: "standard" (the Force Index), "cumulative" (its
+                running total from the start date, the Cumulative Force Index). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1243,16 +1275,16 @@ class MomentumTechnicals:
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
-          the Force Index values for each asset in the Toolkit instance; with method="cumulative"
+          the Force Index values for each asset in the Toolkit instance; the Cumulative Force Index
           as a running total from the start date.
         - The Force Index agrees with TA-Lib's EFI.
-        - With method="cumulative" and `window=1` it agrees with finta's WOBV. With a larger window
+        - The Cumulative Force Index with a window of 1 agrees with finta's WOBV. With a larger window
           every change agrees with that of finta's CFI once the EMAs have converged (after about
           200 periods), but the EMA starts from the simple average of its first `window` values
           while finta's averages from the first value, and the running total keeps the difference
           of the warm-up as a constant offset.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1335,7 +1367,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Ultimate Oscillator for a given price series.
+        Calculate the Ultimate Oscillator: the buying pressure over three windows combined into one value from 0 to
+        100, to show overbought and oversold levels with fewer false signals.
 
         The Ultimate Oscillator is a momentum oscillator that combines short-term, mid-term,
         and long-term price momentum into a single value.
@@ -1348,15 +1381,19 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4), 140-141.
-        - Referenced against TA-Lib's ULTOSC (https://ta-lib.org/functions/ultosc.html).
+
+        Referenced against:
+        - TA-Lib, ULTOSC: https://ta-lib.org/functions/ultosc.html
 
         Also known as: UO, ultimate momentum oscillator. See
         `momentum_model.get_ultimate_oscillator` for the Buying Pressure and True Range
         definitions.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1389,8 +1426,8 @@ class MomentumTechnicals:
         - The Ultimate Oscillator agrees with TA-Lib's ULTOSC. The first period counts with its High —
           Low range and its close minus its low, so the oscillator starts on period `window_3`, one
           period before TA-Lib's.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1466,7 +1503,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
+        Calculate the Percentage Volume Oscillator (PVO): the difference between a fast and a slow average of the
+        volume as a share of the slow one, which shows whether volume is rising or falling.
 
         The Percentage Volume Oscillator is the Percentage Price Oscillator applied to volume: the
         difference between a short-term and a long-term EMA of volume as a share of the long-term
@@ -1480,7 +1518,7 @@ class MomentumTechnicals:
         - Histogram = PVO — Signal Line
 
         with MA the Exponential Moving Average by default. With the Simple Moving Average
-        (`moving_average="simple"`) it is the Volume Oscillator (VOSC) of StockCharts,
+        it is the Volume Oscillator (VOSC) of StockCharts,
         pandas-ta-classic and Tulip Indicators, often used with 14 and 28 periods.
 
         A positive PVO means recent volume runs above its longer-term average, which gives weight to
@@ -1493,25 +1531,30 @@ class MomentumTechnicals:
 
         - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp., the
           MACD of which the PVO is the volume counterpart in percent.
-        - Referenced against TA-Lib's PVO (https://ta-lib.org/functions/pvo.html).
-        - pandas-ta-classic: vosc, the Simple Moving Average form (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: vosc, the Simple Moving Average form (https://tulipindicators.org/vosc).
+
+        Referenced against:
+        - TA-Lib, PVO: https://ta-lib.org/functions/pvo.html
+            Test: tests/technical/test_momentum_model.py::test_simple_percentage_volume_oscillator_matches_talib
+        - pandas-ta-classic, vosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vosc.py#L12
+        - Tulip Indicators, vosc: https://tulipindicators.org/vosc
 
         Also known as: PVO, volume oscillator, VOSC. See `momentum_model.get_percentage_volume_oscillator`
         for the references.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             short_window (int, optional): The number of periods for the short-term moving average.
                 Defaults to 12, as for the PPO and MACD.
             long_window (int, optional): The number of periods for the long-term moving average.
                 Defaults to 26, as for the PPO and MACD.
             signal_window (int, optional): The number of periods for the signal line.
                 Defaults to 9.
-            moving_average (str, optional): The moving average of the volume, "exponential"
-                or "simple" (the Volume Oscillator). The signal line is always an EMA.
-                Defaults to "exponential".
+            moving_average (str, optional): The moving average of the volume. Options are:
+                "exponential" (Exponential Moving Average), "simple" (Simple Moving Average, which gives the
+                Volume Oscillator). The signal line is always an EMA. Defaults to "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1538,11 +1581,11 @@ class MomentumTechnicals:
         - A ticker without volume, such as an index or a currency pair, has no PVO.
         - The PVO is a decimal, like the Percentage Price Oscillator, and NaN for a ticker without
           volume. It agrees with TA-Lib's PVO (with its default EMA) divided by 100: TA-Lib's PVO is in
-          percent, returns 0 without volume and has no signal line or histogram. With
-          `moving_average="simple"` it agrees with TA-Lib's PVO with `matype=0` and the `vosc` of
+          percent, returns 0 without volume and has no signal line or histogram. With the
+          Simple Moving Average it agrees with TA-Lib's PVO with that moving average and the `vosc` of
           pandas-ta-classic and Tulip Indicators, divided by 100.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1616,7 +1659,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Detrended Price Oscillator (DPO) for a given price series.
+        Calculate the Detrended Price Oscillator (DPO): the price minus a moving average shifted back in time, which
+        removes the trend to show the cycles.
 
         The Detrended Price Oscillator (DPO) is an indicator that helps identify short-term cycles
         by removing longer-term trends from prices.
@@ -1629,15 +1673,19 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
-        - Referenced against TA-Lib's DPO (https://ta-lib.org/functions/dpo.html).
+
+        Referenced against:
+        - TA-Lib, DPO: https://ta-lib.org/functions/dpo.html
 
         Also known as: DPO, detrended price oscillator. Note the moving average itself is not
         shifted — only the close price used for the comparison is looked up further back in
         time; see `momentum_model.get_detrended_price_oscillator` for the full explanation.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the DPO calculation.
@@ -1663,8 +1711,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the DPO values for each asset in the Toolkit instance.
         - The DPO agrees with TA-Lib's DPO.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1738,21 +1786,21 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Average Directional Index (ADX) for a given price series, or its rating
-        (ADXR).
+        Calculate the Average Directional Index (ADX) or its rating (ADXR): how strong a trend is, whatever its
+        direction, from the smoothed difference between upward and downward movement.
 
         The Average Directional Index (ADX) is an indicator that measures the strength of a trend,
         whether it's an uptrend or a downtrend. The Average Directional Movement Index Rating
-        (method="rating") is Wilder's smoothed ADX: the average of today's ADX and the ADX of
+        (ADXR) is Wilder's smoothed ADX: the average of today's ADX and the ADX of
         window — 1 periods ago. Wilder rated markets with it on how strongly they trend, to choose
         the ones to trade with his trend-following systems; it moves more slowly than the ADX and
         lags it.
 
         The formula is as follows, per method:
 
-        - "standard": ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| /
+        - ADX: ADX = Wilder's Smoothed Moving Average of DX, where DX = 100 * |+DI — -DI| /
           (+DI + -DI)
-        - "rating": ADXR = (ADX(t) + ADX(t — (window — 1))) / 2
+        - ADXR: ADXR = (ADX(t) + ADX(t — (window — 1))) / 2
 
         The ADX measures trend strength, not direction: a reading above about 25 is usually taken as a
         trending market and below 20 as a range, whether prices are rising or falling. Traders combine it
@@ -1763,8 +1811,12 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - Referenced against TA-Lib's ADX (https://ta-lib.org/functions/adx.html).
-        - Referenced against TA-Lib's ADXR (https://ta-lib.org/functions/adxr.html).
+
+        Referenced against:
+        - TA-Lib, ADX: https://ta-lib.org/functions/adx.html
+            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
+        - TA-Lib, ADXR: https://ta-lib.org/functions/adxr.html
+            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
         Also known as: ADX, trend strength indicator, ADXR, Average Directional Movement Rating,
         Average Directional Movement Index Rating.
@@ -1773,8 +1825,10 @@ class MomentumTechnicals:
         smoothing (not a plain SMA) throughout.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1789,7 +1843,7 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "standard" for the ADX or "rating" for the ADXR. Defaults to
+            method (str, optional): Options are: "standard" (the ADX), "rating" (the ADXR). Defaults to
                 "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1797,8 +1851,8 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame or pd.Series: Average Directional Index (ADX) or, with method="rating",
-            Average Directional Movement Index Rating (ADXR) values, between 0 and 100.
+            pd.DataFrame or pd.Series: Average Directional Index (ADX) or Average Directional
+            Movement Index Rating (ADXR) values, between 0 and 100.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
@@ -1807,11 +1861,11 @@ class MomentumTechnicals:
           ADX seeds its running sums with `window` - 1 values, so the first values differ from
           TA-Lib's until the two converge (within 0.01% after about 120 periods with the default
           window).
-        - "rating": the ADXR starts 3 * `window` — 2 periods after the first price, as in TA-Lib,
+        - ADXR: the ADXR starts 3 * `window` — 2 periods after the first price, as in TA-Lib,
           and its first values differ from TA-Lib's ADXR in the same way until the two converge
           (within 0.01% after about 100 to 125 periods with the default window).
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1889,9 +1943,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional
-        Movement (+DM, -DM), the Directional Indicators (+DI, -DI) and the Directional Movement
-        Index (DX).
+        Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional Movement (+DM, -DM),
+        the Directional Indicators (+DI, -DI) and the Directional Movement Index (DX).
 
         The Directional Movement is the part of a period's range outside the previous period's range:
         upward when the high rises above the previous high by more than the low falls below the previous
@@ -1911,23 +1964,28 @@ class MomentumTechnicals:
 
         +DI crossing above -DI is Wilder's buy signal and crossing below it his sell signal, which he only
         took when the ADX showed a trend. The DX itself is jumpy; the ADX (`get_average_directional_index`)
-        and the ADXR (`get_average_directional_index` with method="rating") smooth it.
+        and the ADXR (the rating of `get_average_directional_index`) smooth it.
 
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - Referenced against TA-Lib's PLUS_DM (https://ta-lib.org/functions/plus_dm.html).
-        - Referenced against TA-Lib's MINUS_DM (https://ta-lib.org/functions/minus_dm.html).
-        - Referenced against TA-Lib's PLUS_DI (https://ta-lib.org/functions/plus_di.html).
-        - Referenced against TA-Lib's MINUS_DI (https://ta-lib.org/functions/minus_di.html).
-        - Referenced against TA-Lib's DX (https://ta-lib.org/functions/dx.html).
+
+        Referenced against:
+        - TA-Lib, PLUS_DM: https://ta-lib.org/functions/plus_dm.html
+            Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
+        - TA-Lib, MINUS_DM: https://ta-lib.org/functions/minus_dm.html
+        - TA-Lib, PLUS_DI: https://ta-lib.org/functions/plus_di.html
+        - TA-Lib, MINUS_DI: https://ta-lib.org/functions/minus_di.html
+        - TA-Lib, DX: https://ta-lib.org/functions/dx.html
 
         Also known as: DMI, Directional Movement System, +DM, -DM, +DI, -DI, DX, PLUS_DM, MINUS_DM,
         PLUS_DI, MINUS_DI, directional indicators.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1964,8 +2022,8 @@ class MomentumTechnicals:
           window within 0.01% after about 100 periods for the +DM, -DM, +DI and -DI and 150 for the DX,
           and to 1e-8 after about 260.
         - A window without any directional movement (+DI and -DI both 0) has no DX.
-        - If `growth` is set to True, the method calculates the growth of the Directional Movement Index
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Directional Movement Index
+          over the given lag.
 
         As an example:
 
@@ -2039,7 +2097,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chande Momentum Oscillator (CMO) for a given price series.
+        Calculate the Chande Momentum Oscillator (CMO): the gains minus the losses over a window as a share of their
+        sum, from -100 to 100, to show momentum and overbought and oversold levels.
 
         The Chande Momentum Oscillator is an indicator that measures the momentum of a price
         series and identifies overbought and oversold conditions.
@@ -2052,21 +2111,25 @@ class MomentumTechnicals:
           (Wilder's MA(Upward Change) + Wilder's MA(Downward Change))
 
         Chande sums the changes over the window, so every change in the window counts equally and the
-        CMO jumps when a large change leaves the window. With `smoothed=True` the changes are averaged
+        CMO jumps when a large change leaves the window. The smoothed CMO averages the changes
         with Wilder's smoothing, as in the RSI, which gives TA-Lib's CMO: a smoother line that equals
         2 * RSI — 100.
 
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's CMOU (https://ta-lib.org/functions/cmou.html).
-        - Referenced against TA-Lib's CMO (https://ta-lib.org/functions/cmo.html).
+
+        Referenced against:
+        - TA-Lib, CMOU: https://ta-lib.org/functions/cmou.html
+        - TA-Lib, CMO: https://ta-lib.org/functions/cmo.html
 
         Also known as: CMO, CMOU, Chande momentum.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column in the historical data that represents
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the CMO calculation.
@@ -2096,9 +2159,9 @@ class MomentumTechnicals:
         - By default the gains and losses are summed over the window, as Chande defines the CMO and as
           on StockCharts, which agrees with TA-Lib's CMOU. TA-Lib's CMO smooths them with Wilder's method
           instead, as in its RSI, so the two differ throughout (by up to about 55 points on daily data);
-          `smoothed=True` gives TA-Lib's CMO, from the same period on.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+          the smoothed CMO gives TA-Lib's CMO, from the same period on.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2174,7 +2237,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Ichimoku Cloud indicator for a given price series.
+        Calculate the Ichimoku Cloud: the midpoints of the highs and lows over three windows, which show the trend,
+        the momentum and the support and resistance of the prices at a glance.
 
         The Ichimoku Cloud, also known as the Ichimoku Kinko Hyo, is a versatile indicator that
         defines support and resistance, identifies trend direction, gauges momentum, and provides
@@ -2199,15 +2263,19 @@ class MomentumTechnicals:
 
         - Hosoda, G. (1969). "Ichimoku Kinko Hyo." Published under the pen name Ichimoku Sanjin.
         - Elliott, N. (2007). "Ichimoku Charts." Harriman House.
-        - Referenced against TA-Lib's ICHIMOKU (https://ta-lib.org/functions/ichimoku.html).
+
+        Referenced against:
+        - TA-Lib, ICHIMOKU: https://ta-lib.org/functions/ichimoku.html
 
         Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
         are Goichi Hosoda's original values, both leading spans are conventionally displaced
         forward by the base (Kijun-sen) period.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             conversion_window (int, optional): The number of periods to consider for the
@@ -2242,8 +2310,8 @@ class MomentumTechnicals:
           `base_window` periods earlier: TA-Lib places them on the period they are calculated on
           instead of displacing them forward, and starts every line on the `lead_span_b_window`-th
           period.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
         - The leading spans are shifted forward by exactly `base_window` periods, as StockCharts
           defines the cloud. Platforms that count the current period as the first of the 26
           shift by `base_window` - 1 and show the same values one period earlier.
@@ -2325,12 +2393,15 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Stochastic Oscillator indicator for a given price series, of the price or
-        of the Relative Strength Index (the Stochastic RSI).
+        Calculate the Stochastic Oscillator or the Stochastic RSI, from 0 to 100, which show momentum and overbought
+        and oversold levels.
+
+        It is where the close, or for the Stochastic RSI the Relative Strength Index, lies within its range over a
+        window.
 
         The Stochastic Oscillator is a momentum indicator that shows the location of the close
         relative to the high-low range over a set number of periods. It consists of the %K line
-        (fast) and the %D line (slow). The Stochastic RSI (method="rsi") applies the Stochastic
+        (fast) and the %D line (slow). The Stochastic RSI applies the Stochastic
         Oscillator to the Relative Strength Index instead of to price: it shows where the current
         RSI sits within its own high-low range over the last `stochastic_window` periods. Chande
         and Kroll (1994, "The New Technical Trader") designed it because the RSI can spend long
@@ -2339,22 +2410,22 @@ class MomentumTechnicals:
 
         The formula is as follows, per method:
 
-        - "standard": %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low)),
+        - Stochastic Oscillator: %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low)),
           %D = SMA(%K, smooth_window), and with `slow` Slow %K = SMA(%K, smooth_window) and
           Slow %D = SMA(Slow %K, smooth_window)
-        - "rsi": RSI = Relative Strength Index(Close, window), with Wilder's smoothing,
+        - Stochastic RSI: RSI = Relative Strength Index(Close, window), with Wilder's smoothing,
           %K = 100 * (RSI — Lowest RSI) / (Highest RSI — Lowest RSI) over the last
           stochastic_window RSI values, and %D = SMA(%K, smooth_window)
 
         The fast stochastic (the default) reacts to every close and gives many crossovers. The slow
-        stochastic (`slow=True`) smooths %K once more, so its %K is the fast %D; it is the stochastic
+        stochastic smooths %K once more, so its %K is the fast %D; it is the stochastic
         George Lane charted and the one most platforms show by default (14, 3, 3).
 
         The defaults of the Stochastic RSI follow Chande and Kroll's definition, a 14-period
         stochastic of a 14-period RSI, which StockCharts and TradingView use as well. StockCharts
         shows this %K on a scale of 0 to 1; TradingView smooths it over 3 periods, so its %K is the
         %D here. TA-Lib's STOCHRSI defaults to a 5-period stochastic instead (timeperiod 14,
-        fastk_period 5 and fastd_period 3 with a simple average): pass stochastic_window=5 for its
+        fastk_period 5 and fastd_period 3 with a simple average): a stochastic window of 5 gives its
         %K and %D. A %K of 100 means the RSI is at its highest of the window, not that the price is
         overbought, so the readings above 80 and below 20 come and go quickly and are mostly read
         together with the trend.
@@ -2362,17 +2433,23 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Lane, G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
-        - Referenced against TA-Lib's STOCHF (https://ta-lib.org/functions/stochf.html).
-        - Referenced against TA-Lib's STOCH (https://ta-lib.org/functions/stoch.html).
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's STOCHRSI (https://ta-lib.org/functions/stochrsi.html).
+
+        Referenced against:
+        - TA-Lib, STOCHF: https://ta-lib.org/functions/stochf.html
+            Test: tests/technical/test_momentum_model.py::test_slow_stochastic_oscillator_matches_talib
+        - TA-Lib, STOCH: https://ta-lib.org/functions/stoch.html
+        - TA-Lib, STOCHRSI: https://ta-lib.org/functions/stochrsi.html
+            Test: tests/technical/test_momentum_model.py::test_stochastic_relative_strength_index_matches_talib
 
         Also known as: stochastic oscillator, percent K, percent D, fast stochastic, slow
         stochastic, Stochastic RSI, StochRSI, Stoch RSI.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2391,7 +2468,7 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): The stochastic: "standard" (of the price) or "rsi" (the
+            method (str, optional): The stochastic. Options are: "standard" (of the price), "rsi" (the
                 Stochastic RSI). Defaults to "standard".
             stochastic_window (int, optional): The number of periods of RSI values whose high-low
                 range gives %K. Only used when method="rsi". Defaults to 14.
@@ -2403,7 +2480,7 @@ class MomentumTechnicals:
         Returns:
             pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values, between 0 and
             100, as "Stochastic %K" and "Stochastic %D", or "Stochastic RSI %K" and
-            "Stochastic RSI %D" with method="rsi".
+            "Stochastic RSI %D" for the Stochastic RSI.
 
         Raises:
             ValueError: If the specified `period` or `method` is not one of the valid options.
@@ -2412,20 +2489,20 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Stochastic Oscillator values for each asset in the Toolkit instance.
         - %K and %D agree with TA-Lib's STOCHF (the fast stochastic) with `fastd_period` set to
-          `smooth_window` and a simple moving average (`fastd_matype=0`), which TA-Lib's STOCH gives
+          `smooth_window` and a simple moving average, which TA-Lib's STOCH gives
           with a `slowk_period` of 1. TA-Lib starts %K on the first %D.
-        - With `slow=True`, %K and %D agree with TA-Lib's STOCH with `slowk_period` and `slowd_period` set to
-          `smooth_window` and simple moving averages (`slowk_matype=0`, `slowd_matype=0`), and
+        - The slow stochastic's %K and %D agree with TA-Lib's STOCH with `slowk_period` and `slowd_period` set to
+          `smooth_window` and simple moving averages, and
           pandas-ta-classic's stoch. TA-Lib starts %K on the first %D.
-        - "rsi": the RSI is seeded with a simple average of its first `window` changes, as Wilder
+        - Stochastic RSI: the RSI is seeded with a simple average of its first `window` changes, as Wilder
           and TA-Lib do, so %K starts `window` + `stochastic_window` - 1 periods after the first
           price and %D `smooth_window` - 1 periods later. TA-Lib starts both on the first %D,
           with the same values from there. An RSI that did not move over the stochastic window
           has no range, which leaves %K missing (TA-Lib sets it to 0). With `fastk_period` set to
-          `stochastic_window`, `fastd_period` to `smooth_window` and a simple moving average
-          (`fastd_matype=0`), %K and %D agree with TA-Lib's STOCHRSI.
-        - If `growth` is set to True, the method calculates the growth of the %K and %D values
-          using the specified `lag`.
+          `stochastic_window`, `fastd_period` to `smooth_window` and a simple moving average,
+          %K and %D agree with TA-Lib's STOCHRSI.
+        - When growth is requested, the method calculates the growth of the %K and %D values
+          over the given lag.
 
         As an example:
 
@@ -2519,8 +2596,11 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series,
-        in price units or as a percentage of the long average (the Percentage Price Oscillator).
+        Calculate the Moving Average Convergence Divergence (MACD) or the Percentage Price Oscillator, which show
+        the direction and momentum of a trend.
+
+        It is the difference between a fast and a slow moving average, in price units or, for the Percentage Price
+        Oscillator, as a percentage of the slow average, with its signal line.
 
         The Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator
         that shows the relationship between two moving averages of a security's price. It consists
@@ -2528,15 +2608,15 @@ class MomentumTechnicals:
         is the Absolute Price Oscillator (APO), the difference between a short-term and a long-term
         moving average of the price, in price units: with exponential moving averages it is
         Appel's MACD line, and `moving_average` lets the average be chosen, such as simple moving
-        averages for a slower oscillator. The Percentage Price Oscillator (method="percentage")
+        averages for a slower oscillator. The Percentage Price Oscillator
         measures the difference between the two moving averages as a percentage of the longer one.
 
         The formula is as follows, per method:
 
-        - "absolute": MACD Line (APO) = MA(Close, short_window) — MA(Close, long_window), with the
+        - MACD: MACD Line (APO) = MA(Close, short_window) — MA(Close, long_window), with the
           EMA by default, Signal Line = EMA(MACD Line, signal_window) and Histogram = MACD Line —
           Signal Line
-        - "percentage": PPO = (MA(Close, short_window) — MA(Close, long_window)) /
+        - Percentage Price Oscillator: PPO = (MA(Close, short_window) — MA(Close, long_window)) /
           MA(Close, long_window), with the EMA by default, Signal Line = EMA(PPO, signal_window)
           and Histogram = PPO — Signal Line
 
@@ -2550,43 +2630,55 @@ class MomentumTechnicals:
         and over long periods; its signal line is always an EMA.
 
         `moving_average` and `signal_moving_average` replace the EMAs of the MACD line and of the signal
-        line with another moving average (TA-Lib's MACDEXT), and `fixed=True` smooths the 12- and
+        line with another moving average (TA-Lib's MACDEXT), and the fixed MACD smooths the 12- and
         26-period EMAs with the fixed constants 0.15 and 0.075 instead of 2 / (window + 1) (TA-Lib's
-        MACDFIX). With `moving_average="volume_weighted"` it is Dormeier's Volume Weighted MACD: the
+        MACDFIX). With the Volume Weighted Moving Average it is Dormeier's Volume Weighted MACD: the
         Volume Weighted Moving Averages, Sum(Close × Volume) / Sum(Volume), let the periods with heavy
         volume count more, so a move on heavy volume moves the MACD more than one on light volume.
-        `moving_average="elastic_volume_weighted"` uses Fries' Elastic Volume Weighted Moving Average,
+        The Elastic Volume Weighted MACD uses Fries' Elastic Volume Weighted Moving Average,
         which moves towards the price by the share of the window's volume traded in a period (the
-        Elastic Volume Weighted MACD, 20 and 40 periods in finta).
+        20 and 40 periods in finta).
 
         For more information, see the following sources:
 
         - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp.
         - Aspray, T. (1988). "MACD Momentum." Technical Analysis of Stocks & Commodities, 6(8), 294-297, for
           the MACD histogram.
-        - Referenced against TA-Lib's MACD (https://ta-lib.org/functions/macd.html).
-        - Referenced against TA-Lib's MACDEXT (https://ta-lib.org/functions/macdext.html).
-        - Referenced against TA-Lib's MACDFIX (https://ta-lib.org/functions/macdfix.html).
         - Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed. McGraw-Hill.
         - Appel, G. (2005). "Technical Analysis: Power Tools for Active Investors." FT Press.
-        - Referenced against TA-Lib's APO (https://ta-lib.org/functions/apo.html) and PPO
-          (https://ta-lib.org/functions/ppo.html).
-        - pandas-ta-classic: ppo, with `mamode="ema"` (https://github.com/xgboosted/pandas-ta-classic).
-        - ta: PercentagePriceOscillator (https://github.com/bukosabino/ta).
-        - finta: PPO (https://github.com/peerchemist/finta).
         - Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
         - Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks & Commodities, 19(6), 52-56
           (https://www.christian-fries.de/evwma/).
-        - pandas-ta-classic: vwmacd, the Volume Weighted MACD (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: VW_MACD and EV_MACD (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, MACD: https://ta-lib.org/functions/macd.html
+            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
+            Test: tests/technical/test_momentum_model.py::test_moving_average_convergence_divergence_variants_match_talib
+        - TA-Lib, MACDEXT: https://ta-lib.org/functions/macdext.html
+        - TA-Lib, MACDFIX: https://ta-lib.org/functions/macdfix.html
+        - pandas-ta-classic, vwmacd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/vwmacd.py#L12
+            Test: tests/technical/test_momentum_model.py::test_volume_weighted_macd_matches_pandas_ta_classic
+        - TA-Lib, APO: https://ta-lib.org/functions/apo.html
+            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
+        - TA-Lib, PPO: https://ta-lib.org/functions/ppo.html
+            Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
+
+        Shares similar logic:
+        - finta, VW_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L575
+        - finta, EV_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L617
+        - pandas-ta-classic, ppo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/ppo.py#L48
+        - ta, PercentagePriceOscillator: https://github.com/bukosabino/ta/blob/0.11.0/ta/momentum.py#L622
+        - finta, PPO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L541
 
         Also known as: MACD, MACD histogram, MACDEXT, MACDFIX, VWMACD, volume weighted MACD, EVMACD,
         elastic volume weighted MACD, momentum indicator, APO, absolute price oscillator, price
         oscillator, PPO, percentage price oscillator, PPO signal line, PPO histogram.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods for the shorter moving average.
@@ -2595,13 +2687,21 @@ class MomentumTechnicals:
                 Defaults to 26.
             signal_window (int, optional): The number of periods for the signal line.
                 Defaults to 9.
-            moving_average (str, optional): The moving average of the short and long term: "simple",
-                "exponential", "double_exponential", "triangular", "weighted", "hull",
-                "kaufman_adaptive", "volume_weighted" (the Volume Weighted MACD) or
-                "elastic_volume_weighted" (the Elastic Volume Weighted MACD). Defaults to "exponential".
-            signal_moving_average (str, optional): The moving average of the signal line, one of the
-                same. Only used when method="absolute"; the signal line of the PPO is an EMA.
-                Defaults to "exponential".
+            moving_average (str, optional): The moving average of the short and long term. Options are:
+                "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+                "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving
+                Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+                "kaufman_adaptive" (Kaufman Adaptive Moving Average), "volume_weighted" (Volume Weighted Moving
+                Average, the Volume Weighted MACD), "elastic_volume_weighted" (Elastic Volume Weighted Moving
+                Average, the Elastic Volume Weighted MACD). Defaults to "exponential".
+            signal_moving_average (str, optional): The moving average of the signal line. Options are:
+                "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+                "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving
+                Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+                "kaufman_adaptive" (Kaufman Adaptive Moving Average), "volume_weighted" (Volume Weighted Moving
+                Average, the Volume Weighted MACD), "elastic_volume_weighted" (Elastic Volume Weighted Moving
+                Average, the Elastic Volume Weighted MACD). Only used when method="absolute"; the signal line of
+                the PPO is an EMA. Defaults to "exponential".
             fixed (bool, optional): Whether to smooth the 12- and 26-period EMAs with the fixed
                 constants 0.15 and 0.075 (TA-Lib's MACDFIX). Needs the exponential moving average and
                 the default windows. Only used when method="absolute". Defaults to False.
@@ -2614,9 +2714,9 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "absolute" for the MACD in price units, or "percentage" for the
-                Percentage Price Oscillator, a decimal of the long average. The volume weighted
-                moving averages and `fixed` apply to the MACD only. Defaults to "absolute".
+            method (str, optional): Options are: "absolute" (the MACD in price units), "percentage" (the
+                Percentage Price Oscillator, a decimal of the long average). The volume weighted moving averages
+                and `fixed` apply to the MACD only. Defaults to "absolute".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2625,7 +2725,7 @@ class MomentumTechnicals:
         Returns:
             pd.Series or pd.DataFrame:
             MACD line, signal line and histogram values in price units ("MACD Line", "Signal Line"
-            and "Histogram"), or with method="percentage" the "Percentage Price Oscillator",
+            and "Histogram"), or for the Percentage Price Oscillator the "Percentage Price Oscillator",
             "Signal Line" and "Histogram" as decimals (0.02 is 2%).
 
         Notes:
@@ -2640,22 +2740,22 @@ class MomentumTechnicals:
           first value; with exponential ones (also MACDFIX) they converge within 0.01% after about 90
           periods, with double exponential ones after about 130 and with Kaufman adaptive ones, whose
           smoothing can be very slow, after about 210.
-        - With `moving_average="volume_weighted"` and `signal_moving_average="volume_weighted"` the
+        - With the Volume Weighted Moving Average for both the MACD line and the signal line the
           lines agree with pandas-ta-classic's vwmacd. finta's VW_MACD divides exponential averages of
           Close × Volume and of the volume instead. finta's EV_MACD starts every eVWMA from 0 where the
           Toolkit seeds it with a simple average, so the two converge as the start decays (after
           several hundred periods for a 40-period eVWMA).
-        - The MACD line agrees with TA-Lib's APO with the same moving average (`matype`: SMA 0,
-          EMA 1, WMA 2, DEMA 3, TRIMA 5, KAMA 6) from the first value.
-        - "percentage": the PPO is a decimal and agrees with TA-Lib's PPO with the same moving average
-          (`matype`) divided by 100, since TA-Lib's PPO is in percent. TA-Lib has no signal line or
+        - The MACD line agrees with TA-Lib's APO with the same moving average (its moving average type:
+          SMA 0, EMA 1, WMA 2, DEMA 3, TRIMA 5, KAMA 6) from the first value.
+        - Percentage Price Oscillator: the PPO is a decimal and agrees with TA-Lib's PPO with the same moving average
+          divided by 100, since TA-Lib's PPO is in percent. TA-Lib has no signal line or
           histogram; with the default EMAs all three agree with pandas-ta-classic's ppo with
-          `mamode="ema"` divided by 100. ta and finta seed their EMAs with the first price instead of
+          its exponential moving average, divided by 100. ta and finta seed their EMAs with the first price instead of
           a simple average, so their first values differ until the two converge. Every EMA is seeded
           with the simple average of its first values, so the PPO starts on the `long_window`-th
           period and the signal line and histogram `signal_window` - 1 periods later.
-        - If `growth` is set to True, the method calculates the growth of the MACD and signal values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the MACD and signal values
+          over the given lag.
 
         As an example:
 
@@ -2777,56 +2877,55 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Relative Strength Index (RSI) indicator for a given price series: Wilder's
-        RSI, the ConnorsRSI, Ehlers' Laguerre RSI, Chande's Dynamic Momentum Index or Chande's
-        Intraday Momentum Index.
+        Calculate the Relative Strength Index (RSI): the size of the gains against the losses over a window, from 0
+        to 100, to show momentum and overbought and oversold levels.
 
         The Relative Strength Index (RSI) is a momentum oscillator that measures the speed and
         change of price movements. It ranges from 0 to 100 and is used to identify overbought or
         oversold conditions in an asset's price. The variants share that scale:
 
-        - "standard": Wilder's RSI of the close.
-        - "connors": the ConnorsRSI of Connors, Alvarez and Radtke averages three short-term
+        - RSI: Wilder's RSI of the close.
+        - ConnorsRSI: the ConnorsRSI of Connors, Alvarez and Radtke averages three short-term
           measures of how overbought or oversold a price is, each on a scale of 0 to 100: a
           3-period RSI of the close, a 2-period RSI of the streak (the number of periods in a row
           the close rose, positive, or fell, negative) and the percent rank of the latest
           one-period return among the returns of the previous 100 periods. It was designed for
           short-term mean reversion: below 10 (or 5) is oversold and a pullback in an uptrend to
           buy, above 90 (or 95) overbought.
-        - "laguerre": the Laguerre RSI of Ehlers (2004) is an RSI over the four elements of a
+        - Laguerre RSI: the Laguerre RSI of Ehlers (2004) is an RSI over the four elements of a
           Laguerre filter instead of four prices. The first element is an exponential moving
           average and each next one an all-pass element that delays the low frequencies more
           than the high ones. That warps time: four elements look as far back as a much longer
           window, so the RSI is smooth yet reacts quickly. Ehlers buys when it crosses back above
           20 and sells when it crosses back below 80.
-        - "dynamic": the Dynamic Momentum Index of Chande and Kroll (1994) is an RSI whose period
+        - Dynamic Momentum Index: the Dynamic Momentum Index of Chande and Kroll (1994) is an RSI whose period
           changes with the volatility: it shortens when the recent volatility is above its
           average and lengthens when it is below, between 5 and 30 periods. The index thereby
           reacts quickly in volatile markets and stays calm in quiet ones.
-        - "intraday": the Intraday Momentum Index is an RSI of the moves within each period: it
+        - Intraday Momentum Index: the Intraday Momentum Index is an RSI of the moves within each period: it
           compares the bodies of the periods that closed above their open with all bodies over
           the window. Tushar Chande designed it for traders who care about the move from open to
           close rather than from close to close.
 
         The formula is as follows, per method:
 
-        - "standard": RSI = 100 — (100 / (1 + RS)), with RS the ratio of Wilder's averages of the
+        - RSI: RSI = 100 — (100 / (1 + RS)), with RS the ratio of Wilder's averages of the
           gains and losses over the window
-        - "connors": Streak = the number of consecutive periods the close rose (positive) or fell
+        - ConnorsRSI: Streak = the number of consecutive periods the close rose (positive) or fell
           (negative), 0 when it was unchanged, Return = Close(t) / Close(t — 1) — 1, and
           ConnorsRSI = (RSI(Close, window) + RSI(Streak, streak_window) + 100 × Percent
           Rank(Return, rank_window)) / 3, with Wilder's RSI and the Percent Rank the share of the
           previous `rank_window` returns below the latest one (`get_percent_rank`)
-        - "laguerre": L0 = (1 - Gamma) * Price + Gamma * L0(t-1),
+        - Laguerre RSI: L0 = (1 - Gamma) * Price + Gamma * L0(t-1),
           L1 = -Gamma * L0 + L0(t-1) + Gamma * L1(t-1), L2 = -Gamma * L1 + L1(t-1) + Gamma *
           L2(t-1), L3 = -Gamma * L2 + L2(t-1) + Gamma * L3(t-1), CU = the sum of L0 - L1, L1 - L2
           and L2 - L3 where positive, CD = the sum of L1 - L0, L2 - L1 and L3 - L2 where positive,
           and Laguerre RSI = 100 * CU / (CU + CD)
-        - "dynamic": Volatility Index = StdDev(Close, volatility_window) /
+        - Dynamic Momentum Index: Volatility Index = StdDev(Close, volatility_window) /
           SMA(StdDev(Close, volatility_window), average_window), Period = Int(window /
           Volatility Index) bounded to minimum_window and maximum_window, and DMI = 100 *
           Sum(Up Changes, Period) / (Sum(Up Changes, Period) + Sum(Down Changes, Period))
-        - "intraday": Gain = Close — Open where Close > Open, else 0, Loss = Open — Close where
+        - Intraday Momentum Index: Gain = Close — Open where Close > Open, else 0, Loss = Open — Close where
           Close < Open, else 0, and IMI = 100 * Sum(Gain, window) / (Sum(Gain, window) +
           Sum(Loss, window))
 
@@ -2847,18 +2946,27 @@ class MomentumTechnicals:
         - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons,
           chapter 14, "Time Warp - Without Space Travel."
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's RSI (https://ta-lib.org/functions/rsi.html), CRSI
-          (https://ta-lib.org/functions/crsi.html) and IMI (https://ta-lib.org/functions/imi.html).
-        - Referenced against pandas-ta-classic's lrsi (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: DYMI (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, RSI: https://ta-lib.org/functions/rsi.html
+        - TA-Lib, CRSI (ConnorsRSI): https://ta-lib.org/functions/crsi.html
+            Test: tests/technical/test_momentum_model.py::test_connors_relative_strength_index_matches_talib
+        - pandas-ta-classic, lrsi (Laguerre RSI): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/lrsi.py#L29
+            Test: tests/technical/test_cycle_model.py::test_laguerre_relative_strength_index_matches_pandas_ta
+        - TA-Lib, IMI (Intraday Momentum Index): https://ta-lib.org/functions/imi.html
+
+        Shares similar logic:
+        - finta, DYMI (Dynamic Momentum Index): https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L752
 
         Also known as: RSI, momentum oscillator, overbought, oversold, CRSI, ConnorsRSI, Connors
         RSI, Laguerre RSI, LRSI, Ehlers' Laguerre RSI, DYMI, Dynamic Momentum Index, Chande's
         Dynamic Momentum Index, variable-term RSI, IMI, Intraday Momentum Index, intraday momentum.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open of method="intraday" is adjusted
                 for dividends in the same way.
@@ -2876,8 +2984,8 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): The RSI: "standard" (Wilder's), "connors" (ConnorsRSI),
-                "laguerre" (Ehlers' Laguerre RSI), "dynamic" (Chande's Dynamic Momentum Index) or
+            method (str, optional): The RSI. Options are: "standard" (Wilder's RSI), "connors" (ConnorsRSI),
+                "laguerre" (Ehlers' Laguerre RSI), "dynamic" (Chande's Dynamic Momentum Index),
                 "intraday" (Chande's Intraday Momentum Index). Defaults to "standard".
             streak_window (int, optional): The number of periods of the RSI of the streak. Only
                 used when method="connors". Defaults to 2.
@@ -2906,27 +3014,27 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           RSI for each asset in the Toolkit instance.
-        - "standard": the RSI agrees with TA-Lib's RSI.
-        - "connors": equals TA-Lib's CRSI. It starts `rank_window` + 1 periods after the first
+        - RSI: the RSI agrees with TA-Lib's RSI.
+        - ConnorsRSI: equals TA-Lib's CRSI. It starts `rank_window` + 1 periods after the first
           price, the first percent rank of a return.
-        - "laguerre": on the same scale of 0 to 100 as the other variants, as pandas-ta-classic's
+        - Laguerre RSI: on the same scale of 0 to 100 as the other variants, as pandas-ta-classic's
           lrsi, where Ehlers' listing and the model function
           `cycle_model.get_laguerre_relative_strength_index` give a decimal between 0 and 1;
           otherwise they are equal. The filter elements start on the first price of each
           ticker's own history, as pandas-ta-classic starts them, so the first period is NaN;
           Ehlers' listing starts them from zero. When the four elements are equal (CU + CD is
           zero) the value before is kept, as in Ehlers' listing, where pandas-ta-classic gives 0.
-        - "dynamic": the period changes every period, which leaves no single period for Wilder's
+        - Dynamic Momentum Index: the period changes every period, which leaves no single period for Wilder's
           recursive average, so each period's RSI sums the gains and losses of its own last
           `Period` changes (Cutler's RSI), the summed form Chande also uses for his Momentum
           Oscillator (`get_chande_momentum_oscillator`). The standard deviation is the sample
           standard deviation (ddof=1). finta's DYMI rounds the Volatility Index before the
           division and takes an exponentially smoothed RSI over the periods before the current
           one, so it differs from this by up to 50 points.
-        - "intraday": the IMI agrees with TA-Lib's IMI, except on a window in which every period
+        - Intraday Momentum Index: the IMI agrees with TA-Lib's IMI, except on a window in which every period
           closed at its open, which has no IMI (NaN) where TA-Lib returns 50.
-        - If `growth` is set to True, the method calculates the growth of the RSI
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the RSI
+          over the given lag.
 
         As an example:
 
@@ -3048,8 +3156,10 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the True Strength Index (TSI) for a given price series, or with
-        method="ergodic" the SMI Ergodic Indicator and Oscillator.
+        Calculate the True Strength Index (TSI) or the SMI Ergodic Indicator and Oscillator, which show the
+        direction and strength of momentum.
+
+        Both are the double-smoothed price change as a share of the double-smoothed absolute price change.
 
         The True Strength Index of Blau (1995, "Momentum, Direction, and Divergence") smooths
         the one-period price change twice with Exponential Moving Averages and divides it by
@@ -3062,13 +3172,13 @@ class MomentumTechnicals:
         Oscillator, the histogram, is the difference between the two, in the way the MACD
         histogram is the MACD line minus its signal line.
 
-        The formula for method="standard" is as follows:
+        The formula for the True Strength Index is as follows:
 
         - Momentum = Close(t) — Close(t - 1)
         - TSI = 100 * EMA(EMA(Momentum, long_window), short_window) / EMA(EMA(|Momentum|, long_window), short_window)
         - Signal Line = EMA(TSI, signal_window)
 
-        The formula for method="ergodic" is as follows:
+        The formula for the SMI Ergodic Indicator is as follows:
 
         - Momentum = Close(t) — Close(t - 1)
         - Smoothed Momentum = EMA(EMA(Momentum, long_window), short_window)
@@ -3088,15 +3198,20 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
-        - Referenced against TA-Lib's TSI (https://ta-lib.org/functions/tsi.html).
-        - pandas-ta-classic: smi (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, TSI: https://ta-lib.org/functions/tsi.html
+        - pandas-ta-classic, smi (SMI Ergodic Indicator): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smi.py#L13
+            Test: tests/technical/test_momentum_model.py::test_smi_ergodic_indicator_matches_pandas_ta_classic
 
         Also known as: TSI, double smoothed momentum, SMI Ergodic, SMIIO, SMI Ergodic Oscillator,
         ergodic oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             long_window (int | None, optional): The number of periods of the first EMA of the price
@@ -3107,9 +3222,9 @@ class MomentumTechnicals:
             signal_window (int | None, optional): The number of periods of the EMA of the indicator
                 that gives the signal line. Defaults to None, which is 7 with method="standard" and 5
                 with method="ergodic".
-            method (str, optional): "standard" for the True Strength Index and its signal line, or
-                "ergodic" for the SMI Ergodic Indicator, its signal line and the histogram (the SMI
-                Ergodic Oscillator). Defaults to "standard".
+            method (str, optional): Options are: "standard" (the True Strength Index and its signal line),
+                "ergodic" (the SMI Ergodic Indicator, its signal line and the histogram, the SMI Ergodic
+                Oscillator). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator lines.
@@ -3125,8 +3240,8 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: True Strength Index and Signal Line values, or with
-            method="ergodic" the SMI Ergodic Indicator, Signal Line and Histogram (the SMI Ergodic
+            pd.Series or pd.DataFrame: True Strength Index and Signal Line values, or for the
+            ergodic form the SMI Ergodic Indicator, Signal Line and Histogram (the SMI Ergodic
             Oscillator) values, between -100 and 100.
 
         Notes:
@@ -3140,8 +3255,8 @@ class MomentumTechnicals:
         - The TSI agrees with TA-Lib's TSI, which has no signal line, with either set of windows.
           The three SMI Ergodic columns agree with pandas-ta-classic's smi times 100, as
           pandas-ta-classic uses a scale of -1 to 1.
-        - If `growth` is set to True, the method calculates the growth of the indicator lines
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator lines
+          over the given lag.
 
         As an example:
 
@@ -3228,7 +3343,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Balance of Power (BOP) indicator for a given price series.
+        Calculate the Balance of Power (BOP): how far the close lies from the open as a share of the range, which
+        shows whether buyers or sellers control the period.
 
         The Balance of Power (BOP) indicator measures the strength of buyers versus sellers
         in the market. It relates the price change to the change in the asset's trading range.
@@ -3241,13 +3357,17 @@ class MomentumTechnicals:
 
         - Igor Livshin, who created the indicator; described in Kaufman, P.J. (2005). "New Trading Systems and
           Methods." 4th ed. Wiley.
-        - Referenced against TA-Lib's BOP (https://ta-lib.org/functions/bop.html).
+
+        Referenced against:
+        - TA-Lib, BOP: https://ta-lib.org/functions/bop.html
 
         Also known as: BOP, bull bear power.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3273,8 +3393,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           BOP for each asset in the Toolkit instance.
         - The BOP agrees with TA-Lib's BOP.
-        - If `growth` is set to True, the method calculates the growth of the BOP
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the BOP
+          over the given lag.
 
         As an example:
 
@@ -3345,7 +3465,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Internal Bar Strength (IBS) for a given price series.
+        Calculate the Internal Bar Strength (IBS): where the close lies within the range of its period, from 0 (at
+        the low) to 1 (at the high).
 
         The Internal Bar Strength is where the close sits within the period's own range: 0 for a close
         on the low, 1 for a close on the high. It is a mean-reversion measure: in equity indices and ETFs
@@ -3359,13 +3480,17 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Pagonidis, A.S. (2014). "The IBS Effect: Mean Reversion in Equity ETFs." NAAIM Founders Award paper.
-        - Referenced against TA-Lib's IBS (https://ta-lib.org/functions/ibs.html).
+
+        Referenced against:
+        - TA-Lib, IBS: https://ta-lib.org/functions/ibs.html
 
         Also known as: IBS, internal bar strength.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3391,8 +3516,8 @@ class MomentumTechnicals:
           the IBS for each asset in the Toolkit instance.
         - The IBS agrees with TA-Lib's IBS, except on a period without a range (High equal to Low), which
           has no IBS (NaN) where TA-Lib returns 0.5.
-        - If `growth` is set to True, the method calculates the growth of the IBS
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the IBS
+          over the given lag.
 
         As an example:
 
@@ -3464,7 +3589,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Qstick indicator for a given price series.
+        Calculate the Qstick: the average of the close minus the open over a window, which shows whether candles
+        have been mostly rising or falling.
 
         Qstick is the moving average of the candlestick bodies, Close — Open, over the window. It turns
         the colour of the recent candles into a number: above zero the periods closed above their open on
@@ -3478,13 +3604,17 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's QSTICK (https://ta-lib.org/functions/qstick.html).
+
+        Referenced against:
+        - TA-Lib, QSTICK: https://ta-lib.org/functions/qstick.html
 
         Also known as: Qstick, QSTICK, Q-stick.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3510,8 +3640,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Qstick for each asset in the Toolkit instance.
         - Qstick agrees with TA-Lib's QSTICK and pandas-ta-classic's qstick.
-        - If `growth` is set to True, the method calculates the growth of the Qstick
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Qstick
+          over the given lag.
 
         As an example:
 
@@ -3587,8 +3717,10 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Awesome Oscillator (AO) for a given price series, or with
-        method="accelerator" the Accelerator/Decelerator Oscillator (AC).
+        Calculate the Awesome Oscillator (AO) or the Accelerator/Decelerator Oscillator (AC), which show the
+        momentum of the market (AO) and whether it speeds up or slows down (AC).
+
+        The AO is the difference between a fast and a slow average of the median price.
 
         The Awesome Oscillator measures market momentum by comparing a short-term and a
         long-term Simple Moving Average of the median price (the midpoint of each period's high
@@ -3599,12 +3731,12 @@ class MomentumTechnicals:
         does. Both were developed by Bill Williams as part of his "Trading Chaos" collection of
         momentum indicators.
 
-        The formula for method="standard" is as follows:
+        The formula for the Awesome Oscillator is as follows:
 
         - Median Price = (High + Low) / 2
         - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
 
-        The formula for method="accelerator" is as follows:
+        The formula for the Accelerator/Decelerator Oscillator is as follows:
 
         - Median Price = (High + Low) / 2
         - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
@@ -3621,15 +3753,19 @@ class MomentumTechnicals:
           Profits." Wiley.
         - Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in Stocks, Bonds, and
           Commodities." Wiley.
-        - Referenced against TA-Lib's AO (https://ta-lib.org/functions/ao.html) and AC
-          (https://ta-lib.org/functions/ac.html).
+
+        Referenced against:
+        - TA-Lib, AO: https://ta-lib.org/functions/ao.html
+        - TA-Lib, AC: https://ta-lib.org/functions/ac.html
 
         Also known as: AO, Bill Williams Awesome Oscillator, AC, Accelerator Oscillator,
         Acceleration/Deceleration Oscillator, AC oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3639,8 +3775,8 @@ class MomentumTechnicals:
                 median price. Defaults to 34.
             signal_window (int, optional): The number of periods for the SMA of the Awesome
                 Oscillator, with method="accelerator" only. Defaults to 5.
-            method (str, optional): "standard" for the Awesome Oscillator or "accelerator" for the
-                Accelerator Oscillator. Defaults to "standard".
+            method (str, optional): Options are: "standard" (the Awesome Oscillator), "accelerator" (the
+                Accelerator Oscillator). Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the oscillator.
@@ -3668,8 +3804,8 @@ class MomentumTechnicals:
           Williams' books above.
         - The AO agrees with TA-Lib's AO, and the AC with TA-Lib's AC; the AC starts
           `long_window` + `signal_window` — 2 periods after the first price.
-        - If `growth` is set to True, the method calculates the growth of the oscillator
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the oscillator
+          over the given lag.
 
         As an example:
 
@@ -3754,7 +3890,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Vortex Indicator for a given price series.
+        Calculate the Vortex Indicator: the upward and downward movement of the prices relative to their true range,
+        whose crossings mark the start of a new trend.
 
         The Vortex Indicator quantifies the presence and strength of a directional trend by
         comparing each period's price movement away from the prior period's range to the
@@ -3772,8 +3909,10 @@ class MomentumTechnicals:
         Also known as: VI, Vortex Indicator +/-, trend direction indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3802,10 +3941,12 @@ class MomentumTechnicals:
           the Vortex Indicator values for each asset in the Toolkit instance.
         - Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis
           of Stocks & Commodities, 28(1), 20-30.
-        - Referenced against TA-Lib's VORTEX (https://ta-lib.org/functions/vortex.html).
         - VI+ and VI- agree with TA-Lib's VORTEX.
-        - If `growth` is set to True, the method calculates the growth of the VI+ and VI-
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the VI+ and VI-
+          over the given lag.
+
+        Referenced against:
+        - TA-Lib, VORTEX: https://ta-lib.org/functions/vortex.html
 
         As an example:
 
@@ -3878,7 +4019,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
+        Calculate the Elder Ray Index: how far the high (Bull Power) and the low (Bear Power) lie from an
+        exponential moving average, which shows the strength of the buyers and the sellers.
 
         The Elder Ray Index measures buying and selling pressure in the market relative to a
         trend baseline (an Exponential Moving Average of the closing price). Bull Power captures
@@ -3893,8 +4035,10 @@ class MomentumTechnicals:
         Also known as: Elder Ray, Bull Power, Bear Power.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -3925,10 +4069,12 @@ class MomentumTechnicals:
           Power moves toward zero from below; when the close is below the EMA (downtrend), both
           tend to be negative.
         - Reference: Elder, A. (1993). "Trading for a Living." Wiley.
-        - Referenced against TA-Lib's ERI (https://ta-lib.org/functions/eri.html).
         - Bull Power and Bear Power agree with TA-Lib's ERI.
-        - If `growth` is set to True, the method calculates the growth of the Bull and Bear Power
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Bull and Bear Power
+          over the given lag.
+
+        Referenced against:
+        - TA-Lib, ERI: https://ta-lib.org/functions/eri.html
 
         As an example:
 
@@ -4002,14 +4148,14 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Rate of Change (ROC) for a given price series, as a percentage or in
-        price units (the Momentum).
+        Calculate the Rate of Change (ROC), as a percentage or in price units (the Momentum): the change of the
+        price over a window, the speed at which the price moves.
 
         The Rate of Change is a pure momentum oscillator that measures the percentage
         change in price between the current period and the price a fixed number of periods
         ago. It oscillates around zero: positive values indicate price is higher than
         `window` periods ago (upward momentum), while negative values indicate price is
-        lower (downward momentum). The Momentum (method="absolute") is the same change in price
+        lower (downward momentum). The Momentum is the same change in price
         units: the simplest measure of the speed of a move. Momentum that falls while the price
         still rises says the move slows down. The Rate of Change is the change as a share of the
         earlier price, which can be compared across stocks; the Momentum is in the currency of the
@@ -4017,22 +4163,26 @@ class MomentumTechnicals:
 
         The formula is as follows, per method:
 
-        - "percentage": ROC = Close(t) / Close(t - window) — 1
-        - "absolute": Momentum = Close(t) — Close(t — window)
+        - Rate of Change: ROC = Close(t) / Close(t - window) — 1
+        - Momentum: Momentum = Close(t) — Close(t — window)
 
         For more information, see the following sources:
 
         - Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute of
           Finance.
         - Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill.
-        - Referenced against TA-Lib's ROCP (https://ta-lib.org/functions/rocp.html).
-        - Referenced against TA-Lib's MOM (https://ta-lib.org/functions/mom.html).
+
+        Referenced against:
+        - TA-Lib, ROCP: https://ta-lib.org/functions/rocp.html
+        - TA-Lib, MOM: https://ta-lib.org/functions/mom.html
 
         Also known as: ROC, Price Rate of Change, momentum, MOM, price momentum, momentum oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to look back for the rate of change
@@ -4046,25 +4196,25 @@ class MomentumTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "percentage" for the Rate of Change as a decimal or "absolute"
-                for the Momentum in price units. Defaults to "percentage".
+            method (str, optional): Options are: "percentage" (the Rate of Change as a decimal), "absolute" (the
+                Momentum in price units). Defaults to "percentage".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Rate of Change values as a decimal (0.05 is 5%), or with
-            method="absolute" the Momentum, the change in price in price units.
+            pd.Series or pd.DataFrame: Rate of Change values as a decimal (0.05 is 5%), or for the
+            Momentum, the change in price in price units.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Rate of Change for each asset in the Toolkit instance.
         - The Rate of Change is a decimal and agrees with TA-Lib's ROCP; TA-Lib's ROC is the same in
           percent.
-        - "absolute": the Momentum agrees with TA-Lib's MOM, pandas-ta-classic's mom and finta's MOM.
-        - If `growth` is set to True, the method calculates the growth of the Rate of Change
-          using the specified `lag`.
+        - Momentum: the Momentum agrees with TA-Lib's MOM, pandas-ta-classic's mom and finta's MOM.
+        - When growth is requested, the method calculates the growth of the Rate of Change
+          over the given lag.
 
         As an example:
 
@@ -4147,7 +4297,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Choppiness Index (CHOP) for a given price series.
+        Calculate the Choppiness Index (CHOP): how much of the range of a window the price travelled, from trending
+        (near 0) to choppy and sideways (near 100).
 
         The Choppiness Index quantifies whether the market is trending or moving sideways
         ("choppy") by comparing the sum of True Range over the window (a measure of the
@@ -4162,29 +4313,34 @@ class MomentumTechnicals:
 
         - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
 
-        With `range_method="true_range"` the net range is that of the true highs and lows,
+        With the true range as the box, the net range is that of the true highs and lows,
         Max(High, Previous Close) and Min(Low, Previous Close), the range the summed True Ranges span,
         so a gap between periods counts in both the path and the net range (TA-Lib's CHOPTR).
 
         For more information, see the following sources:
 
         - Kaufman, P.J. (2013). "Trading Systems and Methods." 5th ed. Wiley.
-        - Referenced against TA-Lib's CHOP (https://ta-lib.org/functions/chop.html).
-        - Referenced against TA-Lib's CHOPTR (https://ta-lib.org/functions/choptr.html).
+
+        Referenced against:
+        - TA-Lib, CHOP: https://ta-lib.org/functions/chop.html
+            Test: tests/technical/test_momentum_model.py::test_choppiness_index_with_the_true_range_box_matches_talib
+        - TA-Lib, CHOPTR: https://ta-lib.org/functions/choptr.html
 
         Also known as: CHOP, CHOPTR, Choppiness Index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the Choppiness Index
                 calculation. Defaults to 14.
-            range_method (str, optional): The net range the summed True Range is divided by:
-                "high_low", the highest high minus the lowest low, or "true_range", the highest true
-                high minus the lowest true low (TA-Lib's CHOPTR). Defaults to "high_low".
+            range_method (str, optional): The net range the summed True Range is divided by. Options are:
+                "high_low" (the highest high minus the lowest low), "true_range" (the highest true high minus
+                the lowest true low, TA-Lib's CHOPTR). Defaults to "high_low".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Choppiness Index.
@@ -4210,11 +4366,11 @@ class MomentumTechnicals:
         - Developed by Australian commodities trader Bill Dreiss; there is no formal journal
           citation. The standard textbook treatment is Kaufman, P.J. (2013). "Trading Systems
           and Methods." 5th ed. Wiley.
-        - The Choppiness Index agrees with TA-Lib's CHOP, and with `range_method="true_range"` TA-Lib's
+        - The Choppiness Index agrees with TA-Lib's CHOP, and with the true range as the box TA-Lib's
           CHOPTR. The first period counts with its High — Low range, so the index starts on period
           `window`, one period before TA-Lib's.
-        - If `growth` is set to True, the method calculates the growth of the Choppiness
-          Index using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Choppiness
+          Index over the given lag.
 
         As an example:
 
@@ -4287,13 +4443,14 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Kaufman's Efficiency Ratio (ER) for a given price series.
+        Calculate Kaufman's Efficiency Ratio (ER): the net change over a window as a share of the path travelled,
+        from 0 (noise) to 1 (a straight trend).
 
         The Efficiency Ratio compares the net change in price over the window with the path the price
         travelled to get there, the sum of the absolute changes of each period. A price that moves in a
         straight line has a ratio of 1; a price that ends where it started, however much it moved in
         between, has a ratio of 0. Perry Kaufman uses it to adapt the speed of his Adaptive Moving
-        Average (`get_moving_average` with method="kaufman_adaptive") to the noise in the market.
+        Average (the Kaufman adaptive method of `get_moving_average`) to the noise in the market.
 
         The formula is as follows:
 
@@ -4304,13 +4461,17 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing Markets." McGraw-Hill.
-        - Referenced against TA-Lib's ER (https://ta-lib.org/functions/er.html).
+
+        Referenced against:
+        - TA-Lib, ER: https://ta-lib.org/functions/er.html
 
         Also known as: ER, Kaufman Efficiency Ratio, fractal efficiency.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the change and the path. Defaults to 10.
@@ -4336,8 +4497,8 @@ class MomentumTechnicals:
           the Efficiency Ratio for each asset in the Toolkit instance.
         - The Efficiency Ratio agrees with TA-Lib's ER, pandas-ta-classic's er and finta's ER, except on a
           window without any change (flat prices), which has no ratio (NaN) where TA-Lib returns 1.
-        - If `growth` is set to True, the method calculates the growth of the Efficiency Ratio
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Efficiency Ratio
+          over the given lag.
 
         As an example:
 
@@ -4410,7 +4571,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Vertical Horizontal Filter (VHF) for a given price series.
+        Calculate the Vertical Horizontal Filter (VHF): the range of a window as a share of the path travelled,
+        which shows whether prices trend or move sideways.
 
         The Vertical Horizontal Filter tells a trending market from a congested one by dividing the range
         of the closes over the window (the vertical move) by the sum of the absolute changes from period
@@ -4425,13 +4587,17 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter." Futures Magazine.
-        - Referenced against TA-Lib's VHF (https://ta-lib.org/functions/vhf.html).
+
+        Referenced against:
+        - TA-Lib, VHF: https://ta-lib.org/functions/vhf.html
 
         Also known as: VHF, vertical horizontal filter.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the range and the path. Defaults to 28.
@@ -4458,8 +4624,8 @@ class MomentumTechnicals:
         - The VHF agrees with TA-Lib's VHF and pandas-ta-classic's vhf and starts `window` periods after the
           first price, except on a window without any change (flat prices), which has no VHF (NaN) where TA-Lib
           returns 0.
-        - If `growth` is set to True, the method calculates the growth of the VHF
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the VHF
+          over the given lag.
 
         As an example:
 
@@ -4537,7 +4703,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Know Sure Thing (KST) for a given price series.
+        Calculate the Know Sure Thing (KST): a weighted sum of four smoothed rates of change over increasing
+        windows, which shows the momentum of the major price cycles.
 
         The Know Sure Thing is a momentum oscillator developed by Martin Pring that combines
         four smoothed Rate of Change series, each calculated over a progressively longer
@@ -4562,14 +4729,18 @@ class MomentumTechnicals:
 
         - Pring, M.J. (1992). "Summed Rate of Change (KST)." Technical Analysis of Stocks & Commodities, 10(9),
           365-369.
-        - Referenced against TA-Lib's KST (https://ta-lib.org/functions/kst.html).
-        - Referenced against TA-Lib's KSTEXT (https://ta-lib.org/functions/kstext.html).
+
+        Referenced against:
+        - TA-Lib, KST: https://ta-lib.org/functions/kst.html
+        - TA-Lib, KSTEXT: https://ta-lib.org/functions/kstext.html
 
         Also known as: KST, KSTEXT, Pring's Know Sure Thing, Summed Rate of Change.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             roc_windows (list[int] | None, optional): The four lookback periods used for the
@@ -4582,11 +4753,16 @@ class MomentumTechnicals:
                 Rate of Change series before summing. Defaults to the standard [1, 2, 3, 4].
             signal_window (int, optional): Number of periods for the Simple Moving Average of
                 the KST used as the signal line. Defaults to 9.
-            moving_average (str, optional): The moving average that smooths each Rate of Change:
-                "simple", "exponential", "double_exponential", "triangular", "weighted", "hull" or
-                "kaufman_adaptive". Defaults to "simple".
-            signal_moving_average (str, optional): The moving average of the signal line, one of the
-                same. Defaults to "simple".
+            moving_average (str, optional): The moving average that smooths each Rate of Change. Options are:
+                "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+                "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving
+                Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+                "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to "simple".
+            signal_moving_average (str, optional): The moving average of the signal line. Options are:
+                "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+                "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving
+                Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+                "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to "simple".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the KST and Signal Line.
@@ -4614,8 +4790,8 @@ class MomentumTechnicals:
           `signalmatype` divided by 100: from the first value for the simple, weighted and triangular
           averages, and after the warm-up for the recursive ones, since TA-Lib starts their recursion
           later (within 0.01% after about 85 periods for exponential averages).
-        - If `growth` is set to True, the method calculates the growth of the KST and Signal
-          Line using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the KST and Signal
+          Line over the given lag.
 
         As an example:
 
@@ -4695,7 +4871,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Coppock Curve for a given price series.
+        Calculate the Coppock Curve: a weighted moving average of the sum of a long and a short rate of change,
+        which shows long-term buying opportunities after a decline.
 
         The Coppock Curve is a long-term momentum indicator that Edwin Coppock designed for
         monthly closes of a stock index, to time buying after a bear market (Coppock, 1962,
@@ -4710,20 +4887,22 @@ class MomentumTechnicals:
 
         with WMA the linearly Weighted Moving Average, so the defaults give WMA10(ROC14 + ROC11).
         The windows count periods of the chosen `period`: the curve as Coppock defined it is
-        period="monthly", the default "daily" applies the same windows to days, as the other
+        monthly, the default of daily periods applies the same windows to days, as the other
         technical indicators do. The classic signal is the curve turning up while below zero;
         Coppock did not use it for sell signals. The Rates of Change are decimals, so the curve
         is a weighted sum of decimal returns (0.30 where charting platforms show 30).
 
-        For more information, see the following sources:
-
-        - Referenced against TA-Lib's COPPOCK (https://ta-lib.org/functions/coppock.html).
-
         Also known as: Coppock Indicator, Coppock Guide.
 
+        Referenced against:
+        - TA-Lib, COPPOCK: https://ta-lib.org/functions/coppock.html
+            Test: tests/technical/test_momentum_model.py::test_coppock_curve_matches_talib
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             long_roc_window (int, optional): Number of periods of the longer Rate of Change.
@@ -4758,8 +4937,8 @@ class MomentumTechnicals:
           about two years before the first value you need.
         - The Coppock Curve is a decimal and agrees with TA-Lib's COPPOCK divided by 100, since TA-Lib's
           is in percent.
-        - If `growth` is set to True, the method calculates the growth of the Coppock Curve
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Coppock Curve
+          over the given lag.
 
         As an example:
 
@@ -4834,7 +5013,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Fisher Transform for a given price series.
+        Calculate the Fisher Transform: the prices' position within their range turned into a near-normal
+        distribution, which makes the turning points sharper and easier to see.
 
         The Fisher Transform of Ehlers (2002) turns the position of the median price within its
         recent range into a series that is close to normally distributed. An oscillator of the
@@ -4860,15 +5040,22 @@ class MomentumTechnicals:
         - Ehlers, J.F. (2002). "Using the Fisher Transform." Technical Analysis of Stocks &
           Commodities, 20(11).
         - Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." Wiley.
-        - Referenced against TA-Lib's FISHER (https://ta-lib.org/functions/fisher.html).
-        - pandas-ta-classic: fisher (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: FISH (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, FISHER: https://ta-lib.org/functions/fisher.html
+            Test: tests/technical/test_momentum_model.py::test_fisher_transform_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, fisher: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fisher.py#L36
+        - finta, FISH: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1827
 
         Also known as: Fisher, Ehlers Fisher Transform, FISHT.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -4901,8 +5088,8 @@ class MomentumTechnicals:
         - pandas-ta-classic's fisher (9 periods by default) starts one period later and equals it after the
           first values; finta's FISH smooths with exponential averages of 5 and 3 periods instead of
           Ehlers' constants, a different series.
-        - If `growth` is set to True, the method calculates the growth of the Fisher Transform and trigger
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Fisher Transform and trigger
+          over the given lag.
 
         As an example:
 
@@ -4976,7 +5163,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Inverse Fisher Transform of the RSI for a given price series.
+        Calculate the Inverse Fisher Transform of the RSI: the smoothed Relative Strength Index squeezed between -1
+        and 1, which makes its overbought and oversold signals clearer.
 
         The inverse Fisher transform (the hyperbolic tangent) of Ehlers (2004) squeezes a series
         into the range from -1 to 1 with most values close to the edges. Applied to a rescaled
@@ -4996,13 +5184,17 @@ class MomentumTechnicals:
 
         - Ehlers, J.F. (2004). "The Inverse Fisher Transform." Technical Analysis of Stocks &
           Commodities, 22(5).
-        - finta: IFT_RSI (https://github.com/peerchemist/finta).
+
+        Shares similar logic:
+        - finta, IFT_RSI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L714
 
         Also known as: IFT RSI, IFTRSI, Inverse Fisher RSI.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rsi_window (int, optional): The number of periods of the RSI. Defaults to 5.
@@ -5033,8 +5225,8 @@ class MomentumTechnicals:
           first price.
         - finta's IFT_RSI returns (Value 2² - 1) / (Value 2² + 1) instead of the hyperbolic tangent, with an
           RSI from an unseeded exponential average; this follows Ehlers' formula.
-        - If `growth` is set to True, the method calculates the growth of the IFT RSI
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the IFT RSI
+          over the given lag.
 
         As an example:
 
@@ -5110,7 +5302,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the KDJ indicator for a given price series.
+        Calculate the KDJ indicator: the Stochastic Oscillator's %K and %D with the J line that leads them, to show
+        overbought and oversold levels and turning points.
 
         The KDJ indicator is a stochastic oscillator, widely used in Chinese and other Asian
         markets, that smooths the raw stochastic with Wilder's average instead of a simple one
@@ -5133,14 +5326,21 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Lane, G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
-        - Referenced against TA-Lib's KDJ (https://ta-lib.org/functions/kdj.html).
-        - pandas-ta-classic: kdj (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, KDJ: https://ta-lib.org/functions/kdj.html
+            Test: tests/technical/test_momentum_model.py::test_kdj_indicator_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, kdj: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/kdj.py#L17
 
         Also known as: KDJ, KDJ stochastic, random index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -5177,8 +5377,8 @@ class MomentumTechnicals:
           dozen periods.
         - A window without a range has no RSV (NaN), where TA-Lib and pandas-ta-classic use 0; the averages
           carry on over it.
-        - If `growth` is set to True, the method calculates the growth of the K, D and J
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the K, D and J
+          over the given lag.
 
         As an example:
 
@@ -5254,7 +5454,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Premier Stochastic Oscillator (PSO) for a given price series.
+        Calculate the Premier Stochastic Oscillator (PSO): the smoothed and normalised Stochastic %K squeezed
+        between -1 and 1, which gives clearer overbought and oversold signals.
 
         The Premier Stochastic Oscillator of Leibfarth (2008) rescales a short stochastic around
         zero, smooths it twice with an exponential average and squeezes the result between -1
@@ -5275,13 +5476,18 @@ class MomentumTechnicals:
 
         - Leibfarth, L. (2008). "Premier Stochastic Oscillator." Technical Analysis of Stocks &
           Commodities, 26(8).
-        - Referenced against TA-Lib's PSO (https://ta-lib.org/functions/pso.html).
+
+        Referenced against:
+        - TA-Lib, PSO: https://ta-lib.org/functions/pso.html
+            Test: tests/technical/test_momentum_model.py::test_premier_stochastic_oscillator_matches_talib
 
         Also known as: PSO, Premier Stochastic.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -5313,8 +5519,8 @@ class MomentumTechnicals:
           missing before it, so the PSO starts `window` + 2 * `smooth_window` - 3 periods after the
           first price.
         - A window without a range has no %K (NaN), where TA-Lib uses 50; the averages carry on over it.
-        - If `growth` is set to True, the method calculates the growth of the PSO
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PSO
+          over the given lag.
 
         As an example:
 
@@ -5391,7 +5597,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Stochastic Momentum Index (SMI) for a given price series.
+        Calculate the Stochastic Momentum Index (SMI): where the close lies relative to the middle of the high-low
+        range of a window, smoothed, from -100 to 100.
 
         The Stochastic Momentum Index of Blau (1993) measures where the close sits relative to
         the midpoint of the high-low range, rather than to its low as the stochastic does, and
@@ -5413,13 +5620,18 @@ class MomentumTechnicals:
 
         - Blau, W. (1993). "Stochastic Momentum." Technical Analysis of Stocks & Commodities, 11(1).
         - Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
-        - Referenced against TA-Lib's SMI (https://ta-lib.org/functions/smi.html).
+
+        Referenced against:
+        - TA-Lib, SMI: https://ta-lib.org/functions/smi.html
+            Test: tests/technical/test_momentum_model.py::test_stochastic_momentum_index_matches_talib
 
         Also known as: SMI, Blau's stochastic momentum.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -5454,8 +5666,8 @@ class MomentumTechnicals:
           `short_window` - 3 periods after the first price and the signal line `signal_window` - 1
           periods later; TA-Lib starts both on the first signal value.
         - A stretch in which the smoothed range is zero has no SMI (NaN), where TA-Lib returns 0.
-        - If `growth` is set to True, the method calculates the growth of the SMI and signal line
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the SMI and signal line
+          over the given lag.
 
         As an example:
 
@@ -5534,7 +5746,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Schaff Trend Cycle (STC) for a given price series.
+        Calculate the Schaff Trend Cycle (STC): a stochastic of the MACD, applied twice, from 0 to 100, which shows
+        the turns of a trend faster than the MACD.
 
         The Schaff Trend Cycle of Schaff (2002, 2008) applies a smoothed stochastic twice to the
         MACD line: it measures where the MACD sits within its range over the last cycle, smooths
@@ -5559,16 +5772,23 @@ class MomentumTechnicals:
         - Schaff, D. (2008). "Releasing the Code to the Schaff Trend Cycle." FX-Strategy.com.
         - Schaff, D. (2002). "Catching Currency Moves with the Schaff Trend Cycle Indicator."
           Chartpoint, July/August 2002.
-        - Referenced against TA-Lib's STC (https://ta-lib.org/functions/stc.html).
-        - pandas-ta-classic: stc (https://github.com/xgboosted/pandas-ta-classic).
-        - ta: STCIndicator (https://github.com/bukosabino/ta).
-        - finta: STC (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, STC: https://ta-lib.org/functions/stc.html
+            Test: tests/technical/test_momentum_model.py::test_schaff_trend_cycle_matches_talib_once_the_seeds_decayed
+
+        Shares similar logic:
+        - pandas-ta-classic, stc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/stc.py#L100
+        - ta, STCIndicator: https://github.com/bukosabino/ta/blob/0.11.0/ta/trend.py#L1093
+        - finta, STC: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2121
 
         Also known as: STC, Schaff Trend Cycle indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods of the short EMA of the MACD.
@@ -5607,8 +5827,8 @@ class MomentumTechnicals:
           first values, and ta's STCIndicator, which smooths with a 3-period EMA (a factor of 0.5)
           without a seed, within 1e-6 after about 500 periods. finta's STC smooths with 3-period
           simple averages, a different series.
-        - If `growth` is set to True, the method calculates the growth of the STC
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the STC
+          over the given lag.
 
         As an example:
 
@@ -5686,7 +5906,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the WaveTrend Oscillator for a given price series.
+        Calculate the WaveTrend Oscillator: how far the typical price lies from its average in units of its average
+        distance, smoothed, to show overbought and oversold levels and turning points.
 
         The WaveTrend Oscillator of LazyBear (2014) is a Commodity Channel Index built from
         exponential averages: the distance of the typical price from its EMA, divided by 0.015
@@ -5708,14 +5929,21 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - LazyBear (2014). "WaveTrend Oscillator [WT]." TradingView published script.
-        - Referenced against TA-Lib's WAVETREND (https://ta-lib.org/functions/wavetrend.html).
-        - finta: WTO (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, WAVETREND: https://ta-lib.org/functions/wavetrend.html
+            Test: tests/technical/test_momentum_model.py::test_wavetrend_oscillator_matches_talib
+
+        Shares similar logic:
+        - finta, WTO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1802
 
         Also known as: WaveTrend, WT, WTO, WT1 and WT2.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -5751,8 +5979,8 @@ class MomentumTechnicals:
           1 periods later. finta's WTO uses averages without a seed and equals it after the first
           values.
         - A stretch without any distance from the average has no CI (NaN), where TA-Lib returns 0.
-        - If `growth` is set to True, the method calculates the growth of the WaveTrend and signal line
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the WaveTrend and signal line
+          over the given lag.
 
         As an example:
 
@@ -5830,7 +6058,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Derivative Oscillator for a given price series.
+        Calculate the Derivative Oscillator: a double-smoothed Relative Strength Index minus its average, which
+        shows the momentum of the RSI itself.
 
         The Derivative Oscillator of Constance Brown (1994) smooths the Relative Strength Index
         twice with an exponential average and subtracts a simple average of the result, the way
@@ -5850,13 +6079,18 @@ class MomentumTechnicals:
         - Brown, C.M. (1994). "The Derivative Oscillator: A New Approach for an Old Problem." MTA
           Journal, 42.
         - Brown, C.M. (1999). "Technical Analysis for the Trading Professional." McGraw-Hill.
-        - Referenced against TA-Lib's DOSC (https://ta-lib.org/functions/dosc.html).
+
+        Referenced against:
+        - TA-Lib, DOSC: https://ta-lib.org/functions/dosc.html
+            Test: tests/technical/test_momentum_model.py::test_derivative_oscillator_matches_talib
 
         Also known as: DOSC, Brown's Derivative Oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the RSI. Defaults to 14.
@@ -5887,8 +6121,8 @@ class MomentumTechnicals:
           the Derivative Oscillator for each asset in the Toolkit instance.
         - The Derivative Oscillator agrees with TA-Lib's DOSC and starts `window` + `first_window` +
           `second_window` + `signal_window` - 3 periods after the first price.
-        - If `growth` is set to True, the method calculates the growth of the Derivative Oscillator
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Derivative Oscillator
+          over the given lag.
 
         As an example:
 
@@ -5964,7 +6198,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Wilder's Swing Index and Accumulative Swing Index for a given price series.
+        Calculate Wilder's Swing Index and Accumulative Swing Index: the strength of each period's move compared
+        with the previous period, and its running total, which shows the real direction of the prices.
 
         The Swing Index of Wilder (1978) weighs the change of the close against the previous
         period's open and close and against the range of the current period, to measure the real
@@ -5992,14 +6227,19 @@ class MomentumTechnicals:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research,
           section VIII "The Swing Index."
-        - Referenced against TA-Lib's SI and ASI (https://ta-lib.org/functions/si.html,
-          https://ta-lib.org/functions/asi.html).
+
+        Referenced against:
+        - TA-Lib, SI: https://ta-lib.org/functions/si.html
+            Test: tests/technical/test_momentum_model.py::test_swing_index_matches_talib
+        - TA-Lib, ASI: https://ta-lib.org/functions/asi.html
 
         Also known as: SI, ASI, Wilder Swing Index, Accumulation Swing Index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -6031,8 +6271,8 @@ class MomentumTechnicals:
           data.
         - A period without any move (R equal to 0) has no Swing Index (NaN), where TA-Lib uses 0; the ASI
           carries on over it. Neither is rounded, where Wilder rounded to whole numbers by hand.
-        - If `growth` is set to True, the method calculates the growth of the Swing Index and Accumulative Swing Index
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Swing Index and Accumulative Swing Index
+          over the given lag.
 
         As an example:
 
@@ -6107,7 +6347,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Quantitative Qualitative Estimation (QQE) for a given price series.
+        Calculate the Quantitative Qualitative Estimation (QQE): a smoothed Relative Strength Index with a trailing
+        stop line a multiple of its own average move away, whose crossings show the turns of a trend.
 
         The Quantitative Qualitative Estimation smooths the Relative Strength Index with an
         exponential average (the fast line) and trails it with a stop line (the QQE, the slow
@@ -6129,15 +6370,16 @@ class MomentumTechnicals:
         The EMA over 2 * window - 1 periods has the smoothing constant 1 / window of Wilder's
         average. The common parameters are 14, 5 and 4.236.
 
-        For more information, see the following sources:
-
-        - pandas-ta-classic: qqe (https://github.com/xgboosted/pandas-ta-classic).
-
         Also known as: QQE, QQE fast and slow line.
 
+        Referenced against:
+        - pandas-ta-classic, qqe: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/qqe.py#L71
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the RSI. Defaults to 14.
@@ -6173,8 +6415,8 @@ class MomentumTechnicals:
           when the RSI Moving Average crosses the band on the other side, which can keep it on the
           old side for a few more periods (3 of 757 days on the test data); this follows the
           original MetaTrader indicator, which switches on the period of the crossing.
-        - If `growth` is set to True, the method calculates the growth of the QQE and RSI Moving Average
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the QQE and RSI Moving Average
+          over the given lag.
 
         As an example:
 
@@ -6249,7 +6491,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Price Zone Oscillator (PZO) for a given price series.
+        Calculate the Price Zone Oscillator (PZO): the share of the recent closes that moved up, from -100 to 100,
+        which shows overbought and oversold levels and the direction of a trend.
 
         The Price Zone Oscillator of Khalil and Steckler (2011) counts each close as positive
         when it closed above the previous close and as negative when it closed below, and
@@ -6269,13 +6512,17 @@ class MomentumTechnicals:
 
         - Khalil, W. & Steckler, D. (2011). "Entering The Price Zone." Technical Analysis of
           Stocks & Commodities, 29(6), 28-35.
-        - finta: PZO (https://github.com/peerchemist/finta).
+
+        Shares similar logic:
+        - finta, PZO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1542
 
         Also known as: PZO.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the EMAs. Defaults to 14.
@@ -6302,8 +6549,8 @@ class MomentumTechnicals:
         - Every EMA is seeded with the simple average of its first values and is missing before it, so the PZO
           starts `window` periods after the first price. finta's PZO uses averages without a seed
           and equals it after the first values.
-        - If `growth` is set to True, the method calculates the growth of the PZO
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PZO
+          over the given lag.
 
         As an example:
 
@@ -6379,7 +6626,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Dorsey's Inertia for a given price series.
+        Calculate Dorsey's Inertia: the Relative Volatility Index smoothed with a linear regression, which shows the
+        direction of a trend, up above 50 and down below it.
 
         Inertia is Dorsey's Relative Volatility Index (RVI) smoothed with a linear regression: the end
         point of the least-squares line through the last 20 RVI values. Dorsey regarded a trend as
@@ -6389,7 +6637,7 @@ class MomentumTechnicals:
 
         The formula is as follows:
 
-        - RVI = Relative Volatility Index(Close, rvi_window, std_window), or with method="refined"
+        - RVI = Relative Volatility Index(Close, rvi_window, std_window), or for the refined RVI
           (RVI(High) + RVI(Low)) / 2
         - Inertia = Linear Regression(RVI, window), the end point of the least-squares line
 
@@ -6402,14 +6650,18 @@ class MomentumTechnicals:
           Commodities, 13(9).
         - Dorsey, D. (1993). "The Relative Volatility Index." Technical Analysis of Stocks &
           Commodities, 11(6).
-        - Referenced against pandas-ta-classic's inertia
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, inertia: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/inertia.py#L61
+            Test: tests/technical/test_momentum_model.py::test_inertia_matches_pandas_ta_classic
 
         Also known as: INERTIA, Dorsey Inertia.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the linear regression. Defaults to 20.
@@ -6417,8 +6669,9 @@ class MomentumTechnicals:
                 Defaults to 14.
             std_window (int, optional): The number of periods of the standard deviation in the RVI.
                 Defaults to 10.
-            method (str, optional): "original" for the RVI of the close or "refined" for the average of
-                the RVI of the highs and of the lows (Dorsey, 1995). Defaults to "original".
+            method (str, optional): The Relative Volatility Index it uses. Options are: "original" (the RVI of
+                the close), "refined" (the average of the RVI of the highs and of the lows; Dorsey, 1995).
+                Defaults to "original".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Inertia.
@@ -6440,11 +6693,11 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Inertia for each asset in the Toolkit instance.
         - Equals the linear regression of `get_relative_volatility_index` with the same parameters,
-          and pandas-ta-classic's inertia with mamode="rma" and `std_window` equal to `rvi_window`. By
+          and pandas-ta-classic's inertia with Wilder's smoothing and `std_window` equal to `rvi_window`. By
           default pandas-ta-classic smooths its RVI with an EMA and takes the standard deviation over
           the RVI window. The linear regression can overshoot the 0 to 100 range of the RVI.
-        - If `growth` is set to True, the method calculates the growth of the Inertia
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Inertia
+          over the given lag.
 
         As an example:
 
@@ -6521,7 +6774,7 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Bias for a given price series: the distance of the close from its moving average.
+        Calculate the Bias: the distance of the price from its moving average, as a share of that average.
 
         The Bias, or deviation rate, is a standard indicator on Asian trading platforms. It measures how
         far the close has run from its moving average as a share of that average: a price far above
@@ -6535,23 +6788,25 @@ class MomentumTechnicals:
 
         with MA the Simple Moving Average by default.
 
-        For more information, see the following sources:
-
-        - pandas-ta-classic: bias (https://github.com/xgboosted/pandas-ta-classic). The definition is the
-          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
-          has no single primary source; it is a standard indicator on Asian trading platforms.
-
         Also known as: BIAS, deviation rate, BIAS ratio, distance to the moving average.
 
+        Referenced against:
+        - pandas-ta-classic, bias: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/bias.py#L12
+            Test: tests/technical/test_momentum_model.py::test_bias_matches_pandas_ta_classic
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the moving average. Defaults to 26.
-            moving_average (str, optional): The moving average: "simple", "exponential",
-                "double_exponential", "triangular", "weighted", "hull" or "kaufman_adaptive".
-                Defaults to "simple".
+            moving_average (str, optional): The moving average. Options are: "simple" (Simple Moving Average),
+                "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential Moving
+                Average), "triangular" (Triangular Moving Average), "weighted" (Weighted Moving Average),
+                "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to
+                "simple".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Bias.
@@ -6573,8 +6828,10 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the Bias for each asset in the Toolkit instance.
         - Equals pandas-ta-classic's bias, also a decimal; some platforms multiply it by 100.
-        - If `growth` is set to True, the method calculates the growth of the Bias
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Bias
+          over the given lag.
+        - The indicator has no single primary source; it is a standard indicator on Asian trading platforms, defined
+          here as in pandas-ta-classic.
 
         As an example:
 
@@ -6648,7 +6905,11 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the AR and BR sentiment indicators (BRAR) for a given price series.
+        Calculate the AR and BR sentiment indicators (BRAR), which show how popular a security is and how willing
+        the market is to buy it.
+
+        They set how far the prices rose against how far they fell, measured from the open (AR) and from the
+        previous close (BR).
 
         AR (popularity) compares how far the price rose above the open with how far it fell below it
         over the window, and BR (willingness) does the same against the previous close, which also
@@ -6661,17 +6922,17 @@ class MomentumTechnicals:
         - AR = 100 × Sum(High — Open, window) / Sum(Open — Low, window)
         - BR = 100 × Sum(Max(High — Close(t — 1), 0), window) / Sum(Max(Close(t — 1) — Low, 0), window)
 
-        For more information, see the following sources:
-
-        - pandas-ta-classic: brar (https://github.com/xgboosted/pandas-ta-classic). The definition is the
-          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
-          has no single primary source; it is a standard indicator on Asian trading platforms.
-
         Also known as: BRAR, AR and BR, popularity and willingness indicators, sentiment indicator.
 
+        Referenced against:
+        - pandas-ta-classic, brar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/brar.py#L18
+            Test: tests/technical/test_momentum_model.py::test_brar_matches_pandas_ta_classic
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the sums. Defaults to 26.
@@ -6697,8 +6958,10 @@ class MomentumTechnicals:
           the AR and BR for each asset in the Toolkit instance.
         - Equals pandas-ta-classic's brar, on its scale of 100 for a balance. A window without any
           downward move has no AR or BR (missing) where pandas-ta-classic gives an infinite value.
-        - If `growth` is set to True, the method calculates the growth of the AR and BR
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the AR and BR
+          over the given lag.
+        - The indicator has no single primary source; it is a standard indicator on Asian trading platforms, defined
+          here as in pandas-ta-classic.
 
         As an example:
 
@@ -6771,7 +7034,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Johnson's Pretty Good Oscillator (PGO) for a given price series.
+        Calculate Johnson's Pretty Good Oscillator (PGO): how far the close lies from its moving average, in units
+        of the Average True Range, which shows breakouts from a range.
 
         The Pretty Good Oscillator of Mark Johnson measures the distance of the close from its Simple
         Moving Average in units of the average true range, so the distance compares across securities
@@ -6789,14 +7053,18 @@ class MomentumTechnicals:
 
         - Johnson, M. "Pretty Good Oscillator." FM Labs technical analysis library
           (https://www.fmlabs.com/reference/default.htm?url=PGO.htm).
-        - Referenced against pandas-ta-classic's pgo
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, pgo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/pgo.py#L14
+            Test: tests/technical/test_momentum_model.py::test_pretty_good_oscillator_matches_pandas_ta_classic
 
         Also known as: PGO, Pretty Good Oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the SMA, the ATR and its EMA. Defaults to 14.
@@ -6824,8 +7092,8 @@ class MomentumTechnicals:
           1e-7 after 200 periods): the Toolkit's ATR includes the High — Low of the first period, as
           StockCharts does. A period without any range has no PGO (missing) where pandas-ta-classic
           gives 0.
-        - If `growth` is set to True, the method calculates the growth of the PGO
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PGO
+          over the given lag.
 
         As an example:
 
@@ -6899,35 +7167,36 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Psychological Line (PSL) for a given price series.
+        Calculate the Psychological Line (PSL): the share of periods in a window that closed higher, which shows
+        whether buyers or sellers have the upper hand.
 
         The Psychological Line is the percentage of the last `window` periods that closed higher, a
         measure of the mood of the market: after many periods up in a row buyers may be exhausted
-        (overbought above 75) and after many down sellers (oversold below 25). With method="open" it
+        (overbought above 75) and after many down sellers (oversold below 25). The open-based form
         counts the periods that closed above their own open instead.
 
         The formula is as follows:
 
         - PSL = 100 × Count(Close(t) > Close(t — 1), window) / window
 
-        or with method="open", 100 × Count(Close > Open, window) / window.
-
-        For more information, see the following sources:
-
-        - pandas-ta-classic: psl (https://github.com/xgboosted/pandas-ta-classic). The definition is the
-          one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic, which notes that the indicator
-          has no single primary source; it is a standard indicator on Asian trading platforms.
+        or in the open-based form, 100 × Count(Close > Open, window) / window.
 
         Also known as: PSL, PSY, psychological line, psychological index.
 
+        Referenced against:
+        - pandas-ta-classic, psl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/psl.py#L19
+            Test: tests/technical/test_momentum_model.py::test_psychological_line_matches_pandas_ta_classic
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods counted. Defaults to 12.
-            method (str, optional): "close" to count the periods that closed above the previous close,
-                or "open" for those that closed above their open. Defaults to "close".
+            method (str, optional): What counts as an up period. Options are: "close" (a close above the
+                previous close), "open" (a close above the period's open). Defaults to "close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the PSL.
@@ -6949,8 +7218,10 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the PSL for each asset in the Toolkit instance.
         - Equals pandas-ta-classic's psl, also on the scale of 0 to 100.
-        - If `growth` is set to True, the method calculates the growth of the PSL
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PSL
+          over the given lag.
+        - The indicator has no single primary source; it is a standard indicator on Asian trading platforms, defined
+          here as in pandas-ta-classic.
 
         As an example:
 
@@ -7025,7 +7296,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Volatility-Based Momentum (VBM) for a given price series.
+        Calculate the Volatility-Based Momentum (VBM): the change of the price over a window in units of the Average
+        True Range, which compares momentum across tickers of different volatility.
 
         Volatility-Based Momentum is the change in the close over `window` periods in units of the
         Average True Range, instead of as a share of the earlier close as in the Rate of Change. A move
@@ -7043,13 +7315,17 @@ class MomentumTechnicals:
         - Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill (momentum).
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research
           (Average True Range).
-        - finta: VBM (https://github.com/peerchemist/finta), by Peerchemist, which defines the indicator.
+
+        Shares similar logic:
+        - finta, VBM: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L664
 
         Also known as: VBM, volatility-based momentum, volatility adjusted momentum.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the price change. Defaults to 12.
@@ -7077,8 +7353,8 @@ class MomentumTechnicals:
         - finta documents this formula, but its VBM subtracts the earlier close twice
           (Close.diff(n) — Close.shift(n)) and averages the true range with a simple moving average,
           so its values differ.
-        - If `growth` is set to True, the method calculates the growth of the VBM
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the VBM
+          over the given lag.
 
         As an example:
 
@@ -7155,7 +7431,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Archer's Moving Averages Trends (AMAT) for a given price series.
+        Calculate Archer's Moving Averages Trends (AMAT): whether a fast and a slow moving average both rise (a long
+        run) or both fall (a short run), which shows the direction of a trend.
 
         AMAT flags a long run when the short moving average rose over the last `lookback` periods while
         the long one moved (a rising long average confirms the up trend, a falling one marks a potential
@@ -7176,22 +7453,29 @@ class MomentumTechnicals:
 
         - Archer's TradingView script "Archer Moving Averages Trends", which defines the indicator; there
           is no published primary source.
-        - Referenced against pandas-ta-classic's amat (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, amat: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/amat.py#L15
+            Test: tests/technical/test_momentum_model.py::test_archer_moving_average_trends_matches_pandas_ta_classic
 
         Also known as: AMAT, Archer Moving Averages Trends.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods of the short moving average. Defaults to 8.
             long_window (int, optional): The number of periods of the long moving average. Defaults to 21.
             lookback (int, optional): The number of periods over which the averages rise or fall.
                 Defaults to 2.
-            moving_average (str, optional): The moving average: "simple", "exponential",
-                "double_exponential", "triangular", "weighted", "hull" or "kaufman_adaptive".
-                Defaults to "exponential".
+            moving_average (str, optional): The moving average. Options are: "simple" (Simple Moving Average),
+                "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential Moving
+                Average), "triangular" (Triangular Moving Average), "weighted" (Weighted Moving Average),
+                "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to
+                "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the AMAT.
@@ -7213,8 +7497,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the AMAT for each asset in the Toolkit instance.
         - Equals pandas-ta-classic's amat (its long_run and short_run columns).
-        - If `growth` is set to True, the method calculates the growth of the AMAT
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the AMAT
+          over the given lag.
 
         As an example:
 
@@ -7290,7 +7574,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Carter's TTM Trend for a given price series.
+        Calculate Carter's TTM Trend: whether the close lies above the average midpoint of the previous bars (1) or
+        not (-1), which shows the direction of the trend.
 
         The TTM Trend of John Carter colours each bar by the short-term trend: up (1) when the close is
         above the average midpoint, (High + Low) / 2, of the previous six bars, and down (-1) when it is
@@ -7306,14 +7591,18 @@ class MomentumTechnicals:
 
         - Carter, J.F. (2005). "Mastering the Trade: Proven Techniques for Profiting from Intraday
           and Swing Trading Setups." McGraw-Hill.
-        - Referenced against pandas-ta-classic's ttm_trend
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, ttm_trend: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/ttm_trend.py#L12
+            Test: tests/technical/test_momentum_model.py::test_ttm_trend_matches_pandas_ta_classic
 
         Also known as: TTM Trend, TTM_TRND.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of earlier bars of the average midpoint. Defaults to 6.
@@ -7338,8 +7627,8 @@ class MomentumTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the TTM Trend for each asset in the Toolkit instance.
         - Equals pandas-ta-classic's ttm_trend. It starts `window` periods after the first price.
-        - If `growth` is set to True, the method calculates the growth of the TTM Trend
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the TTM Trend
+          over the given lag.
 
         As an example:
 
@@ -7412,8 +7701,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Correlation Trend Indicator (CTI) of a price series: the Pearson
-        correlation of the prices over the window with a straight line rising over time.
+        Calculate the Correlation Trend Indicator (CTI) of a price series: the Pearson correlation of the prices
+        over the window with a straight line rising over time.
 
         Ehlers (2020) measures the trend by how closely the prices follow an upward-sloping
         line: +1 when they rise in a straight line, -1 when they fall in one, and around 0 when
@@ -7431,14 +7720,19 @@ class MomentumTechnicals:
 
         - Ehlers, J.F. (2020). "Correlation As A Trend Indicator." Technical Analysis of Stocks &
           Commodities, 38(5), 24-27.
-        - Referenced against TA-Lib's CTI (https://ta-lib.org/functions/cti.html).
-        - pandas-ta-classic: cti (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, CTI: https://ta-lib.org/functions/cti.html
+            Test: tests/technical/test_momentum_model.py::test_correlation_trend_indicator_matches_talib
+        - pandas-ta-classic, cti: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cti.py#L12
 
         Also known as: CTI, correlation trend, Ehlers correlation trend indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods, at least 2. Defaults to 20.
@@ -7465,8 +7759,8 @@ class MomentumTechnicals:
           CTI for each asset in the Toolkit instance.
         - The CTI agrees with TA-Lib's CTI and pandas-ta-classic's cti (whose default window is 12).
         - A window of flat prices has no correlation and is missing, where TA-Lib gives 0.
-        - If `growth` is set to True, the method calculates the growth of the CTI
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the CTI
+          over the given lag.
 
         As an example:
 
@@ -7539,8 +7833,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Forecast Oscillator of a price series: how far the price lies from the
-        Time Series Forecast made for it one period earlier, as a share of the price.
+        Calculate the Forecast Oscillator of a price series: how far the price lies from the Time Series Forecast
+        made for it one period earlier, as a share of the price.
 
         Chande's Forecast Oscillator measures the error of the linear regression forecast: it
         is positive when the price comes in above the forecast of the previous period and
@@ -7557,15 +7851,23 @@ class MomentumTechnicals:
         For more information, see the following sources:
 
         - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
-        - Referenced against TA-Lib's FOSC (https://ta-lib.org/functions/fosc.html).
-        - Tulip Indicators: fosc (https://tulipindicators.org/fosc).
-        - pandas-ta-classic: fosc and cfo (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, FOSC: https://ta-lib.org/functions/fosc.html
+            Test: tests/technical/test_momentum_model.py::test_forecast_oscillator_matches_talib
+        - Tulip Indicators, fosc: https://tulipindicators.org/fosc
+
+        Shares similar logic:
+        - pandas-ta-classic, fosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fosc.py#L12
+        - pandas-ta-classic, cfo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cfo.py#L17
 
         Also known as: FOSC, Chande Forecast Oscillator, CFO, forecast error.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods the forecast line is fitted over, at
@@ -7595,8 +7897,8 @@ class MomentumTechnicals:
           where they give a percentage.
         - pandas-ta-classic's fosc and cfo compare the price with the forecast of the same period, a line fitted
           through that price, rather than with the forecast made the period before.
-        - If `growth` is set to True, the method calculates the growth of the Forecast Oscillator
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Forecast Oscillator
+          over the given lag.
 
         As an example:
 
@@ -7669,8 +7971,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Projection Oscillator of a price series: where the close lies within
-        Widner's Projection Bands, 0 on the lower band and 1 on the upper band.
+        Calculate the Projection Oscillator of a price series: where the close lies within Widner's Projection
+        Bands, 0 on the lower band and 1 on the upper band.
 
         Widner (1995) projects every high and low of the window forward to the latest period
         along the least-squares slope of the highs and of the lows over the window. The upper
@@ -7691,13 +7993,17 @@ class MomentumTechnicals:
 
         - Widner, M. (1995). "Signaling Change with Projection Bands." Technical Analysis of
           Stocks & Commodities, 13(7), 275-281.
-        - pandas-ta-classic: po (https://github.com/xgboosted/pandas-ta-classic).
+
+        Shares similar logic:
+        - pandas-ta-classic, po: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/po.py#L12
 
         Also known as: PO, Projection Oscillator, Projection Bands, Widner.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods, at least 2. Defaults to 14.
@@ -7728,8 +8034,8 @@ class MomentumTechnicals:
           which follows from `get_linear_regression`.
         - With the dividend-adjusted close (the default), the high and low are adjusted by the same factor, so
           the close stays within the high and low of its period.
-        - If `growth` is set to True, the method calculates the growth of the Projection Oscillator
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Projection Oscillator
+          over the given lag.
 
         As an example:
 
@@ -7803,8 +8109,8 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate M.H. Pee's Trend Detection Index (TDI) and its Direction Indicator for a given
-        price series.
+        Calculate M.H. Pee's Trend Detection Index (TDI) and its Direction Indicator: how strongly the momentum
+        keeps one sign over a window, which shows whether the prices trend and in which direction.
 
         The Trend Detection Index tells a trending market from a consolidating one. It compares
         the net momentum over the window with how much the momentum moved over a longer window:
@@ -7828,13 +8134,17 @@ class MomentumTechnicals:
 
         - Pee, M.H. (2001). "Trend Detection Index." Technical Analysis of Stocks & Commodities,
           19(10).
-        - Referenced against TTR's TDI (https://cran.r-project.org/package=TTR).
+
+        Referenced against:
+        - TTR (R), TDI: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/TDI.R#L63
 
         Also known as: TDI, trend detection index, Pee's trend detection index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of the momentum and of the Direction
@@ -7866,8 +8176,8 @@ class MomentumTechnicals:
           TTR's TDI sets the first `window` momentum values, which have no earlier price, to 0, so
           both start `window` periods earlier there, with sums that include those zeros; from
           then on the two agree.
-        - If `growth` is set to True, the method calculates the growth of the Trend Detection
-          Index using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Trend Detection
+          Index over the given lag.
 
         As an example:
 
@@ -7942,7 +8252,11 @@ class MomentumTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate David Varadi's DV Intermediate Oscillator (DVI) for a given price series.
+        Calculate David Varadi's DV Intermediate Oscillator (DVI), from 0 to 1, which shows how stretched the price
+        is.
+
+        It blends rankings of how far the price stands from its short average and of the balance of up and down
+        days.
 
         The DVI is a smooth oscillator between 0 and 1 that combines two rankings over the last
         `window` periods. The magnitude ranks how far the price stands above or below its
@@ -7970,13 +8284,17 @@ class MomentumTechnicals:
 
         - Varadi, D. (2009). "What is the DVI?" CSS Analytics, December 13, 2009
           (https://cssanalytics.wordpress.com/2009/12/13/what-is-the-dvi/).
-        - Referenced against TTR's DVI (https://cran.r-project.org/package=TTR).
+
+        Referenced against:
+        - TTR (R), DVI: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/DVI.R#L50
 
         Also known as: DVI, DV Intermediate, DV indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of previous periods of the Percent Ranks. Defaults to
@@ -8012,8 +8330,8 @@ class MomentumTechnicals:
           magnitude rank with n = `window` + 1 equals (`window` * DVI Magnitude + 1) / (`window` + 1);
           the stretch takes few distinct values, which TTR counts as lower when equal.
         - An unchanged close counts as a down day, as in TTR's DVI.
-        - If `growth` is set to True, the method calculates the growth of the DVI using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the DVI over the
+          given lag.
 
         As an example:
 

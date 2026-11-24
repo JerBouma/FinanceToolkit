@@ -104,28 +104,29 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the events of an event filter: the dates something happens that is worth
-        labeling, such as a run of returns in one direction. Sampling on events rather than on
-        every date keeps the labels of a quiet market from outnumbering those of the moves that
-        matter, and the events are the dates `get_triple_barrier_labels(events=...)` labels.
+        Calculate the events of an event filter: the dates something happens that is worth labeling, such as a run
+        of returns in one direction.
 
-        - "cusum": the symmetric CUSUM filter of López de Prado, after the quality control
+        Sampling on events rather than on every date keeps the labels of a quiet market from outnumbering those of
+        the moves that matter, and the events are the dates `get_triple_barrier_labels(events=...)` labels.
+
+        - CUSUM filter: the symmetric CUSUM filter of López de Prado, after the quality control
           charts of Page (1954) and the trading rule of Lam and Yam (1997). It sums the log
           returns since the last event of each direction and reports an event when a sum moves
           beyond `threshold` daily volatilities, after which that sum starts again from zero. A
           price hovering around a level triggers no events, unlike a band crossing, as it takes
           a full run of the threshold to set one off.
-        - "z_score": the z-score filter: an event when the price lies at least `threshold`
+        - Z-score filter: the z-score filter: an event when the price lies at least `threshold`
           standard deviations from its average over `window` periods, a filter after the
           z-score peak detection of van Brakel (2014).
 
         The formula is as follows, per method:
 
-        - "cusum": y_t = ln(p_t / p_t-1), S+_t = max(0, S+_t-1 + y_t), S-_t = min(0, S-_t-1 + y_t),
+        - CUSUM filter: y_t = ln(p_t / p_t-1), S+_t = max(0, S+_t-1 + y_t), S-_t = min(0, S-_t-1 + y_t),
           h_t = threshold x sigma_t (the AFML daily volatility, an EWM standard deviation of the
           returns with `span`); an event of -1 when S-_t < -h_t (S-_t resets) or else of 1 when
           S+_t > h_t (S+_t resets)
-        - "z_score": z_t = (p_t - mean(p, window)) / std(p, window); an event of 1 when
+        - Z-score filter: z_t = (p_t - mean(p, window)) / std(p, window); an event of 1 when
           z_t >= threshold and of -1 when z_t <= -threshold
 
         Each value uses the prices up to its date only.
@@ -139,16 +140,20 @@ class LabelingTechnicals:
         - Page, E.S. (1954). "Continuous Inspection Schemes." Biometrika, 41(1/2), 100-115.
         - van Brakel, J.P.G. (2014). "Robust peak detection algorithm using z-scores." Stack
           Overflow (https://stackoverflow.com/questions/22583391).
-        - Referenced against RiskLabAI's `symmetric_cusum_filter`
-          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, symmetric_cusum_filter: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L78
 
         Also known as: CUSUM filter, symmetric CUSUM filter, event-based sampling, z-score filter,
         event filter.
 
         Args:
-            method (str, optional): "cusum" or "z_score". Defaults to "cusum".
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            method (str, optional): The filter. Options are: "cusum" (the symmetric CUSUM filter),
+                "z_score" (the z-score filter). Defaults to "cusum".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             threshold (float | None, optional): The threshold in volatilities: the multiple of
@@ -242,14 +247,15 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the triple-barrier labels of López de Prado: for every date (or event) the
-        first of three barriers the price reaches. A profit-taking barrier lies `profit_taking`
-        daily volatilities above the price, a stop-loss barrier `stop_loss` daily volatilities
-        below it and a vertical barrier `horizon` periods later. The label is 1 when the upper
-        barrier is reached first, -1 for the lower barrier and the sign of the return at the
-        vertical barrier. Unlike a label on the return over a fixed horizon, it follows the path
-        of the price the way a trade with a profit target, a stop-loss and a time limit does,
-        and its barriers widen and narrow with the volatility.
+        Calculate the triple-barrier labels of López de Prado: for every date (or event) the first of three barriers
+        the price reaches.
+
+        A profit-taking barrier lies `profit_taking` daily volatilities above the price, a stop-loss barrier
+        `stop_loss` daily volatilities below it and a vertical barrier `horizon` periods later. The label is 1 when
+        the upper barrier is reached first, -1 for the lower barrier and the sign of the return at the vertical
+        barrier. Unlike a label on the return over a fixed horizon, it follows the path of the price the way a trade
+        with a profit target, a stop-loss and a time limit does, and its barriers widen and narrow with the
+        volatility.
 
         With a `side`, such as the crossovers of `get_signals`, the labels are meta-labels: the
         returns are those of the bet (multiplied by the side) and the label is 1 when the bet
@@ -275,15 +281,19 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 3
           (Snippets 3.1 to 3.7).
-        - Referenced against RiskLabAI's `triple_barrier` and
-          `meta_labeling` (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, triple_barrier: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L193
+        - RiskLabAI, meta_labeling: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L402
 
         Also known as: triple barrier method, triple-barrier labeling, meta-labeling, meta labels,
         profit-taking and stop-loss labels.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             horizon (int, optional): The number of periods to the vertical barrier. Defaults to 10.
@@ -295,10 +305,11 @@ class LabelingTechnicals:
                 100, as López de Prado.
             minimum_target (float, optional): The volatility a date needs to exceed to be labeled.
                 Defaults to 0.0.
-            events (str | pd.DataFrame | None, optional): The dates to label: "cusum" or "z_score"
-                for the events of `get_event_filter` with its defaults, or a DataFrame per date and
-                ticker that is non-zero on the dates to label, such as the result of
-                `get_event_filter` with other settings. Defaults to None, which labels every date.
+            events (str | pd.DataFrame | None, optional): The dates to label. Options are: "cusum" (the events
+                of the CUSUM filter of `get_event_filter` with its defaults), "z_score" (the events of its
+                z-score filter with its defaults), or a DataFrame per date and ticker that is non-zero on the
+                dates to label, such as the result of `get_event_filter` with other settings. Defaults to None,
+                which labels every date.
             side (str | pd.DataFrame | None, optional): The side of the bets for meta-labels: the
                 name of a signal of `get_signals`, such as "Moving Average Crossover" or "MACD
                 Crossover", whose crossovers are the bets, or a DataFrame per date and ticker of
@@ -417,11 +428,11 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the fixed-horizon labels: the sign of the return over the next `horizon`
-        periods, 0 when it stays within the threshold, the most common labels of financial
-        machine learning. The return can be the ticker's own or relative: its excess over the
-        mean or median return of the tickers (a cross-sectional label, for which only the ranking
-        matters) or over the Benchmark.
+        Calculate the fixed-horizon labels: the sign of the return over the next `horizon` periods, 0 when it stays
+        within the threshold, the most common labels of financial machine learning.
+
+        The return can be the ticker's own or relative: its excess over the mean or median return of the tickers (a
+        cross-sectional label, for which only the ranking matters) or over the Benchmark.
 
         The formula is as follows:
 
@@ -446,8 +457,10 @@ class LabelingTechnicals:
         return labels, relative labels.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             horizon (int, optional): The number of periods ahead. Defaults to 1.
@@ -457,9 +470,10 @@ class LabelingTechnicals:
                 volatility over the horizon, sigma_t x sqrt(horizon). Defaults to False.
             span (int, optional): The span of the exponentially weighted volatility of a scaled
                 threshold. Defaults to 100.
-            relative_to (str | None, optional): "mean" or "median" for the excess over the mean or
-                median return of the tickers, "benchmark" for the excess over the Benchmark.
-                Defaults to None, which labels the return itself.
+            relative_to (str | None, optional): What the return is measured against. Options are: "mean" (the
+                excess over the mean return of the tickers), "median" (the excess over the median return of the
+                tickers), "benchmark" (the excess over the Benchmark). Defaults to None, which labels the return
+                itself.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -564,12 +578,14 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the trend-scanning labels of López de Prado: for every date, fit a linear trend
-        to the prices of each forward window from `minimum_window` to `maximum_window` periods,
-        and take the window whose slope is the most significant. The label is the sign of that
-        slope and its t-value the strength of the trend. Unlike a fixed horizon, the method lets
-        the data decide how long the trend after a date lasts, and labels the dates without a
-        clear trend with a small t-value rather than a forced sign.
+        Calculate López de Prado's trend-scanning labels: the sign of the most significant linear trend in the
+        prices after every date.
+
+        For every date it fits a linear trend to the prices of each forward window from `minimum_window` to
+        `maximum_window` periods and takes the window whose slope is the most significant. The label is the sign of
+        that slope and its t-value the strength of the trend. Unlike a fixed horizon, the method lets the data
+        decide how long the trend after a date lasts, and labels the dates without a clear trend with a small
+        t-value rather than a forced sign.
 
         The formula is as follows:
 
@@ -586,14 +602,17 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge University
           Press, section 5.4 (Snippets 5.1 and 5.2).
-        - Referenced against RiskLabAI's `find_trend_using_trend_scanning`
-          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, find_trend_using_trend_scanning: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/financial_labels.py#L51
 
         Also known as: trend scanning, trend-scanning method, t-value labels.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             minimum_window (int, optional): The shortest forward window in prices, at least 3.
@@ -670,12 +689,12 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the tail-set labels: per date, rank the tickers on their volatility-adjusted
-        return over the next `horizon` periods and label the top `quantile` 1, the bottom
-        `quantile` -1 and the rest 0. A model trained on them learns to tell the best from the
-        worst performers of a universe, the question a long-short portfolio asks, without being
-        distracted by the noisy middle. The labels need a universe of tickers, such as the
-        constituents of an index.
+        Calculate the tail-set labels: per date, rank the tickers on their volatility-adjusted return over the next
+        `horizon` periods and label the top `quantile` 1, the bottom `quantile` -1 and the rest 0.
+
+        A model trained on them learns to tell the best from the worst performers of a universe, the question a
+        long-short portfolio asks, without being distracted by the noisy middle. The labels need a universe of
+        tickers, such as the constituents of an index.
 
         The formula is as follows:
 
@@ -701,8 +720,10 @@ class LabelingTechnicals:
         Also known as: tail sets, tail set labels, cross-sectional quantile labels.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             horizon (int, optional): The number of periods of the forward return. Defaults to 1.
@@ -793,12 +814,12 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the matrix flag labels: how closely the prices of the last `window` periods
-        fit a bull (or bear) flag, a sharp move followed by a consolidation that chartists read
-        as the pause before the move continues. The window's prices are laid out as a 10 x 10
-        grid of their price deciles (rows) over ten consecutive parts of the window (columns), and
-        a template of weights rewards the cells the flag passes through and penalises the others.
-        The score is the sum of the weighted grid; with a threshold the label is 1 from that score.
+        Calculate the matrix flag labels: how closely the prices of the last `window` periods fit a bull (or bear)
+        flag, a sharp move followed by a consolidation that chartists read as the pause before the move continues.
+
+        The window's prices are laid out as a 10 x 10 grid of their price deciles (rows) over ten consecutive parts
+        of the window (columns), and a template of weights rewards the cells the flag passes through and penalises
+        the others. The score is the sum of the weighted grid; with a threshold the label is 1 from that score.
 
         The templates are those of Leigh, Modani, Purvis and Roberts (2002), "leigh_bull", and of
         Cervelló-Royo, Guijarro and Michniuk (2015), "cervello_royo_bull", who proposed a flag
@@ -827,13 +848,17 @@ class LabelingTechnicals:
         Also known as: matrix flags, bull flag, bear flag, flag pattern, template matching.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of prices of the window, at least 10. Defaults to 40.
-            template (str, optional): "leigh_bull", "leigh_bear", "cervello_royo_bull" or
-                "cervello_royo_bear". Defaults to "leigh_bull".
+            template (str, optional): The template of weights. Options are: "leigh_bull" (the bull flag of
+                Leigh, Modani, Purvis and Roberts, 2002), "leigh_bear" (the Leigh bull flag upside down),
+                "cervello_royo_bull" (the bull flag of Cervelló-Royo, Guijarro and Michniuk, 2015),
+                "cervello_royo_bear" (the Cervelló-Royo bull flag upside down). Defaults to "leigh_bull".
             threshold (float | None, optional): The score from which the label is 1. Defaults to
                 None, which returns the score only.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -904,13 +929,14 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the concurrency and the average uniqueness of labels. Labels that span several
-        periods overlap: the triple-barrier labels of two consecutive days share most of their
-        prices, so they are not independent observations. The concurrency of a date is the
-        number of labels whose span includes it, and the average uniqueness of a label is the
-        mean of one over the concurrency across its span: 1 for a label that overlaps no other
-        and 1/10 for a label sharing its whole span with nine others. López de Prado uses it to
-        weigh the labels, to bootstrap them in proportion to their uniqueness (sequential
+        Calculate the concurrency and the average uniqueness of labels: how many labels span each date and how much
+        of its span each label shares with others.
+
+        Labels that span several periods overlap: the triple-barrier labels of two consecutive days share most of
+        their prices, so they are not independent observations. The concurrency of a date is the number of labels
+        whose span includes it, and the average uniqueness of a label is the mean of one over the concurrency across
+        its span: 1 for a label that overlaps no other and 1/10 for a label sharing its whole span with nine others.
+        López de Prado uses it to weigh the labels, to bootstrap them in proportion to their uniqueness (sequential
         bootstrap) and to set the number of samples a bagging classifier draws.
 
         The formula is as follows:
@@ -925,7 +951,9 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections
           4.3 and 4.4 (Snippets 4.1 and 4.2).
-        - Referenced against RiskLabAI's `calculate_average_uniqueness` (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, calculate_average_uniqueness: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L71
 
         Also known as: label concurrency, number of concurrent events, average uniqueness,
         sample uniqueness, overlapping labels.
@@ -935,8 +963,9 @@ class LabelingTechnicals:
                 ticker, such as the result of `get_triple_barrier_labels`,
                 `get_fixed_horizon_labels` or `get_trend_scanning_labels`. Defaults to None, which
                 uses the triple-barrier labels with their defaults.
-            period (str, optional): The time period of the labels. Can be "intraday", "daily",
-                "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period of the labels. Options are: "intraday" (intraday prices),
+                "daily" (daily prices), "weekly" (weekly prices), "monthly" (monthly prices),
+                "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1016,23 +1045,23 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the sample weights of labels for training a model, as López de Prado proposes
-        for labels that overlap.
+        Calculate the sample weights of labels for training a model: how much each label should count, by its
+        uniqueness, its return or its age, as López de Prado proposes for labels that overlap.
 
-        - "return": the weight by return attribution. Each period's log return is shared among
+        - Return attribution: the weight by return attribution. Each period's log return is shared among
           the labels whose span includes it, and a label's weight is the absolute sum of its
           shares. Labels whose spans saw large moves, and that share them with few other labels,
           count most, while a label over a flat stretch counts little. The weights add up to the
           number of labels.
-        - "time_decay": the weight by time decay. The weights fall linearly with the cumulative
+        - Time decay: the weight by time decay. The weights fall linearly with the cumulative
           average uniqueness from 1 for the newest label to `decay` for the oldest, so that
           older observations count less, measured in unique information rather than in dates.
 
         The formula is as follows, per method:
 
-        - "return": r_t = ln(p_t / p_t-1), w~_i = |SUM_{t0_i < t <= t1_i} r_t / c_t| and
+        - Return attribution: r_t = ln(p_t / p_t-1), w~_i = |SUM_{t0_i < t <= t1_i} r_t / c_t| and
           w_i = w~_i x N / SUM_j w~_j, with c_t the concurrency
-        - "time_decay": x_i the cumulative average uniqueness up to label i and X the total,
+        - Time decay: x_i the cumulative average uniqueness up to label i and X the total,
           slope = (1 - decay) / X when decay >= 0, else 1 / ((decay + 1) x X), and
           w_i = max(0, 1 - slope x X + slope x x_i)
 
@@ -1042,14 +1071,16 @@ class LabelingTechnicals:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, sections
           4.6 and 4.7 (Snippets 4.10 and 4.11).
-        - Referenced against RiskLabAI's `sample_weight_absolute_return_meta_labeling` and
-          `calculate_time_decay`
-          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, sample_weight_absolute_return_meta_labeling: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L200
+        - RiskLabAI, calculate_time_decay: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L279
 
         Also known as: sample weights, return attribution, time decay, time-decay weights.
 
         Args:
-            method (str, optional): "return" or "time_decay". Defaults to "return".
+            method (str, optional): The weighting. Options are: "return" (return attribution),
+                "time_decay" (time decay). Defaults to "return".
             labels (pd.DataFrame | None, optional): Labels with a Holding Period per date and
                 ticker, such as the result of `get_triple_barrier_labels`,
                 `get_fixed_horizon_labels` or `get_trend_scanning_labels`. Defaults to None, which
@@ -1057,8 +1088,9 @@ class LabelingTechnicals:
             decay (float, optional): The weight of the oldest label of "time_decay", in (-1, 1]: 1
                 for no decay, 0 for a decay to zero and a negative value to give the oldest share
                 (-decay) of the labels no weight. Defaults to 1.0.
-            period (str, optional): The time period of the labels. Can be "intraday", "daily",
-                "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period of the labels. Options are: "intraday" (intraday prices),
+                "daily" (daily prices), "weekly" (weekly prices), "monthly" (monthly prices),
+                "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1143,21 +1175,22 @@ class LabelingTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the bet size of López de Prado for the bets of meta-labels: how much of the
-        budget to put on each date, between -1 (fully short) and 1 (fully long), from the sides of
-        the bets a primary model takes and, for "probability", how often its bets have paid off.
-        A model that only says which side to take does not say how much to bet; sizing the bets
+        Calculate López de Prado's bet size for meta-labelled bets: how much of the budget to put on each date, from
+        -1 (fully short) to 1 (fully long).
+
+        It follows from the sides of the bets a primary model takes and, for the probability bet size, how often its
+        bets have paid off. A model that only says which side to take does not say how much to bet; sizing the bets
         keeps a strategy from betting the same on a weak signal as on a strong one.
 
-        - "budget": the open long bets as a share of the most long bets ever open, minus the same
+        - Budget bet size: the open long bets as a share of the most long bets ever open, minus the same
           share of the short bets, a size that spreads the budget over the bets the strategy
           usually has open.
-        - "reserve": the net number of open bets (long minus short) against how many the
+        - Reserve bet size: the net number of open bets (long minus short) against how many the
           strategy usually has open, through a mixture of two normal distributions fitted to it
           with the EF3M algorithm (López de Prado and Foreman, 2014). An unusually large net
           count gives a bet close to 1 and a usual one a small bet, keeping a reserve for stronger
           signals.
-        - "probability": every bet sized by the probability that it pays off, taken as the hit
+        - Probability bet size: every bet sized by the probability that it pays off, taken as the hit
           rate of the bets closed before it was placed (the share whose meta-label is 1), and the
           sizes averaged over the bets still open. A hit rate of 50% or less gives no bet.
 
@@ -1165,11 +1198,11 @@ class LabelingTechnicals:
 
         - Long Bets_t and Short Bets_t, the bets open on t: placed on or before t and closing
           after t, `Holding Period` periods after they were placed
-        - "budget": m_t = Long Bets_t / max(Long Bets) - Short Bets_t / max(Short Bets)
-        - "reserve": c_t = Long Bets_t - Short Bets_t, F the mixture of two normal distributions
+        - Budget bet size: m_t = Long Bets_t / max(Long Bets) - Short Bets_t / max(Short Bets)
+        - Reserve bet size: c_t = Long Bets_t - Short Bets_t, F the mixture of two normal distributions
           that matches the first five moments of c_t on the dates bets are placed, and
           m_t = (F(c_t) - F(0)) / (1 - F(0)) when c_t >= 0, (F(c_t) - F(0)) / F(0) otherwise
-        - "probability": p = the hit rate known when bet i is placed, z_i = (p - 0.5) /
+        - Probability bet size: p = the hit rate known when bet i is placed, z_i = (p - 0.5) /
           SQRT(p x (1 - p)) and m_i = side_i x (2 x N(z_i) - 1) when p > 0.5, else 0; m_t = the
           average of m_i over the bets open on t (0 without an open bet)
         - with a `step_size`: m*_t = round(m_t / step_size) x step_size, capped at -1 and 1
@@ -1185,14 +1218,17 @@ class LabelingTechnicals:
         - López de Prado, M. and Foreman, M. (2014). "A mixture of two Gaussians approach to
           mathematical portfolio oversight: the EF3M algorithm." Quantitative Finance, 14(5),
           913-930.
-        - Referenced against RiskLabAI's `probability_bet_size` and `avg_active_signals`
-          (https://github.com/RiskLabAI/RiskLabAI.py).
+
+        Referenced against:
+        - RiskLabAI, probability_bet_size: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L33
+        - RiskLabAI, avg_active_signals: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L166
 
         Also known as: bet sizing, position sizing from meta-labels, budget bet size, reserve bet
         size, EF3M, bet size from predicted probabilities.
 
         Args:
-            method (str, optional): "budget", "reserve" or "probability". Defaults to "budget".
+            method (str, optional): The bet size. Options are: "budget" (the budget bet size), "reserve" (the
+                reserve bet size), "probability" (the probability bet size). Defaults to "budget".
             labels (pd.DataFrame | None, optional): Meta-labels with a Side, Holding Period and
                 Label per date and ticker, such as the result of `get_triple_barrier_labels` with a
                 side. Defaults to None, which uses the triple-barrier meta-labels of the CUSUM
@@ -1207,8 +1243,9 @@ class LabelingTechnicals:
             runs (int, optional): The number of random starting points of the EF3M fit of
                 "reserve". Defaults to 100.
             seed (int, optional): The seed of the starting points of the EF3M fit. Defaults to 0.
-            period (str, optional): The time period of the labels. Can be "intraday", "daily",
-                "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period of the labels. Options are: "intraday" (intraday prices),
+                "daily" (daily prices), "weekly" (weekly prices), "monthly" (monthly prices),
+                "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses

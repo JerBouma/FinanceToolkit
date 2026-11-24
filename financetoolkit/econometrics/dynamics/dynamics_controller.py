@@ -39,15 +39,18 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Markov regime switching model to every asset: the mean and volatility of its
-        returns depend on a regime that is not observed and switches from one period to the
-        next with fixed probabilities (Hamilton, 1989). With two regimes the model typically
+        Fit a Markov regime switching model to every asset: the hidden regimes, such as calm and
+        turbulent markets, that set the mean and volatility of its returns.
+
+        The regime is not observed and switches from one period to the next with fixed
+        probabilities (Hamilton, 1989), and the model is fitted with statsmodels'
+        MarkovRegression. With two regimes the model typically
         separates calm markets (a higher mean and a low volatility) from turbulent ones (a
         lower mean and a high volatility), and it says which regime the market is most
         likely in today, how persistent each regime is and how long it lasts on average.
 
         The regimes are ordered from the lowest to the highest volatility, so Regime 1 is
-        the calmest. With switching_variance=False all regimes share one volatility, and
+        the calmest. Without a switching variance all regimes share one volatility, and
         they are ordered from the lowest to the highest mean instead, so Regime 1 is the
         one with the lowest mean. The expected duration of a regime is 1 / (1 - p), with p
         the probability of staying in it, in periods. The share is the part of the periods
@@ -62,8 +65,8 @@ class DynamicsEconometrics:
         The formula is as follows:
 
         - yₜ = μ_Sₜ + σ_Sₜ·εₜ, with yₜ the `column` series (Return by default), εₜ standard normal and
-          Sₜ ∈ {1, ..., K} the regime, K = `regimes` (2 by default); σ_Sₜ = σ for every regime when
-          switching_variance=False
+          Sₜ ∈ {1, ..., K} the regime, K = `regimes` (2 by default); σ_Sₜ = σ for every regime without a
+          switching variance
         - P(Sₜ = j | Sₜ₋₁ = i) = pᵢⱼ, a first-order Markov chain with constant transition probabilities
         - μ, σ and pᵢⱼ are fitted by Maximum Likelihood with the Hamilton filter (statsmodels
           MarkovRegression), keeping the best of the default start and 20 random perturbations
@@ -175,8 +178,10 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Find the dates at which the mean of every asset's series shifts, with the Bai and
-        Perron (1998, 2003) method for multiple structural breaks. For every number of breaks
+        Find the structural breaks of every asset's series: the dates at which its mean shifts.
+
+        The breaks follow the Bai and Perron (1998, 2003) method for multiple structural
+        breaks. For every number of breaks
         the break dates that minimize the sum of squared residuals around a mean per segment
         are found exactly (by dynamic programming), and the number of breaks is chosen by the
         Bayesian information criterion. Every segment covers at least a share of the
@@ -295,31 +300,33 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Find the dates at which the mean, the volatility or both of every asset's series
-        change, with the PELT (Pruned Exact Linear Time) method of Killick, Fearnhead and
-        Eckley (2012). It finds the exact segmentation that minimizes the Gaussian cost of
+        Find the change points of every asset's series: the dates at which its mean, its
+        volatility or both change.
+
+        The change points follow the PELT (Pruned Exact Linear Time) method of Killick,
+        Fearnhead and Eckley (2012). It finds the exact segmentation that minimizes the Gaussian cost of
         every segment plus a penalty per change, with no upper limit on the number of
         changes, and prunes the candidate dates that can no longer be the last change, so it
         runs in about linear time.
 
         Where `get_structural_breaks` (Bai and Perron) looks for shifts in the mean with a
-        common variance and at most a few breaks, PELT with the default cost="mean_variance"
+        common variance and at most a few breaks, PELT with the default mean and variance cost
         also splits the series where the volatility changes, which for returns separates calm
-        and turbulent periods; cost="variance" keeps the mean fixed and only lets the
-        volatility change, cost="mean" only the mean. Every segment is dated after the fact
+        and turbulent periods; the variance cost keeps the mean fixed and only lets the
+        volatility change, the mean cost only the mean. Every segment is dated after the fact
         with the whole series, as a description of the past rather than a signal on the day.
 
         The formula is as follows, with yₜ the `column` series (Return by default), n observations
         and a segment s of nₛ observations:
 
-        - cost="mean_variance": C(s) = nₛ·ln(σ̂ₛ²), with σ̂ₛ² = Σ(t in s) (yₜ - ȳₛ)² / nₛ
-        - cost="variance": C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
-        - cost="mean": C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
+        - Mean and variance cost: C(s) = nₛ·ln(σ̂ₛ²), with σ̂ₛ² = Σ(t in s) (yₜ - ȳₛ)² / nₛ
+        - Variance cost: C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
+        - Mean cost: C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
           standard deviation from the changes of the series
         - The segmentation minimizes Σ C(s) + β·(number of changes), every segment at least
           `minimum_segment` observations (5 by default)
-        - β = (p + 1)·ln(n), the BIC, with p = 2 parameters per segment for "mean_variance" and 1 for
-          "mean" and "variance" plus 1 for the date of the change, unless `penalty` is given
+        - β = (p + 1)·ln(n), the BIC, with p = 2 parameters per segment for the mean and variance cost and 1
+          for the mean or the variance cost plus 1 for the date of the change, unless `penalty` is given
         - Per segment: its Start, End, Observations, Mean and Standard Deviation (ddof=1)
 
         For more information, see the following papers:
@@ -329,12 +336,16 @@ class DynamicsEconometrics:
         Association, 107(500), 1590-1598.
         - Jackson, B. et al. (2005). "An Algorithm for Optimal Partitioning of Data on an
         Interval." IEEE Signal Processing Letters, 12(2), 105-108.
-        - Referenced against ruptures' Pelt (https://github.com/deepcharles/ruptures) and
-        RiskLabAI's pelt_change_points (https://github.com/RiskLabAI/RiskLabAI.py), which
-        call ruptures; the change points equal those of an exhaustive search.
 
         Also known as: PELT, change point detection, changepoints, variance change points,
         volatility regimes, segmentation, multiple structural breaks.
+
+        Referenced against:
+        - ruptures, Pelt: https://github.com/deepcharles/ruptures/blob/v1.1.10/src/ruptures/detection/pelt.py#L11
+        - changepoint (R), penalty_decision: https://github.com/cran/changepoint/blob/2.3/R/penalty_decision.R#L1
+
+        Shares similar logic:
+        - RiskLabAI, pelt_change_points: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/pelt_change_points.py#L34
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -342,8 +353,9 @@ class DynamicsEconometrics:
             column (str, optional): The historical data column to analyze. Defaults to
                 "Return"; use "Adj Close" (or "Level" with standalone data) for the series
                 itself, such as an inflation rate.
-            cost (str, optional): What may change between segments: "mean_variance" (both),
-                "variance" (the volatility around the mean of the series) or "mean" (the mean).
+            cost (str, optional): What may change between segments. Options are: "mean_variance"
+                (both), "variance" (the volatility around the mean of the series), "mean" (the
+                mean).
                 Defaults to "mean_variance".
             penalty (float | None, optional): The penalty β per change; a larger one finds
                 fewer changes. Defaults to None, the BIC (p + 1)·ln(n).
@@ -368,7 +380,9 @@ class DynamicsEconometrics:
           volatility model would: weekly or monthly returns, or a larger penalty, give fewer
           and longer segments.
         - A variance is floored at 1e-6 times that of the whole series, so a segment of
-          equal values has a finite cost; ruptures adds 1e-6 to it instead.
+          equal values has a finite cost, unlike ruptures, which adds 1e-6 to it instead.
+        - The change points equal those of an exhaustive search; RiskLabAI's
+          pelt_change_points calls ruptures.
 
         As an example:
 
@@ -426,12 +440,15 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Estimate the alpha and beta of every asset as they change over time, with the Kalman
-        filter. The regression y_t = α_t + β_t x_t + ε_t lets both coefficients take a random
-        step every period; how large those steps are, and how much noise surrounds the
-        regression, is estimated by maximum likelihood. A beta that drifts, such as a stock
-        becoming more sensitive to the market, shows up without choosing the window of a
-        rolling regression, while a beta that is constant stays flat.
+        Estimate a time-varying regression of every asset with the Kalman filter: its alpha and
+        beta as they change over time.
+
+        The model is a statsmodels MLEModel state space model. The regression
+        y_t = α_t + β_t x_t + ε_t lets both coefficients take a random step every period; how large
+        those steps are, and how much noise surrounds the regression, is estimated by
+        maximum likelihood. A beta that drifts, such as a stock becoming more sensitive to
+        the market, shows up without choosing the window of a rolling regression, while a
+        beta that is constant stays flat.
 
         Every alpha and beta is the filtered estimate, updated with the observations up to
         its date only. The three variances that set how fast the estimates adapt are
@@ -561,8 +578,10 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Estimate the correlation between every pair of assets as it changes over time, with
-        the dynamic conditional correlation (DCC) GARCH(1,1) model of Engle (2002). Every
+        Estimate the dynamic conditional correlation between every pair of assets: how it changes
+        over time, with the DCC-GARCH(1,1) model of Engle (2002).
+
+        Every
         asset gets its own GARCH(1,1) volatility, and the correlation of the standardized
         returns follows a GARCH-like recursion around their long-run correlation. Correlations
         between assets tend to rise in crises, exactly when diversification is needed most.
@@ -672,8 +691,10 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the statistics of trading the spread between every pair of assets. The
-        hedge ratio follows from regressing one log price on the other; what remains is the
+        Calculate the statistics of trading the spread between every pair of assets: how far the
+        spread is from its mean and the position that gives.
+
+        The hedge ratio follows from regressing one log price on the other; what remains is the
         spread, and when the two are cointegrated the spread reverts to its mean. Its
         z-score says how far it is from that mean in standard deviations, and threshold
         rules trade on it: short the spread (sell the first asset, buy the hedge ratio of
@@ -698,8 +719,8 @@ class DynamicsEconometrics:
 
         The formula is as follows:
 
-        - yₜ = c + h·xₜ + sₜ, fitted by OLS on the dates both have, with yₜ and xₜ the (log, when
-          log_prices=True) `column` levels (Adj Close by default): h the Hedge Ratio, c the Intercept and
+        - yₜ = c + h·xₜ + sₜ, fitted by OLS on the dates both have, with yₜ and xₜ the (log, by
+          default) `column` levels (Adj Close by default): h the Hedge Ratio, c the Intercept and
           sₜ the Spread
         - Z-Scoreₜ = (sₜ - mean(s)) / std(s) (ddof=1), over the full sample or a rolling `window`
         - Signal: -1 from Z > `entry_z_score` until Z < `exit_z_score`, +1 from Z < -`entry_z_score`
@@ -718,6 +739,10 @@ class DynamicsEconometrics:
 
         Also known as: statistical arbitrage, spread trading, z-score strategy, half-life
         of mean reversion.
+
+        Referenced against:
+        - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
+            Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -823,10 +848,11 @@ class DynamicsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Find the profit-taking and stop-loss levels with the highest Sharpe ratio for a long
-        position in every asset, when its log price follows the mean-reverting
-        Ornstein-Uhlenbeck process fitted to it, with the Monte Carlo method of López de
-        Prado (2018, chapter 13).
+        Find the optimal trading rule of every asset: the profit-taking and stop-loss levels with
+        the highest Sharpe ratio for a long position.
+
+        The log price follows the mean-reverting Ornstein-Uhlenbeck process fitted to it, with
+        the Monte Carlo method of López de Prado (2018, chapter 13).
 
         The process is fitted to the log prices by a regression of each on the one before it,
         which gives how persistent the price is (Phi), the level it reverts to (the Long-Run
@@ -857,13 +883,16 @@ class DynamicsEconometrics:
 
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter
         13, "Backtesting on Synthetic Data".
-        - Referenced against RiskLabAI's ou_rule_metrics (https://github.com/RiskLabAI/RiskLabAI.py),
-        the closed-form gain and exit time of the continuous process, which the simulation
-        agrees with once the levels are moved out by 0.5826 Sigma for the discrete monitoring
-        (Broadie, Glasserman and Kou, 1997).
 
         Also known as: optimal trading rule, OTR, profit-taking and stop-loss, Ornstein-Uhlenbeck
         trading rule, mean reversion trading rule, synthetic backtest.
+
+        Referenced against:
+        - RiskLabAI, ou_rule_metrics: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L148
+
+        Shares similar logic:
+        - RiskLabAI, fit_ornstein_uhlenbeck: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L269
+        - RiskLabAI, optimal_ou_trading_rule: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L198
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -903,10 +932,13 @@ class DynamicsEconometrics:
           on every run. With a wide stop-loss a few large losses decide the standard deviation,
           so the Sharpe ratio of such a rule can move by 0.1 or more with another seed at
           10,000 paths; more paths narrow it.
-        - López de Prado draws new paths for every rule, closes a position one period after the
+        - RiskLabAI's ou_rule_metrics gives the closed-form gain and exit time of the continuous
+          process, which the simulation agrees with once the levels are moved out by 0.5826 Sigma
+          for the discrete monitoring (Broadie, Glasserman and Kou, 1997).
+        - Unlike here, López de Prado draws new paths for every rule, closes a position one period after the
           maximum holding period and takes the standard deviation with ddof=0.
         - The rule is for a long position. For a short position, analyze the negative of the
-          log prices (`Econometrics(data=...)` with log_prices=False), whose rise is a fall
+          log prices (`Econometrics(data=...)` without log prices), whose rise is a fall
           in the price.
         - The simulation takes about a second per asset with the defaults.
 

@@ -20,8 +20,8 @@ def get_probability_bet_size(
     classes: int = 2,
 ) -> pd.Series:
     """
-    Calculate the bet size from the probability a classifier gives its prediction, by testing
-    whether the probability differs from that of a random guess among `classes` outcomes.
+    Calculate the bet size from the probability a classifier gives its prediction: how far the probability lies
+    above that of a random guess, turned into a bet between -1 and 1.
 
     The formula is as follows:
 
@@ -37,6 +37,9 @@ def get_probability_bet_size(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.3
       (Snippet 10.1).
+
+    Referenced against:
+    - RiskLabAI, probability_bet_size: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L33
 
     Args:
         probabilities (pd.Series): The probability of the predicted outcome of each bet.
@@ -116,9 +119,8 @@ def get_average_active_bet_size(
     bet_sizes: pd.Series, holding_periods: pd.Series
 ) -> pd.Series:
     """
-    Calculate the bet size on each date as the average of the bets still open, so a new bet
-    adds to the position of the bets before it instead of replacing it, and the position does
-    not jump with every new prediction.
+    Calculate the average active bet size: the average of the bets still open on each date, so a new bet adds to the
+    position of the bets before it instead of replacing it.
 
     The formula is as follows:
 
@@ -131,6 +133,9 @@ def get_average_active_bet_size(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.4
       (Snippet 10.2).
+
+    Referenced against:
+    - RiskLabAI, avg_active_signals: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L166
 
     Args:
         bet_sizes (pd.Series): The bet size of the bet placed at each date, NaN for dates without
@@ -154,8 +159,8 @@ def get_average_active_bet_size(
 
 def get_discrete_bet_size(bet_sizes: pd.Series, step_size: float) -> pd.Series:
     """
-    Calculate the bet size rounded to a multiple of `step_size`, so small changes of the
-    prediction do not trade (overtrading), and capped at -1 and 1.
+    Calculate the discrete bet size: the bet size rounded to a multiple of a step and capped at -1 and 1, so small
+    changes of the prediction do not trade.
 
     The formula is as follows:
 
@@ -183,9 +188,10 @@ def get_hit_rate(
     labels: pd.Series, holding_periods: pd.Series, minimum_labels: int = 20
 ) -> pd.Series:
     """
-    Calculate the hit rate of meta-labels known on each date: the share of the bets closed on or
-    before the date whose meta-label is 1 (the bet made money). It uses only the bets that have
-    closed, so it holds no information from after the date.
+    Calculate the hit rate of meta-labels known on each date: the share of the bets closed on or before the date
+    whose meta-label is 1 (the bet made money).
+
+    It uses only the bets that have closed, so it holds no information from after the date.
 
     The formula is as follows:
 
@@ -220,7 +226,7 @@ def get_hit_rate(
 
 def get_concurrent_sides(holding_periods: pd.Series, sides: pd.Series) -> pd.DataFrame:
     """
-    Calculate the number of long and short bets open on each date.
+    Calculate the concurrent sides of the bets: the number of long and short bets open on each date.
 
     The formula is as follows:
 
@@ -260,9 +266,11 @@ def get_concurrent_sides(holding_periods: pd.Series, sides: pd.Series) -> pd.Dat
 
 def get_budget_bet_size(holding_periods: pd.Series, sides: pd.Series) -> pd.DataFrame:
     """
-    Calculate the budget bet size: the open long bets as a share of the most long bets ever
-    open, minus the same share of the short bets. It spreads a budget over the bets the
-    strategy usually has open, without a model of how likely each bet is to win.
+    Calculate the budget bet size: the open long bets as a share of the most long bets ever open, minus the same
+    share of the short bets.
+
+    It spreads a budget over the bets the strategy usually has open, without a model of how likely each bet is to
+    win.
 
     The formula is as follows:
 
@@ -367,11 +375,12 @@ def get_mixture_of_two_gaussians(
     values: pd.Series | np.ndarray, runs: int = 100, seed: int = 0
 ) -> pd.Series:
     """
-    Fit a mixture of two normal distributions to values by matching their first five moments,
-    as the EF3M algorithm (Exact Fit of the first 3 Moments) of López de Prado and Foreman does:
-    from many random starting points, each fit matches the first three moments exactly and
-    adjusts the mixing probability and a mean until the fourth and fifth moments match too, and
-    the solution most starting points reach is the most likely one.
+    Fit a mixture of two normal distributions to values by matching their first five moments, with the EF3M
+    algorithm of López de Prado and Foreman.
+
+    EF3M (Exact Fit of the first 3 Moments) starts from many random points: each fit matches the first three moments
+    exactly and adjusts the mixing probability and a mean until the fourth and fifth moments match too, and the
+    solution most starting points reach is the most likely one.
 
     The formula is as follows:
 
@@ -479,7 +488,8 @@ def get_mixture_of_two_gaussians(
 
 def get_mixture_cdf(values: np.ndarray | float, parameters: pd.Series) -> np.ndarray:
     """
-    Calculate the distribution function of a mixture of two normal distributions.
+    Calculate the distribution function of a mixture of two normal distributions: the probability that a value lies
+    at or below each point.
 
     The formula is as follows:
 
@@ -506,11 +516,11 @@ def get_reserve_bet_size(
     holding_periods: pd.Series, sides: pd.Series, runs: int = 100, seed: int = 0
 ) -> pd.DataFrame:
     """
-    Calculate the reserve bet size: the net number of open bets (long minus short) compared
-    with how many the strategy usually has open, through a mixture of two normal distributions
-    fitted to it with the EF3M algorithm. An unusually large net long count gives a bet close to
-    1 and a typical one a small bet, so part of the budget stays in reserve for stronger
-    signals.
+    Calculate the reserve bet size: the net number of open bets (long minus short) compared with how many the
+    strategy usually has open, through a mixture of two normal distributions fitted to it with the EF3M algorithm.
+
+    An unusually large net long count gives a bet close to 1 and a typical one a small bet, so part of the budget
+    stays in reserve for stronger signals.
 
     The formula is as follows:
 
@@ -559,8 +569,8 @@ def get_reserve_bet_size(
 
 def get_sigmoid_width(divergence: float, bet_size: float) -> float:
     """
-    Calculate the width of the sigmoid bet size function that gives `bet_size` at a divergence
-    of the forecast from the market price of `divergence`.
+    Calculate the width of the sigmoid bet size function: the width that gives a chosen bet size at a chosen
+    divergence of the forecast from the market price.
 
     The formula is as follows:
 
@@ -586,8 +596,8 @@ def get_sigmoid_width(divergence: float, bet_size: float) -> float:
 
 def get_power_width(divergence: float, bet_size: float) -> float:
     """
-    Calculate the exponent of the power bet size function that gives `bet_size` at a
-    divergence of `divergence`.
+    Calculate the exponent of the power bet size function: the exponent that gives a chosen bet size at a chosen
+    divergence of the forecast from the market price.
 
     The formula is as follows:
 
@@ -614,8 +624,8 @@ def get_dynamic_bet_size(
     method: str = "sigmoid",
 ) -> np.ndarray | pd.Series | float:
     """
-    Calculate the bet size from the divergence of a forecast from the market price, with a
-    sigmoid function (López de Prado) or a power function.
+    Calculate the dynamic bet size: how large a bet the divergence of a forecast from the market price warrants,
+    with a sigmoid function (López de Prado) or a power function.
 
     The formula is as follows:
 
@@ -631,7 +641,8 @@ def get_dynamic_bet_size(
         divergence (np.ndarray | pd.Series | float): The forecast minus the market price, or for
             the power function a divergence scaled to -1 to 1.
         width (float): The width w of `get_sigmoid_width` or the exponent of `get_power_width`.
-        method (str, optional): "sigmoid" or "power". Defaults to "sigmoid".
+        method (str, optional): The function from the divergence to the bet size. Options are:
+            "sigmoid" (sigmoid function), "power" (power function). Defaults to "sigmoid".
 
     Returns:
         np.ndarray | pd.Series | float: The bet size, between -1 and 1.
@@ -650,7 +661,7 @@ def get_inverse_price(
     forecast_price: float, width: float, bet_size: float, method: str = "sigmoid"
 ) -> float:
     """
-    Calculate the market price at which the bet size function gives `bet_size`.
+    Calculate the inverse price: the market price at which the bet size function gives a given bet size.
 
     The formula is as follows:
 
@@ -666,7 +677,8 @@ def get_inverse_price(
         forecast_price (float): The forecast price f.
         width (float): The width (sigmoid) or exponent (power) w.
         bet_size (float): The bet size m, between -1 and 1.
-        method (str, optional): "sigmoid" or "power". Defaults to "sigmoid".
+        method (str, optional): The function from the divergence to the bet size. Options are:
+            "sigmoid" (sigmoid function), "power" (power function). Defaults to "sigmoid".
 
     Returns:
         float: The market price L.
@@ -689,10 +701,11 @@ def get_limit_price(
     method: str = "sigmoid",
 ) -> float:
     """
-    Calculate the breakeven limit price of an order that moves the position from
-    `current_position` to `target_position`: the average of the market prices at which each unit
-    of the change would be the bet size, so the order does not trade at a loss against the
-    forecast.
+    Calculate the breakeven limit price of an order that moves the position from `current_position` to
+    `target_position`.
+
+    It is the average of the market prices at which each unit of the change would be the bet size, so the order does
+    not trade at a loss against the forecast.
 
     The formula is as follows:
 
@@ -712,7 +725,8 @@ def get_limit_price(
         forecast_price (float): The forecast price f.
         width (float): The width (sigmoid) or exponent (power) w.
         maximum_position (int): The maximum position Q.
-        method (str, optional): "sigmoid" or "power". Defaults to "sigmoid".
+        method (str, optional): The function from the divergence to the bet size. Options are:
+            "sigmoid" (sigmoid function), "power" (power function). Defaults to "sigmoid".
 
     Returns:
         float: The limit price, NaN when the position does not change.
@@ -745,11 +759,11 @@ def get_target_bet_sizes(
     method: str = "sigmoid",
 ) -> pd.DataFrame:
     """
-    Calculate the dynamic bet size of López de Prado: the bet size from the divergence of a
-    forecast price from the market price, the target position it gives and the limit price of
-    the order that reaches it. The function is calibrated so that a divergence of
-    `calibration_divergence` gives a bet size of `calibration_bet_size`, and the position is
-    updated as the market price moves towards or away from the forecast.
+    Calculate the dynamic bet size of López de Prado: the bet size from the divergence of a forecast price from the
+    market price, the target position it gives and the limit price of the order that reaches it.
+
+    The function is calibrated so that a divergence of `calibration_divergence` gives a bet size of
+    `calibration_bet_size`, and the position is updated as the market price moves towards or away from the forecast.
 
     The formula is as follows:
 
@@ -766,8 +780,11 @@ def get_target_bet_sizes(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 10.6
       (Snippet 10.4).
-    - Referenced against RiskLabAI's `bet_size_sigmoid`, `target_position` and `limit_price`
-      (https://github.com/RiskLabAI/RiskLabAI.py).
+
+    Referenced against:
+    - RiskLabAI, bet_size_sigmoid: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L347
+    - RiskLabAI, target_position: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L369
+    - RiskLabAI, limit_price: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/bet_sizing.py#L423
 
     Args:
         market_price (pd.Series | float): The market price p.
@@ -778,7 +795,8 @@ def get_target_bet_sizes(
             Defaults to 10.0.
         calibration_bet_size (float, optional): The bet size m̄ at that divergence. Defaults to
             0.95.
-        method (str, optional): "sigmoid" or "power". Defaults to "sigmoid".
+        method (str, optional): The function from the divergence to the bet size. Options are:
+            "sigmoid" (sigmoid function), "power" (power function). Defaults to "sigmoid".
 
     Returns:
         pd.DataFrame: The Bet Size, Target Position and Limit Price per row.

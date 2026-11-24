@@ -22,22 +22,21 @@ def get_two_sample_t_test(
     equal_variance: bool = False,
 ) -> pd.Series:
     """
-    Calculate a two-sample t-test for a difference in means between `sample_a` and
-    `sample_b`.
+    Calculate a two-sample t-test: whether two samples have different means.
 
-    Also known as: independent samples t-test, Welch's t-test (when `equal_variance`
-    is False), Student's t-test (when `equal_variance` is True).
+    Also known as: independent samples t-test, Welch's t-test (unequal variances),
+    Student's t-test (equal variances).
 
     Tests the null hypothesis that both samples are drawn from distributions with the
-    same mean, `H0: mean(sample_a) = mean(sample_b)`, against the two-sided
-    alternative that they differ. By default (`equal_variance=False`) this is Welch's
-    t-test, which does not assume the two samples share a common variance:
+    same mean, `H0: mean(sample_a) = mean(sample_b)`, against the two-sided alternative
+    that they differ. By default this is Welch's t-test, which does not assume the two
+    samples share a common variance:
 
     - t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
     - df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1) + (s_b^2 / n_b)^2 / (n_b - 1))
 
     With `s^2` the sample variances (ddof=1) and the degrees of freedom from the
-    Welch-Satterthwaite equation. Setting `equal_variance=True` instead pools the two
+    Welch-Satterthwaite equation. Student's test with equal variances instead pools the two
     sample variances into a single estimate (Student's original two-sample t-test):
 
     - s_p^2 = ((n_a - 1) * s_a^2 + (n_b - 1) * s_b^2) / (n_a + n_b - 2)
@@ -54,6 +53,12 @@ def get_two_sample_t_test(
     - Welch, B.L. (1947). "The Generalization of 'Student's' Problem when Several
     Different Population Variances are Involved." Biometrika, 34(1/2), 28-35.
 
+    Referenced against:
+    - statsmodels, ttest_ind: https://www.statsmodels.org/stable/generated/statsmodels.stats.weightstats.ttest_ind.html
+        Test: tests/econometrics/test_least_squares_model.py::test_two_sample_t_tests_match_the_reference
+    - scipy, ttest_ind: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
+        Test: tests/econometrics/test_reference_validation.py::test_two_sample_t_test
+
     Args:
         sample_a (pd.Series | np.ndarray): The first sample.
         sample_b (pd.Series | np.ndarray): The second sample.
@@ -69,8 +74,7 @@ def get_two_sample_t_test(
         TypeError: If `sample_a` or `sample_b` is not one of the accepted types.
 
     Notes:
-        Referenced against statsmodels' `ttest_ind` with `usevar="unequal"` (Welch) and
-        `usevar="pooled"` (Student).
+        - Both Welch's and Student's (pooled) versions are checked against statsmodels.
     """
     sample_a_values = _to_target_vector(sample_a)
     sample_b_values = _to_target_vector(sample_b)
@@ -152,8 +156,8 @@ def _require_fit(result: dict) -> None:
 
 def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     """
-    Calculate a nested-model F-test for the joint significance of the extra
-    regressors in `result_unrestricted` relative to `result_restricted`.
+    Calculate a nested-model F-test: whether the extra regressors of a larger regression
+    jointly improve the fit of a smaller regression nested in it.
 
     Also known as: nested F-test, restricted vs. unrestricted F-test, partial F-test.
 
@@ -175,6 +179,10 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     the weighted (whitened) one, and the F-statistic always uses the RSS, whichever
     covariance estimator the fits used.
 
+    Referenced against:
+    - statsmodels, RegressionResults.compare_f_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_f_test.html
+        Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
+
     Args:
         result_restricted (dict): The fitted restricted model (fewer
         regressors).
@@ -192,8 +200,6 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
         than `result_restricted`, or if the two were not fit on the same number of
         observations.
 
-    Notes:
-        Referenced against statsmodels' `RegressionResults.compare_f_test`.
     """
     _validate_nested_models(result_restricted, result_unrestricted)
     _require_fit(result_restricted)
@@ -230,8 +236,8 @@ def get_wald_test(
     restriction_values: np.ndarray | None = None,
 ) -> pd.Series:
     """
-    Calculate a Wald test of `q` general linear restriction(s) on the coefficients of
-    a single fitted regression result dict.
+    Calculate a Wald test: whether the coefficients of a fitted regression satisfy a set of
+    linear restrictions.
 
     Also known as: Wald chi-squared test.
 
@@ -253,7 +259,7 @@ def get_wald_test(
     algebraic identity with the corresponding coefficient's own squared t-statistic
     (`F = t^2`), since both use the same `Cov(beta_hat)`. `Cov(beta_hat)` is the fit's
     own covariance estimator, and the F denominator degrees of freedom are `n - k`, or
-    the number of clusters minus one for a "cluster" fit. When restrictions are
+    the number of clusters minus one for a cluster-robust fit. When restrictions are
     linearly dependent, the inverse is the Moore-Penrose pseudo-inverse and `q` counts
     the independent ones (see `least_squares_model.get_wald_statistic`).
 
@@ -262,6 +268,10 @@ def get_wald_test(
     - Wald, A. (1943). "Tests of Statistical Hypotheses Concerning Several Parameters
     When the Number of Observations is Large." Transactions of the American
     Mathematical Society, 54(3), 426-482.
+
+    Referenced against:
+    - statsmodels, RegressionResults.wald_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.wald_test.html
+        Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
 
     Args:
         result (dict): The fitted model whose coefficients are being
@@ -282,8 +292,6 @@ def get_wald_test(
         `result["n_parameters"]`, or `restriction_values`'s length does not match
         `restriction_matrix`'s number of rows.
 
-    Notes:
-        Referenced against statsmodels' `RegressionResults.wald_test`.
     """
     restriction_matrix = np.atleast_2d(np.asarray(restriction_matrix, dtype=float))
     n_restrictions, n_coefficients = restriction_matrix.shape
@@ -338,8 +346,10 @@ def get_likelihood_ratio_test(
     result_restricted: dict, result_unrestricted: dict
 ) -> pd.Series:
     """
-    Calculate a nested-model Likelihood Ratio (LR) test, the Maximum Likelihood
-    analogue of `get_f_test`.
+    Calculate a nested-model Likelihood Ratio (LR) test: whether the extra regressors of a
+    larger regression jointly raise its likelihood above that of a smaller one nested in it.
+
+    The test is the Maximum Likelihood analogue of the F-test of `get_f_test`.
 
     Also known as: LR test, Wilks' likelihood ratio test.
 
@@ -363,6 +373,10 @@ def get_likelihood_ratio_test(
     - Wilks, S.S. (1938). "The Large-Sample Distribution of the Likelihood Ratio for
     Testing Composite Hypotheses." Annals of Mathematical Statistics, 9(1), 60-62.
 
+    Referenced against:
+    - statsmodels, RegressionResults.compare_lr_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_lr_test.html
+        Test: tests/econometrics/test_least_squares_model.py::test_nested_and_restriction_tests_match_the_reference
+
     Args:
         result_restricted (dict): The fitted restricted model (fewer
         regressors).
@@ -381,7 +395,6 @@ def get_likelihood_ratio_test(
     Notes:
         The log-likelihoods are those of the fits themselves (with the WLS weights or GLS
         covariance structure), whichever covariance estimator they used.
-        Referenced against statsmodels' `RegressionResults.compare_lr_test`.
     """
     q = _validate_nested_models(result_restricted, result_unrestricted)
     _require_fit(result_restricted)
@@ -439,8 +452,9 @@ def get_hausman_wu_test(
     x_other: pd.DataFrame | pd.Series | np.ndarray | None = None,
 ) -> pd.Series:
     """
-    Calculate a regression-based Hausman-Wu test for the endogeneity of `x_suspect`
-    in a regression of `y` on `x_suspect` (and, optionally, `x_other`).
+    Calculate a regression-based Hausman-Wu test: whether a regressor is endogenous,
+    correlated with the error term, so that OLS is biased and an instrumental-variables fit
+    is needed.
 
     Also known as: Hausman test, Durbin-Wu-Hausman test, regression test for
     endogeneity.
@@ -449,11 +463,9 @@ def get_hausman_wu_test(
     (`Cov(x, e) = 0`); when that fails (e.g. due to an omitted confounder, reverse
     causality, or measurement error) `x_suspect` is "endogenous" and OLS is biased,
     calling for an instrumental-variables approach instead (see
-    `causal_inference_model.get_iv_2sls`, whose `linearmodels.iv.IV2SLS` results
-    object exposes an equivalent `.wu_hausman()` test directly on the fitted IV model
-    -- this function instead builds the classic two-regression version by hand from
-    `regression_model.get_ols`, useful when you want to test endogeneity before
-    committing to a full IV fit). This test operationalizes the Durbin-Wu-Hausman
+    `causal_inference_model.get_iv_2sls`). This function builds the classic two-regression
+    version from `regression_model.get_ols`, useful to test endogeneity before committing
+    to a full IV fit. This test operationalizes the Durbin-Wu-Hausman
     idea as two auxiliary OLS regressions:
 
     1. Regress `x_suspect` on `instruments` (and `x_other`, if given) and keep the
@@ -475,6 +487,9 @@ def get_hausman_wu_test(
     Regressors and Disturbances." Econometrica, 41(4), 733-750.
     - Hausman, J.A. (1978). "Specification Tests in Econometrics." Econometrica,
     46(6), 1251-1271.
+
+    Shares similar logic:
+    - linearmodels, IVResults.wu_hausman: https://bashtage.github.io/linearmodels/iv/iv/linearmodels.iv.results.IVResults.wu_hausman.html
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.

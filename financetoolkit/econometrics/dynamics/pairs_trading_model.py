@@ -12,8 +12,10 @@ NO_REVERSION = 1e-10
 
 def get_half_life(spread: pd.Series) -> float:
     """
-    The half-life of a mean-reverting spread: the time it takes to close half the gap to
-    its mean, from the AR(1) regression Δs_t = c + λ s_{t-1} + ε_t (the discretized
+    Calculate the half-life of a mean-reverting spread: the time it takes to close half the
+    gap to its mean.
+
+    The half-life follows from the AR(1) regression Δs_t = c + λ s_{t-1} + ε_t (the discretized
     Ornstein-Uhlenbeck process), as -ln(2) / ln(1 + λ).
 
     Args:
@@ -38,7 +40,9 @@ def get_signals(
     z_score: pd.Series, entry: float = 2.0, exit_: float = 0.5
 ) -> pd.Series:
     """
-    The position in the spread that z-score rules give: short the spread (-1) once the
+    Calculate the position in the spread that z-score rules give: short, long or flat.
+
+    The rules go short the spread (-1) once the
     z-score rises above the entry threshold, long (+1) once it falls below minus the
     threshold, and flat again once it crosses the exit threshold on its way back: a short
     position closes once the z-score falls below the exit threshold, a long one once it
@@ -89,8 +93,11 @@ def get_pairs_trading(
     log_prices: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """
-    The statistics of trading the spread between two prices: the hedge ratio from the
-    regression of one (log) price on the other, the spread that remains, its z-score
+    Calculate the statistics of trading the spread between two prices: how far the spread is
+    from its mean and the position that gives.
+
+    The statistics are the hedge ratio from the regression of one (log) price on the other,
+    the spread that remains, its z-score
     (against its full-sample mean and standard deviation, or a rolling window), the
     position the z-score rules give, the half-life of the spread and the Engle-Granger
     test of whether the two prices are cointegrated at all.
@@ -107,6 +114,10 @@ def get_pairs_trading(
       of a Relative-Value Arbitrage Rule." The Review of Financial Studies, 19(3), 797-827.
     - Engle, R.F. and Granger, C.W.J. (1987). "Co-Integration and Error Correction:
       Representation, Estimation, and Testing." Econometrica, 55(2), 251-276.
+
+    Referenced against:
+    - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
+        Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
     Args:
         dependent (pd.Series): The price of the first asset.
@@ -171,10 +182,16 @@ MINIMUM_ORNSTEIN_UHLENBECK_OBSERVATIONS = 30
 
 def get_ornstein_uhlenbeck_fit(levels: pd.Series) -> dict[str, float]:
     """
-    Fit the discrete Ornstein-Uhlenbeck process p_t = c + φ·p_(t-1) + σ·ε_t by OLS, as
-    López de Prado (2018, section 13.5) estimates it: φ the persistence, E[p] = c / (1 - φ)
+    Fit the discrete Ornstein-Uhlenbeck process: how strongly a series reverts to its
+    long-run level.
+
+    The process p_t = c + φ·p_(t-1) + σ·ε_t is fitted by OLS, as López de Prado (2018,
+    section 13.5) estimates it: φ the persistence, E[p] = c / (1 - φ)
     the level the process reverts to and σ the standard deviation of the residuals
     (n - 2 degrees of freedom).
+
+    Shares similar logic:
+    - RiskLabAI, fit_ornstein_uhlenbeck: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L269
 
     Args:
         levels (pd.Series): The levels (prices, log prices or a spread).
@@ -221,9 +238,11 @@ def get_trading_rule_mesh(
     seed: int = 0,
 ) -> pd.DataFrame:
     """
-    Simulate the gains of a long position in a discrete Ornstein-Uhlenbeck process for a mesh
-    of profit-taking and stop-loss thresholds, as López de Prado (2018, Snippet 13.2) does, in
-    units of the standard deviation σ of the shocks:
+    Simulate the gains of a long position in a discrete Ornstein-Uhlenbeck process: the Sharpe
+    ratio of every combination of profit-taking and stop-loss thresholds on a mesh.
+
+    The simulation follows López de Prado (2018, Snippet 13.2), in units of the standard
+    deviation σ of the shocks:
 
     - y_t = drift + φ·y_(t-1) + ε_t, y_0 = 0, ε_t ~ N(0, 1), for `simulations` paths of at most
       `maximum_holding_period` steps; with E[p] the long-run mean and p_0 the level at entry,
@@ -242,6 +261,9 @@ def get_trading_rule_mesh(
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 13
     (Snippets 13.1 and 13.2).
 
+    Shares similar logic:
+    - RiskLabAI, optimal_ou_trading_rule: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L198
+
     Args:
         phi (float): The persistence φ.
         drift (float): The constant of the process in units of σ.
@@ -259,9 +281,10 @@ def get_trading_rule_mesh(
         and Sharpe Ratio of the gains (in σ) and the Average Holding Period.
 
     Notes:
-        López de Prado draws new paths for every mesh point, holds a position for up to one
-        step more than the maximum (his loop exits when the holding period exceeds it) and
-        takes the standard deviation with ddof=0.
+        Unlike López de Prado, who draws new paths for every mesh point, holds a position
+        for up to one step more than the maximum (his loop exits when the holding period
+        exceeds it) and takes the standard deviation with ddof=0, the mesh here uses common
+        paths, the maximum holding period and ddof=1.
     """
     if grid_size < 1 or maximum_threshold <= 0:
         raise ValueError(
@@ -330,10 +353,12 @@ def get_optimal_trading_rule(
     seed: int = 0,
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """
-    Find the profit-taking and stop-loss thresholds with the highest Sharpe ratio per trade
-    for a long position in a series that follows a discrete Ornstein-Uhlenbeck process, by
-    simulating its paths from the last observation, as López de Prado (2018, chapter 13)
-    sets out: the process p_t = c + φ·p_(t-1) + σ·ε_t is fitted to the levels by OLS (see
+    Find the optimal trading rule of a mean-reverting series: the profit-taking and stop-loss
+    thresholds with the highest Sharpe ratio per trade for a long position.
+
+    The series follows a discrete Ornstein-Uhlenbeck process whose paths are simulated from
+    the last observation, as López de Prado (2018, chapter 13) sets out: the process
+    p_t = c + φ·p_(t-1) + σ·ε_t is fitted to the levels by OLS (see
     `get_ornstein_uhlenbeck_fit`) and `get_trading_rule_mesh` simulates it from the last
     level p_0 with drift = (c + (φ - 1)·p_0) / σ, which is (1 - φ)·(E[p] - p_0) / σ when the
     process reverts. The optimal rule is the first mesh point with the highest Sharpe ratio.
@@ -342,6 +367,13 @@ def get_optimal_trading_rule(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 13
     (Snippets 13.1 and 13.2).
+
+    Referenced against:
+    - RiskLabAI, ou_rule_metrics: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L148
+
+    Shares similar logic:
+    - RiskLabAI, fit_ornstein_uhlenbeck: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L269
+    - RiskLabAI, optimal_ou_trading_rule: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/ou_trading_rules.py#L198
 
     Args:
         levels (pd.Series): The levels (log prices or a spread).
@@ -361,9 +393,8 @@ def get_optimal_trading_rule(
         Average Holding Period; and the mesh of `get_trading_rule_mesh`.
 
     Notes:
-        Referenced against RiskLabAI's ou_rule_metrics (https://github.com/RiskLabAI/RiskLabAI.py),
-        the closed-form expected gain and exit time of the continuous process: with the
-        thresholds moved out by 0.5826σ for the discrete monitoring (Broadie, Glasserman and
+        RiskLabAI's ou_rule_metrics gives the closed-form expected gain and exit time of the
+        continuous process: with the thresholds moved out by 0.5826σ for the discrete monitoring (Broadie, Glasserman and
         Kou, 1997) and a long maximum holding period, the simulated mean gain agrees within
         0.1σ and the holding period within 6%.
     """

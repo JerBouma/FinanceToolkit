@@ -91,10 +91,12 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate a test for a unit root, per asset: the Augmented Dickey-Fuller (ADF) test
-        (method="augmented_dickey_fuller"), the Phillips-Perron (PP) test (method="phillips_perron")
-        or the Zivot-Andrews test, which allows for a single structural break at an unknown
-        (endogenously estimated) date (method="zivot_andrews").
+        Calculate a unit root test per asset: whether the prices wander like a random walk or are
+        stationary and revert to their mean.
+
+        Three tests are available: the Augmented Dickey-Fuller (ADF) test, the Phillips-Perron
+        (PP) test and the Zivot-Andrews test, which allows for a single structural break at an
+        unknown (endogenously estimated) date.
 
         All three test the same null hypothesis: the series has a unit root (is a random walk,
         not mean-reverting); the alternative is that it is stationary. This is a standard first
@@ -118,18 +120,19 @@ class StationarityEconometrics:
         stationary alternative -- which is why it needs its own (more negative) critical values
         rather than the ordinary ADF ones.
 
-        The formula for method="augmented_dickey_fuller" is as follows:
+        The formula for the Augmented Dickey-Fuller test is as follows:
 
         - ΔYₜ = α + γ·Yₜ₋₁ + Σ(i=1..p) δᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close by default)
-          and regression="c" (the default); "ct" adds a trend β·t and "n" drops α
+          and a constant (the default); the trend version adds a trend β·t and the version without
+          deterministic terms drops α
         - ADF = γ̂ / SE(γ̂), compared with MacKinnon (1994, 2010) critical values and p-values
         - p = the number of lags that minimises the AIC, searched from 0 up to `max_lag`, which defaults to
           min(ceil(12·(n / 100)^(1/4)), (n - 5) // 3)
 
-        The formula for method="phillips_perron" is as follows:
+        The formula for the Phillips-Perron test is as follows:
 
-        - Yₜ = α + ρ·Yₜ₋₁ + uₜ fitted by OLS on the `column` level (Adj Close by default), with
-          regression="c" (the default); "ct" adds a trend β·t
+        - Yₜ = α + ρ·Yₜ₋₁ + uₜ fitted by OLS on the `column` level (Adj Close by default), with a
+          constant (the default); the trend version adds a trend β·t
         - t_ρ = (ρ̂ - 1) / SE(ρ̂), γ₀ = Σûₜ² / n and s² = Σûₜ² / (n - k), with k the number of coefficients
         - λ² = γ₀ + 2·Σ(j=1..l) (1 - j / (l + 1))·γⱼ, with γⱼ = (1 / n)·Σ(t=j+1..n) ûₜ·ûₜ₋ⱼ and l = `lags`,
           which defaults to int(12·(n / 100)^(1/4))
@@ -138,12 +141,12 @@ class StationarityEconometrics:
           root is rejected at 5% when it is below 0.05, as in the ADF test; the critical values are the
           finite-sample MacKinnon (2010) ones for the number of observations
 
-        The formula for method="zivot_andrews" is as follows:
+        The formula for the Zivot-Andrews test is as follows:
 
         - ΔYₜ = μ + θ·DUₜ + β·t + α·Yₜ₋₁ + Σ(i=1..p) cᵢ·ΔYₜ₋ᵢ + εₜ, with Yₜ the `column` level (Adj Close
-          by default) and DUₜ = 1 after the break date T_B and 0 before it (regression="c", the default)
-        - regression="t" replaces θ·DUₜ by a trend break γ·DTₜ, with DTₜ = t - T_B after the break and 0
-          before it, and regression="ct" includes both
+          by default) and DUₜ = 1 after the break date T_B and 0 before it (a level break, the default)
+        - A trend break replaces θ·DUₜ by γ·DTₜ, with DTₜ = t - T_B after the break and 0 before it, and
+          a break in both includes both
         - ZA = min over T_B of α̂ / SE(α̂), searching every break date outside the first and last `trim`
           (15% by default) of the sample
         - p = the number of lags that minimises the AIC, up to `max_lag` (same default as the ADF test)
@@ -164,13 +167,19 @@ class StationarityEconometrics:
         Also known as: ADF test, augmented Dickey-Fuller test, PP test, Z_t test, ZA test,
         structural break unit root test, stationarity test.
 
+        Referenced against:
+        - statsmodels, adfuller (Augmented Dickey-Fuller test): https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
+            Test: tests/econometrics/test_reference_validation.py::test_augmented_dickey_fuller_and_kpss
+        - arch, PhillipsPerron (Phillips-Perron test): https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.PhillipsPerron.html
+            Test: tests/econometrics/test_reference_validation.py::test_phillips_perron_matches_arch
+
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            method (str, optional): The test, "augmented_dickey_fuller" for the Augmented Dickey-Fuller
-            test, "phillips_perron" for the Phillips-Perron test or "zivot_andrews" for the
-            Zivot-Andrews test with a structural break. Defaults to "augmented_dickey_fuller".
+            method (str, optional): The test. Options are: "augmented_dickey_fuller" (Augmented
+            Dickey-Fuller test), "phillips_perron" (Phillips-Perron test), "zivot_andrews"
+            (Zivot-Andrews test with a structural break). Defaults to "augmented_dickey_fuller".
             regression (str, optional): Which deterministic terms to include. For
             "augmented_dickey_fuller" one of "n" (none), "c" (constant) or "ct" (constant and trend);
             for "phillips_perron" one of "c" or "ct" ("n" is not supported, see
@@ -296,7 +305,8 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test for stationarity, per asset.
+        Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test per asset: whether the prices
+        are stationary, around a constant or a trend, rather than having a unit root.
 
         KPSS is the natural complement to the Augmented Dickey-Fuller test (`get_unit_root_test`):
         where the ADF null hypothesis is that the series HAS a unit root, the KPSS null hypothesis
@@ -307,8 +317,8 @@ class StationarityEconometrics:
 
         The formula is as follows:
 
-        - Yₜ = α + eₜ fitted by OLS on the `column` level (Adj Close by default), with regression="c"
-          (the default); "ct" adds a trend β·t
+        - Yₜ = α + eₜ fitted by OLS on the `column` level (Adj Close by default), with a constant
+          (the default); the trend version adds a trend β·t
         - Sₜ = Σ(i=1..t) êᵢ
         - KPSS = Σ(t=1..n) Sₜ² / (n²·λ²)
         - λ² = (1 / n)·Σêₜ² + (2 / n)·Σ(s=1..l) (1 - s / (l + 1))·Σ(t=s+1..n) êₜ·êₜ₋ₛ, with l = `lags` or,
@@ -324,12 +334,14 @@ class StationarityEconometrics:
 
         Also known as: KPSS test, stationarity test.
 
+        The test runs statsmodels' kpss.
+
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            regression (str, optional): Which deterministic term to remove before testing, one of "c"
-            (constant, level-stationarity) or "ct" (constant and trend, trend-stationarity).
+            regression (str, optional): Which deterministic term to remove before testing. Options
+            are: "c" (constant, level-stationarity), "ct" (constant and trend, trend-stationarity).
             Defaults to "c".
             lags (int, optional): The truncation lag for the long-run variance estimate. Defaults
             to `statsmodels`' automatic (Hobijn, Franses & Ooms, 2004) bandwidth selection.
@@ -411,8 +423,8 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Engle-Granger test for cointegration between every ordered
-        pair of tickers in the Toolkit instance.
+        Calculate the Engle-Granger test for every ordered pair of tickers: whether the two prices
+        are cointegrated, held together by a long-run equilibrium so that the spread reverts.
 
         Two individually non-stationary series (e.g. two stock prices, each following a
         random walk) are cointegrated if some linear combination of them is stationary,
@@ -444,6 +456,10 @@ class StationarityEconometrics:
         Representation, Estimation, and Testing." Econometrica, 55(2), 251-276.
 
         Also known as: EG test, residual-based cointegration test, pairs-trading test.
+
+        Referenced against:
+        - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
+            Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -532,8 +548,8 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Johansen test for cointegration among every ticker in the
-        Toolkit instance.
+        Calculate the Johansen test across every ticker: how many long-run equilibrium
+        relationships (cointegrating relations) hold the prices together.
 
         The Engle-Granger test only handles two assets and imposes an arbitrary
         normalization (which asset is "dependent"). Johansen's test generalizes this to
@@ -548,10 +564,9 @@ class StationarityEconometrics:
         The formula is as follows:
 
         - ΔYₜ = Π·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + μ + εₜ, with Yₜ the vector of `column` levels (Adj Close by
-          default), k = `lags` (1 by default) and the deterministic term μ set by `det_order`: none
-          (-1, Johansen's case 1), an unrestricted constant μ₀ (0, the default, case 3) or a linear trend
-          (1: the levels are linearly detrended before the test, evaluated against the case 5 critical
-          values)
+          default), k = `lags` (1 by default) and the deterministic term μ: none (Johansen's case 1),
+          an unrestricted constant μ₀ (the default, case 3) or a linear trend (the levels are linearly
+          detrended before the test, evaluated against the case 5 critical values)
         - λ₁ ≥ ... ≥ λ_N: the eigenvalues of the reduced-rank regression of ΔYₜ on Yₜ₋₁, both corrected for
           the lagged differences and μ
         - Trace(r) = -T·Σ(i=r+1..N) ln(1 - λᵢ)
@@ -569,6 +584,8 @@ class StationarityEconometrics:
         Econometrics, 14(5), 563-577.
 
         Also known as: Johansen test, Johansen procedure, VECM rank test.
+
+        The test runs statsmodels' coint_johansen.
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -650,8 +667,8 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Granger causality test, for every ordered pair of tickers in
-        the Toolkit instance, of whether the second helps predict the first.
+        Calculate the Granger causality test for every ordered pair of tickers: whether the past
+        returns of the second help predict the first beyond its own past.
 
         "Granger causality" is a statement about predictive power, not true causation:
         one asset is said to Granger-cause another if past values of the first,
@@ -679,6 +696,10 @@ class StationarityEconometrics:
         and Cross-Spectral Methods." Econometrica, 37(3), 424-438.
 
         Also known as: Granger causality test, predictive causality, lead-lag test.
+
+        Referenced against:
+        - statsmodels, grangercausalitytests: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.grangercausalitytests.html
+            Test: tests/econometrics/test_reference_validation.py::test_granger_causality
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -766,8 +787,8 @@ class StationarityEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the fractional difference of a price series, per asset, (1 - L)^d applied to
-        the log prices with a d between 0 and 1.
+        Calculate the fractional difference of the log prices per asset: a stationary series that
+        keeps most of the memory of the prices, (1 - L)^d with a d between 0 and 1.
 
         A price series has a unit root, so models that need a stationary input usually take
         returns, the first difference (d = 1), which throws away the memory of the series: the
@@ -779,10 +800,10 @@ class StationarityEconometrics:
         The formula is as follows, with Xₜ the log of the `column` (Adj Close by default):
 
         - ω₀ = 1, ωₖ = -ωₖ₋₁·(d - k + 1) / k, the binomial weights of (1 - L)^d (Hosking, 1981)
-        - Fixed-width window (method="fixed_width", FFD): X̃ₜ = Σ(k=0..l*) ωₖ·Xₜ₋ₖ, with l* the last
+        - Fixed-width window (FFD): X̃ₜ = Σ(k=0..l*) ωₖ·Xₜ₋ₖ, with l* the last
           lag whose weight is at least the threshold (1e-5 by default) in absolute value, so every
           date has the same weights
-        - Expanding window (method="expanding"): X̃ₜ = Σ(k=0..t) ωₖ·Xₜ₋ₖ over the whole history up
+        - Expanding window: X̃ₜ = Σ(k=0..t) ωₖ·Xₜ₋ₖ over the whole history up
           to t, kept from the first date at which the share of the weight that falls before the
           start of the series, Σ(j>t) |ωⱼ| / Σ(j=0..n-1) |ωⱼ|, is at most the threshold (0.01 by
           default)
@@ -793,20 +814,22 @@ class StationarityEconometrics:
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 5
         (Snippets 5.1 to 5.3).
         - Hosking, J.R.M. (1981). "Fractional Differencing." Biometrika, 68(1), 165-176.
-        - Referenced against RiskLabAI's fractional_difference_std and fractional_difference_fixed
-        (https://github.com/RiskLabAI/RiskLabAI.py); the weights, the skipped values and the series
-        agree to 1e-14.
 
         Also known as: fractional differentiation, fractionally differenced prices, FFD, fixed-width
         window fracdiff, memory-preserving stationarity transform.
+
+        Referenced against:
+        - RiskLabAI, fractional_difference_std: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L85
+        - RiskLabAI, fractional_difference_fixed: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L142
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to differentiate. Defaults to "Adj Close".
             d (float, optional): The order of differentiation, at least 0. Defaults to 0.4.
-            method (Literal["fixed_width", "expanding"], optional): The fixed-width window (FFD) or the
-                expanding window. Defaults to "fixed_width".
+            method (Literal["fixed_width", "expanding"], optional): The window. Options are:
+                "fixed_width" (fixed-width window, FFD), "expanding" (expanding window). Defaults to
+                "fixed_width".
             threshold (float | None, optional): The smallest absolute weight kept by the fixed-width
                 window, or the largest share of weight left out by the expanding window. Defaults to
                 None, which is 1e-5 for "fixed_width" and 0.01 for "expanding".
@@ -830,6 +853,7 @@ class StationarityEconometrics:
           fixed-width window spans about 3,400 observations for d = 0.2, 1,460 for d = 0.4 and 230
           for d = 0.8, so a small d needs a long history: on a shorter one the result is NaN throughout. A
           larger threshold shortens the window (1e-4: about 500, 280 and 64; 0.01: about 10).
+        - The weights, the skipped values and the series agree with RiskLabAI to 1e-14.
 
         As an example:
 
@@ -911,12 +935,12 @@ class StationarityEconometrics:
         - Dickey, D.A. and Fuller, W.A. (1979). "Distribution of the Estimators for Autoregressive
         Time Series with a Unit Root." Journal of the American Statistical Association, 74(366a),
         427-431.
-        - Referenced against RiskLabAI's find_optimal_ffd_simple
-        (https://github.com/RiskLabAI/RiskLabAI.py). It and López de Prado's Snippet 5.4 run the
-        ADF test with a single lag and a weight threshold of 0.01, the defaults here.
 
         Also known as: minimum d, optimal fractional differentiation, minimum FFD, memory-preserving
         stationarity.
+
+        Referenced against:
+        - RiskLabAI, find_optimal_ffd_simple: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L273
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -953,6 +977,8 @@ class StationarityEconometrics:
 
         Notes:
         - Requires statsmodels (`pip install financetoolkit[econometrics]`) for the ADF test.
+        - RiskLabAI and López de Prado's Snippet 5.4 run the ADF test with a single lag and a weight
+          threshold of 0.01, the defaults here.
         - A d whose window is longer than the history leaves fewer than 10 values to test and
           shows NaN; pass a larger threshold or a longer history.
 
@@ -1078,20 +1104,22 @@ class StationarityEconometrics:
         Did Exuberance Escalate Asset Values?" International Economic Review, 52(1), 201-226.
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section
         17.4.2 (Snippets 17.1 to 17.4).
-        - Referenced against RiskLabAI's get_gsadf_statistic and simulate_psy_critical_values
-        (https://github.com/RiskLabAI/RiskLabAI.py). Every window statistic agrees with
-        statsmodels' adfuller to 1e-10, and the simulated critical values with those of PSY (2015,
-        Table 1).
 
         Also known as: GSADF test, SADF test, sup ADF, generalized sup ADF, PSY test, PWY test,
         explosive root test, right-tailed unit root test, bubble detection.
+
+        Referenced against:
+        - RiskLabAI, get_gsadf_statistic: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L486
+        - RiskLabAI, simulate_psy_critical_values: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L607
+        - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
+            Test: tests/econometrics/test_bubble_model.py::test_window_statistic_matches_statsmodels
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            method (Literal["gsadf", "sadf"], optional): The generalized (GSADF) or the forward (SADF)
-                test. Defaults to "gsadf".
+            method (Literal["gsadf", "sadf"], optional): The test. Options are: "gsadf" (generalized
+                sup ADF test, GSADF), "sadf" (forward sup ADF test, SADF). Defaults to "gsadf".
             lag_order (int, optional): The number of lagged differences k in every ADF regression.
                 Defaults to 0, as PSY (2015) use.
             minimum_window (int | None, optional): The smallest window in observations. Defaults to
@@ -1122,11 +1150,13 @@ class StationarityEconometrics:
         - The test fits about (T - w)² / 2 regressions per series and as many per simulated path,
           each from window sums of prefix sums: about 0.14 seconds per path for ten years of daily
           data and 0.04 for five, so 2,000 simulations take about 5 minutes and 80 seconds, and
-          with lag_order=2 about 60% longer. Ten years of weekly data take about 16 seconds;
+          with two lagged differences about 60% longer. Ten years of weekly data take about 16 seconds;
           monthly data, as in PSY (2015), a few. The critical values depend
           only on T, w, the lag order, the simulations and the seed, so assets with the same
           number of observations share one simulation, which is kept for the session.
         - Each asset is tested over the dates it has a value.
+        - Every window statistic agrees with statsmodels' adfuller to 1e-10, and the simulated
+          critical values with those of PSY (2015, Table 1).
 
         As an example:
 
@@ -1213,8 +1243,8 @@ class StationarityEconometrics:
         The formula is as follows, with yₜ the log of the `column` (Adj Close by default) and the
         ADF(r₁, r₂) statistics and minimum window w of `get_bubble_test`:
 
-        - BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂) (method="gsadf"), or ADF(0, r₂)
-          (method="sadf")
+        - BSADF(r₂) = max over r₁ ≤ r₂ - w + 1 of ADF(r₁, r₂) (the backward sequence), or ADF(0, r₂)
+          (the forward sequence)
         - cv(r₂) = the `confidence` quantile (95% by default) of the same statistic at r₂ over
           `simulations` random walks yₜ = yₜ₋₁ + 1 / T + εₜ
         - Bubble on r₂ when the statistic is above cv(r₂); an episode is a run of such dates of at
@@ -1228,18 +1258,20 @@ class StationarityEconometrics:
         1043-1078.
         - Phillips, P.C.B., Wu, Y. and Yu, J. (2011). "Explosive Behavior in the 1990s Nasdaq: When
         Did Exuberance Escalate Asset Values?" International Economic Review, 52(1), 201-226.
-        - Referenced against RiskLabAI's get_bsadf_sequence and get_bubble_episodes
-        (https://github.com/RiskLabAI/RiskLabAI.py).
 
         Also known as: BSADF, backward sup ADF, PSY date-stamping, bubble dating, explosive episodes,
         exuberance periods.
+
+        Referenced against:
+        - RiskLabAI, get_bsadf_sequence: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L434
+        - RiskLabAI, get_bubble_episodes: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L544
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
             column (str, optional): The historical data column to test. Defaults to "Adj Close".
-            method (Literal["gsadf", "sadf"], optional): The backward (BSADF, PSY) or the forward (ADF,
-                PWY) sequence. Defaults to "gsadf".
+            method (Literal["gsadf", "sadf"], optional): The sequence. Options are: "gsadf" (backward
+                sequence, BSADF of PSY), "sadf" (forward ADF sequence of PWY). Defaults to "gsadf".
             lag_order (int, optional): The number of lagged differences k in every ADF regression.
                 Defaults to 0.
             minimum_window (int | None, optional): The smallest window in observations. Defaults to

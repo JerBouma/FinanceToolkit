@@ -69,9 +69,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Compare the forecast accuracy of two volatility forecasting methods against
-        realized (squared return) Variance, per asset, via the Diebold-Mariano (1995)
-        test.
+        Calculate the Diebold-Mariano (1995) test per asset: whether one of two volatility
+        forecasting methods predicts the realized (squared return) Variance more accurately.
 
         Rather than comparing two different assets, this compares two different ways
         of forecasting the *same* asset's next-day Variance -- e.g. the simpler
@@ -81,17 +80,17 @@ class ForecastingEconometrics:
 
         The squared return is a noisy stand-in for the true Variance. Patton (2011) shows
         that the squared-error loss still ranks two volatility forecasts correctly with such
-        a proxy, while the absolute-error loss can rank them the wrong way round, so
-        `loss="squared"` is the safer choice. A negative statistic favors `method_a`.
+        a proxy, while the absolute-error loss can rank them the wrong way round, so the
+        squared-error loss is the safer choice. A negative statistic favors the first method.
 
         The formula is as follows:
 
         - Realized Variance: rₜ²
-        - EWMA forecast ("ewma"): σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², with λ = `lambda_` (0.94 by default), so
+        - EWMA forecast: σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², with λ = `lambda_` (0.94 by default), so
           the forecast for t uses returns up to t - 1
-        - Rolling forecast ("rolling"): the sample variance (ddof=1) of the `window` (22 by default)
+        - Rolling forecast: the sample variance (ddof=1) of the `window` (22 by default)
           returns up to t - 1
-        - dₜ = L(rₜ² - f_a,ₜ) - L(rₜ² - f_b,ₜ), with L(e) = e² (loss="squared") or |e| (loss="absolute")
+        - dₜ = L(rₜ² - f_a,ₜ) - L(rₜ² - f_b,ₜ), with L(e) = e² (squared loss) or |e| (absolute loss)
         - DM = mean(d) / √(γ₀ / n)·√((n - 1) / n), with γ₀ = (1 / n)·Σ(dₜ - mean(d))² and the Harvey,
           Leybourne and Newbold (1997) correction for a one-step horizon
         - P-Value = 2·P(T > |DM|) for a Student-t distribution with n - 1 degrees of freedom
@@ -109,15 +108,15 @@ class ForecastingEconometrics:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
             Defaults to "daily", since `window` is expressed in return observations of this
             frequency.
-            method_a (str, optional): The first volatility forecasting method, one of "ewma" or "rolling".
-            Defaults to "ewma".
-            method_b (str, optional): The second (competing) volatility forecasting method, one of "ewma"
-            or "rolling". Defaults to "rolling".
-            window (int, optional): The rolling window size used by the "rolling" method. Defaults to
+            method_a (str, optional): The first volatility forecasting method. Options are: "ewma"
+            (RiskMetrics EWMA), "rolling" (rolling sample variance). Defaults to "ewma".
+            method_b (str, optional): The second (competing) volatility forecasting method. Options are:
+            "ewma" (RiskMetrics EWMA), "rolling" (rolling sample variance). Defaults to "rolling".
+            window (int, optional): The rolling window size used by the rolling method. Defaults to
             22 (approximately one trading month).
-            lambda_ (float, optional): The decay factor used by the "ewma" method. Defaults to 0.94.
-            loss (str, optional): The loss function to compare forecast errors with, one of "squared" or
-            "absolute". Defaults to "squared".
+            lambda_ (float, optional): The decay factor used by the EWMA method. Defaults to 0.94.
+            loss (str, optional): The loss function to compare forecast errors with. Options are:
+            "squared" (squared error), "absolute" (absolute error). Defaults to "squared".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
@@ -211,8 +210,10 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit an ARIMA(p, d, q) model to every ticker's price series in the Toolkit
-        instance and forecast `forecast_steps` periods ahead.
+        Fit an ARIMA(p, d, q) model to every ticker's price series and forecast it: the future
+        path of each series from its own past values and past forecast errors.
+
+        The model is fitted with statsmodels' ARIMA.
 
         Also known as: Box-Jenkins model, autoregressive integrated moving average.
 
@@ -341,8 +342,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance and
-        forecast `forecast_steps` periods ahead.
+        Fit a Vector Autoregression (VAR) across every ticker and forecast it: how the tickers
+        move together, each driven by the past values of all of them.
 
         A VAR models several series jointly: each ticker's value is regressed on `lags` past
         values of all tickers, including its own. Each asset's future can therefore depend on
@@ -371,6 +372,10 @@ class ForecastingEconometrics:
         - Sims, C.A. (1980). "Macroeconomics and Reality." Econometrica, 48(1), 1-48.
 
         Also known as: VAR model, vector autoregressive model.
+
+        Referenced against:
+        - statsmodels, VAR: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VAR.html
+            Test: tests/econometrics/test_reference_validation.py::test_var_forecast
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -467,12 +472,12 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
-        and trace out the Impulse Response Function (IRF) -- how a shock to each
-        ticker propagates through the whole system over `periods` periods ahead. The
-        shock is one standard deviation of the orthogonalized innovation when
-        `orthogonalized=True` (the default) and a unit shock to the reduced-form
-        residual when `orthogonalized=False`.
+        Calculate the Impulse Response Function (IRF) of a Vector Autoregression across every
+        ticker: how a shock to each ticker propagates through the whole system over the periods
+        ahead.
+
+        The shock is one standard deviation of the orthogonalized innovation by default and a
+        unit shock to the reduced-form residual otherwise.
 
         Also known as: IRF.
 
@@ -487,9 +492,13 @@ class ForecastingEconometrics:
         - Ψ₀ = I and Ψₙ = Σ(l=1..min(n, p)) Φₗ·Ψₙ₋ₗ, the moving-average matrices of the VAR(p) fitted on
           every ticker's `column` (Return by default), p = `lags` (1 by default)
         - Σᵤ = Û'Û / (T - k·p - 1) = P·P', with P the lower-triangular Cholesky factor
-        - Θₙ = Ψₙ·P (orthogonalized=True, a one-standard-deviation shock) or Θₙ = Ψₙ
-          (orthogonalized=False, a unit reduced-form shock)
+        - Θₙ = Ψₙ·P (orthogonalized, a one-standard-deviation shock) or Θₙ = Ψₙ
+          (not orthogonalized, a unit reduced-form shock)
         - Response of ticker i, n periods after a shock to ticker j: Θₙ[i, j], for n = 0..`periods`
+
+        Referenced against:
+        - statsmodels, VARResults.irf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.irf.html
+            Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -592,10 +601,11 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
-        and compute the (orthogonalized) Forecast Error Variance Decomposition (FEVD)
-        -- what fraction of each ticker's `h`-step-ahead forecast error variance is
-        attributable to each ticker's own structural shock, for `h = 1, ..., periods`.
+        Calculate the (orthogonalized) Forecast Error Variance Decomposition (FEVD) of a Vector
+        Autoregression across every ticker: which share of each ticker's forecast error variance
+        comes from the shock of each ticker.
+
+        The shares are calculated for every horizon h = 1, ..., periods.
 
         Also known as: FEVD, variance decomposition.
 
@@ -612,6 +622,10 @@ class ForecastingEconometrics:
           a VAR(p) on every ticker's `column` (Return by default), p = `lags` (1 by default)
         - Share of ticker j's shock in ticker i's h-step forecast error variance:
           ωᵢⱼ(h) = Σ(n=0..h-1) Θₙ[i, j]² / Σ(m=1..k) Σ(n=0..h-1) Θₙ[i, m]², for h = 1..`periods`
+
+        Referenced against:
+        - statsmodels, VARResults.fevd: https://www.statsmodels.org/stable/generated/statsmodels.tsa.vector_ar.var_model.VARResults.fevd.html
+            Test: tests/econometrics/test_reference_validation.py::test_impulse_responses_and_variance_decomposition
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -708,8 +722,11 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Fit a Vector Error Correction Model (VECM) across every (cointegrated)
-        ticker in the Toolkit instance and forecast `forecast_steps` periods ahead.
+        Fit a Vector Error Correction Model (VECM) across every (cointegrated) ticker and forecast
+        it: how the prices move back towards their long-run equilibrium while following their
+        short-run dynamics.
+
+        The model is fitted with statsmodels' VECM.
 
         Also known as: VECM, error correction model (for the multivariate/cointegrated
         case).
@@ -727,7 +744,7 @@ class ForecastingEconometrics:
           exceed their critical value at `significance` (5% by default); r = 0 raises an error
         - ΔYₜ = α·β'·Yₜ₋₁ + Σ(i=1..k) Γᵢ·ΔYₜ₋ᵢ + c + εₜ, with Yₜ every ticker's `column` level (Adj Close by
           default), k = `lags` (1 by default) and c a constant outside the cointegrating relation
-          (statsmodels VECM with deterministic="co"), fitted by Maximum Likelihood
+          (statsmodels VECM with an unrestricted constant), fitted by Maximum Likelihood
         - Forecast: the fitted recursion run forward `forecast_steps` periods, in levels
 
         Args:
@@ -821,9 +838,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the forecast error between every unordered pair of tickers' series in the
-        Toolkit instance, the Root Mean Squared Error (method="rmse") or the Mean Absolute Error
-        (method="mae").
+        Calculate the forecast error between every pair of tickers: how far apart the two series
+        are in a typical period, as the Root Mean Squared Error or the Mean Absolute Error.
 
         This controller method compares two ASSETS' series directly, treating one as a naive
         "forecast" proxy for the other -- a simple, tracking-error style measure of
@@ -833,12 +849,12 @@ class ForecastingEconometrics:
         rather than one asset as a naive proxy for another, use
         `get_out_of_sample_validation` instead.
 
-        The formula for method="rmse" is as follows:
+        The formula for the RMSE is as follows:
 
         - RMSE = √((1 / n)·Σ(aₜ - bₜ)²), with aₜ and bₜ the two tickers' `column` (Return by default) on
           the n dates where both have data
 
-        The formula for method="mae" is as follows:
+        The formula for the MAE is as follows:
 
         - MAE = (1 / n)·Σ|aₜ - bₜ|, with aₜ and bₜ the two tickers' `column` (Return by default) on the
           n dates where both have data
@@ -858,6 +874,10 @@ class ForecastingEconometrics:
         Also known as: RMSE, RMSD (Root Mean Squared Deviation), MAE, MAD (Mean Absolute
         Deviation), forecast accuracy.
 
+        Referenced against:
+        - statsmodels, rmse: https://www.statsmodels.org/stable/generated/statsmodels.tools.eval_measures.rmse.html
+        - statsmodels, meanabs: https://www.statsmodels.org/stable/generated/statsmodels.tools.eval_measures.meanabs.html
+
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily".
@@ -865,8 +885,8 @@ class ForecastingEconometrics:
             "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             tickers paired up. Defaults to False.
-            method (str, optional): The error measure, "rmse" for the Root Mean Squared Error or
-            "mae" for the Mean Absolute Error. Defaults to "rmse".
+            method (str, optional): The error measure. Options are: "rmse" (Root Mean Squared
+            Error), "mae" (Mean Absolute Error). Defaults to "rmse".
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -951,23 +971,23 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Out-of-sample validate an ARIMA or VAR forecast of every ticker in the
-        Toolkit instance -- fit only on a training portion of the history,
-        forecast the held-out remainder, and score the forecast against what
-        actually happened.
+        Calculate the out-of-sample forecast error of an ARIMA or VAR forecast of every ticker:
+        its RMSE and MAE on a holdout the model was not fitted on.
+
+        The model is fitted only on a training portion of the history, forecasts the held-out
+        remainder, and the forecast is scored against what actually happened.
 
         Also known as: hold-out validation, train/test split validation.
 
         See `forecast_evaluation_model.get_out_of_sample_validation` for the general
         harness this wraps. Since that function takes a raw Python callable (not
         serializable for e.g. the MCP-facing tool layer), this controller method
-        instead hardcodes the choice between the two Part-1 forecasting models via the
-        `model` string:
+        instead hardcodes the choice between the two forecasting models:
 
-        - `model="arima"`: `time_series_model.get_arima_forecast` is fit on each
+        - ARIMA: `time_series_model.get_arima_forecast` is fit on each
           ticker's own training-period series (`p`, `d`, `q`, `add_constant`
           control the model, same as `get_arima_forecast`).
-        - `model="var"`: `time_series_model.get_var_forecast` is fit on the
+        - VAR: `time_series_model.get_var_forecast` is fit on the
           training-period series of each ticker together with `other_tickers`
           (`lags` controls the VAR order, defaulting to every other ticker in the
           Toolkit instance if not given); only that ticker's own forecast column
@@ -978,8 +998,7 @@ class ForecastingEconometrics:
         - Training sample: the first int(`train_fraction`·n) observations (80% by default) of the
           `column` level (Adj Close by default); the remaining H observations are the holdout
         - Ŷₜ: the H-step forecast of the model fitted on the training sample only, an ARIMA(p, d, q)
-          (model="arima", ARIMA(1, 1, 1) by default) or a VAR(`lags`) on the ticker and `other_tickers`
-          (model="var")
+          (ARIMA(1, 1, 1) by default) or a VAR(`lags`) on the ticker and `other_tickers`
         - RMSE = √((1 / H)·Σ(Yₜ - Ŷₜ)²) and MAE = (1 / H)·Σ|Yₜ - Ŷₜ|, over the holdout
 
         Args:
@@ -987,7 +1006,8 @@ class ForecastingEconometrics:
                 "daily".
             column (str, optional): The historical data column to validate. Defaults
             to "Adj Close".
-            model (str, optional): Either "arima" or "var". Defaults to "arima".
+            model (str, optional): The forecasting model. Options are: "arima" (ARIMA), "var"
+            (Vector Autoregression). Defaults to "arima".
             train_fraction (float, optional): The fraction of observations used for
             training; the remainder is the holdout. Defaults to 0.8.
             p (int, optional): The ARIMA autoregressive order (`model="arima"` only).
@@ -1022,7 +1042,7 @@ class ForecastingEconometrics:
             fewer than 2 tickers are available to form a VAR system.
 
         Notes:
-        - Requires statsmodels with `model="arima"`, the default; `model="var"` does not
+        - Requires statsmodels for the ARIMA model, the default; the VAR model does not
         (`pip install financetoolkit[econometrics]`).
 
         As an example:
@@ -1140,17 +1160,18 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Test the one-period-ahead density forecasts of a return model with Berkowitz's likelihood ratio test.
+        Calculate Berkowitz's likelihood ratio test of the one-period-ahead density forecasts of a return model:
+        whether the forecast distributions match the returns in mean, variance and independence.
 
         A Value at Risk backtest only looks at one quantile; a density forecast says how likely every return
         is. The test transforms each realized return with the distribution function of its forecast (the
         probability integral transform, PIT), which is uniform and independent over time when the forecasts
         are right, takes the normal quantile of the PITs and tests whether those are independent standard
         normal: a mean away from 0 means the forecasts are biased, a standard deviation above 1 that they
-        understate the risk and an autocorrelation that they miss its dynamics. With `alpha`, only the tail
-        below the alpha quantile is tested, the part a Value at Risk at `alpha` depends on.
+        understate the risk and an autocorrelation that they miss its dynamics. With a tail probability, only
+        the tail below that quantile is tested, the part a Value at Risk at that level depends on.
 
-        The formula is as follows (with the default model="garch" and daily returns, for which the window is 504):
+        The formula is as follows (with the default GARCH model and daily returns, for which the window is 504):
 
         - PIT_t = F((Return_t - Mu) / Volatility_t), from a GARCH(1, 1) with normal innovations fitted on the 504 returns
           before t, refitted every 21 returns
@@ -1162,7 +1183,7 @@ class ForecastingEconometrics:
 
         Where L is the exact Gaussian AR(1) likelihood (see `forecast_evaluation_model.get_berkowitz_test`) and F
         the distribution function of the standardized innovations with their fitted Shape and Skew.
-        model="gaussian" uses a normal distribution with the mean and standard deviation (ddof=1) of the
+        The Gaussian model uses a normal distribution with the mean and standard deviation (ddof=1) of the
         `window` returns before t and the EWMA model a normal distribution with mean zero and the RiskMetrics
         variance with decay `lambda_`.
 
@@ -1172,14 +1193,20 @@ class ForecastingEconometrics:
         Business & Economic Statistics, 19(4), 465-474.
         - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with Applications to
         Financial Risk Management." International Economic Review, 39(4), 863-883.
-        - rugarch: BerkowitzTest (https://cran.r-project.org/package=rugarch).
 
         Also known as: density forecast test, PIT test, Berkowitz LR test.
+
+        Referenced against:
+        - statsmodels, ARIMA: https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
+
+        Shares similar logic:
+        - rugarch (R), BerkowitzTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L327
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
-            model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
+            model (str, optional): The density forecast. Options are: "garch" (GARCH-family model),
+            "gaussian" (rolling normal), "ewma" (RiskMetrics EWMA). Defaults to "garch".
             alpha (float | None, optional): The tail probability of the tail test. Defaults to None, which tests
             the whole density.
             window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
@@ -1187,10 +1214,14 @@ class ForecastingEconometrics:
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
-            garch_method (str, optional): The GARCH variance model, one of the methods of `Risk.get_garch`.
-            Defaults to "garch".
-            garch_distribution (str, optional): The GARCH innovation distribution (normal, t, skewt,
-            skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): The GARCH variance model. Options are: "garch" (GARCH(1, 1)), "gjr"
+            (GJR-GARCH(1, 1, 1)), "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)),
+            "tgarch" (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+            (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+            garch_distribution (str, optional): The GARCH innovation distribution. Options are: "normal"
+            (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen), "skewt_fernandez_steel" (skewed
+            Student-t of Fernández and Steel), "ged" (generalized error distribution), "johnson_su" (Johnson
+            SU). Defaults to "normal".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
             to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1206,9 +1237,9 @@ class ForecastingEconometrics:
 
         Notes:
         - Every forecast only uses the returns before it, and each asset uses its own return history.
-        - rugarch's BerkowitzTest fits the AR(1) by least squares, conditional on the first observation; the
-        statistic here maximizes the exact likelihood of the paper, which differs by about 1% of the statistic
-        on 800 observations.
+        - Unlike rugarch's BerkowitzTest, which fits the AR(1) by least squares, conditional on the first
+        observation, the statistic here maximizes the exact likelihood of the paper, which differs by about 1%
+        of the statistic on 800 observations.
         - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
 
         As an example:
@@ -1294,7 +1325,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Test the one-period-ahead density forecasts of a return model with the nonparametric test of Hong and Li.
+        Calculate the nonparametric density forecast test of Hong and Li: whether the one-period-ahead forecast
+        densities of a return model have the right shape and capture the dependence of the returns.
 
         Correct density forecasts turn the realized returns into probability integral transforms (PITs) that
         are independent and uniform on (0, 1), so every pair of a PIT and the PIT j periods before it is spread
@@ -1304,7 +1336,7 @@ class ForecastingEconometrics:
         move it away. Where `get_berkowitz_test` checks the mean, variance and first autocorrelation of the
         normal quantiles of the PITs, this test looks at the whole joint density.
 
-        The formula is as follows (with the default model="garch" and daily returns, for which the window is 504):
+        The formula is as follows (with the default GARCH model and daily returns, for which the window is 504):
 
         - PIT_t = F((Return_t - Mu) / Volatility_t), from a GARCH(1, 1) with normal innovations fitted on the 504 returns
           before t, refitted every 21 returns (see `get_berkowitz_test`)
@@ -1318,7 +1350,7 @@ class ForecastingEconometrics:
         `forecast_evaluation_model.get_hong_li_test`. Only large values reject. The statistics are standard normal
         under the null only as the sample grows, and slowly, so the p-values come from their distribution
         simulated under the null (independent uniform PITs) for the same number of PITs and lags, see
-        `forecast_evaluation_model.get_hong_li_p_value`. model="gaussian" and model="ewma" give the density
+        `forecast_evaluation_model.get_hong_li_p_value`. The Gaussian and EWMA models give the density
         forecasts of `get_berkowitz_test`.
 
         For more information about the method, see the following papers:
@@ -1327,26 +1359,32 @@ class ForecastingEconometrics:
         Applications to Term Structure of Interest Rates." The Review of Financial Studies, 18(1), 37-84.
         - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with Applications to
         Financial Risk Management." International Economic Review, 39(4), 863-883.
-        - Referenced against HLTest of R's rugarch (https://cran.r-project.org/package=rugarch) as its
-        documentation defines it.
 
         Also known as: Hong-Li test, nonparametric density forecast test, PIT independence and uniformity
         test, HL portmanteau test.
 
+        Shares similar logic:
+        - rugarch (R), HLTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L607
+
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
-            model (str, optional): The density forecast, "garch", "gaussian" or "ewma". Defaults to "garch".
+            model (str, optional): The density forecast. Options are: "garch" (GARCH-family model),
+            "gaussian" (rolling normal), "ewma" (RiskMetrics EWMA). Defaults to "garch".
             lags (int, optional): The number of lags of the portmanteau statistic. Defaults to 4.
             window (int | None, optional): The number of returns of every window or GARCH fit. Defaults to
             None, which uses two years of observations with a minimum of 100 for "garch" (504 daily returns) and
             a year with a minimum of 20 for "gaussian".
             lambda_ (float, optional): The decay factor of model="ewma". Defaults to 0.94.
             refit_every (int, optional): The number of returns between two GARCH fits. Defaults to 21.
-            garch_method (str, optional): The GARCH variance model, one of the methods of `Risk.get_garch` other
-            than "realized". Defaults to "garch".
-            garch_distribution (str, optional): The GARCH innovation distribution (normal, t, skewt,
-            skewt_fernandez_steel, ged or johnson_su). Defaults to "normal".
+            garch_method (str, optional): The GARCH variance model. Options are: "garch" (GARCH(1, 1)), "gjr"
+            (GJR-GARCH(1, 1, 1)), "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)),
+            "tgarch" (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+            (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+            garch_distribution (str, optional): The GARCH innovation distribution. Options are: "normal"
+            (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen), "skewt_fernandez_steel" (skewed
+            Student-t of Fernández and Steel), "ged" (generalized error distribution), "johnson_su" (Johnson
+            SU). Defaults to "normal".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets tested. Defaults
             to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1361,6 +1399,9 @@ class ForecastingEconometrics:
 
         Notes:
         - Every forecast only uses the returns before it, and each asset uses its own return history.
+        - The statistic follows rugarch's HLTest as its documentation defines it. Unlike HLTest, which compares
+        the statistics with the standard normal distribution, the p-values come from the simulated null
+        distribution.
         - The asymptotic normal distribution is reached slowly: on simulated independent uniform PITs every Q(j)
         has a mean of about 0 and a standard deviation of about 1.2 at 500 to 2,000 observations, and as the
         Q(j) share the estimate of the marginal density of the PITs (a correlation of about 0.45), W has one of
@@ -1451,8 +1492,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Test whether a return forecast predicts the direction of the next return better than chance, with the
-        Pesaran-Timmermann or the Anatolyev-Gerko test.
+        Calculate a directional accuracy test: whether a return forecast predicts the direction of the next
+        return better than chance, with the Pesaran-Timmermann or the Anatolyev-Gerko test.
 
         A forecast that is right about the sign more than half of the time is not necessarily useful: in a rising
         market a forecast that is always positive is right on most days. The Pesaran-Timmermann test compares the
@@ -1461,7 +1502,7 @@ class ForecastingEconometrics:
         when the forecast is positive and short when it is negative over that of the same share of long positions
         held at random, so it asks whether the forecast would have made money.
 
-        The formula is as follows (with the default forecast="momentum" and daily returns, for which the window is 252):
+        The formula is as follows (with the default momentum forecast and daily returns, for which the window is 252):
 
         - Forecast_t = mean(Return_(t-252), ..., Return_(t-1))
         - P = (1 / n) Σ 1{Forecast_t · Return_t > 0}, P* = P_y P_x + (1 - P_y) (1 - P_x)
@@ -1473,7 +1514,7 @@ class ForecastingEconometrics:
         Where P_y and P_x are the shares of positive returns and forecasts, V(P) = P* (1 - P*) / n,
         V(P*) = (2 P_y - 1)^2 P_x (1 - P_x) / n + (2 P_x - 1)^2 P_y (1 - P_y) / n + 4 P_y P_x (1 - P_y) (1 - P_x) / n^2
         and V = 4 p (1 - p) Σ (Return_t - mean(Return))^2 / n^2 with p = (1 + mean(sign(Forecast))) / 2.
-        forecast="autoregressive" forecasts each return with a + b · Return_(t-1), the least-squares AR(1) over the
+        The autoregressive forecast predicts each return with a + b · Return_(t-1), the least-squares AR(1) over the
         `window` pairs of returns before it. Both statistics are standard normal under the null hypothesis of
         no directional predictability; the p-value is one-sided.
 
@@ -1485,17 +1526,19 @@ class ForecastingEconometrics:
         Business & Economic Statistics, 23(4), 455-461.
         - Moskowitz, T.J., Ooi, Y.H. and Pedersen, L.H. (2012). "Time Series Momentum." Journal of Financial
         Economics, 104(2), 228-250.
-        - rugarch: DACTest (https://cran.r-project.org/package=rugarch).
 
         Also known as: directional accuracy test, market timing test, sign test, PT test, AG test, DAC test.
+
+        Referenced against:
+        - rugarch (R), DACTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L384
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
-            method (str, optional): The test, "pesaran_timmermann" or "anatolyev_gerko". Defaults to
-            "pesaran_timmermann".
-            forecast (str, optional): The return forecast, "momentum" (the mean of the previous `window`
-            returns) or "autoregressive" (the rolling AR(1)). Defaults to "momentum".
+            method (str, optional): The test. Options are: "pesaran_timmermann" (Pesaran-Timmermann),
+            "anatolyev_gerko" (Anatolyev-Gerko). Defaults to "pesaran_timmermann".
+            forecast (str, optional): The return forecast. Options are: "momentum" (the mean of the previous
+            `window` returns), "autoregressive" (the rolling AR(1)). Defaults to "momentum".
             window (int | None, optional): The number of returns of every forecast window. Defaults to None,
             which uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly,
             quarterly or yearly returns).
@@ -1582,8 +1625,8 @@ class ForecastingEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Find the volatility forecasting models that cannot be told apart from the best one with the Model
-        Confidence Set (MCS) of Hansen, Lunde and Nason.
+        Calculate the Model Confidence Set (MCS) of Hansen, Lunde and Nason: the volatility forecasting models
+        that cannot be told apart from the best one.
 
         The Diebold-Mariano test compares two forecasts; the MCS compares any number of them. Every model forecasts
         the next period's variance of each asset from the returns before it, and its loss against the squared return
@@ -1592,9 +1635,9 @@ class ForecastingEconometrics:
         that contains the best model with a probability of at least 1 - alpha; the MCS p-value of a model says at
         which size it would leave the set.
 
-        The formula is as follows (with the defaults statistic="max", loss="qlike" and daily returns):
+        The formula is as follows (with the default max statistic, QLIKE loss and daily returns):
 
-        - Loss_i,t = Return_t^2 / Forecast_i,t + ln(Forecast_i,t), or (Return_t^2 - Forecast_i,t)^2 with loss="squared"
+        - Loss_i,t = Return_t^2 / Forecast_i,t + ln(Forecast_i,t), or (Return_t^2 - Forecast_i,t)^2 with the squared loss
         - d_i = mean(Loss_i) - (1 / m) Σ_j mean(Loss_j) and t_i = d_i / √Var(d_i)
         - T = max_i t_i, with P-Value = (1 / B) Σ_b 1{T*_b >= T} over B stationary bootstrap resamples
         - while the p-value is below alpha, the model with the largest t_i is eliminated and the test repeated
@@ -1602,12 +1645,12 @@ class ForecastingEconometrics:
 
         Where m is the number of models still in the set, Var(d_i) the bootstrap variance of d_i and T*_b the
         statistic of the b-th resample centered at the full sample (see
-        `forecast_evaluation_model.get_model_confidence_set`, also for statistic="range", the largest |t_ij| of
-        all pairs). The forecasts of the models are:
+        `forecast_evaluation_model.get_model_confidence_set`, also for the range statistic, the largest |t_ij|
+        of all pairs). The forecasts of the models are:
 
-        - "ewma": the RiskMetrics variance λ·σₜ₋₁² + (1 - λ)·rₜ₋₁² with λ = `lambda_`
-        - "rolling": the sample variance (ddof=1) of the `window` returns before t
-        - "garch", "gjr" and the other methods of `Risk.get_garch`: the one-step variance of the GARCH-family model
+        - EWMA: the RiskMetrics variance λ·σₜ₋₁² + (1 - λ)·rₜ₋₁² with λ = `lambda_`
+        - Rolling: the sample variance (ddof=1) of the `window` returns before t
+        - GARCH, GJR-GARCH and the other models of `Risk.get_garch`: the one-step variance of the GARCH-family model
           with a constant mean and normal innovations (quasi-maximum likelihood), refitted every `refit_every`
           returns on the `garch_window` returns before t
 
@@ -1622,19 +1665,25 @@ class ForecastingEconometrics:
         453-497.
         - Patton, A.J. (2011). "Volatility Forecast Comparison Using Imperfect Volatility Proxies." Journal of
         Econometrics, 160(1), 246-256.
-        - arch: MCS (https://arch.readthedocs.io) and rugarch: mcsTest (https://cran.r-project.org/package=rugarch).
 
         Also known as: MCS, model confidence set, Hansen-Lunde-Nason test, forecast model selection.
+
+        Referenced against:
+        - arch, MCS: https://bashtage.github.io/arch/multiple-comparison/generated/arch.bootstrap.MCS.html
+        - rugarch (R), mcsTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L919
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
             Defaults to "daily".
-            models (list[str] | None, optional): The forecasting models to compare, at least two of "ewma",
-            "rolling" and the methods of `Risk.get_garch` (such as "garch" and "gjr"). Defaults to None, which
-            compares "ewma", "rolling", "garch" and "gjr".
-            loss (str, optional): The loss of a forecast, "qlike" or "squared". Defaults to "qlike". The squared
+            models (list[str] | None, optional): The forecasting models to compare, at least two. Options are:
+            "ewma" (RiskMetrics EWMA), "rolling" (rolling sample variance), "garch", "gjr", "egarch", "igarch",
+            "aparch", "tgarch", "ngarch", "avgarch", "nagarch", "component", "figarch" (the GARCH-family models
+            of `Risk.get_garch`). Defaults to None, which compares "ewma", "rolling", "garch" and "gjr".
+            loss (str, optional): The loss of a forecast. Options are: "qlike" (QLIKE), "squared" (squared
+            error). Defaults to "qlike". The squared
             losses of daily variances are of the order of 1e-7, so they need a larger `rounding` to show.
-            statistic (str, optional): The test statistic, "max" or "range". Defaults to "max".
+            statistic (str, optional): The test statistic. Options are: "max" (the largest t_i), "range" (the
+            largest |t_ij|). Defaults to "max".
             alpha (float, optional): The size of the test. Defaults to 0.1, the 90% model confidence set.
             n_bootstrap (int, optional): The number of bootstrap resamples. Defaults to 1000.
             block_size (int | None, optional): The average block length of the stationary bootstrap. Defaults to
@@ -1660,10 +1709,10 @@ class ForecastingEconometrics:
         Notes:
         - Every forecast only uses the returns before it, and each asset uses its own return history.
         - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
-        - In samples of a few hundred periods statistic="range" eliminates a model too often (about 14% of the
-        time at alpha=0.1 with four equally good models over 250 periods, against 8% for "max"), a property of
-        the range statistic with the stationary bootstrap that arch's MCS shares; prefer "max" for short
-        samples.
+        - In samples of a few hundred periods the range statistic eliminates a model too often (about 14% of
+        the time at an alpha of 0.1 with four equally good models over 250 periods, against 8% for the max
+        statistic), a property of the range statistic with the stationary bootstrap that arch's MCS shares;
+        prefer the max statistic for short samples.
 
         As an example:
 

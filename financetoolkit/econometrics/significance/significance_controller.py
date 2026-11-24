@@ -116,14 +116,14 @@ class SignificanceEconometrics:
         NaN when no earlier value was as high, which makes the latest value the highest of the
         history; Lowest Since likewise. The Change Since Start is the change between the first and
         the latest observation in the range, so the start and end date choose the two dates to
-        compare (housing starts from January 2021 to their latest month with period="monthly");
+        compare (housing starts from January 2021 to their latest month, in monthly data);
         it is relative to the absolute first value, so a rise from a negative value is positive,
         and NaN when the first value is zero. The Highest and Lowest are the peak and trough of
         the range, the latest value included, with the first dates they were reached, so the
         start date works as the anchor of an event window: the rise from the start to the peak,
         the date of the peak and the fall from it to the latest value. The changes from them
-        are relative to their absolute values, and NaN when they are zero. With
-        `Econometrics(data=..., changes="difference")` every change, the Largest Drawdown
+        are relative to their absolute values, and NaN when they are zero. When the
+        Econometrics data takes differences as its changes, every change, the Largest Drawdown
         included, is a difference in the unit of the series instead (percentage points for a
         rate: a 10-year yield from 5.29% to 4.94% is -0.0035), and the Multiple Since Start and
         Annualised Change are NaN.
@@ -285,8 +285,8 @@ class SignificanceEconometrics:
         rise since").
 
         This is `get_move_significance` (Risk) for any series rather than the returns of the
-        Toolkit's tickers: with `Econometrics(data=..., changes="difference")` a yield, rate or
-        spread moves in points, so a rise of the 2-year Treasury yield from 4.56% to 4.73% is a
+        Toolkit's tickers: when the Econometrics data takes differences as its changes, a yield,
+        rate or spread moves in points, so a rise of the 2-year Treasury yield from 4.56% to 4.73% is a
         move of 0.0017, measured against the earlier daily moves of the same yield. Where
         `get_level_significance` asks how unusual a level is, this asks how unusual a change is.
 
@@ -298,9 +298,9 @@ class SignificanceEconometrics:
         - Largest Since(t) = max(s < t : Change(s) <= Change(t)) if Change(t) < 0
         - Largest Since(t) = max(s < t : Change(s) >= Change(t)) if Change(t) > 0
 
-        The Change is the series' change as `changes` defines it: a percentage change by default,
-        the difference with `changes="difference"` and the series itself with `changes="none"`.
-        The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated
+        The Change is the series' change as the Econometrics data defines it: a percentage change
+        by default, or the difference or the series itself. The volatility σ is the sample
+        standard deviation (n - 1 degrees of freedom) and the quantile is the historic Value at Risk, interpolated
         linearly. Each measure only uses the changes before the period itself (no look-ahead),
         and Largest Since compares falls with falls and rises with rises, as a headline does.
         An earlier change of the same size counts as half in the percentile (the mid-rank, as
@@ -463,8 +463,8 @@ class SignificanceEconometrics:
         February) runs into the next year and is labelled by the year it ends; the same
         month for both gives the change over twelve months. A year without the value of
         either month has no change, so the current year is empty until its last month is
-        published. Largest Since is empty (<NA>) when no earlier year had a change as large. With
-        `Econometrics(data=..., changes="difference")` the Change is x(to_month, y) -
+        published. Largest Since is empty (<NA>) when no earlier year had a change as large. When
+        the Econometrics data takes differences as its changes, the Change is x(to_month, y) -
         x(from_month, y), in percentage points for a rate.
 
         Also known as: same period each year, seasonal change, year-to-date comparison,
@@ -579,12 +579,12 @@ class SignificanceEconometrics:
         how long a series has been on one side of zero, which is the question for inflation,
         growth and spreads: producer prices that fell year over year for 41 months in a row, a
         spread between two series that turned positive after three years, or a yield curve
-        that has been inverted since a given month. With column="Return" it measures the
-        changes instead: a price that rose for eight days in a row, or with
-        `Econometrics(data=..., changes="difference")` an unemployment rate that rose for six
-        months in a row. Through the Toolkit it measures the prices of the tickers; with
-        `Econometrics(data=...)` any series, such as the economic calendar of `Economics`
-        with as_series=True, its inflation rates or the yield curves of `FixedIncome`.
+        that has been inverted since a given month. On the returns it measures the changes
+        instead: a price that rose for eight days in a row, or, when the Econometrics data takes
+        differences as its changes, an unemployment rate that rose for six months in a row.
+        Through the Toolkit it measures the prices of the tickers; with `Econometrics(data=...)`
+        any series, such as the economic calendar of `Economics` as series, its inflation rates
+        or the yield curves of `FixedIncome`.
 
         A run is a stretch of consecutive observations with the same sign (positive, negative
         or zero), counted in observations: months for a monthly series. The current run is the

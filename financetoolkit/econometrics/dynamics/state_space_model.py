@@ -75,9 +75,12 @@ def get_time_varying_beta(
     dependent: pd.Series, independent: pd.Series
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     """
-    Estimate a regression whose alpha and beta drift over time, with the Kalman filter:
-    every period the coefficients take a random step, and the size of those steps and of
-    the noise around the regression are estimated by maximum likelihood. Unlike a rolling
+    Estimate a time-varying regression with the Kalman filter: an alpha and beta that drift
+    over time.
+
+    Every period the coefficients take a random step, and the size of those steps and of
+    the noise around the regression are estimated by maximum likelihood, with a statsmodels
+    MLEModel state space model. Unlike a rolling
     regression there is no window to choose. Each alpha and beta is the filtered estimate,
     updated with the observations up to its date only; the three variances that set how
     fast the estimates adapt are estimated on the whole sample, so the path is not fully
@@ -169,8 +172,10 @@ def _dcc_correlations(
 
 def get_dcc_garch(returns: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]]:
     """
-    Estimate dynamic conditional correlations with the DCC-GARCH(1,1) model (Engle, 2002):
-    every series gets its own GARCH(1,1) volatility, and the correlation of the
+    Estimate dynamic conditional correlations with the DCC-GARCH(1,1) model (Engle, 2002): how
+    the correlations between assets change from period to period.
+
+    Every series gets its own GARCH(1,1) volatility, and the correlation of the
     standardized residuals follows Q_t = (1 - a - b) Q̄ + a z_{t-1} z_{t-1}' + b Q_{t-1},
     with Q̄ their unconditional correlation. Correlations between assets tend to rise in
     crises, exactly when diversification is needed most; a rolling correlation sees that

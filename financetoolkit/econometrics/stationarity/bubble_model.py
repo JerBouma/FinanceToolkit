@@ -20,8 +20,10 @@ WINDOWS_PER_BLOCK = 50_000
 
 def get_minimum_window(observations: int) -> int:
     """
-    The smallest window of the recursive ADF regressions, the rule of Phillips, Shi and Yu
-    (2015): r₀ = 0.01 + 1.8 / √T of the T observations, floor(r₀·T) observations.
+    Calculate the smallest window of the recursive ADF regressions with the rule of Phillips,
+    Shi and Yu (2015).
+
+    The rule is r₀ = 0.01 + 1.8 / √T of the T observations, floor(r₀·T) observations.
 
     Args:
         observations (int): The number of observations T of the series.
@@ -200,6 +202,11 @@ def get_recursive_adf_statistics(
     - BSADF(r₂) = max over r₁ from 0 to r₂ - w + 1 of ADF(r₁, r₂), every window of at least w
       observations that ends at r₂
 
+    Referenced against:
+    - statsmodels, adfuller: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html
+        Test: tests/econometrics/test_bubble_model.py::test_window_statistic_matches_statsmodels
+    - RiskLabAI, get_bsadf_sequence: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L434
+
     Args:
         values (np.ndarray): The levels of the series (such as log prices), without NaN.
         lags (int, optional): The number of lagged differences in the regression. Defaults to 0.
@@ -283,6 +290,9 @@ def simulate_bubble_critical_values(
     serves every series of the same length, window and lags; the results are kept for the
     session.
 
+    Referenced against:
+    - RiskLabAI, simulate_psy_critical_values: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L607
+
     Args:
         observations (int): The number of observations T.
         minimum_window (int): The smallest window in observations.
@@ -332,8 +342,8 @@ def get_bubble_test(
 ) -> pd.Series:
     """
     Calculate the SADF test of Phillips, Wu and Yu (2011) or the GSADF test of Phillips, Shi and
-    Yu (2015) for explosive behaviour (a bubble) in a series, with critical values simulated
-    under a random walk.
+    Yu (2015): whether a series shows explosive behaviour (a bubble), with critical values
+    simulated under a random walk.
 
     The formula is as follows, with the forward ADF and BSADF sequences of
     `get_recursive_adf_statistics`:
@@ -342,10 +352,15 @@ def get_bubble_test(
     - GSADF = max over r₂ of BSADF(r₂), every window of at least w observations
     - P-value = the share of the simulated statistics at least as large
 
+    Referenced against:
+    - RiskLabAI, get_gsadf_statistic: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L486
+    - RiskLabAI, simulate_psy_critical_values: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L607
+
     Args:
         series (pd.Series): The levels of the series, such as log prices. Missing values are
             left out.
-        method (str, optional): "gsadf" or "sadf". Defaults to "gsadf".
+        method (str, optional): The test. Options are: "gsadf" (GSADF test), "sadf" (SADF
+            test). Defaults to "gsadf".
         lags (int, optional): The number of lagged differences in the ADF regressions. Defaults
             to 0.
         minimum_window (int | None, optional): The smallest window in observations. Defaults to
@@ -420,14 +435,19 @@ def get_bubble_episodes(
     The formula is as follows:
 
     - Bubble at r₂ when BSADF(r₂) > cv(r₂), the confidence quantile of the simulated BSADF at
-      r₂ (method="gsadf"), or when ADF(0, r₂) exceeds its own (method="sadf")
+      r₂ (GSADF), or when ADF(0, r₂) exceeds its own (SADF)
     - An episode starts at the first date above the critical value and ends at the last date
       before it falls back; episodes shorter than the minimum duration, by default
       round(log(T)) observations (δ = 1 in the δ·log(T) rule of PSY), are left out
 
+    Referenced against:
+    - RiskLabAI, get_bsadf_sequence: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L434
+    - RiskLabAI, get_bubble_episodes: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/structural_breaks.py#L544
+
     Args:
         series (pd.Series): The levels of the series, such as log prices.
-        method (str, optional): "gsadf" (BSADF) or "sadf" (forward ADF). Defaults to "gsadf".
+        method (str, optional): The sequence. Options are: "gsadf" (BSADF sequence), "sadf"
+            (forward ADF sequence). Defaults to "gsadf".
         lags (int, optional): The number of lagged differences. Defaults to 0.
         minimum_window (int | None, optional): The smallest window. Defaults to None, the PSY rule.
         confidence (float, optional): The confidence of the critical values. Defaults to 0.95.

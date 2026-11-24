@@ -75,7 +75,8 @@ def get_money_flow_index(
     window: int,
 ) -> pd.Series:
     """
-    Calculate the Money Flow Index (MFI) indicator for a given price series.
+    Calculate the Money Flow Index (MFI): how strongly money flows into or out of a security, using price and
+    volume.
 
     The Money Flow Index is a volume-weighted version of the Relative Strength Index: instead
     of ranking the size of up versus down closes, it ranks the "money flow" (typical price
@@ -95,7 +96,8 @@ def get_money_flow_index(
     Reference: Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow."
     Technical Analysis of Stocks & Commodities, 7(3), 76-77.
 
-    Referenced against TA-Lib's MFI (https://ta-lib.org/functions/mfi.html).
+    Referenced against:
+    - TA-Lib, MFI: https://ta-lib.org/functions/mfi.html
 
     Notes:
         - The first period has no prior typical price and therefore no money flow, so the
@@ -142,7 +144,8 @@ def get_williams_percent_r(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Williams %R indicator for a given price series.
+    Calculate the Williams %R: where the close lies within the high-low range of a window, from 0 (at the high) to
+    -100 (at the low), to show overbought and oversold levels.
 
     Williams %R measures where the current close sits within the high-low range of the
     lookback window, expressed as a percentage that runs from 0 (close at the window's
@@ -158,7 +161,8 @@ def get_williams_percent_r(
     Reference: Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading
     Commodities." Windsor Books.
 
-    Referenced against TA-Lib's WILLR (https://ta-lib.org/functions/willr.html).
+    Referenced against:
+    - TA-Lib, WILLR: https://ta-lib.org/functions/willr.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -181,7 +185,8 @@ def get_aroon_indicator(
     prices_high: pd.Series, prices_low: pd.Series, window: int
 ) -> pd.DataFrame:
     """
-    Calculate the Aroon Indicator for a given price series.
+    Calculate the Aroon Indicator: how many periods ago the highest high and the lowest low of a window were, which
+    shows whether a trend is starting and how strong it is.
 
     The Aroon Indicator measures how recently price made a new high (Aroon Up) or a new low
     (Aroon Down) within the lookback window, expressed as a percentage. A reading of 100
@@ -204,8 +209,10 @@ def get_aroon_indicator(
     Reference: Chande, T.S. (1995). "The Time Price Oscillator." Technical Analysis of Stocks
     & Commodities, 13(9), 369-374; Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's AROON and AROONOSC
-    (https://ta-lib.org/functions/aroon.html, https://ta-lib.org/functions/aroonosc.html).
+    Referenced against:
+    - TA-Lib, AROON: https://ta-lib.org/functions/aroon.html
+        Test: tests/technical/test_momentum_model.py::test_aroon_oscillator_matches_talib
+    - TA-Lib, AROONOSC: https://ta-lib.org/functions/aroonosc.html
 
     Notes:
         - The lookback spans `window + 1` bars — the current period plus the previous
@@ -259,7 +266,8 @@ def get_commodity_channel_index(
     constant: float = 0.015,
 ) -> pd.Series:
     """
-    Calculate the Commodity Channel Index (CCI) for a given price series.
+    Calculate the Commodity Channel Index (CCI): how far the typical price lies from its average, in units of its
+    mean deviation, to show cyclical turns and overbought and oversold levels.
 
     The Commodity Channel Index measures how far the typical price has deviated from its own
     moving average, normalized by the average absolute deviation over the same window (the
@@ -279,7 +287,8 @@ def get_commodity_channel_index(
     Trends." Commodities, October 1980; reprinted in Technical Analysis of Stocks &
     Commodities, 1(5), 120-122.
 
-    Referenced against TA-Lib's CCI (https://ta-lib.org/functions/cci.html).
+    Referenced against:
+    - TA-Lib, CCI: https://ta-lib.org/functions/cci.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -324,7 +333,8 @@ def get_relative_vigor_index(
     window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Relative Vigor Index (RVI) for a given price series.
+    Calculate the Relative Vigor Index (RVI): how strongly the close ends above the open relative to the range,
+    which shows the conviction behind a move.
 
     The Relative Vigor Index measures the conviction behind a move by comparing where each
     period closes relative to its open with the period's full high-low range, on the idea
@@ -393,7 +403,8 @@ def get_force_index(
     prices_close: pd.Series, volumes: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Force Index for a given price series.
+    Calculate the Force Index: the price change times the volume, smoothed, which shows the force of the buyers or
+    sellers behind a move.
 
     The Force Index combines the direction and magnitude of a period's price change with
     the volume behind it, so that a price move on heavy volume registers as a stronger
@@ -411,7 +422,8 @@ def get_force_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
-    Referenced against TA-Lib's EFI (https://ta-lib.org/functions/efi.html).
+    Referenced against:
+    - TA-Lib, EFI: https://ta-lib.org/functions/efi.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -437,7 +449,8 @@ def get_ultimate_oscillator(
     window_3: int,
 ) -> pd.Series:
     """
-    Calculate the Ultimate Oscillator for a given price series.
+    Calculate the Ultimate Oscillator: the buying pressure over three windows combined into one value from 0 to 100,
+    to show overbought and oversold levels with fewer false signals.
 
     The Ultimate Oscillator combines buying pressure measured over three different lookback
     periods (short, medium and long) into a single oscillator, weighting the shorter,
@@ -457,7 +470,8 @@ def get_ultimate_oscillator(
     Reference: Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks
     & Commodities, 3(4).
 
-    Referenced against TA-Lib's ULTOSC (https://ta-lib.org/functions/ultosc.html).
+    Referenced against:
+    - TA-Lib, ULTOSC: https://ta-lib.org/functions/ultosc.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -511,7 +525,8 @@ def get_percentage_price_oscillator(
     moving_average: str = "exponential",
 ) -> pd.DataFrame:
     """
-    Calculate the Percentage Price Oscillator (PPO) for a given price series.
+    Calculate the Percentage Price Oscillator (PPO): the difference between a fast and a slow average of the prices
+    as a share of the slow one, the MACD in percentage terms, so tickers of different prices compare.
 
     The Percentage Price Oscillator is the Moving Average Convergence Divergence line
     re-expressed as a percentage of the long-term EMA, rather than as a raw price
@@ -535,24 +550,32 @@ def get_percentage_price_oscillator(
     (Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert
     Corp.).
 
-    Referenced against TA-Lib's PPO (https://ta-lib.org/functions/ppo.html), with
-    the moving average as its `matype`; it returns the PPO in percent and no signal line.
-    The signal line and histogram are those of ta's PercentagePriceOscillator, pandas-ta's
-    ppo and finta's PPO.
+    Referenced against:
+    - TA-Lib, PPO: https://ta-lib.org/functions/ppo.html
+        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ppo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/ppo.py#L48
+    - ta, PercentagePriceOscillator: https://github.com/bukosabino/ta/blob/0.11.0/ta/momentum.py#L622
+    - finta, PPO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L541
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
           `get_exponential_moving_average`), so the PPO starts on period `long_window` - 1
           and the signal line and histogram `signal_window` - 1 periods later.
+        - TA-Lib's PPO takes the moving average as its moving average type and returns the PPO in percent, without a
+          signal line; the signal line and histogram are those of ta, pandas-ta-classic and finta.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
         short_window (int): Number of periods for the short-term moving average.
         long_window (int): Number of periods for the long-term moving average.
         signal_window (int): Number of periods for the signal line EMA. Defaults to 9.
-        moving_average (str): The moving average of the short and long term, one of
-            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
-            "weighted", "hull" or "kaufman_adaptive". Defaults to "exponential".
+        moving_average (str): The moving average of the short and long term, one of `MOVING_AVERAGES`. Options
+            are: "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+            "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving Average),
+            "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman
+            Adaptive Moving Average). Defaults to "exponential".
 
     Returns:
         pd.DataFrame: The Percentage Price Oscillator, Signal Line and Histogram as columns,
@@ -586,7 +609,8 @@ def get_percentage_volume_oscillator(
     moving_average: str = "exponential",
 ) -> pd.DataFrame:
     """
-    Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
+    Calculate the Percentage Volume Oscillator (PVO): the difference between a fast and a slow average of the volume
+    as a share of the slow one, which shows whether volume is rising or falling.
 
     The Percentage Volume Oscillator is the Percentage Price Oscillator applied to volume:
     the difference between a short-term and a long-term EMA of volume as a share of the
@@ -601,7 +625,7 @@ def get_percentage_volume_oscillator(
     - Histogram = PVO - Signal Line
 
     with MA the Exponential Moving Average by default. With the Simple Moving Average
-    (`moving_average="simple"`) it is the Volume Oscillator of StockCharts, pandas-ta-classic
+    it is the Volume Oscillator of StockCharts, pandas-ta-classic
     (`vosc`, 14 and 28 periods) and Tulip Indicators (`vosc`, 2 and 5 periods). The
     conventional parameters are 12, 26 and 9 periods, as for MACD and the PPO.
 
@@ -612,8 +636,11 @@ def get_percentage_volume_oscillator(
     Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
     Convergence-Divergence Trading Method." Signalert Corp.).
 
-    Referenced against TA-Lib's PVO (https://ta-lib.org/functions/pvo.html), with
-    the moving average as its `matype` (1 for the EMA, 0 for the SMA).
+    Referenced against:
+    - TA-Lib, PVO: https://ta-lib.org/functions/pvo.html
+        Test: tests/technical/test_momentum_model.py::test_simple_percentage_volume_oscillator_matches_talib
+    - pandas-ta-classic, vosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vosc.py#L12
+    - Tulip Indicators, vosc: https://tulipindicators.org/vosc
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -624,14 +651,16 @@ def get_percentage_volume_oscillator(
           are in percent and have no signal line.
         - A long-term EMA of zero (a series without volume, such as an index or a currency
           pair with no reported volume) has no PVO rather than an infinite one.
+        - TA-Lib's PVO takes the moving average as its moving average type: the exponential or the simple moving
+          average.
 
     Args:
         volumes (pd.Series): Series of trading volumes.
         short_window (int): Number of periods for the short-term EMA.
         long_window (int): Number of periods for the long-term EMA.
         signal_window (int): Number of periods for the signal line EMA.
-        moving_average (str): The moving average of the volume, "exponential" or "simple".
-            Defaults to "exponential".
+        moving_average (str): The moving average of the volume. Options are: "exponential" (Exponential Moving
+            Average), "simple" (Simple Moving Average). Defaults to "exponential".
 
     Returns:
         pd.DataFrame: The Percentage Volume Oscillator, Signal Line and Histogram as
@@ -654,7 +683,8 @@ def get_detrended_price_oscillator(
     moving_average_type: str = "sma",
 ) -> pd.Series:
     """
-    Calculate the Detrended Price Oscillator (DPO) for a given price series.
+    Calculate the Detrended Price Oscillator (DPO): the price minus a moving average shifted back in time, which
+    removes the trend to show the cycles.
 
     The Detrended Price Oscillator strips the trend out of price so that cycles above and
     below the trend line stand out. It does this by comparing a *past* closing price to the
@@ -677,14 +707,14 @@ def get_detrended_price_oscillator(
     the Financial Markets." New York Institute of Finance; there is no single canonical
     academic paper behind DPO.
 
-    Referenced against TA-Lib's DPO (https://ta-lib.org/functions/dpo.html).
+    Referenced against:
+    - TA-Lib, DPO: https://ta-lib.org/functions/dpo.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for DPO calculation.
-        moving_average_type (str): The type of moving average to detrend against, either
-            "sma" (Simple Moving Average) or "ema" (Exponential Moving Average). Defaults to
-            "sma", the conventional choice.
+        moving_average_type (str): The moving average to detrend against. Options are: "sma" (Simple Moving
+            Average), "ema" (Exponential Moving Average). Defaults to "sma", the conventional choice.
 
     Returns:
         pd.Series: DPO values.
@@ -712,9 +742,8 @@ def get_directional_movement_index(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.DataFrame:
     """
-    Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional
-    Movement (+DM, -DM), the Directional Indicators (+DI, -DI) and the Directional Movement
-    Index (DX) of a given price series.
+    Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional Movement (+DM, -DM), the
+    Directional Indicators (+DI, -DI) and the Directional Movement Index (DX) of a given price series.
 
     The Directional Movement is the part of a period's range outside the previous period's
     range: upward when the high rises above the previous high by more than the low falls
@@ -740,10 +769,13 @@ def get_directional_movement_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI and DX
-    (https://ta-lib.org/functions/plus_dm.html, https://ta-lib.org/functions/minus_dm.html,
-    https://ta-lib.org/functions/plus_di.html, https://ta-lib.org/functions/minus_di.html,
-    https://ta-lib.org/functions/dx.html).
+    Referenced against:
+    - TA-Lib, PLUS_DM: https://ta-lib.org/functions/plus_dm.html
+        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
+    - TA-Lib, MINUS_DM: https://ta-lib.org/functions/minus_dm.html
+    - TA-Lib, PLUS_DI: https://ta-lib.org/functions/plus_di.html
+    - TA-Lib, MINUS_DI: https://ta-lib.org/functions/minus_di.html
+    - TA-Lib, DX: https://ta-lib.org/functions/dx.html
 
     Notes:
         - The True Range and both directional movements start on the second period, the
@@ -815,7 +847,8 @@ def get_average_directional_index(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Average Directional Movement Index (ADX) of a given price series.
+    Calculate the Average Directional Index (ADX): how strong a trend is, whatever its direction, from the smoothed
+    difference between upward and downward movement.
 
     The Average Directional Movement Index (ADX) is a technical indicator used to quantify
     the strength of a trend. It combines the information from the Plus Directional Indicator (+DI)
@@ -843,7 +876,9 @@ def get_average_directional_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's ADX (https://ta-lib.org/functions/adx.html).
+    Referenced against:
+    - TA-Lib, ADX: https://ta-lib.org/functions/adx.html
+        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
     Notes:
         - The True Range and both directional movements start on the second period, the
@@ -874,7 +909,8 @@ def get_average_directional_index_rating(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Average Directional Movement Index Rating (ADXR) of a given price series.
+    Calculate the Average Directional Movement Index Rating (ADXR): the average of the ADX and its value a window
+    earlier, a smoother measure of trend strength.
 
     The ADXR is Wilder's smoothed ADX: the average of today's ADX and the ADX of `window` - 1
     periods ago. It rates how strongly a market trends, more slowly than the ADX itself,
@@ -892,7 +928,9 @@ def get_average_directional_index_rating(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's ADXR (https://ta-lib.org/functions/adxr.html).
+    Referenced against:
+    - TA-Lib, ADXR: https://ta-lib.org/functions/adxr.html
+        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
     Notes:
         - The ADX starts on period 2 * `window` - 1, so the ADXR starts on period
@@ -918,7 +956,8 @@ def get_chande_momentum_oscillator(
     prices_close: pd.Series, window: int, smoothed: bool = False
 ) -> pd.Series:
     """
-    Calculate the Chande Momentum Oscillator (CMO) for a given price series.
+    Calculate the Chande Momentum Oscillator (CMO): the gains minus the losses over a window as a share of their
+    sum, from -100 to 100, to show momentum and overbought and oversold levels.
 
     The Chande Momentum Oscillator is closely related to the Relative Strength Index: both
     compare the sum of up-moves to the sum of down-moves over a window. Where RSI computes
@@ -941,9 +980,13 @@ def get_chande_momentum_oscillator(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's CMOU and CMO
-    (https://ta-lib.org/functions/cmou.html, https://ta-lib.org/functions/cmo.html): CMOU
-    sums the gains and losses as Chande does, CMO smooths them with Wilder's method.
+    Referenced against:
+    - TA-Lib, CMOU: https://ta-lib.org/functions/cmou.html
+        Test: tests/technical/test_momentum_model.py::test_smoothed_chande_momentum_oscillator_matches_talib_and_the_rsi
+    - TA-Lib, CMO: https://ta-lib.org/functions/cmo.html
+
+    Notes:
+        - TA-Lib's CMOU sums the gains and losses as Chande does, and its CMO smooths them with Wilder's method.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -980,7 +1023,8 @@ def get_ichimoku_cloud(
     lead_span_b_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Ichimoku Cloud components for a given price series.
+    Calculate the Ichimoku Cloud: the midpoints of the highs and lows over three windows, which show the trend, the
+    momentum and the support and resistance of the prices at a glance.
 
     The Ichimoku Cloud describes trend, support and resistance in one picture by plotting
     two fast/slow midpoint lines against a shaded band ("the cloud", or Kumo) spanned by two
@@ -1005,8 +1049,8 @@ def get_ichimoku_cloud(
     Sanjin; the standard English treatment is Elliott, N. (2007). "Ichimoku Charts."
     Harriman House.
 
-    Referenced against TA-Lib's ICHIMOKU (https://ta-lib.org/functions/ichimoku.html),
-    which places the leading spans on the period they are calculated on.
+    Referenced against:
+    - TA-Lib, ICHIMOKU: https://ta-lib.org/functions/ichimoku.html
 
     Notes:
         - Both leading spans are projected forward by `base_window` (26 by default) periods,
@@ -1023,6 +1067,8 @@ def get_ichimoku_cloud(
         - The Lagging Span (Chikou Span), the close plotted `base_window` periods into the
           past, is deliberately not returned: at any period it reports a *future* close and
           therefore cannot be used without look-ahead bias.
+        - TA-Lib's ICHIMOKU places the leading spans on the period they are calculated on, without the shift
+          forward.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1069,7 +1115,8 @@ def get_stochastic_oscillator(
     slow: bool = False,
 ) -> pd.DataFrame:
     """
-    Calculate the Stochastic Oscillator of a given price series.
+    Calculate the Stochastic Oscillator: where the close lies within the high-low range of a window, from 0 to 100,
+    to show momentum and overbought and oversold levels.
 
     The Stochastic Oscillator measures where the close sits within the high-low range of the
     lookback window, on the premise that in an uptrend prices tend to close near the high of
@@ -1084,7 +1131,7 @@ def get_stochastic_oscillator(
     - Slow %D = SMA(Slow %K, smooth_window)
 
     The "Fast Stochastic" (the default) smooths the raw %K once to produce %D. The "Slow
-    Stochastic" (`slow=True`) smooths %K itself with an SMA first, which is the stochastic
+    Stochastic" smooths %K itself with an SMA first, which is the stochastic
     Lane charted and most platforms show by default; its %K is the fast %D.
 
     Also known as: Stochastic Oscillator, Fast Stochastic, Slow Stochastic, %K/%D, STOCHF,
@@ -1093,8 +1140,10 @@ def get_stochastic_oscillator(
     Reference: Lane, G.C. Developed in the late 1950s; see Lane, G.C. (1984). "Lane's
     Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
-    Referenced against TA-Lib's STOCHF and STOCH
-    (https://ta-lib.org/functions/stochf.html, https://ta-lib.org/functions/stoch.html).
+    Referenced against:
+    - TA-Lib, STOCHF: https://ta-lib.org/functions/stochf.html
+        Test: tests/technical/test_momentum_model.py::test_slow_stochastic_oscillator_matches_talib
+    - TA-Lib, STOCH: https://ta-lib.org/functions/stoch.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1133,7 +1182,8 @@ def get_moving_average_convergence_divergence(
     volumes: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the Moving Average Convergence Divergence (MACD) of a given price series.
+    Calculate the Moving Average Convergence Divergence (MACD): the difference between a fast and a slow moving
+    average of the prices and its signal line, which show the direction and the momentum of a trend.
 
     MACD tracks the convergence and divergence of a short-term and a long-term Exponential
     Moving Average of price. The MACD line crossing above/below its own EMA-based signal line
@@ -1163,10 +1213,18 @@ def get_moving_average_convergence_divergence(
     builds on Fries, C.P. (2001). "Elastic Moving Averages." Technical Analysis of Stocks &
     Commodities, 19(6), 52-56.
 
-    Referenced against TA-Lib's MACD, MACDEXT and MACDFIX
-    (https://ta-lib.org/functions/macd.html, https://ta-lib.org/functions/macdext.html,
-    https://ta-lib.org/functions/macdfix.html). pandas-ta-classic: vwmacd and finta: VW_MACD
-    and EV_MACD for the volume weighted ones.
+    Referenced against:
+    - TA-Lib, MACD: https://ta-lib.org/functions/macd.html
+        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
+        Test: tests/technical/test_momentum_model.py::test_moving_average_convergence_divergence_variants_match_talib
+    - TA-Lib, MACDEXT: https://ta-lib.org/functions/macdext.html
+    - TA-Lib, MACDFIX: https://ta-lib.org/functions/macdfix.html
+    - pandas-ta-classic, vwmacd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/vwmacd.py#L12
+        Test: tests/technical/test_momentum_model.py::test_volume_weighted_macd_matches_pandas_ta_classic
+
+    Shares similar logic:
+    - finta, VW_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L575
+    - finta, EV_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L617
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -1187,12 +1245,20 @@ def get_moving_average_convergence_divergence(
         short_window (int): Number of periods for the short-term moving average.
         long_window (int): Number of periods for the long-term moving average.
         signal_window (int): Number of periods for the signal line moving average.
-        moving_average (str): The moving average of the short and long term, one of
-            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
-            "weighted", "hull" or "kaufman_adaptive", or of `VOLUME_MOVING_AVERAGES`:
-            "volume_weighted" or "elastic_volume_weighted". Defaults to "exponential".
-        signal_moving_average (str): The moving average of the signal line, one of the
-            same. Defaults to "exponential".
+        moving_average (str): The moving average of the short and long term, one of `MOVING_AVERAGES` or
+            `VOLUME_MOVING_AVERAGES`. Options are: "simple" (Simple Moving Average), "exponential" (Exponential
+            Moving Average), "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular
+            Moving Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+            "kaufman_adaptive" (Kaufman Adaptive Moving Average), "volume_weighted" (Volume Weighted Moving
+            Average, the Volume Weighted MACD), "elastic_volume_weighted" (Elastic Volume Weighted Moving
+            Average, the Elastic Volume Weighted MACD). Defaults to "exponential".
+        signal_moving_average (str): The moving average of the signal line, one of `MOVING_AVERAGES` or
+            `VOLUME_MOVING_AVERAGES`. Options are: "simple" (Simple Moving Average), "exponential" (Exponential
+            Moving Average), "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular
+            Moving Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average),
+            "kaufman_adaptive" (Kaufman Adaptive Moving Average), "volume_weighted" (Volume Weighted Moving
+            Average, the Volume Weighted MACD), "elastic_volume_weighted" (Elastic Volume Weighted Moving
+            Average, the Elastic Volume Weighted MACD). Defaults to "exponential".
         fixed (bool): Whether to smooth the 12- and 26-period EMAs with the fixed constants
             0.15 and 0.075 (TA-Lib's MACDFIX). Needs the exponential moving average and
             windows of 12 and 26. Defaults to False.
@@ -1263,7 +1329,8 @@ def get_moving_average_convergence_divergence(
 
 def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Relative Strength Index (RSI) of a given price series.
+    Calculate the Relative Strength Index (RSI): the size of the gains against the losses over a window, from 0 to
+    100, to show momentum and overbought and oversold levels.
 
     RSI measures the ratio of average gains to average losses over a lookback window and
     rescales it into a bounded 0-100 oscillator. Wilder's original method smooths the average
@@ -1285,7 +1352,8 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's RSI (https://ta-lib.org/functions/rsi.html).
+    Referenced against:
+    - TA-Lib, RSI: https://ta-lib.org/functions/rsi.html
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1318,7 +1386,8 @@ def get_stochastic_relative_strength_index(
     prices: pd.Series, window: int, stochastic_window: int, smooth_window: int
 ) -> pd.DataFrame:
     """
-    Calculate the Stochastic RSI of a given price series.
+    Calculate the Stochastic RSI: where the Relative Strength Index lies within its own range over a window, a
+    faster measure of overbought and oversold levels.
 
     The Stochastic RSI applies the Stochastic Oscillator to the Relative Strength Index
     instead of to price: it shows where the current RSI sits within its own high-low range
@@ -1334,17 +1403,19 @@ def get_stochastic_relative_strength_index(
     - %D = SMA(%K, smooth_window)
 
     Chande and Kroll define it as a 14-period stochastic of a 14-period RSI, as StockCharts
-    and TradingView do (`window=14`, `stochastic_window=14`). StockCharts shows this %K on a
+    and TradingView do (a window and a stochastic window of 14). StockCharts shows this %K on a
     scale of 0 to 1; TradingView smooths it over 3 periods, so its %K equals this %D with
-    `smooth_window=3`. TA-Lib's `STOCHRSI` defaults to a 5-period stochastic instead
+    a smoothing window of 3. TA-Lib's `STOCHRSI` defaults to a 5-period stochastic instead
     (timeperiod 14, fastk_period 5, fastd_period 3 with a simple average), which is
-    `stochastic_window=5` here and returns its fast %K and %D.
+    a stochastic window of 5 here and returns its fast %K and %D.
 
     Also known as: StochRSI, Stoch RSI.
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's STOCHRSI (https://ta-lib.org/functions/stochrsi.html).
+    Referenced against:
+    - TA-Lib, STOCHRSI: https://ta-lib.org/functions/stochrsi.html
+        Test: tests/technical/test_momentum_model.py::test_stochastic_relative_strength_index_matches_talib
 
     Notes:
         - The RSI is that of `get_relative_strength_index`, seeded with a simple average of
@@ -1381,7 +1452,8 @@ def get_true_strength_index(
     prices: pd.Series, long_window: int, short_window: int, signal_window: int
 ) -> pd.DataFrame:
     """
-    Calculate the True Strength Index (TSI) of a given price series.
+    Calculate the True Strength Index (TSI): the double-smoothed price change as a share of the double-smoothed
+    absolute price change, which shows the direction and strength of momentum.
 
     The True Strength Index smooths the one-period price change twice with Exponential Moving
     Averages and divides it by the same double smoothing of the absolute change. The double
@@ -1406,7 +1478,8 @@ def get_true_strength_index(
     in Blau, W. (1991). "True Strength Index." Technical Analysis of Stocks & Commodities,
     9(11).
 
-    Referenced against TA-Lib's TSI (https://ta-lib.org/functions/tsi.html).
+    Referenced against:
+    - TA-Lib, TSI: https://ta-lib.org/functions/tsi.html
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -1459,7 +1532,8 @@ def get_balance_of_power(
     prices_close: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the Balance of Power (BOP) indicator for a given price series.
+    Calculate the Balance of Power (BOP): how far the close lies from the open as a share of the range, which shows
+    whether buyers or sellers control the period.
 
     The Balance of Power (BOP) indicator measures the strength of buyers and sellers in the market.
     It considers the relationship between the closing price and the trading range (high - low) of each period.
@@ -1474,7 +1548,8 @@ def get_balance_of_power(
     Reference: Created by Igor Livshin; featured in Kaufman, P.J. (2005). "New Trading
     Systems and Methods." 4th ed. Wiley.
 
-    Referenced against TA-Lib's BOP (https://ta-lib.org/functions/bop.html).
+    Referenced against:
+    - TA-Lib, BOP: https://ta-lib.org/functions/bop.html
 
     Notes:
         - A period whose high equals its low has no range to divide by and is set to 0, as
@@ -1505,7 +1580,8 @@ def get_awesome_oscillator(
     long_window: int = 34,
 ) -> pd.Series:
     """
-    Calculate the Awesome Oscillator (AO) for a given price series.
+    Calculate the Awesome Oscillator (AO): the difference between a fast and a slow average of the median price,
+    which shows the momentum of the market.
 
     The Awesome Oscillator measures market momentum by comparing a short-term and a long-term
     Simple Moving Average of the median price (the midpoint of each period's high and low,
@@ -1518,6 +1594,9 @@ def get_awesome_oscillator(
     - AO = SMA(Median Price, short_window) - SMA(Median Price, long_window)
 
     Also known as: AO, Bill Williams Awesome Oscillator.
+
+    Referenced against:
+    - TA-Lib, AO: https://ta-lib.org/functions/ao.html
 
     Notes:
         - There is no academic journal citation for the Awesome Oscillator. Like most of Bill
@@ -1555,7 +1634,8 @@ def get_vortex_indicator(
     window: int = 14,
 ) -> pd.DataFrame:
     """
-    Calculate the Vortex Indicator for a given price series.
+    Calculate the Vortex Indicator: the upward and downward movement of the prices relative to their true range,
+    whose crossings mark the start of a new trend.
 
     The Vortex Indicator quantifies the presence and strength of a directional trend by
     comparing each period's price movement away from the prior period's range to the period's
@@ -1575,7 +1655,8 @@ def get_vortex_indicator(
     Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis of
     Stocks & Commodities, 28(1), 20-30.
 
-    Referenced against TA-Lib's VORTEX (https://ta-lib.org/functions/vortex.html).
+    Referenced against:
+    - TA-Lib, VORTEX: https://ta-lib.org/functions/vortex.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1615,7 +1696,8 @@ def get_elder_ray_index(
     window: int = 13,
 ) -> pd.DataFrame:
     """
-    Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
+    Calculate the Elder Ray Index: how far the high (Bull Power) and the low (Bear Power) lie from an exponential
+    moving average, which shows the strength of the buyers and the sellers.
 
     The Elder Ray Index measures buying and selling pressure in the market relative to a trend
     baseline (an Exponential Moving Average of the closing price). Bull Power captures how far
@@ -1631,7 +1713,8 @@ def get_elder_ray_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
-    Referenced against TA-Lib's ERI (https://ta-lib.org/functions/eri.html).
+    Referenced against:
+    - TA-Lib, ERI: https://ta-lib.org/functions/eri.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1660,7 +1743,8 @@ def get_rate_of_change(
     prices_close: pd.Series | pd.DataFrame, window: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Rate of Change (ROC) for a given price series.
+    Calculate the Rate of Change (ROC): the percentage change of the price over a window, the speed at which the
+    price moves.
 
     The Rate of Change is a pure momentum oscillator that measures the percentage change
     in price between the current period and the price a fixed number of periods ago. It
@@ -1677,7 +1761,8 @@ def get_rate_of_change(
     Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York
     Institute of Finance.
 
-    Referenced against TA-Lib's ROCP (https://ta-lib.org/functions/rocp.html).
+    Referenced against:
+    - TA-Lib, ROCP: https://ta-lib.org/functions/rocp.html
 
     Args:
         prices_close (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
@@ -1704,7 +1789,8 @@ def get_choppiness_index(
     range_method: str = "high_low",
 ) -> pd.Series:
     """
-    Calculate the Choppiness Index (CHOP) for a given price series.
+    Calculate the Choppiness Index (CHOP): how much of the range of a window the price travelled, from trending
+    (near 0) to choppy and sideways (near 100).
 
     The Choppiness Index quantifies whether the market is trending or moving sideways
     ("choppy") by comparing the sum of True Range over the window (a measure of the total
@@ -1718,7 +1804,7 @@ def get_choppiness_index(
 
     - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) - Min(Low, window)) ) / log10(window)
 
-    With `range_method="true_range"` the net range is that of the true highs and lows, the
+    With the true range as the box, the net range is that of the true highs and lows, the
     range the True Ranges themselves span, so a gap between periods counts in both:
 
     - True High = Max(High, Previous Close), True Low = Min(Low, Previous Close)
@@ -1730,17 +1816,19 @@ def get_choppiness_index(
     there is no formal journal citation. The standard textbook treatment is Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
 
-    Referenced against TA-Lib's CHOP and CHOPTR
-    (https://ta-lib.org/functions/chop.html, https://ta-lib.org/functions/choptr.html).
+    Referenced against:
+    - TA-Lib, CHOP: https://ta-lib.org/functions/chop.html
+        Test: tests/technical/test_momentum_model.py::test_choppiness_index_with_the_true_range_box_matches_talib
+    - TA-Lib, CHOPTR: https://ta-lib.org/functions/choptr.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods to consider for the Choppiness Index calculation.
-        range_method (str): The net range the summed True Range is divided by: "high_low",
-            the highest high minus the lowest low, or "true_range", the highest true high
-            minus the lowest true low (TA-Lib's CHOPTR). Defaults to "high_low".
+        range_method (str): The net range the summed True Range is divided by. Options are: "high_low" (the
+            highest high minus the lowest low), "true_range" (the highest true high minus the lowest true low,
+            TA-Lib's CHOPTR). Defaults to "high_low".
 
     Returns:
         pd.Series: Choppiness Index values, bounded between 0 and 100. Values above 61.8 are
@@ -1797,7 +1885,8 @@ def get_know_sure_thing(
     signal_moving_average: str = "simple",
 ) -> pd.DataFrame:
     """
-    Calculate the Know Sure Thing (KST) for a given price series.
+    Calculate the Know Sure Thing (KST): a weighted sum of four smoothed rates of change over increasing windows,
+    which shows the momentum of the major price cycles.
 
     The Know Sure Thing is a momentum oscillator developed by Martin Pring that combines
     four smoothed Rate of Change series, each calculated over a progressively longer lookback
@@ -1822,8 +1911,9 @@ def get_know_sure_thing(
     Reference: Pring, M.J. (1992). "Summed Rate of Change (KST)." Technical Analysis of
     Stocks & Commodities, 10(9), 365-369.
 
-    Referenced against TA-Lib's KST and KSTEXT
-    (https://ta-lib.org/functions/kst.html, https://ta-lib.org/functions/kstext.html).
+    Referenced against:
+    - TA-Lib, KST: https://ta-lib.org/functions/kst.html
+    - TA-Lib, KSTEXT: https://ta-lib.org/functions/kstext.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1835,11 +1925,16 @@ def get_know_sure_thing(
             series before summing. Defaults to the standard [1, 2, 3, 4].
         signal_window (int): Number of periods for the Simple Moving Average of the KST used
             as the signal line. Defaults to 9.
-        moving_average (str): The moving average that smooths each Rate of Change, one of
-            `MOVING_AVERAGES`: "simple", "exponential", "double_exponential", "triangular",
-            "weighted", "hull" or "kaufman_adaptive". Defaults to "simple".
-        signal_moving_average (str): The moving average of the signal line, one of
-            `MOVING_AVERAGES`. Defaults to "simple".
+        moving_average (str): The moving average that smooths each Rate of Change, one of `MOVING_AVERAGES`.
+            Options are: "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+            "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving Average),
+            "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman
+            Adaptive Moving Average). Defaults to "simple".
+        signal_moving_average (str): The moving average of the signal line, one of `MOVING_AVERAGES`. Options
+            are: "simple" (Simple Moving Average), "exponential" (Exponential Moving Average),
+            "double_exponential" (Double Exponential Moving Average), "triangular" (Triangular Moving Average),
+            "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman
+            Adaptive Moving Average). Defaults to "simple".
 
     Returns:
         pd.DataFrame: Know Sure Thing (KST and Signal Line) values, weighted sums of
@@ -1894,7 +1989,8 @@ def get_coppock_curve(
     wma_window: int = 10,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Coppock Curve for a given price series.
+    Calculate the Coppock Curve: a weighted moving average of the sum of a long and a short rate of change, which
+    shows long-term buying opportunities after a decline.
 
     The Coppock Curve is a long-term momentum indicator that Edwin Coppock designed for
     monthly closes of a stock index, to time buying after a bear market. He took the 11 and
@@ -1915,7 +2011,9 @@ def get_coppock_curve(
     Reference: Coppock, E.S.C. (1962). "Practical Relative Strength Charting." Trendex
     Research Group; first presented in Barron's, October 15, 1962.
 
-    Referenced against TA-Lib's COPPOCK (https://ta-lib.org/functions/coppock.html).
+    Referenced against:
+    - TA-Lib, COPPOCK: https://ta-lib.org/functions/coppock.html
+        Test: tests/technical/test_momentum_model.py::test_coppock_curve_matches_talib
 
     Notes:
         - The Rates of Change are decimals, as in `get_rate_of_change`, so the curve is a
@@ -1950,7 +2048,8 @@ def get_absolute_price_oscillator(
     moving_average: str = "exponential",
 ) -> pd.Series:
     """
-    Calculate the Absolute Price Oscillator (APO) for a given price series.
+    Calculate the Absolute Price Oscillator (APO): the difference between a fast and a slow moving average of the
+    prices, which shows the direction and momentum of a trend.
 
     The Absolute Price Oscillator is the difference between a short-term and a long-term
     moving average of price, in price units. With exponential moving averages it is the MACD
@@ -1969,21 +2068,26 @@ def get_absolute_price_oscillator(
     Signalert Corp.; Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed.
     McGraw-Hill ("Price Oscillator").
 
-    Referenced against TA-Lib's APO (https://ta-lib.org/functions/apo.html), with
-    the moving average as its `matype` (EMA by default).
+    Referenced against:
+    - TA-Lib, APO: https://ta-lib.org/functions/apo.html
+        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
 
     Notes:
         - Each moving average starts on its own first full window, so with EMAs seeded with a
           Simple Moving Average the APO starts on period `long_window` - 1 and equals the
           MACD line of `get_moving_average_convergence_divergence`.
+        - TA-Lib's APO takes the moving average as its moving average type, the exponential moving average by
+          default.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
         short_window (int): Number of periods for the short-term moving average.
         long_window (int): Number of periods for the long-term moving average.
-        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
-            "exponential", "double_exponential", "triangular", "weighted", "hull" or
-            "kaufman_adaptive". Defaults to "exponential".
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`. Options are: "simple" (Simple Moving
+            Average), "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential
+            Moving Average), "triangular" (Triangular Moving Average), "weighted" (Weighted Moving Average),
+            "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to
+            "exponential".
 
     Returns:
         pd.Series: APO values, in price units.
@@ -2000,7 +2104,8 @@ def get_absolute_price_oscillator(
 
 def get_momentum(prices_close: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Momentum (MOM) of a given price series.
+    Calculate the Momentum (MOM): the change of the price over a window, the speed at which the price moves in price
+    units.
 
     Momentum is the change in price over a fixed number of periods, in price units: the
     simplest measure of the speed of a move. Above zero the price is higher than `window`
@@ -2017,7 +2122,8 @@ def get_momentum(prices_close: pd.Series, window: int) -> pd.Series:
     Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York Institute
     of Finance.
 
-    Referenced against TA-Lib's MOM (https://ta-lib.org/functions/mom.html).
+    Referenced against:
+    - TA-Lib, MOM: https://ta-lib.org/functions/mom.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -2037,7 +2143,8 @@ def get_accelerator_oscillator(
     signal_window: int = 5,
 ) -> pd.Series:
     """
-    Calculate the Accelerator/Decelerator Oscillator (AC) for a given price series.
+    Calculate the Accelerator/Decelerator Oscillator (AC): the Awesome Oscillator minus its own average, which shows
+    whether momentum is speeding up or slowing down.
 
     The Accelerator Oscillator is the Awesome Oscillator minus its own 5-period Simple Moving
     Average. Where the Awesome Oscillator measures the momentum of the median price, the
@@ -2056,7 +2163,8 @@ def get_accelerator_oscillator(
     Reference: Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in
     Stocks, Bonds, and Commodities." Wiley; Williams, B. (1995). "Trading Chaos." Wiley.
 
-    Referenced against TA-Lib's AC (https://ta-lib.org/functions/ac.html).
+    Referenced against:
+    - TA-Lib, AC: https://ta-lib.org/functions/ac.html
 
     Notes:
         - The AC starts on period `long_window` + `signal_window` - 2, the first full window
@@ -2086,7 +2194,8 @@ def get_internal_bar_strength(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
 ) -> pd.Series:
     """
-    Calculate the Internal Bar Strength (IBS) of a given price series.
+    Calculate the Internal Bar Strength (IBS): where the close lies within the range of its period, from 0 (at the
+    low) to 1 (at the high).
 
     The Internal Bar Strength is where the close sits within the period's own range: 0 for
     a close on the low, 1 for a close on the high. It is a mean-reversion measure: a close
@@ -2102,7 +2211,8 @@ def get_internal_bar_strength(
     Reference: Pagonidis, A.S. (2014). "The IBS Effect: Mean Reversion in Equity ETFs."
     NAAIM Founders Award paper.
 
-    Referenced against TA-Lib's IBS (https://ta-lib.org/functions/ibs.html).
+    Referenced against:
+    - TA-Lib, IBS: https://ta-lib.org/functions/ibs.html
 
     Notes:
         - A period without a range (High equal to Low) has no IBS (NaN), where TA-Lib
@@ -2125,7 +2235,8 @@ def get_intraday_momentum_index(
     prices_open: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Intraday Momentum Index (IMI) for a given price series.
+    Calculate the Intraday Momentum Index (IMI): the gains of the closes over the opens against their losses, from 0
+    to 100, a Relative Strength Index of the candles.
 
     The Intraday Momentum Index is a Relative Strength Index of the moves within each
     period: it compares the sum of the bodies of the periods that closed above their open
@@ -2144,7 +2255,8 @@ def get_intraday_momentum_index(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's IMI (https://ta-lib.org/functions/imi.html).
+    Referenced against:
+    - TA-Lib, IMI: https://ta-lib.org/functions/imi.html
 
     Notes:
         - A window in which every period closed at its open has no IMI (NaN), where TA-Lib
@@ -2170,7 +2282,8 @@ def get_qstick(
     prices_open: pd.Series, prices_close: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Qstick indicator for a given price series.
+    Calculate the Qstick: the average of the close minus the open over a window, which shows whether candles have
+    been mostly rising or falling.
 
     Qstick is the moving average of the candlestick bodies, Close - Open, over the window.
     It turns the colour of the recent candles into a number: above zero the periods closed
@@ -2185,7 +2298,8 @@ def get_qstick(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's QSTICK (https://ta-lib.org/functions/qstick.html).
+    Referenced against:
+    - TA-Lib, QSTICK: https://ta-lib.org/functions/qstick.html
 
     Args:
         prices_open (pd.Series): Series of opening prices.
@@ -2200,7 +2314,8 @@ def get_qstick(
 
 def get_efficiency_ratio(prices_close: pd.Series, window: int) -> pd.Series:
     """
-    Calculate Kaufman's Efficiency Ratio (ER) for a given price series.
+    Calculate Kaufman's Efficiency Ratio (ER): the net change over a window as a share of the path travelled, from 0
+    (noise) to 1 (a straight trend).
 
     The Efficiency Ratio compares the net change in price over the window to the path price
     travelled to get there, the sum of the absolute changes of each period. A price that
@@ -2219,7 +2334,8 @@ def get_efficiency_ratio(prices_close: pd.Series, window: int) -> pd.Series:
     Reference: Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing
     Markets." McGraw-Hill.
 
-    Referenced against TA-Lib's ER (https://ta-lib.org/functions/er.html).
+    Referenced against:
+    - TA-Lib, ER: https://ta-lib.org/functions/er.html
 
     Notes:
         - The ratio is the one `get_kaufman_adaptive_moving_average` uses, except that a
@@ -2241,7 +2357,8 @@ def get_efficiency_ratio(prices_close: pd.Series, window: int) -> pd.Series:
 
 def get_vertical_horizontal_filter(prices_close: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Vertical Horizontal Filter (VHF) for a given price series.
+    Calculate the Vertical Horizontal Filter (VHF): the range of a window as a share of the path travelled, which
+    shows whether prices trend or move sideways.
 
     The Vertical Horizontal Filter tells a trending market from a congested one by dividing
     the range of the closes over the window (the vertical move) by the sum of the absolute
@@ -2258,7 +2375,8 @@ def get_vertical_horizontal_filter(prices_close: pd.Series, window: int) -> pd.S
     Reference: White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter."
     Futures Magazine, August 1991.
 
-    Referenced against TA-Lib's VHF (https://ta-lib.org/functions/vhf.html).
+    Referenced against:
+    - TA-Lib, VHF: https://ta-lib.org/functions/vhf.html
 
     Notes:
         - The range spans the last `window` closes and the path the last `window` changes,
@@ -2284,7 +2402,8 @@ def get_fisher_transform(
     prices_high: pd.Series, prices_low: pd.Series, window: int
 ) -> pd.DataFrame:
     """
-    Calculate the Fisher Transform of a given price series.
+    Calculate the Fisher Transform: the prices' position within their range turned into a near-normal distribution,
+    which makes the turning points sharper and easier to see.
 
     The Fisher Transform turns the position of the median price within its recent range into
     a series that is close to normally distributed. Prices are not normally distributed, so
@@ -2313,7 +2432,13 @@ def get_fisher_transform(
     Stocks & Commodities, 20(11); Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and
     Futures." Wiley.
 
-    Referenced against TA-Lib's FISHER (https://ta-lib.org/functions/fisher.html).
+    Referenced against:
+    - TA-Lib, FISHER: https://ta-lib.org/functions/fisher.html
+        Test: tests/technical/test_momentum_model.py::test_fisher_transform_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, fisher: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fisher.py#L36
+    - finta, FISH: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1827
 
     Notes:
         - A window in which the median price did not move has no range; its position is the
@@ -2376,8 +2501,8 @@ def get_inverse_fisher_transform_rsi(
     prices: pd.Series, rsi_window: int, wma_window: int
 ) -> pd.Series:
     """
-    Calculate the Inverse Fisher Transform of the Relative Strength Index of a given price
-    series.
+    Calculate the Inverse Fisher Transform of the RSI: the smoothed Relative Strength Index squeezed between -1 and
+    1, which makes its overbought and oversold signals clearer.
 
     The inverse Fisher transform (the hyperbolic tangent) squeezes a series into the range
     from -1 to 1, with most values close to the edges: applied to a rescaled and smoothed
@@ -2398,7 +2523,8 @@ def get_inverse_fisher_transform_rsi(
     Reference: Ehlers, J.F. (2004). "The Inverse Fisher Transform." Technical Analysis of
     Stocks & Commodities, 22(5).
 
-    finta: IFT_RSI (https://github.com/peerchemist/finta).
+    Shares similar logic:
+    - finta, IFT_RSI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L714
 
     Notes:
         - The RSI is that of `get_relative_strength_index` (Wilder's smoothing, seeded with
@@ -2434,7 +2560,8 @@ def get_kdj_indicator(
     d_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the KDJ indicator of a given price series.
+    Calculate the KDJ indicator: the Stochastic Oscillator's %K and %D with the J line that leads them, to show
+    overbought and oversold levels and turning points.
 
     The KDJ indicator is a stochastic oscillator, widely used in Chinese and other Asian
     markets, that smooths the raw stochastic with Wilder's average instead of a simple one
@@ -2459,7 +2586,12 @@ def get_kdj_indicator(
     Reference: The KDJ has no single primary source; it extends Lane's stochastic, see Lane,
     G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
-    Referenced against TA-Lib's KDJ (https://ta-lib.org/functions/kdj.html).
+    Referenced against:
+    - TA-Lib, KDJ: https://ta-lib.org/functions/kdj.html
+        Test: tests/technical/test_momentum_model.py::test_kdj_indicator_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, kdj: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/kdj.py#L17
 
     Notes:
         - Every Wilder average is seeded with the simple average of its first values (see
@@ -2500,7 +2632,8 @@ def get_premier_stochastic_oscillator(
     smooth_window: int,
 ) -> pd.Series:
     """
-    Calculate the Premier Stochastic Oscillator (PSO) of a given price series.
+    Calculate the Premier Stochastic Oscillator (PSO): the smoothed and normalised Stochastic %K squeezed between -1
+    and 1, which gives clearer overbought and oversold signals.
 
     The Premier Stochastic Oscillator rescales a short stochastic around zero, smooths it
     twice with an exponential average and squeezes the result between -1 and 1 with the
@@ -2524,7 +2657,9 @@ def get_premier_stochastic_oscillator(
     Reference: Leibfarth, L. (2008). "Premier Stochastic Oscillator." Technical Analysis of
     Stocks & Commodities, 26(8).
 
-    Referenced against TA-Lib's PSO (https://ta-lib.org/functions/pso.html).
+    Referenced against:
+    - TA-Lib, PSO: https://ta-lib.org/functions/pso.html
+        Test: tests/technical/test_momentum_model.py::test_premier_stochastic_oscillator_matches_talib
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2565,7 +2700,8 @@ def get_stochastic_momentum_index(
     signal_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Stochastic Momentum Index (SMI) of a given price series.
+    Calculate the Stochastic Momentum Index (SMI): where the close lies relative to the middle of the high-low range
+    of a window, smoothed, from -100 to 100.
 
     The Stochastic Momentum Index measures where the close sits relative to the midpoint of
     the high-low range, rather than to its low as the stochastic does, and smooths both the
@@ -2588,7 +2724,9 @@ def get_stochastic_momentum_index(
     Reference: Blau, W. (1993). "Stochastic Momentum." Technical Analysis of Stocks &
     Commodities, 11(1); Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
 
-    Referenced against TA-Lib's SMI (https://ta-lib.org/functions/smi.html).
+    Referenced against:
+    - TA-Lib, SMI: https://ta-lib.org/functions/smi.html
+        Test: tests/technical/test_momentum_model.py::test_stochastic_momentum_index_matches_talib
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2645,7 +2783,8 @@ def get_smi_ergodic_indicator(
     prices: pd.Series, long_window: int, short_window: int, signal_window: int
 ) -> pd.DataFrame:
     """
-    Calculate the SMI Ergodic Indicator and Oscillator of a given price series.
+    Calculate the SMI Ergodic Indicator and Oscillator: the True Strength Index with its signal line and their
+    difference, which show the direction and strength of momentum.
 
     The SMI Ergodic Indicator is Blau's True Strength Index with short smoothing periods,
     and its signal line an EMA of the indicator. The SMI Ergodic Oscillator is the
@@ -2667,7 +2806,9 @@ def get_smi_ergodic_indicator(
 
     Reference: Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley.
 
-    pandas-ta-classic: smi (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, smi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smi.py#L13
+        Test: tests/technical/test_momentum_model.py::test_smi_ergodic_indicator_matches_pandas_ta_classic
 
     Notes:
         - The indicator is `get_true_strength_index` with these windows and on its scale of
@@ -2709,7 +2850,8 @@ def get_schaff_trend_cycle(
     factor: float = 0.5,
 ) -> pd.Series:
     """
-    Calculate the Schaff Trend Cycle (STC) of a given price series.
+    Calculate the Schaff Trend Cycle (STC): a stochastic of the MACD, applied twice, from 0 to 100, which shows the
+    turns of a trend faster than the MACD.
 
     The Schaff Trend Cycle applies a smoothed stochastic twice to the MACD line: it measures
     where the MACD sits within its range over the last cycle, smooths that, and does the
@@ -2737,7 +2879,14 @@ def get_schaff_trend_cycle(
     FX-Strategy.com; Schaff, D. (2002). "Catching Currency Moves with the Schaff Trend Cycle
     Indicator." Chartpoint, July/August 2002.
 
-    Referenced against TA-Lib's STC (https://ta-lib.org/functions/stc.html).
+    Referenced against:
+    - TA-Lib, STC: https://ta-lib.org/functions/stc.html
+        Test: tests/technical/test_momentum_model.py::test_schaff_trend_cycle_matches_talib_once_the_seeds_decayed
+
+    Shares similar logic:
+    - pandas-ta-classic, stc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/stc.py#L100
+    - ta, STCIndicator: https://github.com/bukosabino/ta/blob/0.11.0/ta/trend.py#L1093
+    - finta, STC: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2121
 
     Notes:
         - The EMAs of the MACD are seeded with the Simple Moving Average of their first
@@ -2809,7 +2958,8 @@ def get_wavetrend_oscillator(
     signal_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the WaveTrend Oscillator of a given price series.
+    Calculate the WaveTrend Oscillator: how far the typical price lies from its average in units of its average
+    distance, smoothed, to show overbought and oversold levels and turning points.
 
     The WaveTrend Oscillator is a Commodity Channel Index built from exponential averages:
     the distance of the typical price from its EMA, divided by 0.015 times the EMA of that
@@ -2832,8 +2982,12 @@ def get_wavetrend_oscillator(
 
     Reference: LazyBear (2014). "WaveTrend Oscillator [WT]." TradingView published script.
 
-    Referenced against TA-Lib's WAVETREND
-    (https://ta-lib.org/functions/wavetrend.html).
+    Referenced against:
+    - TA-Lib, WAVETREND: https://ta-lib.org/functions/wavetrend.html
+        Test: tests/technical/test_momentum_model.py::test_wavetrend_oscillator_matches_talib
+
+    Shares similar logic:
+    - finta, WTO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1802
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2879,7 +3033,8 @@ def get_derivative_oscillator(
     signal_window: int,
 ) -> pd.Series:
     """
-    Calculate the Derivative Oscillator of a given price series.
+    Calculate the Derivative Oscillator: a double-smoothed Relative Strength Index minus its average, which shows
+    the momentum of the RSI itself.
 
     The Derivative Oscillator smooths the Relative Strength Index twice with an exponential
     average and subtracts a simple average of the result, the way the MACD histogram
@@ -2900,7 +3055,9 @@ def get_derivative_oscillator(
     Problem." MTA Journal, 42; Brown, C.M. (1999). "Technical Analysis for the Trading
     Professional." McGraw-Hill.
 
-    Referenced against TA-Lib's DOSC (https://ta-lib.org/functions/dosc.html).
+    Referenced against:
+    - TA-Lib, DOSC: https://ta-lib.org/functions/dosc.html
+        Test: tests/technical/test_momentum_model.py::test_derivative_oscillator_matches_talib
 
     Notes:
         - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
@@ -2935,7 +3092,8 @@ def get_swing_index(
     limit_move: float,
 ) -> pd.DataFrame:
     """
-    Calculate Wilder's Swing Index and Accumulative Swing Index of a given price series.
+    Calculate Wilder's Swing Index and Accumulative Swing Index: the strength of each period's move compared with
+    the previous period, and its running total, which shows the real direction of the prices.
 
     The Swing Index weighs the change of the close against the previous period's open and
     close and against the range of the current period, to measure the real direction of a
@@ -2964,8 +3122,10 @@ def get_swing_index(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research, section VIII "The Swing Index."
 
-    Referenced against TA-Lib's SI and ASI (https://ta-lib.org/functions/si.html,
-    https://ta-lib.org/functions/asi.html).
+    Referenced against:
+    - TA-Lib, SI: https://ta-lib.org/functions/si.html
+        Test: tests/technical/test_momentum_model.py::test_swing_index_matches_talib
+    - TA-Lib, ASI: https://ta-lib.org/functions/asi.html
 
     Notes:
         - The first period has no previous period and no Swing Index, so the Accumulative
@@ -3032,7 +3192,8 @@ def get_quantitative_qualitative_estimation(
     prices: pd.Series, window: int, smooth_window: int, multiplier: float
 ) -> pd.DataFrame:
     """
-    Calculate the Quantitative Qualitative Estimation (QQE) of a given price series.
+    Calculate the Quantitative Qualitative Estimation (QQE): a smoothed Relative Strength Index with a trailing stop
+    line a multiple of its own average move away, whose crossings show the turns of a trend.
 
     The QQE smooths the Relative Strength Index with an exponential average (the fast line)
     and trails it with a stop line (the QQE, the slow line), placed a multiple of the RSI's
@@ -3059,7 +3220,9 @@ def get_quantitative_qualitative_estimation(
     Reference: The QQE is a community indicator of the MetaTrader platform without a
     published primary source.
 
-    pandas-ta-classic: qqe (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, qqe: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/qqe.py#L71
+        Test: tests/technical/test_momentum_model.py::test_quantitative_qualitative_estimation_matches_pandas_ta_classic
 
     Notes:
         - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
@@ -3130,7 +3293,8 @@ def get_dynamic_momentum_index(
     maximum_window: int,
 ) -> pd.Series:
     """
-    Calculate the Dynamic Momentum Index (DMI) of a given price series.
+    Calculate the Dynamic Momentum Index (DMI): a Relative Strength Index whose window shortens when volatility
+    rises, so it reacts faster in volatile markets.
 
     The Dynamic Momentum Index is a Relative Strength Index whose period changes with the
     volatility: the period shortens when the recent volatility is above its average and
@@ -3152,7 +3316,8 @@ def get_dynamic_momentum_index(
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    finta: DYMI (https://github.com/peerchemist/finta).
+    Shares similar logic:
+    - finta, DYMI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L752
 
     Notes:
         - The period changes every period, which leaves no single period for Wilder's
@@ -3215,7 +3380,8 @@ def get_dynamic_momentum_index(
 
 def get_price_zone_oscillator(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Price Zone Oscillator (PZO) of a given price series.
+    Calculate the Price Zone Oscillator (PZO): the share of the recent closes that moved up, from -100 to 100, which
+    shows overbought and oversold levels and the direction of a trend.
 
     The Price Zone Oscillator counts each close as positive when it closed above the
     previous close and as negative when it closed below, and divides the EMA of these signed
@@ -3236,7 +3402,8 @@ def get_price_zone_oscillator(prices: pd.Series, window: int) -> pd.Series:
     Reference: Khalil, W. & Steckler, D. (2011). "Entering The Price Zone." Technical
     Analysis of Stocks & Commodities, 29(6), 28-35.
 
-    finta: PZO (https://github.com/peerchemist/finta).
+    Shares similar logic:
+    - finta, PZO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1542
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -3266,7 +3433,8 @@ def get_connors_relative_strength_index(
     prices: pd.Series, window: int = 3, streak_window: int = 2, rank_window: int = 100
 ) -> pd.Series:
     """
-    Calculate the Connors Relative Strength Index (ConnorsRSI) of a given price series.
+    Calculate the Connors Relative Strength Index (ConnorsRSI): the average of a short RSI, the RSI of the streak of
+    rises or falls and the rank of the latest change, which shows short-term overbought and oversold levels.
 
     ConnorsRSI averages three short-term measures of how overbought or oversold a price is,
     each on a scale of 0 to 100: a 3-period RSI of the price, a 2-period RSI of the streak
@@ -3292,7 +3460,9 @@ def get_connors_relative_strength_index(
     ConnorsRSI." Connors Research Trading Strategy Series; Connors, L. & Alvarez, C. (2009).
     "Short Term Trading Strategies That Work." TradingMarkets Publishing.
 
-    Referenced against TA-Lib's CRSI (https://ta-lib.org/functions/crsi.html).
+    Referenced against:
+    - TA-Lib, CRSI: https://ta-lib.org/functions/crsi.html
+        Test: tests/technical/test_momentum_model.py::test_connors_relative_strength_index_matches_talib
 
     Notes:
         - Equals TA-Lib's CRSI.
@@ -3344,7 +3514,8 @@ def get_inertia(
     method: str = "original",
 ) -> pd.Series:
     """
-    Calculate Dorsey's Inertia of a given price series.
+    Calculate Dorsey's Inertia: the Relative Volatility Index smoothed with a linear regression, which shows the
+    direction of a trend, up above 50 and down below it.
 
     Inertia is the Relative Volatility Index smoothed with a linear regression: the end point
     of the least-squares line through the last `window` RVI values. Dorsey regarded a trend
@@ -3365,10 +3536,12 @@ def get_inertia(
     Reference: Dorsey, D. (1995). "Refining the Relative Volatility Index." Technical
     Analysis of Stocks & Commodities, 13(9).
 
-    pandas-ta-classic: inertia (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, inertia: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/inertia.py#L61
+        Test: tests/technical/test_momentum_model.py::test_inertia_matches_pandas_ta_classic
 
     Notes:
-        - Equals pandas-ta-classic's inertia with mamode="rma" and a `std_window` equal to
+        - Equals pandas-ta-classic's inertia with Wilder's smoothing and a `std_window` equal to
           `rvi_window`. By default pandas-ta-classic smooths its RVI with an EMA and takes
           the standard deviation over the RVI window, where the Toolkit follows Dorsey (and
           TA-Lib's RVI) with Wilder's smoothing over 14 periods of a 10-period standard
@@ -3383,8 +3556,8 @@ def get_inertia(
         rvi_window (int): Number of periods of Wilder's smoothing in the RVI. Defaults to 14.
         std_window (int): Number of periods of the standard deviation in the RVI.
             Defaults to 10.
-        method (str): "original" for the RVI of the close or "refined" for the average of
-            the RVI of the highs and of the lows. Defaults to "original".
+        method (str): The Relative Volatility Index it uses. Options are: "original" (the RVI of the close),
+            "refined" (the average of the RVI of the highs and of the lows). Defaults to "original".
 
     Returns:
         pd.Series: Inertia values, around 0 to 100.
@@ -3411,8 +3584,7 @@ def get_bias(
     prices: pd.Series, window: int = 26, moving_average: str = "simple"
 ) -> pd.Series:
     """
-    Calculate the Bias of a given price series: the distance of the price from its moving
-    average, as a share of that average.
+    Calculate the Bias: the distance of the price from its moving average, as a share of that average.
 
     The Bias (deviation rate) is widely used in Asian markets: a price far above its
     average is read as overbought and likely to return to it, far below as oversold. The
@@ -3430,8 +3602,9 @@ def get_bias(
     platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
     which notes the same.
 
-    Referenced against pandas-ta-classic's bias
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, bias: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/bias.py#L12
+        Test: tests/technical/test_momentum_model.py::test_bias_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's bias. Both give a decimal (0.05 is 5% above the
@@ -3440,9 +3613,11 @@ def get_bias(
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods of the moving average. Defaults to 26.
-        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
-            "exponential", "double_exponential", "triangular", "weighted", "hull" or
-            "kaufman_adaptive". Defaults to "simple".
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`. Options are: "simple" (Simple Moving
+            Average), "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential
+            Moving Average), "triangular" (Triangular Moving Average), "weighted" (Weighted Moving Average),
+            "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to
+            "simple".
 
     Returns:
         pd.Series: Bias values as decimals.
@@ -3463,7 +3638,11 @@ def get_brar(
     window: int = 26,
 ) -> pd.DataFrame:
     """
-    Calculate the AR and BR sentiment indicators (BRAR) of a given price series.
+    Calculate the AR and BR sentiment indicators (BRAR), which show how popular a security is and how willing the
+    market is to buy it.
+
+    They set how far the prices rose against how far they fell, measured from the open (AR) and from the previous
+    close (BR).
 
     AR (popularity) compares how far the price rose above the open with how far it fell below
     it over the window, and BR (willingness to buy) does the same against the previous
@@ -3482,8 +3661,9 @@ def get_brar(
     trading platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
     which notes the same.
 
-    Referenced against pandas-ta-classic's brar
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, brar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/brar.py#L18
+        Test: tests/technical/test_momentum_model.py::test_brar_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's brar, on its scale of 100 for a balance. A window
@@ -3527,7 +3707,8 @@ def get_pretty_good_oscillator(
     window: int = 14,
 ) -> pd.Series:
     """
-    Calculate Johnson's Pretty Good Oscillator (PGO) of a given price series.
+    Calculate Johnson's Pretty Good Oscillator (PGO): how far the close lies from its moving average, in units of
+    the Average True Range, which shows breakouts from a range.
 
     The Pretty Good Oscillator measures the distance of the close from its Simple Moving
     Average in units of the average true range, so the distance compares across securities
@@ -3547,8 +3728,9 @@ def get_pretty_good_oscillator(
     Reference: Johnson, M. "Pretty Good Oscillator", as documented in FM Labs' technical
     analysis library (https://www.fmlabs.com/reference/default.htm?url=PGO.htm).
 
-    Referenced against pandas-ta-classic's pgo
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, pgo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/pgo.py#L14
+        Test: tests/technical/test_momentum_model.py::test_pretty_good_oscillator_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's pgo once Wilder's smoothing of the ATR has forgotten
@@ -3581,7 +3763,8 @@ def get_psychological_line(
     method: str = "close",
 ) -> pd.Series:
     """
-    Calculate the Psychological Line (PSL) of a given price series.
+    Calculate the Psychological Line (PSL): the share of periods in a window that closed higher, which shows whether
+    buyers or sellers have the upper hand.
 
     The Psychological Line is the percentage of the last `window` periods that closed
     higher, a measure of the mood of the market: above 75 many periods in a row went up and
@@ -3600,8 +3783,9 @@ def get_psychological_line(
     trading platforms. The definition is the one of pandas-ta (Kevin Johnson), continued as pandas-ta-classic,
     which notes the same.
 
-    Referenced against pandas-ta-classic's psl
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, psl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/psl.py#L19
+        Test: tests/technical/test_momentum_model.py::test_psychological_line_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's psl, also on the scale of 0 to 100. The first period
@@ -3611,8 +3795,8 @@ def get_psychological_line(
         prices_open (pd.Series): Series of opening prices, used with `method` "open".
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods counted. Defaults to 12.
-        method (str): "close" to count the periods that closed above the previous close,
-            or "open" for those that closed above their open. Defaults to "close".
+        method (str): What counts as an up period. Options are: "close" (a close above the previous close),
+            "open" (a close above the period's open). Defaults to "close".
 
     Returns:
         pd.Series: PSL values, between 0 and 100.
@@ -3640,7 +3824,8 @@ def get_volatility_based_momentum(
     atr_window: int = 26,
 ) -> pd.Series:
     """
-    Calculate the Volatility-Based Momentum (VBM) of a given price series.
+    Calculate the Volatility-Based Momentum (VBM): the change of the price over a window in units of the Average
+    True Range, which compares momentum across tickers of different volatility.
 
     Volatility-Based Momentum is the change in price over `window` periods in units of the
     Average True Range, instead of as a share of the earlier price as in the Rate of Change.
@@ -3659,7 +3844,8 @@ def get_volatility_based_momentum(
     the measure is the momentum of Pring (1991) normalized by Wilder's (1978) Average True
     Range.
 
-    finta: VBM (https://github.com/peerchemist/finta).
+    Shares similar logic:
+    - finta, VBM: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L664
 
     Notes:
         - finta documents this formula, but its VBM subtracts the earlier close twice
@@ -3693,7 +3879,8 @@ def get_archer_moving_average_trends(
     moving_average: str = "exponential",
 ) -> pd.DataFrame:
     """
-    Calculate Archer's Moving Averages Trends (AMAT) of a given price series.
+    Calculate Archer's Moving Averages Trends (AMAT): whether a fast and a slow moving average both rise (a long
+    run) or both fall (a short run), which shows the direction of a trend.
 
     AMAT flags a long run when the short moving average rose over the last `lookback`
     periods while the long one moved (a rising long average confirms the trend, a falling
@@ -3714,8 +3901,9 @@ def get_archer_moving_average_trends(
     Reference: Archer's TradingView script "Archer Moving Averages Trends", which defines the
     indicator; there is no published primary source.
 
-    Referenced against pandas-ta-classic's amat
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, amat: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/amat.py#L15
+        Test: tests/technical/test_momentum_model.py::test_archer_moving_average_trends_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's amat (its long_run and short_run). Both flags are
@@ -3727,9 +3915,11 @@ def get_archer_moving_average_trends(
         long_window (int): Number of periods of the long moving average. Defaults to 21.
         lookback (int): Number of periods over which the averages rise or fall.
             Defaults to 2.
-        moving_average (str): The moving average, one of `MOVING_AVERAGES`: "simple",
-            "exponential", "double_exponential", "triangular", "weighted", "hull" or
-            "kaufman_adaptive". Defaults to "exponential".
+        moving_average (str): The moving average, one of `MOVING_AVERAGES`. Options are: "simple" (Simple Moving
+            Average), "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential
+            Moving Average), "triangular" (Triangular Moving Average), "weighted" (Weighted Moving Average),
+            "hull" (Hull Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average). Defaults to
+            "exponential".
 
     Returns:
         pd.DataFrame: Long Run and Short Run, 1 when the run holds and 0 otherwise.
@@ -3760,7 +3950,8 @@ def get_ttm_trend(
     window: int = 6,
 ) -> pd.Series:
     """
-    Calculate Carter's TTM Trend of a given price series.
+    Calculate Carter's TTM Trend: whether the close lies above the average midpoint of the previous bars (1) or not
+    (-1), which shows the direction of the trend.
 
     The TTM Trend colours each bar by the trend: up (1) when the close is above the average
     midpoint (High + Low) / 2 of the previous `window` bars, and down (-1) when it is not.
@@ -3778,8 +3969,9 @@ def get_ttm_trend(
     Reference: Carter, J.F. (2005). "Mastering the Trade: Proven Techniques for Profiting
     from Intraday and Swing Trading Setups." McGraw-Hill.
 
-    Referenced against pandas-ta-classic's ttm_trend
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, ttm_trend: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/ttm_trend.py#L12
+        Test: tests/technical/test_momentum_model.py::test_ttm_trend_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's ttm_trend. The TTM Trend starts on period `window`,
@@ -3803,8 +3995,8 @@ def get_ttm_trend(
 
 def get_correlation_trend_indicator(prices: pd.Series, window: int = 20) -> pd.Series:
     """
-    Calculate the Correlation Trend Indicator (CTI) of a price series: the Pearson
-    correlation of the prices with a straight line rising over time.
+    Calculate the Correlation Trend Indicator (CTI) of a price series: the Pearson correlation of the prices with a
+    straight line rising over time.
 
     Ehlers (2020) measures the trend by how closely the prices follow an upward-sloping
     line: +1 when they rise in a straight line, -1 when they fall in one, and around 0 when
@@ -3821,7 +4013,10 @@ def get_correlation_trend_indicator(prices: pd.Series, window: int = 20) -> pd.S
     Reference: Ehlers, J.F. (2020). "Correlation As A Trend Indicator." Technical Analysis of
     Stocks & Commodities, 38(5), 24-27.
 
-    Referenced against TA-Lib's CTI (https://ta-lib.org/functions/cti.html).
+    Referenced against:
+    - TA-Lib, CTI: https://ta-lib.org/functions/cti.html
+        Test: tests/technical/test_momentum_model.py::test_correlation_trend_indicator_matches_talib
+    - pandas-ta-classic, cti: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cti.py#L12
 
     Notes:
         - Equals TA-Lib's CTI and pandas-ta-classic's cti. TA-Lib defaults to a window of
@@ -3858,8 +4053,8 @@ def get_correlation_trend_indicator(prices: pd.Series, window: int = 20) -> pd.S
 
 def get_forecast_oscillator(prices: pd.Series, window: int = 5) -> pd.Series:
     """
-    Calculate the Forecast Oscillator of a price series: how far the price lies from the
-    Time Series Forecast made for it one period earlier, as a share of the price.
+    Calculate the Forecast Oscillator of a price series: how far the price lies from the Time Series Forecast made
+    for it one period earlier, as a share of the price.
 
     Chande's Forecast Oscillator measures the error of the linear regression forecast: it
     is positive when the price comes in above the forecast of the previous period and
@@ -3876,7 +4071,14 @@ def get_forecast_oscillator(prices: pd.Series, window: int = 5) -> pd.Series:
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's FOSC (https://ta-lib.org/functions/fosc.html).
+    Referenced against:
+    - TA-Lib, FOSC: https://ta-lib.org/functions/fosc.html
+        Test: tests/technical/test_momentum_model.py::test_forecast_oscillator_matches_talib
+    - Tulip Indicators, fosc: https://tulipindicators.org/fosc
+
+    Shares similar logic:
+    - pandas-ta-classic, fosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fosc.py#L12
+    - pandas-ta-classic, cfo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cfo.py#L17
 
     Notes:
         - Equals TA-Lib's FOSC and Tulip Indicators' fosc divided by 100: the Toolkit gives
@@ -3905,8 +4107,8 @@ def get_projection_oscillator(
     window: int = 14,
 ) -> pd.Series:
     """
-    Calculate the Projection Oscillator of a price series: where the close lies within
-    Widner's Projection Bands, 0 on the lower band and 1 on the upper band.
+    Calculate the Projection Oscillator of a price series: where the close lies within Widner's Projection Bands, 0
+    on the lower band and 1 on the upper band.
 
     Widner (1995) projects every high and low of the window forward to the latest period
     along the least-squares slope of the highs and of the lows over the window. The upper
@@ -3927,7 +4129,8 @@ def get_projection_oscillator(
     Reference: Widner, M. (1995). "Signaling Change with Projection Bands." Technical Analysis
     of Stocks & Commodities, 13(7), 275-281.
 
-    pandas-ta-classic: po (https://github.com/xgboosted/pandas-ta-classic).
+    Shares similar logic:
+    - pandas-ta-classic, po: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/po.py#L12
 
     Notes:
         - Widner gives the oscillator from 0 to 100; the Toolkit gives a decimal from 0 to 1.
@@ -3978,7 +4181,8 @@ def get_trend_detection_index(
     prices: pd.Series, window: int = 20, multiple: int = 2
 ) -> pd.DataFrame:
     """
-    Calculate the Trend Detection Index (TDI) and its Direction Indicator of a given price series.
+    Calculate the Trend Detection Index (TDI) and its Direction Indicator: how strongly the momentum keeps one sign
+    over a window, which shows whether the prices trend or consolidate and in which direction.
 
     M.H. Pee's Trend Detection Index tells a trending market from a consolidating one. It
     compares the net momentum over the window with how much the momentum moved over a longer
@@ -3999,7 +4203,8 @@ def get_trend_detection_index(
     Reference: Pee, M.H. (2001). "Trend Detection Index." Technical Analysis of Stocks &
     Commodities, 19(10).
 
-    Referenced against TTR's TDI (https://cran.r-project.org/package=TTR).
+    Referenced against:
+    - TTR (R), TDI: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/TDI.R#L63
 
     Notes:
         - Every sum covers momentum values only, so the TDI starts on period
@@ -4037,7 +4242,8 @@ def get_dv_intermediate_oscillator(
     prices: pd.Series, window: int = 252, magnitude_weight: float = 0.8
 ) -> pd.DataFrame:
     """
-    Calculate David Varadi's DV Intermediate Oscillator (DVI) of a given price series.
+    Calculate David Varadi's DV Intermediate Oscillator (DVI): a blend of rankings of how far the price stands from
+    its short average and of the balance of up and down days, from 0 to 1, which shows how stretched the price is.
 
     The DVI is a smooth oscillator between 0 and 1 that combines two rankings over the last
     `window` periods. The magnitude ranks how far the price stands above or below its 3-period
@@ -4064,13 +4270,14 @@ def get_dv_intermediate_oscillator(
     Reference: Varadi, D. (2009). "What is the DVI?" CSS Analytics, December 13, 2009
     (https://cssanalytics.wordpress.com/2009/12/13/what-is-the-dvi/).
 
-    Referenced against TTR's DVI (https://cran.r-project.org/package=TTR).
+    Referenced against:
+    - TTR (R), DVI: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/DVI.R#L50
 
     Notes:
         - The Percent Rank compares the latest value with the `window` values before it and
           lies between 0 (a new low) and 1 (a new high). TTR's DVI ranks within a window of `n`
           values that includes the latest one and counts it, and equal values, as lower
-          (`exact.multiplier = 1`), so its rank lies between 1/n and 1. Without equal values,
+          (an exact multiplier of 1), so its rank lies between 1/n and 1. Without equal values,
           TTR's rank over n = window + 1 values equals (window * Percent Rank + 1) / (window + 1).
         - An unchanged close counts as a down day, as in TTR's DVI.
 

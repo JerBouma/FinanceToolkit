@@ -19,8 +19,10 @@ def get_event_study(
     post_event_days: int = 10,
 ) -> dict:
     """
-    Perform a market-model event study around a single event date, following the
-    methodology in MacKinlay, A.C. (1997), "Event Studies in Economics and Finance,"
+    Perform a market-model event study around a single event date: the return of a stock
+    around an event beyond what its relation with the market explains (the abnormal return).
+
+    The method follows MacKinlay, A.C. (1997), "Event Studies in Economics and Finance,"
     Journal of Economic Literature, 35(1), 13-39 -- the canonical reference and still
     the dominant approach used to measure the stock-price impact of corporate events
     (earnings announcements, M&A deals, index additions/deletions, dividend changes,

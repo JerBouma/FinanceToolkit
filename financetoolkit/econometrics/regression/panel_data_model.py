@@ -285,8 +285,10 @@ def get_fixed_effects(
     time_effects: bool = False,
 ) -> dict:
     """
-    Fit a Fixed Effects ("within") estimator of `y` on `x` for panel data, via
-    `linearmodels.panel.PanelOLS`.
+    Fit a Fixed Effects ("within") estimator for panel data: how a series moves with its
+    regressors within every entity, after removing what is specific to each entity.
+
+    The model is fitted with linearmodels' PanelOLS.
 
     Also known as: within estimator, FE, least squares dummy variable (LSDV)
     estimator (numerically identical to, but far cheaper than, running OLS with a
@@ -304,7 +306,7 @@ def get_fixed_effects(
     - y~_it = y_it - ybar_i.,  x~_it = x_it - xbar_i.  (entity_effects)
     - beta_hat = (X~'X~)^-1 X~'y~
 
-    `time_effects=True` additionally (or instead) demeans by the time-period mean,
+    Time effects additionally (or instead) demean by the time-period mean,
     controlling for anything common to all entities at a given time (e.g. a
     market-wide shock) the same way. Because the entity/time intercepts are
     absorbed rather than estimated as coefficients, they are recovered separately
@@ -470,9 +472,11 @@ def get_random_effects(
     x: pd.DataFrame | pd.Series,
 ) -> dict:
     """
-    Fit a Random Effects estimator of `y` on `x` for panel data, via
-    `linearmodels.panel.RandomEffects` (Swamy-Arora feasible Generalized Least
-    Squares).
+    Fit a Random Effects estimator for panel data: how a series moves with its regressors
+    across entities whose own effects are random and unrelated to the regressors.
+
+    The model is fitted with linearmodels' RandomEffects (Swamy-Arora feasible Generalized
+    Least Squares).
 
     Also known as: RE, GLS panel estimator, Swamy-Arora estimator.
 
@@ -599,8 +603,9 @@ def get_hausman_test(
     variance: str = "separate",
 ) -> pd.Series:
     """
-    Calculate the Hausman specification test comparing a Fixed Effects and a
-    Random Effects fit of the same panel data model.
+    Calculate the Hausman specification test: whether the Fixed Effects and Random Effects
+    fits of the same panel data model differ by more than chance, so that Random Effects is
+    inconsistent.
 
     Also known as: Hausman specification test, Hausman-Wu test.
 
@@ -614,17 +619,17 @@ def get_hausman_test(
     estimators' coefficients differ by more than sampling variation would explain:
 
     - H = (b_FE - b_RE)' * [Var(b_FE) - Var(b_RE)]^-1 * (b_FE - b_RE)
-    - With variance="efficient": Var(b_FE) * s²_RE / s²_FE in place of Var(b_FE)
-    - With variance="consistent": Var(b_RE) * s²_FE / s²_RE in place of Var(b_RE)
+    - With the efficient variance: Var(b_FE) * s²_RE / s²_FE in place of Var(b_FE)
+    - With the consistent variance: Var(b_RE) * s²_FE / s²_RE in place of Var(b_RE)
 
     Where s²_FE and s²_RE are the residual variances of the two fits. Each model's own
-    variance ("separate", the statistic of Hausman 1978) can make Var(b_FE) - Var(b_RE)
+    variance (the separate variances, the statistic of Hausman 1978) can make Var(b_FE) - Var(b_RE)
     not positive definite in a sample, and H negative. A negative H means that the data do
     not meet the assumptions of the test rather than that the two models agree, so its
     p-value and preference are NaN. Basing both variances on one disturbance variance, that
-    of the efficient Random Effects fit ("efficient", Stata's `sigmamore`) or of the
-    consistent Fixed Effects fit ("consistent", Stata's `sigmaless`), keeps the difference
-    positive semi-definite in the usual case and gives a statistic where "separate" does not.
+    of the efficient Random Effects fit (Stata's sigmamore) or of the consistent Fixed
+    Effects fit (Stata's sigmaless), keeps the difference positive semi-definite in the
+    usual case and gives a statistic where the separate variances do not.
 
     Under the null hypothesis that Random Effects' exogeneity assumption holds
     (and is therefore consistent AND efficient), `H` is asymptotically
@@ -635,10 +640,8 @@ def get_hausman_test(
     preferred, even though it discards the between-entity variation Random
     Effects would otherwise use.
 
-    Neither `linearmodels` nor `statsmodels` ships a single Hausman-test function
-    for comparing separately fitted `PanelOLS`/`RandomEffects` results -- this
-    combines their `.params`/`.cov` directly via the standard formula above, the
-    usual practice recommended in the `linearmodels` documentation itself.
+    The test combines the coefficients and covariances of the two fits with the formula
+    above.
 
     Args:
         y (pd.Series | pd.DataFrame): The dependent variable. Either a `pd.Series`
@@ -646,9 +649,10 @@ def get_hausman_test(
         entity x time (one row per entity, one column per time period).
         x (pd.DataFrame | pd.Series): The independent variable(s)/regressor(s), in
         the same `(entity, time)` shape as `y`.
-        variance (str, optional): The variances compared: "separate" (each model's own),
-        "efficient" (both based on the residual variance of Random Effects) or "consistent"
-        (both based on the residual variance of Fixed Effects). Defaults to "separate".
+        variance (str, optional): The variances compared. Options are: "separate" (each
+        model's own), "efficient" (both based on the residual variance of Random Effects),
+        "consistent" (both based on the residual variance of Fixed Effects). Defaults to
+        "separate".
 
     Returns:
         pd.Series: The Hausman statistic, its degrees of freedom, its p-value, and

@@ -33,8 +33,11 @@ def get_linear_regression(prices: pd.Series, window: int = 14) -> pd.DataFrame:
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE
-    and TSF (https://ta-lib.org/functions/linearreg.html).
+    Referenced against:
+    - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
+        Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
+    - Tulip Indicators, linreg: https://tulipindicators.org/linreg
+    - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
     Notes:
         - Equals TA-Lib's LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE
@@ -80,8 +83,10 @@ def get_linear_regression(prices: pd.Series, window: int = 14) -> pd.DataFrame:
 
 def get_slope(prices: pd.Series, window: int = 1, as_angle: bool = False) -> pd.Series:
     """
-    Calculate the Slope of a price series: the average change per period over a window,
-    the rise over the run of the line between the price `window` periods ago and the latest.
+    Calculate the Slope of a price series: the average change per period over a window.
+
+    The slope is the rise over the run of the line between the price a window ago and the
+    latest.
 
     The formula is as follows:
 
@@ -93,13 +98,13 @@ def get_slope(prices: pd.Series, window: int = 1, as_angle: bool = False) -> pd.
     Reference: the slope of a straight line between two points (rise over run), a standard
     measure; pandas-ta-classic defines the same indicator.
 
-    Referenced against pandas-ta-classic's slope
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
+        Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
     Notes:
-        - Equals pandas-ta-classic's slope, and with `as_angle` its slope with
-          `as_angle=True, to_degrees=True`; pandas-ta-classic gives the angle in radians
-          unless asked for degrees.
+        - Equals pandas-ta-classic's slope, also as an angle in degrees; pandas-ta-classic
+          gives the angle in radians unless asked for degrees.
         - The least-squares slope over a window, which uses every price of the window
           rather than its two ends, is the Slope of `get_linear_regression`.
 
@@ -138,7 +143,10 @@ def get_rolling_correlation(
     Reference: Pearson, K. (1895). "Notes on Regression and Inheritance in the Case of Two
     Parents." Proceedings of the Royal Society of London, 58, 240-242.
 
-    Referenced against TA-Lib's CORREL (https://ta-lib.org/functions/correl.html).
+    Referenced against:
+    - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
+    - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
     Notes:
         - Equals TA-Lib's CORREL and pandas-ta-classic's correl.
@@ -178,7 +186,11 @@ def get_rolling_median(prices: pd.Series, window: int = 30) -> pd.Series:
     Reference: Tukey, J.W. (1977). "Exploratory Data Analysis." Addison-Wesley, for running
     medians; TA-Lib's MEDIAN gives the same definition.
 
-    Referenced against TA-Lib's MEDIAN (https://ta-lib.org/functions/median.html).
+    Referenced against:
+    - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
+    - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
+    - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
     Notes:
         - Equals TA-Lib's MEDIAN, pandas-ta-classic's median and finta's SMM (whose default
@@ -206,9 +218,9 @@ def get_rolling_percentile(
 
     The formula is as follows, per method:
 
-    - "nearest_rank": the k-th smallest price of the window, k = ceil(percentile * window)
+    - Nearest rank: the k-th smallest price of the window, k = ceil(percentile * window)
       (Hyndman and Fan's definition 1, the inverse of the empirical distribution function)
-    - "linear": interpolated between the two prices around position percentile * (window - 1)
+    - Linear: interpolated between the two prices around position percentile * (window - 1)
       of the sorted window, with positions from 0 (Hyndman and Fan's definition 7)
 
     Also known as: PERCENTILE, quantile, rolling quantile, moving percentile.
@@ -216,8 +228,11 @@ def get_rolling_percentile(
     Reference: Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages."
     The American Statistician, 50(4), 361-365.
 
-    Referenced against TA-Lib's PERCENTILE
-    (https://ta-lib.org/functions/percentile.html).
+    Referenced against:
+    - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
+    - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
 
     Notes:
         - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation equals
@@ -229,7 +244,9 @@ def get_rolling_percentile(
         prices (pd.Series): Series of prices.
         window (int): Number of periods. Defaults to 100.
         percentile (float): The percentile as a decimal between 0 and 1. Defaults to 0.5.
-        method (str): "nearest_rank" or "linear". Defaults to "nearest_rank".
+        method (str): The percentile definition. Options are: "nearest_rank" (Hyndman and
+            Fan's definition 1), "linear" (Hyndman and Fan's definition 7). Defaults to
+            "nearest_rank".
 
     Returns:
         pd.Series: Percentile values.
@@ -255,8 +272,8 @@ def get_rolling_percentile(
 
 def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
     """
-    Calculate the Percent Rank of a price series: the share of the previous `window` prices
-    that are lower than the latest price.
+    Calculate the Percent Rank of a price series: the share of the prices of the window
+    before it that are lower than the latest price.
 
     A Percent Rank of 1 means the price is above every price of the window, a new high for
     the window, and 0 that it is at or below all of them. It ranks the price within its
@@ -271,8 +288,9 @@ def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
     Reference: Connors, L., Alvarez, C. & Radtke, M. (2012). "An Introduction to ConnorsRSI."
     Connors Research Trading Strategy Series.
 
-    Referenced against TA-Lib's PERCENTRANK
-    (https://ta-lib.org/functions/percentrank.html).
+    Referenced against:
+    - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
+        Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
     Notes:
         - Equals TA-Lib's PERCENTRANK divided by 100: the Toolkit gives a decimal between
@@ -314,8 +332,9 @@ def get_rolling_z_score(prices: pd.Series, window: int = 30) -> pd.Series:
     Reference: the standard score of the price within its window, a standard statistic;
     pandas-ta-classic's zscore gives the same rolling form.
 
-    Referenced against pandas-ta-classic's zscore
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's zscore (window 30, ddof=1). Its cdl_z applies the
@@ -359,7 +378,12 @@ def get_rolling_mean_absolute_deviation(
     Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
     Trends." Commodities, October 1980.
 
-    Referenced against TA-Lib's AVGDEV (https://ta-lib.org/functions/avgdev.html).
+    Referenced against:
+    - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
+    - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
+    - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
+    - Tulip Indicators, md: https://tulipindicators.org/md
 
     Notes:
         - Equals TA-Lib's AVGDEV, pandas-ta-classic's mad and md (window 30) and Tulip
@@ -388,8 +412,11 @@ def get_rolling_mean_absolute_deviation(
 
 def get_rolling_standard_error(prices: pd.Series, window: int = 14) -> pd.Series:
     """
-    Calculate the rolling Standard Error of the mean of a price series: the standard
-    deviation of the window divided by the square root of the number of periods.
+    Calculate the rolling Standard Error of the mean of a price series: how uncertain the
+    moving average is as an estimate of the mean price.
+
+    The standard error is the standard deviation of the window divided by the square root
+    of the number of periods.
 
     It is the uncertainty of the moving average as an estimate of the mean price of the
     window: a moving average plus and minus two standard errors spans roughly where the
@@ -406,13 +433,17 @@ def get_rolling_standard_error(prices: pd.Series, window: int = 14) -> pd.Series
     Reference: the standard error of the sample mean, a standard statistic;
     pandas-ta-classic's stderr gives the same rolling form.
 
-    Referenced against pandas-ta-classic's stderr
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
+
+    Shares similar logic:
+    - Tulip Indicators, stderr: https://tulipindicators.org/stderr
 
     Notes:
-        - Equals pandas-ta-classic's stderr (ddof=1). Tulip Indicators' stderr uses the
-          population standard deviation (ddof=0), which is sqrt((window - 1) / window)
-          times this value.
+        - Equals pandas-ta-classic's stderr (ddof=1). Unlike Tulip Indicators' stderr, which
+          uses the population standard deviation (ddof=0), this is the sample one: Tulip's
+          value is sqrt((window - 1) / window) times this value.
 
     Args:
         prices (pd.Series): Series of prices.
@@ -445,8 +476,9 @@ def get_rolling_entropy(
     Reference: Shannon, C.E. (1948). "A Mathematical Theory of Communication." Bell System
     Technical Journal, 27(3), 379-423.
 
-    Referenced against pandas-ta-classic's entropy
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
+        Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's entropy (window 10, base 2).

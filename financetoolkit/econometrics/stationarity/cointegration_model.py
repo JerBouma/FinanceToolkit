@@ -31,9 +31,11 @@ def get_engle_granger_cointegration(
     series_a: pd.Series, series_b: pd.Series, max_lag: int | None = None
 ) -> pd.Series:
     """
-    Calculate the Engle-Granger test for cointegration between two series, as
-    `statsmodels.tsa.stattools.coint` does, with the lag search of the ADF test on the
-    residuals from one decomposition (see `unitroot_model.get_adf_regression`).
+    Calculate the Engle-Granger test: whether two series are cointegrated, held together by a
+    long-run equilibrium so that the spread between them reverts.
+
+    The test gives the results of statsmodels' coint, with the lag search of the ADF test on
+    the residuals from one decomposition (see `unitroot_model.get_adf_regression`).
 
     Two individually non-stationary series (e.g. two stock prices, each following a
     random walk) are cointegrated if some linear combination of them is stationary,
@@ -60,6 +62,10 @@ def get_engle_granger_cointegration(
     Representation, Estimation, and Testing." Econometrica, 55(2), 251-276.
 
     Also known as: EG test, residual-based cointegration test.
+
+    Referenced against:
+    - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
+        Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
     Args:
         series_a (pd.Series): The dependent series.
@@ -139,14 +145,15 @@ def get_johansen_cointegration(
     data: pd.DataFrame, det_order: int = 0, lags: int = 1
 ) -> pd.DataFrame:
     """
-    Calculate the Johansen test for cointegration among two or more series, via
-    `statsmodels.tsa.vector_ar.vecm.coint_johansen`.
+    Calculate the Johansen test: how many long-run equilibrium relationships (cointegrating
+    relations) hold two or more series together.
 
-    The Engle-Granger test (see `cointegration_model.get_engle_granger_cointegration`)
-    only handles two series and imposes an arbitrary normalization (which series is
-    "dependent"). Johansen's test generalizes this to `N >= 2` series at once by
-    testing the rank of the long-run coefficient matrix `Pi` in the Vector Error
-    Correction Model (VECM) representation of a VAR(p):
+    The test runs statsmodels' coint_johansen. The Engle-Granger test (see
+    `cointegration_model.get_engle_granger_cointegration`) only handles two series and
+    imposes an arbitrary normalization (which series is "dependent"). Johansen's test
+    generalizes this to `N >= 2` series at once by testing the rank of the long-run
+    coefficient matrix `Pi` in the Vector Error Correction Model (VECM) representation of a
+    VAR(p):
 
     - Delta_Y_t = Pi * Y_(t-1) + SUM(Gamma_i * Delta_Y_(t-i)) + mu + e_t
 

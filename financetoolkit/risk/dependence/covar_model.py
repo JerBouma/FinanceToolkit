@@ -80,8 +80,8 @@ def get_covar(
     alpha: float,
 ) -> pd.Series:
     """
-    Calculate the (Delta-)CoVaR of `returns` conditional on `conditioning_returns`
-    being in its own distress state.
+    Calculate the (Delta-)CoVaR of `returns`: how much worse their Value at Risk gets when
+    `conditioning_returns` is in its own distress state, the spillover of tail risk.
 
     Ordinary Value at Risk (see `get_var_historic`) treats each asset in isolation,
     which misses systemic risk -- the fact that one institution's or asset's distress
@@ -216,8 +216,9 @@ def get_marginal_expected_shortfall(
         market_returns (pd.Series): The daily returns of the market (the system).
         alpha (float, optional): The tail probability of the market returns. Defaults to
         0.05, the paper's 5% worst days.
-        period (str, optional): The period of each estimate: weekly, monthly, quarterly or
-        yearly. Defaults to "yearly", as in the paper.
+        period (str, optional): The period of each estimate. Options are: "weekly", "monthly", "quarterly", "yearly".
+        Defaults to
+        "yearly", as in the paper.
         rolling (int | None, optional): Use the days of the last `rolling` periods instead
         of a single period. Defaults to None.
 
@@ -267,19 +268,25 @@ def get_market_beta(
     rolling: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the market beta per period from the daily returns within it, on the dates the
-    asset and the market both have a return (see `get_marginal_expected_shortfall` for the
-    alignment):
+    Calculate the market beta per period from the daily returns within it: how strongly the
+    asset moves with the market.
+
+    It uses the dates the asset and the market both have a return (see
+    `get_marginal_expected_shortfall` for the alignment):
 
     - Beta = Covariance(Returns, Market Returns) / Variance(Market Returns)
 
     A period with fewer than 15 shared returns is NaN.
 
+    Shares similar logic:
+    - empyrical, beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1314
+
     Args:
         returns (pd.Series | pd.DataFrame): The daily returns of the asset(s).
         market_returns (pd.Series): The daily returns of the market.
-        period (str, optional): The period of each estimate: weekly, monthly, quarterly or
-        yearly. Defaults to "yearly".
+        period (str, optional): The period of each estimate. Options are: "weekly", "monthly", "quarterly", "yearly".
+        Defaults to
+        "yearly".
         rolling (int | None, optional): Use the days of the last `rolling` periods instead
         of a single period. Defaults to None.
 
@@ -405,8 +412,10 @@ def get_srisk(
 
 def get_srisk_share(srisk: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate each firm's share of the total SRISK of the firms (SRISK% in Brownlees and
-    Engle (2017)). A capital surplus does not offset the shortfall of another firm in a
+    Calculate each firm's share of the total SRISK of the firms: how much of the system's
+    capital shortfall in a crisis it accounts for (SRISK% in Brownlees and Engle (2017)).
+
+    A capital surplus does not offset the shortfall of another firm in a
     crisis, so the total only adds the positive SRISK and a firm with a surplus has a share
     of 0:
 

@@ -53,7 +53,8 @@ def get_fitted_discount_factors(
     parameters: pd.Series, years: np.ndarray | list | float, method: str
 ) -> np.ndarray:
     """
-    The discount factors of a fitted bond curve, see `fit_bond_curve`.
+    Calculate the discount factors of a fitted bond curve: what a payment at each time is
+    worth today on the curve, see `fit_bond_curve`.
 
     Args:
         parameters (pd.Series): The parameters `fit_bond_curve` returns.
@@ -108,8 +109,8 @@ def get_fitted_curve(
     parameters: pd.Series, years: np.ndarray | list | float, method: str
 ) -> pd.DataFrame:
     """
-    The zero rates, discount factors and instantaneous forward rates of a fitted bond curve,
-    see `fit_bond_curve`.
+    Calculate the zero rates, discount factors and instantaneous forward rates of a fitted
+    bond curve: the term structure the bond prices imply, see `fit_bond_curve`.
 
     The formula is as follows:
 
@@ -152,8 +153,8 @@ def get_fitted_bond_prices(
     method: str,
 ) -> np.ndarray:
     """
-    The prices (with accrued interest) of bonds on a fitted curve: their cash flows
-    discounted with `get_fitted_discount_factors`.
+    Calculate the prices (with accrued interest) of bonds on a fitted curve: what their cash
+    flows are worth discounted with `get_fitted_discount_factors`.
 
     Args:
         parameters (pd.Series): The parameters `fit_bond_curve` returns.
@@ -343,15 +344,18 @@ def fit_bond_curve(
     method: str = "svensson",
 ) -> pd.Series:
     """
-    Fits a discount curve to the prices of coupon bonds. Where a bootstrap needs one
-    instrument per maturity, a fitted curve takes every bond there is and smooths out the
-    noise of the individual prices, so the residuals show which bonds trade rich (above the
-    curve) or cheap (below it). The fit minimizes the weighted squared price errors, with
-    weights inversely proportional to duration, as Gürkaynak, Sack and Wright (2007) fit the
-    Federal Reserve's Treasury curve. A price error is about the duration times the price
-    times the yield error, so the weights reduce the weight of the long bonds' larger price
-    errors, while still giving a basis point of a long bond more weight than one of a short
-    bond (equal weight in yield would need 1 / D²).
+    Fit a discount curve to the prices of coupon bonds: the smooth term structure closest to
+    every bond's price, whose residuals show which bonds trade rich (above the curve) or
+    cheap (below it).
+
+    Where a bootstrap needs one instrument per maturity, a fitted curve takes every bond
+    there is and smooths out the noise of the individual prices. The fit minimizes the
+    weighted squared price errors, with weights inversely proportional to duration, as
+    Gürkaynak, Sack and Wright (2007) fit the Federal Reserve's Treasury curve. A price
+    error is about the duration times the price times the yield error, so the weights reduce
+    the weight of the long bonds' larger price errors, while still giving a basis point of a
+    long bond more weight than one of a short bond (equal weight in yield would need 1 /
+    D²).
 
     The formula is as follows:
 
@@ -360,14 +364,14 @@ def fit_bond_curve(
     where P_i is the price of bond i with accrued interest, CF_ik its cash flows at times
     t_ik, D_i its duration and d(t) the discount function of the method:
 
-    - "nelson_siegel": d(t) = e^(-y(t) t) with y(t) the Nelson-Siegel (1987) zero rate,
+    - Nelson-Siegel: d(t) = e^(-y(t) t) with y(t) the Nelson-Siegel (1987) zero rate,
       β0 + β1 (1 - e^(-t/τ1)) / (t/τ1) + β2 [(1 - e^(-t/τ1)) / (t/τ1) - e^(-t/τ1)]
-    - "svensson": the same with Svensson's (1994) second curvature,
+    - Svensson: the same with Svensson's (1994) second curvature,
       + β3 [(1 - e^(-t/τ2)) / (t/τ2) - e^(-t/τ2)]
-    - "exponential_spline": d(t) = Σ_{k=1}^{9} a_k e^(-k κ t) with Σ a_k = 1, the
+    - Exponential spline: d(t) = Σ_{k=1}^{9} a_k e^(-k κ t) with Σ a_k = 1, the
       exponential basis of Vasicek and Fong (1982), whose discount function decays
       exponentially at long maturities
-    - "cubic_spline": d(t) = Σ_j c_j B_j(t), a cubic spline with d(0) = 1 (McCulloch, 1975),
+    - Cubic spline: d(t) = Σ_j c_j B_j(t), a cubic spline with d(0) = 1 (McCulloch, 1975),
       in the B-spline basis; the number of basis functions is about the square root of the
       number of bonds and the knots lie at quantiles of the maturities, so that as many
       bonds mature between every two knots, as McCulloch places them
@@ -399,9 +403,12 @@ def fit_bond_curve(
     - Gürkaynak, R.S., Sack, B. and Wright, J.H. (2007). "The U.S. Treasury Yield Curve:
       1961 to the Present." Journal of Monetary Economics, 54(8), 2291-2304.
 
-    Referenced against QuantLib's FittedBondDiscountCurve with NelsonSiegelFitting,
-    SvenssonFitting, ExponentialSplinesFitting and CubicBSplinesFitting
-    (https://www.quantlib.org).
+    Shares similar logic:
+    - QuantLib, FittedBondDiscountCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_fitted_bond_discount_curve.html
+    - QuantLib, NelsonSiegelFitting (nelson_siegel): https://www.quantlib.org/reference/class_quant_lib_1_1_nelson_siegel_fitting.html
+    - QuantLib, SvenssonFitting (svensson): https://www.quantlib.org/reference/class_quant_lib_1_1_svensson_fitting.html
+    - QuantLib, ExponentialSplinesFitting (exponential_spline): https://www.quantlib.org/reference/class_quant_lib_1_1_exponential_splines_fitting.html
+    - QuantLib, CubicBSplinesFitting (cubic_spline): https://www.quantlib.org/reference/class_quant_lib_1_1_cubic_b_splines_fitting.html
 
     Args:
         cash_flow_times (np.ndarray | list): The time of every cash flow in years, a row per
@@ -413,8 +420,10 @@ def fit_bond_curve(
         weights (np.ndarray | list | None, optional): The weight of every bond's squared
             price error. Defaults to None, one over the Macaulay duration (continuously
             compounded).
-        method (str, optional): "nelson_siegel", "svensson", "exponential_spline" or
-            "cubic_spline". Defaults to "svensson".
+        method (str, optional): The discount function. Options are: "nelson_siegel" (the
+            Nelson-Siegel zero rate), "svensson" (the Nelson-Siegel-Svensson zero rate),
+            "exponential_spline" (the exponential spline of Vasicek and Fong),
+            "cubic_spline" (McCulloch's cubic spline). Defaults to "svensson".
 
     Returns:
         pd.Series: The parameters: Beta 0 to Beta 3 (continuously compounded) and Tau 1 and

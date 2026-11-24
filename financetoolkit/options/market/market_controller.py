@@ -193,11 +193,13 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the put-call ratio of every expiry, by volume and by open interest. The
-        ratio is the number of puts divided by the number of calls: a ratio above one means
-        more puts are traded or held than calls, which is usually read as hedging demand or
-        bearish sentiment, and an unusually low ratio as complacency. The volume ratio
-        reflects today's trading; the open interest ratio the positions that remain.
+        Calculate the put-call ratio of every expiry, by volume and by open interest:
+        how many puts are traded or held per call, which is usually read as hedging
+        demand or bearish sentiment when above one.
+
+        The ratio is the number of puts divided by the number of calls, and an unusually
+        low ratio is read as complacency. The volume ratio reflects today's trading; the
+        open interest ratio the positions that remain.
 
         Also known as: PCR, put/call ratio, options sentiment.
 
@@ -382,8 +384,8 @@ class MarketOptions:
 
         Returns:
             pd.DataFrame: Per ticker the Stock Price, Call, Put and Net Gamma Exposure (in
-            dollars per 1% move) and the Gamma Flip Point; with by_strike=True the Call, Put
-            and Net Gamma Exposure per ticker and strike.
+            dollars per 1% move) and the Gamma Flip Point; or, when returned per strike, the
+            Call, Put and Net Gamma Exposure per ticker and strike.
 
         Notes:
         - The assumption about who holds which side is the main uncertainty: when
@@ -557,8 +559,9 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the volatility skew of every expiry from the 25-delta options, the
-        standard way to compare skew across underlyings and dates:
+        Calculate the volatility skew of every expiry: how much more the market pays for
+        downside than for upside protection, from the 25-delta options, the standard way
+        to compare skew across underlyings and dates:
 
             - 25-Delta Risk Reversal = IV(25-delta call) - IV(25-delta put)
             - 25-Delta Butterfly = (IV(25-delta call) + IV(25-delta put)) / 2 - ATM IV
@@ -638,16 +641,17 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the move the options market expects up to every expiry, from the price of
-        the at-the-money straddle (buying the call and the put at the strike closest to the
-        current price):
+        Calculate the move the options market expects up to every expiry: the size of
+        the move, in either direction, that the price of the at-the-money straddle
+        (buying the call and the put at the strike closest to the current price) prices
+        in:
 
             - Implied Move = (Call Price + Put Price) / Stock Price
             - Expected Range = Stock Price ± Straddle Price
 
         The straddle pays the absolute move, so its price is the market's expected size of
-        the move, regardless of direction. With around_earnings=True the first expiry after
-        the next earnings date is used, which gives the move the market prices for the
+        the move, regardless of direction. Around earnings the first expiry after the next
+        earnings date is used, which gives the move the market prices for the
         earnings announcement (an expiry on the announcement day itself settles at that
         day's close, before the usual after-the-close announcement).
 
@@ -835,16 +839,19 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the model-free implied volatility with the Cboe VIX methodology, for any
-        ticker with listed options. Rather than inverting a pricing model, it reads the
-        expected variance directly from the prices of out-of-the-money options across all
-        strikes, weighted by 1/K², for the two expiries around the target maturity, and
-        interpolates their variances to a constant maturity:
+        Calculate the model-free implied volatility with the Cboe VIX methodology, for
+        any ticker with listed options: the volatility the options market expects over
+        the coming days, without a pricing model.
+
+        Rather than inverting a pricing model, it reads the expected variance directly
+        from the prices of out-of-the-money options across all strikes, weighted by
+        1/K², for the two expiries around the target maturity, and interpolates their
+        variances to a constant maturity:
 
             - σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²
             - Volatility = sqrt(interpolated variance at `days`)
 
-        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the VIX,
+        Applied to the S&P 500 index options ("^SPX") over 30 days it approximates the VIX,
         within about a tenth of a volatility point: the Cboe counts the time to expiry in
         minutes, uses Treasury rates for each expiry and the Friday expiries between 23 and
         37 days away. For a single stock it gives the equivalent volatility index.
@@ -1049,8 +1056,10 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of the
-        log return up to every expiry with the method of Bakshi, Kapadia and Madan (2003).
+        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of
+        the log return up to every expiry: the shape of the return distribution that the
+        option prices imply, with the method of Bakshi, Kapadia and Madan (2003).
+
         Any payoff can be built from a position in the underlying and a strip of
         out-of-the-money options (Carr and Madan, 2001), so the prices of the quadratic,
         cubic and quartic contracts on the log return follow from the option prices, and
@@ -1250,7 +1259,7 @@ class MarketOptions:
         paper prints half of it (see market_metrics_model.get_cboe_skewness); for index
         options the difference is negligible.
         Unlike the variance of the VIX, the skewness is interpolated linearly in time.
-        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the Cboe
+        Applied to the S&P 500 index options ("^SPX") over 30 days it approximates the Cboe
         SKEW Index, which uses the Cboe's own quotes and Treasury bill rates per expiry.
 
         For more information, see the following papers:
@@ -1344,12 +1353,16 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the fair strike of a variance swap up to every expiry from the option chain,
-        replicated with the discrete strike weights of Demeterfi, Derman, Kamal and Zou (1999),
-        and with a strike the value of a swap, also of one traded in the past. A variance swap
-        pays the variance the stock realizes up to maturity minus the strike; the fair strike
-        is the price of a portfolio of out-of-the-money options that replicates the log
-        contract, whose payoff grows with the realized variance whatever the path:
+        Calculate the fair strike of a variance swap up to every expiry from the option
+        chain: the variance at which a swap on the stock's realized variance is worth
+        nothing today, replicated with the discrete strike weights of Demeterfi, Derman,
+        Kamal and Zou (1999), and with a strike the value of a swap, also of one traded
+        in the past.
+
+        A variance swap pays the variance the stock realizes up to maturity minus the
+        strike; the fair strike is the price of a portfolio of out-of-the-money options
+        that replicates the log contract, whose payoff grows with the realized variance
+        whatever the path:
 
             - f(S) = (2/T) [(S - S*) / S* - ln(S / S*)]
             - w(K_i) = the change in the slope of f at K_i, with f linear between the strikes
@@ -1373,11 +1386,18 @@ class MarketOptions:
         - Carr, P. and Madan, D. (1998). "Towards a Theory of Volatility Trading." In Volatility:
           New Estimation Techniques for Pricing Derivatives, Risk Books, 417-427.
 
-        Referenced against QuantLib's ReplicatingVarianceSwapEngine and VarianceSwap
-        (https://www.quantlib.org) and FinancePy's EquityVarianceSwap
-        (https://github.com/domokane/FinancePy).
-
         Also known as: variance swap rate, variance strike, fair variance, DDKZ replication.
+
+        Referenced against:
+        - QuantLib, ReplicatingVarianceSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_replicating_variance_swap_engine.html
+            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_quantlib
+        - FinancePy, EquityVarianceSwap.fair_strike: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L102
+            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_financepy
+        - FinancePy, EquityVarianceSwap.value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L61
+            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_value_matches_financepy
+
+        Shares similar logic:
+        - QuantLib, VarianceSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_variance_swap.html
 
         Args:
             expiration_dates (list[str] | None, optional): The expiries to use, the maturities
@@ -1561,11 +1581,15 @@ class MarketOptions:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the realized profit and loss of selling a European option on each ticker
-        and delta hedging it on the ticker's own prices until it expires `days` trading days
-        later (Hull, 2022, chapter 19). The option is sold at its Black-Scholes value, the
-        hedge holds its delta in shares, pays a proportional cost on every trade, receives
-        the dividends on the shares held and keeps the rest in cash at the risk free rate:
+        Calculate the realized profit and loss of selling a European option on each
+        ticker and delta hedging it on the ticker's own prices until it expires `days`
+        trading days later: how much the hedged seller gained or lost when the
+        volatility the stock realized differed from the one the option was sold at
+        (Hull, 2022, chapter 19).
+
+        The option is sold at its Black-Scholes value, the hedge holds its delta in
+        shares, pays a proportional cost on every trade, receives the dividends on the
+        shares held and keeps the rest in cash at the risk free rate:
 
             - Option Value = Black-Scholes value at the volatility σ on the start date
             - Cash_(i+1) = Cash_i e^(r Δt) + Δ_i D_(i+1) - (Δ_(i+1) - Δ_i) S_(i+1) - k |Δ_(i+1) - Δ_i| S_(i+1)
@@ -1752,11 +1776,13 @@ class MarketOptions:
     ) -> pd.DataFrame:
         """
         Calculate the distribution of the hedging error of selling a European option and
-        delta hedging it, by simulating the stock as a Geometric Brownian Motion from its
-        price on the start date. Each path is hedged as in get_delta_hedging_backtest: the
-        option is sold at its Black-Scholes value at the implied volatility, the hedge holds
-        its delta, rebalanced every `rebalancing_days` trading days at a proportional cost,
-        while the stock moves with the volatility:
+        delta hedging it: how much the hedged seller can gain or lose across simulated
+        Geometric Brownian Motion paths of the stock from its price on the start date.
+
+        Each path is hedged as in get_delta_hedging_backtest: the option is sold at its
+        Black-Scholes value at the implied volatility, the hedge holds its delta,
+        rebalanced every `rebalancing_days` trading days at a proportional cost, while
+        the stock moves with the volatility:
 
             - S(t + Δt) = S(t) e^((r - q - σ² / 2) Δt + σ sqrt(Δt) Z), Z ~ N(0, 1), Δt = 1 / 252
             - Profit and Loss = e^(-rT) [Cash_T + Δ_T S_T - Payoff(S_T)], per path
@@ -1778,12 +1804,15 @@ class MarketOptions:
         - Leland, H. E. (1985). "Option Pricing and Replication with Transactions Costs." The
           Journal of Finance, 40(5), 1283-1301.
 
-        Referenced against FinancePy's simulate_hedge_paths
-        (https://github.com/domokane/FinancePy), which reports the profit and loss at
-        expiration rather than discounted and closes the hedge in cash at expiration.
+        FinancePy's simulate_hedge_paths reports the profit and loss at expiration rather
+        than discounted and closes the hedge in cash at expiration.
 
         Also known as: hedging error distribution, discrete hedging simulation, delta hedging
         Monte Carlo.
+
+        Referenced against:
+        - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
+            Test: tests/options/test_hedging_model.py::test_the_simulation_matches_financepy
 
         Args:
             days (int, optional): The trading days to expiration. Defaults to 63, about three

@@ -64,10 +64,12 @@ def get_fourier_price(
 ) -> float | np.ndarray:
     """
     Calculate the price of European options from the characteristic function of the log
-    return, with Lewis' single integral (2001), the COS method of Fang and Oosterlee (2008) or
-    the fast Fourier transform of Carr and Madan (1999). This is the pricer behind the Heston,
-    Bates, Merton jump diffusion and Variance Gamma models of the Finance Toolkit: a model only
-    supplies the characteristic function.
+    return: what calls or puts are worth in any model whose characteristic function is
+    known, with Lewis' single integral (2001), the COS method of Fang and Oosterlee (2008)
+    or the fast Fourier transform of Carr and Madan (1999).
+
+    This is the pricer behind the Heston, Bates, Merton jump diffusion and Variance Gamma
+    models of the Finance Toolkit: a model only supplies the characteristic function.
 
     The characteristic function is that of X = ln(S_T / F), the log of the stock price at
     expiration over the forward price F = S * e^((r — q)T), so φ(u) = E[e^(iuX)] with φ(—i) = 1
@@ -112,6 +114,15 @@ def get_fourier_price(
     noise of prices close to it (such as —1e-13 for a deep out-of-the-money option a day from
     expiration).
 
+    Referenced against:
+    - QuantLib, AnalyticHestonEngine (Heston): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_heston_engine.html
+        Test: tests/options/test_stochastic_volatility_models.py::test_heston_matches_quantlib
+    - QuantLib, BatesEngine (Bates): https://www.quantlib.org/reference/class_quant_lib_1_1_bates_engine.html
+        Test: tests/options/test_stochastic_volatility_models.py::test_bates_matches_quantlib
+    - QuantLib, VarianceGammaEngine (Variance Gamma): https://www.quantlib.org/reference/class_quant_lib_1_1_variance_gamma_engine.html
+        Test:
+            tests/options/test_stochastic_volatility_models.py::test_variance_gamma_matches_the_gamma_clock_integral_and_quantlib
+
     Args:
         characteristic_function (Callable): The characteristic function φ(u) of
             X = ln(S_T / F), taking a complex np.ndarray of u and returning E[e^(iuX)] for each.
@@ -122,7 +133,9 @@ def get_fourier_price(
             worth its exercise value.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price puts instead of calls. Defaults to False.
-        method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
+        method (str, optional): The Fourier pricer. Options are: "lewis" (Lewis' integral),
+            "cos" (the COS method), "fft" (the Carr-Madan fast Fourier transform). Defaults to
+            "lewis".
         cos_terms (int, optional): The smallest number of cosine terms of the COS method.
             Defaults to 256.
         cos_tolerance (float | None, optional): The largest difference per unit of the strike
@@ -149,9 +162,9 @@ def get_fourier_price(
         European Options Based on Fourier-Cosine Series Expansions." SIAM Journal on
         Scientific Computing, 31(2), 826-848; Carr, P. and Madan, D. B. (1999). "Option
         Valuation Using the Fast Fourier Transform." Journal of Computational Finance, 2(4),
-        61-73. The models built on this function are referenced against QuantLib's
-        AnalyticHestonEngine, BatesEngine and VarianceGammaEngine (https://www.quantlib.org),
-        each within the precision of the method stated above.
+        61-73.
+        - The models built on this function agree with QuantLib's engines within the
+          precision of the method stated above.
 
     As an example, the Black-Scholes model, whose log return is normal:
 

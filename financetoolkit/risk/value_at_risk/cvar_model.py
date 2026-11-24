@@ -21,7 +21,15 @@ def get_cvar_historic(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the historical Conditional Value at Risk (CVaR) of returns.
+    Calculate the historical Conditional Value at Risk (CVaR) of returns: the average return
+    in the worst alpha share of the observed periods.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
+    - empyrical, conditional_value_at_risk: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2115
+    - quantstats, conditional_value_at_risk: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2086
+    - Riskfolio-Lib, CVaR_Hist: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.CVaR_Hist
+    - skfolio, cvar: https://skfolio.org/generated/skfolio.measures.cvar.html
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series of returns.
@@ -67,7 +75,11 @@ def get_rolling_cvar_historic(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the rolling historical Conditional Value at Risk (CVaR) of returns.
+    Calculate the rolling historical Conditional Value at Risk (CVaR) of returns: the average
+    return in the worst alpha share of the periods of every rolling window.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -91,14 +103,19 @@ def get_cvar_gaussian(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Conditional Value at Risk (CVaR) of returns based on the gaussian distribution.
+    Calculate the gaussian Conditional Value at Risk (CVaR) of returns: the average return
+    below the alpha quantile of a normal distribution with the mean and standard deviation of
+    the returns.
 
     The formula is as follows:
 
     - CVaR = mean - std * phi(z_alpha) / alpha
 
     Where `phi` is the standard normal density, `z_alpha` the standard normal quantile at
-    `alpha` and `std` the sample standard deviation (ddof=1).
+    `alpha` and `std` the sample standard deviation (with n - 1 in the denominator).
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns. A rolling
@@ -136,9 +153,11 @@ def get_cvar_kernel(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the kernel Conditional Value at Risk (CVaR) of returns: the mean return below
-    the kernel VaR under a Gaussian kernel density estimate of the return distribution with
-    Silverman's bandwidth (Scaillet 2004), which has a closed form given the VaR:
+    Calculate the kernel Conditional Value at Risk (CVaR) of returns: the average return below
+    the kernel VaR under a smoothed estimate of the return distribution.
+
+    The distribution is a Gaussian kernel density estimate with Silverman's bandwidth
+    (Scaillet 2004), which gives a closed form given the VaR:
 
     - CVaR = mean(Return_i * Φ(u_i) - h * φ(u_i)) / alpha
     - u_i = (VaR - Return_i) / h
@@ -150,6 +169,10 @@ def get_cvar_kernel(
 
     - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected
     Shortfall." Mathematical Finance, 14(1), 115-129.
+
+    Referenced against:
+    - scipy, gaussian_kde: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
+        Test: tests/risk/test_cvar_model.py::test_get_cvar_kernel_reference_value
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
@@ -183,7 +206,9 @@ def get_weighted_cvar(
 ) -> pd.Series | pd.DataFrame:
     """
     Combine the Conditional Value at Risk at several tail probabilities into the Weighted
-    (spectral) Conditional Value at Risk, their weighted sum (Acerbi 2002, Cajas 2021):
+    (spectral) Conditional Value at Risk: one tail loss that weighs the deeper tails as chosen.
+
+    It is the weighted sum of the CVaRs (Acerbi 2002, Cajas 2021):
 
     - Weighted CVaR = Σ_k Weight_k * CVaR(alpha_k)
 
@@ -215,7 +240,8 @@ def get_cvar_studentt(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Conditional Value at Risk (CVaR) of returns based on the Student-T distribution.
+    Calculate the Student-T Conditional Value at Risk (CVaR) of returns: the average return
+    below the alpha quantile of a fat-tailed Student-T distribution fitted to the returns.
 
     The degrees of freedom `v`, the location and the scale are fitted by maximum likelihood
     (see `var_model.fit_student_t`, the same fit as `var_model.get_var_studentt`), and the
@@ -223,8 +249,8 @@ def get_cvar_studentt(
 
     - CVaR = location - scale * (v + t^2) / (v - 1) * f_v(t) / alpha
 
-    Where `t = t_v^-1(1 - alpha)` and `f_v` is the Student-T density. The Expected
-    Shortfall only exists when the mean does, i.e. for `v > 1`; NaN is returned for a
+    Where t = t_v^-1(1 - alpha) and `f_v` is the Student-T density. The Expected
+    Shortfall only exists when the mean does, i.e. for v > 1; NaN is returned for a
     column whose fitted degrees of freedom are 1 or lower (or that has fewer than three
     observations).
 
@@ -273,7 +299,9 @@ def get_cvar_laplace(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Conditional Value at Risk (CVaR) of returns based on the Laplace distribution.
+    Calculate the Laplace Conditional Value at Risk (CVaR) of returns: the average return below
+    the alpha quantile of a Laplace (double exponential) distribution with the mean and spread
+    of the returns.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -325,7 +353,9 @@ def get_cvar_logistic(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Conditional Value at Risk (CVaR) of returns based on the logistic distribution.
+    Calculate the logistic Conditional Value at Risk (CVaR) of returns: the average return below
+    the alpha quantile of a logistic distribution with the mean and standard deviation of the
+    returns.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -365,8 +395,9 @@ def get_cvar_cornish_fisher(
     returns: pd.Series | pd.DataFrame, alpha: float, number_of_quantiles: int = 1000
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Conditional Value at Risk (CVaR) of returns based on the Cornish-Fisher
-    (modified Gaussian) expansion.
+    Calculate the Cornish-Fisher (modified) Conditional Value at Risk (CVaR) of returns: the
+    average return below the gaussian quantile corrected for the skewness and fat tails of
+    the returns.
 
     There is no clean closed-form Expected Shortfall for the Cornish-Fisher expansion (unlike
     for e.g. the gaussian or Student-T distributions), since the expansion is a quantile
@@ -402,6 +433,9 @@ def get_cvar_cornish_fisher(
     Hedge Funds." Journal of Alternative Investments, 5(2), 21-25.
     - Maillard, D. (2012). "A User's Guide to the Cornish Fisher Expansion." SSRN
     Working Paper 1997178.
+
+    Shares similar logic:
+    - PerformanceAnalytics (R), ES: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -479,7 +513,9 @@ def get_cvar_evt(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on Extreme Value Theory
-    (EVT), using the same Generalized Pareto Distribution (GPD) Peak-over-Threshold fit as
+    (EVT): the average loss beyond the VaR under a distribution fitted to the extreme losses.
+
+    It uses the same Generalized Pareto Distribution (GPD) Peak-over-Threshold fit as
     `var_model.get_var_evt`.
 
     Because the GPD has a closed-form mean above the threshold, the Expected Shortfall can be
@@ -488,7 +524,7 @@ def get_cvar_evt(
 
     - ES = VaR / (1 - xi) + (sigma - xi * u) / (1 - xi)
 
-    This is only valid for a shape parameter `xi < 1`; for `xi >= 1` the GPD's mean (and hence
+    This is only valid for a shape parameter xi < 1; for xi >= 1 the GPD's mean (and hence
     its Expected Shortfall) is undefined/infinite, so NaN is returned for that column instead.
     Since the Expected Shortfall averages over all losses beyond the VaR threshold, `abs(CVaR)`
     is always at least as large as `abs(VaR)` for the same `alpha`.
@@ -498,6 +534,9 @@ def get_cvar_evt(
     - McNeil, A.J., & Frey, R. (2000). "Estimation of Tail-Related Risk Measures for
     Heteroscedastic Financial Time Series: An Extreme Value Approach." Journal of Empirical
     Finance, 7(3-4), 271-300.
+
+    Shares similar logic:
+    - empyrical, gpd_risk_estimates: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1675
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -574,8 +613,8 @@ def get_cvar_garch(
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the conditional Conditional Value at Risk (CVaR, expected shortfall) of returns
-    from a GARCH-family model: the mean of the model's distribution of the next return below
-    its alpha quantile.
+    from a GARCH-family model: the average of the model's distribution of the next return
+    below its alpha quantile, given today's volatility.
 
     The formula is as follows:
 
@@ -598,9 +637,16 @@ def get_cvar_garch(
             path, at least 100. Defaults to None, which fits once on all returns.
         refit_every (int, optional): The number of returns between two fits of a rolling path.
             Defaults to 21.
-        method (str, optional): The variance model of `garch_model.get_garch_family`. Defaults
-            to "garch".
-        distribution (str, optional): The innovation distribution. Defaults to "normal".
+        method (str, optional): The variance model of `garch_model.get_garch_family`. Options
+            are: "garch" (GARCH), "gjr" (GJR-GARCH), "egarch" (EGARCH), "igarch" (IGARCH),
+            "aparch" (APARCH), "tgarch" (threshold GARCH), "ngarch" (nonlinear GARCH),
+            "avgarch" (absolute value GARCH), "nagarch" (nonlinear asymmetric GARCH),
+            "component" (component GARCH), "figarch" (FIGARCH). Defaults to "garch".
+        distribution (str, optional): The innovation distribution. Options are: "normal"
+            (normal), "t" (Student-t), "skewt" (Hansen's skewed Student-t),
+            "skewt_fernandez_steel" (Fernández and Steel's skewed Student-t), "ged"
+            (generalized error distribution), "johnson_su" (Johnson's SU). Defaults to
+            "normal".
 
     Returns:
         pd.Series | pd.DataFrame | float: The CVaR of the next period, shaped as the VaR of
@@ -627,7 +673,8 @@ def get_higher_moment_coherent_risk_samples(
 ) -> np.ndarray:
     """
     Calculate the Higher Moment Coherent Risk (HMCR) of every row of an array of returns
-    without missing values, as `get_higher_moment_coherent_risk` reports it.
+    without missing values: the tail loss that weighs the deepest losses more, as
+    `get_higher_moment_coherent_risk` reports it.
 
     With the losses L = -Return, X = L - ζ and the mean over the n returns of a row:
 
@@ -697,14 +744,16 @@ def get_higher_moment_coherent_risk(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Higher Moment Coherent Risk (HMCR) of returns (Krokhmal 2007), the coherent
-    risk measure that extends the Conditional Value at Risk from the first to a higher moment of
-    the losses beyond a threshold:
+    Calculate the Higher Moment Coherent Risk (HMCR) of returns (Krokhmal 2007): a tail loss
+    like the Conditional Value at Risk that weighs the deepest losses more.
+
+    The coherent risk measure extends the Conditional Value at Risk from the first to a higher
+    moment of the losses beyond a threshold:
 
     - HMCR = min over ζ of ζ + (1 / alpha) * (mean(max(-Return - ζ, 0)^order))^(1 / order)
 
-    With order=1 it is the Conditional Value at Risk of Rockafellar and Uryasev (2002), with
-    order=2 the coherent second moment (CSM). A higher order weighs the deepest losses more, so
+    With an order of 1 it is the Conditional Value at Risk of Rockafellar and Uryasev (2002),
+    with an order of 2 the coherent second moment (CSM). A higher order weighs the deepest losses more, so
     the HMCR rises with the order towards the worst loss. The mean runs over the n returns, so
     the measure does not depend on the length of the sample, see
     `get_higher_moment_coherent_risk_samples` for the minimization.
@@ -741,7 +790,8 @@ def get_expected_quadratic_shortfall_samples(
 ) -> np.ndarray:
     """
     Calculate the Expected Quadratic Shortfall (EQS) of every row of an array of returns
-    without missing values, as `get_expected_quadratic_shortfall` reports it.
+    without missing values: the average squared loss in the tail, as
+    `get_expected_quadratic_shortfall` reports it.
 
     The minimum of the Rockafellar and Uryasev (2002) form over ζ is the average of the alpha
     share of the largest squared losses, counting the squared loss at the boundary with the
@@ -773,8 +823,10 @@ def get_expected_quadratic_shortfall(
     window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
-    Calculate the Expected Quadratic Shortfall (EQS) of returns, the Conditional Value at Risk
-    of the squared losses, in the Rockafellar and Uryasev (2002) form:
+    Calculate the Expected Quadratic Shortfall (EQS) of returns: the average squared loss in
+    the worst alpha share of the periods, the Conditional Value at Risk of the squared losses.
+
+    It takes the Rockafellar and Uryasev (2002) form:
 
     - EQS = min over ζ of ζ + (1 / (n * alpha)) * Σ max(max(-Return, 0)^2 - ζ, 0)
 

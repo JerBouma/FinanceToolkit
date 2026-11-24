@@ -377,11 +377,12 @@ class OptionsBase:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Option Chains which gives information about the currently available
-        options as reported by Yahoo Finance. This returns the Expiration Date, Contract
-        Symbol, Last Trade Date, Last Price, Bid, Ask, Change, Percent Change, Volume,
-        Open Interest, Implied Volatility, whether the option is In The Money and the
-        Currency.
+        Get the Option Chains: the currently available options of each ticker as reported by
+        Yahoo Finance, with their prices, volume, open interest and implied volatility.
+
+        This returns the Expiration Date, Contract Symbol, Last Trade Date, Last Price, Bid,
+        Ask, Change, Percent Change, Volume, Open Interest, Implied Volatility, whether the
+        option is In The Money and the Currency.
 
         Every ticker has its own expiration dates (one lists weekly options, another only
         monthly ones). Without an expiration date each ticker shows its nearest expiry; with

@@ -287,7 +287,9 @@ def get_risk_free_rate_term_structures(
     releases between the start and end date are downloaded.
 
     Args:
-        curve (str): "spot_no_va", "spot_with_va", "shock_up" or "shock_down".
+        curve (str): The term structure. Options are: "spot_no_va" (without volatility
+            adjustment), "spot_with_va" (with it), "shock_up" (the upward shock),
+            "shock_down" (the downward shock).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
 

@@ -73,12 +73,14 @@ def get_vasicek_loss_distribution(
     recovery_rate: float = 0.0,
 ) -> float | np.ndarray:
     """
-    The probability that the loss of a large homogeneous portfolio stays at or below a level,
-    Vasicek's (1987, 2002) limit of the one-factor Gaussian copula. In a portfolio of many
-    small loans with the same default probability p and asset correlation ρ the share of
-    loans that default given the factor is no longer random, it is p(Z), so the loss
-    distribution is that of p(Z) over the factor. It is the distribution behind the Basel II
-    and III internal ratings-based capital formula, which takes its 99.9% quantile.
+    Calculate the probability that the loss of a large homogeneous portfolio stays at or
+    below a level: Vasicek's (1987, 2002) limit of the one-factor Gaussian copula.
+
+    In a portfolio of many small loans with the same default probability p and asset
+    correlation ρ the share of loans that default given the factor is no longer random, it
+    is p(Z), so the loss distribution is that of p(Z) over the factor. It is the
+    distribution behind the Basel II and III internal ratings-based capital formula, which
+    takes its 99.9% quantile.
 
     The formula is as follows:
 
@@ -96,7 +98,9 @@ def get_vasicek_loss_distribution(
     - Basel Committee on Banking Supervision (2005). "An Explanatory Note on the Basel II IRB
       Risk Weight Functions."
 
-    Referenced against FinancePy's `portfolio_cdf_lhp`.
+    Referenced against:
+    - FinancePy, portfolio_cdf_lhp: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L60
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_vasicek_distribution_matches_financepy
 
     Args:
         loss (float | np.ndarray): The loss level(s) x, as a share of the notional.
@@ -145,10 +149,12 @@ def get_vasicek_loss_density(
     recovery_rate: float = 0.0,
 ) -> float | np.ndarray:
     """
-    The probability density of the loss of a large homogeneous portfolio, the derivative of
-    Vasicek's loss distribution (`get_vasicek_loss_distribution`). For a correlation below
-    one half it is zero at both ends and peaks near the mean loss; above one half it piles up
-    at no loss and at the full loss.
+    Calculate the probability density of the loss of a large homogeneous portfolio: how
+    likely each loss level is, the derivative of Vasicek's loss distribution
+    (`get_vasicek_loss_distribution`).
+
+    For a correlation below one half it is zero at both ends and peaks near the mean loss;
+    above one half it piles up at no loss and at the full loss.
 
     The formula is as follows:
 
@@ -163,7 +169,12 @@ def get_vasicek_loss_density(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       section 16.3.
 
-    Referenced against FinancePy's `lhp_density` and `lhp_analytical_density`.
+    Referenced against:
+    - FinancePy, lhp_analytical_density: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L219
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_vasicek_distribution_matches_financepy
+
+    Shares similar logic:
+    - FinancePy, lhp_density: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L137
 
     Args:
         loss (float | np.ndarray): The loss level(s) x, as a share of the notional.
@@ -215,12 +226,15 @@ def get_vasicek_tranche_loss(
     recovery_rate: float = DEFAULT_RECOVERY_RATE,
 ) -> float:
     """
-    The expected loss of a tranche of a large homogeneous portfolio, as a share of the
-    tranche notional. A tranche from the attachment K_1 to the detachment K_2 absorbs the
-    portfolio losses between them; the share of it that survives, 1 - the expected loss, is
-    the tranche survival probability with which its premium leg is valued like a CDS
-    (O'Kane, 2008, ch. 12). Given the factor the loss is certain, so the expectation is a
-    single integral, split at the factor value at which the loss reaches the strike.
+    Calculate the expected loss of a tranche of a large homogeneous portfolio, as a share of
+    the tranche notional: how much of the tranche the portfolio's defaults are expected to
+    wipe out.
+
+    A tranche from the attachment K_1 to the detachment K_2 absorbs the portfolio losses
+    between them; the share of it that survives, 1 - the expected loss, is the tranche
+    survival probability with which its premium leg is valued like a CDS (O'Kane, 2008, ch.
+    12). Given the factor the loss is certain, so the expectation is a single integral,
+    split at the factor value at which the loss reaches the strike.
 
     The formula is as follows:
 
@@ -241,7 +255,12 @@ def get_vasicek_tranche_loss(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       sections 16.3 and 16.4.
 
-    Referenced against FinancePy's `tr_surv_prob_lhp` and `exp_min_lk`.
+    Referenced against:
+    - FinancePy, tr_surv_prob_lhp: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L17
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_tranche_survival_matches_financepy
+
+    Shares similar logic:
+    - FinancePy, exp_min_lk: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_lhp.py#L257
 
     Args:
         attachment (float): The attachment K_1, as a share of the portfolio notional.
@@ -401,16 +420,17 @@ def get_portfolio_loss_distribution(
     integration_points: int = 64,
 ) -> pd.Series:
     """
-    The loss distribution of a portfolio of named credits in the one-factor Gaussian or
-    Student-t copula, with the recursion of Andersen, Sidenius and Basu (2003). Given the
-    common factor the names default independently, so the distribution of the loss is
-    built by adding one name at a time: each moves its loss up by its loss given default
+    Calculate the loss distribution of a portfolio of named credits in the one-factor
+    Gaussian or Student-t copula: the probability of every portfolio loss, with the
+    recursion of Andersen, Sidenius and Basu (2003).
+
+    Given the common factor the names default independently, so the distribution of the loss
+    is built by adding one name at a time: each moves its loss up by its loss given default
     with its conditional default probability. The conditional distributions are then
-    averaged over the factor (and, for the Student-t copula, the common scale) with
-    Gaussian quadrature. It holds names with different default probabilities,
-    correlations, recoveries and notionals; as the number of names grows the distribution
-    of a homogeneous portfolio tends to Vasicek's large portfolio limit
-    (`get_vasicek_loss_distribution`).
+    averaged over the factor (and, for the Student-t copula, the common scale) with Gaussian
+    quadrature. It holds names with different default probabilities, correlations,
+    recoveries and notionals; as the number of names grows the distribution of a homogeneous
+    portfolio tends to Vasicek's large portfolio limit (`get_vasicek_loss_distribution`).
 
     The formula is as follows:
 
@@ -438,8 +458,14 @@ def get_portfolio_loss_distribution(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       ch. 13 and 18.
 
-    Referenced against FinancePy's `loss_dbn_recursion_gcd` and `homog_basket_loss_dbn`
-    (Gaussian copula); the Student-t copula against a Monte Carlo simulation of the copula.
+    The Student-t copula is checked against a Monte Carlo simulation of the copula.
+
+    Referenced against:
+    - FinancePy, loss_dbn_recursion_gcd: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L29
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_recursion_matches_financepy
+
+    Shares similar logic:
+    - FinancePy, homog_basket_loss_dbn: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L95
 
     Args:
         default_probabilities (np.ndarray | list): The default probability p_i of every name
@@ -451,7 +477,8 @@ def get_portfolio_loss_distribution(
             name, or one for all. Defaults to 0.4.
         notionals (np.ndarray | list | float, optional): The notional N_i of every name, or
             one for all. Defaults to 1.
-        copula (str, optional): "gaussian" or "student_t". Defaults to "gaussian".
+        copula (str, optional): The copula. Options are: "gaussian" (the one-factor Gaussian
+            copula), "student_t" (the one-factor Student-t copula). Defaults to "gaussian".
         degrees_of_freedom (float | None, optional): The degrees of freedom ν of the
             Student-t copula. Defaults to None.
         loss_unit (float | None, optional): The loss unit, in the currency of the notionals;
@@ -533,13 +560,15 @@ def get_tranche_expected_loss(
     loss_distribution: pd.Series, attachment: float, detachment: float
 ) -> float:
     """
-    The expected loss of a tranche as a share of its notional, from a portfolio loss
-    distribution (`get_portfolio_loss_distribution`). The tranche from the attachment K_1 to
-    the detachment K_2 absorbs the portfolio losses between them; 1 - the expected loss is
-    the tranche survival probability, with which the premium and protection legs of a
-    tranche are valued like those of a CDS (O'Kane, 2008, ch. 12). The tranche losses of
-    the whole capital structure, weighted by their widths, add up to the expected portfolio
-    loss.
+    Calculate the expected loss of a tranche as a share of its notional, from a portfolio
+    loss distribution (`get_portfolio_loss_distribution`): how much of the tranche the
+    portfolio's defaults are expected to wipe out.
+
+    The tranche from the attachment K_1 to the detachment K_2 absorbs the portfolio losses
+    between them; 1 - the expected loss is the tranche survival probability, with which the
+    premium and protection legs of a tranche are valued like those of a CDS (O'Kane, 2008,
+    ch. 12). The tranche losses of the whole capital structure, weighted by their widths,
+    add up to the expected portfolio loss.
 
     The formula is as follows:
 
@@ -555,7 +584,9 @@ def get_tranche_expected_loss(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       ch. 12 and 18.
 
-    Referenced against FinancePy's `tranche_surv_prob_recursion`.
+    Referenced against:
+    - FinancePy, tranche_surv_prob_recursion: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/gauss_copula_onefactor.py#L150
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_tranche_survival_matches_financepy
 
     Args:
         loss_distribution (pd.Series): The probability of every loss, indexed by the loss as
@@ -604,12 +635,13 @@ def get_nth_to_default_probability(
     integration_points: int = 64,
 ) -> float:
     """
-    The probability that at least n names of a basket default before the horizon, the
-    probability that an nth-to-default basket pays out. The number of defaults is the loss
-    of a portfolio in which every name loses one unit, so its distribution follows from the
-    recursion of `get_portfolio_loss_distribution`. A first-to-default basket pays when any
-    name defaults, so it is worth more the less the names are correlated; for the last names
-    to default it is the other way around.
+    Calculate the probability that at least n names of a basket default before the horizon:
+    the probability that an nth-to-default basket pays out.
+
+    The number of defaults is the loss of a portfolio in which every name loses one unit, so
+    its distribution follows from the recursion of `get_portfolio_loss_distribution`. A
+    first-to-default basket pays when any name defaults, so it is worth more the less the
+    names are correlated; for the last names to default it is the other way around.
 
     The formula is as follows:
 
@@ -627,7 +659,8 @@ def get_nth_to_default_probability(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       ch. 14.
 
-    Referenced against FinancePy's `CDSBasket`.
+    Shares similar logic:
+    - FinancePy, CDSBasket: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds_basket.py#L38
 
     Args:
         default_probabilities (np.ndarray | list): The default probability p_i of every name
@@ -636,7 +669,8 @@ def get_nth_to_default_probability(
             factor (between 0 and 1, excluded), or one for all.
         n (int, optional): The default that triggers the basket, between 1 and the number of
             names. Defaults to 1.
-        copula (str, optional): "gaussian" or "student_t". Defaults to "gaussian".
+        copula (str, optional): The copula. Options are: "gaussian" (the one-factor Gaussian
+            copula), "student_t" (the one-factor Student-t copula). Defaults to "gaussian".
         degrees_of_freedom (float | None, optional): The degrees of freedom ν of the
             Student-t copula. Defaults to None.
         integration_points (int, optional): The quadrature nodes for the factor (and as
@@ -691,14 +725,16 @@ def get_nth_to_default_swap(
     integration_points: int = 64,
 ) -> pd.Series:
     """
-    The par spread and value of an nth-to-default basket swap: a CDS whose protection pays
-    (1 - R) of the notional at the nth default among the names of the basket, and whose
-    premium is paid until then. The time of the nth default has a survival curve of its
-    own, the probability of fewer than n defaults at each date, which the one-factor copula
-    gives at every premium date (`get_nth_to_default_probability`, with the default
-    probabilities of each name's survival curve at that date and one factor for all
-    dates). Between the dates its hazard rate is held flat, and the swap is then valued as
-    a CDS on that curve with the ISDA CDS Standard Model (`cds_model.get_credit_default_swap`).
+    Calculate the par spread and value of an nth-to-default basket swap: what protection
+    that pays (1 - R) of the notional at the nth default among the names of the basket costs
+    and is worth, a CDS whose premium is paid until that default.
+
+    The time of the nth default has a survival curve of its own, the probability of fewer
+    than n defaults at each date, which the one-factor copula gives at every premium date
+    (`get_nth_to_default_probability`, with the default probabilities of each name's
+    survival curve at that date and one factor for all dates). Between the dates its hazard
+    rate is held flat, and the swap is then valued as a CDS on that curve with the ISDA CDS
+    Standard Model (`cds_model.get_credit_default_swap`).
 
     The formula is as follows:
 
@@ -721,7 +757,9 @@ def get_nth_to_default_swap(
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley,
       ch. 14.
 
-    Referenced against FinancePy's `CDSBasket` (`value_gaussian_one_factor`).
+    Referenced against:
+    - FinancePy, CDSBasket.value_1f_gaussian_homo: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/credit/cds_basket.py#L354
+        Test: tests/fixedincome/test_portfolio_credit_model.py::test_nth_to_default_swap_matches_financepy
 
     Args:
         n (int): The default that triggers the protection, between 1 and the number of
@@ -739,7 +777,8 @@ def get_nth_to_default_swap(
         recovery_rate (float, optional): The recovery rate of every name. Defaults to 0.4.
         notional (float, optional): The notional. Defaults to 1.
         frequency (int, optional): The number of premium payments per year. Defaults to 4.
-        copula (str, optional): "gaussian" or "student_t". Defaults to "gaussian".
+        copula (str, optional): The copula. Options are: "gaussian" (the one-factor Gaussian
+            copula), "student_t" (the one-factor Student-t copula). Defaults to "gaussian".
         degrees_of_freedom (float | None, optional): The degrees of freedom ν of the
             Student-t copula. Defaults to None.
         integration_points (int, optional): The quadrature nodes for the factor (and as

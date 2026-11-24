@@ -49,12 +49,17 @@ def get_survival_probability(
     years: float | np.ndarray,
 ) -> np.ndarray:
     """
-    The survival probabilities of a piecewise flat hazard rate curve.
+    Calculate the survival probabilities of a piecewise flat hazard rate curve: the
+    probability that the reference entity has not defaulted by each time.
 
     The hazard rate λ_i holds between the maturities T_(i-1) and T_i (T_0 = 0), and the
     last one beyond the last maturity, so the probability of no default before t is
 
     - Q(t) = exp(-SUM(λ_i * (min(t, T_i) - T_(i-1))^+))
+
+    Referenced against:
+    - QuantLib, HazardRateCurve: https://www.quantlib.org/reference/class_quant_lib_1_1_interpolated_hazard_rate_curve.html
+        Test: tests/fixedincome/test_credit_model.py::test_survival_probability_matches_quantlib
 
     Args:
         hazard_rates (np.ndarray | list | pd.Series): The hazard rates λ_i, continuous and
@@ -83,7 +88,8 @@ def get_hazard_rate(
     years: float | np.ndarray,
 ) -> np.ndarray:
     """
-    The hazard rate of a piecewise flat hazard rate curve at any times.
+    Calculate the hazard rate of a piecewise flat hazard rate curve at any times: the rate
+    at which the reference entity defaults at that time, given that it survived until then.
 
     Args:
         hazard_rates (np.ndarray | list | pd.Series): The hazard rates λ_i per year.
@@ -108,9 +114,9 @@ def get_default_integrals(
     accrual_start: float | None = None,
 ) -> tuple[float, float]:
     """
-    The discounted probability of a default between two times, and the discounted time
-    accrued since a date at that default, the two integrals of the default leg of a bond
-    or CDS (O'Kane, 2008, ch. 6; ISDA CDS Standard Model).
+    Calculate the discounted probability of a default between two times, and the discounted
+    time accrued since a date at that default: the two integrals of the default leg of a
+    bond or CDS (O'Kane, 2008, ch. 6; ISDA CDS Standard Model).
 
     The formula is as follows:
 
@@ -184,8 +190,10 @@ def get_risky_bond_price(
     par_value: float = 100,
 ) -> float:
     """
-    Calculate the price of a fixed rate bond that can default, from a risk-free zero-coupon
-    curve and a survival curve (Jarrow and Turnbull, 1995; O'Kane, 2008, ch. 3).
+    Calculate the price of a fixed rate bond that can default: what its coupons and
+    principal are worth given the chance that the issuer defaults and pays only the
+    recovery, from a risk-free zero-coupon curve and a survival curve (Jarrow and Turnbull,
+    1995; O'Kane, 2008, ch. 3).
 
     Every coupon and the principal are paid only when the issuer survives to their date, and
     a default pays the recovery rate times the face value at the time of default:
@@ -209,7 +217,9 @@ def get_risky_bond_price(
       Subject to Credit Risk." The Journal of Finance, 50(1), 53-85.
     - O'Kane, D. (2008). "Modelling Single-name and Multi-name Credit Derivatives." Wiley.
 
-    Referenced against QuantLib's RiskyBondEngine on a PiecewiseFlatHazardRate curve.
+    Referenced against:
+    - QuantLib, RiskyBondEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_risky_bond_engine.html
+        Test: tests/fixedincome/test_credit_model.py::test_risky_bond_price_matches_quantlib
 
     Args:
         coupon_rate (float): The annual coupon rate, as a decimal.
@@ -259,8 +269,9 @@ def get_bond_implied_hazard_rates(
     frequency: int = 2,
 ) -> pd.Series:
     """
-    Bootstrap a piecewise flat hazard rate curve from the spreads of bonds over the risk-free
-    curve, such as the option-adjusted spreads of a corporate bond index by maturity.
+    Bootstrap a piecewise flat hazard rate curve from the spreads of bonds over the
+    risk-free curve, such as the option-adjusted spreads of a corporate bond index by
+    maturity: the default intensity over time that the bond market prices in.
 
     Each spread s_i is taken as the spread over the zero-coupon curve of a bond that matures
     at T_i and trades at par, so its coupon is the par yield of the spread curve. The hazard

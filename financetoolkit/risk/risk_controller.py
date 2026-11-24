@@ -327,11 +327,12 @@ class Risk(
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculates and collects all risk metrics.
+        Collect all risk metrics of every asset in one table: its volatility, tail risk, drawdowns and
+        distribution side by side.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -349,7 +350,7 @@ class Risk(
 
         Notes:
         - The method calculates various risk metrics for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the ratio values
+        - With growth, the method calculates the growth of the ratio values
           using the specified `lag`.
 
         As an example:
@@ -569,8 +570,10 @@ class Risk(
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the risk metrics: whether the tickers that score
-        high on a metric go on to return more than those that score low. Per period, the
+        Calculate the factor analysis (predictive power) of the risk metrics: whether the tickers that
+        score high on a metric go on to return more than those that score low.
+
+        Per period, the
         information coefficient (IC) is the Spearman rank correlation between the metric of the
         tickers in the period and their return over the following horizon: 1 means the metric
         ranks the later returns perfectly, -1 in reverse and 0 that it says nothing about them.
@@ -606,14 +609,19 @@ class Risk(
         returns it is compared with. Each ticker keeps its own history: a ticker without a
         value or a return in a period is left out of that period only.
 
+        Shares similar logic:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+
         Args:
             metrics (str | list[str], optional): A risk method name with a value per ticker and period,
-                e.g. "get_volatility", a list of them, or a collection: "anomalies" or "all".
-                Defaults to "anomalies", the volatility, maximum drawdown, skewness and Amihud
-                illiquidity. "all" adds the downside deviation, kurtosis, value at risk,
+                e.g. "get_volatility", a list of them, or a collection. Options for a collection are:
+                "anomalies" (the volatility, maximum drawdown, skewness and Amihud illiquidity), "all"
+                (every risk metric with a value per ticker and period). Defaults to "anomalies". "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
-            period (str, optional): The frequency at which the metrics are measured and evaluated
-                (weekly, monthly, quarterly or yearly). Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated.
+                Options are: "daily", "weekly", "monthly", "quarterly", "yearly". Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
@@ -624,18 +632,18 @@ class Risk(
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
             detail (str | None, optional): Returns one part of the analysis of a single metric
-                instead of the summary: "information_coefficient" (per period and horizon),
-                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
-                per calendar month or year), "group_information_coefficient" (the IC statistics
-                within each group, needs group), "quantile_returns" (the mean forward return per
-                quantile and horizon), "quantile_returns_by_date" (per period),
-                "quantile_return_statistics" (the mean, its standard error and both per single
-                period), "quantile_statistics" (the range, mean and count of the factor values in
-                each quantile), "quantile_turnover" (per period and quantile),
-                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
+                instead of the summary. Options are: "information_coefficient" (per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year),
+                "group_information_coefficient" (the IC statistics within each group, needs group),
+                "quantile_returns" (the mean forward return per quantile and horizon),
+                "quantile_returns_by_date" (per period), "quantile_return_statistics" (the mean, its
+                standard error and both per single period), "quantile_statistics" (the range, mean and
+                count of the factor values in each quantile), "quantile_turnover" (per period and
+                quantile), "rank_autocorrelation" (per period), "factor_weights" (the weights of the
                 factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
                 return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
-                each quantile) or "event_returns" (the mean price path of each quantile from the
+                each quantile), "event_returns" (the mean price path of each quantile from the
                 longest horizon before to the longest horizon after the periods it is formed).
                 Defaults to None.
             column (str | None, optional): The output to use of a metric with several.
@@ -650,11 +658,11 @@ class Risk(
                 factor-weighted portfolio neutral within each group. Without group the IC
                 stays the same, as subtracting one mean from every ticker keeps their ranks.
                 Defaults to False.
-            binning (str, optional): How the tickers are sorted into quantiles per period:
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are:
                 "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
                 and highest value), "zero_aware" (half of the quantiles for the negative and half
                 for the zero and positive values, for a signal centred on zero; needs an even number
-                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
+                of quantiles), "group" (equally sized within each group, needs group). Defaults to
                 "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -693,9 +701,8 @@ class Risk(
               1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
               (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
               35(1).
-            - Referenced against alphalens-reloaded
-              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
-              spread is half of the one here (a gross exposure of one rather than two), it
+            - The top minus bottom spread of alphalens (Stefan Jansen's alphalens-reloaded)
+              is half of the one here (a gross exposure of one rather than two), it
               drops a period and ticker without every horizon's return where each horizon
               here uses its own, and its event returns average the single-period returns at
               each offset where these are the price paths rebased to the period itself.

@@ -58,7 +58,8 @@ class LiquidityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Amihud (2002) Illiquidity ratio, per asset.
+        Calculate the Amihud (2002) Illiquidity ratio per asset: how much the price moves per dollar traded,
+        high for an illiquid asset.
 
         The Amihud ratio measures the average price impact of trading -- how much the
         price moves per dollar of trading volume. A high value means that even a small
@@ -87,8 +88,8 @@ class LiquidityRisk:
         Also known as: Amihud illiquidity ratio, ILLIQ, price impact ratio.
 
         Args:
-            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
-                Defaults to "daily".
+            period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the ratio within the specified period or
             for the entire period. Defaults to False. Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
@@ -113,7 +114,7 @@ class LiquidityRisk:
         Notes:
         - The method retrieves historical return, Close price and Volume data based on the specified
         `period` and calculates the Amihud Illiquidity ratio for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the Amihud Illiquidity values
+        - With growth, the method calculates the growth of the Amihud Illiquidity values
         using the specified `lag`.
 
         A `scale` of one billion is used in the example below: liquid stocks trade so much dollar volume
@@ -216,17 +217,17 @@ class LiquidityRisk:
         measure of the trading of the day, over the days within the period. A high value is an illiquid asset,
         in which trading moves the price a lot:
 
-        - method="kyle": Kyle (1985) models market makers who cannot tell informed from uninformed orders and
+        - Kyle's lambda: Kyle (1985) models market makers who cannot tell informed from uninformed orders and
         move the price by λ per share of net order flow. The price change of a day is regressed on its Volume,
         signed with the tick rule (a rise is buying, a fall selling).
-        - method="amihud": the absolute log return of a day is regressed on its dollar volume. This is the
+        - Amihud's lambda: the absolute log return of a day is regressed on its dollar volume. This is the
         regression form of the Amihud (2002) illiquidity ratio (`get_amihud_illiquidity`, the mean of the
         ratios), which weighs the days by their dollar volume, so a quiet day with a large move does not
         dominate it.
-        - method="hasbrouck": Hasbrouck (2009) uses the square root of the signed dollar volume, as the impact
+        - Hasbrouck's lambda: Hasbrouck (2009) uses the square root of the signed dollar volume, as the impact
         of an order grows less than proportionally with its size. The log return of a day is regressed on the
         square root of its dollar volume, signed with the tick rule.
-        - method="roll": the Roll (1984) spread of the period (see `get_roll_spread`) divided by the mean
+        - Roll Impact: the Roll (1984) spread of the period (see `get_roll_spread`) divided by the mean
         dollar volume of its days, the spread paid per dollar traded.
 
         The measures are mostly used to compare assets and periods: a rising lambda is a market that has
@@ -246,31 +247,31 @@ class LiquidityRisk:
 
         The formula is as follows:
 
-        With method="kyle":
+        For Kyle's lambda:
 
         - b_t = sign(ΔP_t), or b_(t-1) when ΔP_t = 0
         - ΔP_t = λ * (b_t * V_t) + ε_t
         - Kyle's Lambda = Σ(ΔP_t * b_t * V_t) / Σ((b_t * V_t)^2) * 1,000,000
 
-        With method="amihud":
+        For Amihud's lambda:
 
         - |r_t| = λ * DV_t + ε_t
         - Amihud's Lambda = Σ(|r_t| * DV_t) / Σ(DV_t^2) * 1,000,000,000
 
-        With method="hasbrouck":
+        For Hasbrouck's lambda:
 
         - b_t = sign(r_t), or b_(t-1) when r_t = 0
         - r_t = λ * (b_t * √DV_t) + ε_t
         - Hasbrouck's Lambda = Σ(r_t * b_t * √DV_t) / Σ(DV_t) * 1,000,000
 
-        With method="roll":
+        For the Roll Impact:
 
         - Roll Spread = 2 * √(-Cov(ΔP_t, ΔP_(t-1)))
         - Roll Impact = Roll Spread / Mean(DV_t) * 1,000,000,000
 
         Where ΔP_t is the change of the Close, V_t the Volume, DV_t = Close_t * V_t the dollar volume and r_t
         the log return of the Adjusted Close (continuously compounded) on day t; the sums, the covariance
-        (ddof=1) and the mean run over the days within the period. The default `scale` makes the measures of
+        (with n - 1 in the denominator) and the mean run over the days within the period. The default `scale` makes the measures of
         stocks readable: Kyle's lambda is the change of the price per million shares of net buying, Amihud's
         lambda the absolute log return per billion dollars traded (as `get_amihud_illiquidity` is shown),
         Hasbrouck's lambda the log return per square root of a dollar times 1,000,000 and the Roll Impact the
@@ -280,12 +281,13 @@ class LiquidityRisk:
         lambda, Roll impact.
 
         Args:
-            period (str, optional): The period each regression runs within (weekly, monthly, quarterly or yearly).
-                Defaults to "monthly".
+            period (str, optional): The period each regression runs within. Options are: "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "monthly".
             rolling (int, optional): Regress on the days of the last `rolling` periods together instead of one
                 period (e.g. period='monthly' and rolling=3 for a three-month lambda at every month end).
                 Defaults to None.
-            method (str, optional): The measure: "kyle", "amihud", "hasbrouck" or "roll". Defaults to "kyle".
+            method (str, optional): The measure. Options are: "kyle" (Kyle's lambda), "amihud" (Amihud's lambda),
+                "hasbrouck" (Hasbrouck's lambda), "roll" (Roll Impact). Defaults to "kyle".
             scale (float | None, optional): A multiplier applied to the measure for readability. Defaults to
                 None, which uses 1,000,000 for method="kyle" and "hasbrouck" and 1,000,000,000 for "amihud" and
                 "roll".
@@ -308,7 +310,7 @@ class LiquidityRisk:
         - The method uses the daily prices of each asset on its own trading days; the price change and log
         return of a day are those since the asset's previous trading day.
         - A day without a price change keeps the sign of the last change (the tick rule), as in the book.
-        - A period with fewer than two days, or for method="roll" with fewer than three pairs of consecutive
+        - A period with fewer than two days, or for the Roll Impact with fewer than three pairs of consecutive
         price changes within the period or an autocovariance of zero or above (no Roll spread), is NaN.
         - The lambdas are the regression slopes of the book, not the means of the ratios (ΔP_t / (b_t * V_t)
         and the like), which would weigh every day equally however little traded on it. For the Roll impact a
@@ -403,7 +405,8 @@ class LiquidityRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Roll (1984) implied bid-ask spread, per asset.
+        Calculate the Roll (1984) implied bid-ask spread per asset: the cost of a round trip implied by the
+        bounce of the price between the bid and the ask.
 
         Roll's model shows that, under a stylized microstructure model in which the
         true (efficient) price follows a random walk and observed trade prices
@@ -428,14 +431,15 @@ class LiquidityRisk:
         - Roll Spread = 2 * √(-Cov(ΔP_t, ΔP_(t-1)))
         - Relative Roll Spread = Roll Spread / Mean(P)
 
-        Where P is the Close price, ΔP_t = P_t - P_(t-1) and Cov the sample autocovariance (ddof=1) of
+        Where P is the Close price, ΔP_t = P_t - P_(t-1) and Cov the sample autocovariance (with n - 1 in the
+        denominator) of
         consecutive price changes; a covariance of zero or above gives NaN.
 
         Also known as: Roll's implied spread, Roll measure.
 
         Args:
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily".
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily".
             within_period (bool, optional): Whether to calculate the spread within the specified period or
             for the entire period. Defaults to False. Note that this requires intraday data when period = 'daily', since a
             single day only nests observations when intraday data was fetched.
@@ -514,8 +518,10 @@ class LiquidityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the bid-ask spread per asset and period from daily prices alone, without quote data,
-        with the EDGE estimator of Ardia, Guidotti and Kroencke (2024), the high-low estimator of Corwin and
+        Calculate the bid-ask spread per asset and period: the cost of a round trip, estimated from daily
+        prices alone, without quote data.
+
+        It uses the EDGE estimator of Ardia, Guidotti and Kroencke (2024), the high-low estimator of Corwin and
         Schultz (2012) or the close-high-low estimator of Abdi and Ranaldo (2017).
 
         The daily High is almost always a trade at the ask and the daily Low a trade at the bid, while the
@@ -523,7 +529,7 @@ class LiquidityRisk:
         to it therefore hold both the volatility and the bid-ask spread, and each estimator separates the
         two in its own way:
 
-        - method="edge" (the Efficient Discrete Generalized Estimator) takes the mid-range (the average of
+        - EDGE (the Efficient Discrete Generalized Estimator) takes the mid-range (the average of
         the High and Low) as a proxy for the efficient price; the returns between it and the Open and the
         Close bounce with the spread. Four such estimators, two at the open and two at the close (one of
         them a generalization of the Abdi-Ranaldo spread), are combined with the weights of the
@@ -532,12 +538,12 @@ class LiquidityRisk:
         asymptotically unbiased and, in the paper's simulations and empirical tests, more precise than the
         Roll, Corwin-Schultz and Abdi-Ranaldo estimators. It is estimated from all pairs of consecutive
         trading days of the period at once.
-        - method="corwin_schultz": the volatility part of the range grows with the length of the window
+        - Corwin-Schultz: the volatility part of the range grows with the length of the window
         while the spread part does not, so comparing the ranges of two single days with the range over
         both days together backs out the spread from the daily High and Low. Each pair of consecutive
         trading days gives an estimate and the spread of a period is the average of the estimates within
         it.
-        - method="abdi_ranaldo": the distance of the Close to the mid-range of its own day and to that of
+        - Abdi-Ranaldo: the distance of the Close to the mid-range of its own day and to that of
         the next day both hold half the spread, and their product removes the volatility of the efficient
         price. Unlike the Corwin-Schultz spread, the estimator uses the Close as well and needs no
         adjustment for the overnight return (a weekend or a gap at the open). Each pair of consecutive
@@ -561,7 +567,7 @@ class LiquidityRisk:
 
         The formula is as follows:
 
-        With method="edge":
+        For the EDGE spread:
 
         - η_t = (h_t + l_t) / 2 and τ_t = 1 if h_t ≠ l_t or l_t ≠ c_(t-1), else 0
         - π_o = -8 / (P[o_t ≠ h_t, τ_t = 1] + P[o_t ≠ l_t, τ_t = 1])
@@ -578,7 +584,7 @@ class LiquidityRisk:
         squared spread of the period is set to 0, as in the paper (equation 26); setting the period's
         estimate rather than each two-day estimate to 0 keeps the estimate consistent.
 
-        With method="corwin_schultz":
+        For the Corwin-Schultz spread:
 
         - β = [ln(H_t / L_t)]^2 + [ln(H_(t+1) / L_(t+1))]^2
         - γ = [ln(max(H_t, H_(t+1)) / min(L_t, L_(t+1)))]^2
@@ -593,7 +599,7 @@ class LiquidityRisk:
         the difference. A negative two-day spread is set to 0, the paper's main convention,
         before the average is taken.
 
-        With method="abdi_ranaldo":
+        For the Abdi-Ranaldo spread:
 
         - η_t = (ln H_t + ln L_t) / 2
         - Two-Day Spread = √(max(4 * (ln C_t - η_t) * (ln C_t - η_(t+1)), 0))
@@ -609,15 +615,19 @@ class LiquidityRisk:
         spread estimator, HL spread, CS spread, Abdi-Ranaldo spread, close-high-low spread estimator, CHL
         spread, AR spread.
 
+        Shares similar logic:
+        - RiskLabAI, edge_estimator (EDGE): https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/edge.py#L42
+        - RiskLabAI, corwin_schultz_estimator (Corwin-Schultz): https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/corwin_schultz.py#L106
+
         Args:
-            period (str, optional): The period to estimate the spread over (weekly, monthly, quarterly or
-                yearly). Defaults to "monthly", as in the papers.
+            period (str, optional): The period to estimate the spread over. Options are: "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "monthly", as in the papers.
             rolling (int, optional): Estimate the spread from the pairs of the last `rolling` periods together
                 (method="edge"), or average the two-day spreads of the last `rolling` periods
                 (method="corwin_schultz" and "abdi_ranaldo"), instead of one period (e.g. period='monthly' and
                 rolling=3 for a three-month spread at every month end). Defaults to None.
-            method (str, optional): The estimator: "edge" (Ardia, Guidotti and Kroencke, from the Open,
-                High, Low and Close), "corwin_schultz" (from the High and Low) or "abdi_ranaldo" (from the
+            method (str, optional): The estimator. Options are: "edge" (Ardia, Guidotti and Kroencke, from the
+                Open, High, Low and Close), "corwin_schultz" (from the High and Low), "abdi_ranaldo" (from the
                 Close, High and Low). Defaults to "edge".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -642,16 +652,16 @@ class LiquidityRisk:
         - Both days of a pair fall within the period; a pair across two periods is left out, also in a
         rolling window.
         - A day with a price of 0 or below (a bad bar) is left out.
-        - With method="edge", a period with fewer than two pairs with a price change, or in which the Open
+        - For the EDGE spread, a period with fewer than two pairs with a price change, or in which the Open
         (or the previous Close) equals both the High and the Low on every pair with a price change (only
-        single-price days), is NaN. The estimates equal those of the authors' `bidask` package (`edge` on
-        the days of the period, with negative squared spreads set to 0).
-        - With method="abdi_ranaldo", averaging the square roots of the two-day estimates lowers the level
+        single-price days), is NaN. The estimate follows the equations of the authors' `bidask` package
+        (`edge` on the days of the period, with negative squared spreads set to 0).
+        - For the Abdi-Ranaldo spread, averaging the square roots of the two-day estimates lowers the level
         when the daily volatility is large relative to the spread (in simulations with a 1% spread and a 1%
         daily volatility the estimate is about 0.8%). The paper accepts this for the closer correlation
-        with the effective spread from trade and quote data; method="edge" has no such bias.
+        with the effective spread from trade and quote data; the EDGE spread has no such bias.
         - Abdi and Ranaldo discard months with fewer than 12 applicable days; no such minimum is applied
-        here, as for method="corwin_schultz", so a period with a single pair has an estimate.
+        here, as for the Corwin-Schultz spread, so a period with a single pair has an estimate.
 
         As an example:
 
@@ -739,7 +749,7 @@ class LiquidityRisk:
         overstates the volatility of an asset with a wide spread. Corwin and Schultz write the expected squared
         range of one day and of two days in terms of the spread and the volatility; the spread part does not
         grow with the length of the window while the volatility part does. Solving the two equations for the
-        spread gives the Corwin-Schultz spread (`get_bid_ask_spread` with method="corwin_schultz"), and solving
+        spread gives the Corwin-Schultz spread (`get_bid_ask_spread`), and solving
         them for the volatility gives this estimate, as López de Prado (2018, section 19.3.4 and snippet 19.2)
         does; RiskLabAI names it the Bekker-Parkinson volatility.
 
@@ -767,9 +777,12 @@ class LiquidityRisk:
 
         Also known as: Corwin-Schultz volatility, spread-adjusted high-low volatility.
 
+        Shares similar logic:
+        - RiskLabAI, bekker_parkinson_volatility_estimates: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/bekker_parkinson_volatility_estimator.py#L51
+
         Args:
-            period (str, optional): The period to estimate the volatility over and scale to (weekly, monthly,
-                quarterly or yearly). Defaults to "monthly", as for the Corwin-Schultz spread.
+            period (str, optional): The period to estimate the volatility over and scale to. Options are:
+                "weekly", "monthly", "quarterly", "yearly". Defaults to "monthly", as for the Corwin-Schultz spread.
             rolling (int, optional): Average the two-day volatilities of the last `rolling` periods instead of
                 one period (e.g. period='monthly' and rolling=3 for a three-month estimate at every month end).
                 Defaults to None.
@@ -795,8 +808,7 @@ class LiquidityRisk:
         set to 0 before the average is taken, as in López de Prado's snippet 19.2.
         - RiskLabAI's `bekker_parkinson_volatility_estimates` averages β over a rolling window of days but takes
         γ of the last pair only, and does not adjust for the overnight return. Here σ is taken per pair and
-        averaged per period, as the Corwin-Schultz spread is; per pair the two are the same. Referenced against
-        RiskLabAI (https://github.com/RiskLabAI/RiskLabAI.py).
+        averaged per period, as the Corwin-Schultz spread is; per pair the two use the same formula.
 
         As an example:
 
@@ -864,8 +876,8 @@ class LiquidityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Share Turnover, the number of shares traded relative to the number of
-        shares outstanding, per asset and period.
+        Calculate the Share Turnover per asset and period: the number of shares traded relative to the
+        number of shares outstanding, high for a liquid asset.
 
         Datar, Naik and Radcliffe (1998) use the turnover as a liquidity proxy: a share that
         changes hands often can be traded at a lower cost. They find that stocks with a lower
@@ -874,7 +886,7 @@ class LiquidityRisk:
         shares that was traded in it, the sum of the daily turnover within the period.
 
         The paper measures the turnover per month and averages it over the three months before
-        the month of the returns, which `rolling=3` gives with the default monthly period.
+        the month of the returns, which a rolling window of 3 gives with the default monthly period.
         A turnover of 0.1 means that 10% of the shares outstanding changed hands; a value
         above 1 means more shares were traded than there are outstanding.
 
@@ -895,8 +907,8 @@ class LiquidityRisk:
         Also known as: turnover ratio, share turnover rate, trading turnover.
 
         Args:
-            period (str, optional): The period to sum the daily turnover over (weekly, monthly, quarterly or
-                yearly). Defaults to "monthly", as in the paper.
+            period (str, optional): The period to sum the daily turnover over. Options are: "weekly", "monthly",
+                "quarterly", "yearly". Defaults to "monthly", as in the paper.
             rolling (int, optional): The mean of the turnover of the last `rolling` periods instead of the
                 turnover per period (e.g. rolling=3 for the paper's three-month average). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -918,7 +930,7 @@ class LiquidityRisk:
         Notes:
         - The number of shares is the Weighted Average Shares of the income statement, the share count the
         Toolkit's market capitalization uses as well. Each period's figure applies from the end of its fiscal
-        period (from the filing day with point_in_time), so a day never uses a share count that was not yet
+        period (from the filing day with a point-in-time Toolkit), so a day never uses a share count that was not yet
         reported. The days before the first fiscal period end in the statements have no share count, so a
         period with such a day is NaN rather than a partial sum, as is a period with a trading day without a
         positive share count.
@@ -1010,15 +1022,15 @@ class LiquidityRisk:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Calculate the Idiosyncratic Volatility, the volatility of the part of the returns the
-        factors do not explain, per asset and period.
+        Calculate the Idiosyncratic Volatility per asset and period: the volatility of the part of the
+        returns the factors do not explain.
 
         Ang, Hodrick, Xing and Zhang (2006) regress the daily excess returns of every stock on
         the Fama and French three factors within each month and take the standard deviation
         of the residuals. Stocks with a high idiosyncratic volatility earn strikingly low
         returns in the following month, the idiosyncratic volatility puzzle: a diversified
         investor is not exposed to this risk, so it should not be priced at all, let alone
-        negatively. With model="capm" the regression is the market model on the excess return
+        negatively. With the CAPM the regression is the market model on the excess return
         of the benchmark instead.
 
         For more information about the method, see the following paper:
@@ -1026,37 +1038,37 @@ class LiquidityRisk:
         - Ang, A., Hodrick, R. J., Xing, Y., & Zhang, X. (2006). "The Cross-Section of
         Volatility and Expected Returns." The Journal of Finance, 61(1), 259-299.
 
-        The formula is as follows (with the default model="fama_french"):
+        The formula is as follows (with the default Fama and French three factors):
 
         - Excess Return_t = α + β_1 * (Mkt-RF)_t + β_2 * SMB_t + β_3 * HML_t + ε_t
         - Idiosyncratic Volatility = Std(ε_t) * √(Trading Days per Period)
 
-        And with model="capm":
+        And with the CAPM:
 
         - Excess Return_t = α + β * Benchmark Excess Return_t + ε_t
 
         Where the regression runs on the daily returns within the period, Std is the sample
-        standard deviation (ddof=1) of the residuals and the trading days per period are 252 / 12
+        standard deviation (with n - 1 in the denominator) of the residuals and the trading days per period are 252 / 12
         (monthly), 252 / 4 (quarterly) or 252 (yearly), the scaling of the Volatility of the Risk
-        module; with annualize=True it is √252 for every period. A period with fewer than 15
+        module; annualized it is √252 for every period. A period with fewer than 15
         daily returns (the paper's minimum) is NaN.
 
         Also known as: IVOL, idiosyncratic risk, residual volatility, specific risk.
 
         Args:
-            period (str, optional): The period each regression runs within (monthly, quarterly or yearly).
-                Defaults to "monthly", as in the paper.
-            model (str, optional): The factors to regress on: "fama_french" for the Fama and French three
-                factors (Mkt-RF, SMB, HML) or "capm" for the excess return of the benchmark. Defaults to
+            period (str, optional): The period each regression runs within. Options are: "monthly", "quarterly",
+                "yearly". Defaults to "monthly", as in the paper.
+            model (str, optional): The factors to regress on. Options are: "fama_french" (the Fama and French
+                three factors Mkt-RF, SMB and HML), "capm" (the excess return of the benchmark). Defaults to
                 "fama_french".
             rolling (int, optional): Regress on the daily returns of the last `rolling` periods instead of one
                 period (e.g. period='monthly' and rolling=12 for a one-year window at every month end).
                 Defaults to None.
             annualize (bool, optional): Whether to scale the daily standard deviation of the residuals to a
                 year (√252) instead of to the period. Defaults to False.
-            region (str, optional): The region whose Fama and French factors to use with model="fama_french":
-                "United States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan"
-                or "North America". Every region's factors are U.S. dollar returns. Defaults to
+            region (str, optional): The region whose Fama and French factors to use with model="fama_french".
+                Options are: "United States", "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific
+                ex Japan", "North America". Every region's factors are U.S. dollar returns. Defaults to
                 "United States".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -1077,10 +1089,10 @@ class LiquidityRisk:
 
         Notes:
         - The returns are the daily returns of the Adjusted Close on the asset's own trading days.
-        - With model="fama_french", the excess return is the return minus the risk-free rate (RF) of the
+        - With the Fama and French factors, the excess return is the return minus the risk-free rate (RF) of the
         Fama and French dataset, the one-month Treasury bill the factors are built with, as in the paper.
         The dataset is published with a delay of a month or more, so the most recent periods are NaN.
-        - With model="capm", the excess returns are taken over the risk-free rate of the Toolkit, an annually
+        - With the CAPM, the excess returns are taken over the risk-free rate of the Toolkit, an annually
         compounded yield converted to a daily rate with (1 + rate)^(1 / 252) - 1, and the benchmark itself is
         left out, as its residuals are 0.
         - The regression runs on the days with a return for both the asset and every factor.
@@ -1161,7 +1173,7 @@ class LiquidityRisk:
     ):
         """
         Calculate the Volume-Synchronized Probability of Informed Trading (VPIN) of Easley, López de Prado and
-        O'Hara (2012) per asset and day, from daily bars.
+        O'Hara (2012) per asset and day, from daily bars: how one-sided, and thus toxic, the order flow is.
 
         VPIN measures the toxicity of the order flow, the share of the volume that is one-sided: informed traders
         buy (or sell) persistently, while uninformed trading roughly balances. The volume is cut into buckets of
@@ -1195,11 +1207,14 @@ class LiquidityRisk:
 
         Where P is the Adjusted Close and V_t the Volume of day t, Z the cumulative distribution function of the
         standard normal distribution (or of the Student-t distribution with `degrees_of_freedom`), σ_ΔP the
-        sample standard deviation (ddof=1) of the price changes of the last `window` days, V the volume of a
+        sample standard deviation (with n - 1 in the denominator) of the price changes of the last `window` days, V the volume of a
         bucket and n the number of `buckets`.
 
         Also known as: volume-synchronized probability of informed trading, flow toxicity, order flow toxicity,
         bulk volume classification, BVC.
+
+        Shares similar logic:
+        - RiskLabAI, volume_synchronized_pin: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/microstructural_features/order_flow.py#L157
 
         Args:
             buckets (int, optional): The number of buckets n VPIN is the mean over. Defaults to 50, as in the

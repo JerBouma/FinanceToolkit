@@ -64,12 +64,13 @@ def get_lmm_factor_loadings(
     factors: int | None = None,
 ) -> np.ndarray:
     """
-    The factor loadings B of the forward rates of a LIBOR market model: the matrix whose rows
-    give each forward's exposure to independent Brownian motions, so that dW_i = SUM(B_ik dZ_k)
-    and the correlation of the forwards is B Bᵀ. With fewer factors than forwards the
-    correlation is reduced in rank, with Rebonato's (2002) method: keep the largest
-    eigenvalues of the correlation matrix and scale every row back to unit length, so each
-    forward keeps its volatility.
+    Calculate the factor loadings B of the forward rates of a LIBOR market model: the matrix
+    whose rows give each forward's exposure to independent Brownian motions, so that dW_i =
+    SUM(B_ik dZ_k) and the correlation of the forwards is B Bᵀ.
+
+    With fewer factors than forwards the correlation is reduced in rank, with Rebonato's
+    (2002) method: keep the largest eigenvalues of the correlation matrix and scale every
+    row back to unit length, so each forward keeps its volatility.
 
     The formula is as follows:
 
@@ -236,9 +237,12 @@ def simulate_lmm_forwards(
 ) -> np.ndarray:
     """
     Simulate the forward rates of a LIBOR market model under the spot LIBOR measure, from
-    today to the last reset time. Each forward F_i has a constant volatility σ_i and the
-    forwards are correlated through factor loadings (`get_lmm_factor_loadings`): one factor
-    makes them move together, more factors let the curve twist.
+    today to the last reset time: the paths along which the forward rates of the curve may
+    move together.
+
+    Each forward F_i has a constant volatility σ_i and the forwards are correlated through
+    factor loadings (`get_lmm_factor_loadings`): one factor makes them move together, more
+    factors let the curve twist.
 
     The scheme is log-Euler with the drift frozen at the start of every step (Glasserman,
     2003, section 3.7): the logarithm of a forward has a constant volatility, so only the
@@ -268,9 +272,13 @@ def simulate_lmm_forwards(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, sections 6.3 and 6.10.
 
-    Referenced against FinancePy's `lmm_simulate_fwds_1f`, `lmm_simulate_fwds_mf` and
-    `lmm_simulate_fwds_nf`, which step once per period; the paths match in distribution
-    rather than draw by draw.
+    FinancePy's LMM simulations step once per period; the paths match in distribution rather
+    than draw by draw.
+
+    Shares similar logic:
+    - FinancePy, lmm_simulate_fwds_1f: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L430
+    - FinancePy, lmm_simulate_fwds_mf: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L547
+    - FinancePy, lmm_simulate_fwds_nf: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L320
 
     Args:
         forward_rates (np.ndarray | list): The forward rates F_i(0) of the n periods (simple
@@ -359,14 +367,16 @@ def get_lmm_cap(
     notional: float = 1.0,
 ) -> pd.DataFrame:
     """
-    The Monte Carlo prices of the caplets or floorlets of a cap or floor in the LIBOR market
-    model. The caplet on F_i pays τ_i max(F_i(T_i) - K, 0) at T_(i+1); under the spot LIBOR
-    measure it is discounted with the rolled-over deposit, the product of the growth of every
-    period up to its payment. A cap is the sum of its caplets. Each caplet depends on its own
-    forward only, so its Monte Carlo price converges to Black's formula,
-    P(0, T_(i+1)) τ_i Black(F_i(0), K, σ_i, T_i), which makes it a check on the simulation;
-    the model earns its keep on products that depend on several forwards (swaptions,
-    `get_lmm_swaption`).
+    Calculate the Monte Carlo prices of the caplets or floorlets of a cap or floor in the
+    LIBOR market model: what the protection against a rising or falling forward rate is
+    worth when the forwards follow the model.
+
+    The caplet on F_i pays τ_i max(F_i(T_i) - K, 0) at T_(i+1); under the spot LIBOR measure
+    it is discounted with the rolled-over deposit, the product of the growth of every period
+    up to its payment. A cap is the sum of its caplets. Each caplet depends on its own
+    forward only, so its Monte Carlo price converges to Black's formula, P(0, T_(i+1)) τ_i
+    Black(F_i(0), K, σ_i, T_i), which makes it a check on the simulation; the model earns
+    its keep on products that depend on several forwards (swaptions, `get_lmm_swaption`).
 
     The formula is as follows:
 
@@ -388,7 +398,10 @@ def get_lmm_cap(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, sections 6.4 and 6.10.
 
-    Referenced against FinancePy's `lmm_cap_flr_pricer` and Black's caplet formula.
+    The prices converge to Black's caplet formula.
+
+    Shares similar logic:
+    - FinancePy, lmm_cap_flr_pricer: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L664
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -406,7 +419,8 @@ def get_lmm_cap(
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
-        option_type (str, optional): "caplet" or "floorlet". Defaults to "caplet".
+        option_type (str, optional): The option. Options are: "caplet" (caplets of a cap),
+            "floorlet" (floorlets of a floor). Defaults to "caplet".
         simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         steps_per_year (int, optional): The fewest steps per year between reset times.
@@ -489,13 +503,16 @@ def get_lmm_swaption(
     notional: float = 1.0,
 ) -> pd.Series:
     """
-    The Monte Carlo price of a European swaption in the LIBOR market model. The swaption
-    expires at the first tenor date T_0 into a swap that pays the fixed rate K against the
-    forward rates on the dates T_1, ..., T_n. At expiry the swap is worth the annuity times
-    the gap between the swap rate and K, both functions of all forwards at T_0, so the price
-    depends on how the forwards move together: more factors and a lower correlation give a
-    lower swap rate volatility and a cheaper swaption. Until T_0 the spot LIBOR measure is
-    the T_0-forward measure, whose numeraire is the bond maturing at T_0.
+    Calculate the Monte Carlo price of a European swaption in the LIBOR market model: what
+    the right to enter a swap at the fixed rate is worth when the forwards of the curve move
+    together as the model has them.
+
+    The swaption expires at the first tenor date T_0 into a swap that pays the fixed rate K
+    against the forward rates on the dates T_1, ..., T_n. At expiry the swap is worth the
+    annuity times the gap between the swap rate and K, both functions of all forwards at
+    T_0, so the price depends on how the forwards move together: more factors and a lower
+    correlation give a lower swap rate volatility and a cheaper swaption. Until T_0 the spot
+    LIBOR measure is the T_0-forward measure, whose numeraire is the bond maturing at T_0.
 
     The formula is as follows:
 
@@ -518,7 +535,9 @@ def get_lmm_swaption(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 6.7.
 
-    Referenced against FinancePy's `lmm_swaption_pricer`.
+    Referenced against:
+    - FinancePy, lmm_swaption_pricer: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L809
+        Test: tests/fixedincome/test_lmm_model.py::test_swaption_matches_financepy_monte_carlo
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -535,8 +554,8 @@ def get_lmm_swaption(
             Defaults to None.
         factors (int | None, optional): The number of factors; None keeps the full rank of
             the correlation. Defaults to None.
-        swaption_type (str, optional): "payer" (the right to pay the fixed rate) or
-            "receiver". Defaults to "payer".
+        swaption_type (str, optional): The swaption. Options are: "payer" (the right to pay
+            the fixed rate), "receiver" (the right to receive it). Defaults to "payer".
         simulations (int, optional): The number of paths. Defaults to 10,000.
         seed (int | None, optional): The random seed. Defaults to 0.
         steps_per_year (int, optional): The fewest steps per year until the expiry.
@@ -617,12 +636,14 @@ def get_rebonato_swaption_volatility(
     factors: int | None = None,
 ) -> float:
     """
-    Rebonato's approximation of the Black volatility of a European swaption in the LIBOR
-    market model. The swap rate is a weighted sum of the forwards, S = SUM(w_i F_i), with
-    weights that move little compared with the forwards; freezing them at today's values
-    makes the swap rate's variance a sum over the forwards' covariances. It turns the
-    model's caplet volatilities and correlation into swaption volatilities without
-    simulation, which is how the model is calibrated to both markets at once.
+    Calculate Rebonato's approximation of the Black volatility of a European swaption in the
+    LIBOR market model: the swaption volatility that the model's caplet volatilities and
+    correlation imply, without simulation.
+
+    The swap rate is a weighted sum of the forwards, S = SUM(w_i F_i), with weights that
+    move little compared with the forwards; freezing them at today's values makes the swap
+    rate's variance a sum over the forwards' covariances. This is how the model is
+    calibrated to both markets at once.
 
     The formula is as follows:
 
@@ -647,7 +668,8 @@ def get_rebonato_swaption_volatility(
     - Brigo, D. and Mercurio, F. (2006). "Interest Rate Models - Theory and Practice."
       Springer, 2nd edition, section 6.15, equation 6.67.
 
-    Referenced against FinancePy's `lmm_swaption_vol_approx`.
+    Shares similar logic:
+    - FinancePy, lmm_swaption_vol_approx: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L64
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),

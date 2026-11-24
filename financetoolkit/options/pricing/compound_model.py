@@ -167,8 +167,8 @@ def get_chooser_option(
     put_time_to_expiration: float | None = None,
 ) -> float | np.ndarray:
     """
-    Calculate the price of a chooser option, which lets the holder decide at the choice time
-    whether it becomes a European call or a European put (Rubinstein, 1991).
+    Calculate the price of a chooser option: what the right to decide at the choice time whether
+    the option becomes a European call or a European put is worth (Rubinstein, 1991).
 
     A simple chooser (put_strike_price and put_time_to_expiration left out) chooses between a
     call and a put with the same strike K and expiration T. By put-call parity at the choice
@@ -192,6 +192,13 @@ def get_chooser_option(
     dividend yield, σ the volatility, N the standard normal and M the bivariate standard normal
     distribution function. At a choice time of 0 the chooser is worth the larger of the call
     and the put, and at the call's expiration (simple chooser) a straddle.
+
+    Referenced against:
+    - QuantLib, AnalyticSimpleChooserEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_simple_chooser_engine.html
+        Test: tests/options/test_compound_model.py::test_the_simple_chooser_matches_quantlib
+
+    Shares similar logic:
+    - FinancePy, EquityChooserOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_chooser_option.py#L67
 
     Args:
         stock_price (float): The current stock price.
@@ -219,8 +226,7 @@ def get_chooser_option(
     Notes:
         References: Rubinstein, M. (1991). "Options for the Undecided." Risk, 4(4), 43.
         Haug, E. G. (2007). The Complete Guide to Option Pricing Formulas, 2nd ed., section
-        4.10. Referenced against QuantLib's AnalyticSimpleChooserEngine and FinancePy's
-        EquityChooserOption.
+        4.10.
 
     As an example:
 
@@ -410,9 +416,10 @@ def get_compound_option(
     ] = "call_on_call",
 ) -> float:
     """
-    Calculate the price of a compound option, an option to buy (call) or sell (put) a European
-    option on the stock for the compound strike K1 at time T1 (Geske, 1979). The underlying
-    option has strike K2 and expires at T2 ≥ T1.
+    Calculate the price of a compound option: what an option to buy (call) or sell (put) a
+    European option on the stock for the compound strike K1 at time T1 is worth (Geske, 1979).
+
+    The underlying option has strike K2 and expires at T2 ≥ T1.
 
     At T1 the compound option is exercised where the underlying option V is worth more (call)
     or less (put) than K1, which for a call on a call happens above the critical price S* with
@@ -432,6 +439,13 @@ def get_compound_option(
     worth at most K2 * e^(-r(T2 - T1)) at T1, so for a compound strike above it S* is 0: a call
     on that put is worthless and a put on it is a forward.
 
+    Referenced against:
+    - QuantLib, AnalyticCompoundOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_compound_option_engine.html
+        Test: tests/options/test_compound_model.py::test_the_compound_options_match_quantlib_and_their_integral
+
+    Shares similar logic:
+    - FinancePy, EquityCompoundOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_compound_option.py#L26
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The strike price K2 of the underlying option.
@@ -443,8 +457,10 @@ def get_compound_option(
         compound_time_to_expiration (float): The time to expiration T1 of the compound option
             in years, at least 0 and at most T2.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
-        option_type (str, optional): "call_on_call", "call_on_put", "put_on_call" or
-            "put_on_put", the compound option first. Defaults to "call_on_call".
+        option_type (str, optional): The compound option first, then the option it is on.
+            Options are: "call_on_call" (a call on a call), "call_on_put" (a call on a put),
+            "put_on_call" (a put on a call), "put_on_put" (a put on a put). Defaults to
+            "call_on_call".
 
     Returns:
         float: The compound option value.
@@ -456,8 +472,7 @@ def get_compound_option(
     Notes:
         References: Geske, R. (1979). "The Valuation of Compound Options." Journal of
         Financial Economics, 7(1), 63-81. Haug, E. G. (2007). The Complete Guide to Option
-        Pricing Formulas, 2nd ed., section 4.9. Referenced against QuantLib's
-        AnalyticCompoundOptionEngine and FinancePy's EquityCompoundOption.
+        Pricing Formulas, 2nd ed., section 4.9.
 
     As an example:
 
@@ -573,9 +588,11 @@ def get_forward_start_option(
     performance: bool = False,
 ) -> float:
     """
-    Calculate the price of a forward-start option, a European option whose strike is set at
-    the start time t1 to moneyness α times the stock price then (Rubinstein, 1990), or of a
-    performance option, which pays the return over [t1, T] beyond α instead.
+    Calculate the price of a forward-start option: what a European option is worth whose strike
+    is set at the start time t1 to moneyness α times the stock price then (Rubinstein, 1990).
+
+    The performance option, which pays the return over [t1, T] beyond α instead, is priced as
+    well.
 
     The option on S(T) with strike α * S(t1) is S(t1) times an option on a unit stock price
     with strike α, so its value at t1 is S(t1) * BS(1, α, T - t1). Taken back to today:
@@ -588,6 +605,13 @@ def get_forward_start_option(
     stock price, r the continuously compounded risk-free rate, q the continuous dividend
     yield, σ the volatility and N the standard normal distribution function. A performance
     option is a forward-start option divided by S only when r = q.
+
+    Referenced against:
+    - QuantLib, ForwardEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_vanilla_engine.html
+        Test: tests/options/test_compound_model.py::test_the_forward_start_options_match_quantlib
+
+    Shares similar logic:
+    - FinancePy, EquityForwardStartOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_forward_start_option.py#L32
 
     Args:
         stock_price (float): The current stock price.
@@ -613,8 +637,6 @@ def get_forward_start_option(
     Notes:
         References: Rubinstein, M. (1990). "Pay Now, Choose Later." Risk, 3(2). Haug, E. G.
         (2007). The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.6.
-        Referenced against QuantLib's ForwardEuropeanEngine and FinancePy's
-        EquityForwardStartOption.
 
     As an example:
 
@@ -688,10 +710,11 @@ def get_cliquet_option(
     performance: bool = False,
 ) -> float:
     """
-    Calculate the price of a cliquet (ratchet) option, a series of forward-start options of
-    which each one's strike is reset to moneyness α times the stock price at the start of its
-    period and whose payoff is paid at the end of that period, or the same series of
-    performance options.
+    Calculate the price of a cliquet (ratchet) option: what a series of forward-start options is
+    worth, each with its strike reset to moneyness α times the stock price at the start of its
+    period and paid at the end of that period.
+
+    The same series of performance options is priced as well.
 
     With reset times t1 < t2 < ... < tn and t(n+1) = T the last period's end, the cliquet is the
     sum of the forward-start options over each period (see get_forward_start_option):
@@ -703,6 +726,12 @@ def get_cliquet_option(
     dividend yield and BS(1, α, τ) the Black-Scholes value of an option on a unit stock price
     with strike α and expiration τ. A reset time of 0 starts the first period today; with one
     reset time the cliquet is a forward-start option.
+
+    Referenced against:
+    - QuantLib, AnalyticCliquetEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_cliquet_engine.html
+        Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
+    - QuantLib, AnalyticPerformanceEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_performance_engine.html
+        Test: tests/options/test_compound_model.py::test_the_cliquets_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -729,7 +758,6 @@ def get_cliquet_option(
     Notes:
         References: Rubinstein, M. (1990). "Pay Now, Choose Later." Risk, 3(2). Haug, E. G.
         (2007). The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.6.
-        Referenced against QuantLib's AnalyticCliquetEngine and AnalyticPerformanceEngine.
 
     As an example:
 
@@ -798,13 +826,13 @@ def get_extendible_option(
     extension_fee: float = 0.0,
 ) -> float:
     """
-    Calculate the price of an extendible option, a European option with strike K1 expiring at
-    t1 whose life can be extended to T2 with a new strike K2 (Longstaff, 1990).
+    Calculate the price of an extendible option: what a European option with strike K1 expiring
+    at t1 is worth when its life can be extended to T2 with a new strike K2 (Longstaff, 1990).
 
-    - Holder-extendible (method="holder"): at t1 the holder exercises, lets the option expire
+    - Holder-extendible: at t1 the holder exercises, lets the option expire
       or pays the extension fee A to hold an option on (K2, T2) instead, whichever is worth
       most.
-    - Writer-extendible (method="writer"): an option that is out of the money at t1 is extended
+    - Writer-extendible: an option that is out of the money at t1 is extended
       to (K2, T2) automatically, so the holder receives the extended option instead of nothing.
 
     Both are the vanilla option on (K1, t1) plus the extended option over the region where it
@@ -828,6 +856,12 @@ def get_extendible_option(
     distribution function. A holder never extends when V(K1) ≤ A, which leaves the vanilla
     option; a boundary that is never reached is 0 or infinity (A = 0 makes I1 = 0 for a call).
 
+    Referenced against:
+    - QuantLib, AnalyticHolderExtensibleOptionEngine (holder-extendible): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_holder_extensible_option_engine.html
+        Test: tests/options/test_compound_model.py::test_the_holder_extendible_call_matches_quantlib
+    - QuantLib, AnalyticWriterExtensibleOptionEngine (writer-extendible): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_writer_extensible_option_engine.html
+        Test: tests/options/test_compound_model.py::test_the_writer_extendible_options_match_quantlib
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The strike price K1 of the original option.
@@ -839,8 +873,8 @@ def get_extendible_option(
             least t1.
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether the option is a put. Defaults to False.
-        method (str, optional): "holder" or "writer", who decides on the extension.
-            Defaults to "holder".
+        method (str, optional): Who decides on the extension. Options are: "holder"
+            (holder-extendible), "writer" (writer-extendible). Defaults to "holder".
         extension_fee (float, optional): The fee A the holder pays at t1 to extend, ignored
             for a writer-extendible option. Defaults to 0.
 
@@ -855,8 +889,6 @@ def get_extendible_option(
         References: Longstaff, F. A. (1990). "Pricing Options with Extendible Maturities:
         Analysis and Applications." The Journal of Finance, 45(3), 935-957. Haug, E. G.
         (2007). The Complete Guide to Option Pricing Formulas, 2nd ed., section 4.11.
-        Referenced against QuantLib's AnalyticHolderExtensibleOptionEngine and
-        AnalyticWriterExtensibleOptionEngine.
 
     As an example:
 
@@ -1040,11 +1072,12 @@ def get_quanto_option(
     start_time: float = 0.0,
 ) -> float:
     """
-    Calculate the price of a quanto option, a European option on a stock quoted in a foreign
-    currency whose payoff is paid in the domestic currency at a fixed exchange rate E (Reiner,
-    1992). Paying at a fixed rate makes the stock drift at r_f - q - ρσσ_E in the domestic
-    risk-neutral measure, so the option is a Black-Scholes option with a quanto-adjusted
-    dividend yield:
+    Calculate the price of a quanto option: what a European option on a stock quoted in a
+    foreign currency is worth when its payoff is paid in the domestic currency at a fixed
+    exchange rate E (Reiner, 1992).
+
+    Paying at a fixed rate makes the stock drift at r_f - q - ρσσ_E in the domestic risk-neutral
+    measure, so the option is a Black-Scholes option with a quanto-adjusted dividend yield:
 
     - Quanto = E * BS(S, K, r, q', σ, T), q' = q + r - r_f + ρ * σ * σ_E
     - Quanto Call = E * [S * e^((r_f - q - ρσσ_E - r)T) * N(d1) - K * e^(-rT) * N(d1 - σ√T)]
@@ -1060,6 +1093,12 @@ def get_quanto_option(
     the volatility of the stock, σ_E the volatility of the exchange rate (domestic currency per
     unit of foreign currency), ρ the correlation between the stock's and the exchange rate's
     returns and N the standard normal distribution function.
+
+    Referenced against:
+    - QuantLib, QuantoEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_quanto_engine.html
+        Test: tests/options/test_compound_model.py::test_the_quanto_options_match_quantlib
+    - QuantLib, QuantoForwardEuropeanEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_quanto_engine.html
+        Test: tests/options/test_compound_model.py::test_the_quanto_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price in the foreign currency.
@@ -1089,7 +1128,6 @@ def get_quanto_option(
     Notes:
         References: Reiner, E. (1992). "Quanto Mechanics." Risk, 5(3), 59-63. Haug, E. G.
         (2007). The Complete Guide to Option Pricing Formulas, 2nd ed., section 5.15.
-        Referenced against QuantLib's QuantoEuropeanEngine and QuantoForwardEuropeanEngine.
 
     As an example:
 

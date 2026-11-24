@@ -532,7 +532,8 @@ def _validate_monte_carlo(
         simulations (int): The number of paths.
         time_steps (int): The number of steps per path.
         dimensions (int): The number of Brownian motions per path.
-        sequence (str): "pseudo_random" or "sobol".
+        sequence (str): The numbers drawn. Options are: "pseudo_random" (pseudo random
+            numbers), "sobol" (scrambled Sobol points).
         antithetic (bool): Whether the paths come in antithetic pairs.
     """
     check_option("sequence", sequence, MONTE_CARLO_SEQUENCES)
@@ -606,7 +607,8 @@ def draw_standard_normals(
         simulations (int): The number of paths.
         time_steps (int): The number of steps per path.
         dimensions (int, optional): The number of Brownian motions per path. Defaults to 1.
-        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        sequence (str, optional): The numbers to draw. Options are: "pseudo_random" (pseudo
+            random numbers), "sobol" (scrambled Sobol points). Defaults to "pseudo_random".
         antithetic (bool, optional): Whether to draw antithetic pairs. Defaults to False.
         seed (int | None, optional): The seed of the numbers. Defaults to None.
         chunk_size (int, optional): The most paths per chunk; an even number. Defaults to
@@ -668,7 +670,8 @@ def simulation_groups(simulations: int, sequence: str, antithetic: bool) -> np.n
 
     Args:
         simulations (int): The number of paths.
-        sequence (str): "pseudo_random" or "sobol".
+        sequence (str): The numbers drawn. Options are: "pseudo_random" (pseudo random
+            numbers), "sobol" (scrambled Sobol points).
         antithetic (bool): Whether the paths come in antithetic pairs.
 
     Returns:
@@ -803,8 +806,8 @@ def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
         **kwargs: The inputs to validate, keyed by argument name.
 
     Raises:
-        TypeError: If any of the inputs is not a float or int (or, with arrays=True, an
-            np.ndarray or pd.Series).
+        TypeError: If any of the inputs is not a float or int (or, when arrays are
+            accepted, an np.ndarray or pd.Series).
     """
     for name, value in kwargs.items():
         if arrays and value is None:

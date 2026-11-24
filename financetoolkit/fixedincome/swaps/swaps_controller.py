@@ -149,13 +149,19 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         The default curve is EIOPA's risk-free rate term structure, which EIOPA derives from
         the swap rates of each currency (for the euro, swap rates minus a credit risk
-        adjustment) and publishes at each month end; curve="government" uses the zero-coupon
-        curve of the government bond yield curve of the day instead, whose par rates are those
+        adjustment) and publishes at each month end; the government curve is the zero-coupon
+        curve of the government bond yield curve of the day, whose par rates are those
         of government bonds rather than swaps. To value a swap of your own, with a fixed rate,
         a current fixing and its DV01, use `swap_model.get_swap_value`.
 
-        Referenced against QuantLib's VanillaSwap with the DiscountingSwapEngine, FinancePy's
-        IborSwap and rateslib's IRS on the same discount factors.
+        Referenced against:
+        - QuantLib, VanillaSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
+            Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
+        - rateslib, IRS.rate: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.rate
+            Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
+
+        Shares similar logic:
+        - FinancePy, IborSwap.swap_rate: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L280
 
         Also known as: par swap rate, swap curve, interest rate swap rate, forward swap rate,
         PV01, swap annuity, PVBP.
@@ -165,12 +171,11 @@ class SwapsFixedIncome(MarketsFixedIncome):
                 swaps, in years or as labels such as '10Y'. Defaults to None, 1, 2, 3, 5, 7, 10,
                 15, 20 and 30 years.
             country (str, optional): The country or currency area of the curve, as EIOPA
-                (curve="eiopa") or `get_government_bond_yield_curve` (curve="government") names
-                it. Defaults to "United States".
-            curve (str, optional): "eiopa" for the EIOPA risk-free rate term structure of the
-                last month end on or before the date, or "government" for the zero-coupon curve
-                of the government bond yield curve of the date (see `get_zero_coupon_curve`).
-                Defaults to "eiopa".
+                (for the EIOPA curve) or `get_government_bond_yield_curve` (for the government
+                curve) names it. Defaults to "United States".
+            curve (str, optional): The discount curve. Options are: "eiopa" (EIOPA's risk-free rate term structure of
+                the last month end on or before the date), "government" (the zero-coupon curve of the government bond
+                yield curve of the date, see `get_zero_coupon_curve`). Defaults to "eiopa".
             fixed_frequency (int, optional): The number of fixed payments per year. Defaults to
                 1 (annual, as euro and US dollar overnight index swaps pay).
             forward_start (float | str, optional): The start of the swaps, in years or as a
@@ -252,8 +257,9 @@ class SwapsFixedIncome(MarketsFixedIncome):
     ):
         """
         Calculates the rates of forward rate agreements (FRAs) from a zero-coupon curve: the
-        simple interest rate, fixed today, of a loan that starts and ends at future dates. A
-        "3x6" FRA covers the three months that start three months from now.
+        simple interest rate, fixed today, of a loan that starts and ends at future dates.
+
+        A "3x6" FRA covers the three months that start three months from now.
 
         At no arbitrage the FRA rate is the simple forward rate implied by the discount factors
         of the two dates (Hull, 2022, Options, Futures and Other Derivatives, ch. 4.7). A FRA
@@ -272,12 +278,17 @@ class SwapsFixedIncome(MarketsFixedIncome):
         simple interest on that day count.
 
         The default curve is the zero-coupon curve of the government bond yield curve of the
-        day (see `get_zero_coupon_curve`), whose bills price the first months; curve="eiopa"
-        uses EIOPA's swap-based risk-free rate term structure of the last month end, which
+        day (see `get_zero_coupon_curve`), whose bills price the first months; the EIOPA curve
+        is EIOPA's swap-based risk-free rate term structure of the last month end, which
         starts at 1 year.
 
-        Referenced against QuantLib's ForwardRateAgreement, FinancePy's IborFRA and rateslib's
-        FRA on the same discount factors.
+        Referenced against:
+        - QuantLib, ForwardRateAgreement: https://www.quantlib.org/reference/class_quant_lib_1_1_forward_rate_agreement.html
+            Test: tests/fixedincome/test_swap_model.py::test_forward_rate_agreement_matches_quantlib
+
+        Shares similar logic:
+        - FinancePy, IborFRA: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_fra.py#L23
+        - rateslib, FRA: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FRA.html
 
         Also known as: FRA, forward rate agreement, forward-forward rate, simple forward rate.
 
@@ -286,13 +297,13 @@ class SwapsFixedIncome(MarketsFixedIncome):
                 list or comma-separated, e.g. "3x6,6x12". Defaults to None, 1x4, 3x6, 6x9, 6x12,
                 9x12, 12x18 and 12x24.
             country (str, optional): The country or currency area of the curve, see
-                `get_government_bond_yield_curve` (or EIOPA's names with curve="eiopa").
+                `get_government_bond_yield_curve` (or EIOPA's names for the EIOPA curve).
                 Defaults to "United States".
-            curve (str, optional): "government" for the zero-coupon curve of the government
-                bond yield curve of the date, or "eiopa" for EIOPA's risk-free rate term
-                structure of the last month end on or before it. Defaults to "government".
-            day_count (str, optional): The day count of the FRA rate, "act/360" or "act/365".
-                Defaults to "act/360".
+            curve (str, optional): The discount curve. Options are: "eiopa" (EIOPA's risk-free rate term structure of
+                the last month end on or before the date), "government" (the zero-coupon curve of the government bond
+                yield curve of the date, see `get_zero_coupon_curve`). Defaults to "government".
+            day_count (str, optional): The day count of the FRA rate. Options are: "act/360" (actual/360), "act/365"
+                (actual/365). Defaults to "act/360".
             date (str | None, optional): The day of the curve (YYYY-MM-DD). Defaults to None,
                 the end date.
             rounding (int | None, optional): The number of decimals to round the results
@@ -460,12 +471,13 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         The default curve is EIOPA's US dollar risk-free rate term structure, which EIOPA
         derives from US dollar swap rates, of the last month end on or before each bond's Price
-        Date; curve="government" uses the Treasury zero-coupon curve of the Price Date instead,
+        Date; the government curve is the Treasury zero-coupon curve of the Price Date instead,
         which gives the asset swap spread over Treasuries. For a bond and curve of your own, use
         `swap_model.get_asset_swap_spread`.
 
-        Referenced against QuantLib's AssetSwap (fairSpread, par and market value) on the same
-        discount factors.
+        Referenced against:
+        - QuantLib, AssetSwap.fairSpread: https://www.quantlib.org/reference/class_quant_lib_1_1_asset_swap.html
+            Test: tests/fixedincome/test_swap_model.py::test_asset_swap_spread_matches_quantlib
 
         Also known as: ASW, asset swap spread, par-par asset swap, proceeds asset swap, market
         value asset swap.
@@ -482,8 +494,8 @@ class SwapsFixedIncome(MarketsFixedIncome):
                 date (YYYY-MM-DD). Defaults to None.
             etfs (list[str] | str | None, optional): The bond ETFs to read the bonds from (see
                 `get_bond_universe`). Defaults to None, LQD, IGSB and USHY.
-            curve (str, optional): "eiopa" for EIOPA's US dollar risk-free rate term structure,
-                or "government" for the Treasury zero-coupon curve. Defaults to "eiopa".
+            curve (str, optional): The swap curve. Options are: "eiopa" (EIOPA's US dollar risk-free rate term
+                structure), "government" (the Treasury zero-coupon curve). Defaults to "eiopa".
             float_frequency (int, optional): The number of floating payments per year of the
                 swap. Defaults to 4 (quarterly).
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -500,7 +512,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Notes:
         - EIOPA publishes its curve at each month end, so the curve can be up to a month and
-          a half older than the bond prices; curve="government" uses the curve of the same day.
+          a half older than the bond prices; the government curve is that of the same day.
         - The bonds and their prices are those of `get_bond_universe`; a callable bond is
           treated as a bullet bond to maturity.
         - Requires a FinancialModelingPrep API key for the holdings.
@@ -597,7 +609,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         The default curve is EIOPA's US dollar risk-free rate term structure, which EIOPA
         derives from US dollar swap rates, of the last month end on or before each bond's Price
-        Date; curve="government" uses the Treasury zero-coupon curve, which makes the I-spread
+        Date; the government curve is the Treasury zero-coupon curve, which makes the I-spread
         a spread over the Treasury par curve, close to the G-Spread. For a bond and curve of
         your own, use `swap_model.get_i_spread`.
 
@@ -615,8 +627,8 @@ class SwapsFixedIncome(MarketsFixedIncome):
                 date (YYYY-MM-DD). Defaults to None.
             etfs (list[str] | str | None, optional): The bond ETFs to read the bonds from (see
                 `get_bond_universe`). Defaults to None, LQD, IGSB and USHY.
-            curve (str, optional): "eiopa" for EIOPA's US dollar risk-free rate term structure,
-                or "government" for the Treasury zero-coupon curve. Defaults to "eiopa".
+            curve (str, optional): The swap curve. Options are: "eiopa" (EIOPA's US dollar risk-free rate term
+                structure), "government" (the Treasury zero-coupon curve). Defaults to "eiopa".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -631,7 +643,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         Notes:
         - EIOPA publishes its curve at each month end, so the curve can be up to a month and
-          a half older than the bond prices; curve="government" uses the curve of the same day.
+          a half older than the bond prices; the government curve is that of the same day.
         - The yield is to maturity: a callable bond priced above its call price yields less
           to its call date.
         - Requires a FinancialModelingPrep API key for the holdings.
@@ -697,11 +709,13 @@ class SwapsFixedIncome(MarketsFixedIncome):
     ):
         """
         Calculates FX forward rates by covered interest parity: the exchange rate, agreed
-        today, at which currencies are exchanged at a future date. Exchanging today and
-        depositing abroad, or depositing at home and exchanging forward, must give the same,
-        so the forward rate is the spot rate carried at the difference between the two
-        currencies' interest rates: the currency with the higher rate trades at a forward
-        discount (Hull, 2022, Options, Futures and Other Derivatives, ch. 5.10).
+        today, at which currencies are exchanged at a future date.
+
+        Exchanging today and depositing abroad, or depositing at home and exchanging
+        forward, must give the same, so the forward rate is the spot rate carried at the
+        difference between the two currencies' interest rates: the currency with the higher
+        rate trades at a forward discount (Hull, 2022, Options, Futures and Other
+        Derivatives, ch. 5.10).
 
         The formula is as follows:
 
@@ -717,13 +731,18 @@ class SwapsFixedIncome(MarketsFixedIncome):
 
         The default curves are EIOPA's risk-free rate term structures, which EIOPA derives from
         the swap rates of each currency and publishes at each month end for the euro and about 20 other currencies;
-        they start at 1 year, so a shorter tenor uses the 1-year zero rate. curve="government"
-        uses the zero-coupon curves of the government bond yield curves of the date, whose
+        they start at 1 year, so a shorter tenor uses the 1-year zero rate. The government
+        curves are the zero-coupon curves of the government bond yield curves of the date, whose
         bills price the first months, for the countries that have one (see
         `get_zero_coupon_curve`).
 
-        Referenced against QuantLib's FxForward, FinancePy's FXForward and rateslib's
-        forward_fx on the same discount factors.
+        Referenced against:
+        - rateslib, forward_fx: https://rateslib.com/py/en/3.0.x/api/rateslib.fx.forward_fx.html
+            Test: tests/fixedincome/test_swap_model.py::test_fx_forward_rate_matches_rateslib
+
+        Shares similar logic:
+        - QuantLib, FxForward: https://www.quantlib.org/reference/class_quant_lib_1_1_fx_forward.html
+        - FinancePy, FXForward: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/fx/fx_forward.py#L20
 
         Also known as: FX forward, currency forward, forward exchange rate, forward points,
         swap points, covered interest parity, outright forward.
@@ -737,9 +756,9 @@ class SwapsFixedIncome(MarketsFixedIncome):
                 the rates are quoted against. Defaults to "United States".
             tenors (float | str | list | None, optional): The tenors, in years or as labels such
                 as '3M' or '5Y'. Defaults to None, 1, 3 and 6 months and 1, 2, 5 and 10 years.
-            curve (str, optional): "eiopa" for EIOPA's risk-free rate term structures of the last
-                month end on or before the date, or "government" for the zero-coupon curves of the
-                government bond yield curves of the date. Defaults to "eiopa".
+            curve (str, optional): The discount curves. Options are: "eiopa" (EIOPA's risk-free rate term structures of
+                the last month end on or before the date), "government" (the zero-coupon curves of the government bond
+                yield curves of the date). Defaults to "eiopa".
             points (bool, optional): Whether to return the forward points, (Forward Rate - Spot
                 Rate) * 10,000, instead of the forward rates. Defaults to False.
             date (str | None, optional): The day (YYYY-MM-DD). Defaults to None, the end date.
@@ -758,7 +777,7 @@ class SwapsFixedIncome(MarketsFixedIncome):
         - The market quotes forward points of yen pairs per 100 rather than 10,000; the points
           here are per 10,000 for every pair.
         - The spot rate is the BIS rate of the day, while EIOPA's curves are those of the last
-          month end; curve="government" takes the curves of the same day.
+          month end; the government curves are those of the same day.
         - Covered interest parity leaves out the cross-currency basis, which makes US dollar
           forwards trade some basis points of carry away from the parity rate.
 

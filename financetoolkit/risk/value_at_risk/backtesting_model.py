@@ -38,7 +38,8 @@ def get_kupiec_test(
     alpha: float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Kupiec's Proportion of Failures (POF) test for a Value at Risk model.
+    Calculate Kupiec's Proportion of Failures (POF) test: whether a Value at Risk model is
+    breached as often as its tail probability says it should be.
 
     The test compares the observed breach rate (the fraction of periods in which the
     realized return was worse than the estimated VaR) against the breach rate implied
@@ -57,6 +58,9 @@ def get_kupiec_test(
 
     - Kupiec, P.H. (1995). "Techniques for Verifying the Accuracy of Risk Measurement
     Models." The Journal of Derivatives, 3(2), 73-84.
+
+    Shares similar logic:
+    - rugarch (R), VaRTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L418
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -109,7 +113,8 @@ def get_christoffersen_test(
     var_estimates: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Christoffersen's independence test for a Value at Risk model.
+    Calculate Christoffersen's independence test: whether the breaches of a Value at Risk
+    model cluster in time rather than arriving independently.
 
     Kupiec's test checks whether the overall breach rate matches the expected rate,
     but says nothing about whether breaches cluster together in time (e.g. during a
@@ -125,6 +130,9 @@ def get_christoffersen_test(
 
     - Christoffersen, P.F. (1998). "Evaluating Interval Forecasts." International
     Economic Review, 39(4), 841-862.
+
+    Shares similar logic:
+    - rugarch (R), VaRTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L418
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -190,7 +198,9 @@ def get_acerbi_szekely_test(
     seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Acerbi-Szekely (2014) "Z2" Expected Shortfall backtest.
+    Calculate the Acerbi-Szekely (2014) "Z2" Expected Shortfall backtest: whether the losses
+    on the days a Value at Risk is breached are as severe as the Conditional Value at Risk
+    predicted.
 
     Kupiec's and Christoffersen's tests above only backtest the VaR estimate itself
     -- they check how often (and how independently) the VaR threshold is breached,
@@ -326,7 +336,8 @@ def get_conditional_coverage_test(
     alpha: float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Christoffersen's conditional coverage test for a Value at Risk model.
+    Calculate Christoffersen's conditional coverage test: whether a Value at Risk model is
+    breached as often as it should be and with breaches that arrive independently.
 
     The test joins Kupiec's unconditional coverage test (is the breach rate alpha?) and
     Christoffersen's independence test (does a breach make the next one more likely?) into
@@ -345,8 +356,8 @@ def get_conditional_coverage_test(
     - Christoffersen, P.F. (1998). "Evaluating Interval Forecasts." International Economic
     Review, 39(4), 841-862.
 
-    Referenced against `VaRTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which adds the two statistics in the same way.
+    Shares similar logic:
+    - rugarch (R), VaRTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L418
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -478,8 +489,8 @@ def get_duration_test(
     seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Christoffersen and Pelletier's duration-based test of independence for a Value
-    at Risk model.
+    Calculate Christoffersen and Pelletier's duration test: whether the time between the
+    breaches of a Value at Risk model is memoryless, or breaches come in clusters.
 
     Under a correct model, breaches arrive without memory: the number of periods between two
     breaches (the duration) is exponentially distributed, with a constant probability of a
@@ -518,9 +529,8 @@ def get_duration_test(
     to Finite-Sample Inference and Nonstandard Asymptotics." Journal of Econometrics,
     133(2), 443-477.
 
-    Referenced against `VaRDurTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which defines the durations and their censoring in the same way and compares the LR with
-    the χ² distribution instead.
+    Shares similar logic:
+    - rugarch (R), VaRDurTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L469
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -533,6 +543,10 @@ def get_duration_test(
     Returns:
         pd.Series | pd.DataFrame: The duration statistic, its p-value and the fitted Weibull
         Shape b; NaN with fewer than two durations.
+
+    Notes:
+    - rugarch's VaRDurTest defines the durations and their censoring in the same way and
+      compares the LR with the χ² distribution instead of the Monte Carlo p-value.
     """
     if isinstance(returns, pd.DataFrame):
         return pd.DataFrame(
@@ -585,8 +599,8 @@ def get_mcneil_frey_test(
     seed: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate McNeil and Frey's exceedance residual test for an Expected Shortfall (CVaR)
-    model.
+    Calculate McNeil and Frey's exceedance residual test: whether an Expected Shortfall (CVaR)
+    model understates the losses beyond its Value at Risk.
 
     On every breach day the gap between the return and the Expected Shortfall forecast,
     in units of the forecast volatility, is an exceedance residual. If the model describes
@@ -597,7 +611,8 @@ def get_mcneil_frey_test(
     - Statistic = mean(e) / (std(e) / √k)
     - P-Value = (1 / B) * Σ_b 1{Statistic*_b >= Statistic}
 
-    Where k is the number of breaches, std the sample standard deviation (ddof=1) and
+    Where k is the number of breaches, std the sample standard deviation (with k - 1 in the
+    denominator) and
     Statistic*_b the statistic of the b-th of B resamples (with replacement) of the residuals
     less their mean, which have a mean of zero as under the null hypothesis. The test is
     one-sided: only an understatement of the tail losses rejects the model. Returns, VaR and
@@ -611,9 +626,8 @@ def get_mcneil_frey_test(
     - Efron, B. and Tibshirani, R.J. (1993). "An Introduction to the Bootstrap." Chapman and
     Hall, section 16.4.
 
-    Referenced against `ESTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which tests the unscaled gap CVaR_t - Return_t with a normal p-value and, with boot=TRUE,
-    reports the average of the p-values of the resamples instead.
+    Shares similar logic:
+    - rugarch (R), ESTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L440
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -629,6 +643,10 @@ def get_mcneil_frey_test(
     Returns:
         pd.Series | pd.DataFrame: The McNeil-Frey statistic, its bootstrap p-value and the
         number of breaches; NaN with fewer than two breaches.
+
+    Notes:
+    - rugarch's ESTest tests the unscaled gap CVaR_t - Return_t with a normal p-value and, in
+      its bootstrap version, reports the average of the p-values of the resamples instead.
     """
     if isinstance(returns, pd.DataFrame):
         return pd.DataFrame(
@@ -697,8 +715,8 @@ def get_tick_loss(
     alpha: float,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the tick (quantile) loss of a Value at Risk model, the average loss of its VaR
-    estimates as alpha quantiles of the returns.
+    Calculate the tick (quantile) loss of a Value at Risk model: how well its VaR estimates
+    work as alpha quantiles of the returns, lower being better.
 
     The VaR at alpha is the value that minimizes the expected tick loss, so of two VaR
     models on the same returns the one with the lower loss is the better quantile forecast.
@@ -717,9 +735,8 @@ def get_tick_loss(
     Check Based on Option Pricing, Utility Function, Value-at-Risk, and Predictive
     Likelihood." International Journal of Forecasting, 20(4), 629-645.
 
-    Referenced against `VaRloss` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which smooths the breach indicator with a steep logistic function and reports the loss of
-    every period in percentage points; the loss here is the exact one, in decimals, averaged.
+    Shares similar logic:
+    - rugarch (R), VaRloss: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L3839
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
@@ -729,6 +746,11 @@ def get_tick_loss(
 
     Returns:
         pd.Series | pd.DataFrame: The tick loss.
+
+    Notes:
+    - rugarch's VaRloss smooths the breach indicator with a steep logistic function and reports
+      the loss of every period in percentage points; the loss here is the exact one, in
+      decimals, averaged.
     """
     if isinstance(returns, pd.DataFrame):
         return pd.DataFrame(

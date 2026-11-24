@@ -29,7 +29,8 @@ MAX_PATH_TIMESTEPS = 16
 
 def calculate_up_and_down_movements(volatility: float, time_delta: float):
     """
-    Calculates the up and down movements in the binomial tree.
+    Calculate the up and down movements of the Cox-Ross-Rubinstein binomial tree: the factors by
+    which the stock price rises or falls in one time step.
 
     Args:
         volatility (float): the volatility of a stock.
@@ -52,7 +53,8 @@ def calculate_risk_neutral_probability(
     down_movement: float,
 ):
     """
-    Calculates the risk-neutral probability.
+    Calculate the risk-neutral probability of an up movement: the probability under which the
+    expected stock price grows at the risk-free rate less the dividend yield.
 
     Args:
         risk_free_rate (float): The risk-free interest rate.
@@ -135,8 +137,10 @@ def calculate_tree_movements(
     time_steps: int,
 ) -> tuple[float, float, float]:
     """
-    Calculates the up movement, down movement and probability of an up movement of a
-    binomial tree variant. With Δt = T / n, b = r — q and ν = b — σ² / 2:
+    Calculate the up movement, down movement and probability of an up movement of a binomial
+    tree variant: how far the stock price moves in a time step and how likely a rise is.
+
+    With Δt = T / n, b = r — q and ν = b — σ² / 2:
 
     - Cox-Ross-Rubinstein (1979): u = e^(σ√Δt), d = 1 / u, p = (e^(bΔt) — d) / (u — d)
     - Jarrow-Rudd (1983), equal probabilities: u = e^(νΔt + σ√Δt), d = e^(νΔt — σ√Δt), p = 1/2
@@ -157,8 +161,10 @@ def calculate_tree_movements(
     the option at its value on the forward.
 
     Args:
-        method (str): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian", "trigeorgis",
-            "leisen_reimer" or "exact_inversion".
+        method (str): The tree. Options are: "cox_ross_rubinstein" (Cox-Ross-Rubinstein),
+            "jarrow_rudd" (Jarrow-Rudd), "tian" (Tian), "trigeorgis" (Trigeorgis),
+            "leisen_reimer" (Leisen-Reimer), "exact_inversion" (exact inversion of the
+            binomial distribution).
         stock_price (float): The current stock price.
         strike_price (float): The strike price, which the Leisen-Reimer and exact inversion trees are
             centred on.
@@ -275,7 +281,8 @@ def calculate_stock_prices(
     show_unique_combinations: bool = True,
 ) -> pd.DataFrame:
     """
-    Calculates stock prices at each node.
+    Calculate the stock prices at each node of a binomial tree: the prices the stock can reach
+    after every combination of up and down movements.
 
     Args:
         stock_price (float): Current stock price.
@@ -395,7 +402,8 @@ def get_call_option_payoffs(
     stock_price: float | pd.Series | np.ndarray, strike_price: float
 ) -> float | pd.Series | np.ndarray:
     """
-    Calculates call option payoffs at maturity.
+    Calculate the payoff of a call option at expiration: the amount by which the stock price
+    exceeds the strike price, or zero.
 
     Args:
         stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
@@ -415,7 +423,8 @@ def get_put_option_payoffs(
     stock_price: float | pd.Series | np.ndarray, strike_price: float
 ) -> float | pd.Series | np.ndarray:
     """
-    Calculates put option payoffs at maturity.
+    Calculate the payoff of a put option at expiration: the amount by which the strike price
+    exceeds the stock price, or zero.
 
     Args:
         stock_price (float | pd.Series | np.ndarray): Stock price, or a range of stock
@@ -440,7 +449,8 @@ def calculate_option_value(
     risk_neutral_probability: float,
 ):
     """
-    Calculates option values at each node.
+    Calculate the option value at a node of a binomial tree: the discounted expected value of
+    the option in the up and down states that follow.
 
     Args:
         up_option_payoff (float): The option payoff in the up state.
@@ -475,8 +485,24 @@ def get_option_payoffs(
     method: str = "cox_ross_rubinstein",
 ):
     """
-    Calculates the binomial tree of a European or American option, with the tree of
-    Cox-Ross-Rubinstein (1979) or one of its variants (see calculate_tree_movements).
+    Calculate the binomial tree of a European or American option: the value of the option at
+    every node, from the payoffs at expiration back to today.
+
+    The tree is that of Cox-Ross-Rubinstein (1979) or one of its variants (see
+    calculate_tree_movements).
+
+    Referenced against:
+    - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test:
+            tests/options/test_binomial_trees_model.py::test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes
 
     Args:
         stock_price (float): Current stock price
@@ -489,20 +515,21 @@ def get_option_payoffs(
         put_option (bool, optional): Whether the option is a put option. Defaults to False.
         american_option (bool, optional): Whether the option is an American option. Defaults to False.
         show_input_info (bool, optional): Whether to show input info. Defaults to False.
-        method (str, optional): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian",
-            "trigeorgis", "leisen_reimer" or "exact_inversion" (the last two need an odd number of time
-            steps). Defaults to "cox_ross_rubinstein".
+        method (str, optional): The tree. Options are: "cox_ross_rubinstein"
+            (Cox-Ross-Rubinstein), "jarrow_rudd" (Jarrow-Rudd), "tian" (Tian), "trigeorgis"
+            (Trigeorgis), "leisen_reimer" (Leisen-Reimer), "exact_inversion" (exact
+            inversion of the binomial distribution). The last two need an odd number of time
+            steps. Defaults to "cox_ross_rubinstein".
 
     Returns:
         pd.DataFrame: Option payoffs
 
     Notes:
-        Referenced against QuantLib's BinomialJRVanillaEngine, BinomialTianVanillaEngine,
-        BinomialTrigeorgisVanillaEngine, BinomialLRVanillaEngine and BinomialJ4VanillaEngine
-        (https://www.quantlib.org). The Jarrow-Rudd, Tian, Trigeorgis and Leisen-Reimer trees
-        agree within 1e-9. Joshi (2010) expands the inverse of the binomial distribution to
-        fourth order (his J4 tree); this tree takes the exact inverse, which prices a European
-        option at its Black-Scholes value and lies within 1e-6 of the J4 tree at 101 steps.
+        - The Jarrow-Rudd, Tian, Trigeorgis and Leisen-Reimer trees agree with QuantLib's
+          within 1e-9.
+        - Joshi (2010) expands the inverse of the binomial distribution to fourth order (his
+          J4 tree); this tree takes the exact inverse, which prices a European option at its
+          Black-Scholes value and lies within 1e-6 of the J4 tree at 101 steps.
     """
     trees, up_movements, down_movements, probabilities = get_option_payoff_trees(
         stock_price=stock_price,
@@ -548,15 +575,31 @@ def get_option_payoff_trees(
     method: str = "cox_ross_rubinstein",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Calculates the binomial trees of European or American options for an array of strike
-    prices at once, with numpy backward induction over a strikes × nodes array (see
-    get_option_payoffs for the trees).
+    Calculate the binomial trees of European or American options for an array of strike prices
+    at once: the value of each option at every node, from the payoffs at expiration back to
+    today.
+
+    The trees use numpy backward induction over a strikes × nodes array (see get_option_payoffs
+    for the trees).
 
     Row k of a tree holds the node with k down movements: at step i it is the price after
     min(i, k) downs followed by the ups, S * d^min(i, k) * u^max(i — k, 0), and the option
     value there is defined for k ≤ i (NaN beyond, where the node does not exist yet). Going
     back from expiration, the value at (k, i) is e^(—rΔt) * (p * V(k, i + 1) + (1 — p) *
     V(k + 1, i + 1)), and for an American option at least the exercise value at the node.
+
+    Referenced against:
+    - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
+    - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
+        Test:
+            tests/options/test_binomial_trees_model.py::test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes
 
     Args:
         stock_price (float): Current stock price.
@@ -569,7 +612,10 @@ def get_option_payoff_trees(
         put_option (bool, optional): Whether the options are put options. Defaults to False.
         american_option (bool, optional): Whether the options are American options.
             Defaults to False.
-        method (str, optional): The tree (see calculate_tree_movements). Defaults to
+        method (str, optional): The tree (see calculate_tree_movements). Options are:
+            "cox_ross_rubinstein" (Cox-Ross-Rubinstein), "jarrow_rudd" (Jarrow-Rudd), "tian"
+            (Tian), "trigeorgis" (Trigeorgis), "leisen_reimer" (Leisen-Reimer),
+            "exact_inversion" (exact inversion of the binomial distribution). Defaults to
             "cox_ross_rubinstein".
 
     Returns:
@@ -658,8 +704,9 @@ def get_strategy_payoff(
     legs: list[dict[str, float | bool | str]],
 ) -> float | pd.Series | np.ndarray:
     """
-    Calculate the net expiration profit and loss (P&L) of a multi-leg option (and,
-    optionally, stock) strategy.
+    Calculate the net expiration profit and loss (P&L) of a multi-leg option (and, optionally,
+    stock) strategy: what the combined position earns or loses at each stock price at
+    expiration.
 
     Also known as: option strategy payoff diagram, P&L profile.
 

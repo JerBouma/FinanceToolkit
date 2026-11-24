@@ -144,8 +144,10 @@ class DependenceRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the Upper and Lower Tail Dependence Coefficients between `ticker_a`
-        and `ticker_b`. Without a pair, every ticker is paired with the benchmark, which
+        Calculate the Upper and Lower Tail Dependence Coefficients between `ticker_a` and `ticker_b`: how
+        likely one asset is in extreme distress given that the other one already is.
+
+        Without a pair, every ticker is paired with the benchmark, which
         tells how likely each company is to be in distress when the market is.
 
         Correlation only captures the *average* co-movement between two assets -- it
@@ -168,17 +170,20 @@ class DependenceRisk:
         Financial Markets: Diagnostics, Models, and Financial Implications." Review of
         Financial Studies, 17(2), 581-610.
 
-        The formula is as follows (with the default method="empirical" and q=0.95):
+        The formula is as follows (with the default empirical estimate and a q of 0.95):
 
         - Upper Tail Dependence = #(A > Q_A(q) and B > Q_B(q)) / #(A > Q_A(q))
         - Lower Tail Dependence = #(A <= Q_A(1 - q) and B <= Q_B(1 - q)) / #(A <= Q_A(1 - q))
 
         Where A and B are the values of `ticker_a` and `ticker_b` on their common dates and Q_A and Q_B their
-        empirical quantiles. With method="gaussian" both coefficients are 0 (1 only for a correlation of exactly
-        1), and with method="student-t" both are 2 * t_(v+1)(-√((v + 1) * (1 - rho) / (1 + rho))), with v = `dof`,
+        empirical quantiles. With the gaussian copula both coefficients are 0 (1 only for a correlation of exactly
+        1), and with the Student-T copula both are 2 * t_(v+1)(-√((v + 1) * (1 - rho) / (1 + rho))), with v = `dof`,
         rho the Pearson correlation and t_(v+1) the Student-T distribution function.
 
         Also known as: tail dependence, extremal dependence coefficient.
+
+        Shares similar logic:
+        - skfolio, StudentTCopula (Student-T): https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
 
         Args:
             ticker_a (str | None, optional): The first asset. Defaults to None, which pairs every other ticker
@@ -186,18 +191,18 @@ class DependenceRisk:
             ticker_b (str | None, optional): The second asset, the benchmark by its own ticker (SPY) or as
                 "Benchmark", or a ticker outside the Toolkit, whose returns are retrieved for the same dates
                 (with column="Return"). Defaults to None, which uses the benchmark.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a dependence estimate needs far more observations than a
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return", since
             tail dependence between return series is the standard risk management application.
             q (float, optional): The threshold quantile used for the "empirical" method, in (0.5, 1).
             Defaults to 0.95.
-            method (str, optional): The estimation method, one of "empirical", "gaussian" or
-            "student-t". Defaults to "empirical".
+            method (str, optional): The estimation method. Options are: "empirical" (nonparametric plug-in
+                estimate), "gaussian" (gaussian copula), "student-t" (Student-T copula). Defaults to "empirical".
             dof (float, optional): The degrees of freedom of the Student-T copula, only used when
-            `method="student-t"`. Defaults to 4.0.
+            method is "student-t". Defaults to 4.0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -277,8 +282,10 @@ class DependenceRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calibrate a bivariate copula between `ticker_a` and `ticker_b` on the
-        pseudo-observations (ranks) of their returns: the Clayton, Gumbel and Frank
+        Calibrate a bivariate copula between `ticker_a` and `ticker_b`: how their returns move together
+        apart from their own distributions, including how often their crashes or rallies coincide.
+
+        It is fitted on the pseudo-observations (ranks) of their returns: the Clayton, Gumbel and Frank
         parameters by maximum likelihood, the gaussian correlation from the normal
         scores, and the Student-T correlation from Kendall's tau with the degrees of
         freedom by maximum likelihood (Demarta & McNeil, 2005).
@@ -291,17 +298,17 @@ class DependenceRisk:
         letting the two be modeled independently. Five families are supported,
         each capturing a different shape of dependence:
 
-        - "gaussian": zero tail dependence -- crashes and rallies are no more
+        - Gaussian: zero tail dependence -- crashes and rallies are no more
         likely to happen together than the correlation alone implies. Included
         mainly as a baseline, since real asset returns typically show more
         joint tail risk than this.
-        - "student-t": symmetric, nonzero tail dependence in both tails.
-        - "clayton": nonzero *lower* tail dependence only -- assets crash
+        - Student-T: symmetric, nonzero tail dependence in both tails.
+        - Clayton: nonzero *lower* tail dependence only -- assets crash
         together more than they rally together. The most common choice for
         equity return pairs.
-        - "gumbel": nonzero *upper* tail dependence only -- assets rally
+        - Gumbel: nonzero *upper* tail dependence only -- assets rally
         together more than they crash together.
-        - "frank": zero tail dependence in both tails, but (unlike gaussian) can
+        - Frank: zero tail dependence in both tails, but (unlike gaussian) can
         represent negative dependence and is symmetric around independence.
 
         See `get_best_fitting_copula` to compare all five by AIC on the same
@@ -334,14 +341,22 @@ class DependenceRisk:
 
         Also known as: copula calibration, copula fit, dependence modeling.
 
+        Shares similar logic:
+        - skfolio, GaussianCopula: https://skfolio.org/generated/skfolio.distribution.GaussianCopula.html
+        - skfolio, StudentTCopula: https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
+        - skfolio, ClaytonCopula: https://skfolio.org/generated/skfolio.distribution.ClaytonCopula.html
+        - skfolio, GumbelCopula: https://skfolio.org/generated/skfolio.distribution.GumbelCopula.html
+        - statsmodels, FrankCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.FrankCopula.html
+
         Args:
             ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
             tickers in the Toolkit instance is calibrated (requires `ticker_b` to also be None).
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
-            copula (str, optional): The copula family to fit, one of "gaussian",
-            "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a dependence estimate needs far more observations than a
+            copula (str, optional): The copula family to fit. Options are: "gaussian" (Gaussian copula),
+                "student-t" (Student-T copula), "clayton" (Clayton copula), "gumbel" (Gumbel copula), "frank" (Frank
+                copula). Defaults to "gaussian".
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
@@ -446,8 +461,10 @@ class DependenceRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calibrate a bivariate copula (see `get_copula_parameters`) between
-        `ticker_a` and `ticker_b`, and simulate joint scenarios from it.
+        Simulate joint return scenarios of `ticker_a` and `ticker_b` from a bivariate copula: draws that keep
+        how the two move together, including in their tails.
+
+        The copula is calibrated as in `get_copula_parameters`.
 
         When `ticker_a`/`ticker_b` are not given, every unique pair among the
         Toolkit's tickers is calibrated and simulated instead, as columns
@@ -455,11 +472,11 @@ class DependenceRisk:
 
         This is what a copula-based portfolio Monte Carlo simulation needs: draws
         that preserve the calibrated dependence structure -- including tail
-        dependence, for the "student-t", "clayton" and "gumbel" families -- rather
+        dependence, for the Student-T, Clayton and Gumbel families -- rather
         than the (typically understated) joint crash risk a plain multivariate
         gaussian simulation would produce.
 
-        The formula is as follows (with the default copula="gaussian" and empirical_margins=True):
+        The formula is as follows (with the default gaussian copula and empirical margins):
 
         - (Z1, Z2) ~ N(0, [[1, Rho], [Rho, 1]])
         - U = Φ(Z1), V = Φ(Z2)
@@ -473,14 +490,22 @@ class DependenceRisk:
         Also known as: copula Monte Carlo, dependence simulation, scenario
         generation.
 
+        Shares similar logic:
+        - skfolio, GaussianCopula: https://skfolio.org/generated/skfolio.distribution.GaussianCopula.html
+        - skfolio, StudentTCopula: https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
+        - skfolio, ClaytonCopula: https://skfolio.org/generated/skfolio.distribution.ClaytonCopula.html
+        - skfolio, GumbelCopula: https://skfolio.org/generated/skfolio.distribution.GumbelCopula.html
+        - statsmodels, FrankCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.FrankCopula.html
+
         Args:
             ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
             tickers in the Toolkit instance is used (requires `ticker_b` to also be None).
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
-            copula (str, optional): The copula family to fit and simulate from, one of "gaussian",
-            "student-t", "clayton", "gumbel" or "frank". Defaults to "gaussian".
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a dependence estimate needs far more observations than a
+            copula (str, optional): The copula family to fit and simulate from. Options are: "gaussian" (Gaussian copula),
+                "student-t" (Student-T copula), "clayton" (Clayton copula), "gumbel" (Gumbel copula), "frank" (Frank
+                copula). Defaults to "gaussian".
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
@@ -503,8 +528,8 @@ class DependenceRisk:
             up when neither is given, or if fewer than 10 paired, non-missing observations are available.
 
         Returns:
-            pd.DataFrame: `simulations` simulated joint draws, one column per asset (or "U"/"V" when
-            `empirical_margins=False`) for a single given pair, or with columns grouped by
+            pd.DataFrame: `simulations` simulated joint draws, one column per asset (or "U"/"V" without
+            empirical margins) for a single given pair, or with columns grouped by
             (Ticker A, Ticker B) pair when neither ticker is given.
 
         Notes:
@@ -640,9 +665,10 @@ class DependenceRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calibrate all five supported copula families (see `get_copula_parameters`)
-        between `ticker_a` and `ticker_b`, and compare them by AIC (Akaike
-        Information Criterion) -- the lower the AIC, the better the fit relative
+        Calculate which copula family best describes how `ticker_a` and `ticker_b` move together, by
+        comparing all five supported families on their AIC (Akaike Information Criterion).
+
+        Each family is calibrated as in `get_copula_parameters`. The lower the AIC, the better the fit relative
         to its number of parameters, so the top row is the best-fitting family.
 
         When `ticker_a`/`ticker_b` are not given, every unique pair among the
@@ -657,12 +683,19 @@ class DependenceRisk:
 
         Also known as: copula selection, copula comparison.
 
+        Shares similar logic:
+        - skfolio, GaussianCopula: https://skfolio.org/generated/skfolio.distribution.GaussianCopula.html
+        - skfolio, StudentTCopula: https://skfolio.org/generated/skfolio.distribution.StudentTCopula.html
+        - skfolio, ClaytonCopula: https://skfolio.org/generated/skfolio.distribution.ClaytonCopula.html
+        - skfolio, GumbelCopula: https://skfolio.org/generated/skfolio.distribution.GumbelCopula.html
+        - statsmodels, FrankCopula: https://www.statsmodels.org/stable/generated/statsmodels.distributions.copula.api.FrankCopula.html
+
         Args:
             ticker_a (str, optional): The first asset. Defaults to None, meaning every unique pair of
             tickers in the Toolkit instance is compared (requires `ticker_b` to also be None).
             ticker_b (str, optional): The second asset. Defaults to None, see `ticker_a`.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a dependence estimate needs far more observations than a
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
@@ -687,7 +720,7 @@ class DependenceRisk:
             first), with each family's fitted parameter(s), Lower and Upper Tail Dependence,
             Log-Likelihood, AIC and the number of observations used, indexed by "Copula". When neither
             ticker is given, a square ticker-by-ticker grid of the winning copula family per pair (or,
-            with `show_full_results=True`, one row per pair instead, indexed by (Ticker A, Ticker B),
+            with full results, one row per pair instead, indexed by (Ticker A, Ticker B),
             with a "Best Copula" column and that family's fitted stats).
 
         Notes:
@@ -799,8 +832,10 @@ class DependenceRisk:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
-        Calculate the (Delta-)CoVaR of `ticker` conditional on `conditioning_ticker`
-        being in its own distress state. Without a pair, it measures how much each
+        Calculate the (Delta-)CoVaR of `ticker`: how much worse its Value at Risk gets when
+        `conditioning_ticker` is in its own distress state, the spillover of tail risk.
+
+        Without a pair, it measures how much each
         ticker's distress adds to the tail risk of the benchmark (the market as the
         "system"), as in Adrian & Brunnermeier (2016).
 
@@ -820,7 +855,7 @@ class DependenceRisk:
         quantile, it needs several years of daily data, and the result is a statement about
         co-movement in the tails, not about causality.
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - Quantile_alpha(A | B) = Intercept + Slope * B
         - CoVaR = Intercept + Slope * VaR_B
@@ -845,8 +880,8 @@ class DependenceRisk:
             conditioning_ticker (str | None, optional): The asset whose distress `ticker` is conditioned on.
             Defaults to None, which conditions `ticker` on every other ticker in the Toolkit instance in turn
             (the benchmark included when `ticker` is given), a row each.
-            period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
-                "daily", since a dependence estimate needs far more observations than a
+            period (str, optional): The data frequency. Options are: "daily", "weekly", "monthly", "quarterly",
+                "yearly". Defaults to "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
                 observations.
             column (str, optional): The historical data column to use. Defaults to "Return".
@@ -954,7 +989,7 @@ class DependenceRisk:
         suffers when a firm is in distress, the MES asks how much a firm suffers when the system
         is; it is the market component of SRISK (see `get_srisk`).
 
-        The formula is as follows (with the default alpha=0.05):
+        The formula is as follows (with the default alpha of 0.05):
 
         - VaR_alpha(Market) = Quantile(Market Returns within the period, alpha)
         - MES = MEAN(Returns_t | Market Return_t <= VaR_alpha(Market))
@@ -979,8 +1014,8 @@ class DependenceRisk:
                 benchmark by its own ticker (SPY) or as "Benchmark", one of the tickers, or a ticker outside
                 the Toolkit (such as ^GSPC), whose returns are retrieved for the same dates. Defaults to None,
                 which uses the benchmark.
-            period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
-                to "yearly", as in the paper.
+            period (str, optional): The period of each estimate. Options are: "monthly", "quarterly",
+                "yearly". Defaults to "yearly", as in the paper.
             alpha (float, optional): The tail probability of the market returns. Defaults to 0.05, the
                 5% worst days of the market.
             rolling (int, optional): Use the daily returns of the last `rolling` periods instead of one
@@ -1009,7 +1044,7 @@ class DependenceRisk:
         - Each ticker is paired with the market on the days both have a return: a market return on a day the
         ticker did not trade is compounded into the next shared date, so the other tickers of the Toolkit (e.g.
         a cryptocurrency that trades every day) do not change a ticker's MES.
-        - A period with fewer than 1 / alpha shared returns (20 at alpha=0.05) is NaN, as its tail would hold
+        - A period with fewer than 1 / alpha shared returns (20 at an alpha of 0.05) is NaN, as its tail would hold
         less than one day on average.
         - The market itself is left out: its MES is the average of its own worst days, its Conditional Value at
         Risk.
@@ -1101,7 +1136,7 @@ class DependenceRisk:
         publishes as its systemic risk ranking (SRISK%). It is meant for financial firms, whose
         liabilities are mostly debt; for other firms the liabilities include operating items.
 
-        The formula is as follows (with the defaults decline=0.4 and capital_ratio=0.08):
+        The formula is as follows (with the default decline of 0.4 and capital ratio of 0.08):
 
         - Beta = Covariance(Returns, Market Returns) / Variance(Market Returns)
         - LRMES = (1 - decline) ^ Beta - 1
@@ -1126,6 +1161,9 @@ class DependenceRisk:
         Also known as: systemic risk, capital shortfall, SRISK%, long-run marginal expected shortfall,
         LRMES.
 
+        Shares similar logic:
+        - empyrical, beta (Beta): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1314
+
         Args:
             ticker (str | None, optional): The ticker whose SRISK to calculate. Defaults to None, which
                 uses every ticker except the market and the benchmark.
@@ -1133,8 +1171,8 @@ class DependenceRisk:
                 its own ticker (SPY) or as "Benchmark", one of the tickers, or a ticker outside the Toolkit
                 (such as ^GSPC), whose returns are retrieved for the same dates. Defaults to None, which uses
                 the benchmark.
-            period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
-                to "yearly".
+            period (str, optional): The period of each estimate. Options are: "monthly", "quarterly",
+                "yearly". Defaults to "yearly".
             decline (float, optional): The fall of the market over six months that defines the crisis, as a
                 decimal. Defaults to 0.4, as in V-Lab.
             capital_ratio (float, optional): The prudential capital ratio k, the share of the assets a firm
@@ -1171,11 +1209,11 @@ class DependenceRisk:
         - The liabilities and the share count are those of the last fiscal period that ended on or before the
         last calendar day of the period (filed on or before it with point_in_time), so a fiscal year that ends
         on a weekend still belongs to its own year and a period never uses figures that were not yet reported.
-        A Toolkit with quarterly=True uses the latest quarter, as V-Lab does. The market cap is the traded
+        A quarterly Toolkit uses the latest quarter, as V-Lab does. The market cap is the traded
         (split-adjusted) Close times the diluted share count, which for periods that coincide with the fiscal
         periods equals `toolkit.ratios.get_market_cap`.
         - The Close is in the currency the ticker trades in, while the statements are in the currency they
-        are reported in unless the Toolkit converts them to the currency of the prices (convert_currency=True);
+        are reported in unless the Toolkit converts them to the currency of the prices (currency conversion);
         when the two differ without a conversion, a warning is logged.
         - V-Lab estimates the beta with a GJR-GARCH volatility and a Dynamic Conditional Correlation (DCC)
         model, a beta for every day, while this beta is the ordinary least squares beta over the period's daily

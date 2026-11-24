@@ -217,6 +217,9 @@ def get_augmented_dickey_fuller(
     stattools = import_optional(
         "statsmodels.tsa.stattools", "The Augmented Dickey-Fuller test"
     )
+    adfvalues = import_optional(
+        "statsmodels.tsa.adfvalues", "The Augmented Dickey-Fuller test"
+    )
 
     try:
         if len(values) < MINIMUM_TEST_OBSERVATIONS:
@@ -229,8 +232,8 @@ def get_augmented_dickey_fuller(
 
         if fast is not None:
             adf_statistic, used_lag, n_observations, _ = fast
-            p_value = stattools.mackinnonp(adf_statistic, regression=regression, N=1)
-            critical = stattools.mackinnoncrit(
+            p_value = adfvalues.mackinnonp(adf_statistic, regression=regression, N=1)
+            critical = adfvalues.mackinnoncrit(
                 N=1, regression=regression, nobs=n_observations
             )
             critical_values = {

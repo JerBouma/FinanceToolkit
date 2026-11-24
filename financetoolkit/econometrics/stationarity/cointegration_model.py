@@ -83,6 +83,9 @@ def get_engle_granger_cointegration(
     stattools = import_optional(
         "statsmodels.tsa.stattools", "The Engle-Granger cointegration test"
     )
+    adfvalues = import_optional(
+        "statsmodels.tsa.adfvalues", "The Engle-Granger cointegration test"
+    )
 
     try:
         if len(dependent) < MINIMUM_TEST_OBSERVATIONS:
@@ -107,9 +110,9 @@ def get_engle_granger_cointegration(
 
         if fast is not None:
             eg_statistic = fast[0]
-            p_value = stattools.mackinnonp(eg_statistic, regression="c", N=2)
+            p_value = adfvalues.mackinnonp(eg_statistic, regression="c", N=2)
             # One observation fewer, as statsmodels (and Stata's egranger) does.
-            critical_values = stattools.mackinnoncrit(
+            critical_values = adfvalues.mackinnoncrit(
                 N=2, regression="c", nobs=len(dependent) - 1
             )
         else:

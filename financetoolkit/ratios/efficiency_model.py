@@ -71,9 +71,8 @@ def get_days_of_sales_outstanding(
     days: int | float = 365,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the days of sales outstanding, an efficiency ratio that measures
-    the average number of days it takes a company to collect payment on its
-    credit sales.
+    Calculate the days of sales outstanding, an efficiency ratio that measures the average number of days it takes a
+    company to collect payment on its credit sales.
 
     Args:
         average_accounts_receivable (float or pd.Series): Average accounts receivable of the company.
@@ -111,8 +110,8 @@ def get_accounts_payables_turnover_ratio(
     average_accounts_payable: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the accounts payable turnover ratio is an efficiency ratio that measures how
-    quickly a company pays its suppliers.
+    Calculate the accounts payable turnover ratio, an efficiency ratio that measures how quickly a company pays its
+    suppliers.
 
     Args:
         cost_of_goods_sold (float or pd.Series): Total Costs of Goods Sold of the company.
@@ -152,9 +151,8 @@ def get_cash_conversion_cycle(
     days_payables_outstanding: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
-    its investments in inventory and accounts receivable into cash, while considering the time it takes to pay
-    its accounts payable.
+    Calculate the cash conversion cycle: the number of days a company's cash is tied up in inventory and receivables,
+    less the days it takes to pay its suppliers.
 
     Args:
         days_inventory (float or pd.Series): Average number of days that inventory is held before being sold.
@@ -172,9 +170,8 @@ def get_receivables_turnover(
     net_credit_sales: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the receivables turnover, an efficiency ratio that measures how many
-    times per period a company collects its average accounts receivable, i.e. how
-    efficiently it extends credit to and collects cash from its customers.
+    Calculate the receivables turnover, an efficiency ratio that measures how many times per period a company collects
+    its average accounts receivable, i.e. how efficiently it extends credit to and collects cash from its customers.
 
     Note that this is the reciprocal (times per period, rather than days) of the
     days of sales outstanding: Receivables Turnover = Days in Period /
@@ -199,8 +196,8 @@ def get_sga_to_revenue_ratio(
     sga_expenses: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculates the sales, general, and administrative (SG&A) expenses to revenue ratio,
-    which measures the SG&A expenses relative to the revenue of the company.
+    Calculate the sales, general and administrative (SG&A) expenses to revenue ratio: the share of revenue a company
+    spends on its overhead.
 
     Args:
         sga_expenses (float or pd.Series): SG&A expenses of the company.
@@ -235,8 +232,9 @@ def get_operating_margin(
     operating_income: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the operating margin, a financial metric that measures the
-    percentage of revenue that remains after covering operating expenses.
+    Calculate the operating margin, a financial metric that measures the percentage of revenue that remains after
+    covering operating expenses.
+
     It is calculated as operating income divided by revenue.
 
     Args:
@@ -292,9 +290,8 @@ def get_research_and_development_ratio(
     revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the research and development (R&D) intensity ratio, an efficiency ratio
-    that measures how much a company reinvests in research and development relative
-    to its revenue.
+    Calculate the research and development (R&D) intensity ratio, an efficiency ratio that measures how much a company
+    reinvests in research and development relative to its revenue.
 
     This ratio is particularly relevant for comparing companies in technology,
     pharmaceutical and other innovation-driven industries, where R&D spending is a
@@ -316,9 +313,8 @@ def get_selling_and_marketing_ratio(
     revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the selling and marketing (S&M) expenses to revenue ratio, an efficiency
-    ratio that measures the proportion of revenue spent on selling and marketing
-    activities.
+    Calculate the selling and marketing (S&M) expenses to revenue ratio, an efficiency ratio that measures the
+    proportion of revenue spent on selling and marketing activities.
 
     This ratio isolates the selling and marketing component of the combined SG&A
     expense line, which is useful for comparing customer-acquisition efficiency
@@ -340,9 +336,8 @@ def get_general_and_administrative_ratio(
     revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the general and administrative (G&A) expenses to revenue ratio, an
-    efficiency ratio that measures the proportion of revenue spent on general and
-    administrative overhead.
+    Calculate the general and administrative (G&A) expenses to revenue ratio, an efficiency ratio that measures the
+    proportion of revenue spent on general and administrative overhead.
 
     This ratio isolates the administrative component of the combined SG&A expense
     line, which is useful for assessing overhead efficiency independently of selling
@@ -364,9 +359,8 @@ def get_stock_based_compensation_ratio(
     revenue: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
-    ratio that measures how much of a company's revenue is being used to compensate
-    employees through non-cash equity awards.
+    Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency ratio that measures how much of a
+    company's revenue is being used to compensate employees through non-cash equity awards.
 
     A high or rising SBC-to-revenue ratio is a common quality-of-earnings flag,
     particularly for technology companies, since SBC is added back in cash flow from
@@ -417,9 +411,8 @@ def get_deferred_revenue_ratio(
     deferred_revenue: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the deferred revenue ratio, an efficiency ratio that measures the size
-    of a company's deferred revenue (payments collected for goods or services not yet
-    delivered) relative to its revenue.
+    Calculate the deferred revenue ratio, an efficiency ratio that measures the size of a company's deferred revenue
+    (payments collected for goods or services not yet delivered) relative to its revenue.
 
     This ratio is a common leading indicator for subscription and SaaS businesses,
     where a growing deferred revenue balance relative to revenue can signal
@@ -468,9 +461,10 @@ def get_capex_to_depreciation_ratio(
     depreciation_and_amortization: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the capital expenditure to depreciation ratio, which compares what a
-    company invests in its assets with what wears off them. Above 1 the asset base
-    grows, around 1 the company maintains it and below 1 it shrinks.
+    Calculate the capital expenditure to depreciation ratio, which compares what a company invests in its assets with
+    what wears off them.
+
+    Above 1 the asset base grows, around 1 the company maintains it and below 1 it shrinks.
 
     The formula is as follows:
 
@@ -529,9 +523,10 @@ def get_asset_growth(
     beginning_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the asset growth of Cooper, Gulen and Schill (2008): the change in total
-    assets relative to the total assets at the start of the window. Companies that grow
-    their assets the most earn the lowest returns afterwards.
+    Calculate the asset growth of Cooper, Gulen and Schill (2008): the change in total assets relative to the total
+    assets at the start of the window.
+
+    Companies that grow their assets the most earn the lowest returns afterwards.
 
     The formula is as follows:
 
@@ -562,11 +557,11 @@ def get_net_operating_assets(
     beginning_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the scaled net operating assets of Hirshleifer, Hou, Teoh and Zhang
-    (2004): the operating assets minus the operating liabilities, relative to the total
-    assets at the start of the year. It is the cumulative difference between operating
-    income and free cash flow, so a high value means earnings have run ahead of cash
-    for years (a bloated balance sheet), which predicts lower returns.
+    Calculate the scaled net operating assets of Hirshleifer, Hou, Teoh and Zhang (2004): the operating assets minus
+    the operating liabilities, relative to the total assets at the start of the year.
+
+    It is the cumulative difference between operating income and free cash flow, so a high value means earnings have
+    run ahead of cash for years (a bloated balance sheet), which predicts lower returns.
 
     The formula is as follows:
 

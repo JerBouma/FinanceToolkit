@@ -276,9 +276,7 @@ class ValueAtRiskRisk:
 
         Referenced against:
         - scipy, gaussian_kde (kernel): https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
-            Test: tests/risk/test_var_model.py::test_get_var_kernel_reference_value
         - arch, GARCH (GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_var_model.py::test_get_var_garch_matches_the_arch_package
 
         Shares similar logic:
         - PerformanceAnalytics (R), VaR (historic, gaussian, Cornish-Fisher): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/VaR.R#L329
@@ -558,7 +556,6 @@ class ValueAtRiskRisk:
 
         Referenced against:
         - scipy, gaussian_kde (kernel): https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
-            Test: tests/risk/test_cvar_model.py::test_get_cvar_kernel_reference_value
 
         Shares similar logic:
         - PerformanceAnalytics (R), ES (historic, gaussian, Cornish-Fisher): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ES.R#L245
@@ -813,9 +810,7 @@ class ValueAtRiskRisk:
 
         Referenced against:
         - skfolio, evar (historic): https://skfolio.org/generated/skfolio.measures.evar.html
-            Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
         - Riskfolio-Lib, EVaR_Hist (historic): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.EVaR_Hist
-            Test: tests/risk/test_evar_model.py::test_get_evar_historic_reference_values
 
         Args:
             period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",
@@ -946,9 +941,7 @@ class ValueAtRiskRisk:
 
         Referenced against:
         - skfolio, entropic_risk_measure: https://skfolio.org/generated/skfolio.measures.entropic_risk_measure.html
-            Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
         - Riskfolio-Lib, Entropic_RM: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Entropic_RM
-            Test: tests/risk/test_evar_model.py::test_get_entropic_risk_measure_reference_values
 
         Args:
             period (str, optional): The data frequency for returns. Options are: "daily", "weekly", "monthly",

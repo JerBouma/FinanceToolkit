@@ -22,10 +22,11 @@ COUNTRY = "United States"
 
 def get_recession_indicator() -> pd.DataFrame:
     """
-    Builds the monthly US recession indicator from the NBER business cycle dates, the
-    way FRED builds USREC: 1 from the month after a peak through the trough month, and 0
-    otherwise. A recession without a trough yet runs through the current month, and the
-    first trough, whose peak predates the chronology, counts from the first month.
+    Builds the monthly US recession indicator from the NBER business cycle dates, the way FRED builds USREC: 1 from
+    the month after a peak through the trough month, and 0 otherwise.
+
+    A recession without a trough yet runs through the current month, and the first trough, whose peak predates the
+    chronology, counts from the first month.
 
     Returns:
         pd.DataFrame: A single "United States" column of 1 and 0, indexed by the first day

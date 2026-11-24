@@ -1374,8 +1374,6 @@ def get_treynor_ratio(
 
     Referenced against:
     - PerformanceAnalytics (R), TreynorRatio (modified): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TreynorRatio.R#L47
-        Test:
-            tests/performance/test_performance_model.py::test_modified_and_alternative_jensens_alpha_match_performance_analytics
 
     Shares similar logic:
     - quantstats, treynor_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1469
@@ -1556,9 +1554,7 @@ def get_probabilistic_sharpe_ratio(
 
     Referenced against:
     - quantstats, probabilistic_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1404
-        Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
     - quantstats, probabilistic_adjusted_sortino_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1434
-        Test: tests/performance/test_performance_model.py::test_probabilistic_sortino_ratios_match_quantstats
 
     Shares similar logic:
     - quantstats, probabilistic_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1297
@@ -1914,7 +1910,6 @@ def get_annualized_return(
 
     Referenced against:
     - PerformanceAnalytics (R), Return.annualized: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.annualized.R#L39
-        Test: tests/performance/test_performance_model.py::test_annualized_return_matches_performance_analytics
 
     Shares similar logic:
     - empyrical, annual_return: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L408
@@ -2247,7 +2242,6 @@ def get_m2_excess_return(
 
     Referenced against:
     - PerformanceAnalytics (R), MSquaredExcess: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/MSquaredExcess.R#L35
-        Test: tests/performance/test_performance_model.py::test_m2_excess_return_matches_performance_analytics
 
     Args:
         m2_ratio (pd.Series | pd.DataFrame): The M2 measure per period (columns per asset).
@@ -2864,11 +2858,7 @@ def get_upside_capture_ratio(
 
     Referenced against:
     - empyrical, up_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1887
-        Test:
-            tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
     - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-        Test:
-            tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -2911,8 +2901,6 @@ def get_downside_capture_ratio(
 
     Referenced against:
     - empyrical, down_capture (annualized): https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1921
-        Test:
-            tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
 
     Shares similar logic:
     - PerformanceAnalytics (R), UpDownRatios (arithmetic): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
@@ -3055,8 +3043,6 @@ def get_up_down_number(
 
     Referenced against:
     - PerformanceAnalytics (R), UpDownRatios (Up Number, Down Number): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-        Test:
-            tests/performance/test_performance_model.py::test_capture_ratio_methods_match_empyrical_and_performance_analytics
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns, a "within period" (period,
@@ -3118,7 +3104,6 @@ def get_win_rate(
 
     Referenced against:
     - PerformanceAnalytics (R), UpDownRatios (Up Percent, Down Percent): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/UpDownRatios.R#L44
-        Test: tests/performance/test_performance_model.py::test_up_and_down_market_win_rates_match_performance_analytics
 
     Shares similar logic:
     - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
@@ -3348,11 +3333,7 @@ def get_gain_to_pain_ratio(
 
     Referenced against:
     - PerformanceAnalytics (R), OmegaSharpeRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaSharpeRatio.R#L37
-        Test:
-            tests/performance/test_performance_model.py::test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references
     - quantstats, gain_to_pain_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1584
-        Test:
-            tests/performance/test_performance_model.py::test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -3420,7 +3401,6 @@ def get_d_ratio(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame |
 
     Referenced against:
     - PerformanceAnalytics (R), DRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DRatio.R#L38
-        Test: tests/performance/test_performance_model.py::test_d_ratio_matches_performance_analytics
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
@@ -3481,7 +3461,6 @@ def get_prospect_ratio(
 
     Referenced against:
     - PerformanceAnalytics (R), ProspectRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/ProspectRatio.R#L32
-        Test: tests/performance/test_performance_model.py::test_prospect_ratio_matches_performance_analytics
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
@@ -3552,7 +3531,6 @@ def get_omega_excess_return(
 
     Referenced against:
     - PerformanceAnalytics (R), OmegaExcessReturn: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/OmegaExcessReturn.R#L36
-        Test: tests/performance/test_performance_model.py::test_omega_excess_return_matches_performance_analytics
 
     Args:
         returns (pd.Series | pd.DataFrame): The return of each period (columns per asset).
@@ -3627,41 +3605,17 @@ def get_return_statistics(
 
     Referenced against:
     - quantstats, avg_return (Expectancy): https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L640
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, best: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L362
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, worst: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L395
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, exposure: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L514
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, cpc_index: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2417
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, profit_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2312
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, outlier_win_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2484
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, outlier_loss_ratio: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L2523
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - quantstats, risk_of_ruin: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L1968
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - PerformanceAnalytics (R), mean.stderr: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L137
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - PerformanceAnalytics (R), mean.LCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L169
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
     - PerformanceAnalytics (R), mean.UCL: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/mean.utils.R#L208
-        Test:
-            tests/performance/test_performance_model.py::test_return_statistics_extensions_match_quantstats_and_performance_analytics
 
     Shares similar logic:
     - quantstats, win_rate: https://github.com/ranaroussi/quantstats/blob/v0.0.86/quantstats/stats.py#L564
@@ -4403,8 +4357,6 @@ def get_modified_jensens_alpha(
 
     Referenced against:
     - PerformanceAnalytics (R), AppraisalRatio (modified, alternative): https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/AppraisalRatio.R#L45
-        Test:
-            tests/performance/test_performance_model.py::test_modified_and_alternative_jensens_alpha_match_performance_analytics
 
     Args:
         jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
@@ -6089,7 +6041,6 @@ def get_outperformance_probability(
 
     Referenced against:
     - PerformanceAnalytics (R), table.ProbOutPerformance: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/table.ProbOutperformance.R#L32
-        Test: tests/performance/test_performance_model.py::test_outperformance_probability_matches_performance_analytics
 
     Shares similar logic:
     - ffn, PerformanceStats (twelve_month_win_perc): https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
@@ -6177,15 +6128,10 @@ def get_bull_bear_beta(
 
     Referenced against:
     - PerformanceAnalytics (R), CAPM.beta.bull: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L133
-        Test: tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
     - PerformanceAnalytics (R), CAPM.beta.bear: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L184
-        Test: tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
     - PerformanceAnalytics (R), TimingRatio: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.beta.R#L236
-        Test: tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
     - empyrical, up_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1986
-        Test: tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
     - empyrical, down_alpha_beta: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L2004
-        Test: tests/performance/test_performance_model.py::test_bull_bear_beta_matches_performance_analytics_and_empyrical
 
     Args:
         excess_returns (pd.Series): The asset's excess returns.
@@ -6261,7 +6207,6 @@ def get_beta_fragility_heuristic(
 
     Referenced against:
     - empyrical, beta_fragility_heuristic: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1565
-        Test: tests/performance/test_performance_model.py::test_beta_fragility_heuristic_matches_empyrical
 
     Args:
         returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
@@ -6334,7 +6279,6 @@ def get_stability_of_returns(
 
     Referenced against:
     - empyrical, stability_of_timeseries: https://github.com/quantopian/empyrical/blob/0.5.5/empyrical/stats.py#L1471
-        Test: tests/performance/test_performance_model.py::test_stability_and_r_squared_match_empyrical_and_quantstats
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, either a flat index or a 'within
@@ -6396,9 +6340,7 @@ def get_risk_decomposition(
 
     Referenced against:
     - PerformanceAnalytics (R), SystematicRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SystematicRisk.R#L36
-        Test: tests/performance/test_performance_model.py::test_risk_decomposition_matches_performance_analytics
     - PerformanceAnalytics (R), SpecificRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SpecificRisk.R#L27
-        Test: tests/performance/test_performance_model.py::test_risk_decomposition_matches_performance_analytics
 
     Shares similar logic:
     - PerformanceAnalytics (R), TotalRisk: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/TotalRisk.R#L30
@@ -6474,11 +6416,7 @@ def get_capital_market_line(
 
     Referenced against:
     - PerformanceAnalytics (R), CAPM.CML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L6
-        Test:
-            tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
     - PerformanceAnalytics (R), CAPM.SML.slope: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.utils.R#L152
-        Test:
-            tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
 
     Args:
         returns (pd.Series): The asset's returns.
@@ -6543,8 +6481,6 @@ def get_regression_epsilon(
 
     Referenced against:
     - PerformanceAnalytics (R), CAPM.epsilon: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/CAPM.epsilon.R#L33
-        Test:
-            tests/performance/test_performance_model.py::test_capital_market_line_and_regression_epsilon_match_performance_analytics
 
     Args:
         excess_returns (pd.Series): The asset's excess returns per observation.
@@ -6627,7 +6563,6 @@ def get_geltner_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Dat
 
     Referenced against:
     - PerformanceAnalytics (R), Return.Geltner: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/Return.Geltner.R#L43
-        Test: tests/performance/test_performance_model.py::test_geltner_returns_match_performance_analytics
 
     Args:
         returns (pd.Series | pd.DataFrame): The returns, each column on its own history
@@ -6684,8 +6619,6 @@ def get_smoothing_index(returns: pd.Series, order: int = 2) -> pd.Series:
 
     Referenced against:
     - statsmodels, ARIMA (order (0, 0, k), without a mean): https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
-        Test:
-            tests/performance/test_performance_model.py::test_smoothing_index_matches_the_maximum_likelihood_of_statsmodels
 
     Shares similar logic:
     - PerformanceAnalytics (R), SmoothingIndex: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/SmoothingIndex.R#L96
@@ -6938,7 +6871,6 @@ def get_risk_measure_ratio(
 
     Referenced against:
     - skfolio, RatioMeasure: https://skfolio.org/generated/skfolio.measures.RatioMeasure.html
-        Test: tests/performance/test_performance_model.py::test_risk_measure_ratio_matches_skfolio
 
     Shares similar logic:
     - Riskfolio-Lib, Sharpe: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.Sharpe
@@ -7017,7 +6949,6 @@ def get_trailing_returns(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.Dat
 
     Referenced against:
     - ffn, PerformanceStats: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L123
-        Test: tests/performance/test_performance_model.py::test_trailing_returns_match_ffn
 
     Shares similar logic:
     - ffn, calc_mtd: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1426
@@ -7408,7 +7339,6 @@ def get_forecast_cone(
 
     Referenced against:
     - pyfolio, summarize_paths: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1111
-        Test: tests/performance/test_performance_model.py::test_forecast_cone_matches_pyfolio_on_the_same_paths
 
     Shares similar logic:
     - pyfolio, forecast_cone_bootstrap: https://github.com/quantopian/pyfolio/blob/0.9.2/pyfolio/timeseries.py#L1147
@@ -7520,7 +7450,6 @@ def get_probability_of_backtest_overfitting(
 
     Referenced against:
     - ffn, calc_prob_backtest_overfitting: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L3165
-        Test: tests/performance/test_performance_model.py::test_probability_of_backtest_overfitting_matches_ffn
 
     Shares similar logic:
     - RiskLabAI, probability_of_backtest_overfitting: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/backtest/probability_of_backtest_overfitting.py#L80
@@ -7638,7 +7567,6 @@ def get_probabilistic_momentum(
 
     Referenced against:
     - ffn, calc_prob_mom: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L1739
-        Test: tests/performance/test_performance_model.py::test_probabilistic_momentum_matches_ffn
 
     Args:
         information_ratio (pd.Series | pd.DataFrame | float): The information ratio of the
@@ -7692,7 +7620,6 @@ def get_factor_regression(
 
     Referenced against:
     - pyfolio, rolling_regression: https://github.com/stefan-jansen/pyfolio-reloaded/blob/0.10.2/src/pyfolio/timeseries.py#L550
-        Test: tests/performance/test_performance_model.py::test_rolling_factor_regression_matches_pyfolio
 
     Shares similar logic:
     - statsmodels, RollingOLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.rolling.RollingOLS.html

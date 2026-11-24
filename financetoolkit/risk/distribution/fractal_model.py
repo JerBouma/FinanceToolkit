@@ -219,7 +219,6 @@ def get_rescaled_range_hurst_exponent(
 
     Referenced against:
     - nolds, hurst_rs: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1203
-        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
     Notes:
         - S is the population standard deviation (with n in the denominator), as in Hurst's and Peters'
@@ -312,7 +311,6 @@ def get_detrended_fluctuation(
 
     Referenced against:
     - nolds, dfa: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L1997
-        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
     Shares similar logic:
     - antropy, detrended_fluctuation: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L369
@@ -389,7 +387,6 @@ def get_higuchi_fractal_dimension(
 
     Referenced against:
     - antropy, higuchi_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L232
-        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -447,7 +444,6 @@ def get_katz_fractal_dimension(data: pd.Series | np.ndarray) -> float:
 
     Referenced against:
     - antropy, katz_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L104
-        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -493,7 +489,6 @@ def get_petrosian_fractal_dimension(data: pd.Series | np.ndarray) -> float:
 
     Referenced against:
     - antropy, petrosian_fd: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/fractal.py#L14
-        Test: tests/risk/test_fractal_model.py::test_fractal_dimensions_equal_antropy
 
     Args:
         data (pd.Series | np.ndarray): The curve, e.g. log prices.
@@ -685,7 +680,6 @@ def get_largest_lyapunov_exponent(
 
     Referenced against:
     - nolds, lyap_r: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L117
-        Test: tests/risk/test_fractal_model.py::test_measures_of_returns_equal_nolds
 
     Notes:
         - nolds chooses the delay from the autocorrelation function and fits by RANSAC unless
@@ -808,7 +802,6 @@ def get_lyapunov_spectrum(
 
     Referenced against:
     - nolds, lyap_e: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L400
-        Test: tests/risk/test_fractal_model.py::test_lyapunov_spectrum_equals_nolds_with_a_step_of_one
 
     Notes:
         - nolds is matched with as many exponents as the embedding dimension (a step of one),

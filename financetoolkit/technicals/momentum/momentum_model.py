@@ -211,7 +211,6 @@ def get_aroon_indicator(
 
     Referenced against:
     - TA-Lib, AROON: https://ta-lib.org/functions/aroon.html
-        Test: tests/technical/test_momentum_model.py::test_aroon_oscillator_matches_talib
     - TA-Lib, AROONOSC: https://ta-lib.org/functions/aroonosc.html
 
     Notes:
@@ -552,7 +551,6 @@ def get_percentage_price_oscillator(
 
     Referenced against:
     - TA-Lib, PPO: https://ta-lib.org/functions/ppo.html
-        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
 
     Shares similar logic:
     - pandas-ta-classic, ppo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/ppo.py#L48
@@ -638,7 +636,6 @@ def get_percentage_volume_oscillator(
 
     Referenced against:
     - TA-Lib, PVO: https://ta-lib.org/functions/pvo.html
-        Test: tests/technical/test_momentum_model.py::test_simple_percentage_volume_oscillator_matches_talib
     - pandas-ta-classic, vosc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vosc.py#L12
     - Tulip Indicators, vosc: https://tulipindicators.org/vosc
 
@@ -771,7 +768,6 @@ def get_directional_movement_index(
 
     Referenced against:
     - TA-Lib, PLUS_DM: https://ta-lib.org/functions/plus_dm.html
-        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
     - TA-Lib, MINUS_DM: https://ta-lib.org/functions/minus_dm.html
     - TA-Lib, PLUS_DI: https://ta-lib.org/functions/plus_di.html
     - TA-Lib, MINUS_DI: https://ta-lib.org/functions/minus_di.html
@@ -878,7 +874,6 @@ def get_average_directional_index(
 
     Referenced against:
     - TA-Lib, ADX: https://ta-lib.org/functions/adx.html
-        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
     Notes:
         - The True Range and both directional movements start on the second period, the
@@ -930,7 +925,6 @@ def get_average_directional_index_rating(
 
     Referenced against:
     - TA-Lib, ADXR: https://ta-lib.org/functions/adxr.html
-        Test: tests/technical/test_momentum_model.py::test_directional_movement_index_matches_talib_and_the_adx
 
     Notes:
         - The ADX starts on period 2 * `window` - 1, so the ADXR starts on period
@@ -982,7 +976,6 @@ def get_chande_momentum_oscillator(
 
     Referenced against:
     - TA-Lib, CMOU: https://ta-lib.org/functions/cmou.html
-        Test: tests/technical/test_momentum_model.py::test_smoothed_chande_momentum_oscillator_matches_talib_and_the_rsi
     - TA-Lib, CMO: https://ta-lib.org/functions/cmo.html
 
     Notes:
@@ -1142,7 +1135,6 @@ def get_stochastic_oscillator(
 
     Referenced against:
     - TA-Lib, STOCHF: https://ta-lib.org/functions/stochf.html
-        Test: tests/technical/test_momentum_model.py::test_slow_stochastic_oscillator_matches_talib
     - TA-Lib, STOCH: https://ta-lib.org/functions/stoch.html
 
     Args:
@@ -1215,12 +1207,9 @@ def get_moving_average_convergence_divergence(
 
     Referenced against:
     - TA-Lib, MACD: https://ta-lib.org/functions/macd.html
-        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
-        Test: tests/technical/test_momentum_model.py::test_moving_average_convergence_divergence_variants_match_talib
     - TA-Lib, MACDEXT: https://ta-lib.org/functions/macdext.html
     - TA-Lib, MACDFIX: https://ta-lib.org/functions/macdfix.html
     - pandas-ta-classic, vwmacd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/vwmacd.py#L12
-        Test: tests/technical/test_momentum_model.py::test_volume_weighted_macd_matches_pandas_ta_classic
 
     Shares similar logic:
     - finta, VW_MACD: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L575
@@ -1415,7 +1404,6 @@ def get_stochastic_relative_strength_index(
 
     Referenced against:
     - TA-Lib, STOCHRSI: https://ta-lib.org/functions/stochrsi.html
-        Test: tests/technical/test_momentum_model.py::test_stochastic_relative_strength_index_matches_talib
 
     Notes:
         - The RSI is that of `get_relative_strength_index`, seeded with a simple average of
@@ -1818,7 +1806,6 @@ def get_choppiness_index(
 
     Referenced against:
     - TA-Lib, CHOP: https://ta-lib.org/functions/chop.html
-        Test: tests/technical/test_momentum_model.py::test_choppiness_index_with_the_true_range_box_matches_talib
     - TA-Lib, CHOPTR: https://ta-lib.org/functions/choptr.html
 
     Args:
@@ -2013,7 +2000,6 @@ def get_coppock_curve(
 
     Referenced against:
     - TA-Lib, COPPOCK: https://ta-lib.org/functions/coppock.html
-        Test: tests/technical/test_momentum_model.py::test_coppock_curve_matches_talib
 
     Notes:
         - The Rates of Change are decimals, as in `get_rate_of_change`, so the curve is a
@@ -2070,7 +2056,6 @@ def get_absolute_price_oscillator(
 
     Referenced against:
     - TA-Lib, APO: https://ta-lib.org/functions/apo.html
-        Test: tests/technical/test_momentum_model.py::test_price_oscillators_match_talib
 
     Notes:
         - Each moving average starts on its own first full window, so with EMAs seeded with a
@@ -2434,7 +2419,6 @@ def get_fisher_transform(
 
     Referenced against:
     - TA-Lib, FISHER: https://ta-lib.org/functions/fisher.html
-        Test: tests/technical/test_momentum_model.py::test_fisher_transform_matches_talib
 
     Shares similar logic:
     - pandas-ta-classic, fisher: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/fisher.py#L36
@@ -2588,7 +2572,6 @@ def get_kdj_indicator(
 
     Referenced against:
     - TA-Lib, KDJ: https://ta-lib.org/functions/kdj.html
-        Test: tests/technical/test_momentum_model.py::test_kdj_indicator_matches_talib
 
     Shares similar logic:
     - pandas-ta-classic, kdj: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/kdj.py#L17
@@ -2659,7 +2642,6 @@ def get_premier_stochastic_oscillator(
 
     Referenced against:
     - TA-Lib, PSO: https://ta-lib.org/functions/pso.html
-        Test: tests/technical/test_momentum_model.py::test_premier_stochastic_oscillator_matches_talib
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2726,7 +2708,6 @@ def get_stochastic_momentum_index(
 
     Referenced against:
     - TA-Lib, SMI: https://ta-lib.org/functions/smi.html
-        Test: tests/technical/test_momentum_model.py::test_stochastic_momentum_index_matches_talib
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -2808,7 +2789,6 @@ def get_smi_ergodic_indicator(
 
     Referenced against:
     - pandas-ta-classic, smi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smi.py#L13
-        Test: tests/technical/test_momentum_model.py::test_smi_ergodic_indicator_matches_pandas_ta_classic
 
     Notes:
         - The indicator is `get_true_strength_index` with these windows and on its scale of
@@ -2881,7 +2861,6 @@ def get_schaff_trend_cycle(
 
     Referenced against:
     - TA-Lib, STC: https://ta-lib.org/functions/stc.html
-        Test: tests/technical/test_momentum_model.py::test_schaff_trend_cycle_matches_talib_once_the_seeds_decayed
 
     Shares similar logic:
     - pandas-ta-classic, stc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/stc.py#L100
@@ -2984,7 +2963,6 @@ def get_wavetrend_oscillator(
 
     Referenced against:
     - TA-Lib, WAVETREND: https://ta-lib.org/functions/wavetrend.html
-        Test: tests/technical/test_momentum_model.py::test_wavetrend_oscillator_matches_talib
 
     Shares similar logic:
     - finta, WTO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1802
@@ -3057,7 +3035,6 @@ def get_derivative_oscillator(
 
     Referenced against:
     - TA-Lib, DOSC: https://ta-lib.org/functions/dosc.html
-        Test: tests/technical/test_momentum_model.py::test_derivative_oscillator_matches_talib
 
     Notes:
         - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
@@ -3124,7 +3101,6 @@ def get_swing_index(
 
     Referenced against:
     - TA-Lib, SI: https://ta-lib.org/functions/si.html
-        Test: tests/technical/test_momentum_model.py::test_swing_index_matches_talib
     - TA-Lib, ASI: https://ta-lib.org/functions/asi.html
 
     Notes:
@@ -3222,7 +3198,6 @@ def get_quantitative_qualitative_estimation(
 
     Referenced against:
     - pandas-ta-classic, qqe: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/qqe.py#L71
-        Test: tests/technical/test_momentum_model.py::test_quantitative_qualitative_estimation_matches_pandas_ta_classic
 
     Notes:
         - The RSI is that of `get_relative_strength_index` and every EMA is seeded with the
@@ -3462,7 +3437,6 @@ def get_connors_relative_strength_index(
 
     Referenced against:
     - TA-Lib, CRSI: https://ta-lib.org/functions/crsi.html
-        Test: tests/technical/test_momentum_model.py::test_connors_relative_strength_index_matches_talib
 
     Notes:
         - Equals TA-Lib's CRSI.
@@ -3538,7 +3512,6 @@ def get_inertia(
 
     Referenced against:
     - pandas-ta-classic, inertia: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/inertia.py#L61
-        Test: tests/technical/test_momentum_model.py::test_inertia_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's inertia with Wilder's smoothing and a `std_window` equal to
@@ -3604,7 +3577,6 @@ def get_bias(
 
     Referenced against:
     - pandas-ta-classic, bias: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/bias.py#L12
-        Test: tests/technical/test_momentum_model.py::test_bias_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's bias. Both give a decimal (0.05 is 5% above the
@@ -3663,7 +3635,6 @@ def get_brar(
 
     Referenced against:
     - pandas-ta-classic, brar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/brar.py#L18
-        Test: tests/technical/test_momentum_model.py::test_brar_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's brar, on its scale of 100 for a balance. A window
@@ -3730,7 +3701,6 @@ def get_pretty_good_oscillator(
 
     Referenced against:
     - pandas-ta-classic, pgo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/pgo.py#L14
-        Test: tests/technical/test_momentum_model.py::test_pretty_good_oscillator_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's pgo once Wilder's smoothing of the ATR has forgotten
@@ -3785,7 +3755,6 @@ def get_psychological_line(
 
     Referenced against:
     - pandas-ta-classic, psl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/psl.py#L19
-        Test: tests/technical/test_momentum_model.py::test_psychological_line_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's psl, also on the scale of 0 to 100. The first period
@@ -3903,7 +3872,6 @@ def get_archer_moving_average_trends(
 
     Referenced against:
     - pandas-ta-classic, amat: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/amat.py#L15
-        Test: tests/technical/test_momentum_model.py::test_archer_moving_average_trends_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's amat (its long_run and short_run). Both flags are
@@ -3971,7 +3939,6 @@ def get_ttm_trend(
 
     Referenced against:
     - pandas-ta-classic, ttm_trend: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/ttm_trend.py#L12
-        Test: tests/technical/test_momentum_model.py::test_ttm_trend_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's ttm_trend. The TTM Trend starts on period `window`,
@@ -4015,7 +3982,6 @@ def get_correlation_trend_indicator(prices: pd.Series, window: int = 20) -> pd.S
 
     Referenced against:
     - TA-Lib, CTI: https://ta-lib.org/functions/cti.html
-        Test: tests/technical/test_momentum_model.py::test_correlation_trend_indicator_matches_talib
     - pandas-ta-classic, cti: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cti.py#L12
 
     Notes:
@@ -4073,7 +4039,6 @@ def get_forecast_oscillator(prices: pd.Series, window: int = 5) -> pd.Series:
 
     Referenced against:
     - TA-Lib, FOSC: https://ta-lib.org/functions/fosc.html
-        Test: tests/technical/test_momentum_model.py::test_forecast_oscillator_matches_talib
     - Tulip Indicators, fosc: https://tulipindicators.org/fosc
 
     Shares similar logic:

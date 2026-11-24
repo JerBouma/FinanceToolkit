@@ -45,8 +45,9 @@ def get_last_trading_day(
     rule: str, delivery_month: pd.Period, business_days: pd.DatetimeIndex
 ) -> pd.Timestamp:
     """
-    Calculates the last trading day of a futures contract from the rule in its CME Group
-    contract specification:
+    Calculate the last trading day of a futures contract: the last day it can be traded before delivery.
+
+    Calculates the last trading day of a futures contract from the rule in its CME Group contract specification:
 
     - crude_oil (NYMEX WTI Light Sweet Crude Oil, CL): three business days before the 25th
       calendar day of the month before the delivery month, or four business days before
@@ -59,7 +60,8 @@ def get_last_trading_day(
       calendar day of the delivery month.
 
     Args:
-        rule (str): The rule, "crude_oil", "natural_gas", "metals" or "grains".
+        rule (str): The rule, see above. Options are: "crude_oil" (NYMEX WTI crude oil), "natural_gas" (NYMEX Henry
+            Hub natural gas), "metals" (COMEX gold, silver and copper), "grains" (CBOT corn, wheat and soybeans).
         delivery_month (pd.Period): The contract's delivery month.
         business_days (pd.DatetimeIndex): The exchange's business days, covering at least
             the month before the delivery month and the delivery month itself.
@@ -102,13 +104,13 @@ def get_generic_curve(
     contracts: int = 12,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Arranges dated futures contracts by their position on the curve of each day: the
-    front (the nearest contract that has not expired), the next one (+1) and so on, as
-    the curve was listed on that day. This is the generic (nearby) series (CL1, CL2, ...
-    in Bloomberg notation) with the contract that fills each position on each day, rolling
-    to the next contract the day after the front's last trading day. A position is a rank
-    on the curve, not a fixed time to maturity: its maturity shortens as the front nears
-    expiry and lengthens again at the roll, as nothing is interpolated.
+    Arranges dated futures contracts by their position on the curve of each day: the front (the nearest contract that
+    has not expired), the next one (+1) and so on, as the curve was listed on that day.
+
+    This is the generic (nearby) series (CL1, CL2, ... in Bloomberg notation) with the contract that fills each
+    position on each day, rolling to the next contract the day after the front's last trading day. A position is a
+    rank on the curve, not a fixed time to maturity: its maturity shortens as the front nears expiry and lengthens
+    again at the roll, as nothing is interpolated.
 
     A contract is on the curve of a day from its first price up to and including its last
     trading day. A contract without prices (one that expired and is no longer published, or
@@ -180,11 +182,12 @@ def get_term_structure(
     months: int = 12,
 ) -> pd.DataFrame:
     """
-    Summarises the term structure of a futures curve per day with the 12-month calendar
-    spread: the front contract against the last contract of the 12-month strip that starts
-    with it (the furthest contract delivering less than `months` months after the front,
-    e.g. November 2027 for a December 2026 front of a monthly listed commodity, September
-    2027 for corn's December 2026 front).
+    Summarise the term structure of a futures curve per day: the 12-month calendar spread, the annualised roll yield
+    and whether the curve is in backwardation, contango or flat.
+
+    The calendar spread compares the front contract with the last contract of the 12-month strip that starts with it:
+    the furthest contract delivering less than the given number of months after the front, e.g. November 2027 for a
+    December 2026 front of a monthly listed commodity, September 2027 for corn's December 2026 front.
 
     The formulas are as follows:
 

@@ -49,9 +49,7 @@ def get_local_volatility(
 
     Referenced against:
     - QuantLib, LocalVolSurface: https://www.quantlib.org/reference/class_quant_lib_1_1_local_vol_surface.html
-        Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
     - FinancePy, volatility_fns.ssvi_local_varg: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L318
-        Test: tests/options/test_smile_models.py::test_local_volatility_matches_quantlib_and_financepy
 
     Args:
         log_moneyness (pd.Series | np.ndarray): The log-moneyness ln(K / F_T) at which to

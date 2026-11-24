@@ -1820,7 +1820,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - TA-Lib, KVO: https://ta-lib.org/functions/kvo.html
-            Test: tests/technical/test_breadth_model.py::test_klinger_volume_oscillator_matches_talib
         - Tulip Indicators, kvo: https://tulipindicators.org/kvo
 
         Also known as: KVO, Klinger Oscillator, Klinger Volume Force.
@@ -1963,7 +1962,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - TA-Lib, MARKETFI: https://ta-lib.org/functions/marketfi.html
-            Test: tests/technical/test_breadth_model.py::test_market_facilitation_index_matches_talib
         - pandas-ta-classic, marketfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/marketfi.py#L16
         - Tulip Indicators, marketfi: https://tulipindicators.org/marketfi
 
@@ -2100,7 +2098,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - TA-Lib, WAD: https://ta-lib.org/functions/wad.html
-            Test: tests/technical/test_breadth_model.py::test_williams_accumulation_distribution_matches_talib
         - pandas-ta-classic, wad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/wad.py#L13
         - Tulip Indicators, wad: https://tulipindicators.org/wad
 
@@ -2232,7 +2229,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - TA-Lib, RVOL: https://ta-lib.org/functions/rvol.html
-            Test: tests/technical/test_breadth_model.py::test_relative_volume_matches_talib
 
         Also known as: RVOL, Relative Volume, volume ratio.
 
@@ -2368,7 +2364,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - pandas-ta-classic, vfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vfi.py#L17
-            Test: tests/technical/test_breadth_model.py::test_volume_flow_indicator_matches_pandas_ta
 
         Shares similar logic:
         - finta, VFI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2026
@@ -2521,7 +2516,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - finta, FVE: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1998
-            Test: tests/technical/test_breadth_model.py::test_finite_volume_elements_matches_finta
 
         Also known as: FVE, Finite Volume Elements.
 
@@ -2657,7 +2651,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - finta, VZO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1521
-            Test: tests/technical/test_breadth_model.py::test_volume_zone_oscillator_matches_finta
 
         Also known as: VZO, Volume Zone Oscillator.
 
@@ -2786,7 +2779,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - pandas-ta-classic, pvol: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvol.py#L17
-            Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
         Also known as: PVOL, dollar volume, traded value.
 
@@ -2918,7 +2910,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - pandas-ta-classic, pvr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvr.py#L12
-            Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
         Also known as: PVR, Price Volume Rank.
 
@@ -3047,7 +3038,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - finta, BASP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1671
-            Test: tests/technical/test_breadth_model.py::test_buying_selling_pressure_matches_finta
         - finta, BASPN: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1691
 
         - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4),
@@ -3193,7 +3183,6 @@ class BreadthTechnicals:
 
         Referenced against:
         - pandas-ta-classic, aobv: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/aobv.py#L17
-            Test: tests/technical/test_breadth_model.py::test_archer_on_balance_volume_matches_pandas_ta
 
         Also known as: AOBV, Archer OBV.
 

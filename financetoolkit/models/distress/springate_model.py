@@ -12,9 +12,11 @@ def get_working_capital_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Working Capital to Total Assets Ratio is a financial metric used to measure a company's liquidity and
-    ability to meet short-term obligations. It represents the proportion of a company's total assets that are
-    financed by its working capital. It is the liquidity component of the Springate Score.
+    The Working Capital to Total Assets Ratio is a financial metric used to measure a
+    company's liquidity and ability to meet short-term obligations.
+
+    It represents the proportion of a company's total assets that are financed by its
+    working capital. It is the liquidity component of the Springate Score.
 
     The formula is as follows:
 
@@ -40,8 +42,10 @@ def get_ebit_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The EBIT to Total Assets Ratio is a financial metric used to measure a company's profitability and the
-    efficiency with which it uses its assets. It is the profitability component of the Springate Score.
+    The EBIT to Total Assets Ratio is a financial metric used to measure a company's
+    profitability and the efficiency with which it uses its assets.
+
+    It is the profitability component of the Springate Score.
 
     The formula is as follows:
 
@@ -66,8 +70,10 @@ def get_ebt_to_current_liabilities_ratio(
     current_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The EBT to Current Liabilities Ratio is a financial metric used to measure a company's ability to cover its
-    short-term obligations out of its pre-tax earnings. It is the solvency component of the Springate Score.
+    The EBT to Current Liabilities Ratio is a financial metric used to measure a company's
+    ability to cover its short-term obligations out of its pre-tax earnings.
+
+    It is the solvency component of the Springate Score.
 
     The formula is as follows:
 
@@ -93,9 +99,10 @@ def get_sales_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Sales to Total Assets Ratio is a financial metric used to measure a company's efficiency and the
-    proportion of its assets that are used to generate sales. It is the efficiency component of the
-    Springate Score.
+    The Sales to Total Assets Ratio is a financial metric used to measure a company's
+    efficiency and the proportion of its assets that are used to generate sales.
+
+    It is the efficiency component of the Springate Score.
 
     The formula is as follows:
 
@@ -122,10 +129,12 @@ def get_springate_score(
     sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Springate Score is a financial metric, developed by Gordon L.V. Springate in 1978, used to measure a
-    company's solvency and the likelihood that it will go bankrupt. Springate built the model using a
-    step-wise multiple discriminant analysis on 19 possible financial ratios, of which four were ultimately
-    selected. It follows the same discriminant-analysis methodology as the Altman Z-Score, using a smaller,
+    The Springate Score is a financial metric, developed by Gordon L.V. Springate in 1978,
+    used to measure a company's solvency and the likelihood that it will go bankrupt.
+
+    Springate built the model using a step-wise multiple discriminant analysis on 19
+    possible financial ratios, of which four were ultimately selected. It follows the same
+    discriminant-analysis methodology as the Altman Z-Score, using a smaller,
     Canadian-firm-calibrated set of ratios.
 
     The formula is as follows:

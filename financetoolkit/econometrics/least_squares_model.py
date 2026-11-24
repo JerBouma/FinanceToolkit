@@ -244,11 +244,8 @@ def fit_least_squares(
 
     Referenced against:
     - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
-        Test: tests/econometrics/test_least_squares_model.py::test_ols_covariances_match_the_reference
     - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
-        Test: tests/econometrics/test_least_squares_model.py::test_wls_and_gls_match_the_reference
     - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
-        Test: tests/econometrics/test_least_squares_model.py::test_wls_and_gls_match_the_reference
 
     Args:
         y (np.ndarray): The dependent variable, shape `(n,)`.
@@ -457,7 +454,6 @@ def get_kolmogorov_survival(statistic: float) -> float:
 
     Referenced against:
     - scipy, kstwobign: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kstwobign.html
-        Test: tests/econometrics/test_least_squares_model.py::test_kolmogorov_survival_matches_the_reference
 
     Args:
         statistic (float): The value x.

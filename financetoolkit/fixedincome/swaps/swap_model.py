@@ -86,12 +86,8 @@ def get_swap_rate(
 
     Referenced against:
     - QuantLib, VanillaSwap.fairRate: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
-        Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
-        Test: tests/fixedincome/test_swap_model.py::test_forward_starting_swap_rate_matches_quantlib
     - QuantLib, DiscountingSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_discounting_swap_engine.html
-        Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
     - rateslib, IRS.rate: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.rate
-        Test: tests/fixedincome/test_swap_model.py::test_swap_rate_matches_quantlib_and_rateslib
 
     Shares similar logic:
     - FinancePy, IborSwap.swap_rate: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L280
@@ -213,10 +209,7 @@ def get_swap_value(
 
     Referenced against:
     - QuantLib, VanillaSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_vanilla_swap.html
-        Test: tests/fixedincome/test_swap_model.py::test_swap_value_matches_quantlib
-        Test: tests/fixedincome/test_swap_model.py::test_running_swap_value_matches_quantlib
     - rateslib, IRS.npv: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.IRS.html#rateslib.instruments.IRS.npv
-        Test: tests/fixedincome/test_swap_model.py::test_swap_value_of_a_receiver_matches_rateslib
 
     Shares similar logic:
     - FinancePy, IborSwap: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/rates/ibor_swap.py#L29
@@ -322,7 +315,6 @@ def get_asset_swap_spread(
 
     Referenced against:
     - QuantLib, AssetSwap.fairSpread: https://www.quantlib.org/reference/class_quant_lib_1_1_asset_swap.html
-        Test: tests/fixedincome/test_swap_model.py::test_asset_swap_spread_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded swap zero rates (decimals), indexed

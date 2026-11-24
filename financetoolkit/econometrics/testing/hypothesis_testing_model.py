@@ -55,9 +55,7 @@ def get_two_sample_t_test(
 
     Referenced against:
     - statsmodels, ttest_ind: https://www.statsmodels.org/stable/generated/statsmodels.stats.weightstats.ttest_ind.html
-        Test: tests/econometrics/test_least_squares_model.py::test_two_sample_t_tests_match_the_reference
     - scipy, ttest_ind: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
-        Test: tests/econometrics/test_reference_validation.py::test_two_sample_t_test
 
     Args:
         sample_a (pd.Series | np.ndarray): The first sample.
@@ -181,7 +179,6 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
 
     Referenced against:
     - statsmodels, RegressionResults.compare_f_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_f_test.html
-        Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
 
     Args:
         result_restricted (dict): The fitted restricted model (fewer
@@ -271,7 +268,6 @@ def get_wald_test(
 
     Referenced against:
     - statsmodels, RegressionResults.wald_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.wald_test.html
-        Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
 
     Args:
         result (dict): The fitted model whose coefficients are being
@@ -375,7 +371,6 @@ def get_likelihood_ratio_test(
 
     Referenced against:
     - statsmodels, RegressionResults.compare_lr_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_lr_test.html
-        Test: tests/econometrics/test_least_squares_model.py::test_nested_and_restriction_tests_match_the_reference
 
     Args:
         result_restricted (dict): The fitted restricted model (fewer

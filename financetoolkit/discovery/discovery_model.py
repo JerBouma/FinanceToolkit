@@ -129,8 +129,8 @@ def get_instruments(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         query (str): The query to search for.
-        search_method (str, optional): What the query is: "name", "symbol", "cik", "cusip" or
-            "isin". Defaults to "name".
+        search_method (str, optional): What the query is. Options are: "name" (the name), "symbol" (the
+            ticker symbol), "cik" (the SEC CIK number), "cusip" (the CUSIP), "isin" (the ISIN). Defaults to "name".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
@@ -394,8 +394,9 @@ def get_stock_screener(
     truncation_advice: str = "Narrow the criteria or raise the limit to see the remainder.",
 ) -> pd.DataFrame:
     """
-    Get a list of instruments based on the screening criteria provided. It defaults
-    to all stocks.
+    Get a list of instruments based on the screening criteria provided.
+
+    It defaults to all stocks.
 
     The market capitalisations of the listings are in their own currency, so they are
     converted to US dollars, which the market cap bounds and the ranking use: a listing
@@ -828,8 +829,9 @@ def get_stock_shares_float(
     api_key: str, user_subscription: str = "Free"
 ) -> pd.DataFrame:
     """
-    Get the shares float for all stocks. A free float, float or number of outstanding
-    shares the source reports as zero is missing and returned as NaN.
+    Get the shares float for all stocks.
+
+    A free float, float or number of outstanding shares the source reports as zero is missing and returned as NaN.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -918,8 +920,8 @@ def get_sectors_performance(
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
             Defaults to None, which uses today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance indexed by date, with one column per sector
@@ -1155,7 +1157,7 @@ def get_delisted_stocks(
 
     Returns:
         pd.DataFrame: DataFrame of delisted companies, one page at a time. The endpoint returns
-            at most 100 rows per call, so a full list requires walking `page` upwards until an
+            at most 100 rows per call, so a full list requires walking the pages upwards until an
             empty frame comes back.
     """
     url = (
@@ -1301,13 +1303,15 @@ def get_index_constituents(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the constituents of an index, today's or those on a past date. Past figures computed
-    from today's members leave out the companies removed from the index since (survivorship
+    Get the constituents of an index, today's or those on a past date.
+
+    Past figures computed from today's members leave out the companies removed from the index since (survivorship
     bias); the members on a date are today's members with every later change undone.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+            "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
         date (str | None, optional): The date (YYYY-MM-DD) to list the members of. Defaults to
             None, today's members.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
@@ -1362,10 +1366,11 @@ def reconstruct_index_constituents(
     constituents: pd.DataFrame, changes: pd.DataFrame, date: str
 ) -> pd.DataFrame:
     """
-    Reconstruct the members of an index on a date by undoing, from the newest back, every
-    change after it: a company added since is taken out and a company removed since is put
-    back. A change takes effect on its own date, so the members on a change's date include
-    it.
+    Reconstruct the members of an index on a past date from today's members and its changes since.
+
+    Reconstruct the members of an index on a date by undoing, from the newest back, every change after it: a company
+    added since is taken out and a company removed since is put back. A change takes effect on its own date, so the
+    members on a change's date include it.
 
     Args:
         constituents (pd.DataFrame): Today's constituents, indexed by symbol.
@@ -1447,7 +1452,8 @@ def get_index_constituent_changes(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to "S&P 500".
+        index (str, optional): The index. Options are: "S&P 500" (the S&P 500), "NASDAQ 100" (the NASDAQ 100),
+            "Dow Jones" (the Dow Jones Industrial Average). Defaults to "S&P 500".
         start_date (str | None, optional): The first date (YYYY-MM-DD) to include. Defaults to
             None, the first change recorded.
         end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults to
@@ -2228,8 +2234,10 @@ def get_sector_performance(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get sector performance. Provide exactly one of `date` (a snapshot across all
-    sectors on that date) or `sector` (the historical time series for one sector).
+    Get the average daily price change of the companies in each sector of an exchange.
+
+    Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time series
+    for one sector).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2240,8 +2248,8 @@ def get_sector_performance(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector performance, indexed by Sector (snapshot)
@@ -2302,9 +2310,10 @@ def get_industry_performance(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get industry performance. Provide exactly one of `date` (a snapshot across all
-    industries on that date) or `industry` (the historical time series for one
-    industry).
+    Get the average daily price change of the companies in each industry of an exchange.
+
+    Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical time
+    series for one industry).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2315,8 +2324,8 @@ def get_industry_performance(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry performance, indexed by Industry (snapshot)
@@ -2377,9 +2386,10 @@ def get_sector_pe(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get sector price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
-    snapshot across all sectors on that date) or `sector` (the historical time
-    series for one sector).
+    Get the price-to-earnings (P/E) ratio of the companies in each sector of an exchange.
+
+    Provide exactly one of a date (a snapshot across all sectors on that date) or a sector (the historical time series
+    for one sector).
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2390,8 +2400,8 @@ def get_sector_pe(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of sector P/E ratios, indexed by Sector (snapshot)
@@ -2446,8 +2456,9 @@ def get_industry_pe(
     exchange: str = "NASDAQ",
 ) -> pd.DataFrame:
     """
-    Get industry price-to-earnings (P/E) ratios. Provide exactly one of `date` (a
-    snapshot across all industries on that date) or `industry` (the historical time
+    Get the price-to-earnings (P/E) ratio of the companies in each industry of an exchange.
+
+    Provide exactly one of a date (a snapshot across all industries on that date) or an industry (the historical time
     series for one industry).
 
     Args:
@@ -2459,8 +2470,8 @@ def get_industry_pe(
             which uses the date a year ago.
         end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
             today.
-        exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
-            or "AMEX". Defaults to "NASDAQ".
+        exchange (str, optional): The exchange whose companies are averaged. Options are: "NASDAQ" (Nasdaq),
+            "NYSE" (New York Stock Exchange), "AMEX" (NYSE American). Defaults to "NASDAQ".
 
     Returns:
         pd.DataFrame: DataFrame of industry P/E ratios, indexed by Industry (snapshot)
@@ -2611,9 +2622,10 @@ def get_earnings_calendar(
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
-    Get the earnings releases of all companies in a date range, with the reported and
-    estimated earnings per share and revenue, the company name, the exchange of each
-    listing and the company's market capitalisation in US dollars.
+    Get the earnings releases of all companies in a date range, reported and expected.
+
+    Get the earnings releases of all companies in a date range, with the reported and estimated earnings per share and
+    revenue, the company name, the exchange of each listing and the company's market capitalisation in US dollars.
 
     The calendar holds every listing of a company (Cisco in New York, Frankfurt and Hong
     Kong). A company's primary listing is its most traded one (price times volume in US
@@ -2641,8 +2653,8 @@ def get_earnings_calendar(
             "XETRA". Defaults to None.
         primary_only (bool, optional): Whether to keep only the primary listing of each
             company. Defaults to False.
-        sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
-            the largest companies first. Defaults to "date".
+        sort_by (str, optional): The order of the releases. Options are: "date" (by date and symbol),
+            "market_cap" (the largest companies first). Defaults to "date".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:

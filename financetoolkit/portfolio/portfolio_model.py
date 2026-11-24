@@ -500,8 +500,10 @@ def normalize_currency(currency: str) -> str:
 def get_price_unit(currency: str) -> tuple[str, int]:
     """
     The major currency a price quoted in a currency belongs to and how many of the quoted
-    units make up one of it: ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100)
-    for South African cents, ("ILS", 100) for agorot and (currency, 1) otherwise.
+    units make up one of it.
+
+    ("GBP", 100) for a price in pence (GBp or GBX), ("ZAR", 100) for South African cents,
+    ("ILS", 100) for agorot and (currency, 1) otherwise.
 
     Args:
         currency (str): The currency the price is quoted in, e.g. "USD" or "GBp".
@@ -517,9 +519,11 @@ def get_price_unit(currency: str) -> tuple[str, int]:
 
 def get_exchange_rate_ticker(base_currency: str, currency: str) -> str | None:
     """
-    The exchange rate that converts a price quoted in a currency into the base currency,
-    as the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies: USDGBP=X,
-    the pounds per dollar, for a price in pounds or pence that is converted to dollars.
+    The exchange rate that converts a price quoted in a currency into the base currency, as
+    the Yahoo Finance symbol BASE + QUOTE + "=X" between the major currencies.
+
+    USDGBP=X, the pounds per dollar, for a price in pounds or pence that is converted to
+    dollars.
 
     Args:
         base_currency (str): The currency to convert to, e.g. "USD".
@@ -581,11 +585,13 @@ def get_base_currency(currencies: dict[str, str], weights: dict[str, float]) -> 
 
 def align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
     """
-    A daily exchange rate on the dates of a price series: the rate of the same day, or the
-    last one before it when the rate has no quote that day (exchanges and the currency
-    market close on different holidays). For weekly to yearly prices, which hold the last
-    price of each period, it is the last rate of each period. A date can occur more than
-    once, such as two transactions on one day, and each occurrence gets the rate of its day.
+    A daily exchange rate on the dates of a price series.
+
+    It is the rate of the same day, or the last one before it when the rate has no quote
+    that day (exchanges and the currency market close on different holidays). For weekly to
+    yearly prices, which hold the last price of each period, it is the last rate of each
+    period. A date can occur more than once, such as two transactions on one day, and each
+    occurrence gets the rate of its day.
 
     Args:
         rate (pd.Series): The daily exchange rate.
@@ -617,11 +623,12 @@ def convert_prices(
     exchange_rates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Prices in the currency each ticker is quoted in, converted to one base currency. A price
-    is divided by the number of quoted units in its major currency (100 for pence) and by
-    the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per dollar),
-    and multiplied by the units of the base currency. Values in money, such as dividends,
-    convert the same way.
+    Prices in the currency each ticker is quoted in, converted to one base currency.
+
+    A price is divided by the number of quoted units in its major currency (100 for pence)
+    and by the exchange rate BASE/QUOTE of the same day (e.g. USDGBP=X, the pounds per
+    dollar), and multiplied by the units of the base currency. Values in money, such as
+    dividends, convert the same way.
 
     Args:
         prices (pd.DataFrame): The prices, one column per ticker, on a daily (or weekly to
@@ -673,16 +680,15 @@ def convert_historical_data(
     columns: list[str],
 ) -> pd.DataFrame:
     """
-    Historical data (columns such as Open and Adj Close, each with one column per ticker)
-    with the money columns of some tickers converted to another currency, after which
-    their Return and Cumulative Return are calculated again from the converted Adj Close,
-    so they are the returns in that currency.
+    Historical data with the money columns of some tickers converted to another currency.
 
-    A date without a price after a ticker's first price, such as the last date when its
-    exchange is closed while another is open, gets the last price in the ticker's own
-    currency (Open, High and Low at that close, a flat bar), which is then converted at
-    the exchange rate of that date. Carrying the converted price forward instead would
-    value the holding at the exchange rate of its last trading day.
+    The columns, such as Open and Adj Close, each hold one column per ticker, and their
+    Return and Cumulative Return are calculated again from the converted Adj Close, so they
+    are the returns in that currency. A date without a price after a ticker's first price,
+    such as the last date when its exchange is closed while another is open, gets the last
+    price in the ticker's own currency (Open, High and Low at that close, a flat bar), which
+    is then converted at the exchange rate of that date. Carrying the converted price
+    forward instead would value the holding at the exchange rate of its last trading day.
 
     Args:
         historical_data (pd.DataFrame): The historical data, with the column names on the
@@ -820,10 +826,11 @@ def get_split_factors(
     splits: dict[str, pd.Series],
 ) -> pd.Series:
     """
-    The factor that restates each transaction to the share basis of the historical data, which
-    is adjusted for stock splits: 10 for a purchase of one share at 830.40 before a ten for one
-    split, which is ten shares at 83.04 on today's basis, and 1 for a transaction that is on
-    that basis already.
+    The factor that restates each transaction to the share basis of the historical data,
+    which is adjusted for stock splits.
+
+    10 for a purchase of one share at 830.40 before a ten for one split, which is ten shares
+    at 83.04 on today's basis, and 1 for a transaction that is on that basis already.
 
     A transaction from before a split can be given as the broker confirmed it at the time or
     restated by the broker since, for the splits up to the moment the ledger was exported. The
@@ -831,7 +838,7 @@ def get_split_factors(
     last one, the last two, and so on), and the factor is the candidate closest to the price of
     the transaction divided by the split-adjusted close of its day, compared on a log scale.
     A trade fills within the day's range, so its price is close to the close on the basis it is
-    given in. Shares similar logic as the split adjustment of price histories (CRSP's cumulative
+    given in. It follows the split adjustment of price histories (CRSP's cumulative
     factor to adjust shares, CFACSHR), applied to the transactions.
 
     Args:

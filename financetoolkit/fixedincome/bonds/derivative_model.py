@@ -516,7 +516,6 @@ def get_black_price(
 
     Referenced against:
     - QuantLib, BlackSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_swaption_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_swaption_settlement_and_greeks_match_quantlib
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. Must be positive.
@@ -666,7 +665,6 @@ def get_bachelier_price(
 
     Referenced against:
     - QuantLib, BachelierSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_swaption_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_swaption_settlement_and_greeks_match_quantlib
 
     Args:
         forward_rate (float): Forward rate of the underlying swap. May be zero or negative.
@@ -790,9 +788,7 @@ def get_swaption_greeks(
 
     Referenced against:
     - QuantLib, BlackSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_swaption_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_swaption_settlement_and_greeks_match_quantlib
     - QuantLib, BachelierSwaptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_swaption_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_swaption_settlement_and_greeks_match_quantlib
 
     Args:
         forward_rate (float): The forward swap rate.
@@ -947,9 +943,7 @@ def get_implied_volatility(
 
     Referenced against:
     - QuantLib, blackFormulaImpliedStdDev: https://www.quantlib.org/reference/namespace_quant_lib.html#ae5515dd7810c45e5a7c61df4a00a8166
-        Test: tests/fixedincome/test_derivative_model.py::test_implied_volatility_matches_quantlib
     - QuantLib, bachelierBlackFormulaImpliedVol: https://www.quantlib.org/reference/namespace_quant_lib.html#ae7f634488a3e089f97d4d1e64625dda8
-        Test: tests/fixedincome/test_derivative_model.py::test_implied_volatility_matches_quantlib
 
     Args:
         price (float): The price of the option.
@@ -1218,15 +1212,10 @@ def get_cap_floor(
 
     Referenced against:
     - QuantLib, Cap: https://www.quantlib.org/reference/class_quant_lib_1_1_cap.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
     - QuantLib, Floor: https://www.quantlib.org/reference/class_quant_lib_1_1_floor.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
     - QuantLib, Collar: https://www.quantlib.org/reference/class_quant_lib_1_1_collar.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
     - QuantLib, BlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_black_cap_floor_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
     - QuantLib, BachelierCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bachelier_cap_floor_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),
@@ -1340,7 +1329,6 @@ def get_cap_floor_implied_volatility(
 
     Referenced against:
     - QuantLib, CapFloor.impliedVolatility: https://www.quantlib.org/reference/class_quant_lib_1_1_cap_floor.html
-        Test: tests/fixedincome/test_derivative_model.py::test_cap_floor_and_collar_match_quantlib
 
     Args:
         price (float): The price of the cap or floor.
@@ -1490,17 +1478,11 @@ def get_year_on_year_inflation_cap_floor(
 
     Referenced against:
     - QuantLib, YoYInflationCap: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_cap.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
     - QuantLib, YoYInflationFloor: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_floor.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
     - QuantLib, YoYInflationCollar: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_collar.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
     - QuantLib, YoYInflationBlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_black_cap_floor_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
     - QuantLib, YoYInflationUnitDisplacedBlackCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_unit_displaced_black_cap_floor_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
     - QuantLib, YoYInflationBachelierCapFloorEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_yo_y_inflation_bachelier_cap_floor_engine.html
-        Test: tests/fixedincome/test_derivative_model.py::test_year_on_year_inflation_cap_floor_matches_quantlib
 
     Args:
         zero_curve (pd.Series): The annually compounded nominal zero-coupon rates

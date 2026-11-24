@@ -99,11 +99,12 @@ def parse_claims_report(text: str) -> pd.DataFrame:
 
 def get_claims_report() -> pd.DataFrame:
     """
-    Retrieves the national weekly claims report of the U.S. Department of Labor from
-    January 1967: initial claims, continued claims and the insured unemployment rate,
-    seasonally adjusted, from one request that is cached as a whole. When the report's
-    database cannot be reached, which happens at times, the request is retried and
-    otherwise the most recently cached copy is served.
+    Retrieve the national weekly claims report of the U.S. Department of Labor from January 1967: the initial claims,
+    continued claims and insured unemployment rate.
+
+    The figures are seasonally adjusted and come from one request that is cached as a whole. When the report's
+    database cannot be reached, which happens at times, the request is retried and otherwise the most recently cached
+    copy is served.
 
     Returns:
         pd.DataFrame: The Initial Claims, Continued Claims and Insured Unemployment Rate
@@ -176,10 +177,11 @@ def get_initial_jobless_claims() -> pd.DataFrame:
 
 def get_continuing_jobless_claims() -> pd.DataFrame:
     """
-    Retrieves the weekly continued claims for unemployment insurance (insured
-    unemployment), seasonally adjusted, from the U.S. Department of Labor, from January
-    1967 (see get_claims_report). A week is the week of unemployment the claims count,
-    which the news release reports a week after the initial claims of that week.
+    Retrieves the weekly continued claims for unemployment insurance (insured unemployment), seasonally adjusted, from
+    the U.S. Department of Labor, from January 1967 (see get_claims_report).
+
+    A week is the week of unemployment the claims count, which the news release reports a week after the initial
+    claims of that week.
 
     Returns:
         pd.DataFrame: A single "United States" column with the number of continued claims,
@@ -195,10 +197,11 @@ def get_continuing_jobless_claims() -> pd.DataFrame:
 
 def get_insured_unemployment_rate() -> pd.DataFrame:
     """
-    Retrieves the weekly insured unemployment rate, seasonally adjusted, from the U.S.
-    Department of Labor, from January 1971 (see get_claims_report): the continued claims
-    as a share of the employment covered by unemployment insurance, dated like the
-    continued claims by the week of unemployment.
+    Retrieve the weekly insured unemployment rate of the U.S. Department of Labor from January 1971: the continued
+    claims as a share of the employment covered by unemployment insurance.
+
+    The rate is seasonally adjusted (see get_claims_report) and dated like the continued claims, by the week of
+    unemployment.
 
     Returns:
         pd.DataFrame: A single "United States" column with the rate as a decimal (0.012

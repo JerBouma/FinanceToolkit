@@ -35,7 +35,6 @@ def get_linear_regression(prices: pd.Series, window: int = 14) -> pd.DataFrame:
 
     Referenced against:
     - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
-        Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
     - Tulip Indicators, linreg: https://tulipindicators.org/linreg
     - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
@@ -100,7 +99,6 @@ def get_slope(prices: pd.Series, window: int = 1, as_angle: bool = False) -> pd.
 
     Referenced against:
     - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's slope, also as an angle in degrees; pandas-ta-classic
@@ -145,7 +143,6 @@ def get_rolling_correlation(
 
     Referenced against:
     - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
     - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
     Notes:
@@ -188,7 +185,6 @@ def get_rolling_median(prices: pd.Series, window: int = 30) -> pd.Series:
 
     Referenced against:
     - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
     - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
     - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
@@ -230,9 +226,7 @@ def get_rolling_percentile(
 
     Referenced against:
     - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
     - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
 
     Notes:
         - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation equals
@@ -290,7 +284,6 @@ def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
 
     Referenced against:
     - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
-        Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
     Notes:
         - Equals TA-Lib's PERCENTRANK divided by 100: the Toolkit gives a decimal between
@@ -334,7 +327,6 @@ def get_rolling_z_score(prices: pd.Series, window: int = 30) -> pd.Series:
 
     Referenced against:
     - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's zscore (window 30, ddof=1). Its cdl_z applies the
@@ -380,7 +372,6 @@ def get_rolling_mean_absolute_deviation(
 
     Referenced against:
     - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
     - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
     - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
     - Tulip Indicators, md: https://tulipindicators.org/md
@@ -435,7 +426,6 @@ def get_rolling_standard_error(prices: pd.Series, window: int = 14) -> pd.Series
 
     Referenced against:
     - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
 
     Shares similar logic:
     - Tulip Indicators, stderr: https://tulipindicators.org/stderr
@@ -478,7 +468,6 @@ def get_rolling_entropy(
 
     Referenced against:
     - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's entropy (window 10, base 2).

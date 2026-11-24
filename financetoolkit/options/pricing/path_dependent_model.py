@@ -303,7 +303,6 @@ def get_geometric_asian_option(
 
     Referenced against:
     - QuantLib, AnalyticDiscreteGeometricAveragePriceAsianEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_discrete_geometric_average_price_asian_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
 
     Args:
         stock_price (float | np.ndarray): The current stock price.
@@ -435,9 +434,7 @@ def get_turnbull_wakeman(
 
     Referenced against:
     - QuantLib, TurnbullWakemanAsianEngine (fixings): https://www.quantlib.org/reference/class_quant_lib_1_1_turnbull_wakeman_asian_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
     - QuantLib, ContinuousArithmeticAsianLevyEngine (continuous): https://www.quantlib.org/reference/class_quant_lib_1_1_continuous_arithmetic_asian_levy_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -584,7 +581,6 @@ def get_curran(
 
     Referenced against:
     - QuantLib, MCDiscreteArithmeticAPEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -699,7 +695,6 @@ def get_monte_carlo_asian_options(
 
     Referenced against:
     - QuantLib, MCDiscreteArithmeticAPEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_discrete_arithmetic_a_p_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_asian_options_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -1114,13 +1109,9 @@ def get_lookback_option(
 
     Referenced against:
     - QuantLib, AnalyticContinuousFixedLookbackEngine (fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_fixed_lookback_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
     - QuantLib, AnalyticContinuousFloatingLookbackEngine (floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_floating_lookback_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
     - QuantLib, AnalyticContinuousPartialFixedLookbackEngine (partial fixed strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_fixed_lookback_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
     - QuantLib, AnalyticContinuousPartialFloatingLookbackEngine (partial floating strike): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_continuous_partial_floating_lookback_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_lookbacks_match_quantlib
 
     Args:
         stock_price (float): The current stock price, which is also the extreme so far.
@@ -1345,7 +1336,6 @@ def get_double_barrier_option(
 
     Referenced against:
     - QuantLib, AnalyticDoubleBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -1615,7 +1605,6 @@ def get_partial_time_barrier_option(
 
     Referenced against:
     - QuantLib, AnalyticPartialTimeBarrierOptionEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_partial_time_barrier_option_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -1851,7 +1840,6 @@ def get_soft_barrier_option(
 
     Referenced against:
     - QuantLib, AnalyticSoftBarrierEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_soft_barrier_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -2067,9 +2055,7 @@ def get_touch_option(
 
     Referenced against:
     - QuantLib, AnalyticDigitalAmericanEngine (one-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_digital_american_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
     - QuantLib, AnalyticBinaryBarrierEngine (no-touch): https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_binary_barrier_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
     Args:
         stock_price (float): The current stock price.
@@ -2205,7 +2191,6 @@ def get_double_touch_option(
 
     Referenced against:
     - QuantLib, AnalyticDoubleBarrierBinaryEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_double_barrier_binary_engine.html
-        Test: tests/options/test_path_dependent_model.py::test_the_barriers_and_touches_match_quantlib
 
     Args:
         stock_price (float): The current stock price.

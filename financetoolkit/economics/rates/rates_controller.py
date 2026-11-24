@@ -195,34 +195,32 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Exchange rates are defined as the price of one country's currency in relation
-        to another country's currency. This indicator is measured in terms of
-        national currency per US dollar.
+        Get the exchange rates of a variety of countries: the price of one US dollar in each national currency.
 
         See definition: https://data.oecd.org/conversion/exchange-rates.htm
 
-        It is also possible to get the data from the Global Macro Database (GMDB) by setting
-        the gmdb_source to True.
+        It is also possible to get the data from the Global Macro Database (GMDB) by choosing
+        it as the source.
 
         Both sources are quoted the same way (national currency per US dollar), but the OECD
         source omits the United States itself, since the rate is trivially 1, whereas the GMDB
         source carries it as 1.0. Only the OECD source supports monthly and quarterly
-        frequency; the GMDB is annual only, so the period argument has no effect when
-        gmdb_source is True.
+        frequency; the GMDB is annual only, so the period has no effect when
+        it is the source.
 
-        Both are averages over each period. For daily and weekly rates (period="daily" or
-        "weekly"), or the rate at the end of each month, quarter or year (end_of_period=True),
-        the rates come from the Bank for International Settlements instead, without an API
-        key: daily for around 80 currencies with history back to 1945 for some, and at the
-        end of each month for around 130, back to the 1950s for most. Weekly and quarterly or
-        yearly end-of-period rates take the last observation of each period.
+        Both are averages over each period. For daily and weekly rates, or the rate at the end of each month, quarter
+        or year (end of period), the rates come from the Bank for International Settlements instead, without an API
+        key: daily for around 80 currencies with history back to 1945 for some, and at the end of each month for
+        around 130, back to the 1950s for most. Weekly and quarterly or yearly end-of-period rates take the last
+        observation of each period.
 
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
-                or the annual data. Defaults to None, which is quarterly when the Economics class
+            period (str | None, optional): The frequency of the data. Options are: "daily" (daily data),
+                "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data), "yearly"
+                (yearly data). Defaults to None, which is quarterly when the Economics class
                 was initialized with quarterly=True and otherwise the highest frequency available: daily.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
@@ -352,10 +350,8 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Real Effective Exchange Rate (REER) for a variety of countries over time from the
-        Global Macro Database (GMDB). The REER is a trade-weighted average of a country's currency
-        relative to a basket of other major currencies, adjusted for relative price levels
-        (inflation) between the country and its trading partners.
+        Get the Real Effective Exchange Rate (REER) of a variety of countries from the Global Macro Database (GMDB):
+        the value of a currency against those of its trading partners, adjusted for inflation.
 
         Unlike a simple bilateral exchange rate, the REER captures a currency's overall
         competitiveness: a rising REER indicates that a country's exports are becoming more
@@ -451,10 +447,12 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Money Supply is the total amount of money that is in circulation in a country.
-        It includes currency, demand deposits, and other liquid assets that can be easily
-        converted into cash. Money supply is an important economic indicator that the
-        Federal Reserve uses to implement its monetary policy.
+        Get the money supply of a variety of countries: the amount of money in circulation, from cash to the broader
+        aggregates.
+
+        Money Supply is the total amount of money that is in circulation in a country. It includes currency, demand
+        deposits, and other liquid assets that can be easily converted into cash. Money supply is an important
+        economic indicator that the Federal Reserve uses to implement its monetary policy.
 
         Money supply can be divided into five categories: M0, M1, M2, M3 and M4.
             - M0: The total of all physical currency, plus accounts at the central bank that can be exchanged for physical currency.
@@ -474,9 +472,10 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            measure (str | None, optional): Which single aggregate to return, one of 'M0', 'M1',
-                'M2', 'M3' or 'M4'. Defaults to None, which returns all five with the aggregate
-                as the first level of the column index.
+            measure (str | None, optional): Which single aggregate to return. Options are: "M0" (currency and central
+                bank reserves), "M1" (narrow money), "M2" (M1 plus savings, money market and small time deposits),
+                "M3" (broad money), "M4" (M3 plus all other financial assets). Defaults to None, which returns all
+                five with the aggregate as the first level of the column index.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -621,9 +620,12 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The Central Bank Policy Rate is the interest rate that a central bank sets on its
-        loans and advances to a commercial bank. This interest rate is used by the monetary
-        authorities to control inflation and stabilize the country's currency.
+        Get the central bank policy rate of a variety of countries: the rate a central bank sets to steer inflation
+        and the economy.
+
+        The Central Bank Policy Rate is the interest rate that a central bank sets on its loans and advances to a
+        commercial bank. This interest rate is used by the monetary authorities to control inflation and stabilize the
+        country's currency.
 
         By default the rates are daily, from the Bank for International Settlements (BIS),
         which publishes the policy rates of around fifty central banks, including the
@@ -643,7 +645,7 @@ class RatesEconomics:
         September 2024, when the ECB began steering money markets with it;
         get_european_central_bank_rates has either rate throughout.
 
-        With period="yearly" the rates come from the Global Macro Database (GMDB) instead,
+        With yearly data the rates come from the Global Macro Database (GMDB) instead,
         taken at the end of the year rather than averaged over it. Further information
         about the variable can be found within
         https://www.globalmacrodata.com/documentation.html
@@ -655,8 +657,9 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
-                or the yearly data. Defaults to None, which is quarterly when the Economics class
+            period (str | None, optional): The frequency of the data. Options are: "daily" (daily data),
+                "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data), "yearly"
+                (yearly data). Defaults to None, which is quarterly when the Economics class
                 was initialized with quarterly=True and otherwise the highest frequency available: daily.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -757,10 +760,12 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Short-term interest rates are the rates at which short-term borrowings are
-        effected between financial institutions or the rate at which short-term government
-        paper is issued or traded in the market. Short-term interest rates are generally
-        averages of daily rates, measured as a percentage.
+        Get the short-term interest rate of a variety of countries: the 3-month rate at which banks lend to each other
+        or governments borrow.
+
+        Short-term interest rates are the rates at which short-term borrowings are effected between financial
+        institutions or the rate at which short-term government paper is issued or traded in the market. Short-term
+        interest rates are generally averages of daily rates, measured as a percentage.
 
         Short-term interest rates are based on three-month money market rates where available.
         Typical standardised names are "money market rate" and "treasury bill rate". The OECD
@@ -768,21 +773,21 @@ class RatesEconomics:
 
         See definition: https://data.oecd.org/interest/short-term-interest-rates.htm
 
-        It is also possible to get the data from the Global Macro Database (GMDB) by setting
-        the gmdb_source to True.
+        It is also possible to get the data from the Global Macro Database (GMDB) by choosing
+        it as the source.
 
         Both sources return the rate as a decimal fraction per annum (0.0513 for 5.13%), so
         the two are directly interchangeable. Only the OECD source supports monthly and
-        quarterly frequency; the GMDB is annual only, so the period argument has no effect
-        when gmdb_source is True.
+        quarterly frequency; the GMDB is annual only, so the period has no effect
+        when it is the source.
 
         Also known as: 3-month rate, money market rate, short-term yield.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -896,12 +901,13 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Long-term interest rates refer to government bonds maturing in ten years.
-        Rates are mainly determined by the price charged by the lender, the risk
-        from the borrower and the fall in the capital value. Long-term interest rates
-        are generally averages of daily rates, measured as a percentage. These interest
-        rates are implied by the prices at which the government bonds are traded on
-        financial markets, not the interest rates at which the loans were issued.
+        Get the long-term interest rate of a variety of countries: the yield on 10-year government bonds.
+
+        Long-term interest rates refer to government bonds maturing in ten years. Rates are mainly determined by the
+        price charged by the lender, the risk from the borrower and the fall in the capital value. Long-term interest
+        rates are generally averages of daily rates, measured as a percentage. These interest rates are implied by the
+        prices at which the government bonds are traded on financial markets, not the interest rates at which the
+        loans were issued.
 
         In all cases, they refer to bonds whose capital repayment is guaranteed by governments.
         Long-term interest rates are one of the determinants of business investment. Low long
@@ -910,15 +916,15 @@ class RatesEconomics:
 
         See definition: https://data.oecd.org/interest/long-term-interest-rates.htm
 
-        It is also possible to get the data from the Global Macro Database (GMDB) by setting
-        the gmdb_source to True.
+        It is also possible to get the data from the Global Macro Database (GMDB) by choosing
+        it as the source.
 
         Both sources return the rate as a decimal fraction per annum (0.0357 for 3.57%), so
         the two are directly interchangeable. Only the OECD source supports monthly and
-        quarterly frequency; the GMDB is annual only, so the period argument has no effect
-        when gmdb_source is True.
+        quarterly frequency; the GMDB is annual only, so the period has no effect
+        when it is the source.
 
-        With period="daily" or "weekly" the 10-year yields come from the issuers
+        With daily or weekly data the 10-year yields come from the issuers
         themselves: the U.S. Department of the Treasury (par yield,
         from 1990), the Bank of England (nominal par yield of gilts, from 1993), the
         Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
@@ -938,8 +944,9 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
-                or the annual data. Defaults to None, which is quarterly when the Economics class
+            period (str | None, optional): The frequency of the data. Options are: "daily" (daily data),
+                "weekly" (weekly data), "monthly" (monthly data), "quarterly" (quarterly data), "yearly"
+                (yearly data). Defaults to None, which is quarterly when the Economics class
                 was initialized with quarterly=True and otherwise the highest frequency available: daily
                 when only the United States, the United Kingdom, Japan and the Euro Area are requested,
                 and the monthly OECD data when other countries are requested or countries is None.
@@ -1072,10 +1079,12 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The overnight rate is the interest rate at which banks borrow from each other for
-        a single day. It is the rate central banks steer with their policy rate, and the
-        benchmark that replaced LIBOR for loans, derivatives and floating rate notes in
-        each of these currencies, which makes it the most direct daily read of monetary
+        Get the overnight rate of a variety of countries: the rate at which banks borrow from each other for a single
+        day, the most direct read of monetary conditions.
+
+        The overnight rate is the interest rate at which banks borrow from each other for a single day. It is the rate
+        central banks steer with their policy rate, and the benchmark that replaced LIBOR for loans, derivatives and
+        floating rate notes in each of these currencies, which makes it the most direct daily read of monetary
         conditions.
 
         Each currency has its own benchmark, published by its central bank:
@@ -1093,7 +1102,7 @@ class RatesEconomics:
         and monthly periods take the rate
         on the last day of each period (weeks end on Friday).
 
-        With cumulative=True, the rates are compounded day by day into the growth of 1
+        Cumulatively, the rates are compounded day by day into the growth of 1
         deposited on the first day of the date range, the method of the compounded €STR
         index of the European Central Bank and the SOFR Index of the New York Fed:
 
@@ -1111,7 +1120,8 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str, optional): Whether to return the daily, weekly or monthly data. Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly
+                data), "monthly" (monthly data). Defaults to "daily".
             cumulative (bool, optional): Whether to return the growth of 1 deposited at the
                 overnight rate on the first day of the date range instead of the rate.
                 Defaults to False.
@@ -1204,19 +1214,17 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Real Interest Rate for a variety of countries over time. The Real Interest Rate
-        is the nominal interest rate adjusted for inflation, and reflects the true cost of
-        borrowing (or the true return earned on savings) once the erosion of purchasing power
-        by inflation is taken into account.
+        Get the real interest rate of a variety of countries: the nominal interest rate minus inflation, the true cost
+        of borrowing or return on savings.
 
         The formula is as follows (the Fisher equation, approximation):
 
         - Real Interest Rate = Nominal Interest Rate - Inflation Rate, with the nominal rate the Long Term Interest
-          Rate by default (rate_type="long_term") and the inflation rate the year-over-year change in consumer prices
+          Rate by default and the inflation rate the year-over-year change in consumer prices
 
         The nominal interest rate is the Long Term Interest Rate (the 10-year government bond
         yield), the Short Term Interest Rate (the 3-month money market rate) or the Central
-        Bank Policy Rate, selected via the rate_type parameter.
+        Bank Policy Rate, selected as the rate type.
 
         Monthly (the default) subtracts the monthly year-over-year inflation rate of
         get_inflation_rate (national statistical offices, Eurostat for the euro area and the
@@ -1228,7 +1236,7 @@ class RatesEconomics:
         is empty.
 
         Yearly subtracts the annual inflation rate of the Global Macro Database (GMDB) from
-        its annual long or short-term rate (or the OECD's with gmdb_source=False) or its
+        its annual long or short-term rate (or the OECD's as the source) or its
         end-of-year policy rate.
 
         Both legs are decimal fractions (0.05 for 5%), so the result is itself a decimal
@@ -1249,11 +1257,11 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            rate_type (str, optional): Which nominal interest rate to use. Can be 'long_term'
-                (10-year government bond yield), 'short_term' (3-month money market rate) or
-                'policy' (central bank policy rate). Defaults to 'long_term'.
-            period (str | None, optional): Whether to return the monthly or the yearly data.
-                Defaults to None, which is the monthly data.
+            rate_type (str, optional): Which nominal interest rate to use. Options are: "long_term" (10-year
+                government bond yield), "short_term" (3-month money market rate), "policy" (central bank policy
+                rate). Defaults to "long_term".
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data), "yearly"
+                (yearly data). Defaults to None, which is the monthly data.
             gmdb_source (bool | None, optional): Whether to get the yearly long or short-term
                 rate from the Global Macro Database (GMDB) instead of the OECD. Defaults to
                 None, which falls back to the gmdb_source set on the Economics class (True by
@@ -1416,10 +1424,8 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Yield Curve Slope for a variety of countries over time. The Yield Curve Slope is
-        the difference between the Long Term Interest Rate (the 10-year government bond yield)
-        and the Short Term Interest Rate (the 3-month money market rate), and summarizes the
-        overall shape of the yield curve in a single number.
+        Get the yield curve slope of a variety of countries: the 10-year government bond yield minus the 3-month money
+        market rate, the shape of the yield curve in one number.
 
         The formula is as follows:
 
@@ -1440,9 +1446,9 @@ class RatesEconomics:
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB),
                 which is annual. Defaults to None, which uses the GMDB only for yearly data and only when the
                 gmdb_source set on the Economics class is True (its default); monthly and quarterly data, or
@@ -1555,8 +1561,8 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the weekly average 30-Year Fixed Rate Mortgage from FRED (Freddie
-        Mac's Primary Mortgage Market Survey).
+        Get the weekly average 30-year fixed mortgage rate in the United States (Freddie Mac's Primary Mortgage Market
+        Survey): what new home buyers pay to borrow.
 
         The 30-year fixed mortgage rate is the primary interest rate US households
         actually borrow at for home purchases, and is one of the clearest single
@@ -1574,8 +1580,8 @@ class RatesEconomics:
         decimal fraction.
 
         Without a FRED API key the data comes from Freddie Mac's Primary Mortgage Market
-        Survey directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Survey directly, which gives the same figures. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/MORTGAGE30US
 
@@ -1662,17 +1668,17 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the distribution of the interest rates US homeowners pay on the mortgages they
-        already have, from the National Mortgage Database (NMDB) of the Federal Housing
-        Finance Agency (FHFA): the share of the mortgages outstanding at the end of each
-        quarter with a contract interest rate below 3%, between 3% and 4%, 4% and 5%, 5% and
-        6%, and at or above 6%, next to their average rate.
+        Get the distribution of the interest rates US homeowners pay on the mortgages they already have, from the
+        National Mortgage Database of the FHFA.
+
+        It gives the share of the mortgages outstanding at the end of each quarter with a contract interest rate below
+        3%, between 3% and 4%, 4% and 5%, 5% and 6%, and at or above 6%, next to their average rate.
 
         This is the measure of the mortgage rate "lock-in": a homeowner with a rate well
         below the rate on a new mortgage (see `get_mortgage_rate_30_year`) gives that rate
         up when moving, so the further the outstanding rates lie below the market rate, the
         fewer existing homes come up for sale. The share of mortgages below 3%, 4%, 5% and
-        6% (cumulative=True) is how the lock-in is usually reported, to be compared with the
+        6% (cumulative) is how the lock-in is usually reported, to be compared with the
         rate on a new mortgage. The Market Rate Gap makes that comparison: the 30-year fixed
         rate on a new mortgage (the quarterly average of Freddie Mac's weekly Primary Mortgage
         Market Survey, the rate of `get_mortgage_rate_30_year`) minus the average rate of the
@@ -1719,23 +1725,23 @@ class RatesEconomics:
         The formula is as follows:
 
         - Share Below X% = Share Below 3% + ... + Share (X - 1)% to X%, the sum of the
-          published buckets below X% (cumulative=True)
+          published buckets below X% (cumulative)
         - Market Rate = AVERAGE(weekly 30-year fixed mortgage rates surveyed in the quarter)
         - Market Rate Gap = Market Rate - Average Rate
 
         Args:
-            market (str, optional): The market of the mortgages: "all", "enterprise"
-                (Fannie Mae and Freddie Mac), "government" or "other conventional".
+            market (str, optional): The market of the mortgages. Options are: "all" (every mortgage),
+                "enterprise" (Fannie Mae and Freddie Mac), "government" (government-backed mortgages),
+                "other conventional" (other conventional mortgages).
                 Defaults to "all".
-            region (str, optional): The area: "United States", a census region ("Northeast",
-                "Midwest", "South", "West"), a census division ("New England", "Middle
-                Atlantic", "East North Central", "West North Central", "South Atlantic",
-                "East South Central", "West South Central", "Mountain", "Pacific"), or
-                "United States Rural" and "United States Non-Rural". Defaults to "United
-                States".
-            weighting (str, optional): Whether the shares and the average rate are weighted
-                by the number of mortgages ("loans") or by their unpaid principal balance
-                ("balance"). Defaults to "loans".
+            region (str, optional): The area. Options are: "United States" (the country), "Northeast",
+                "Midwest", "South", "West" (the census regions), "New England", "Middle Atlantic", "East North
+                Central", "West North Central", "South Atlantic", "East South Central", "West South Central",
+                "Mountain", "Pacific" (the census divisions), "United States Rural" (rural areas), "United
+                States Non-Rural" (non-rural areas). Defaults to "United States".
+            weighting (str, optional): How the shares and the average rate are weighted. Options are: "loans"
+                (by the number of mortgages), "balance" (by their unpaid principal balance). Defaults to
+                "loans".
             cumulative (bool, optional): Whether to return the share of mortgages below 3%,
                 4%, 5% and 6% instead of the share per bucket. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -1755,7 +1761,7 @@ class RatesEconomics:
         Returns:
             pd.DataFrame: The quarterly shares of the outstanding mortgages per rate bucket
             ("Below 3%", "3% to 4%", "4% to 5%", "5% to 6%" and "6% and Above", or "Below 3%"
-            to "Below 6%" with cumulative=True), their "Average Rate", the "Market Rate" of a
+            to "Below 6%" cumulatively), their "Average Rate", the "Market Rate" of a
             new 30-year fixed mortgage and the "Market Rate Gap" between the two, all as
             decimals (0.192 for 19.2%).
 
@@ -1952,10 +1958,11 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the real yield curve of a variety of countries: the yields of inflation-linked
-        government bonds, which pay a return on top of inflation, by maturity. Together with
-        the nominal curve (see `fixedincome.get_government_bond_yield_curve`) it gives the
-        inflation the bond market expects, see `get_breakeven_inflation_expectations`.
+        Get the real yield curve of a variety of countries: the yields of inflation-linked government bonds, which pay
+        a return on top of inflation, by maturity.
+
+        Together with the nominal curve (see `fixedincome.get_government_bond_yield_curve`) it gives the inflation the
+        bond market expects, see `get_breakeven_inflation_expectations`.
 
         Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's real par yield curve of
@@ -1982,8 +1989,8 @@ class RatesEconomics:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "United States", "United Kingdom" and "Germany". Defaults to None, which
                 retrieves every country.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly
+                data), "monthly" (monthly data). Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -2078,12 +2085,11 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the market-implied (Q-measure) breakeven inflation of a variety of countries by
-        maturity: the nominal government bond yield minus the real yield of an
-        inflation-linked bond of the same maturity, which is the inflation rate at which
-        both earn the same. It is the bond market's expectation of inflation, including an
-        inflation risk premium. See `get_inflation_expectations` for the expectations of
-        professional forecasters instead.
+        Get the market-implied (Q-measure) breakeven inflation of a variety of countries by maturity: the inflation at
+        which nominal and inflation-linked government bonds earn the same.
+
+        It is the bond market's expectation of inflation, including an inflation risk premium. See
+        `get_inflation_expectations` for the expectations of professional forecasters instead.
 
         Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's nominal minus real (TIPS) par
@@ -2120,8 +2126,8 @@ class RatesEconomics:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "United States", "United Kingdom" and "Germany". Defaults to None, which
                 retrieves every country.
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly
+                data), "monthly" (monthly data). Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -2212,9 +2218,12 @@ class RatesEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Split the nominal government bond yield of a maturity into the real yield of the
-        inflation-linked bond of that maturity and the breakeven inflation, the part the
-        market demands for inflation, with the change of each part since the previous period:
+        Decompose the nominal government bond yield into the real yield and the breakeven inflation: how much of the
+        yield pays for expected inflation.
+
+        Split the nominal government bond yield of a maturity into the real yield of the inflation-linked bond of that
+        maturity and the breakeven inflation, the part the market demands for inflation, with the change of each part
+        since the previous period:
 
         - Nominal Yield = Real Yield + Breakeven Inflation
 
@@ -2244,8 +2253,9 @@ class RatesEconomics:
                 States, the United Kingdom and Germany. Defaults to None, which is all three.
             maturities (list[str] | str, optional): The maturities, such as "5Y" or
                 ["5Y", "10Y"], each one both curves of a country have. Defaults to "10Y".
-            period (str, optional): Whether to return the daily, weekly or monthly data, the
-                curve on the last trading day of each week or month. Defaults to "daily".
+            period (str, optional): The frequency of the data: the                 curve on the last trading day of
+                each week or month. Options are: "daily" (daily data), "weekly" (weekly data), "monthly" (monthly
+                data). Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2352,9 +2362,10 @@ class RatesEconomics:
     ) -> pd.DataFrame:
         """
         Get the inflation professional forecasters expect over the longer term, from surveys.
-        Where `get_breakeven_inflation_expectations` is the bond market's expectation,
-        priced daily and including risk premia, this is the forecasters' own expectation,
-        with no inflation risk or liquidity premium in it and a longer history.
+
+        Where `get_breakeven_inflation_expectations` is the bond market's expectation, priced daily and including risk
+        premia, this is the forecasters' own expectation, with no inflation risk or liquidity premium in it and a
+        longer history.
 
         Every series comes from the official source:
         - Germany: the inflation Consensus Economics' forecasters expect over 5 and 10 years,
@@ -2364,7 +2375,7 @@ class RatesEconomics:
           yield back gives the expected inflation.
         - Euro Area: the average longer-term (five years ahead) HICP inflation forecast of the
           ECB's quarterly Survey of Professional Forecasters, from 1999. With
-          period="monthly" each survey round is shown from the first month of its quarter
+          monthly data each survey round is shown from the first month of its quarter
           until the next round.
 
         Rates are returned as a decimal fraction (0.0223 for 2.23%), with one column per
@@ -2378,10 +2389,10 @@ class RatesEconomics:
         Args:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "Germany" and "Euro Area". Defaults to None, which retrieves every country.
-            period (str | None, optional): Whether to return the monthly or quarterly data.
-                Quarterly data takes the last month of each quarter. Defaults to None, which is
-                quarterly when the Economics class was initialized with quarterly=True and
-                otherwise the highest frequency available: monthly.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data). Quarterly data takes the last month of each quarter. Defaults to None,
+                which is quarterly when the Economics class was initialized with quarterly=True and otherwise the
+                highest frequency available: monthly.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over

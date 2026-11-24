@@ -312,7 +312,6 @@ def get_svi_butterfly_function(
 
     Referenced against:
     - FinancePy, volatility_fns.g: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/volatility_fns.py#L247
-        Test: tests/options/test_smile_models.py::test_butterfly_function_matches_financepy
 
     Args:
         log_moneyness (pd.Series | np.ndarray): ln(K / F) for each strike K, given forward

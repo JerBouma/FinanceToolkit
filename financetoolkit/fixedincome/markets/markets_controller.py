@@ -1326,9 +1326,7 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         Referenced against:
         - FinancePy, BondFRN.dirty_price_from_dm: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L107
-            Test: tests/fixedincome/test_treasury_markets_model.py::test_frn_price_and_durations_against_financepy
         - FinancePy, BondFRN.modified_credit_duration: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L283
-            Test: tests/fixedincome/test_treasury_markets_model.py::test_frn_price_and_durations_against_financepy
 
         Shares similar logic:
         - FinancePy, BondFRN.discount_margin: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_frn.py#L375
@@ -1513,8 +1511,6 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         Referenced against:
         - QuantLib, CPI.laggedFixing: https://github.com/lballabio/QuantLib/blob/v1.44/ql/indexes/inflationindex.hpp#L39
-            Test:
-                tests/fixedincome/test_treasury_markets_model.py::test_reference_cpi_and_index_ratio_follow_the_treasury_example
 
         Shares similar logic:
         - QuantLib, CPIBond: https://www.quantlib.org/reference/class_quant_lib_1_1_c_p_i_bond.html
@@ -1768,7 +1764,6 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         Referenced against:
         - QuantLib, BondForward: https://www.quantlib.org/reference/class_quant_lib_1_1_bond_forward.html
-            Test: tests/fixedincome/test_treasury_markets_model.py::test_bond_forward_price_against_quantlib
 
         Shares similar logic:
         - rateslib, FixedRateBond.fwd_from_repo: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.FixedRateBond.html#rateslib.instruments.FixedRateBond.fwd_from_repo
@@ -1957,7 +1952,6 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         Referenced against:
         - rateslib, BondFuture.cfs: https://rateslib.com/py/en/3.0.x/api/rateslib.instruments.BondFuture.html#rateslib.instruments.BondFuture.cfs
-            Test: tests/fixedincome/test_treasury_markets_model.py::test_conversion_factor_against_rateslib
 
         Shares similar logic:
         - FinancePy, BondFuture.gross_basis: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/bonds/bond_future.py#L209

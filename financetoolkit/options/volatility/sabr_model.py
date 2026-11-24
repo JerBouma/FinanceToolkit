@@ -78,9 +78,7 @@ def get_sabr_volatility(
 
     Referenced against:
     - QuantLib, sabrVolatility: https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L163
-        Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
     - QuantLib, shiftedSabrVolatility: https://github.com/lballabio/QuantLib/blob/v1.44/ql/termstructures/volatility/sabr.cpp#L182
-        Test: tests/options/test_smile_models.py::test_sabr_volatility_matches_quantlib
 
     Shares similar logic:
     - FinancePy, SABR: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/sabr.py#L157

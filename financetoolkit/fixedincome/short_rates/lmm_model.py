@@ -537,7 +537,6 @@ def get_lmm_swaption(
 
     Referenced against:
     - FinancePy, lmm_swaption_pricer: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/lmm_mc.py#L809
-        Test: tests/fixedincome/test_lmm_model.py::test_swaption_matches_financepy_monte_carlo
 
     Args:
         zero_curve (pd.Series): The annually compounded zero-coupon rates (decimals),

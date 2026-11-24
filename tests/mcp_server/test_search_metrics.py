@@ -111,3 +111,14 @@ def test_compact_tools_keep_the_first_clause_and_the_indicator_description(
         "indicator": {"description": "Name of the metric."},
         "start_date": {},
     }
+
+
+def test_an_indicator_name_returns_the_whole_description_up_to_its_sections():
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool("search_metrics", {"query": "get_aroon_indicator"})
+    )[0][0].text
+    # The summary sentence, the explanation and the formula, but not the library references or Args.
+    assert "how many periods ago the highest high" in text
+    assert "- Aroon Oscillator = Aroon Up — Aroon Down" in text
+    assert "Referenced against" not in text
+    assert "ta-lib.org" not in text

@@ -13,9 +13,11 @@ def get_working_capital_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Working Capital to Total Assets Ratio is a financial metric used to measure a company's liquidity and
-    ability to meet short-term obligations. It represents the proportion of a company's total assets that are
-    financed by its working capital.
+    The Working Capital to Total Assets Ratio is a financial metric used to measure a
+    company's liquidity and ability to meet short-term obligations.
+
+    It represents the proportion of a company's total assets that are financed by its
+    working capital.
 
     The formula is as follows:
 
@@ -41,8 +43,8 @@ def get_retained_earnings_to_total_assets_ratio(
     total_assets: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Retained Earnings to Total Assets Ratio is a financial metric used to measure a company's profitability
-    and the proportion of its assets that are financed by its retained earnings.
+    The Retained Earnings to Total Assets Ratio shows the proportion of its assets that are
+    financed by its retained earnings.
 
     The formula is as follows:
 
@@ -94,8 +96,10 @@ def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
     total_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Market Value of Equity to Book Value of Total Liabilities Ratio is a financial metric used to measure a
-    company's solvency and the proportion of its liabilities that are covered by its equity.
+    The Market Value of Equity to Book Value of Total Liabilities Ratio shows how many times
+    a company's equity covers its liabilities.
+
+    It measures solvency.
 
     The formula is as follows:
 
@@ -146,10 +150,12 @@ def get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
     total_liabilities: float | pd.Series | pd.DataFrame,
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Book Value of Equity to Book Value of Total Liabilities Ratio measures how much of a company's
-    liabilities its shareholders' equity on the balance sheet covers. It replaces the market value of equity
-    in the Z'-Score (private firms), the Z''-Score (non-manufacturers) and the Z''-EM score (emerging markets),
-    which do not rely on a share price.
+    The Book Value of Equity to Book Value of Total Liabilities Ratio measures how much of a
+    company's liabilities its shareholders' equity on the balance sheet covers.
+
+    It replaces the market value of equity in the Z'-Score (private firms), the Z''-Score
+    (non-manufacturers) and the Z''-EM score (emerging markets), which do not rely on a
+    share price.
 
     The formula is as follows:
 
@@ -201,8 +207,10 @@ def get_altman_z_score(
     method: str = "original",
 ) -> float | pd.Series | pd.DataFrame:
     """
-    The Altman Z-Score is a financial metric used to measure a company's solvency and the likelihood that it will
-    go bankrupt. It is calculated using a combination of four or five weighted business ratios, with the
+    The Altman Z-Score is a financial metric used to measure a company's solvency and the
+    likelihood that it will go bankrupt.
+
+    It is calculated using a combination of four or five weighted business ratios, with the
     coefficients of one of Altman's four models.
 
     The formulas are as follows:

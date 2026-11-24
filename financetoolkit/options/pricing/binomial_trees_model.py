@@ -493,16 +493,10 @@ def get_option_payoffs(
 
     Referenced against:
     - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test:
-            tests/options/test_binomial_trees_model.py::test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes
 
     Args:
         stock_price (float): Current stock price
@@ -590,16 +584,10 @@ def get_option_payoff_trees(
 
     Referenced against:
     - QuantLib, BinomialJRVanillaEngine (Jarrow-Rudd): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialTianVanillaEngine (Tian): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialTrigeorgisVanillaEngine (Trigeorgis): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialLRVanillaEngine (Leisen-Reimer): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test: tests/options/test_binomial_trees_model.py::test_the_tree_variants_match_quantlib
     - QuantLib, BinomialJ4VanillaEngine (exact inversion): https://www.quantlib.org/reference/class_quant_lib_1_1_binomial_vanilla_engine.html
-        Test:
-            tests/options/test_binomial_trees_model.py::test_the_exact_inversion_tree_prices_a_european_option_at_black_scholes
 
     Args:
         stock_price (float): Current stock price.

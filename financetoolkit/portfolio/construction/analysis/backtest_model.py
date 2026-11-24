@@ -23,13 +23,16 @@ def get_rebalancing_dates(
     index: pd.PeriodIndex, rebalancing: str, lookback: int
 ) -> list:
     """
-    The rebalancing dates of a walk-forward backtest: the last trading day of every
-    month, quarter or year that has at least `lookback` returns up to and including it,
-    except the last day of the data, after which there is nothing to hold.
+    The rebalancing dates of a walk-forward backtest.
+
+    They fall on the last trading day of every month, quarter or year that has at least
+    `lookback` returns up to and including it, except the last day of the data, after which
+    there is nothing to hold.
 
     Args:
         index (pd.PeriodIndex): The trading days of the returns.
-        rebalancing (str): "monthly", "quarterly" or "yearly".
+        rebalancing (str): How often the weights are set anew. Options are: "monthly" (the last
+            trading day of every month), "quarterly" (of every quarter), "yearly" (of every year).
         lookback (int): The number of returns each estimation needs.
 
     Returns:
@@ -59,7 +62,10 @@ def get_walk_forward_backtest(
     holding_returns: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    A walk-forward (out-of-sample) backtest of weighting strategies. On every rebalancing
+    A walk-forward (out-of-sample) backtest of weighting strategies: how each would have
+    performed with weights set from only the returns known at the time.
+
+    On every rebalancing
     date each strategy sets its weights from the `lookback` returns up to and including
     that date, and the portfolio holds them from the next period on, so no estimate uses
     a return it is then measured on. Between rebalancing dates the weights drift with
@@ -235,14 +241,14 @@ def get_backtest_statistics(
     transaction_cost: float = 0.0,
 ) -> pd.DataFrame:
     """
-    The performance of the strategies of a backtest: the annualized (geometric) return,
-    the annualized volatility (ddof=1), the Sharpe ratio (the annualized average return
-    above the risk free rate over the annualized volatility), the maximum drawdown of
-    the compounded returns, the average turnover per rebalancing (DeMiguel, Garlappi and
-    Uppal, 2009) and the transaction costs per year.
+    The performance of the strategies of a backtest.
 
-    Each strategy is measured over the periods in which it has a return, so a benchmark
-    that misses some days does not shorten the others.
+    These are the annualized (geometric) return, the annualized volatility (ddof=1), the
+    Sharpe ratio (the annualized average return above the risk free rate over the annualized
+    volatility), the maximum drawdown of the compounded returns, the average turnover per
+    rebalancing (DeMiguel, Garlappi and Uppal, 2009) and the transaction costs per year.
+    Each strategy is measured over the periods in which it has a return, so a benchmark that
+    misses some days does not shorten the others.
 
     Args:
         returns (pd.DataFrame): The returns per period after costs, one column per
@@ -285,10 +291,12 @@ def get_backtest_statistics(
 
 def get_in_sample_expectations(weights: pd.DataFrame, estimates: dict) -> pd.DataFrame:
     """
-    What the weights of a walk-forward backtest promised when they were set: on every
-    rebalancing date the expected return and Sharpe ratio of the weights by the estimates
-    of their own estimation window, averaged over the dates. Next to the realised (out of
-    sample) return of the backtest, it shows how much of an optimizer's promise held.
+    What the weights of a walk-forward backtest promised when they were set.
+
+    On every rebalancing date the expected return and Sharpe ratio of the weights by the
+    estimates of their own estimation window, averaged over the dates. Next to the realised
+    (out of sample) return of the backtest, it shows how much of an optimizer's promise
+    held.
 
     The formula is as follows:
 

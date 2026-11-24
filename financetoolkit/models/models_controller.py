@@ -526,9 +526,10 @@ class Models(
     ModelsBase,
 ):
     """
-    The Models module is meant to execute well-known models such
-    as DUPONT and the Discounted Cash Flow (DCF) model. These models
-    are also directly related to the data retrieved from the Toolkit module.
+    The Models module is meant to execute well-known models such as DUPONT and the
+    Discounted Cash Flow (DCF) model.
+
+    These models are also directly related to the data retrieved from the Toolkit module.
 
     """
 
@@ -550,15 +551,16 @@ class Models(
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the models: whether the tickers that score high
-        on a model, such as the Piotroski F-Score or the Altman Z-Score, go on to return more
-        than those that score low. Per period, the information coefficient (IC) is the
-        Spearman rank correlation between the model score of the tickers at the end of the
-        period and their return over the following horizon: 1 means the score ranks the later
-        returns perfectly, -1 in reverse and 0 that it says nothing about them. The IC measures
-        skill in Grinold and Kahn's fundamental law of active management,
-        IR ≈ IC × √breadth: a small but consistent IC across many tickers and periods gives a
-        high information ratio.
+        Factor analysis (predictive power) of the models.
+
+        Whether the tickers that score high on a model, such as the Piotroski F-Score or the
+        Altman Z-Score, go on to return more than those that score low. Per period, the
+        information coefficient (IC) is the Spearman rank correlation between the model score of
+        the tickers at the end of the period and their return over the following horizon: 1
+        means the score ranks the later returns perfectly, -1 in reverse and 0 that it says
+        nothing about them. The IC measures skill in Grinold and Kahn's fundamental law of
+        active management, IR ≈ IC × √breadth: a small but consistent IC across many tickers and
+        periods gives a high information ratio.
 
         The summary has a row per model and horizon with the mean IC, its standard deviation, the IC
         information ratio (mean divided by standard deviation), the t-statistic of the mean with its
@@ -589,6 +591,15 @@ class Models(
         Each ticker keeps its own history: a ticker without a score or a return in a period is
         left out of that period only.
 
+        Shares similar logic:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+        - alphalens, factor_weights: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L131
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, quantile_turnover: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L575
+        - alphalens, factor_rank_autocorrelation: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L620
+        - alphalens, average_cumulative_return_by_quantile (event returns): https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L758
+
         Args:
             metrics (str | list[str], optional): A model method name with one value per
                 ticker and period, e.g. "get_piotroski_score", a list of them, or a
@@ -599,8 +610,8 @@ class Models(
                 growth rates, the magic formula and the Merton distance to default. The
                 valuation models and the analyses with several components and no score are not
                 in the collections.
-            period (str, optional): The frequency at which the models are evaluated: daily,
-                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            period (str, optional): The frequency at which the models are evaluated. Options are: "daily", "weekly",
+                "monthly", "quarterly", "yearly". Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
                 returns cover. Defaults to None, which uses about a period, a quarter and a
                 year ahead (1, 3 and 12 months for monthly).
@@ -608,21 +619,19 @@ class Models(
                 period. Defaults to 5.
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
-            detail (str | None, optional): Returns one part of the analysis of a single model
-                instead of the summary: "information_coefficient" (per period and horizon),
-                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
-                per calendar month or year), "group_information_coefficient" (the IC statistics
-                within each group, needs group), "quantile_returns" (the mean forward return per
-                quantile and horizon), "quantile_returns_by_date" (per period),
-                "quantile_return_statistics" (the mean, its standard error and both per single
-                period), "quantile_statistics" (the range, mean and count of the factor values in
-                each quantile), "quantile_turnover" (per period and quantile),
-                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
-                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
-                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
-                each quantile) or "event_returns" (the mean price path of each quantile from the
-                longest horizon before to the longest horizon after the periods it is formed).
-                Defaults to None.
+            detail (str | None, optional): Returns one part of the analysis of a single model instead of the
+                summary. Options are: "information_coefficient" (per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year), "group_information_coefficient"
+                (the IC statistics within each group, needs group), "quantile_returns" (the mean forward return per
+                quantile and horizon), "quantile_returns_by_date" (per period), "quantile_return_statistics" (the
+                mean, its standard error and both per single period), "quantile_statistics" (the range, mean and
+                count of the factor values in each quantile), "quantile_turnover" (per period and quantile),
+                "rank_autocorrelation" (per period), "factor_weights" (the weights of the factor-weighted long-short
+                portfolio per period and ticker), "factor_returns" (its return per period and horizon),
+                "cumulative_returns" (the growth of 1 in it and in each quantile), "event_returns" (the mean price
+                path of each quantile from the longest horizon before to the longest horizon after the periods it is
+                formed). Defaults to None.
             column (str | None, optional): The component to use of a model, e.g.
                 "Working Capital to Total Assets" of the Altman Z-Score. Defaults to None,
                 which uses the model's score (its last row).
@@ -636,12 +645,11 @@ class Models(
                 factor-weighted portfolio neutral within each group. Without group the IC
                 stays the same, as subtracting one mean from every ticker keeps their ranks.
                 Defaults to False.
-            binning (str, optional): How the tickers are sorted into quantiles per period:
-                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
-                and highest value), "zero_aware" (half of the quantiles for the negative and half
-                for the zero and positive values, for a signal centred on zero; needs an even number
-                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
-                "quantile".
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are: "quantile"
+                (equally sized), "equal_width" (bins of equal width between the lowest and highest value),
+                "zero_aware" (half of the quantiles for the negative and half for the zero and positive values, for
+                a signal centred on zero; needs an even number of quantiles), "group" (equally sized within each
+                group, needs group). Defaults to "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the models that take them, e.g. trailing=4 or
@@ -683,12 +691,11 @@ class Models(
               1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
               (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
               35(1).
-            - Referenced against alphalens-reloaded
-              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
-              spread is half of the one here (a gross exposure of one rather than two), it
-              drops a period and ticker without every horizon's return where each horizon
-              here uses its own, and its event returns average the single-period returns at
-              each offset where these are the price paths rebased to the period itself.
+            - Unlike alphalens, whose top minus bottom spread is half of the one here (a gross
+              exposure of one rather than two), each horizon here uses its own returns where
+              alphalens drops a period and ticker without every horizon's return, and the event
+              returns are the price paths rebased to the period itself where alphalens averages
+              the single-period returns at each offset.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 

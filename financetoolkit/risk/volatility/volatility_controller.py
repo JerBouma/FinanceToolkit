@@ -241,17 +241,11 @@ class VolatilityRisk:
 
         Referenced against:
         - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
         - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
         - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
         - arch, APARCH (APARCH, TGARCH, NGARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_fit_matches_the_arch_package
         - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
         - arch, ARCHInMean (GARCH-in-mean): https://bashtage.github.io/arch/univariate/generated/arch.univariate.ARCHInMean.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
 
         Shares similar logic:
         - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
@@ -483,19 +477,12 @@ class VolatilityRisk:
 
         Referenced against:
         - arch, GARCH (GJR-GARCH forecast): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_risk_controller.py::test_get_garch_forecast_gjr_monthly_matches_the_arch_package
         - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
         - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
         - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
         - arch, APARCH (APARCH, TGARCH, NGARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_fit_matches_the_arch_package
         - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
         - arch, ARCHInMean (GARCH-in-mean): https://bashtage.github.io/arch/univariate/generated/arch.univariate.ARCHInMean.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
 
         Shares similar logic:
         - rugarch (R), ugarchforecast: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L1071
@@ -768,19 +755,12 @@ class VolatilityRisk:
 
         Referenced against:
         - arch, GARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_parameters_match_the_arch_package
         - arch, GARCH (GJR-GARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_gjr_garch_parameters_match_the_arch_package
         - arch, EGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.EGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_egarch_parameters_match_the_arch_package
         - arch, APARCH (APARCH, TGARCH, NGARCH): https://bashtage.github.io/arch/univariate/generated/arch.univariate.APARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_fit_matches_the_arch_package
         - arch, FIGARCH: https://bashtage.github.io/arch/univariate/generated/arch.univariate.FIGARCH.html
-            Test: tests/risk/test_garch_fit.py::test_figarch_matches_the_arch_package
         - arch, ARCHInMean (GARCH-in-mean): https://bashtage.github.io/arch/univariate/generated/arch.univariate.ARCHInMean.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_log_likelihood_matches_the_arch_package
         - arch, GARCH (classic and robust standard errors, information criteria): https://bashtage.github.io/arch/univariate/generated/arch.univariate.GARCH.html
-            Test: tests/risk/test_garch_fit.py::test_garch_family_standard_errors_match_the_arch_package
 
         Shares similar logic:
         - rugarch (R), ugarchspec (sGARCH, iGARCH, apARCH, fGARCH, csGARCH, realGARCH, ARFIMA mean): https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-methods.R#L21
@@ -1859,9 +1839,7 @@ class VolatilityRisk:
 
         Referenced against:
         - Riskfolio-Lib, SemiDeviation: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/risk.html#RiskFunctions.SemiDeviation
-            Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
         - skfolio, semi_deviation: https://skfolio.org/generated/skfolio.measures.semi_deviation.html
-            Test: tests/risk/test_dispersion_model.py::test_volatility_skewness_and_semi_deviation_match_references
 
         Shares similar logic:
         - PerformanceAnalytics (R), DownsideDeviation: https://github.com/braverock/PerformanceAnalytics/blob/v2.0.4/R/DownsideDeviation.R#L104

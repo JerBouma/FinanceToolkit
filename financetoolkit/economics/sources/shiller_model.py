@@ -56,10 +56,11 @@ def _to_month(value: float) -> pd.Period:
 
 def get_stock_market_data() -> pd.DataFrame:
     """
-    Retrieves Robert Shiller's monthly US stock market data from 1871: the S&P Composite
-    price, dividends and earnings, the consumer price index, the long-term interest rate,
-    the trailing price-earnings ratio (P/E) and the cyclically adjusted price-earnings ratio
-    (CAPE), in nominal and real terms.
+    Retrieve Robert Shiller's monthly US stock market data from 1871: the S&P Composite price, dividends, earnings,
+    interest rates and the CAPE ratio, nominal and real.
+
+    Next to the price, dividends, earnings, the consumer price index and the long-term interest rate come the trailing
+    price-earnings ratio (P/E) and the cyclically adjusted price-earnings ratio (CAPE).
 
     Returns:
         pd.DataFrame: One column per measure, indexed by month. The long interest rate is a

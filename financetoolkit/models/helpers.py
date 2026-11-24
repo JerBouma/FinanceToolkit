@@ -35,7 +35,7 @@ def determine_within_historical_data(
     "within period" data the models estimate a beta per period from.
 
     Args:
-        period (str): The period (weekly, monthly, quarterly or yearly).
+        period (str): The period. Options are: "weekly", "monthly", "quarterly", "yearly".
         daily_historical_data (pd.DataFrame): The daily historical data, with a PeriodIndex.
 
     Raises:
@@ -63,9 +63,11 @@ def rates_per_ticker(
 ) -> dict[str, float]:
     """
     A rate per ticker from what a valuation method is given: one number for every ticker, a
-    list in the order of the tickers or a dictionary by ticker. Where no rate is given (None,
-    or a ticker missing from the dictionary), the rate comes from `default`, which returns the
-    company's own rate per ticker; it is only called when needed, since it may load data.
+    list in the order of the tickers or a dictionary by ticker.
+
+    Where no rate is given (None, or a ticker missing from the dictionary), the rate comes
+    from `default`, which returns the company's own rate per ticker; it is only called when
+    needed, since it may load data.
 
     Args:
         value (float | list | dict[str, float] | None): The rate(s) given.
@@ -100,10 +102,11 @@ def rates_per_period(
     default: Callable[[], pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """
-    A rate per ticker and period, for valuations that value every period: a given rate (one
-    number, a list in the order of the tickers or a dictionary by ticker) is the same in
-    every period, while the `default` gives each period the company's own rate of that
-    period, so that no period is valued with a rate that was only known later.
+    A rate per ticker and period, for valuations that value every period.
+
+    A given rate (one number, a list in the order of the tickers or a dictionary by ticker)
+    is the same in every period, while the `default` gives each period the company's own
+    rate of that period, so that no period is valued with a rate that was only known later.
 
     Args:
         value (float | list | dict[str, float] | None): The rate(s) given.
@@ -176,10 +179,11 @@ def exceeds_growth_per_period(
 ) -> pd.DataFrame:
     """
     Per ticker (rows) and period (columns), whether the discount rate exceeds the growth
-    rate kept forever, as `exceeds_growth` checks for one rate. The periods where it
-    doesn't are logged per ticker and left out (NaN), so the other periods are still valued.
-    Periods where the rate exceeds the growth by less than NARROW_SPREAD are valued and
-    logged, as their values are very sensitive to both rates.
+    rate kept forever, as `exceeds_growth` checks for one rate.
+
+    The periods where it doesn't are logged per ticker and left out (NaN), so the other
+    periods are still valued. Periods where the rate exceeds the growth by less than
+    NARROW_SPREAD are valued and logged, as their values are very sensitive to both rates.
 
     Args:
         rates (pd.DataFrame): The discount rate per ticker and period.
@@ -228,8 +232,10 @@ def trailing_within_periods(
 ) -> pd.DataFrame | pd.Series:
     """
     The "within period" data (period, day) with every period holding the days of the
-    `trailing` periods that end with it, so that a statistic per period, such as a beta,
-    covers that trailing span: with quarterly periods and trailing=4, a year of days.
+    `trailing` periods that end with it.
+
+    A statistic per period, such as a beta, covers that trailing span: with four trailing
+    quarters, a year of days.
 
     Args:
         within (pd.DataFrame | pd.Series): Data with the period and the day as index levels.
@@ -255,10 +261,11 @@ def exceeds_growth(
 ) -> bool:
     """
     Whether a ticker's discount rate exceeds the growth rate it keeps forever, which the
-    terminal value of a perpetuity needs to be finite. A ticker where it doesn't is logged
-    and left out, so the other tickers are still valued. A rate that exceeds the growth by
-    less than NARROW_SPREAD is accepted with a warning, as the value is then very sensitive
-    to both rates.
+    terminal value of a perpetuity needs to be finite.
+
+    A ticker where it doesn't is logged and left out, so the other tickers are still valued.
+    A rate that exceeds the growth by less than NARROW_SPREAD is accepted with a warning, as
+    the value is then very sensitive to both rates.
 
     Args:
         ticker (str): The ticker, for the log.
@@ -303,9 +310,10 @@ def values_on_or_before(
     daily: pd.DataFrame, dates: pd.DataFrame, tolerance: int = 10
 ) -> pd.DataFrame:
     """
-    The last value of each ticker on or before a date per ticker and period, taken from the
-    ticker's own history, so that a day without a value (a holiday on its exchange) uses
-    the value before it.
+    The last value of each ticker on or before a date per ticker and period.
+
+    It is taken from the ticker's own history, so that a day without a value (a holiday on
+    its exchange) uses the value before it.
 
     Args:
         daily (pd.DataFrame): The daily values with a DatetimeIndex and the tickers as
@@ -344,15 +352,17 @@ def least_squares_coefficients(
     dependent: np.ndarray, regressors: np.ndarray, min_observations: int
 ) -> np.ndarray:
     """
-    The ordinary least squares coefficients of a regression of `dependent` on the columns
-    of `regressors` as given (add a column of ones for an intercept), over the rows where
-    every value is finite.
+    The ordinary least squares coefficients of a regression of `dependent` on the columns of
+    `regressors`, over the rows where every value is finite.
 
-    The columns are scaled to unit length before solving and the coefficients scaled back
-    afterwards. Regressors of very different magnitudes, such as one over the total assets
-    of a company reporting in Indonesian rupiah (around 1e-15) next to ratios around 1,
-    would otherwise fall below the singular value cut-off of the solver and be treated as
-    collinear.
+    The regressors are used as given; a column of ones adds an intercept. The columns are
+    scaled to unit length before solving and the coefficients scaled back afterwards.
+    Regressors of very different magnitudes, such as one over the total assets of a company
+    reporting in Indonesian rupiah (around 1e-15) next to ratios around 1, would otherwise
+    fall below the singular value cut-off of the solver and be treated as collinear.
+
+    Referenced against:
+    - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
     Args:
         dependent (np.ndarray): The dependent variable, one value per observation.

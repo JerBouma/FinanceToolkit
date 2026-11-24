@@ -75,10 +75,8 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Gross Household Savings Rate for a variety of countries over time from the
-        OECD's Household Dashboard. The household savings rate is the share of household
-        gross disposable income (adjusted for the net change in pension entitlements) that
-        is saved rather than spent on final consumption.
+        Get the gross household savings rate of a variety of countries from the OECD's Household Dashboard: the share
+        of household disposable income that is saved rather than spent.
 
         It is a key input to consumption-smoothing and life-cycle/permanent-income theories
         of household behaviour, and a closely watched signal of both near-term consumption
@@ -183,9 +181,10 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Household Debt to Disposable Income Ratio for a variety of countries over
-        time from the OECD's Household Dashboard. This expresses total household gross
-        debt (loans and debt securities) as a share of household gross disposable
+        Get the household debt to disposable income ratio of a variety of countries from the OECD's Household
+        Dashboard: how indebted households are against what they earn.
+
+        This expresses total household gross debt (loans and debt securities) as a share of household gross disposable
         income, returned as a decimal ratio (1.0014 means debt equals 100.14% of income).
 
         It is a standard household-leverage indicator used in financial-stability analysis:
@@ -289,11 +288,12 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The unemployed are people of working age who are without work,
-        are available for work, and have taken specific steps to find work.
-        The uniform application of this definition results in estimates of
-        unemployment rates that are more internationally comparable than
-        estimates based on national definitions of unemployment.
+        Get the unemployment rate of a variety of countries: the share of the labour force that is without work but
+        available for and looking for work.
+
+        The unemployed are people of working age who are without work, are available for work, and have taken specific
+        steps to find work. The uniform application of this definition results in estimates of unemployment rates that
+        are more internationally comparable than estimates based on national definitions of unemployment.
 
         This indicator is measured in numbers of unemployed people as a
         percentage of the labour force and it is seasonally adjusted.
@@ -312,16 +312,16 @@ class JobsEconomics:
 
         See definition: https://data.oecd.org/unemp/unemployment-rate.htm
 
-        It is also possible to get the data from the Global Macro Database (GMDB) by setting
-        the gmdb_source to True.
+        It is also possible to get the data from the Global Macro Database (GMDB) by choosing
+        it as the source.
 
         Both sources return the rate as a decimal fraction of the labour force (0.036 for
         3.6%), so the two are directly interchangeable. Only the OECD source supports
         monthly and quarterly frequency; the GMDB is annual only, so a monthly or quarterly
-        request uses the OECD unless gmdb_source=True is passed, in which case the period
-        argument has no effect.
+        request uses the OECD unless the GMDB is chosen as the source, in which case the period
+        has no effect.
 
-        With period="monthly" (unless gmdb_source=True is passed explicitly) the euro area
+        With monthly data (unless the GMDB is chosen as the source) the euro area
         and the countries Eurostat covers come from Eurostat and the United Kingdom from
         the Office for National Statistics, which publish weeks before the OECD republishes
         their figures, and Brazil from the IBGE (as the UK, the average of the three months
@@ -336,11 +336,11 @@ class JobsEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
-                Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise. Countries the OECD publishes quarterly only,
-                such as New Zealand, are not in the monthly data; a warning names them when they
-                are requested.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is quarterly when the
+                Economics class was initialized with quarterly=True and monthly otherwise. Countries the OECD
+                publishes quarterly only, such as New Zealand, are not in the monthly data; a warning names them when
+                they are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Defaults to None, which uses the GMDB for yearly data when gmdb_source is True on the Economics class (its default) and the OECD otherwise.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -515,13 +515,14 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The job vacancy rate is the share of all posts, occupied or not, that employers are
-        actively trying to fill from outside the company. It measures unmet labour demand,
-        the counterpart of the unemployment rate: plotted against each other, the two trace
-        the Beveridge curve, where a movement along the curve reflects the business cycle
-        and a shift of the curve a change in how well job seekers and vacancies are matched.
-        A high vacancy rate next to low unemployment points to a tight labour market and,
-        in time, wage pressure.
+        Get the job vacancy rate of a variety of countries: the share of all posts employers are trying to fill, the
+        unmet demand for labour.
+
+        The job vacancy rate is the share of all posts, occupied or not, that employers are actively trying to fill
+        from outside the company. It measures unmet labour demand, the counterpart of the unemployment rate: plotted
+        against each other, the two trace the Beveridge curve, where a movement along the curve reflects the business
+        cycle and a shift of the curve a change in how well job seekers and vacancies are matched. A high vacancy rate
+        next to low unemployment points to a tight labour market and, in time, wage pressure.
 
         Each country comes from its official publisher, seasonally adjusted:
 
@@ -552,11 +553,11 @@ class JobsEconomics:
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the monthly or the quarterly data.
-                Defaults to None, which is monthly when only the United States, the one country
-                published monthly, is requested and quarterly otherwise (and quarterly when the
-                Economics class was initialized with quarterly=True). With period='monthly'
-                the other countries are left out with a warning.
+            period (str | None, optional): The frequency of the data. Options are: "monthly" (monthly data),
+                "quarterly" (quarterly data). Defaults to None, which is monthly when only the United States, the one
+                country published monthly, is requested and quarterly otherwise (and quarterly when the Economics
+                class was initialized with quarterly=True). With period='monthly' the other countries are left out
+                with a warning.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -713,15 +714,13 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Misery Index for a variety of countries over time. The Misery Index is a simple
-        gauge of the overall economic discomfort felt by the average person, combining the two
-        economic ills that are most directly and visibly felt by households: unemployment and
-        rising prices.
+        Get the Misery Index of a variety of countries: the unemployment rate plus the inflation rate, a gauge of the
+        economic discomfort households feel.
 
         The formula is as follows:
 
         - Misery Index (year) = Unemployment Rate (year) + Inflation Rate (year), with the annual unemployment rate
-          from the Global Macro Database (or the OECD with gmdb_source=False) and the Global Macro Database's annual
+          from the Global Macro Database (or the OECD as the source) and the Global Macro Database's annual
           CPI inflation
 
         The Unemployment Rate and Inflation Rate are both retrieved as annual decimal fractions
@@ -828,12 +827,12 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        GDP per hour worked is a measure of labour productivity. It measures
-        how efficiently labour input is combined with other factors of production
-        and used in the production process. Labour input is defined as total hours
-        worked of all persons engaged in production. Labour productivity only partially
-        reflects the productivity of labour in terms of the personal capacities of
-        workers or the intensity of their effort.
+        Get the labour productivity of a variety of countries: the GDP produced per hour worked.
+
+        GDP per hour worked is a measure of labour productivity. It measures how efficiently labour input is combined
+        with other factors of production and used in the production process. Labour input is defined as total hours
+        worked of all persons engaged in production. Labour productivity only partially reflects the productivity of
+        labour in terms of the personal capacities of workers or the intensity of their effort.
 
         The ratio between the output measure and the labour input depends to a large
         degree on the presence and/or use of other inputs (e.g. capital, intermediate
@@ -934,20 +933,22 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Unit labour costs are the average cost of labour per unit of output: what an
-        economy pays its employees for producing one unit of real GDP. They link wages to
-        productivity (see get_labour_productivity): pay rising faster than output per
-        worker raises unit labour costs, which firms either pass on in prices or absorb in
-        their margins. That makes them a measure of domestic cost pressure and, compared
-        between countries, of cost competitiveness; the European Union's macroeconomic
-        imbalance procedure, for example, watches their growth over three years.
+        Get the unit labour costs of a variety of countries: what an economy pays its employees per unit of output, a
+        measure of cost pressure and competitiveness.
+
+        Unit labour costs are the average cost of labour per unit of output: what an economy pays its employees for
+        producing one unit of real GDP. They link wages to productivity (see get_labour_productivity): pay rising
+        faster than output per worker raises unit labour costs, which firms either pass on in prices or absorb in
+        their margins. That makes them a measure of domestic cost pressure and, compared between countries, of cost
+        competitiveness; the European Union's macroeconomic imbalance procedure, for example, watches their growth
+        over three years.
 
         The OECD compiles them for the total economy, employment based, from the national
         accounts: the compensation of employees per employee divided by real GDP per
         person employed (OECD Compendium of Productivity Indicators). They are published
         quarterly, seasonally adjusted, as an index with 2015 = 100 in national currency,
-        so compare their growth rather than their level between countries; growth=True
-        with lag=4 gives the change on the same quarter a year earlier as a decimal.
+        so compare their growth rather than their level between countries; the growth
+        over a lag of 4 gives the change on the same quarter a year earlier as a decimal.
 
         The index is the OECD's own figure (the source's calculation).
 
@@ -1039,11 +1040,13 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
+        Get the income inequality of a variety of countries: how unevenly household disposable income is spread across
+        the population.
+
         Income is defined as household disposable income in a particular year. It consists of earnings,
-        self-employment and capital income and public cash transfers; income taxes and social
-        security contributions paid by households are deducted. The income of the household is
-        attributed to each of its members, with an adjustment to reflect differences in needs for
-        households of different sizes.
+        self-employment and capital income and public cash transfers; income taxes and social security contributions
+        paid by households are deducted. The income of the household is attributed to each of its members, with an
+        adjustment to reflect differences in needs for households of different sizes.
 
         The Gini coefficient is based on the comparison of cumulative proportions of the population against
         cumulative proportions of income they receive, and it ranges between 0 in the case of perfect equality
@@ -1137,10 +1140,13 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Population is defined as all nationals present in, or temporarily absent from a country,
-        and aliens permanently settled in a country. This indicator shows the number of people
-        that usually live in an area. Growth rates are the annual changes in population resulting
-        from births, deaths and net migration during the year.
+        Get the population statistics of a variety of countries: the number of people who usually live in a country
+        and how it grows.
+
+        Population is defined as all nationals present in, or temporarily absent from a country, and aliens
+        permanently settled in a country. This indicator shows the number of people that usually live in an area.
+        Growth rates are the annual changes in population resulting from births, deaths and net migration during the
+        year.
 
         Total population includes the following:
 
@@ -1159,8 +1165,8 @@ class JobsEconomics:
         statistical projections, helping governments in their decision making.
 
         By default the data comes from the Global Macro Database (GMDB), which returns a
-        single total population series per country, in millions of people. Set
-        gmdb_source=False for the OECD series, which breaks the total down by gender,
+        single total population series per country, in millions of people. Choose the
+        OECD as the source for its series, which breaks the total down by gender,
         giving a Population, Men and Women series for each country, and reports a plain
         count of persons rather than millions. Both are annual, and the OECD source uses
         the historical (observed) series rather than its projections.
@@ -1273,8 +1279,10 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        The poverty rate is the ratio of the number of people (in a given age group) whose income
-        falls below the poverty line; taken as half the median household income of the total population.
+        Get the poverty rate of a variety of countries: the share of people whose income falls below the poverty line.
+
+        The poverty rate is the ratio of the number of people (in a given age group) whose income falls below the
+        poverty line; taken as half the median household income of the total population.
 
         However, two countries with the same poverty rates may differ in terms of the relative income-level of the poor.
 
@@ -1358,8 +1366,8 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get Total Nonfarm Payroll Employment for the United States from the Bureau of
-        Labor Statistics.
+        Get the total nonfarm payroll employment of the United States from the Bureau of Labor Statistics: the number
+        of jobs outside farming, the headline jobs figure.
 
         Nonfarm Payrolls is the headline monthly employment report and one of the most
         closely watched real-activity indicators in macroeconomics: it counts the
@@ -1372,12 +1380,12 @@ class JobsEconomics:
 
         The series is the monthly level of employment in thousands of persons, seasonally
         adjusted, so 156857 means 156.857 million jobs -- not the monthly change that the
-        headline "jobs added" number refers to. Use growth=True for that change.
+        headline "jobs added" number refers to. Use the growth for that change.
 
         Without a FRED API key the data comes from the Bureau of Labor Statistics' API,
         which gives the same figures but only for about the last three years. The
-        full history, from 1939, comes from FRED when a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class).
+        full history, from 1939, comes from FRED when a FRED API key is set
+        on the Economics class.
 
         See definition: https://fred.stlouisfed.org/series/PAYEMS
 
@@ -1546,8 +1554,8 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get weekly Initial Claims for Unemployment Insurance for the United States
-        from the Department of Labor.
+        Get the weekly initial claims for unemployment insurance of the United States from the Department of Labor:
+        how many people newly file for unemployment benefits.
 
         Initial Jobless Claims counts the number of individuals filing for
         unemployment insurance for the first time in a given week. Because it is
@@ -1557,10 +1565,10 @@ class JobsEconomics:
         core component of the Conference Board's Leading Economic Index. The
         continued claims of the same report are in `get_continuing_jobless_claims`.
 
-        Each week is dated by the Saturday it ends, the week the claims were filed. With
-        period="monthly", "quarterly" or "yearly" the weeks are combined into that period:
+        Each week is dated by the Saturday it ends, the week the claims were filed. With a
+        monthly, quarterly or yearly period the weeks are combined into that period:
         by default their average, as FRED converts its weekly series, or the
-        highest, lowest or last week of the period with aggregation="max", "min" or "last".
+        highest, lowest or last week of the period.
 
         The formula is as follows:
 
@@ -1572,13 +1580,13 @@ class JobsEconomics:
         the weekly series, so a month has four or five weeks. A period is only returned once
         all of its weeks are published, so the month that is still running is left out rather
         than shown as the average of its first weeks. The rolling, trailing, growth and lag
-        options work on the combined series, e.g. growth=True with lag=12 on monthly data
+        options work on the combined series, e.g. the growth over a lag of 12 on monthly data
         gives the change on the same month a year earlier.
 
         Without a FRED API key the data comes from the Department of Labor's weekly claims
         report directly, which gives the same figures, although FRED adds the latest weeks
-        before the report includes them. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        before the report includes them. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/ICSA
 
@@ -1586,12 +1594,12 @@ class JobsEconomics:
         average of initial claims.
 
         Args:
-            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
-                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
-                class was initialized with quarterly=True.
-            aggregation (str, optional): How the weeks are combined into a month, quarter or
-                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
-                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+            period (str | None, optional): The frequency of the data. Options are: "weekly" (weekly data), "monthly"
+                (monthly data), "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is
+                weekly, or quarterly when the Economics class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or year. Options
+                are: "mean" (the average of its weeks), "max" (the highest week), "min" (the lowest week),
+                "last" (the last week). Not used with weekly data. Defaults to
                 "mean".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
@@ -1665,8 +1673,8 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get weekly Continued Claims (Insured Unemployment) for the United States from the
-        Department of Labor.
+        Get the weekly continued claims (insured unemployment) of the United States from the Department of Labor: how
+        many people keep receiving unemployment benefits.
 
         Continued claims count the people who already receive unemployment insurance and
         claim it for another week: the stock of insured unemployed, where initial claims
@@ -1679,9 +1687,9 @@ class JobsEconomics:
         lies a week before the week the claims are filed, so the weekly news release
         reports the continued claims a week behind the initial claims: a release with the
         initial claims of the week ending November 14 gives the continued claims of the
-        week ending November 7. With period="monthly", "quarterly" or "yearly" the weeks are
+        week ending November 7. With a monthly, quarterly or yearly period the weeks are
         combined into that period as in `get_initial_jobless_claims`: by default their
-        average, or the highest, lowest or last week with aggregation="max", "min" or "last".
+        average, or the highest, lowest or last week.
 
         The formula is as follows:
 
@@ -1696,8 +1704,8 @@ class JobsEconomics:
 
         Without a FRED API key the data comes from the Department of Labor's weekly claims
         report directly, which gives the same figures, although FRED adds the latest weeks
-        before the report includes them. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        before the report includes them. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/CCSA
 
@@ -1705,12 +1713,12 @@ class JobsEconomics:
         jobless claims.
 
         Args:
-            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
-                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
-                class was initialized with quarterly=True.
-            aggregation (str, optional): How the weeks are combined into a month, quarter or
-                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
-                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+            period (str | None, optional): The frequency of the data. Options are: "weekly" (weekly data), "monthly"
+                (monthly data), "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is
+                weekly, or quarterly when the Economics class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or year. Options
+                are: "mean" (the average of its weeks), "max" (the highest week), "min" (the lowest week),
+                "last" (the last week). Not used with weekly data. Defaults to
                 "mean".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
@@ -1784,8 +1792,8 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Get the weekly Insured Unemployment Rate for the United States from the Department
-        of Labor.
+        Get the weekly insured unemployment rate of the United States from the Department of Labor: the continued
+        claims as a share of the employment covered by unemployment insurance.
 
         The insured unemployment rate is the continued claims (see
         `get_continuing_jobless_claims`) as a share of the employment covered by
@@ -1796,10 +1804,9 @@ class JobsEconomics:
         unemployment rate is high enough.
 
         Each week is dated like the continued claims, by the Saturday ending the week of
-        unemployment, as FRED dates IURSA. With period="monthly", "quarterly" or "yearly"
+        unemployment, as FRED dates IURSA. With a monthly, quarterly or yearly period
         the weeks are combined into that period as in `get_initial_jobless_claims`: by
-        default their average, or the highest, lowest or last week with
-        aggregation="max", "min" or "last".
+        default their average, or the highest, lowest or last week.
 
         The formula is as follows:
 
@@ -1811,20 +1818,20 @@ class JobsEconomics:
 
         Without a FRED API key the data comes from the Department of Labor's weekly claims
         report directly, which gives the same figures, although FRED adds the latest weeks
-        before the report includes them. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        before the report includes them. When a FRED API key is set
+        on the Economics class, it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/IURSA
 
         Also known as: IUR, insured unemployment rate, covered unemployment rate.
 
         Args:
-            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
-                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
-                class was initialized with quarterly=True.
-            aggregation (str, optional): How the weeks are combined into a month, quarter or
-                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
-                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+            period (str | None, optional): The frequency of the data. Options are: "weekly" (weekly data), "monthly"
+                (monthly data), "quarterly" (quarterly data), "yearly" (yearly data). Defaults to None, which is
+                weekly, or quarterly when the Economics class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or year. Options
+                are: "mean" (the average of its weeks), "max" (the highest week), "min" (the lowest week),
+                "last" (the last week). Not used with weekly data. Defaults to
                 "mean".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
@@ -1897,19 +1904,17 @@ class JobsEconomics:
         show_columns: str | list[str] | None = None,
     ):
         """
-        Retrieves the life tables Eurostat compiles yearly for the countries of the European
-        Economic Area, by single year of age from 0 to 95 (the last age group being 95 and
-        over), from 1960 for most countries. A life table describes the mortality of a
-        population: the basis of every pension, life insurance and annuity calculation, and
-        of mortality and longevity assumptions in scenario models.
+        Get the life tables Eurostat compiles yearly for the countries of the European Economic Area: the mortality of
+        a population by single year of age from 0 to 95.
 
-        The measures are the probability of dying within the year (death_probability, qx),
-        the probability of surviving it (survival_probability, px), the age-specific death
-        rate (death_rate, mx), the number of survivors out of 100,000 births (survivors, lx),
-        the number dying (deaths, dx), the person-years lived within the year (person_years,
-        Lx) and above the age (total_person_years, Tx), and the life expectancy at the age
-        (life_expectancy, ex). Probabilities and rates are fractions; the others are counts
-        or years.
+        The last age group is 95 and over, and the tables start in 1960 for most countries. A life table describes the
+        mortality of a population: the basis of every pension, life insurance and annuity calculation, and of
+        mortality and longevity assumptions in scenario models.
+
+        The measures are the probability of dying within the year (qx), the probability of surviving it (px), the
+        age-specific death rate (mx), the number of survivors out of 100,000 births (lx), the number dying (dx), the
+        person-years lived within the year (Lx) and above the age (Tx), and the life expectancy at the age (ex).
+        Probabilities and rates are fractions; the others are counts or years.
 
         For countries outside Europe the UN World Population Prospects
         publish life tables for every country (bulk files at population.un.org/wpp), and the
@@ -1920,9 +1925,12 @@ class JobsEconomics:
         Args:
             countries (list[str] | str | None, optional): The countries to include, e.g.
                 'Germany' or ['Germany', 'France']. Defaults to None, which retrieves every country.
-            measure (str, optional): The life table measure, see above. Defaults to
+            measure (str, optional): The life table measure. Options are: "death_probability" (qx),
+                "survival_probability" (px), "death_rate" (mx), "survivors" (lx), "deaths" (dx),
+                "person_years" (Lx), "total_person_years" (Tx), "life_expectancy" (ex). Defaults to
                 "death_probability".
-            sex (str, optional): "total", "male" or "female". Defaults to "total".
+            sex (str, optional): The sex of the population. Options are: "total" (everyone), "male"
+                (men), "female" (women). Defaults to "total".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.

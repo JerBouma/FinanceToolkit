@@ -184,10 +184,10 @@ def _parse_observations(text: str) -> list[tuple[str, str, str, float]]:
 
 def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Retrieves the monthly annual rate of change of the consumer price index the IMF
-    collects from national statistical offices, for around 160 countries, including many
-    that no other source in the Finance Toolkit covers. Only the months that are not cached
-    yet are requested.
+    Retrieves the monthly annual rate of change of the consumer price index the IMF collects from national statistical
+    offices, for around 160 countries, including many that no other source in the Finance Toolkit covers.
+
+    Only the months that are not cached yet are requested.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -299,8 +299,9 @@ def collect_government_finance(
     dataflow: str, key: str, start_date: str, end_date: str, description: str
 ) -> pd.DataFrame:
     """
-    Retrieves an IMF dataset for every country it covers, with a column per country and
-    indicator. Only the periods that are not cached yet are requested.
+    Retrieves an IMF dataset for every country it covers, with a column per country and indicator.
+
+    Only the periods that are not cached yet are requested.
 
     Args:
         dataflow (str): The dataflow, e.g. "QGFS".
@@ -372,22 +373,23 @@ def get_government_interest(
     period: str, start_date: str, end_date: str, denominator: str | None = None
 ) -> pd.DataFrame:
     """
-    Retrieves the interest payable by the general government (GFS item 24, D.41 in the
-    national accounts), on an accrual basis and before interest received is netted, for
-    around 40 economies, including the United States, the euro area and its members, the
-    United Kingdom, Canada, Australia, Brazil, Turkey and Indonesia.
+    Retrieve the interest payable by the general government (GFS item 24, D.41 in the national accounts) for around 40
+    economies: what governments pay on their debt.
+
+    The interest is on an accrual basis and before interest received is netted; the economies include the United
+    States, the euro area and its members, the United Kingdom, Canada, Australia, Brazil, Turkey and Indonesia.
 
     As a ratio, the interest is divided by the GDP or the government revenue of the same
     period. Quarterly ratios cover the four quarters up to and including each quarter, so
     they are annual figures without the seasonal swings of tax receipts and GDP.
 
     Args:
-        period (str): "quarterly" or "yearly".
+        period (str): The frequency of the data. Options are: "quarterly" (quarterly data), "yearly" (yearly data).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
-        denominator (str | None): None for the interest itself in millions of national
-            currency, "gdp" for the share of GDP or "revenue" for the share of government
-            revenue. Defaults to None.
+        denominator (str | None): What the interest is divided by. Options are: None (the interest itself in millions
+            of national currency), "gdp" (the share of GDP), "revenue" (the share of government revenue). Defaults to
+            None.
 
     Returns:
         pd.DataFrame: The interest or its ratio (a decimal, 0.04 for 4%), indexed by quarter
@@ -448,9 +450,8 @@ def get_expenditure_by_function(
     functions: list[str], start_date: str, end_date: str, to_gdp: bool = False
 ) -> pd.DataFrame:
     """
-    Retrieves the yearly general government expenditure by function, classified by the
-    United Nations' Classification of the Functions of Government (COFOG), for around 180
-    countries.
+    Retrieves the yearly general government expenditure by function, classified by the United Nations' Classification
+    of the Functions of Government (COFOG), for around 180 countries.
 
     Args:
         functions (list[str]): The functions, keys of EXPENDITURE_FUNCTIONS.
@@ -509,9 +510,8 @@ def get_net_international_investment_position(
     period: str, start_date: str, end_date: str, to_gdp: bool = False
 ) -> pd.DataFrame:
     """
-    Retrieves the net international investment position (external financial assets less
-    liabilities) at the end of each quarter or year, for about 130 economies quarterly and
-    175 yearly, and the euro area.
+    Retrieves the net international investment position (external financial assets less liabilities) at the end of
+    each quarter or year, for about 130 economies quarterly and 175 yearly, and the euro area.
 
     As a share of GDP, the position is converted to national currency at the IMF's
     end-of-period exchange rate and divided by the nominal GDP in national currency of the
@@ -521,7 +521,7 @@ def get_net_international_investment_position(
     convention of Eurostat's macroeconomic imbalance procedure scoreboard.
 
     Args:
-        period (str): "quarterly" or "yearly".
+        period (str): The frequency of the data. Options are: "quarterly" (quarterly data), "yearly" (yearly data).
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
         to_gdp (bool): Whether to return the position as a share of GDP (a decimal, -0.35

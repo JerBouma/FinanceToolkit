@@ -36,22 +36,26 @@ def get_james_stein_expected_returns(
     returns: pd.DataFrame,
 ) -> tuple[pd.Series, float]:
     """
-    The James-Stein estimator of the expected returns: every average return pulled
-    towards the grand mean, the average of the average returns, by a shrinkage intensity
-    that grows as the averages differ less compared to their estimation error.
+    The James-Stein estimator of the expected returns.
 
-    With μ̂ the average returns of the T periods of the N assets, μ̄ their average and
-    λ_1, ..., λ_N the eigenvalues of the sample covariance matrix S (ddof=1), the estimate
-    is μ = (1 - β) μ̂ + β μ̄ 1 with β = (Σ λ_k - 2 max λ_k) / (T ‖μ̂ - μ̄ 1‖²), clipped to
-    [0, 1] (the positive-part James-Stein estimator). This is the form of Meucci (2005)
-    for an unknown covariance matrix. Referenced against skfolio's ShrunkMu (JAMES_STEIN)
-    and Riskfolio-Lib's mean_vector (method="JS"), which do not clip β; that only differs
-    when the averages lie so close together that β leaves [0, 1]. With two assets
-    Σ λ_k - 2 max λ_k is negative, so the estimator needs at least three assets to shrink.
+    Every average return pulled towards the grand mean, the average of the average returns,
+    by a shrinkage intensity that grows as the averages differ less compared to their
+    estimation error. With μ̂ the average returns of the T periods of the N assets, μ̄ their
+    average and λ_1, ..., λ_N the eigenvalues of the sample covariance matrix S (ddof=1),
+    the estimate is μ = (1 - β) μ̂ + β μ̄ 1 with β = (Σ λ_k - 2 max λ_k) / (T ‖μ̂ - μ̄ 1‖²),
+    clipped to [0, 1] (the positive-part James-Stein estimator). This is the form of Meucci
+    (2005) for an unknown covariance matrix. With two assets Σ λ_k - 2 max λ_k is negative,
+    so the estimator needs at least three assets to shrink.
 
     See James, W. and Stein, C. (1961), "Estimation with Quadratic Loss", Proceedings of
     the Fourth Berkeley Symposium on Mathematical Statistics and Probability, 1, 361-379,
     and Meucci, A. (2005), Risk and Asset Allocation, Springer, chapter 4.
+
+    Referenced against:
+    - skfolio, ShrunkMu (James-Stein): https://skfolio.org/generated/skfolio.moments.ShrunkMu.html
+
+    Shares similar logic:
+    - Riskfolio-Lib, mean_vector (James-Stein): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.mean_vector
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -60,6 +64,10 @@ def get_james_stein_expected_returns(
     Returns:
         tuple[pd.Series, float]: The expected return per asset per period and the
             shrinkage intensity β between 0 (the averages) and 1 (the grand mean).
+
+    Notes:
+    - Unlike skfolio's ShrunkMu and Riskfolio-Lib's mean_vector, β is clipped to [0, 1];
+      that only differs when the averages lie so close together that β leaves [0, 1].
     """
     average = returns.mean().to_numpy(dtype=float)
     grand_mean = average.mean()
@@ -83,12 +91,13 @@ def get_bodnar_okhrin_parolya_expected_returns(
     returns: pd.DataFrame,
 ) -> tuple[pd.Series, float, float]:
     """
-    The shrinkage estimator of the expected returns of Bodnar, Okhrin and Parolya (2019):
-    μ = α μ̂ + β b, a combination of the average returns μ̂ and a target b with the
-    weights α and β that are optimal in the sense of the quadratic loss when the number
-    of assets grows with the number of periods. The target is the grand mean, the average
-    of the average returns; since α and β scale with b, any multiple of a vector of ones
-    gives the same estimate.
+    The shrinkage estimator of the expected returns of Bodnar, Okhrin and Parolya (2019).
+
+    Μ = α μ̂ + β b, a combination of the average returns μ̂ and a target b with the weights
+    α and β that are optimal in the sense of the quadratic loss when the number of assets
+    grows with the number of periods. The target is the grand mean, the average of the
+    average returns; since α and β scale with b, any multiple of a vector of ones gives the
+    same estimate.
 
     With S the sample covariance matrix (ddof=1), T periods and N assets, u = μ̂'S⁻¹μ̂,
     v = μ̂'S⁻¹b and w = b'S⁻¹b:
@@ -96,11 +105,14 @@ def get_bodnar_okhrin_parolya_expected_returns(
     - α = ((u - N / (T - N)) w - v²) / (u w - v²)
     - β = (1 - α) v / w
 
-    Referenced against skfolio's ShrunkMu (BODNAR_OKHRIN) and Riskfolio-Lib's mean_vector
-    (method="BOP"), whose values it matches with the grand mean as the target.
-
     See Bodnar, T., Okhrin, O. and Parolya, N. (2019), "Optimal Shrinkage Estimator for
     High-Dimensional Mean Vector", Journal of Multivariate Analysis, 170, 63-79.
+
+    Referenced against:
+    - skfolio, ShrunkMu (Bodnar-Okhrin): https://skfolio.org/generated/skfolio.moments.ShrunkMu.html
+
+    Shares similar logic:
+    - Riskfolio-Lib, mean_vector (Bodnar-Okhrin-Parolya): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.mean_vector
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -135,19 +147,22 @@ def get_shrunk_covariance(
 ) -> pd.DataFrame:
     """
     The covariance matrix shrunk with a fixed intensity towards the identity matrix scaled
-    by the average variance: Σ = (1 - δ) S + δ (tr(S) / N) I, with S the sample covariance
-    matrix (ddof=1) of the N assets. Unlike Ledoit-Wolf and OAS, the intensity δ is
-    chosen rather than estimated.
+    by the average variance.
 
-    Referenced against PyPortfolioOpt's CovarianceShrinkage.shrunk_covariance, whose
-    values it matches; that defaults to δ = 0.2. scikit-learn's ShrunkCovariance, skfolio's ShrunkCovariance and
-    Riskfolio-Lib's covar_matrix (method="shrunk") default to δ = 0.1, the default here,
-    and shrink the maximum likelihood covariance (divided by T rather than T - 1), which
-    is T / (T - 1) times smaller.
+    Σ = (1 - δ) S + δ (tr(S) / N) I, with S the sample covariance matrix (ddof=1) of the N
+    assets. Unlike Ledoit-Wolf and OAS, the intensity δ is chosen rather than estimated.
 
     See Ledoit, O. and Wolf, M. (2004), "A Well-Conditioned Estimator for Large-Dimensional
     Covariance Matrices", Journal of Multivariate Analysis, 88(2), 365-411, for the
     target.
+
+    Referenced against:
+    - PyPortfolioOpt, CovarianceShrinkage.shrunk_covariance: https://pyportfolioopt.readthedocs.io/en/latest/RiskModels.html#pypfopt.risk_models.CovarianceShrinkage.shrunk_covariance
+
+    Shares similar logic:
+    - scikit-learn, ShrunkCovariance: https://scikit-learn.org/stable/modules/generated/sklearn.covariance.ShrunkCovariance.html
+    - skfolio, ShrunkCovariance: https://skfolio.org/generated/skfolio.moments.ShrunkCovariance.html
+    - Riskfolio-Lib, covar_matrix (fixed shrinkage): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.covar_matrix
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -157,6 +172,12 @@ def get_shrunk_covariance(
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
+
+    Notes:
+    - PyPortfolioOpt's shrunk_covariance defaults to δ = 0.2. scikit-learn's
+      ShrunkCovariance, skfolio's ShrunkCovariance and Riskfolio-Lib's covar_matrix default
+      to δ = 0.1, the default here, and shrink the maximum likelihood covariance (divided by
+      T rather than T - 1), which is T / (T - 1) times smaller.
     """
     if not 0 <= shrinkage <= 1:
         raise ValueError("The shrinkage intensity must lie between 0 and 1.")
@@ -171,13 +192,15 @@ def get_shrunk_covariance(
 
 def get_nearest_correlation(correlation: np.ndarray) -> np.ndarray:
     """
-    The correlation matrix itself when it is positive definite, otherwise the nearest one
-    by eigenvalue clipping: the eigenvalues below 1e-13 are raised to it and the matrix is
-    rescaled to a unit diagonal. Shares similar logic as skfolio's cov_nearest
-    (higham=False).
+    The correlation matrix itself when it is positive definite, otherwise the nearest one by
+    eigenvalue clipping.
 
-    See Higham, N. J. (2002), "Computing the Nearest Correlation Matrix - A Problem from
-    Finance", IMA Journal of Numerical Analysis, 22(3), 329-343.
+    The eigenvalues below 1e-13 are raised to it and the matrix is rescaled to a unit
+    diagonal. See Higham, N. J. (2002), "Computing the Nearest Correlation Matrix - A
+    Problem from Finance", IMA Journal of Numerical Analysis, 22(3), 329-343.
+
+    Shares similar logic:
+    - skfolio, cov_nearest (eigenvalue clipping): https://skfolio.org/generated/skfolio.utils.stats.cov_nearest.html
 
     Args:
         correlation (np.ndarray): A symmetric matrix with a unit diagonal.
@@ -199,46 +222,57 @@ def get_gerber_covariance(
     returns: pd.DataFrame, threshold: float = 0.5, statistic: int = 1
 ) -> pd.DataFrame:
     """
-    The Gerber covariance matrix: Σ = D G D, with D the standard deviations (ddof=1) and G
-    the Gerber statistic, a correlation that counts only the periods in which returns move
-    beyond a threshold. A return r_ti is up when r_ti ≥ c σ_i and down when r_ti ≤ -c σ_i,
-    with c the threshold; small moves, which are mostly noise, do not count, and neither
-    does the size of large ones, so a few extreme returns do not dominate it.
+    The Gerber covariance matrix.
+
+    Σ = D G D, with D the standard deviations (ddof=1) and G the Gerber statistic, a
+    correlation that counts only the periods in which returns move beyond a threshold. A
+    return r_ti is up when r_ti ≥ c σ_i and down when r_ti ≤ -c σ_i, with c the threshold;
+    small moves, which are mostly noise, do not count, and neither does the size of large
+    ones, so a few extreme returns do not dominate it.
 
     Per pair of assets, n_c counts the periods in which both moved beyond the threshold in
     the same direction (concordant), n_d those in opposite directions (discordant) and n_n
     those in which neither did. With U and D the T × N indicators of up and down moves:
 
-    - Statistic 0: g_ij = (n_c - n_d) / (n_c + n_d), the original pairwise statistic,
-      which need not give a positive semidefinite matrix.
-    - Statistic 1: g_ij = (n_c - n_d) / (T - n_n), referenced against skfolio's
-      GerberCovariance (psd_variant=True, its default) and Riskfolio-Lib's
-      gerber_cov_stat1.
-    - Statistic 2: G = H / √(diag(H) diag(H)'), with H = U'U + D'D - U'D - D'U, the
-      matrix form that is positive semidefinite by construction, referenced against
-      Riskfolio-Lib's gerber_cov_stat2 and skfolio's GerberCovariance with
-      psd_variant=False.
+    - Statistic 0: g_ij = (n_c - n_d) / (n_c + n_d), the original pairwise statistic, which
+      need not give a positive semidefinite matrix.
+    - Statistic 1: g_ij = (n_c - n_d) / (T - n_n).
+    - Statistic 2: G = H / √(diag(H) diag(H)'), with H = U'U + D'D - U'D - D'U, the matrix
+      form that is positive semidefinite by construction.
 
     A matrix that is not positive definite is replaced by the nearest one by clipping the
-    eigenvalues of G (see get_nearest_correlation), as in skfolio. The thresholds apply
-    to the returns themselves, not to their deviations from the mean, as in the paper and
-    both libraries. Unlike the libraries, which take the standard deviations with ddof=0,
-    they take ddof=1 here, which gives their result with the threshold multiplied by
-    √(T / (T - 1)) and the covariance by T / (T - 1).
+    eigenvalues of G (see get_nearest_correlation). The thresholds apply to the returns
+    themselves, not to their deviations from the mean, as in the paper.
 
     See Gerber, S., Markowitz, H. M., Ernst, P. A., Miao, Y., Javid, B. and Sargen, P.
     (2022), "The Gerber Statistic: A Robust Co-Movement Measure for Portfolio
     Optimization", The Journal of Portfolio Management, 48(3), 87-102.
+
+    Referenced against:
+    - skfolio, GerberCovariance (statistics 1 and 2): https://skfolio.org/generated/skfolio.moments.GerberCovariance.html
+    - Riskfolio-Lib, gerber_cov_stat0 (statistic 0): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#GerberStatistic.gerber_cov_stat0
+
+    Shares similar logic:
+    - Riskfolio-Lib, gerber_cov_stat1 (statistic 1): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#GerberStatistic.gerber_cov_stat1
+    - Riskfolio-Lib, gerber_cov_stat2 (statistic 2): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#GerberStatistic.gerber_cov_stat2
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         threshold (float, optional): The threshold c, in standard deviations, between 0
             and 1. Defaults to 0.5.
-        statistic (int, optional): The Gerber statistic: 0, 1 or 2. Defaults to 1.
+        statistic (int, optional): The Gerber statistic. Options are: 0 (the original statistic), 1
+            (the positive semidefinite variant), 2 (the matrix form). Defaults to 1.
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
+
+    Notes:
+    - Unlike skfolio and Riskfolio-Lib, which take the standard deviations with ddof=0, the
+      standard deviations here take ddof=1, which gives their result with the threshold
+      multiplied by √(T / (T - 1)) and the covariance by T / (T - 1). skfolio's
+      GerberCovariance gives statistic 1 by default and statistic 2 without its positive
+      semidefinite variant.
     """
     if not 0 < threshold < 1:
         raise ValueError("The Gerber threshold must lie between 0 and 1.")
@@ -276,29 +310,30 @@ def get_detoned_covariance(
     returns: pd.DataFrame, components: int = 1, covariance: pd.DataFrame | None = None
 ) -> pd.DataFrame:
     """
-    The detoned covariance matrix: the sample covariance (ddof=1), or another estimate,
-    with the first principal components of its correlation matrix, the market, removed.
-    With λ_k and v_k the eigenvalues and eigenvectors of the correlation matrix C in
-    descending order, the detoned correlation is C - Σ_(k ≤ m) λ_k v_k v_k' for the m
-    components, rescaled to a unit diagonal and turned back into a covariance with the
-    standard deviations of the estimate.
+    The detoned covariance matrix.
 
-    López de Prado (2020, section 2.6) detones the denoised correlation matrix: pass the
-    denoised covariance (optimization_model.get_denoised_covariance) as the covariance, and
-    the eigenvalues and eigenvectors are those of its correlation matrix.
+    It is the sample covariance (ddof=1), or another estimate, with the first principal
+    components of its correlation matrix, the market, removed. With λ_k and v_k the
+    eigenvalues and eigenvectors of the correlation matrix C in descending order, the
+    detoned correlation is C - Σ_(k ≤ m) λ_k v_k v_k' for the m components, rescaled to a
+    unit diagonal and turned back into a covariance with the standard deviations of the
+    estimate. López de Prado (2020, section 2.6) detones the denoised correlation matrix:
+    pass the denoised covariance (optimization_model.get_denoised_covariance) as the
+    covariance, and the eigenvalues and eigenvectors are those of its correlation matrix.
 
     The market component makes all assets look alike; without it, the clusters of assets
     that move together for other reasons stand out. The detoned matrix has rank N - m, so
-    it is singular: it suits clustering (codependence="detoned") but cannot be inverted
+    it is singular: it suits clustering (as the detoned codependence) but cannot be inverted
     by an optimizer.
 
-    This is the detoning of López de Prado (2020), applied to the correlation matrix
-    itself rather than to a denoised one. Referenced against skfolio's DetoneCovariance on
-    the sample covariance, whose values it matches (it also raises the zero eigenvalues to
-    1e-13).
+    This is the detoning of López de Prado (2020), applied to the correlation matrix itself
+    rather than to a denoised one; like skfolio, the zero eigenvalues are raised to 1e-13.
 
     See López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge
     University Press, chapter 2.
+
+    Referenced against:
+    - skfolio, DetoneCovariance (sample covariance): https://skfolio.org/generated/skfolio.moments.DetoneCovariance.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -343,12 +378,13 @@ def get_minimum_covariance_determinant(
     seed: int | None = 0,
 ) -> pd.DataFrame:
     """
-    The Minimum Covariance Determinant (MCD) covariance matrix: the covariance of the h
-    periods whose covariance matrix has the smallest determinant, so that the periods far
-    from the bulk of the returns (crashes, squeezes, data errors) do not inflate it. With
-    T periods and N assets, h = ⌊(T + N + 1) / 2⌋ by default, the subset size with the
-    highest breakdown point: the estimate withstands up to ⌊(T - N + 1) / 2⌋ outlying
-    periods (Rousseeuw, 1985).
+    The Minimum Covariance Determinant (MCD) covariance matrix.
+
+    It is the covariance of the h periods whose covariance matrix has the smallest
+    determinant, so that the periods far from the bulk of the returns (crashes, squeezes,
+    data errors) do not inflate it. With T periods and N assets, h = ⌊(T + N + 1) / 2⌋ by
+    default, the subset size with the highest breakdown point: the estimate withstands up to
+    ⌊(T - N + 1) / 2⌋ outlying periods (Rousseeuw, 1985).
 
     The subset is found with the FAST-MCD algorithm of Rousseeuw and Van Driessen (1999).
     Its building block is the C-step (concentration step): from the mean μ and covariance
@@ -378,12 +414,8 @@ def get_minimum_covariance_determinant(
     Unlike the median rule of Rousseeuw and Van Driessen (1999), med d²_t / χ²_N(0.5), the
     consistency factors are the exact ones at the normal distribution, and the reweighted
     covariance is made consistent as well, as in robustbase's covMcd and scikit-learn's
-    MinCovDet. Referenced against scikit-learn's MinCovDet, which starts from 30 random
-    subsets of h periods: the random subsets differ, so the two can end in different
-    local minima of the determinant, which on small samples moves the estimate by a few
-    percent; periods far from the bulk are flagged by both. With reweight=False it is the
-    raw covariance of the best subset, without the consistency factor, as
-    PyPortfolioOpt's risk_models.min_cov_determinant returns it.
+    MinCovDet. Without reweighting it is the raw covariance of the best subset, without the
+    consistency factor.
 
     See Rousseeuw, P. J. (1985), "Multivariate Estimation with High Breakdown Point", in
     Grossmann, W., Pflug, G., Vincze, I. and Wertz, W. (eds.), Mathematical Statistics and
@@ -392,6 +424,9 @@ def get_minimum_covariance_determinant(
     212-223; and Croux, C. and Haesbroeck, G. (1999), "Influence Function and Efficiency of
     the Minimum Covariance Determinant Scatter Matrix Estimator", Journal of Multivariate
     Analysis, 71(2), 161-190.
+
+    Referenced against:
+    - scikit-learn, MinCovDet: https://scikit-learn.org/stable/modules/generated/sklearn.covariance.MinCovDet.html
 
     Args:
         returns (pd.DataFrame): The returns per period, at least two assets, without missing
@@ -405,6 +440,13 @@ def get_minimum_covariance_determinant(
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
+
+    Notes:
+    - Unlike scikit-learn's MinCovDet, which starts from 30 random subsets of h periods, the
+      search starts from 500: the random subsets differ, so the two can end in different
+      local minima of the determinant, which on small samples moves the estimate by a few
+      percent; periods far from the bulk are flagged by both. Without reweighting it is the
+      covariance PyPortfolioOpt's min_cov_determinant returns.
     """
     data = returns.to_numpy(dtype=float)
     periods, assets = data.shape
@@ -536,9 +578,10 @@ def get_triangulated_maximally_filtered_graph(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     The Triangulated Maximally Filtered Graph (TMFG) of a matrix of non-negative weights
-    (such as similarities between assets): a planar graph that keeps the strongest links,
-    3(N - 2) of the N(N - 1) / 2, built from 4-cliques (tetrahedra) joined by 3-cliques
-    (triangles, the separators).
+    (such as similarities between assets).
+
+    It is a planar graph that keeps the strongest links, 3(N - 2) of the N(N - 1) / 2, built
+    from 4-cliques (tetrahedra) joined by 3-cliques (triangles, the separators).
 
     The graph grows by T2 moves (Massara, Di Matteo and Aste, 2017), each of which
     inserts a vertex into a triangular face:
@@ -552,13 +595,13 @@ def get_triangulated_maximally_filtered_graph(
       with the largest gain: the face becomes a separator, the face and the vertex form a
       new 4-clique, and the face splits into three new faces that hold the vertex.
 
-    Ties in the gain go to the earliest face and then to the lowest vertex index. Shares
-    similar logic as Riskfolio-Lib's PMFG_T2s, which gives the same graph on the test
-    data; it compares the gains rounded to six decimals, so two gains within 1e-6 of each
-    other can make it choose another face.
+    Ties in the gain go to the earliest face and then to the lowest vertex index.
 
     See Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
     Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Shares similar logic:
+    - Riskfolio-Lib, PMFG_T2s: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#DBHT.PMFG_T2s
 
     Args:
         weights (np.ndarray): A symmetric N × N matrix of non-negative weights, N ≥ 4.
@@ -566,6 +609,11 @@ def get_triangulated_maximally_filtered_graph(
     Returns:
         tuple[np.ndarray, np.ndarray]: The N - 3 4-cliques (rows of four vertex indices)
         and the N - 4 separators (rows of three vertex indices).
+
+    Notes:
+    - Riskfolio-Lib's PMFG_T2s gives the same graph on the test data; it compares the gains
+      rounded to six decimals, so two gains within 1e-6 of each other can make it choose
+      another face.
     """
     vertices = len(weights)
     if vertices < 4:  # noqa: PLR2004
@@ -594,11 +642,13 @@ def get_triangulated_maximally_filtered_graph(
 
 def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
     """
-    The j-LoGo covariance matrix: the inverse of the sparse inverse covariance (precision
-    matrix) that the Local-Global (LoGo) method of Barfuss, Massara, Di Matteo and Aste
-    (2016) builds on the TMFG of the correlations. Two assets that the planar graph does
-    not link are conditionally independent given the others, so most of the precision
-    matrix is zero and far fewer parameters are estimated than in the full matrix.
+    The j-LoGo covariance matrix.
+
+    It is the inverse of the sparse inverse covariance (precision matrix) that the
+    Local-Global (LoGo) method of Barfuss, Massara, Di Matteo and Aste (2016) builds on the
+    TMFG of the correlations. Two assets that the planar graph does not link are
+    conditionally independent given the others, so most of the precision matrix is zero and
+    far fewer parameters are estimated than in the full matrix.
 
     The TMFG is a tree of 4-cliques joined by separators, and for such a graph the
     precision matrix of a Gaussian follows from the local covariances alone. With S the
@@ -609,15 +659,17 @@ def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
       its vertices, over the 4-cliques C and the separators S.
     - Σ = J⁻¹.
 
-    The similarity (1 + ρ_ij) / 2 = 1 - d²_ij, with d_ij = √((1 - ρ_ij) / 2) the
-    correlation distance, is the choice of Riskfolio-Lib's covar_matrix(method="jlogo");
-    referenced against it, the two agree to 1e-10. With four or fewer assets the graph
-    links every pair and the estimate is the sample covariance.
+    The similarity (1 + ρ_ij) / 2 = 1 - d²_ij, with d_ij = √((1 - ρ_ij) / 2) the correlation
+    distance, is the choice of Riskfolio-Lib's j-LoGo covariance. With four or fewer assets
+    the graph links every pair and the estimate is the sample covariance.
 
     See Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Parsimonious
     Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306, and
     Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
     Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Referenced against:
+    - Riskfolio-Lib, covar_matrix (j-LoGo): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.covar_matrix
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -649,8 +701,9 @@ def get_geodesic_shrinkage_covariance(
 ) -> pd.DataFrame:
     """
     The covariance matrix shrunk towards a target along the geodesic of the positive
-    definite matrices rather than along a straight line. With S the sample covariance
-    (ddof=1), T the target and α the shrinkage intensity:
+    definite matrices rather than along a straight line.
+
+    With S the sample covariance (ddof=1), T the target and α the shrinkage intensity:
 
     - Σ(α) = S^(1/2) (S^(-1/2) T S^(-1/2))^α S^(1/2), so Σ(0) = S and Σ(1) = T.
     - For the scaled identity T = (tr(S) / N) I, the eigenvectors of S are kept and its
@@ -664,21 +717,21 @@ def get_geodesic_shrinkage_covariance(
     that is not positive definite is first replaced by the nearest one (see
     get_nearest_correlation).
 
-    Referenced against skfolio's GeodesicShrinkageCovariance, whose values it matches on
-    its default EmpiricalCovariance (ddof=1), with the same default intensity of 0.1.
-
     See Bhatia, R. (2007), Positive Definite Matrices, Princeton University Press, and
     Musolas, A., Smith, S. T. and Marzouk, Y. (2021), "Geodesically Parameterized
     Covariance Estimation", SIAM Journal on Matrix Analysis and Applications, 42(2),
     528-556.
+
+    Referenced against:
+    - skfolio, GeodesicShrinkageCovariance: https://skfolio.org/generated/skfolio.moments.GeodesicShrinkageCovariance.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         shrinkage (float, optional): The shrinkage intensity α between 0 (the sample
             covariance) and 1 (the target). Defaults to 0.1.
-        target (str, optional): The target: "scaled_identity" or "diagonal". Defaults to
-            "scaled_identity".
+        target (str, optional): The target. Options are: "scaled_identity" (the identity scaled by
+            the average variance), "diagonal" (the variances). Defaults to "scaled_identity".
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
@@ -717,8 +770,10 @@ def get_regime_adjusted_exponential_covariance(
     returns: pd.DataFrame, half_life: float = 40
 ) -> tuple[pd.DataFrame, float]:
     """
-    The exponentially weighted covariance matrix rescaled by a short-term volatility
-    update (STVU): a multiplier φ that compares the risk the covariance predicted with the
+    The exponentially weighted covariance matrix rescaled by a short-term volatility update
+    (STVU).
+
+    The update is a multiplier φ that compares the risk the covariance predicted with the
     risk that followed, so the estimate catches up when volatility changes faster than the
     exponential average can follow.
 
@@ -738,15 +793,14 @@ def get_regime_adjusted_exponential_covariance(
     covariance (the Mahalanobis distance), since the directions of the smallest
     eigenvalues, which an inverse volatility portfolio hardly holds, are estimated worst.
 
-    The short-term volatility update follows Paleologo (2025). Referenced against
-    skfolio's RegimeAdjustedEWCovariance, whose values it matches with its defaults
-    (half_life=40, the PORTFOLIO target with inverse volatility weights, the FIRST_MOMENT
-    method, the multiplier clipped to (0.7, 1.6), assume_centered=True, no HAC
-    correction).
+    The short-term volatility update follows Paleologo (2025).
 
     See Paleologo, G. A. (2025), The Elements of Quantitative Investing, Wiley Finance,
     and Hawkins, D. M. and Maboudou-Tchao, E. M. (2008), "Multivariate Exponentially
     Weighted Moving Covariance Matrix", Technometrics, 50(2), 155-166.
+
+    Referenced against:
+    - skfolio, RegimeAdjustedEWCovariance (its defaults): https://skfolio.org/generated/skfolio.moments.RegimeAdjustedEWCovariance.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -756,6 +810,12 @@ def get_regime_adjusted_exponential_covariance(
 
     Returns:
         tuple[pd.DataFrame, float]: The covariance matrix per period and the multiplier φ.
+
+    Notes:
+    - skfolio's RegimeAdjustedEWCovariance gives the same values with its defaults: a
+      half-life of 40, the portfolio target with inverse volatility weights, the first
+      moment method, the multiplier clipped to 0.7 and 1.6, returns taken around zero and no
+      HAC correction.
     """
     if half_life <= 0:
         raise ValueError("The half-life must be positive.")
@@ -801,9 +861,11 @@ def get_regime_adjusted_exponential_covariance(
 
 def get_distance_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     """
-    The distance correlation of every pair of assets, which is zero only when their
-    returns are independent, so it also captures non-linear co-movement that the Pearson
-    correlation misses. It lies between 0 and 1.
+    The distance correlation of every pair of assets: how much they depend on each other,
+    linearly or not.
+
+    It is zero only when their returns are independent, so it also captures non-linear
+    co-movement that the Pearson correlation misses. It lies between 0 and 1.
 
     With a_st = |x_s - x_t| the distances between the returns of one asset in periods s
     and t, A the doubly centred distances (A_st = a_st - ā_s. - ā_.t + ā_..), and B the
@@ -812,12 +874,17 @@ def get_distance_correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     - dCov²(x, y) = (1 / T²) Σ A_st B_st
     - dCor(x, y) = √(dCov²(x, y) / √(dCov²(x, x) dCov²(y, y)))
 
-    Referenced against skfolio's DistanceCorrelation and Riskfolio-Lib's dcorr_matrix,
-    whose values it matches. It builds a T × T matrix per asset, so it grows with the
+    It builds a T × T matrix per asset, so it grows with the
     square of the number of periods.
 
     See Székely, G. J., Rizzo, M. L. and Bakirov, N. K. (2007), "Measuring and Testing
     Dependence by Correlation of Distances", The Annals of Statistics, 35(6), 2769-2794.
+
+    Referenced against:
+    - skfolio, DistanceCorrelation: https://skfolio.org/generated/skfolio.distance.DistanceCorrelation.html
+
+    Shares similar logic:
+    - Riskfolio-Lib, dcorr_matrix: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.dcorr_matrix
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -859,14 +926,12 @@ def get_number_of_bins(
     """
     The number of bins of the histograms that the mutual information is estimated from.
 
-    - "freedman": the rule of Freedman and Diaconis (1981), ⌈(max - min) / (2 IQR /
-      T^(1/3))⌉ per series (5 for a series without an interquartile range), and the
-      larger of the two for a pair, also the default of skfolio's MutualInformation.
-    - "hacine_gharbi": the rule of Hacine-Gharbi et al. (2012) for one series,
-      round(z / 6 + 2 / (3 z) + 1 / 3) with z = (8 + 324 T + 12 √(36 T + 729 T²))^(1/3),
-      and of Hacine-Gharbi and Ravier (2018) for a pair with correlation ρ,
-      round(√(1 + √(1 + 24 T / (1 - ρ²))) / √2), the choice of López de Prado (2020),
-      as in Riskfolio-Lib's numBins.
+    - The rule of Freedman and Diaconis (1981), ⌈(max - min) / (2 IQR / T^(1/3))⌉ per series
+      (5 for a series without an interquartile range), and the larger of the two for a pair.
+    - The rule of Hacine-Gharbi et al. (2012) for one series, round(z / 6 + 2 / (3 z) + 1 /
+      3) with z = (8 + 324 T + 12 √(36 T + 729 T²))^(1/3), and of Hacine-Gharbi and Ravier
+      (2018) for a pair with correlation ρ, round(√(1 + √(1 + 24 T / (1 - ρ²))) / √2), the
+      choice of López de Prado (2020).
 
     See Freedman, D. and Diaconis, P. (1981), "On the Histogram as a Density Estimator:
     L2 Theory", Zeitschrift für Wahrscheinlichkeitstheorie und verwandte Gebiete, 57,
@@ -874,11 +939,16 @@ def get_number_of_bins(
     Bi-histogram for Joint Entropy Estimation Using Mean Square Error Minimization",
     Pattern Recognition Letters, 101, 21-28.
 
+    Shares similar logic:
+    - skfolio, MutualInformation (Freedman-Diaconis): https://skfolio.org/generated/skfolio.distance.MutualInformation.html
+    - Riskfolio-Lib, numBins (Hacine-Gharbi): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.numBins
+
     Args:
         first (np.ndarray): The returns of the first asset.
         second (np.ndarray | None, optional): The returns of the second asset, for a
             pair. Defaults to None.
-        method (str, optional): "freedman" or "hacine_gharbi". Defaults to "freedman".
+        method (str, optional): The rule. Options are: "freedman" (Freedman and Diaconis),
+            "hacine_gharbi" (Hacine-Gharbi). Defaults to "freedman".
 
     Returns:
         int: The number of bins.
@@ -915,10 +985,12 @@ def get_mutual_information_matrix(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     The mutual information and the variation of information of every pair of assets,
-    estimated from histograms of their returns. The mutual information I(X, Y) =
-    H(X) + H(Y) - H(X, Y) measures how much knowing one return tells about the other,
-    linear or not; the variation of information VI(X, Y) = H(X) + H(Y) - 2 I(X, Y) is the
-    information they do not share, a metric distance between the assets.
+    estimated from histograms of their returns.
+
+    The mutual information I(X, Y) = H(X) + H(Y) - H(X, Y) measures how much knowing one
+    return tells about the other, linear or not; the variation of information VI(X, Y) =
+    H(X) + H(Y) - 2 I(X, Y) is the information they do not share, a metric distance between
+    the assets.
 
     With p_ab the share of the periods in bin a of X and bin b of Y of the joint
     histogram, and p_a, p_b its margins (natural logarithms):
@@ -928,20 +1000,23 @@ def get_mutual_information_matrix(
     - normalized: I(X, Y) / min(H(X), H(Y)) between 0 and 1, and VI(X, Y) / H(X, Y)
       between 0 (identical) and 1 (independent)
 
-    Referenced against skfolio's MutualInformation (codependence and distance) and
-    Riskfolio-Lib's mutual_info_matrix and var_info_matrix, whose values it matches with
-    the same number of bins.
-
     See Meilă, M. (2007), "Comparing Clusterings - An Information Based Distance",
     Journal of Multivariate Analysis, 98(5), 873-895, and López de Prado, M. (2020),
     Machine Learning for Asset Managers, Cambridge University Press, chapter 3.
 
+    Referenced against:
+    - skfolio, MutualInformation: https://skfolio.org/generated/skfolio.distance.MutualInformation.html
+    - Riskfolio-Lib, mutual_info_matrix (Hacine-Gharbi bins): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.mutual_info_matrix
+
+    Shares similar logic:
+    - Riskfolio-Lib, var_info_matrix: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.var_info_matrix
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        bins (str | int, optional): The number of bins of every histogram, or the rule
-            that sets it per pair: "freedman" or "hacine_gharbi" (see
-            get_number_of_bins). Defaults to "freedman".
+        bins (str | int, optional): The number of bins of every histogram, or the rule that sets it
+            per pair (see get_number_of_bins). Options are: "freedman" (Freedman and Diaconis),
+            "hacine_gharbi" (Hacine-Gharbi), or an integer. Defaults to "freedman".
         normalize (bool, optional): Whether to normalize the mutual information by the
             smaller entropy and the variation of information by the joint entropy.
             Defaults to True.
@@ -993,21 +1068,22 @@ def get_lower_tail_dependence_matrix(
     returns: pd.DataFrame, alpha: float = 0.05
 ) -> pd.DataFrame:
     """
-    The lower tail dependence of every pair of assets: the share of the periods in which
-    one asset fell into its lowest alpha share of returns in which the other did too,
-    λ_ij = P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) at α = alpha, with q(α) the empirical
-    quantile. It measures how often assets crash together, which the correlation, an
-    average over all periods, does not show.
+    The lower tail dependence of every pair of assets.
+
+    It is the share of the periods in which one asset fell into its lowest alpha share of
+    returns in which the other did too, λ_ij = P(r_j ≤ q_j(α) | r_i ≤ q_i(α)) at α = alpha,
+    with q(α) the empirical quantile. It measures how often assets crash together, which the
+    correlation, an average over all periods, does not show.
 
     Each pair comes from the empirical estimator of get_tail_dependence_coefficient
-    (quantiles with linear interpolation). Riskfolio-Lib's ltdi_matrix takes the k-th
-    lowest return as the quantile, with k = ⌈T α⌉, and divides by k; both count the same
-    periods whenever the k-th lowest return is the last one at or below the interpolated
-    quantile.
+    (quantiles with linear interpolation).
 
     See Embrechts, P., McNeil, A. and Straumann, D. (2002), "Correlation and Dependence
     in Risk Management: Properties and Pitfalls", in Risk Management: Value at Risk and
     Beyond, Cambridge University Press, 176-223.
+
+    Referenced against:
+    - Riskfolio-Lib, ltdi_matrix: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/auxiliary.html#AuxFunctions.ltdi_matrix
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -1017,6 +1093,11 @@ def get_lower_tail_dependence_matrix(
 
     Returns:
         pd.DataFrame: The lower tail dependence matrix, with ones on the diagonal.
+
+    Notes:
+    - Riskfolio-Lib's ltdi_matrix takes the k-th lowest return as the quantile, with k = ⌈T
+      α⌉, and divides by k; both count the same periods whenever the k-th lowest return is
+      the last one at or below the interpolated quantile.
     """
     if not 0 < alpha < 0.5:  # noqa: PLR2004
         raise InvalidArgumentError(
@@ -1048,11 +1129,13 @@ def get_fast_threshold_clusters(
     remaining that is correlated above it with L. This repeats until every asset belongs
     to a cluster; a last single asset forms its own.
 
-    Referenced against ffn's calc_ftca, whose clusters it matches on the Pearson
-    correlation of the returns; any codependence matrix can be passed here.
+    Any codependence matrix can be passed, not only the Pearson correlation of the returns.
 
     See Varadi, D. (2013), "The Fast Threshold Clustering Algorithm (FTCA)", CSS
     Analytics.
+
+    Referenced against:
+    - ffn, calc_ftca: https://github.com/pmorissette/ffn/blob/v1.4.1/ffn/core.py#L2297
 
     Args:
         correlation (pd.DataFrame): The correlation (or another codependence) matrix of
@@ -1101,14 +1184,18 @@ def get_fast_threshold_clusters(
 
 def get_comoment_weights(periods: int, method: str, span: int) -> np.ndarray:
     """
-    The weights of the periods in a co-moment: 1 / T each for "sample", "semi" and
-    "ccc_garch" (on its scenarios), and
-    (1 - α)^age normalized to sum to one, with α = 2 / (span + 1), for "exponential".
+    How much every period counts in a co-moment.
+
+    1 / T each for the sample, semi and CCC-GARCH co-moments (the latter on its scenarios),
+    and (1 - α)^age normalized to sum to one, with α = 2 / (span + 1), for the exponential
+    one.
 
     Args:
         periods (int): The number of periods T.
-        method (str): "sample", "exponential" or "semi".
-        span (int): The span in periods of the "exponential" weights.
+        method (str): The estimator. Options are: "sample" (equal weights), "exponential"
+            (exponentially weighted), "semi" (lower semi co-moment), "ccc_garch" (CCC-GARCH
+            scenarios).
+        span (int): The span in periods of the exponential weights.
 
     Returns:
         np.ndarray: The weight of every period, oldest first.
@@ -1129,26 +1216,22 @@ def get_coskewness_matrix(
     standardized_moments: bool = True,
 ) -> pd.DataFrame:
     """
-    The coskewness matrix M3, the third co-moments of the returns: N rows and N² columns
-    with m_ijk = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k), with μ the average returns
-    and w_t the weight of period t. The skewness of a portfolio with weights w is
-    w'M3(w ⊗ w) / σ_p³, so M3 is what a mean-variance-skewness optimization or a modified
-    VaR of a portfolio needs.
+    The coskewness matrix M3, the third co-moments of the returns.
 
-    - "sample": w_t = 1 / T, referenced against PerformanceAnalytics' M3.MM
-      (unbiased=FALSE) and CoSkewnessMatrix.
-    - "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent
-      periods weigh most. PerformanceAnalytics' M3.ewma uses the same weights (its
-      default λ = 0.97 is a span of about 65.7) on returns it assumes to have a zero
-      mean; here the deviations are taken from the average return, as in the
-      exponential covariance, so it matches M3.ewma on the demeaned returns.
-    - "semi": the lower semi co-moment, with min(r_ti - μ_i, 0) in place of the
-      deviations, so only returns below the average count, as defined by Cajas in
-      Riskfolio-Lib.
-    - "ccc_garch": the next-period coskewness of the constant conditional correlation
-      GARCH(1, 1) model, the "sample" co-moment of its scenarios, the standardized
-      residuals at the next-period volatilities (see get_ccc_garch_covariance),
-      referenced against the m3 of PortfolioAnalytics' CCCgarch.MM.
+    N rows and N² columns with m_ijk = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k), with μ
+    the average returns and w_t the weight of period t. The skewness of a portfolio with
+    weights w is w'M3(w ⊗ w) / σ_p³, so M3 is what a mean-variance-skewness optimization or
+    a modified VaR of a portfolio needs.
+
+    - Sample: w_t = 1 / T.
+    - Exponential: w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent periods
+      weigh most. The deviations are taken from the average return, as in the exponential
+      covariance.
+    - Semi: the lower semi co-moment, with min(r_ti - μ_i, 0) in place of the deviations, so
+      only returns below the average count, as defined by Cajas (2022).
+    - CCC-GARCH: the next-period coskewness of the constant conditional correlation GARCH(1,
+      1) model, the sample co-moment of its scenarios, the standardized residuals at the
+      next-period volatilities (see get_ccc_garch_covariance).
 
     With standardized moments, every m_ijk is divided by σ_i σ_j σ_k, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iii is
@@ -1159,19 +1242,29 @@ def get_coskewness_matrix(
     Ziemann, V. (2010), "Improved Estimates of Higher-Order Comoments and Implications for
     Portfolio Selection", The Review of Financial Studies, 23(4), 1467-1502.
 
+    Shares similar logic:
+    - PerformanceAnalytics (R), M3.MM (sample): https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/MultivariateMoments.R#L34
+    - PerformanceAnalytics (R), M3.ewma (exponential): https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/MultivariateMoments.R#L1486
+    - PortfolioAnalytics (R), CCCgarch.MM (CCC-GARCH): https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/moment.functions.R#L22
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): The estimator of the co-moments. Options are: "sample",
-            "exponential", "semi" or "ccc_garch". Defaults to "sample".
-        span (int, optional): The span in periods of the "exponential" weights.
-            Defaults to 180.
+        method (str, optional): The estimator of the co-moments. Options are: "sample" (equal
+            weights), "exponential" (exponentially weighted), "semi" (lower semi co-moment),
+            "ccc_garch" (CCC-GARCH scenarios). Defaults to "sample".
+        span (int, optional): The span in periods of the exponential weights. Defaults to 180.
         standardized_moments (bool, optional): Whether to divide by the product of the
             standard deviations. Defaults to True.
 
     Returns:
         pd.DataFrame: The coskewness matrix, one row per asset i and one column per pair
             of assets (j, k).
+
+    Notes:
+    - PerformanceAnalytics' M3.ewma uses the same weights (its default λ = 0.97 is a span of
+      about 65.7) on returns it assumes to have a zero mean, so the two agree on demeaned
+      returns.
     """
     if method == "ccc_garch":
         returns, method = get_ccc_garch_covariance(returns)[1], "sample"
@@ -1200,24 +1293,19 @@ def get_cokurtosis_matrix(
     standardized_moments: bool = True,
 ) -> pd.DataFrame:
     """
-    The cokurtosis matrix M4, the fourth co-moments of the returns: N rows and N³ columns
-    with m_ijkl = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k)(r_tl - μ_l), with μ the
-    average returns and w_t the weight of period t. The kurtosis of a portfolio with
-    weights w is w'M4(w ⊗ w ⊗ w) / σ_p⁴.
+    The cokurtosis matrix M4, the fourth co-moments of the returns.
 
-    - "sample": w_t = 1 / T, referenced against PerformanceAnalytics' M4.MM and
-      CoKurtosisMatrix and, in its N² × N² arrangement, Riskfolio-Lib's cokurt_matrix
-      (method="hist").
-    - "exponential": w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent
-      periods weigh most; it agrees with PerformanceAnalytics' M4.ewma on the demeaned
-      returns.
-    - "semi": the lower semi cokurtosis, with min(r_ti - μ_i, 0) in place of the
-      deviations (Cajas, 2022), referenced against Riskfolio-Lib's cokurt_matrix
-      (method="semi") in its N² × N² arrangement.
-    - "ccc_garch": the next-period cokurtosis of the constant conditional correlation
-      GARCH(1, 1) model, the "sample" co-moment of its scenarios (see
-      get_ccc_garch_covariance), referenced against the m4 of PortfolioAnalytics'
-      CCCgarch.MM.
+    N rows and N³ columns with m_ijkl = Σ_t w_t (r_ti - μ_i)(r_tj - μ_j)(r_tk - μ_k)(r_tl -
+    μ_l), with μ the average returns and w_t the weight of period t. The kurtosis of a
+    portfolio with weights w is w'M4(w ⊗ w ⊗ w) / σ_p⁴.
+
+    - Sample: w_t = 1 / T.
+    - Exponential: w_t = λ^(T - t) / Σ λ^(T - s) with λ = 1 - 2 / (span + 1), recent periods
+      weigh most.
+    - Semi: the lower semi cokurtosis, with min(r_ti - μ_i, 0) in place of the deviations
+      (Cajas, 2022).
+    - CCC-GARCH: the next-period cokurtosis of the constant conditional correlation GARCH(1,
+      1) model, the sample co-moment of its scenarios (see get_ccc_garch_covariance).
 
     With standardized moments, every m_ijkl is divided by σ_i σ_j σ_k σ_l, with σ² = Σ_t w_t
     (r_t - μ)² the weighted second moment of the full deviations, so the diagonal m_iiii
@@ -1227,13 +1315,19 @@ def get_cokurtosis_matrix(
     Moments", European Financial Management, 12(1), 29-55, and Cajas, D. (2022), "Convex
     Optimization of Portfolio Kurtosis", SSRN 4202967.
 
+    Shares similar logic:
+    - PerformanceAnalytics (R), M4.MM (sample): https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/MultivariateMoments.R#L72
+    - PerformanceAnalytics (R), M4.ewma (exponential): https://github.com/cran/PerformanceAnalytics/blob/2.1.0/R/MultivariateMoments.R#L1543
+    - Riskfolio-Lib, cokurt_matrix (sample and semi, as N² × N²): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.cokurt_matrix
+    - PortfolioAnalytics (R), CCCgarch.MM (CCC-GARCH): https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/moment.functions.R#L22
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): The estimator of the co-moments. Options are: "sample",
-            "exponential", "semi" or "ccc_garch". Defaults to "sample".
-        span (int, optional): The span in periods of the "exponential" weights.
-            Defaults to 180.
+        method (str, optional): The estimator of the co-moments. Options are: "sample" (equal
+            weights), "exponential" (exponentially weighted), "semi" (lower semi co-moment),
+            "ccc_garch" (CCC-GARCH scenarios). Defaults to "sample".
+        span (int, optional): The span in periods of the exponential weights. Defaults to 180.
         standardized_moments (bool, optional): Whether to divide by the product of the
             standard deviations. Defaults to True.
 
@@ -1273,20 +1367,21 @@ def get_bootstrap_indices(
 ) -> np.ndarray:
     """
     The periods of one bootstrapped history of the same length (or of `simulations` of
-    them), drawn in blocks so that the dependence between consecutive returns (volatility
+    them).
+
+    They are drawn in blocks so that the dependence between consecutive returns (volatility
     clustering) survives.
 
-    - "stationary": the stationary bootstrap of Politis and Romano (1994), blocks of a
-      random length with a geometric distribution of mean block_size: every period
-      continues the block with the next period (after the last, the first) with
-      probability 1 - 1 / block_size and starts a new block at a random period otherwise.
-    - "circular": blocks of block_size periods that start at a random period and wrap
-      from the last period to the first (Politis and Romano, 1992).
-    - "moving": blocks of block_size periods that start at a random period from which a
-      whole block fits (Künsch, 1989).
+    - The stationary bootstrap of Politis and Romano (1994), blocks of a random length with
+      a geometric distribution of mean block_size: every period continues the block with the
+      next period (after the last, the first) with probability 1 - 1 / block_size and starts
+      a new block at a random period otherwise.
+    - The circular block bootstrap: blocks of block_size periods that start at a random
+      period and wrap from the last period to the first (Politis and Romano, 1992).
+    - The moving block bootstrap: blocks of block_size periods that start at a random period
+      from which a whole block fits (Künsch, 1989).
 
-    The arch package (Sheppard) offers the same schemes, which Riskfolio-Lib's
-    bootstrapping draws from.
+    The arch package offers the same schemes.
 
     See Politis, D. N. and Romano, J. P. (1994), "The Stationary Bootstrap", Journal of
     the American Statistical Association, 89(428), 1303-1313, and Künsch, H. R. (1989),
@@ -1295,15 +1390,16 @@ def get_bootstrap_indices(
 
     Args:
         periods (int): The number of periods T of the history.
-        method (str, optional): "stationary", "circular" or "moving". Defaults to
+        method (str, optional): The bootstrap. Options are: "stationary" (stationary bootstrap),
+            "circular" (circular block bootstrap), "moving" (moving block bootstrap). Defaults to
             "stationary".
         block_size (int, optional): The (average) number of periods in a block. Defaults
             to 3.
         generator (np.random.Generator | None, optional): The random number generator.
             Defaults to None, a new unseeded one.
-        simulations (int | None, optional): The number of histories, each drawn from the
-            generator in turn, so that they are the histories of as many calls with one
-            history each. Defaults to None, one history.
+        simulations (int | None, optional): The number of histories, each drawn from the generator
+            in turn, so that they are the histories of as many calls with one history each. Defaults
+            to None, one history.
 
     Returns:
         np.ndarray: The T periods, numbered from 0, of the bootstrapped history, or a row of
@@ -1356,38 +1452,42 @@ def get_bootstrap_estimates(
     seed: int | None = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    How uncertain the average returns and the covariance matrix are: both are estimated
-    again on many simulated histories of the same length, and the spread of those
-    estimates gives a confidence interval (box) for every average return and every
+    How uncertain the average returns and the covariance matrix are.
+
+    Both are estimated again on many simulated histories of the same length, and the spread
+    of those estimates gives a confidence interval (box) for every average return and every
     covariance, and a standard error for every average return.
 
-    - "stationary", "circular", "moving": the histories are block bootstraps of the
-      returns (see get_bootstrap_indices), which keep the dependence between consecutive
-      returns.
-    - "normal": the histories are drawn from a multivariate normal distribution with the
-      average returns and the sample covariance matrix.
+    - With the stationary, circular or moving block bootstrap, the histories are block
+      bootstraps of the returns (see get_bootstrap_indices), which keep the dependence
+      between consecutive returns.
+    - With the normal distribution, the histories are drawn from a multivariate normal
+      distribution with the average returns and the sample covariance matrix.
 
     The bounds are the (1 - c) / 2 and (1 + c) / 2 percentiles of the estimates at
     confidence level c, and the standard error is their standard deviation (ddof=1).
-    The averages and covariances are those of the returns per period (ddof=1). The
-    parameters match Riskfolio-Lib's bootstrapping (q = 1 - c, n_sim, window) and
-    normal_simulation, whose box and ellipsoid uncertainty sets come from these
-    estimates; the draws differ from its arch-based ones, so results agree only in
-    distribution. The bounds of the covariances are per entry and are not adjusted to
-    form positive semidefinite matrices.
+    The averages and covariances are those of the returns per period (ddof=1). The bounds of
+    the covariances are per entry and are not adjusted to form positive semidefinite
+    matrices.
 
     See Politis, D. N. and Romano, J. P. (1994), "The Stationary Bootstrap", Journal of
     the American Statistical Association, 89(428), 1303-1313, and Tütüncü, R. H. and
     Koenig, M. (2004), "Robust Asset Allocation", Annals of Operations Research, 132,
     157-187.
 
+    Shares similar logic:
+    - Riskfolio-Lib, bootstrapping: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.bootstrapping
+    - Riskfolio-Lib, normal_simulation (normal distribution): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.normal_simulation
+    - skfolio, BootstrapMuUncertaintySet: https://skfolio.org/generated/skfolio.uncertainty_set.BootstrapMuUncertaintySet.html
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
-        method (str, optional): "stationary", "circular", "moving" or "normal". Defaults
-            to "stationary".
-        n_bootstrap (int, optional): The number of simulated histories. Defaults to 1000,
-            as skfolio's bootstrap uncertainty sets (Riskfolio-Lib draws 6000).
+        method (str, optional): How the histories are simulated. Options are: "stationary"
+            (stationary bootstrap), "circular" (circular block bootstrap), "moving" (moving block
+            bootstrap), "normal" (multivariate normal draws). Defaults to "stationary".
+        n_bootstrap (int, optional): The number of simulated histories. Defaults to 1000, as
+            skfolio's bootstrap uncertainty sets (Riskfolio-Lib draws 6000).
         block_size (int, optional): The (average) number of periods in a block. Defaults
             to 3.
         confidence_level (float, optional): The confidence level of the bounds. Defaults
@@ -1399,6 +1499,12 @@ def get_bootstrap_estimates(
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Per asset the Expected Return
             (the average), its Lower and Upper bound and its Standard Error; the lower
             bounds of the covariance matrix; and its upper bounds, all per period.
+
+    Notes:
+    - The parameters match Riskfolio-Lib's bootstrapping and normal_simulation (q = 1 - c,
+      the number of simulations and the block size), whose box and ellipsoid uncertainty
+      sets come from these estimates; the draws differ from its arch-based ones, so the
+      results agree only in distribution.
     """
     check_option("method", method, BOOTSTRAP_METHODS)
     if not 0 < confidence_level < 1:
@@ -1459,19 +1565,19 @@ def get_stepwise_factors(
 ) -> list[str]:
     """
     The factors a stepwise regression (Efroymson, 1960) of an asset's returns on factor
-    returns (with a constant) selects. Shares similar logic as Riskfolio-Lib's
-    forward_regression and backward_regression.
+    returns (with a constant) selects.
 
-    - direction="forward", criterion="pvalue": starting without factors, add the factor
-      with the lowest p-value among those that keep every p-value of the model at or below
-      the threshold, until no factor qualifies.
-    - direction="backward", criterion="pvalue": starting with every factor, drop the
-      factor with the highest p-value until every p-value is at or below the threshold.
-      With either direction, when no factor qualifies the single factor with the lowest
-      p-value is kept, so the model always holds one factor.
-    - criterion="aic", "bic", "r_squared" or "adjusted_r_squared": add (forward) or drop
-      (backward) the factor that improves the criterion most (a lower information
-      criterion, a higher R squared) for as long as it improves.
+    - Forward selection on the p-value: starting without factors, add the factor with the
+      lowest p-value among those that keep every p-value of the model at or below the
+      threshold, until no factor qualifies.
+    - Backward selection on the p-value: starting with every factor, drop the factor with
+      the highest p-value until every p-value is at or below the threshold. With either
+      direction, when no factor qualifies the single factor with the lowest p-value is kept,
+      so the model always holds one factor.
+    - Selection on the Akaike or Schwarz information criterion, the R squared or the
+      adjusted R squared: add (forward) or drop (backward) the factor that improves the
+      criterion most (a lower information criterion, a higher R squared) for as long as it
+      improves.
 
     The p-values are those of the t-statistics of the OLS coefficients and the criteria
     are defined as statsmodels defines them (see helpers.get_linear_regression).
@@ -1480,15 +1586,20 @@ def get_stepwise_factors(
     H. S. (eds.), Mathematical Methods for Digital Computers, Wiley; Akaike, H. (1974), "A
     New Look at the Statistical Model Identification", IEEE Transactions on Automatic
     Control, 19(6), 716-723; and Schwarz, G. (1978), "Estimating the Dimension of a Model",
-    The Annals of Statistics, 6(2), 461-464. Riskfolio-Lib:
-    https://github.com/dcajasn/Riskfolio-Lib.
+    The Annals of Statistics, 6(2), 461-464.
+
+    Shares similar logic:
+    - Riskfolio-Lib, forward_regression: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.forward_regression
+    - Riskfolio-Lib, backward_regression: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.backward_regression
 
     Args:
         returns (pd.Series): The returns per period of the asset.
         factors (pd.DataFrame): The factor returns per period, on the same periods.
-        direction (str, optional): "forward" or "backward". Defaults to "forward".
-        criterion (str, optional): "pvalue", "aic", "bic", "r_squared" or
-            "adjusted_r_squared". Defaults to "pvalue".
+        direction (str, optional): Options are: "forward" (add factors), "backward" (drop factors).
+            Defaults to "forward".
+        criterion (str, optional): Options are: "pvalue" (p-value), "aic" (Akaike information
+            criterion), "bic" (Schwarz information criterion), "r_squared" (R squared),
+            "adjusted_r_squared" (adjusted R squared). Defaults to "pvalue".
         threshold (float, optional): The highest p-value a selected factor may have.
             Defaults to 0.05.
 
@@ -1565,16 +1676,19 @@ def get_principal_components_loadings(
 ) -> pd.Series:
     """
     The intercept and factor loadings of a principal components regression (PCR) of an
-    asset's returns on factor returns (Jolliffe, 1982). The factors
-    are standardized (ddof=1), their first k principal components Z = X_std V_k are the
-    regressors of an OLS regression with a constant, and the coefficients γ of the
-    components are mapped back to the factors: β = V_k γ / σ_f and the intercept
-    α = mean(r) - Σ β_f mean(f). Leaving out the components with little variance removes
-    the instability that correlated factors give OLS loadings. Shares similar logic as
-    Riskfolio-Lib's PCR (https://github.com/dcajasn/Riskfolio-Lib).
+    asset's returns on factor returns (Jolliffe, 1982).
+
+    The factors are standardized (ddof=1), their first k principal components Z = X_std V_k
+    are the regressors of an OLS regression with a constant, and the coefficients γ of the
+    components are mapped back to the factors: β = V_k γ / σ_f and the intercept α = mean(r)
+    - Σ β_f mean(f). Leaving out the components with little variance removes the instability
+      that correlated factors give OLS loadings.
 
     See Jolliffe, I. T. (1982), "A Note on the Use of Principal Components in
     Regression", Journal of the Royal Statistical Society, Series C, 31(3), 300-303.
+
+    Referenced against:
+    - Riskfolio-Lib, PCR: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.PCR
 
     Args:
         returns (pd.Series): The returns per period of the asset.
@@ -1620,31 +1734,40 @@ def get_factor_loadings(
     components: float = 0.95,
 ) -> pd.DataFrame:
     """
-    The loadings matrix of a time series factor model: the intercept and factor loadings
-    of the regression of every asset's returns on the factor returns, r_i,t = α_i +
-    Σ_f β_i,f F_f,t + ε_i,t (Fama and French, 1993; Connor, 1995). Shares similar logic as
-    Riskfolio-Lib's loadings_matrix.
+    The loadings matrix of a time series factor model.
 
-    - "ols": every factor, ordinary least squares.
-    - "forward", "backward": the factors a stepwise regression selects (see
+    These are the intercept and factor loadings of the regression of every asset's returns
+    on the factor returns, r_i,t = α_i + Σ_f β_i,f F_f,t + ε_i,t (Fama and French, 1993;
+    Connor, 1995).
+
+    - Ordinary least squares on every factor.
+    - Forward or backward selection: the factors a stepwise regression selects (see
       get_stepwise_factors), the others with a loading of zero.
-    - "pcr": a principal components regression (see get_principal_components_loadings).
+    - A principal components regression (see get_principal_components_loadings).
 
     See Fama, E. F. and French, K. R. (1993), "Common Risk Factors in the Returns on
     Stocks and Bonds", Journal of Financial Economics, 33(1), 3-56, and Connor, G.
     (1995), "The Three Types of Factor Models: A Comparison of Their Explanatory Power",
     Financial Analysts Journal, 51(3), 42-46.
 
+    Referenced against:
+    - Riskfolio-Lib, loadings_matrix (backward selection, every factor kept): https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.loadings_matrix
+
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
         factors (pd.DataFrame): The factor returns per period, on the same periods, without
             missing values.
-        selection (str, optional): "ols", "forward", "backward" or "pcr". Defaults to "ols".
-        criterion (str, optional): The criterion of the stepwise selection. Defaults to
+        selection (str, optional): The selection of the factors. Options are: "ols" (every factor),
+            "forward" (forward selection), "backward" (backward selection), "pcr" (principal
+            components regression). Defaults to "ols".
+        criterion (str, optional): The criterion of the stepwise selection. Options are: "pvalue"
+            (p-value), "aic" (Akaike information criterion), "bic" (Schwarz information criterion),
+            "r_squared" (R squared), "adjusted_r_squared" (adjusted R squared). Defaults to
             "pvalue".
         threshold (float, optional): The highest p-value of the stepwise selection.
             Defaults to 0.05.
-        components (float, optional): The components of "pcr". Defaults to 0.95.
+        components (float, optional): The components of the principal components regression.
+            Defaults to 0.95.
 
     Returns:
         pd.DataFrame: Per asset the Intercept (per period) and the loading of every factor.
@@ -1680,11 +1803,12 @@ def get_factor_model(
     returns: pd.DataFrame, factors: pd.DataFrame, loadings: pd.DataFrame
 ) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
     """
-    The expected returns and covariance matrix a time series factor model implies
-    (Connor, 1995), referenced against Riskfolio-Lib's risk_factors and skfolio's
-    FactorModel: with B the loadings, α the intercepts, μ_f and Σ_f the mean and sample covariance (ddof=1) of the
-    factor returns and D the diagonal matrix of the variances (ddof=1) of the residuals
-    ε = r - α - F B',
+    The expected returns and covariance matrix a time series factor model implies (Connor,
+    1995).
+
+    With B the loadings, α the intercepts, μ_f and Σ_f the mean and sample covariance
+    (ddof=1) of the factor returns and D the diagonal matrix of the variances (ddof=1) of
+    the residuals ε = r - α - F B',
 
     - μ = α + B μ_f
     - Σ = B Σ_f B' + D
@@ -1697,6 +1821,12 @@ def get_factor_model(
 
     See Connor, G. (1995), "The Three Types of Factor Models: A Comparison of Their
     Explanatory Power", Financial Analysts Journal, 51(3), 42-46.
+
+    Referenced against:
+    - Riskfolio-Lib, risk_factors: https://riskfolio-lib.readthedocs.io/en/latest/riskfoliolib/parameters.html#ParamsEstimation.risk_factors
+
+    Shares similar logic:
+    - skfolio, FactorModel: https://skfolio.org/generated/skfolio.prior.FactorModel.html
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
@@ -1738,10 +1868,12 @@ def get_entropy_pooling(
 ) -> pd.Series:
     """
     The posterior probabilities of the historical scenarios (periods) under views, by
-    Entropy Pooling (Meucci, 2008): the probabilities p closest to the prior probabilities
-    q (equal, 1 / T, by default) in relative entropy, KL(p ‖ q) = Σ p_t ln(p_t / q_t), that
-    satisfy the views. The scenarios stay as they were; only their weights change, so the
-    posterior keeps the fat tails and co-movements of the history.
+    Entropy Pooling (Meucci, 2008).
+
+    These are the probabilities p closest to the prior probabilities q (equal, 1 / T, by
+    default) in relative entropy, KL(p ‖ q) = Σ p_t ln(p_t / q_t), that satisfy the views.
+    The scenarios stay as they were; only their weights change, so the posterior keeps the
+    fat tails and co-movements of the history.
 
     A view is linear in p: a mean view E_p[r_i] = Σ p_t r_i,t (or of r_i - r_j for a
     relative view "AAPL-MSFT"), a volatility view Σ p_t (r_i,t - m_i)² = σ² with m_i the
@@ -1751,11 +1883,12 @@ def get_entropy_pooling(
     Meucci, Ardia and Keel (2011), in the order skfolio's EntropyPooling takes them. A
     view is an equality (a number) or an inequality, (">=", value) or ("<=", value).
 
-    A ranking is the ordering view of Meucci (2008), its "ranking" example: with the assets listed from
-    the highest expected return to the lowest, the inequalities E_p[r_(k+1)] ≤ E_p[r_(k)]
-    between every pair of neighbours, Σ p_t (r_(k+1),t - r_(k),t) ≤ 0, which are imposed
-    with the mean views. The posterior then agrees with the ordering while staying as close
-    to the prior as it can, so assets the history already ranks that way keep their means.
+    A ranking is the ordering view of Meucci (2008), its ranking example: with the assets
+    listed from the highest expected return to the lowest, the inequalities E_p[r_(k+1)] ≤
+    E_p[r_(k)] between every pair of neighbours, Σ p_t (r_(k+1),t - r_(k),t) ≤ 0, which are
+    imposed with the mean views. The posterior then agrees with the ordering while staying
+    as close to the prior as it can, so assets the history already ranks that way keep their
+    means.
 
     The problem is solved through its dual (Csiszár, 1975; Boyd and Vandenberghe, 2004,
     5.2.3). With the constraints A'p = b and A'p ≤ b (every column of A scaled to unit
@@ -1764,11 +1897,13 @@ def get_entropy_pooling(
     (SciPy's L-BFGS-B). The multipliers of the moments held fixed are bounded to ±1000, as
     in skfolio, which relaxes them when the views cannot be met exactly. A solution that
     misses a view by more than 1e-8 (on the scaled constraints) raises an error.
-    Referenced against skfolio's EntropyPooling (https://github.com/skfolio/skfolio).
 
     See Meucci, A. (2008), "Fully Flexible Views: Theory and Practice", Risk, 21(10),
     97-102, and Meucci, A., Ardia, D. and Keel, S. (2011), "Fully Flexible Extreme Views",
     Journal of Risk, 14(2), 39-49.
+
+    Referenced against:
+    - skfolio, EntropyPooling: https://skfolio.org/generated/skfolio.prior.EntropyPooling.html
 
     Args:
         returns (pd.DataFrame): The returns per period (the scenarios), one column per
@@ -1965,32 +2100,37 @@ def get_opinion_pooling(
 ) -> pd.Series:
     """
     The consensus of several sets of scenario probabilities, the opinions of different
-    experts (e.g. each an Entropy Pooling posterior). The weight π_k of each opinion lies
-    between 0 and 1; when they sum to less than one, the rest goes to the prior (equal
-    probabilities).
+    experts (e.g. each an Entropy Pooling posterior).
 
-    - "linear": p = Σ π_k p_k, the arithmetic mixture (Stone, 1961), which keeps every
+    The weight π_k of each opinion lies between 0 and 1; when they sum to less than one, the
+    rest goes to the prior (equal probabilities).
+
+    - Linear pooling: p = Σ π_k p_k, the arithmetic mixture (Stone, 1961), which keeps every
       scenario any opinion gives a probability.
-    - "logarithmic": p ∝ Π p_k^π_k, the geometric mixture (Genest and Zidek, 1986), which
-      minimizes the weighted relative entropy to the opinions and gives no probability to
-      a scenario that any opinion rules out.
+    - Logarithmic pooling: p ∝ Π p_k^π_k, the geometric mixture (Genest and Zidek, 1986),
+      which minimizes the weighted relative entropy to the opinions and gives no probability
+      to a scenario that any opinion rules out.
 
     With a divergence penalty α > 0 the weights become π̃_k ∝ π_k exp(-α KL(p_k ‖ c)), with
     c = Σ π_k p_k the linear consensus, which weighs down the opinions far from the others;
     this robust weighting is the one skfolio's OpinionPooling (Delatte and Nicolini)
-    defines, and the function is referenced against it.
+    defines.
 
     See Stone, M. (1961), "The Opinion Pool", The Annals of Mathematical Statistics,
     32(4), 1339-1342; Genest, C. and Zidek, J. V. (1986), "Combining Probability
     Distributions: A Critique and an Annotated Bibliography", Statistical Science, 1(1),
-    114-135. skfolio: https://github.com/skfolio/skfolio.
+    114-135.
+
+    Referenced against:
+    - skfolio, OpinionPooling: https://skfolio.org/generated/skfolio.prior.OpinionPooling.html
 
     Args:
         probabilities (pd.DataFrame): The probability of every scenario (rows) per opinion
             (columns), each column summing to one.
         opinion_weights (list[float] | None, optional): The weight of every opinion.
             Defaults to None, equal weights summing to one.
-        method (str, optional): "linear" or "logarithmic". Defaults to "linear".
+        method (str, optional): The pooling. Options are: "linear" (arithmetic mixture),
+            "logarithmic" (geometric mixture). Defaults to "linear".
         divergence_penalty (float, optional): The penalty α. Defaults to 0.
 
     Returns:
@@ -2041,14 +2181,16 @@ def get_silhouette_coefficients(
     euclidean: np.ndarray, labels: np.ndarray
 ) -> np.ndarray:
     """
-    The silhouette coefficients of Rousseeuw (1987), S_i = (b_i - a_i) / max(a_i, b_i), with
-    a_i the average distance of asset i to the other assets of its cluster and b_i the
-    smallest average distance to the assets of another cluster (S_i = 0 for an asset alone
-    in its cluster).
+    The silhouette coefficients of Rousseeuw (1987): how well every asset fits its cluster.
 
-    See Rousseeuw, P. J. (1987), "Silhouettes: A Graphical Aid to the Interpretation and
-    Validation of Cluster Analysis", Journal of Computational and Applied Mathematics, 20,
-    53-65.
+    They are S_i = (b_i - a_i) / max(a_i, b_i), with a_i the average distance of asset i to
+    the other assets of its cluster and b_i the smallest average distance to the assets of
+    another cluster (S_i = 0 for an asset alone in its cluster). See Rousseeuw, P. J.
+    (1987), "Silhouettes: A Graphical Aid to the Interpretation and Validation of Cluster
+    Analysis", Journal of Computational and Applied Mathematics, 20, 53-65.
+
+    Shares similar logic:
+    - scikit-learn, silhouette_samples: https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_samples.html
 
     Args:
         euclidean (np.ndarray): The N × N distances between the assets.
@@ -2086,9 +2228,10 @@ def get_optimal_number_of_clusters(
 ) -> np.ndarray:
     """
     The clusters of the Optimal Number of Clusters (ONC) algorithm of López de Prado and
-    Lewis (2019): k-means on the rows of the distance matrix, the number of clusters chosen
-    by the quality of their silhouettes, and the clusters of below-average quality
-    clustered again.
+    Lewis (2019).
+
+    K-means on the rows of the distance matrix, the number of clusters chosen by the quality
+    of their silhouettes, and the clusters of below-average quality clustered again.
 
     - Every asset is a point whose coordinates are its row of the distance matrix (for the
       correlation distance d = √((1 - ρ) / 2)), so two assets are close when they have
@@ -2112,8 +2255,6 @@ def get_optimal_number_of_clusters(
     drawn from numpy's default generator with the seed, so the same distances give the same
     clusters, and the clusters are numbered in the order of their first asset.
 
-    Referenced against RiskLabAI's cluster_k_means_top
-    (https://github.com/RiskLabAI/RiskLabAI.py), which clusters with scikit-learn's KMeans.
     As in the book's snippet 4.2, the clusters are clustered again when at least two are
     below the average quality, and the new clusters are kept when their quality is above
     that of the clusters replaced.
@@ -2122,6 +2263,9 @@ def get_optimal_number_of_clusters(
     Strategies Using Unsupervised Learning Methods", Quantitative Finance, 19(9), 1555-1565,
     and López de Prado, M. (2020), Machine Learning for Asset Managers, Cambridge University
     Press, chapter 4.
+
+    Shares similar logic:
+    - RiskLabAI, cluster_k_means_top (López de Prado, Machine Learning for Asset Managers, snippet 4.2): https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/cluster/clustering.py#L194
 
     Args:
         distance (pd.DataFrame): The N × N distance matrix of the assets.
@@ -2133,6 +2277,10 @@ def get_optimal_number_of_clusters(
 
     Returns:
         np.ndarray: The cluster of every asset, numbered from 0 in the order of the assets.
+
+    Notes:
+    - Unlike RiskLabAI's cluster_k_means_top, which clusters with scikit-learn's KMeans, the
+      k-means runs here are drawn from numpy's default generator with the seed.
     """
     matrix = distance.to_numpy(dtype=float)
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:  # noqa: PLR2004
@@ -2246,9 +2394,10 @@ def get_gnpr_distance_matrix(
 ) -> pd.DataFrame:
     """
     The distance of the Generic Non-Parametric Representation (GNPR) of Marti, Andler,
-    Nielsen and Donnat (2016) between every pair of assets: a mix of how differently two
-    assets move (their copula) and how differently their returns are distributed (their
-    marginals), weighted by θ.
+    Nielsen and Donnat (2016) between every pair of assets.
+
+    It is a mix of how differently two assets move (their copula) and how differently their
+    returns are distributed (their marginals), weighted by θ.
 
     - d_θ² = θ d_1² + (1 - θ) d_0²
     - d_1² = 3 / (T (T² - 1)) Σ_t (R_i,t - R_j,t)², with R the ranks of the returns (ties
@@ -2320,8 +2469,9 @@ def get_nercome_covariance(
 ) -> pd.DataFrame:
     """
     The Nonparametric Eigenvalue-Regularized COvariance Matrix Estimator (NERCOME) of Lam
-    (2016), which builds on the split-sample estimator of Abadir, Distaso and Žikeš (2014):
-    the eigenvectors come from one part of the periods and the eigenvalues from the other,
+    (2016), which builds on the split-sample estimator of Abadir, Distaso and Žikeš (2014).
+
+    The eigenvectors come from one part of the periods and the eigenvalues from the other,
     so the eigenvalues are not fitted to the noise in the eigenvectors that the sample
     covariance overfits.
 
@@ -2338,16 +2488,15 @@ def get_nercome_covariance(
     The estimate is positive semi-definite, and positive definite when the first part has more
     periods than there are assets. The random orders are drawn from numpy's default
     generator with the seed, the same orders for every candidate split, so the same returns
-    give the same estimate. Referenced against RiskLabAI's nercome_denoised_covariance
-    (https://github.com/RiskLabAI/RiskLabAI.py), which splits at 2T / 3 and estimates the
-    correlation matrix of the standardized returns, scaled back with the sample standard
-    deviations; here the covariance itself is estimated, as in Lam (2016), so the variances
-    are regularized as well.
+    give the same estimate.
 
     See Abadir, K. M., Distaso, W. and Žikeš, F. (2014), "Design-Free Estimation of Variance
     Matrices", Journal of Econometrics, 181(2), 165-180, and Lam, C. (2016), "Nonparametric
     Eigenvalue-Regularized Precision or Covariance Matrix Estimator", The Annals of
     Statistics, 44(3), 928-953.
+
+    Shares similar logic:
+    - RiskLabAI, nercome_denoised_covariance: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/denoise/nercome.py#L54
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -2358,6 +2507,12 @@ def get_nercome_covariance(
 
     Returns:
         pd.DataFrame: The covariance matrix per period.
+
+    Notes:
+    - Unlike RiskLabAI's nercome_denoised_covariance, which splits at 2T / 3 and estimates
+      the correlation matrix of the standardized returns, scaled back with the sample
+      standard deviations, the covariance itself is estimated, as in Lam (2016), so the
+      variances are regularized as well.
     """
     if splits < 1:
         raise ValueError("The number of splits must be at least 1.")
@@ -2409,8 +2564,10 @@ def get_ccc_garch_covariance(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     The next-period covariance matrix of the Constant Conditional Correlation (CCC) GARCH
-    model of Bollerslev (1990): every asset has its own GARCH(1, 1) volatility and the
-    correlations between the standardized residuals are constant.
+    model of Bollerslev (1990).
+
+    Every asset has its own GARCH(1, 1) volatility and the correlations between the
+    standardized residuals are constant.
 
     - ε_t = r_t - r̄, the returns around their average
     - σ²_i,t = ω_i + α_i ε²_i,t-1 + β_i σ²_i,t-1 per asset, fitted by Gaussian (quasi-)
@@ -2426,17 +2583,17 @@ def get_ccc_garch_covariance(
     standard deviation (ddof=1), whose sample covariance is Σ_T+1 and whose co-moments are
     the next-period coskewness and cokurtosis of the model.
 
-    Referenced against PortfolioAnalytics' CCCgarch.MM (Boudt, Peterson and Carl;
-    https://github.com/braverock/PortfolioAnalytics), which builds the same moments from
-    fGarch's GARCH(1, 1) fits and falls back on a constant volatility when a fitted α_i is
-    below 0.01; here the fitted volatility is kept. The GARCH(1, 1) legs are referenced
-    against the arch package (arch_model(mean="Zero", vol="GARCH") on the demeaned returns).
+    The GARCH(1, 1) legs follow the same model as the arch package's zero-mean GARCH on the
+    demeaned returns.
 
     See Bollerslev, T. (1990), "Modelling the Coherence in Short-Run Nominal Exchange Rates:
     A Multivariate Generalized ARCH Model", The Review of Economics and Statistics, 72(3),
     498-505, and, for the scenarios rescaled to the next-period volatilities, Boudt, K.,
     Carl, P. and Peterson, B. (2013), "Asset Allocation with Conditional Value-at-Risk
     Budgets", Journal of Risk, 15(3), 39-68.
+
+    Shares similar logic:
+    - PortfolioAnalytics (R), CCCgarch.MM: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/moment.functions.R#L22
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -2445,6 +2602,11 @@ def get_ccc_garch_covariance(
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: The next-period covariance matrix and the
             scenarios, the rescaled standardized residuals per period.
+
+    Notes:
+    - PortfolioAnalytics' CCCgarch.MM (Boudt, Peterson and Carl) builds the same moments
+      from fGarch's GARCH(1, 1) fits and falls back on a constant volatility when a fitted
+      α_i is below 0.01; here the fitted volatility is kept.
     """
     if len(returns) < 100:  # noqa: PLR2004
         raise ValueError("The CCC-GARCH model needs at least 100 periods.")
@@ -2485,9 +2647,10 @@ def get_bisquare_constants(
     assets: int, delta: float, efficiency: float
 ) -> tuple[float, float]:
     """
-    The tuning constants of Tukey's bisquare, ρ(d) = 1 - (1 - (d / c)²)³ for d ≤ c and 1
-    above, for the S-estimator and the MM-estimator of the location and scatter of N
-    assets at the normal distribution.
+    The tuning constants of Tukey's bisquare for the S-estimator and the MM-estimator of the
+    location and scatter of N assets at the normal distribution.
+
+    The bisquare is ρ(d) = 1 - (1 - (d / c)²)³ for d ≤ c and 1 above.
 
     - The S-estimator's c_0 makes it consistent at the normal distribution: E[ρ(√X)] = δ for
       X ~ χ²_N, which in closed form is P(X > c²) + E[3 X / c² - 3 X² / c⁴ + X³ / c⁶; X ≤ c²]
@@ -2497,14 +2660,17 @@ def get_bisquare_constants(
       (N + 1) ψ(d) d]² for d ~ χ_N and ψ = ρ' (Lopuhaä, 1989, equation 5.5;
       Salibián-Barrera, Van Aelst and Willems, 2006), integrated by Gauss-Legendre quadrature.
 
-    Referenced against statsmodels' robust.tools.eff_mvshape and its table of biweight
-    constants (https://github.com/statsmodels/statsmodels).
-
     See Lopuhaä, H. P. (1989), "On the Relation between S-Estimators and M-Estimators of
     Multivariate Location and Covariance", The Annals of Statistics, 17(4), 1662-1683, and
     Salibián-Barrera, M., Van Aelst, S. and Willems, G. (2006), "Principal Components
     Analysis Based on Multivariate MM Estimators with Fast and Robust Bootstrap", Journal of
     the American Statistical Association, 101(475), 1198-1211.
+
+    Referenced against:
+    - statsmodels, tukeybiweight_mvmean_eff (shape efficiency): https://github.com/statsmodels/statsmodels/blob/v0.15.0/statsmodels/robust/tools.py#L586
+
+    Shares similar logic:
+    - statsmodels, eff_mvshape: https://github.com/statsmodels/statsmodels/blob/v0.15.0/statsmodels/robust/tools.py#L414
 
     Args:
         assets (int): The number of assets N.
@@ -2563,27 +2729,28 @@ def get_robust_covariance(
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     The robust location and covariance matrix of the returns by an MM-estimator or Rocke's
-    S-estimator, both iteratively reweighted means and covariances in which periods far from
-    the bulk of the returns (in Mahalanobis distance) get a weight that falls to zero, so
-    crashes, squeezes and data errors barely move them.
+    S-estimator, which outliers barely move.
 
-    An S-estimator (Davies, 1987) is the location μ and scatter Σ = s V with det(V) = 1 that
-    give the smallest scale s solving (1 / T) Σ_t ρ(d²_t / s) = δ, with d²_t = (r_t - μ)'
-    V⁻¹ (r_t - μ) and δ = (1 - N / T) / 2, the largest breakdown point: the estimate
-    withstands almost half the periods being outliers (Lopuhaä and Rousseeuw, 1991). It is
-    found by iterating μ = Σ w_t r_t / Σ w_t and V ∝ Σ w_t (r_t - μ)(r_t - μ)' with the weights
-    w_t = ρ'(d²_t / s), halving the step whenever the scale would rise.
+    Both are iteratively reweighted means and covariances in which periods far from the bulk
+    of the returns (in Mahalanobis distance) get a weight that falls to zero, so crashes,
+    squeezes and data errors barely move them. An S-estimator (Davies, 1987) is the location
+    μ and scatter Σ = s V with det(V) = 1 that give the smallest scale s solving (1 / T) Σ_t
+    ρ(d²_t / s) = δ, with d²_t = (r_t - μ)' V⁻¹ (r_t - μ) and δ = (1 - N / T) / 2, the
+    largest breakdown point: the estimate withstands almost half the periods being outliers
+    (Lopuhaä and Rousseeuw, 1991). It is found by iterating μ = Σ w_t r_t / Σ w_t and V ∝ Σ
+    w_t (r_t - μ)(r_t - μ)' with the weights w_t = ρ'(d²_t / s), halving the step whenever
+    the scale would rise.
 
-    - "mm": the MM-estimator (Tatsuoka and Tyler, 2000; Salibián-Barrera, Van Aelst and
-      Willems, 2006). First an S-estimator with Tukey's bisquare, ρ(d) = 1 - (1 - (d / c_0)²)³
-      for d ≤ c_0, consistent at the normal distribution. Then, with its scale s held
-      fixed, the M-estimator with a bisquare of a larger c_1 that minimizes Σ_t ρ(d_t / √s)
-      over μ and V, by the same reweighting: Σ = s V. The second step brings the efficiency
-      of the shape at the normal distribution to `efficiency` (see get_bisquare_constants)
-      and keeps the breakdown point of the first.
-    - "rocke": the S-estimator with the translated biweight of Rocke (1996) on the squared
-      distances, ρ(x) = 0 for x < 1 - γ, ((x - 1) / (4γ)) (3 - ((x - 1) / γ)²) + ½ for
-      |x - 1| ≤ γ and 1 for x > 1 + γ, with γ = min(χ²_N(1 - α) / N - 1, 1) and α = 0.005
+    - The MM-estimator (Tatsuoka and Tyler, 2000; Salibián-Barrera, Van Aelst and Willems,
+      2006). First an S-estimator with Tukey's bisquare, ρ(d) = 1 - (1 - (d / c_0)²)³ for d
+      ≤ c_0, consistent at the normal distribution. Then, with its scale s held fixed, the
+      M-estimator with a bisquare of a larger c_1 that minimizes Σ_t ρ(d_t / √s) over μ and
+      V, by the same reweighting: Σ = s V. The second step brings the efficiency of the
+      shape at the normal distribution to `efficiency` (see get_bisquare_constants) and
+      keeps the breakdown point of the first.
+    - Rocke's S-estimator, with the translated biweight of Rocke (1996) on the squared
+      distances, ρ(x) = 0 for x < 1 - γ, ((x - 1) / (4γ)) (3 - ((x - 1) / γ)²) + ½ for |x -
+      1| ≤ γ and 1 for x > 1 + γ, with γ = min(χ²_N(1 - α) / N - 1, 1) and α = 0.005
       (Maronna, Martin, Yohai and Salibián-Barrera, 2019). Its weights vanish at both small
       and large distances, which keeps its efficiency and robustness as the number of assets
       grows, where the bisquare S-estimator becomes ever less robust. The scatter s V is
@@ -2597,12 +2764,8 @@ def get_robust_covariance(
     1e-12 (relative to the scale), so the estimate is the fixed point rather than wherever a
     looser stop leaves it, and the same returns with the same seed give the same estimate.
 
-    PortfolioAnalytics' custom.covRob.MM and custom.covRob.Rocke
-    (https://github.com/braverock/PortfolioAnalytics) call RobStatTM's covRobMM and
-    covRobRocke, which start from the kurtosis-based estimate of Peña and Prieto (2007);
-    from another start, the iterations can end in another local minimum of the scale on
-    small samples. They are referenced against the papers and against statsmodels' biweight
-    constants, and checked to recover the covariance of normal returns with outliers added.
+    The estimates follow the papers, with the bisquare constants of statsmodels, and are
+    checked to recover the covariance of normal returns with outliers added.
 
     See Davies, P. L. (1987), "Asymptotic Behaviour of S-Estimates of Multivariate Location
     Parameters and Dispersion Matrices", The Annals of Statistics, 15(3), 1269-1292; Lopuhaä,
@@ -2615,17 +2778,28 @@ def get_robust_covariance(
     A., Martin, R. D., Yohai, V. J. and Salibián-Barrera, M. (2019), Robust Statistics:
     Theory and Methods (with R), 2nd edition, Wiley, chapter 6.
 
+    Shares similar logic:
+    - PortfolioAnalytics (R), custom.covRob.MM: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/custom.covRob.R#L29
+    - PortfolioAnalytics (R), custom.covRob.Rocke: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/custom.covRob.R#L57
+
     Args:
         returns (pd.DataFrame): The returns per period, at least two assets, without missing
             values.
-        method (str, optional): "mm" or "rocke". Defaults to "mm".
-        efficiency (float, optional): The shape efficiency of "mm" at the normal
+        method (str, optional): The estimator. Options are: "mm" (MM-estimator), "rocke" (Rocke's
+            S-estimator). Defaults to "mm".
+        efficiency (float, optional): The shape efficiency of the MM-estimator at the normal
             distribution, between 0.5 and 0.99. Defaults to 0.95.
         seed (int | None, optional): The seed of the minimum covariance determinant start.
             Defaults to 0.
 
     Returns:
         tuple[pd.Series, pd.DataFrame]: The location and the covariance matrix per period.
+
+    Notes:
+    - PortfolioAnalytics' custom.covRob.MM and custom.covRob.Rocke call RobStatTM's covRobMM
+      and covRobRocke, which start from the kurtosis-based estimate of Peña and Prieto
+      (2007); from another start, the iterations can end in another local minimum of the
+      scale on small samples.
     """
     check_option("method", method, ROBUST_COVARIANCE_METHODS)
     if not 0.5 <= efficiency <= 0.99:  # noqa: PLR2004
@@ -2784,9 +2958,10 @@ def get_centroid_expected_returns(
 ) -> pd.Series:
     """
     The expected returns implied by an ordering of the assets alone, by the centroid of
-    Almgren and Chriss (2006): the expected value of the risk-adjusted returns given only
-    that they fall in the stated order, which is the centre of mass of the cone of vectors in
-    that order.
+    Almgren and Chriss (2006).
+
+    It is the expected value of the risk-adjusted returns given only that they fall in the
+    stated order, which is the centre of mass of the cone of vectors in that order.
 
     - For a complete ordering of n assets, the centroid is the vector of expected order
       statistics of n standard normal draws, approximated by
@@ -2801,15 +2976,14 @@ def get_centroid_expected_returns(
     no estimation error of the means; the maximum Sharpe portfolio depends only on the
     direction of μ, the other optimizers also on its scale.
 
-    Referenced against PortfolioAnalytics' ac.ranking and centroid.complete.mc
-    (https://github.com/braverock/PortfolioAnalytics), whose centroid values it matches,
-    and against the Monte Carlo mean of sorted normal draws. PortfolioAnalytics takes the
-    order from the lowest expected return to the highest and rescales the centroid to lie
-    between -0.05 and 0.05; its centroid.buckets gives every bucket the centroid of as many
-    draws as there are buckets, where here a bucket averages the positions it holds.
+    The centroid values are checked against the Monte Carlo mean of sorted normal draws.
 
     See Almgren, R. and Chriss, N. (2006), "Optimal Portfolios from Ordering Information",
     Journal of Risk, 9(1), 1-47.
+
+    Shares similar logic:
+    - PortfolioAnalytics (R), ac.ranking: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/ac_ranking.R#L31
+    - PortfolioAnalytics (R), centroid.complete.mc: https://github.com/cran/PortfolioAnalytics/blob/2.1.2/R/ac_ranking.R#L97
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
@@ -2822,6 +2996,12 @@ def get_centroid_expected_returns(
 
     Returns:
         pd.Series: The annualized expected return per asset.
+
+    Notes:
+    - PortfolioAnalytics takes the order from the lowest expected return to the highest and
+      rescales the centroid to lie between -0.05 and 0.05; its centroid.buckets gives every
+      bucket the centroid of as many draws as there are buckets, where here a bucket
+      averages the positions it holds.
     """
     if isinstance(ranking, dict | pd.Series):
         scores = pd.Series(ranking, dtype=float)

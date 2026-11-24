@@ -19,10 +19,11 @@ def get_cash_flow_return_on_investment(
     asset_life: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    The Cash Flow Return on Investment (CFROI) of Madden: the internal rate of return of the
-    company's assets as one project, where the gross investment buys the gross cash flow for
-    every year of the asset life and the non-depreciating assets (working capital, land) are
-    released at the end of it.
+    The Cash Flow Return on Investment (CFROI) of Madden.
+
+    It is the internal rate of return of the company's assets as one project, where the
+    gross investment buys the gross cash flow for every year of the asset life and the
+    non-depreciating assets (working capital, land) are released at the end of it.
 
     The formula is as follows, solved for the CFROI:
 

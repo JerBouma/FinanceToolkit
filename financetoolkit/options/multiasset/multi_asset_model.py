@@ -114,7 +114,6 @@ def get_exchange_option(
 
     Referenced against:
     - QuantLib, AnalyticEuropeanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_european_margrabe_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_exchange_option_matches_quantlib_and_the_tree
 
     Shares similar logic:
     - QuantLib, AnalyticAmericanMargrabeEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_american_margrabe_engine.html
@@ -289,9 +288,7 @@ def get_spread_option(
 
     Referenced against:
     - QuantLib, BjerksundStenslandSpreadEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_bjerksund_stensland_spread_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_spread_option_matches_quantlib
     - QuantLib, KirkEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_kirk_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_spread_option_matches_quantlib
 
     Args:
         first_stock_price (float): The price of the first asset, S1.
@@ -496,7 +493,6 @@ def get_two_asset_correlation_option(
 
     Referenced against:
     - QuantLib, AnalyticTwoAssetCorrelationEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_analytic_two_asset_correlation_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_two_asset_correlation_option_matches_quantlib
 
     Args:
         first_stock_price (float): The price of the first asset, S1, that decides whether
@@ -666,7 +662,6 @@ def get_rainbow_option(
 
     Referenced against:
     - QuantLib, StulzEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_stulz_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_rainbow_option_matches_quantlib
 
     Shares similar logic:
     - FinancePy, EquityRainbowOption: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_rainbow_option.py#L124
@@ -1019,7 +1014,6 @@ def get_basket_option(
 
     Referenced against:
     - QuantLib, ChoiBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_choi_basket_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_basket_approximations_are_close_to_choi
 
     Shares similar logic:
     - QuantLib, MCEuropeanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_basket_engine.html
@@ -1196,7 +1190,6 @@ def get_monte_carlo_basket_option(
 
     Referenced against:
     - QuantLib, ChoiBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_choi_basket_engine.html
-        Test: tests/options/test_multi_asset_model.py::test_the_monte_carlo_basket_matches_choi
 
     Shares similar logic:
     - QuantLib, MCEuropeanBasketEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_m_c_european_basket_engine.html

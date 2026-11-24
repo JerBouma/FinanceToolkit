@@ -58,7 +58,6 @@ def get_accrued_fraction(years_to_maturity: float, frequency: int) -> float:
 
     Referenced against:
     - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
@@ -88,7 +87,6 @@ def get_cash_flow_periods(years_to_maturity: float, frequency: int) -> np.ndarra
 
     Referenced against:
     - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
 
     Args:
         years_to_maturity (float): The number of years until the bond matures.
@@ -177,7 +175,6 @@ def get_accrued_interest(
 
     Referenced against:
     - QuantLib, FixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_fixed_rate_bond.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
 
     Args:
         par_value (float): The face value of the bond.
@@ -290,8 +287,6 @@ def get_bond_price(
 
     Referenced against:
     - QuantLib, BondFunctions.cleanPrice: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
     Args:
         par_value (float): The face value of the bond.
@@ -475,7 +470,6 @@ def get_yield_to_call(
 
     Referenced against:
     - QuantLib, BondFunctions.yield: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_yield_to_call_matches_quantlib_and_excel_yield
 
     Args:
         par_value (float): The face value of the bond.
@@ -715,8 +709,6 @@ def get_macaulays_duration(
 
     Referenced against:
     - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_matches_quantlib
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
     Args:
         par_value (float): The face value of the bond.
@@ -774,7 +766,6 @@ def get_modified_duration(
 
     Referenced against:
     - QuantLib, BondFunctions.duration: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
     Args:
         par_value (float): The face value of the bond.
@@ -1001,7 +992,6 @@ def get_convexity(
 
     Referenced against:
     - QuantLib, BondFunctions.convexity: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_fractional_maturity_semi_annual_matches_quantlib
 
     Args:
         par_value (float): The face value of the bond.
@@ -1596,9 +1586,7 @@ def get_amortizing_bond_measures(
 
     Referenced against:
     - QuantLib, AmortizingFixedRateBond: https://www.quantlib.org/reference/class_quant_lib_1_1_amortizing_fixed_rate_bond.html
-        Test: tests/fixedincome/test_bond_model.py::test_amortizing_bond_measures_match_quantlib
     - QuantLib, BondFunctions: https://www.quantlib.org/reference/struct_quant_lib_1_1_bond_functions.html
-        Test: tests/fixedincome/test_bond_model.py::test_amortizing_bond_measures_match_quantlib
 
     Args:
         par_value (float): The principal outstanding today.

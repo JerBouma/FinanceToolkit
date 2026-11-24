@@ -500,9 +500,7 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
 
         Referenced against:
         - QuantLib, JamshidianSwaptionEngine (european): https://www.quantlib.org/reference/class_quant_lib_1_1_jamshidian_swaption_engine.html
-            Test: tests/fixedincome/test_short_rate_model.py::test_swaption_matches_quantlib_jamshidian
         - QuantLib, TreeSwaptionEngine (bermudan): https://www.quantlib.org/reference/class_quant_lib_1_1_tree_swaption_engine.html
-            Test: tests/fixedincome/test_trinomial_tree_model.py::test_bermudan_swaption_matches_quantlib
 
         Args:
             expiries (float | str | list | None, optional): The expiries of the swaptions, in

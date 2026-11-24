@@ -641,45 +641,32 @@ class OverlapTechnicals:
         - TA-Lib, EMA: https://ta-lib.org/functions/ema.html
         - TA-Lib, DEMA: https://ta-lib.org/functions/dema.html
         - TA-Lib, TEMA: https://ta-lib.org/functions/tema.html
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - TA-Lib, ZLEMA: https://ta-lib.org/functions/zlema.html
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - TA-Lib, TRIMA: https://ta-lib.org/functions/trima.html
         - pandas-ta-classic, swma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/swma.py#L18
         - TA-Lib, WMA: https://ta-lib.org/functions/wma.html
         - TA-Lib, HMA: https://ta-lib.org/functions/hma.html
         - TA-Lib, KAMA: https://ta-lib.org/functions/kama.html
         - TA-Lib, T3: https://ta-lib.org/functions/t3.html
-            Test: tests/technical/test_overlap_model.py::test_t3_moving_average_matches_talib
         - pandas-ta-classic, t3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/t3.py#L14
         - TA-Lib, ALMA: https://ta-lib.org/functions/alma.html
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - pandas-ta-classic, alma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/alma.py#L12
         - TA-Lib, VWMA: https://ta-lib.org/functions/vwma.html
-            Test: tests/technical/test_overlap_model.py::test_volume_weighted_moving_average_matches_talib
         - pandas-ta-classic, vwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwma.py#L13
         - TA-Lib, MCGD: https://ta-lib.org/functions/mcgd.html
         - pandas-ta-classic, mcgd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mcgd.py#L28
         - TA-Lib, VIDYA: https://ta-lib.org/functions/vidya.html
         - pandas-ta-classic, vidya: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vidya.py#L27
         - TA-Lib, FRAMA: https://ta-lib.org/functions/frama.html
-            Test: tests/technical/test_overlap_model.py::test_fractal_adaptive_moving_average_matches_talib_after_the_seed
         - finta, FRAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L463
         - pandas-ta-classic, sinwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/sinwma.py#L12
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - pandas-ta-classic, fwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/fwma.py#L17
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - pandas-ta-classic, pwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/pwma.py#L17
-            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
         - pandas-ta-classic, hwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hwma.py#L31
-            Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
         - finta, EVWMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L381
         - finta, VAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L226
-            Test: tests/technical/test_overlap_model.py::test_volume_adjusted_moving_average_matches_finta
         - pandas-ta-classic, ssf (SuperSmoother): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ssf.py#L28
-            Test: tests/technical/test_cycle_model.py::test_super_smoother_filter_matches_pandas_ta
         - TA-Lib, HT_TRENDLINE (Hilbert Transform Instantaneous Trendline): https://ta-lib.org/functions/ht_trendline.html
-            Test: tests/technical/test_cycle_model.py::test_instantaneous_trendline_matches_talib
         - pandas-ta-classic, ht_trendline (Hilbert Transform Instantaneous Trendline): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ht_trendline.py#L14
 
         Shares similar logic:
@@ -1028,7 +1015,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - TA-Lib, TRIX: https://ta-lib.org/functions/trix.html
-            Test: tests/technical/test_overlap_model.py::test_trix_signal_line_matches_talib
 
         Shares similar logic:
         - pandas-ta-classic, trix: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trix.py#L18
@@ -1171,7 +1157,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - TA-Lib, AVGPRICE: https://ta-lib.org/functions/avgprice.html
-            Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
         - TA-Lib, MEDPRICE: https://ta-lib.org/functions/medprice.html
         - TA-Lib, TYPPRICE: https://ta-lib.org/functions/typprice.html
         - TA-Lib, WCLPRICE: https://ta-lib.org/functions/wclprice.html
@@ -1319,7 +1304,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - TA-Lib, MIDPOINT: https://ta-lib.org/functions/midpoint.html
-            Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
         - TA-Lib, MIDPRICE: https://ta-lib.org/functions/midprice.html
 
         Shares similar logic:
@@ -1467,7 +1451,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - pandas-ta-classic, hwc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/hwc.py#L75
-            Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
         Also known as: HWC, Holt-Winters channel, Holt-Winter channel.
 
@@ -1753,7 +1736,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - TA-Lib, ZIGZAG: https://ta-lib.org/functions/zigzag.html
-            Test: tests/technical/test_overlap_model.py::test_zigzag_matches_talib
 
         Also known as: ZIGZAG, Zig Zag, swing filter, filtered waves.
 
@@ -2064,8 +2046,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - TA-Lib, SAR: https://ta-lib.org/functions/sar.html
-            Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_ta_lib_from_a_short_start
-            Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_talib_sarext
         - TA-Lib, SAREXT: https://ta-lib.org/functions/sarext.html
 
         Shares similar logic:
@@ -2243,7 +2223,6 @@ class OverlapTechnicals:
 
         Referenced against:
         - pandas-ta-classic, cpr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cpr.py#L76
-            Test: tests/technical/test_overlap_model.py::test_pivot_point_variants_match_pandas_ta
 
         Shares similar logic:
         - finta, PIVOT: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1123

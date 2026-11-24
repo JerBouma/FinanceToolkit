@@ -29,9 +29,10 @@ RATINGS_PER_TABLE = 15
 
 def get_synthetic_rating_table() -> pd.DataFrame:
     """
-    Retrieves Aswath Damodaran's synthetic rating tables: per firm type (large
-    non-financial, smaller and riskier, financial service firms), the interest coverage
-    range of every bond rating and the default spread of that rating.
+    Retrieves Aswath Damodaran's synthetic rating tables.
+
+    Per firm type (large non-financial, smaller and riskier, financial service firms), the
+    interest coverage range of every bond rating and the default spread of that rating.
 
     Returns:
         pd.DataFrame: One row per firm type and rating with the Lower and Upper bound of the

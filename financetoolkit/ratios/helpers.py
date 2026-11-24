@@ -10,14 +10,15 @@ def map_period_data_to_daily_data(
     period_end_dates: pd.DataFrame | None = None,
 ):
     """
-    Maps period data (e.g. quarterly or yearly financial statement figures) to daily dates.
+    Map period data, such as quarterly or yearly financial statement figures, to daily dates, so each day carries the
+    figures of the last period that closed on or before it.
 
     Each period's value applies from the last day of its fiscal period onwards, until the
     next period ends. A day therefore only sees the figures of periods that have closed on
     or before it, never those of the period it falls in. By default the figures apply from
     the period end, not from the (later) date they were filed, so a day shortly after a
-    period end already uses figures the market only learns of weeks later; a Toolkit with
-    point_in_time passes the filing days as period_end_dates, so each day only uses filed
+    period end already uses figures the market only learns of weeks later; a point-in-time
+    Toolkit passes the filing days as the period end dates, so each day only uses filed
     figures. The period ratios price each period at the close on the same date (or the last
     trading day before it), so on a trading day that a period's figures start to apply, the
     daily ratio equals the period ratio. Days before the end of the first period have no
@@ -26,7 +27,7 @@ def map_period_data_to_daily_data(
     The statement columns are calendar periods, which for a fiscal year ending in January
     through May is the calendar year before the one it ends in (and for an off-cycle quarter
     the calendar quarter before), so the end of the label can lie before the end of the
-    fiscal period. period_end_dates gives the actual end of each ticker's fiscal periods;
+    fiscal period. The period end dates give the actual end of each ticker's fiscal periods;
     without it, or for a ticker or period it does not cover, the end of the labelled
     calendar period is used.
 
@@ -95,8 +96,8 @@ def align_employee_count(
     quarterly: bool = False,
 ) -> pd.DataFrame:
     """
-    Places the employee counts of the annual filings on the statement periods, so that a
-    figure per employee divides each period's figures by the headcount of that period.
+    Place the employee counts of the annual filings on the statement periods, so a figure per employee divides each
+    period's figures by that period's headcount.
 
     The employee counts are labelled with the calendar year of the fiscal year end of the
     annual filing they come from (the period of report; a 52/53-week year ending in the first

@@ -742,7 +742,6 @@ class DynamicsEconometrics:
 
         Referenced against:
         - statsmodels, coint: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.coint.html
-            Test: tests/econometrics/test_reference_validation.py::test_cointegration_tests
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or

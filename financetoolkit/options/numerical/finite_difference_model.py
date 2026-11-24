@@ -687,9 +687,7 @@ def get_finite_difference_option(
 
     Referenced against:
     - QuantLib, FdBlackScholesVanillaEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_fd_black_scholes_vanilla_engine.html
-        Test: tests/options/test_finite_difference_model.py::test_american_put_matches_the_fixed_point_and_the_references
     - FinancePy, black_scholes_fd: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference.py#L318
-        Test: tests/options/test_finite_difference_model.py::test_american_put_matches_the_fixed_point_and_the_references
 
     Shares similar logic:
     - FinancePy, black_scholes_fd_psor: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/finite_difference_psor.py#L13
@@ -1082,7 +1080,6 @@ def get_finite_difference_shout_option(
 
     Referenced against:
     - QuantLib, FdBlackScholesShoutEngine: https://github.com/lballabio/QuantLib/blob/v1.44/ql/pricingengines/vanilla/fdblackscholesshoutengine.hpp#L35
-        Test: tests/options/test_finite_difference_model.py::test_shout_option_matches_quantlib
 
     Args:
         stock_price (float): The current stock price.

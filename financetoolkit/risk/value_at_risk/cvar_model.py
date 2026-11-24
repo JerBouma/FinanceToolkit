@@ -164,7 +164,6 @@ def get_cvar_kernel(
 
     Referenced against:
     - scipy, gaussian_kde: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
-        Test: tests/risk/test_cvar_model.py::test_get_cvar_kernel_reference_value
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with

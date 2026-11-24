@@ -104,9 +104,7 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, ttest_ind: https://www.statsmodels.org/stable/generated/statsmodels.stats.weightstats.ttest_ind.html
-            Test: tests/econometrics/test_least_squares_model.py::test_two_sample_t_tests_match_the_reference
         - scipy, ttest_ind: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html
-            Test: tests/econometrics/test_reference_validation.py::test_two_sample_t_test
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -216,7 +214,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, RegressionResults.compare_f_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_f_test.html
-            Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -335,7 +332,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, RegressionResults.compare_lr_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.compare_lr_test.html
-            Test: tests/econometrics/test_least_squares_model.py::test_nested_and_restriction_tests_match_the_reference
 
         Args:
             dependent_ticker (str): The dependent (predicted) asset.
@@ -456,7 +452,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, RegressionResults.wald_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.wald_test.html
-            Test: tests/econometrics/test_reference_validation.py::test_nested_model_tests
 
         Args:
             restriction_matrix (pd.DataFrame | np.ndarray | list[list[float]]): The `(q, k)`
@@ -794,9 +789,7 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, het_breuschpagan (Breusch-Pagan test): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_breuschpagan.html
-            Test: tests/econometrics/test_reference_validation.py::test_specification_tests
         - statsmodels, het_white (White's test): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_white.html
-            Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -919,7 +912,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, durbin_watson: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.durbin_watson.html
-            Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
@@ -1031,7 +1023,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, variance_inflation_factor: https://www.statsmodels.org/stable/generated/statsmodels.stats.outliers_influence.variance_inflation_factor.html
-            Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
         Args:
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
@@ -1135,7 +1126,6 @@ class TestingEconometrics:
 
         Referenced against:
         - statsmodels, linear_reset: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.linear_reset.html
-            Test: tests/econometrics/test_reference_validation.py::test_specification_tests
 
         Args:
             dependent_ticker (str | None, optional): The dependent (predicted) asset.

@@ -403,7 +403,7 @@ def get_exchange_business_days(start_date: str, end_date: str) -> pd.DatetimeInd
         end_date (str): The last day (YYYY-MM-DD).
 
     Returns:
-        pd.DatetimeIndex: The business days from start_date up to and including end_date.
+        pd.DatetimeIndex: The business days from the start date up to and including the end date.
     """
     holidays = USExchangeHolidays().holidays(start=start_date, end=end_date)
 
@@ -416,7 +416,8 @@ def buffered_start_date(start_date: str, period: str) -> str:
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
-        period (str): "daily", "weekly", "monthly" or "quarterly".
+        period (str): The frequency of the data. Options are: "daily" (daily data), "weekly" (weekly data), "monthly"
+            (monthly data), "quarterly" (quarterly data).
 
     Returns:
         str: The earlier start date (YYYY-MM-DD).
@@ -430,12 +431,12 @@ def normalize_requested_countries(
     countries: list[str] | str | None, known: Iterable[str]
 ) -> list[str] | None:
     """
-    The requested countries as a list of the names the sources use, so a short form or
-    another casing ("USA", "united kingdom", "uk") selects the same sources as the name
-    itself. A string may hold several countries separated by commas; blank entries (a
-    trailing comma in "Germany,") are skipped and a country spelled twice is listed once.
-    A country that matches nothing known is kept as given, so it is reported as
-    unavailable later on.
+    Turn the requested countries into a list of the names the sources use, so a short form or another casing selects
+    the same sources as the name itself.
+
+    A string may hold several countries separated by commas; blank entries (a trailing comma in "Germany,") are
+    skipped and a country spelled twice is listed once. A country that matches nothing known is kept as given, so it
+    is reported as unavailable later on.
 
     Args:
         countries (list[str] | str | None): The countries as passed to a method.
@@ -486,8 +487,11 @@ def warn_about_long_run_prices(
     end_date: str | None,
 ) -> None:
     """
-    Warns about the years of the Global Macro Database's yearly consumer price index, in
-    the date range, that its inflation rate does not describe as it reads:
+    Warn about the years of the Global Macro Database's yearly consumer price index whose inflation rate does not
+    describe the price change as it reads.
+
+    Warns about the years of the Global Macro Database's yearly consumer price index, in the date range, that its
+    inflation rate does not describe as it reads:
 
     - A value repeated in consecutive years, which the source carried forward rather
       than measured, so that the inflation of those years is 0 by construction. Germany's
@@ -630,10 +634,8 @@ def change_over_periods(
     data: pd.DataFrame | pd.Series, periods: int
 ) -> pd.DataFrame | pd.Series:
     """
-    The relative change over a number of periods (12 months, 4 quarters) on consecutive
-    periods: a period a source skipped becomes empty first, so the change compares the
-    same period a year earlier rather than the row that many places back, and the skipped
-    period and the one a year after it are empty.
+    Calculate the relative change over a number of periods on consecutive periods, so a period a source skipped does
+    not shift the comparison.
 
     Args:
         data (pd.DataFrame | pd.Series): The values, indexed by a monthly, quarterly or
@@ -706,13 +708,13 @@ def validate_consumer_price_measure(
 
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the
-    last observation of every period, the end-of-period convention central banks and the
-    BIS use for rates.
+    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the last observation of every
+    period, the end-of-period convention central banks and the BIS use for rates.
 
     Args:
         data (pd.DataFrame): The daily series, indexed by a daily PeriodIndex.
-        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+        period (str): The frequency to resample to. Options are: "daily" (daily data), "weekly" (weekly data),
+            "monthly" (monthly data), "quarterly" (quarterly data), "yearly" (yearly data).
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -739,19 +741,20 @@ def aggregate_weekly_series(
     data: pd.DataFrame, period: str, aggregation: str = "mean"
 ) -> pd.DataFrame:
     """
-    Converts a weekly series, indexed by the day each week ends, to a monthly, quarterly or
-    yearly one: the average of the weeks of every period (the default with which FRED
-    converts its weekly series), or the highest, lowest or last week. A week
-    belongs to the period of the day it ends, as FRED aggregates its weekly series. A period
-    is only returned once all of its weeks are published, so a month that is still running
-    is not mistaken for a full one (nor the first period when the data starts within it).
+    Convert a weekly series, indexed by the day each week ends, to a monthly, quarterly or yearly one: the average,
+    highest, lowest or last week of every period.
+
+    A week belongs to the period of the day it ends, as FRED aggregates its weekly series. A period is only returned
+    once all of its weeks are published, so a month that is still running is not mistaken for a full one (nor the
+    first period when the data starts within it).
 
     Args:
         data (pd.DataFrame): The weekly series, indexed by a daily PeriodIndex of the days
             the weeks end (all on the same weekday).
-        period (str): "weekly", which returns the data as it is, "monthly", "quarterly" or
-            "yearly".
-        aggregation (str, optional): "mean", "max", "min" or "last". Defaults to "mean".
+        period (str): The frequency to combine the weeks into. Options are: "weekly" (the data as it is), "monthly"
+            (monthly data), "quarterly" (quarterly data), "yearly" (yearly data).
+        aggregation (str, optional): How the weeks are combined. Options are: "mean" (the average of its weeks), "max"
+            (the highest week), "min" (the lowest week), "last" (the last week). Defaults to "mean".
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -791,14 +794,16 @@ def aggregate_weekly_series(
 
 def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a monthly index to a quarterly or yearly one by averaging the months of
-    every period, the convention statistical offices use for the quarterly and annual
-    values of a price index. A period is only averaged once all of its months are
-    published, so a partial quarter or year is not mistaken for a full one.
+    Converts a monthly index to a quarterly or yearly one by averaging the months of every period, the convention
+    statistical offices use for the quarterly and annual values of a price index.
+
+    A period is only averaged once all of its months are published, so a partial quarter or year is not mistaken for a
+    full one.
 
     Args:
         data (pd.DataFrame): The monthly index, indexed by a monthly PeriodIndex.
-        period (str): "monthly", "quarterly" or "yearly".
+        period (str): The frequency to average to. Options are: "monthly" (monthly data), "quarterly" (quarterly
+            data), "yearly" (yearly data).
 
     Returns:
         pd.DataFrame: The index at the requested frequency, NaN for incomplete periods.
@@ -821,11 +826,11 @@ MINIMUM_REPEATED_QUARTERS = 2
 
 def keep_quarter_end_of_repeated_quarters(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Keeps only the last month of each quarter in which a monthly series repeats the
-    quarter's value over its months, such as the BIS consumer prices of Australia and New
-    Zealand, which publish their CPI quarterly. Repeated months would otherwise show a
-    monthly rate of change of 0 twice a quarter and count each quarter three times in
-    averages and rolling windows.
+    Keeps only the last month of each quarter in which a monthly series repeats the quarter's value over its months,
+    such as the BIS consumer prices of Australia and New Zealand, which publish their CPI quarterly.
+
+    Repeated months would otherwise show a monthly rate of change of 0 twice a quarter and count each quarter three
+    times in averages and rolling windows.
 
     The decision is made per country and per quarter, so a country that moves from
     quarterly to monthly publication keeps its monthly months while its earlier quarters
@@ -921,9 +926,8 @@ def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
 
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     """
-    Combines country columns from several sources, taking each country from the source
-    with the most recent observation and, when sources are equally recent, from the
-    first in the list.
+    Combines country columns from several sources, taking each country from the source with the most recent
+    observation and, when sources are equally recent, from the first in the list.
 
     A source can keep a country it no longer updates, such as the United Kingdom in
     Eurostat data since Brexit, so the most recent observation decides rather than the
@@ -1040,9 +1044,11 @@ def compound_overnight_rate(
     rates: pd.DataFrame, day_counts: dict[str, int]
 ) -> pd.DataFrame:
     """
-    Compounds daily overnight rates into the growth of 1 deposited on the first day, the
-    method of the compounded indices the European Central Bank and the New York Fed
-    publish for €STR and SOFR:
+    Compound daily overnight rates into the growth of 1 deposited on the first day, what a deposit at the overnight
+    rate grows to.
+
+    Compounds daily overnight rates into the growth of 1 deposited on the first day, the method of the compounded
+    indices the European Central Bank and the New York Fed publish for €STR and SOFR:
 
     - Growth (t) = Growth (t-1) × (1 + Rate (t-1) × Days (t-1) / Day Count)
 

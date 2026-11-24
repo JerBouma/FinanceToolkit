@@ -1390,11 +1390,8 @@ class MarketOptions:
 
         Referenced against:
         - QuantLib, ReplicatingVarianceSwapEngine: https://www.quantlib.org/reference/class_quant_lib_1_1_replicating_variance_swap_engine.html
-            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_quantlib
         - FinancePy, EquityVarianceSwap.fair_strike: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L102
-            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_fair_strike_matches_financepy
         - FinancePy, EquityVarianceSwap.value: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/products/equity/equity_variance_swap.py#L61
-            Test: tests/options/test_market_metrics_model.py::test_the_variance_swap_value_matches_financepy
 
         Shares similar logic:
         - QuantLib, VarianceSwap: https://www.quantlib.org/reference/class_quant_lib_1_1_variance_swap.html
@@ -1812,7 +1809,6 @@ class MarketOptions:
 
         Referenced against:
         - FinancePy, simulate_hedge_paths: https://github.com/domokane/FinancePy/blob/V1.1.2/financepy/models/black_scholes_hedging_sim.py#L592
-            Test: tests/options/test_hedging_model.py::test_the_simulation_matches_financepy
 
         Args:
             days (int, optional): The trading days to expiration. Defaults to 63, about three

@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.econometrics.statistics import entropy_model
+from financetoolkit.econometrics.helpers import calculate_per_series
+from financetoolkit.econometrics.statistics import entropy_model, statistics_model
 from financetoolkit.utilities.error_model import InvalidArgumentError
 
 
@@ -1107,82 +1108,170 @@ def test_get_slope(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_slope(period="weekly"))
 
 
-def test_get_rolling_correlation(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_correlation(column="Adj Close"))
+def test_get_correlation(recorder, econometrics_module):
     recorder.capture(
-        econometrics_module.get_rolling_correlation(column="High", against="Low")
+        econometrics_module.get_correlation(column="Adj Close", rolling=30)
     )
     recorder.capture(
-        econometrics_module.get_rolling_correlation(column="Adj Close", against="MSFT")
+        econometrics_module.get_correlation(column="High", against="Low", rolling=30)
     )
-    recorder.capture(econometrics_module.get_rolling_correlation())
-
-
-def test_get_rolling_median(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_median())
-    recorder.capture(econometrics_module.get_rolling_median(window=9))
-    recorder.capture(econometrics_module.get_rolling_median(column="Return"))
-
-
-def test_get_rolling_percentile(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_percentile())
     recorder.capture(
-        econometrics_module.get_rolling_percentile(window=30, percentile=0.75)
+        econometrics_module.get_correlation(
+            column="Adj Close", against="MSFT", rolling=30
+        )
     )
-    recorder.capture(econometrics_module.get_rolling_percentile(method="linear"))
-    recorder.capture(econometrics_module.get_rolling_percentile(period="weekly"))
+    recorder.capture(econometrics_module.get_correlation(rolling=30))
+    recorder.capture(econometrics_module.get_correlation())
+
+
+def test_get_percentile_median(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_percentile(rolling=30))
+    recorder.capture(econometrics_module.get_percentile(rolling=9))
+    recorder.capture(econometrics_module.get_percentile(rolling=30, column="Return"))
+
+
+def test_get_percentile(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_percentile(rolling=100, method="nearest_rank")
+    )
+    recorder.capture(
+        econometrics_module.get_percentile(
+            rolling=30, percentile=0.75, method="nearest_rank"
+        )
+    )
+    recorder.capture(econometrics_module.get_percentile(rolling=100))
+    recorder.capture(
+        econometrics_module.get_percentile(
+            rolling=100, method="nearest_rank", period="weekly"
+        )
+    )
+    recorder.capture(econometrics_module.get_percentile())
 
 
 def test_get_percent_rank(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_percent_rank(rolling=100))
+    recorder.capture(econometrics_module.get_percent_rank(rolling=30))
+    recorder.capture(econometrics_module.get_percent_rank(rolling=100, column="Return"))
     recorder.capture(econometrics_module.get_percent_rank())
-    recorder.capture(econometrics_module.get_percent_rank(window=30))
-    recorder.capture(econometrics_module.get_percent_rank(column="Return"))
 
 
-def test_get_rolling_z_score(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_z_score())
-    recorder.capture(econometrics_module.get_rolling_z_score(window=20))
-    recorder.capture(econometrics_module.get_rolling_z_score(column="Return"))
+def test_get_z_score(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_z_score(rolling=30))
+    recorder.capture(econometrics_module.get_z_score(rolling=20))
+    recorder.capture(econometrics_module.get_z_score(rolling=30, column="Return"))
+    recorder.capture(econometrics_module.get_z_score())
 
 
-def test_get_rolling_mean_absolute_deviation(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_mean_absolute_deviation())
-    recorder.capture(econometrics_module.get_rolling_mean_absolute_deviation(window=30))
+def test_get_mean_absolute_deviation(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_mean_absolute_deviation(rolling=14))
+    recorder.capture(econometrics_module.get_mean_absolute_deviation(rolling=30))
     recorder.capture(
-        econometrics_module.get_rolling_mean_absolute_deviation(column="Return")
+        econometrics_module.get_mean_absolute_deviation(rolling=14, column="Return")
+    )
+    recorder.capture(econometrics_module.get_mean_absolute_deviation())
+
+
+def test_get_standard_error(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_standard_error(rolling=14))
+    recorder.capture(econometrics_module.get_standard_error(rolling=30))
+    recorder.capture(
+        econometrics_module.get_standard_error(rolling=14, include_benchmark=True)
+    )
+    recorder.capture(econometrics_module.get_standard_error())
+
+
+def test_get_entropy_share(recorder, econometrics_module):
+    recorder.capture(
+        econometrics_module.get_entropy(method="share", rolling=10, normalize=False)
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="share", rolling=20, base=np.e, normalize=False
+        )
+    )
+    recorder.capture(
+        econometrics_module.get_entropy(
+            method="share", rolling=10, normalize=False, period="weekly"
+        )
+    )
+    recorder.capture(econometrics_module.get_entropy(method="share"))
+
+
+def test_whole_sample_statistics_equal_pandas(econometrics_module):
+    """Without rolling, each statistic is one value per asset over all its observations."""
+    prices = econometrics_module._get_series_column("daily", "Adj Close").drop(
+        columns="Benchmark", errors="ignore"
+    )
+    returns = econometrics_module._get_series_column("daily", "Return")
+
+    expected = {
+        "get_percentile": prices.median(),
+        "get_z_score": prices.apply(
+            lambda price: (price.dropna().iloc[-1] - price.mean()) / price.std(ddof=1)
+        ),
+        "get_mean_absolute_deviation": prices.apply(
+            lambda price: (price - price.mean()).abs().mean()
+        ),
+        "get_standard_error": prices.std(ddof=1) / np.sqrt(prices.count()),
+        "get_percent_rank": prices.apply(
+            lambda price: (price.dropna().iloc[:-1] < price.dropna().iloc[-1]).mean()
+        ),
+    }
+    for method, values in expected.items():
+        result = getattr(econometrics_module, method)(rounding=12)
+        assert isinstance(result, pd.Series)
+        assert list(result.index) == list(prices.columns)
+        assert result.to_numpy() == pytest.approx(values.to_numpy(), abs=1e-10), method
+
+    pair = pd.concat([returns["AAPL"], returns["Benchmark"]], axis=1).dropna()
+    assert econometrics_module.get_correlation(rounding=12)["AAPL"] == pytest.approx(
+        np.corrcoef(pair.iloc[:, 0], pair.iloc[:, 1])[0, 1], abs=1e-10
+    )
+
+    shares = prices["AAPL"].dropna() / prices["AAPL"].sum()
+    assert econometrics_module.get_entropy(method="share", rounding=12)[
+        "AAPL"
+    ] == pytest.approx(
+        -(shares * np.log(shares)).sum() / np.log(len(shares)), abs=1e-10
     )
 
 
-def test_get_rolling_standard_error(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_standard_error())
-    recorder.capture(econometrics_module.get_rolling_standard_error(window=30))
-    recorder.capture(
-        econometrics_module.get_rolling_standard_error(include_benchmark=True)
-    )
+def test_median_is_the_linear_half_percentile(econometrics_module):
+    """The default percentile equals pandas' rolling median to the last digit."""
+    for column in ("Adj Close", "Return"):
+        data = econometrics_module._get_series_column("daily", column)
+
+        for window in (9, 30, 100):
+            percentile = calculate_per_series(
+                data, statistics_model.get_percentile, window
+            )
+            median = calculate_per_series(
+                data, lambda series, size: series.rolling(size).median(), window
+            )
+            assert percentile.equals(median)
 
 
-def test_get_rolling_entropy(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_rolling_entropy())
-    recorder.capture(econometrics_module.get_rolling_entropy(window=20, base=np.e))
-    recorder.capture(econometrics_module.get_rolling_entropy(period="weekly"))
-
-
-def test_rolling_correlation_with_an_unknown_series_raises(econometrics_module):
+def test_correlation_with_an_unknown_series_raises(econometrics_module):
     with pytest.raises(InvalidArgumentError, match="choose from AAPL, MSFT"):
-        econometrics_module.get_rolling_correlation(against="UNKNOWN")
+        econometrics_module.get_correlation(against="UNKNOWN")
 
 
-def test_rolling_correlation_leaves_out_the_series_it_is_correlated_with(
+def test_correlation_leaves_out_the_series_it_is_correlated_with(
     econometrics_module,
 ):
     # MSFT against itself would be 1 everywhere; the Benchmark is left out by default.
-    correlation = econometrics_module.get_rolling_correlation(against="MSFT")
+    correlation = econometrics_module.get_correlation(against="MSFT", rolling=30)
     assert list(correlation.columns) == ["AAPL"]
 
-    with_benchmark = econometrics_module.get_rolling_correlation(
-        against="MSFT", include_benchmark=True
+    with_benchmark = econometrics_module.get_correlation(
+        against="MSFT", rolling=30, include_benchmark=True
     )
     assert list(with_benchmark.columns) == ["AAPL", "Benchmark"]
+
+    whole_sample = econometrics_module.get_correlation(
+        against="MSFT", include_benchmark=True
+    )
+    assert list(whole_sample.index) == ["AAPL", "Benchmark"]
 
 
 def test_rolling_statistics_skip_the_dates_a_series_has_no_value():
@@ -1196,28 +1285,35 @@ def test_rolling_statistics_skip_the_dates_a_series_has_no_value():
         data={"Daily": daily, "Monthly": monthly}, rounding=None
     )
 
-    median = econometrics.get_rolling_median(window=3)
+    median = econometrics.get_percentile(rolling=3)
 
     assert median["Monthly"].dropna().tolist() == [32.0]
     assert median["Daily"].dropna().iloc[0] == 2.0
 
 
-def test_rolling_statistics_default_windows():
+def test_statistics_default_to_the_whole_sample():
     import inspect
 
     from financetoolkit.econometrics.econometrics_controller import Econometrics
 
-    # The TA-Lib defaults, and pandas-ta-classic's where TA-Lib has no such function.
+    for method in (
+        Econometrics.get_correlation,
+        Econometrics.get_percentile,
+        Econometrics.get_percent_rank,
+        Econometrics.get_mean_absolute_deviation,
+        Econometrics.get_z_score,
+        Econometrics.get_standard_error,
+        Econometrics.get_entropy,
+        Econometrics.get_lempel_ziv_complexity,
+        Econometrics.get_hjorth_parameters,
+    ):
+        parameters = inspect.signature(method).parameters
+        assert parameters["rolling"].default is None
+        assert "window" not in parameters
+
+    # The window of the linear regression and slope is part of the formula (TA-Lib's defaults).
     for method, window in (
         (Econometrics.get_linear_regression, 14),
-        (Econometrics.get_rolling_correlation, 30),
-        (Econometrics.get_rolling_median, 30),
-        (Econometrics.get_rolling_percentile, 100),
-        (Econometrics.get_percent_rank, 100),
-        (Econometrics.get_rolling_mean_absolute_deviation, 14),
-        (Econometrics.get_rolling_z_score, 30),
-        (Econometrics.get_rolling_standard_error, 14),
-        (Econometrics.get_rolling_entropy, 10),
         (Econometrics.get_slope, 1),
     ):
         assert inspect.signature(method).parameters["window"].default == window
@@ -1313,7 +1409,7 @@ def test_log_prices_need_positive_values(econometrics_module):
 
 def test_get_entropy(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_entropy())
-    recorder.capture(econometrics_module.get_entropy(method="approximate", window=100))
+    recorder.capture(econometrics_module.get_entropy(method="approximate", rolling=100))
     recorder.capture(econometrics_module.get_entropy(method="permutation", order=4))
     recorder.capture(
         econometrics_module.get_entropy(method="spectral", estimator="welch")
@@ -1325,14 +1421,14 @@ def test_get_entropy(recorder, econometrics_module):
     )
     recorder.capture(
         econometrics_module.get_entropy(
-            method="kontoyiannis", window=252, encoding="sigma"
+            method="kontoyiannis", rolling=252, encoding="sigma"
         )
     )
 
 
 def test_get_lempel_ziv_complexity(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_lempel_ziv_complexity())
-    recorder.capture(econometrics_module.get_lempel_ziv_complexity(window=100))
+    recorder.capture(econometrics_module.get_lempel_ziv_complexity(rolling=100))
     recorder.capture(
         econometrics_module.get_lempel_ziv_complexity(encoding="quantile", bins=4)
     )
@@ -1340,7 +1436,7 @@ def test_get_lempel_ziv_complexity(recorder, econometrics_module):
 
 def test_get_hjorth_parameters(recorder, econometrics_module):
     recorder.capture(econometrics_module.get_hjorth_parameters())
-    recorder.capture(econometrics_module.get_hjorth_parameters(window=100))
+    recorder.capture(econometrics_module.get_hjorth_parameters(rolling=100))
 
 
 def test_entropy_of_each_series_over_its_own_dates(econometrics_module):

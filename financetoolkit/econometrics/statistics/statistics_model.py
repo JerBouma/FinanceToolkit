@@ -1,4 +1,4 @@
-"""Statistics Model: the rolling linear regression and the rolling statistics of a series"""
+"""Statistics Model: the linear regression and slope, and statistics over the whole sample or a rolling window"""
 
 __docformat__ = "google"
 
@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.econometrics.helpers import latest_unless_rolling
 from financetoolkit.utilities.error_model import check_option
 
 
@@ -35,7 +36,6 @@ def get_linear_regression(prices: pd.Series, window: int = 14) -> pd.DataFrame:
 
     Referenced against:
     - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
-        Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
     - Tulip Indicators, linreg: https://tulipindicators.org/linreg
     - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
@@ -100,7 +100,6 @@ def get_slope(prices: pd.Series, window: int = 1, as_angle: bool = False) -> pd.
 
     Referenced against:
     - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
     Notes:
         - Equals pandas-ta-classic's slope, also as an angle in degrees; pandas-ta-classic
@@ -122,21 +121,22 @@ def get_slope(prices: pd.Series, window: int = 1, as_angle: bool = False) -> pd.
     return np.degrees(np.arctan(slope)) if as_angle else slope
 
 
-def get_rolling_correlation(
-    prices: pd.Series, other_prices: pd.Series, window: int = 30
-) -> pd.Series:
+def get_correlation(
+    prices: pd.Series, other_prices: pd.Series, window: int | None = None
+) -> pd.Series | float:
     """
-    Calculate the rolling Pearson Correlation between two price series over a window.
+    Calculate the Pearson Correlation between two series: how closely they move together in
+    a straight-line relation, over the whole sample or a rolling window.
 
     The correlation is +1 when the two series move up and down together in a straight-line
     relation, -1 when they move in opposite directions and around 0 when they are unrelated.
     On price levels, two series that both trend have a high correlation even when their
-    daily moves are unrelated, so it shows whether two prices follow the same course over
-    the window rather than whether their returns are related.
+    daily moves are unrelated, so it shows whether two prices follow the same course rather
+    than whether their returns are related.
 
     The formula is as follows:
 
-    - Correlation = Covariance(X, Y, window) / (StdDev(X, window) * StdDev(Y, window))
+    - Correlation = Covariance(X, Y) / (StdDev(X) * StdDev(Y)), over the window
 
     Also known as: CORREL, Pearson correlation coefficient, rolling correlation.
 
@@ -145,143 +145,138 @@ def get_rolling_correlation(
 
     Referenced against:
     - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
     - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
     Notes:
-        - Equals TA-Lib's CORREL and pandas-ta-classic's correl.
+        - The rolling correlation equals TA-Lib's CORREL and pandas-ta-classic's correl.
         - A window in which either series is flat has no correlation and is missing, where
           TA-Lib and pandas-ta-classic give 0.
 
     Args:
         prices (pd.Series): Series of prices.
         other_prices (pd.Series): The series of prices to correlate with, on the same dates.
-        window (int): Number of periods. Defaults to 30.
+        window (int | None): Number of periods of a rolling window. Defaults to None, which
+            correlates every observation and returns one number.
 
     Returns:
-        pd.Series: Correlation values between -1 and 1.
+        pd.Series | float: Correlation values between -1 and 1 per date, or one value over
+        the whole sample without a window.
     """
-    correlation = prices.rolling(window=window).corr(other_prices)
-    flat = (prices.rolling(window=window).std() == 0) | (
-        other_prices.rolling(window=window).std() == 0
+    length = window if window is not None else len(prices)
+    correlation = prices.rolling(window=length).corr(other_prices)
+    flat = (prices.rolling(window=length).std() == 0) | (
+        other_prices.rolling(window=length).std() == 0
     )
 
-    return correlation.mask(flat).where(np.isfinite(correlation))
+    return latest_unless_rolling(
+        correlation.mask(flat).where(np.isfinite(correlation)), window
+    )
 
 
-def get_rolling_median(prices: pd.Series, window: int = 30) -> pd.Series:
+def get_percentile(
+    prices: pd.Series,
+    window: int | None = None,
+    percentile: float = 0.5,
+    method: str = "linear",
+) -> pd.Series | float:
     """
-    Calculate the rolling Median of a price series: the middle price of the window.
+    Calculate the Percentile of a series: the value below which a given share of the
+    observations lies, such as the median (0.5), over the whole sample or a rolling window.
 
-    The median is a moving average that is not pulled by a single outlier, such as one day
-    with a spike, as it only depends on the order of the prices.
+    The median of a rolling window is a moving average that a single outlier, such as one
+    day with a spike, does not pull along, as it only depends on the order of the prices.
 
-    The formula is as follows:
+    The formula is as follows, per method, with n the number of observations:
 
-    - Median = the middle value of the sorted prices of the window, or the mean of the two
-      middle values for an even window
+    - Linear: interpolated between the two values around position percentile * (n - 1) of
+      the sorted values, with positions from 0 (Hyndman and Fan's definition 7); the 0.5
+      percentile is the median, the middle value or the mean of the two middle values
+    - Nearest rank: the k-th smallest value, k = ceil(percentile * n) (Hyndman and Fan's
+      definition 1, the inverse of the empirical distribution function)
 
-    Also known as: MEDIAN, moving median, simple moving median, SMM.
+    Also known as: PERCENTILE, MEDIAN, quantile, rolling quantile, moving percentile, moving
+    median, simple moving median, SMM.
 
-    Reference: Tukey, J.W. (1977). "Exploratory Data Analysis." Addison-Wesley, for running
-    medians; TA-Lib's MEDIAN gives the same definition.
+    Reference:
+    - Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages." The
+      American Statistician, 50(4), 361-365.
+    - Tukey, J.W. (1977). "Exploratory Data Analysis." Addison-Wesley, for running medians.
 
     Referenced against:
+    - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
     - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
+    - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
     - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
     - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
     Notes:
-        - Equals TA-Lib's MEDIAN, pandas-ta-classic's median and finta's SMM (whose default
-          window is 9).
-
-    Args:
-        prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 30.
-
-    Returns:
-        pd.Series: Median values.
-    """
-    return prices.rolling(window=window).median()
-
-
-def get_rolling_percentile(
-    prices: pd.Series,
-    window: int = 100,
-    percentile: float = 0.5,
-    method: str = "nearest_rank",
-) -> pd.Series:
-    """
-    Calculate the rolling Percentile of a price series: the price below which a given share
-    of the prices of the window lies.
-
-    The formula is as follows, per method:
-
-    - Nearest rank: the k-th smallest price of the window, k = ceil(percentile * window)
-      (Hyndman and Fan's definition 1, the inverse of the empirical distribution function)
-    - Linear: interpolated between the two prices around position percentile * (window - 1)
-      of the sorted window, with positions from 0 (Hyndman and Fan's definition 7)
-
-    Also known as: PERCENTILE, quantile, rolling quantile, moving percentile.
-
-    Reference: Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages."
-    The American Statistician, 50(4), 361-365.
-
-    Referenced against:
-    - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
-    - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
-
-    Notes:
-        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation equals
-          pandas-ta-classic's quantile (window 30) and numpy's default quantile.
+        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation
+          equals pandas-ta-classic's quantile (window 30) and numpy's default quantile.
+        - The linear 0.5 percentile equals TA-Lib's MEDIAN, pandas-ta-classic's median and
+          finta's SMM (whose default window is 9).
         - The percentile is a decimal (0.5 is the median) where TA-Lib takes a percentage.
-        - A window with a missing price has no percentile.
+        - A window with a missing value has no percentile.
 
     Args:
         prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 100.
-        percentile (float): The percentile as a decimal between 0 and 1. Defaults to 0.5.
-        method (str): The percentile definition. Options are: "nearest_rank" (Hyndman and
-            Fan's definition 1), "linear" (Hyndman and Fan's definition 7). Defaults to
-            "nearest_rank".
+        window (int | None): Number of periods of a rolling window. Defaults to None, which
+            takes every observation and returns one number.
+        percentile (float): The percentile as a decimal between 0 and 1. Defaults to 0.5,
+            the median.
+        method (str): The percentile definition. Options are: "linear" (Hyndman and Fan's
+            definition 7), "nearest_rank" (Hyndman and Fan's definition 1). Defaults to
+            "linear".
 
     Returns:
-        pd.Series: Percentile values.
+        pd.Series | float: Percentile values per date, or one value over the whole sample
+        without a window.
     """
-    methods = {"nearest_rank": "inverted_cdf", "linear": "linear"}
-    check_option("method", method, methods)
+    check_option("method", method, ["linear", "nearest_rank"])
     if not 0 <= percentile <= 1:
         raise ValueError("The percentile is a decimal between 0 and 1.")
 
     values = prices.to_numpy(dtype=float)
+    length = window if window is not None else len(values)
     result = np.full(len(values), np.nan)
 
-    if len(values) >= window:
-        windows = sliding_window_view(values, window)
-        result[window - 1 :] = np.where(
-            np.isnan(windows).any(axis=1),
-            np.nan,
-            np.quantile(windows, percentile, axis=1, method=methods[method]),
+    if 0 < length <= len(values):
+        windows = sliding_window_view(values, length)
+        position = percentile * (length - 1)
+        if method == "linear" and position % 1 == 0.5:  # noqa: PLR2004
+            # Halfway between two values, such as the median of an even number of them, the
+            # percentile is their mean, (a + b) / 2, where numpy's interpolation, b - (b - a) / 2,
+            # can differ from it in the last digit.
+            ordered = np.sort(windows, axis=1)
+            middle = int(position)
+            quantiles = (ordered[:, middle] + ordered[:, middle + 1]) / 2
+        else:
+            quantiles = np.quantile(
+                windows,
+                percentile,
+                axis=1,
+                method="linear" if method == "linear" else "inverted_cdf",
+            )
+        result[length - 1 :] = np.where(
+            np.isnan(windows).any(axis=1), np.nan, quantiles
         )
 
-    return pd.Series(result, index=prices.index)
+    return latest_unless_rolling(pd.Series(result, index=prices.index), window)
 
 
-def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
+def get_percent_rank(prices: pd.Series, window: int | None = None) -> pd.Series | float:
     """
-    Calculate the Percent Rank of a price series: the share of the prices of the window
-    before it that are lower than the latest price.
+    Calculate the Percent Rank of a price series: the share of the earlier prices that are
+    lower than the latest price, over the whole sample or a rolling window.
 
-    A Percent Rank of 1 means the price is above every price of the window, a new high for
-    the window, and 0 that it is at or below all of them. It ranks the price within its
-    recent history the way a percentile does, and is a component of Connors' RSI.
+    A Percent Rank of 1 means the price is above every earlier price of the window, a new
+    high for the window, and 0 that it is at or below all of them. It ranks the price within
+    its history the way a percentile does, and is a component of Connors' RSI.
 
     The formula is as follows:
 
     - Percent Rank = Count(Close(t - i) < Close(t), i = 1, ..., window) / window
+
+    with window = n - 1, every earlier observation, over the whole sample.
 
     Also known as: PERCENTRANK, percentile rank, percent rank.
 
@@ -290,7 +285,6 @@ def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
 
     Referenced against:
     - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
-        Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
     Notes:
         - Equals TA-Lib's PERCENTRANK divided by 100: the Toolkit gives a decimal between
@@ -300,30 +294,33 @@ def get_percent_rank(prices: pd.Series, window: int = 100) -> pd.Series:
 
     Args:
         prices (pd.Series): Series of prices.
-        window (int): Number of previous periods. Defaults to 100.
+        window (int | None): Number of previous periods of a rolling window. Defaults to
+            None, which ranks the latest price among every earlier one and returns one number.
 
     Returns:
-        pd.Series: Percent Rank values as decimals.
+        pd.Series | float: Percent Rank values as decimals per date, or the rank of the
+        latest price without a window.
     """
     values = prices.to_numpy(dtype=float)
+    length = window if window is not None else len(values) - 1
     result = np.full(len(values), np.nan)
 
-    if len(values) > window:
-        windows = sliding_window_view(values, window + 1)
-        rank = (windows[:, :-1] < windows[:, -1:]).sum(axis=1) / window
-        result[window:] = np.where(np.isnan(windows).any(axis=1), np.nan, rank)
+    if 0 < length < len(values):
+        windows = sliding_window_view(values, length + 1)
+        rank = (windows[:, :-1] < windows[:, -1:]).sum(axis=1) / length
+        result[length:] = np.where(np.isnan(windows).any(axis=1), np.nan, rank)
 
-    return pd.Series(result, index=prices.index)
+    return latest_unless_rolling(pd.Series(result, index=prices.index), window)
 
 
-def get_rolling_z_score(prices: pd.Series, window: int = 30) -> pd.Series:
+def get_z_score(prices: pd.Series, window: int | None = None) -> pd.Series | float:
     """
-    Calculate the rolling Z-Score of a price series: the number of standard deviations the
-    price lies above or below its moving average.
+    Calculate the Z-Score of a price series: the number of standard deviations the latest
+    price lies above or below the average, over the whole sample or a rolling window.
 
     The formula is as follows:
 
-    - Z-Score = (Close - SMA(Close, window)) / StdDev(Close, window)
+    - Z-Score = (Close - Mean(Close)) / StdDev(Close), over the window
 
     with the sample standard deviation (ddof=1).
 
@@ -334,34 +331,39 @@ def get_rolling_z_score(prices: pd.Series, window: int = 30) -> pd.Series:
 
     Referenced against:
     - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
     Notes:
-        - Equals pandas-ta-classic's zscore (window 30, ddof=1). Its cdl_z applies the
-          same score to the open, high, low and close.
+        - The rolling Z-Score equals pandas-ta-classic's zscore (window 30, ddof=1). Its
+          cdl_z applies the same score to the open, high, low and close.
         - A window of flat prices has no standard deviation and is missing, where
           pandas-ta-classic gives 0.
 
     Args:
         prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 30.
+        window (int | None): Number of periods of a rolling window. Defaults to None, which
+            scores the latest price against the mean and standard deviation of every
+            observation and returns one number.
 
     Returns:
-        pd.Series: Z-Score values.
+        pd.Series | float: Z-Score values per date, or the Z-Score of the latest price
+        without a window.
     """
-    standard_deviation = prices.rolling(window=window).std(ddof=1)
+    length = window if window is not None else len(prices)
+    standard_deviation = prices.rolling(window=length).std(ddof=1)
 
-    return (prices - prices.rolling(window=window).mean()) / standard_deviation.where(
-        standard_deviation > 0
+    return latest_unless_rolling(
+        (prices - prices.rolling(window=length).mean())
+        / standard_deviation.where(standard_deviation > 0),
+        window,
     )
 
 
-def get_rolling_mean_absolute_deviation(
-    prices: pd.Series, window: int = 14
-) -> pd.Series:
+def get_mean_absolute_deviation(
+    prices: pd.Series, window: int | None = None
+) -> pd.Series | float:
     """
-    Calculate the rolling Mean Absolute Deviation of a price series: the average distance
-    of the prices of the window from their mean.
+    Calculate the Mean Absolute Deviation of a price series: the average distance of the
+    prices from their mean, over the whole sample or a rolling window.
 
     It measures the dispersion of the prices like the standard deviation, but without
     squaring the deviations, so a single large deviation weighs less. Lambert's Commodity
@@ -369,7 +371,7 @@ def get_rolling_mean_absolute_deviation(
 
     The formula is as follows:
 
-    - Mean Absolute Deviation = Mean(|Close(t - i) - SMA(Close, window)|, i = 0, ..., window - 1)
+    - Mean Absolute Deviation = Mean(|Close(t - i) - Mean(Close)|, i = 0, ..., window - 1)
 
     with the average of the window itself for every price of the window.
 
@@ -380,51 +382,53 @@ def get_rolling_mean_absolute_deviation(
 
     Referenced against:
     - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
     - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
     - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
     - Tulip Indicators, md: https://tulipindicators.org/md
 
     Notes:
-        - Equals TA-Lib's AVGDEV, pandas-ta-classic's mad and md (window 30) and Tulip
-          Indicators' md.
+        - The rolling deviation equals TA-Lib's AVGDEV, pandas-ta-classic's mad and md
+          (window 30) and Tulip Indicators' md.
         - The Mean Absolute Deviation of `toolkit.risk` measures the daily returns within
-          each period instead of the prices over a rolling window.
+          each period instead of the prices.
 
     Args:
         prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 14.
+        window (int | None): Number of periods of a rolling window. Defaults to None, which
+            takes every observation and returns one number.
 
     Returns:
-        pd.Series: Mean Absolute Deviation values, in price units.
+        pd.Series | float: Mean Absolute Deviation values per date, in price units, or one
+        value over the whole sample without a window.
     """
     values = prices.to_numpy(dtype=float)
+    length = window if window is not None else len(values)
     result = np.full(len(values), np.nan)
 
-    if len(values) >= window:
-        windows = sliding_window_view(values, window)
-        result[window - 1 :] = np.abs(
+    if 0 < length <= len(values):
+        windows = sliding_window_view(values, length)
+        result[length - 1 :] = np.abs(
             windows - windows.mean(axis=1, keepdims=True)
         ).mean(axis=1)
 
-    return pd.Series(result, index=prices.index)
+    return latest_unless_rolling(pd.Series(result, index=prices.index), window)
 
 
-def get_rolling_standard_error(prices: pd.Series, window: int = 14) -> pd.Series:
+def get_standard_error(
+    prices: pd.Series, window: int | None = None
+) -> pd.Series | float:
     """
-    Calculate the rolling Standard Error of the mean of a price series: how uncertain the
-    moving average is as an estimate of the mean price.
+    Calculate the Standard Error of the mean of a price series: how uncertain the average
+    price is as an estimate of the mean, over the whole sample or a rolling window.
 
-    The standard error is the standard deviation of the window divided by the square root
-    of the number of periods.
-
-    It is the uncertainty of the moving average as an estimate of the mean price of the
-    window: a moving average plus and minus two standard errors spans roughly where the
-    mean lies.
+    The standard error is the standard deviation divided by the square root of the number
+    of observations. For a rolling window it is the uncertainty of the moving average as an
+    estimate of the mean price of the window: a moving average plus and minus two standard
+    errors spans roughly where the mean lies.
 
     The formula is as follows:
 
-    - Standard Error = StdDev(Close, window) / sqrt(window)
+    - Standard Error = StdDev(Close) / sqrt(window), over the window
 
     with the sample standard deviation (ddof=1).
 
@@ -435,75 +439,27 @@ def get_rolling_standard_error(prices: pd.Series, window: int = 14) -> pd.Series
 
     Referenced against:
     - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
 
     Shares similar logic:
     - Tulip Indicators, stderr: https://tulipindicators.org/stderr
 
     Notes:
-        - Equals pandas-ta-classic's stderr (ddof=1). Unlike Tulip Indicators' stderr, which
-          uses the population standard deviation (ddof=0), this is the sample one: Tulip's
-          value is sqrt((window - 1) / window) times this value.
+        - The rolling standard error equals pandas-ta-classic's stderr (ddof=1). Unlike
+          Tulip Indicators' stderr, which uses the population standard deviation (ddof=0),
+          this is the sample one: Tulip's value is sqrt((window - 1) / window) times this
+          value.
 
     Args:
         prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 14.
+        window (int | None): Number of periods of a rolling window. Defaults to None, which
+            takes every observation and returns one number.
 
     Returns:
-        pd.Series: Standard Error values, in price units.
+        pd.Series | float: Standard Error values per date, in price units, or one value
+        over the whole sample without a window.
     """
-    return prices.rolling(window=window).std(ddof=1) / np.sqrt(window)
+    length = window if window is not None else len(prices)
 
-
-def get_rolling_entropy(
-    prices: pd.Series, window: int = 10, base: float = 2.0
-) -> pd.Series:
-    """
-    Calculate the rolling Shannon Entropy of a price series: the entropy of the prices of the
-    window taken as shares of their sum.
-
-    The entropy is at its maximum, log(window), when all prices of the window are equal,
-    and falls as the prices spread out, so a lower entropy points to a larger move within
-    the window. In base 2 it is measured in bits.
-
-    The formula is as follows:
-
-    - P(t - i) = Close(t - i) / Sum(Close, window), i = 0, ..., window - 1
-    - Entropy = -Sum(P * log_base(P))
-
-    Also known as: ENTP, Shannon entropy, information entropy.
-
-    Reference: Shannon, C.E. (1948). "A Mathematical Theory of Communication." Bell System
-    Technical Journal, 27(3), 379-423.
-
-    Referenced against:
-    - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
-        Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
-
-    Notes:
-        - Equals pandas-ta-classic's entropy (window 10, base 2).
-        - The shares are only probabilities for positive prices: a window with a negative
-          price or a sum of 0 has no entropy.
-
-    Args:
-        prices (pd.Series): Series of prices.
-        window (int): Number of periods. Defaults to 10.
-        base (float): The base of the logarithm. Defaults to 2.
-
-    Returns:
-        pd.Series: Entropy values.
-    """
-    values = prices.to_numpy(dtype=float)
-    result = np.full(len(values), np.nan)
-
-    if len(values) >= window:
-        windows = sliding_window_view(values, window)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            shares = windows / windows.sum(axis=1, keepdims=True)
-            terms = np.where(shares == 0, 0.0, -shares * np.log(shares))
-        entropy = terms.sum(axis=1) / np.log(base)
-        result[window - 1 :] = np.where(
-            (shares < 0).any(axis=1) | ~np.isfinite(entropy), np.nan, entropy
-        )
-
-    return pd.Series(result, index=prices.index)
+    return latest_unless_rolling(
+        prices.rolling(window=length).std(ddof=1) / np.sqrt(length), window
+    )

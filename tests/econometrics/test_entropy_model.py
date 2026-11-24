@@ -146,3 +146,39 @@ def test_hjorth_parameters():
     )
     zeros = entropy_model.get_hjorth_parameters(np.array([-1.0, 0.0, -1.0, 2.0, 0.0]))
     assert zeros["Zero Crossings"] == 1
+
+
+def share_prices() -> np.ndarray:
+    """80 closes of a random walk, the series pandas-ta-classic's entropy values are of."""
+    rng = np.random.default_rng(7)
+    return 100 + rng.normal(0, 1, 80).cumsum()
+
+
+def test_share_entropy_matches_pandas_ta_classic():
+    result = entropy_model.get_share_entropy(share_prices(), 10, 2)
+
+    assert len(result) == 80 - 10 + 1
+    assert result[-3:] == pytest.approx([3.321847, 3.321866, 3.321854], abs=1e-6)
+    # Equal prices give the maximum, log2 of the window, or 1 when normalized.
+    assert entropy_model.get_share_entropy(np.full(8, 4.0), 8)[-1] == pytest.approx(3)
+    assert entropy_model.get_share_entropy(np.full(8, 4.0), 8, normalize=True)[
+        -1
+    ] == pytest.approx(1)
+    assert np.isnan(entropy_model.get_share_entropy(np.array([1.0, -1.0, 2.0]), 3)[-1])
+
+
+def test_share_entropy_of_the_whole_sample_equals_numpy():
+    prices = share_prices()
+    shares = prices / prices.sum()
+    entropy = -(shares * np.log(shares)).sum()
+
+    assert entropy_model.get_share_entropy(prices) == pytest.approx(
+        entropy / np.log(2), abs=1e-12
+    )
+    assert entropy_model.get_share_entropy(prices, base=np.e) == pytest.approx(
+        entropy, abs=1e-12
+    )
+    assert entropy_model.get_share_entropy(prices, normalize=True) == pytest.approx(
+        entropy / np.log(len(prices)), abs=1e-12
+    )
+    assert np.isnan(entropy_model.get_share_entropy(np.array([])))

@@ -21,7 +21,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 @track_sources
 class StatisticsEconometrics:
     """
-    Rolling statistics of a series: the rolling linear regression and slope, the correlation with another series, the median, percentile, percent rank, z-score, mean absolute deviation, standard error and entropy, and the entropies and complexity of a series: sample, approximate, permutation, spectral, SVD, Shannon, Lempel-Ziv and Kontoyiannis entropy, the Lempel-Ziv complexity and the Hjorth parameters.
+    Statistics of a series, over its full history or a rolling window: the rolling linear regression and slope, the correlation with another series, the percentile (the median by default), percent rank, z-score, mean absolute deviation and standard error, and the entropies and complexity of a series: sample, approximate, permutation, spectral, SVD, Shannon, Lempel-Ziv, Kontoyiannis and share entropy, the Lempel-Ziv complexity and the Hjorth parameters.
     """
 
     @handle_portfolio
@@ -63,7 +63,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE, TSF: https://ta-lib.org/functions/linearreg.html
-            Test: tests/econometrics/test_statistics_model.py::test_linear_regression_matches_talib
         - Tulip Indicators, linreg: https://tulipindicators.org/linreg
         - pandas-ta-classic, linreg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/linreg.py#L92
 
@@ -168,7 +167,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - pandas-ta-classic, slope: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/slope.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_slope_matches_pandas_ta_classic
 
         Also known as: slope, rise over run, average change per period, angle.
 
@@ -242,34 +240,34 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
-    def get_rolling_correlation(
+    def get_correlation(
         self,
         period: str | None = None,
         column: str = "Return",
-        window: int = 30,
+        rolling: int | None = None,
         against: str | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the rolling Pearson Correlation of every series with another over a window:
-        with the benchmark, another ticker of the Toolkit (or series of the data) or another
-        price column of the same ticker, such as the high against the low as in TA-Lib.
+        Calculate the Pearson Correlation of every series with another: how closely they move
+        together, with the benchmark, another ticker of the Toolkit (or series of the data) or
+        another price column of the same ticker, such as the high against the low as in TA-Lib.
 
         The correlation is +1 when the two series move up and down together in a straight-line
         relation, -1 when they move in opposite directions and around 0 when they are unrelated.
         By default it correlates the returns, so it shows whether the moves of two assets go
-        together over the window. On price levels (the adjusted close), two series that both
-        trend have a high correlation even when their daily moves are unrelated, so it then shows
-        whether two prices follow the same course over the window rather than whether their
-        returns are related.
+        together. On price levels (the adjusted close), two series that both trend have a high
+        correlation even when their daily moves are unrelated, so it then shows whether two
+        prices follow the same course rather than whether their returns are related.
 
         The formula is as follows:
 
-        - Correlation = Covariance(X, Y, window) / (StdDev(X, window) * StdDev(Y, window))
+        - Correlation = Covariance(X, Y) / (StdDev(X) * StdDev(Y))
 
-        with X the `column` series of each asset and Y that of `against`.
+        with X the `column` series of each asset and Y that of `against`, over the whole sample
+        or over every rolling window.
 
         For more information, see the following sources:
 
@@ -278,7 +276,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, CORREL: https://ta-lib.org/functions/correl.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_correlation_matches_talib
         - pandas-ta-classic, correl: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/correl.py#L11
 
         Also known as: CORREL, Pearson correlation coefficient, rolling correlation, correlation with the benchmark.
@@ -290,7 +287,8 @@ class StatisticsEconometrics:
                 returns (the changes of the series), "Adj Close" for the prices (the series as given
                 with `Econometrics(data=...)`) or another price column such as "High". Defaults to
                 "Return".
-            window (int, optional): The number of periods. Defaults to 30.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
             against (str | None, optional): What to correlate with: a ticker of the Toolkit (or a
                 series of the data), such as "Benchmark" or "MSFT", or another column of the same
                 ticker, such as "Low" with column="High". Defaults to None, which uses the
@@ -305,16 +303,17 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Correlation values between -1 and 1, a column per asset (the series it is correlated
-            with is left out, as its correlation with itself is 1).
+            pd.Series | pd.DataFrame:
+            The correlation between -1 and 1 per asset, or with `rolling` per date (a column per
+            asset). The series it is correlated with is left out, as its correlation with itself
+            is 1.
 
         Notes:
         - The method takes the `column` series of the specified `period` and correlates each asset with
           `against` over the dates both have a value, so a cryptocurrency's weekends do not count against
-          a stock.
-        - The correlation agrees with TA-Lib's CORREL and pandas-ta-classic's correl, which take the series as
-          given; TA-Lib's default compares the high with the low.
+          a stock. With `rolling`, the first value needs a full window of data from the start date.
+        - The rolling correlation agrees with TA-Lib's CORREL and pandas-ta-classic's correl, which take the
+          series as given; TA-Lib's default compares the high with the low.
         - A window in which either series is flat has no correlation and is missing, where TA-Lib and pandas-ta-
           classic give 0.
 
@@ -330,7 +329,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rolling_correlation().tail(5)
+        toolkit.econometrics.get_correlation(rolling=30).tail(5)
         ```
 
         Which returns:
@@ -370,56 +369,77 @@ class StatisticsEconometrics:
                 f"from {', '.join(series)}."
             )
 
-        rolling_correlation = {}
+        if not include_benchmark:
+            others.pop(BENCHMARK_TICKER, None)
+
+        correlation = {}
         for name, other in others.items():
             # Over the dates both have a value, so neither counts the other's holidays.
             pair = pd.concat([data[name], other], axis=1).dropna()
-            rolling_correlation[name] = statistics_model.get_rolling_correlation(
-                pair.iloc[:, 0], pair.iloc[:, 1], window
-            ).reindex(data.index)
+            correlation[name] = statistics_model.get_correlation(
+                pair.iloc[:, 0], pair.iloc[:, 1], rolling
+            )
 
-        rolling_correlation = self._filter_benchmark(
-            pd.DataFrame(rolling_correlation, index=data.index),
-            include_benchmark=include_benchmark,
+        correlation = (
+            pd.Series(correlation, dtype=float)
+            if rolling is None
+            else pd.DataFrame(
+                {
+                    name: value.reindex(data.index)
+                    for name, value in correlation.items()
+                },
+                index=data.index,
+            )
         )
 
         return apply_rounding(
-            rolling_correlation, rounding if rounding is not None else self._rounding
+            correlation, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
     @handle_errors
-    def get_rolling_median(
+    def get_percentile(
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int = 30,
+        rolling: int | None = None,
+        percentile: float = 0.5,
+        method: str = "linear",
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the rolling Median of a price series: the middle price of the window.
+        Calculate the Percentile of a series: the value below which a given share of the
+        observations lies, by default the median (0.5), such as the upper quartile (0.75).
 
-        The median is a moving average that a single outlier, such as one day with a spike,
-        does not pull along, as it depends only on the order of the prices.
+        The rolling median is a moving average that a single outlier, such as one day with a
+        spike, does not pull along, as it depends only on the order of the prices.
 
-        The formula is as follows:
+        The formula is as follows, per method, with n the number of observations of the whole
+        sample or of the rolling window:
 
-        - Median = the middle value of the sorted prices of the window, or the mean of the two
-          middle values for an even window
+        - Linear: interpolated between the two values around position percentile * (n - 1) of
+          the sorted values, counting from 0 (Hyndman and Fan's definition 7); the 0.5
+          percentile is the median, the middle value or the mean of the two middle values
+        - Nearest rank: the k-th smallest value, k = ceil(percentile * n) (Hyndman and Fan's
+          definition 1)
 
         For more information, see the following sources:
 
+        - Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages." The
+          American Statistician, 50(4), 361-365.
         - Tukey, J.W. (1977). "Exploratory Data Analysis." Addison-Wesley, for running medians.
 
         Referenced against:
+        - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
         - TA-Lib, MEDIAN: https://ta-lib.org/functions/median.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_median_matches_talib
+        - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
         - pandas-ta-classic, median: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/median.py#L12
         - finta, SMM: https://github.com/peerchemist/finta/blob/v0.25/finta/finta.py#L13
 
-        Also known as: MEDIAN, moving median, simple moving median, SMM.
+        Also known as: PERCENTILE, MEDIAN, quantile, rolling quantile, moving percentile, moving median, simple
+        moving median, SMM.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -427,7 +447,13 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 30.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
+            percentile (float, optional): The percentile as a decimal between 0 and 1. Defaults
+                to 0.5, the median.
+            method (str, optional): The percentile definition. Options are: "linear" (Hyndman and
+                Fan's definition 7), "nearest_rank" (Hyndman and Fan's definition 1). Defaults to
+                "linear".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -438,14 +464,17 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Median values.
+            pd.Series | pd.DataFrame:
+            The percentile per asset, or with `rolling` per date (a column per asset).
 
         Notes:
-        - The method takes the `column` series of the specified `period` and calculates the Median for each asset, each
-          over the dates it has a value. The first value needs a full window of data from the start date.
-        - The median agrees with TA-Lib's MEDIAN, pandas-ta-classic's median and finta's SMM (whose default window is
-          9).
+        - The method takes the `column` series of the specified `period` and calculates the Percentile for each asset,
+          each over the dates it has a value. With `rolling`, the first value needs a full window of data from the
+          start date.
+        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation with pandas-ta-classic's
+          quantile. The linear 0.5 percentile, the median, agrees with TA-Lib's MEDIAN, pandas-ta-classic's median
+          and finta's SMM (whose default window is 9).
+        - The percentile is a decimal (0.5 is the median) where TA-Lib takes a percentage.
 
         As an example:
 
@@ -459,7 +488,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rolling_median().tail(5)
+        toolkit.econometrics.get_percentile(rolling=30).tail(5)
         ```
 
         Which returns:
@@ -479,121 +508,12 @@ class StatisticsEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        rolling_median = calculate_per_series(
-            data, statistics_model.get_rolling_median, window
+        percentile_values = calculate_per_series(
+            data, statistics_model.get_percentile, rolling, percentile, method
         )
 
         return apply_rounding(
-            rolling_median, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_rolling_percentile(
-        self,
-        period: str | None = None,
-        column: str = "Adj Close",
-        window: int = 100,
-        percentile: float = 0.5,
-        method: str = "nearest_rank",
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the rolling Percentile of a price series: the price below which a given share
-        of the prices of the window lies, such as the median (0.5) or the upper quartile (0.75).
-
-        The formula is as follows, per method:
-
-        - Nearest rank: the k-th smallest price of the window, k = ceil(percentile * window)
-          (Hyndman and Fan's definition 1)
-        - Linear: interpolated between the two prices around position percentile * (window - 1)
-          of the sorted window, counting from 0 (Hyndman and Fan's definition 7)
-
-        For more information, see the following sources:
-
-        - Hyndman, R.J. & Fan, Y. (1996). "Sample Quantiles in Statistical Packages." The
-          American Statistician, 50(4), 361-365.
-
-        Referenced against:
-        - TA-Lib, PERCENTILE: https://ta-lib.org/functions/percentile.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
-        - pandas-ta-classic, quantile: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/quantile.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_percentile_matches_talib_and_pandas_ta_classic
-
-        Also known as: PERCENTILE, quantile, rolling quantile, moving percentile.
-
-        Args:
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
-                yearly). Defaults to None, which uses "daily".
-            column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
-                for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
-                traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 100.
-            percentile (float, optional): The percentile as a decimal between 0 and 1. Defaults
-                to 0.5.
-            method (str, optional): The percentile definition. Options are: "nearest_rank" (Hyndman
-                and Fan's definition 1), "linear" (Hyndman and Fan's definition 7). Defaults to
-                "nearest_rank".
-            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
-                Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame:
-            Percentile values.
-
-        Notes:
-        - The method takes the `column` series of the specified `period` and calculates the Percentile for each asset,
-          each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation pandas-ta-classic's
-          quantile.
-        - The percentile is a decimal (0.5 is the median) where TA-Lib takes a percentage.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.econometrics.get_rolling_percentile(percentile=0.9).tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |    AAPL |    MSFT |
-        |:-----------|--------:|--------:|
-        | 2025-12-24 | 276.586 | 518.336 |
-        | 2025-12-26 | 276.586 | 517.138 |
-        | 2025-12-29 | 276.586 | 516.368 |
-        | 2025-12-30 | 276.586 | 516.368 |
-        | 2025-12-31 | 276.586 | 516.368 |
-        """
-        period = period if period else "daily"
-
-        data = self._filter_benchmark(
-            self._get_series_column(period, column),
-            include_benchmark=include_benchmark,
-        )
-
-        rolling_percentile = calculate_per_series(
-            data, statistics_model.get_rolling_percentile, window, percentile, method
-        )
-
-        return apply_rounding(
-            rolling_percentile, rounding if rounding is not None else self._rounding
+            percentile_values, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
@@ -602,22 +522,24 @@ class StatisticsEconometrics:
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int = 100,
+        rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Percent Rank of a price series: the share of the prices of the window
-        before it that are lower than the latest price.
+        Calculate the Percent Rank of a price series: the share of the earlier prices that are
+        lower than the latest price, over the full history or a rolling window.
 
-        A Percent Rank of 1 means the price is above every price of the window, a new high for
-        the window, and 0 that it is at or below all of them. It ranks the price within its
-        recent history, and Connors uses it in ConnorsRSI to rank the latest return.
+        A Percent Rank of 1 means the price is above every earlier price, a new high for the
+        window, and 0 that it is at or below all of them. It ranks the price within its history,
+        and Connors uses it in ConnorsRSI to rank the latest return.
 
         The formula is as follows:
 
         - Percent Rank = Count(Close(t - i) < Close(t), i = 1, ..., window) / window
+
+        with window = n - 1, every earlier observation, over the full history.
 
         For more information, see the following sources:
 
@@ -626,7 +548,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, PERCENTRANK: https://ta-lib.org/functions/percentrank.html
-            Test: tests/econometrics/test_statistics_model.py::test_percent_rank_matches_talib
 
         Also known as: PERCENTRANK, percentile rank, percent rank.
 
@@ -636,7 +557,9 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of previous periods. Defaults to 100.
+            rolling (int | None, optional): The number of previous periods of a rolling window.
+                Defaults to None, which ranks the latest value among every earlier one of every
+                asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -647,16 +570,17 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Percent Rank values as decimals.
+            pd.Series | pd.DataFrame:
+            The Percent Rank of the latest value as a decimal per asset, or with `rolling` per date
+            (a column per asset).
 
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Percent Rank for each asset,
-          each over the dates it has a value. The first value needs a full window of data from the start date.
+          each over the dates it has a value.
         - The Percent Rank agrees with TA-Lib's PERCENTRANK divided by 100: a decimal between 0 and 1 where TA-Lib
           gives a percentage.
-        - The latest price is compared with the `window` prices before it, so the first value needs `window` + 1
-          prices.
+        - With `rolling`, the latest price is compared with the `rolling` prices before it, so the first value needs
+          `rolling` + 1 prices from the start date.
 
         As an example:
 
@@ -670,7 +594,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_percent_rank().tail(5)
+        toolkit.econometrics.get_percent_rank(rolling=100).tail(5)
         ```
 
         Which returns:
@@ -691,7 +615,7 @@ class StatisticsEconometrics:
         )
 
         percent_rank = calculate_per_series(
-            data, statistics_model.get_percent_rank, window
+            data, statistics_model.get_percent_rank, rolling
         )
 
         return apply_rounding(
@@ -700,32 +624,32 @@ class StatisticsEconometrics:
 
     @handle_portfolio
     @handle_errors
-    def get_rolling_z_score(
+    def get_z_score(
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int = 30,
+        rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the rolling Z-Score of a price series: the number of standard deviations the
-        price lies above or below its moving average.
+        Calculate the Z-Score of a price series: the number of standard deviations the latest
+        price lies above or below its average, over the full history or a rolling window.
 
-        A Z-Score of 2 puts the price two standard deviations above its average of the window,
-        on the upper Bollinger Band of the same window measured with the sample standard
+        A rolling Z-Score of 2 puts the price two standard deviations above its average of the
+        window, on the upper Bollinger Band of the same window measured with the sample standard
         deviation. Mean-reversion strategies read large absolute values as stretched prices.
 
         The formula is as follows:
 
-        - Z-Score = (Close - SMA(Close, window)) / StdDev(Close, window)
+        - Z-Score = (Close - Mean(Close)) / StdDev(Close)
 
-        with the sample standard deviation (ddof=1).
+        with the mean and the sample standard deviation (ddof=1) of the full history or of every
+        rolling window.
 
         Referenced against:
         - pandas-ta-classic, zscore: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/zscore.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_z_score_matches_pandas_ta_classic
 
         Also known as: z-score, standard score, ZSCORE, normalized price.
 
@@ -735,7 +659,9 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 30.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which scores the latest value against the mean and standard deviation of the
+                full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -746,16 +672,18 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Z-Score values.
+            pd.Series | pd.DataFrame:
+            The Z-Score of the latest value per asset, or with `rolling` per date (a column per
+            asset).
 
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Z-Score for each asset, each
-          over the dates it has a value. The first value needs a full window of data from the start date.
-        - The Z-Score agrees with pandas-ta-classic's zscore; its cdl_z applies the same score to the open, high, low
-          and close.
+          over the dates it has a value. With `rolling`, the first value needs a full window of data from the start
+          date.
+        - The rolling Z-Score agrees with pandas-ta-classic's zscore; its cdl_z applies the same score to the open,
+          high, low and close.
         - A window of flat prices has no standard deviation and is missing, where pandas-ta-classic gives 0.
-        - The `standardize` parameter instead standardizes the result over the whole date range shown.
+        - The `standardize` parameter instead standardizes every value of the result over the whole date range shown.
 
         As an example:
 
@@ -769,7 +697,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rolling_z_score().tail(5)
+        toolkit.econometrics.get_z_score(rolling=30).tail(5)
         ```
 
         Which returns:
@@ -789,28 +717,26 @@ class StatisticsEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        rolling_z_score = calculate_per_series(
-            data, statistics_model.get_rolling_z_score, window
-        )
+        z_score = calculate_per_series(data, statistics_model.get_z_score, rolling)
 
         return apply_rounding(
-            rolling_z_score, rounding if rounding is not None else self._rounding
+            z_score, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
     @handle_errors
-    def get_rolling_mean_absolute_deviation(
+    def get_mean_absolute_deviation(
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int = 14,
+        rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the rolling Mean Absolute Deviation of a price series: the average distance of
-        the prices of the window from their mean.
+        Calculate the Mean Absolute Deviation of a price series: the average distance of the
+        prices from their mean, over the full history or a rolling window.
 
         It measures the dispersion of the prices like the standard deviation, but without
         squaring the deviations, so a single large deviation weighs less. Lambert's Commodity
@@ -818,9 +744,10 @@ class StatisticsEconometrics:
 
         The formula is as follows:
 
-        - Mean Absolute Deviation = Mean(|Close(t - i) - SMA(Close, window)|, i = 0, ..., window - 1)
+        - Mean Absolute Deviation = Mean(|Close(t - i) - Mean(Close)|, i = 0, ..., n - 1)
 
-        with the average of the window itself for every price of the window.
+        with n the number of observations of the full history or of the rolling window, and
+        the average of those same observations.
 
         For more information, see the following sources:
 
@@ -829,7 +756,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - TA-Lib, AVGDEV: https://ta-lib.org/functions/avgdev.html
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_mean_absolute_deviation_matches_talib
         - pandas-ta-classic, mad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/mad.py#L12
         - pandas-ta-classic, md: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/md.py#L12
         - Tulip Indicators, md: https://tulipindicators.org/md
@@ -842,7 +768,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 14.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -853,17 +780,18 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Mean Absolute Deviation values, in price units.
+            pd.Series | pd.DataFrame:
+            The Mean Absolute Deviation in price units per asset, or with `rolling` per date (a
+            column per asset).
 
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Mean Absolute Deviation for
-          each asset, each over the dates it has a value. The first value needs a full window of data from the start
-          date.
-        - The deviation agrees with TA-Lib's AVGDEV, pandas-ta-classic's mad and md (whose default window is 30) and
-          Tulip Indicators' md.
+          each asset, each over the dates it has a value. With `rolling`, the first value needs a full window of data
+          from the start date.
+        - The rolling deviation agrees with TA-Lib's AVGDEV, pandas-ta-classic's mad and md (whose default window is
+          30) and Tulip Indicators' md.
         - `toolkit.risk.get_mean_absolute_deviation` measures the daily returns within each period instead of
-          the prices over a rolling window.
+          the prices of the full history or a rolling window.
 
         As an example:
 
@@ -877,7 +805,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rolling_mean_absolute_deviation().tail(5)
+        toolkit.econometrics.get_mean_absolute_deviation(rolling=14).tail(5)
         ```
 
         Which returns:
@@ -897,46 +825,46 @@ class StatisticsEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        rolling_mean_absolute_deviation = calculate_per_series(
-            data, statistics_model.get_rolling_mean_absolute_deviation, window
+        mean_absolute_deviation = calculate_per_series(
+            data, statistics_model.get_mean_absolute_deviation, rolling
         )
 
         return apply_rounding(
-            rolling_mean_absolute_deviation,
+            mean_absolute_deviation,
             rounding if rounding is not None else self._rounding,
         )
 
     @handle_portfolio
     @handle_errors
-    def get_rolling_standard_error(
+    def get_standard_error(
         self,
         period: str | None = None,
         column: str = "Adj Close",
-        window: int = 14,
+        rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
+    ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the rolling Standard Error of the mean of a price series: how uncertain the
-        moving average is as an estimate of the mean price.
+        Calculate the Standard Error of the mean of a price series: how uncertain the average
+        price is as an estimate of the mean, over the full history or a rolling window.
 
-        The standard error is the standard deviation of the window divided by the square root
-        of the number of periods.
+        The standard error is the standard deviation divided by the square root of the number
+        of observations.
 
-        It is the uncertainty of the moving average as an estimate of the mean price of the
-        window: the moving average plus and minus two standard errors spans roughly where that
-        mean lies.
+        For a rolling window it is the uncertainty of the moving average as an estimate of the
+        mean price of the window: the moving average plus and minus two standard errors spans
+        roughly where that mean lies.
 
         The formula is as follows:
 
-        - Standard Error = StdDev(Close, window) / sqrt(window)
+        - Standard Error = StdDev(Close) / sqrt(n)
 
-        with the sample standard deviation (ddof=1).
+        with the sample standard deviation (ddof=1) and n the number of observations of the
+        full history or of the rolling window.
 
         Referenced against:
         - pandas-ta-classic, stderr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/stderr.py#L12
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_standard_error_matches_pandas_ta_classic
 
         Shares similar logic:
         - Tulip Indicators, stderr: https://tulipindicators.org/stderr
@@ -949,7 +877,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
                 for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
                 traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 14.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -960,14 +889,16 @@ class StatisticsEconometrics:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame:
-            Standard Error values, in price units.
+            pd.Series | pd.DataFrame:
+            The Standard Error in price units per asset, or with `rolling` per date (a column per
+            asset).
 
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Standard Error for each
-          asset, each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The standard error agrees with pandas-ta-classic's stderr. Unlike this, Tulip Indicators' stderr uses
-          the population standard deviation (ddof=0), which is sqrt((window - 1) / window) times this value.
+          asset, each over the dates it has a value. With `rolling`, the first value needs a full window of data from
+          the start date.
+        - The rolling standard error agrees with pandas-ta-classic's stderr. Unlike this, Tulip Indicators' stderr
+          uses the population standard deviation (ddof=0), which is sqrt((n - 1) / n) times this value.
 
         As an example:
 
@@ -981,7 +912,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_rolling_standard_error().tail(5)
+        toolkit.econometrics.get_standard_error(rolling=14).tail(5)
         ```
 
         Which returns:
@@ -1001,115 +932,12 @@ class StatisticsEconometrics:
             include_benchmark=include_benchmark,
         )
 
-        rolling_standard_error = calculate_per_series(
-            data, statistics_model.get_rolling_standard_error, window
+        standard_error = calculate_per_series(
+            data, statistics_model.get_standard_error, rolling
         )
 
         return apply_rounding(
-            rolling_standard_error, rounding if rounding is not None else self._rounding
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_rolling_entropy(
-        self,
-        period: str | None = None,
-        column: str = "Adj Close",
-        window: int = 10,
-        base: float = 2.0,
-        include_benchmark: bool = False,
-        rounding: int | None = None,
-        show_columns: str | list[str] | None = None,
-    ) -> pd.DataFrame:
-        """
-        Calculate the rolling Shannon Entropy of a price series: the entropy of the prices of the
-        window taken as shares of their sum.
-
-        The entropy is at its maximum, log(window), when all prices of the window are equal, and
-        falls as the prices spread out, so a lower entropy points to a larger move within the
-        window. In base 2 it is measured in bits.
-
-        The formula is as follows:
-
-        - P(t - i) = Close(t - i) / Sum(Close, window), i = 0, ..., window - 1
-        - Entropy = -Sum(P * log_base(P))
-
-        For more information, see the following sources:
-
-        - Shannon, C.E. (1948). "A Mathematical Theory of Communication." Bell System Technical
-          Journal, 27(3), 379-423.
-
-        Referenced against:
-        - pandas-ta-classic, entropy: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
-            Test: tests/econometrics/test_statistics_model.py::test_rolling_entropy_matches_pandas_ta_classic
-
-        Also known as: ENTP, Shannon entropy, information entropy.
-
-        Args:
-            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
-                yearly). Defaults to None, which uses "daily".
-            column (str, optional): The historical data column the statistic is calculated on: "Adj Close"
-                for the prices (the series as given with `Econometrics(data=...)`), "Close" for the
-                traded prices or "Return" for the returns (the changes of the series). Defaults to "Adj Close".
-            window (int, optional): The number of periods. Defaults to 10.
-            base (float, optional): The base of the logarithm. Defaults to 2.0, in bits.
-            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
-                Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
-                on every column level, or the rows when no column has those names (such as the line
-                items of a financial statement). Names that do not exist are logged, and when none
-                exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Returns:
-            pd.DataFrame:
-            Entropy values.
-
-        Notes:
-        - The method takes the `column` series of the specified `period` and calculates the Entropy for each asset, each
-          over the dates it has a value. The first value needs a full window of data from the start date.
-        - The entropy agrees with pandas-ta-classic's entropy.
-        - A window with a negative price or a sum of 0 has no entropy.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["AAPL", "MSFT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.econometrics.get_rolling_entropy().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   AAPL |   MSFT |
-        |:-----------|-------:|-------:|
-        | 2025-12-24 | 3.3219 | 3.3219 |
-        | 2025-12-26 | 3.3219 | 3.3219 |
-        | 2025-12-29 | 3.3219 | 3.3219 |
-        | 2025-12-30 | 3.3219 | 3.3219 |
-        | 2025-12-31 | 3.3219 | 3.3219 |
-        """
-        period = period if period else "daily"
-
-        data = self._filter_benchmark(
-            self._get_series_column(period, column),
-            include_benchmark=include_benchmark,
-        )
-
-        rolling_entropy = calculate_per_series(
-            data, statistics_model.get_rolling_entropy, window, base
-        )
-
-        return apply_rounding(
-            rolling_entropy, rounding if rounding is not None else self._rounding
+            standard_error, rounding if rounding is not None else self._rounding
         )
 
     @handle_portfolio
@@ -1125,14 +953,16 @@ class StatisticsEconometrics:
             "shannon",
             "lempel_ziv",
             "kontoyiannis",
+            "share",
         ] = "sample",
         period: str | None = None,
-        column: str = "Return",
-        window: int | None = None,
+        column: str | None = None,
+        rolling: int | None = None,
         order: int | None = None,
         delay: int = 1,
         tolerance: float = 0.2,
         normalize: bool = True,
+        base: float = 2.0,
         estimator: str = "periodogram",
         encoding: str = "binary",
         bins: int = 10,
@@ -1144,12 +974,12 @@ class StatisticsEconometrics:
         """
         Calculate the Entropy of a series, by default the returns: how irregular and
         unpredictable it is, from the sample entropy of Richman and Moorman to the entropies of
-        encoded returns of López de Prado.
+        encoded returns of López de Prado, over the full history or a rolling window.
 
         An entropy is low for a series that repeats itself, trends or is driven by a few
         cycles, and high for a series that looks like noise. On daily returns, which are close
         to noise, most entropies sit near their maximum, so they are mainly of use to compare
-        assets or periods with each other (e.g. with `window` for a rolling value) rather than
+        assets or periods with each other (e.g. with `rolling` for a rolling value) rather than
         as an absolute level.
 
         The methods are as follows (with the default order m = 2 for the sample and
@@ -1175,8 +1005,12 @@ class StatisticsEconometrics:
         - Kontoyiannis (Kontoyiannis et al., 1998): Mean(log2(i + 1) / L_i) over the first half
           of the encoded returns, L_i one more than the longest match of the symbols from
           position i with the i symbols before it, in bits per symbol.
+        - Share (Shannon, 1948): H = -Sum(P * log_base(P)), P = x / Sum(x) the values (by
+          default the prices) as shares of their sum, divided by ln(n) of the n values when
+          normalized. It is at its maximum, log(n), when all values are equal and falls as they
+          spread out, so for prices a lower entropy points to a larger move.
 
-        The last three encode the returns into symbols first: binary (1 for a rise, 0 for a
+        The Shannon, Lempel-Ziv and Kontoyiannis entropy encode the returns into symbols first: binary (1 for a rise, 0 for a
         fall, returns of 0 left out), by quantile (the decile of the return with 10 bins) or
         by sigma (the bucket of one standard deviation the return falls in).
 
@@ -1202,17 +1036,13 @@ class StatisticsEconometrics:
 
         Referenced against:
         - nolds, sampen: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L699
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, sample_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L740
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, app_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L638
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, perm_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L143
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, spectral_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L315
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
         - antropy, svd_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L437
-            Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+
+        - pandas-ta-classic, entropy (share): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/statistics/entropy.py#L13
 
         Shares similar logic:
         - RiskLabAI, plug_in_entropy_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/plug_in.py#L10
@@ -1220,22 +1050,24 @@ class StatisticsEconometrics:
         - RiskLabAI, kontoyiannis_entropy: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/kontoyiannis.py#L57
 
         Also known as: SampEn, ApEn, ordinal pattern entropy, spectral entropy, SVD entropy,
-        plug-in entropy, LZ entropy, Kontoyiannis entropy, entropy features.
+        plug-in entropy, LZ entropy, Kontoyiannis entropy, entropy features, ENTP.
 
         Args:
             method (str, optional): The entropy. Options are: "sample" (Sample Entropy),
                 "approximate" (Approximate Entropy), "permutation" (Permutation Entropy),
                 "spectral" (Spectral Entropy), "svd" (SVD Entropy), "shannon" (Shannon entropy
-                rate), "lempel_ziv" (Lempel-Ziv entropy), "kontoyiannis" (Kontoyiannis entropy).
-                Defaults to "sample".
+                rate), "lempel_ziv" (Lempel-Ziv entropy), "kontoyiannis" (Kontoyiannis entropy),
+                "share" (Shannon entropy of the values as shares of their sum). Defaults to
+                "sample".
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
                 yearly). Defaults to None, which uses "daily".
-            column (str, optional): The historical data column the entropy is calculated on.
+            column (str | None, optional): The historical data column the entropy is calculated on.
                 Options are: "Return" (the returns, the changes of the series), "Adj Close" (the
                 prices, the series as given with `Econometrics(data=...)`), "Close" (the traded
-                prices). Defaults to "Return".
-            window (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every series.
+                prices). Defaults to None, which uses "Adj Close" for the share entropy, whose
+                values must be positive, and "Return" for the others.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
             order (int | None, optional): The template length m of the sample and approximate
                 entropy or the number of values n of the permutation and SVD entropy. Defaults to
                 None, which uses 2 for the sample and approximate and 3 for the permutation and
@@ -1244,8 +1076,10 @@ class StatisticsEconometrics:
                 permutation and SVD entropy. Defaults to 1.
             tolerance (float, optional): The tolerance r of the sample and approximate entropy
                 as a multiple of the standard deviation (ddof=1). Defaults to 0.2.
-            normalize (bool, optional): Whether to divide the permutation, spectral and SVD
+            normalize (bool, optional): Whether to divide the permutation, spectral, SVD and share
                 entropy by their maximum, so they lie between 0 and 1. Defaults to True.
+            base (float, optional): The base of the logarithm of the share entropy when it is not
+                normalized. Defaults to 2.0, in bits.
             estimator (str, optional): The power spectrum of the spectral entropy. Options are:
                 "periodogram" (the periodogram), "welch" (segments of 256 periods with a Hann
                 window). Defaults to "periodogram".
@@ -1267,12 +1101,12 @@ class StatisticsEconometrics:
 
         Returns:
             pd.Series | pd.DataFrame:
-            The entropy per asset, or with `window` per date (a column per asset). The sample,
+            The entropy per asset, or with `rolling` per date (a column per asset). The sample,
             approximate and Lempel-Ziv entropies have no unit; the others are in bits (per symbol),
-            or between 0 and 1 when normalized.
+            the share entropy in units of its base, or between 0 and 1 when normalized.
 
         Notes:
-        - Each asset is measured over the dates it has a value. With a window, the first value
+        - Each asset is measured over the dates it has a value. With `rolling`, the first value
           needs a full window of data from the start date.
         - The sample and approximate entropy compare every template with every other one, so
           their time grows with the square of the number of observations: about 0.1 seconds for
@@ -1282,6 +1116,8 @@ class StatisticsEconometrics:
           nolds and antropy give infinity. Unlike antropy, the tolerance uses the sample standard deviation
           (ddof=1) and includes a distance of exactly r, as in Richman and Moorman.
         - The Shannon entropy counts every overlapping word, the last one included.
+        - The rolling share entropy, not normalized, agrees with pandas-ta-classic's entropy (window 10, base 2). A
+          window with a negative value or a sum of 0 has no share entropy.
 
         As an example:
 
@@ -1295,7 +1131,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_entropy(method="permutation", window=252).tail(5)
+        toolkit.econometrics.get_entropy(method="permutation", rolling=252).tail(5)
         ```
 
         Which returns:
@@ -1309,13 +1145,14 @@ class StatisticsEconometrics:
         | 2025-12-31 | 0.9981 | 0.9919 | 0.9992 |
         """
         period = period if period else "daily"
+        column = column if column else "Adj Close" if method == "share" else "Return"
 
         data = self._filter_benchmark(
             self._get_series_column(period, column),
             include_benchmark=include_benchmark,
         )
 
-        rolling = None
+        rolling_function = None
         if method in ["sample", "approximate"]:
             function = (
                 entropy_model.get_sample_entropy
@@ -1324,7 +1161,7 @@ class StatisticsEconometrics:
             )
             options = {"order": order or 2, "tolerance": tolerance}
             # The windows share their comparisons of the values, so they are counted at once.
-            rolling = (
+            rolling_function = (
                 entropy_model.get_rolling_sample_entropy
                 if method == "sample"
                 else entropy_model.get_rolling_approximate_entropy
@@ -1352,17 +1189,21 @@ class StatisticsEconometrics:
                 return estimate(entropy_model.encode_series(values, encoding, bins))
 
             options = {}
+        elif method == "share":
+            # One function for both: every window is a slice of the same array of shares.
+            function = rolling_function = entropy_model.get_share_entropy
+            options = {"base": base, "normalize": normalize}
         else:
             raise InvalidArgumentError(
-                f"method must be one of 'sample', 'approximate', 'permutation', 'spectral', 'svd', 'shannon', 'lempel_ziv' or 'kontoyiannis', "
+                f"method must be one of 'sample', 'approximate', 'permutation', 'spectral', 'svd', 'shannon', 'lempel_ziv', 'kontoyiannis' or 'share', "
                 f"not {method!r}. Please pass one of these as method."
             )
 
         entropy = calculate_per_window(
             data,
             function,
-            window,
-            rolling=rolling,
+            rolling,
+            rolling=rolling_function,
             **options,
         )
 
@@ -1376,7 +1217,7 @@ class StatisticsEconometrics:
         self,
         period: str | None = None,
         column: str = "Return",
-        window: int | None = None,
+        rolling: int | None = None,
         encoding: str = "binary",
         bins: int = 10,
         normalize: bool = True,
@@ -1386,7 +1227,8 @@ class StatisticsEconometrics:
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Lempel-Ziv Complexity of a series, by default of the direction of the
-        returns: the number of new patterns needed to write the series down.
+        returns: the number of new patterns needed to write the series down, over the full
+        history or a rolling window.
 
         The returns are encoded into symbols (by default 1 for a rise and 0 for a fall) and
         parsed from the start into phrases, each the longest stretch that can be copied from
@@ -1413,7 +1255,6 @@ class StatisticsEconometrics:
 
         Referenced against:
         - antropy, lziv_complexity: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L915
-            Test: tests/econometrics/test_entropy_model.py::test_lempel_ziv_complexity_equals_antropy
 
         Also known as: LZ complexity, LZ76, Lempel-Ziv-Welch complexity, LZC.
 
@@ -1423,8 +1264,8 @@ class StatisticsEconometrics:
             column (str, optional): The historical data column that is encoded: "Return" for the
                 returns (the changes of the series), "Adj Close" for the prices (the series as given
                 with `Econometrics(data=...)`) or "Close" for the traded prices. Defaults to "Return".
-            window (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates one value over the full history of every series.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates one value over the full history of every asset.
             encoding (str, optional): The encoding. Options are: "binary" (1 for a positive and 0 for
                 a negative value, values of 0 left out), "quantile" (the quantile of the value),
                 "sigma" (the bucket of one standard deviation the value falls in). Defaults to
@@ -1443,10 +1284,10 @@ class StatisticsEconometrics:
 
         Returns:
             pd.Series | pd.DataFrame:
-            The (normalized) complexity per asset, or with `window` per date (a column per asset).
+            The (normalized) complexity per asset, or with `rolling` per date (a column per asset).
 
         Notes:
-        - Each asset is measured over the dates it has a value. With a window, the first value
+        - Each asset is measured over the dates it has a value. With `rolling`, the first value
           needs a full window of data from the start date.
         - It equals antropy's lziv_complexity of the same symbols; antropy leaves the encoding to
           the user (often above or below the median, which for returns is close to the sign).
@@ -1463,7 +1304,7 @@ class StatisticsEconometrics:
             end_date="2025-12-31",
         )
 
-        toolkit.econometrics.get_lempel_ziv_complexity(window=252).tail(5)
+        toolkit.econometrics.get_lempel_ziv_complexity(rolling=252).tail(5)
         ```
 
         Which returns:
@@ -1491,7 +1332,7 @@ class StatisticsEconometrics:
                 alphabet=alphabet,
             )
 
-        lempel_ziv_complexity = calculate_per_window(data, complexity, window)
+        lempel_ziv_complexity = calculate_per_window(data, complexity, rolling)
 
         return apply_rounding(
             lempel_ziv_complexity,
@@ -1504,14 +1345,15 @@ class StatisticsEconometrics:
         self,
         period: str | None = None,
         column: str = "Return",
-        window: int | None = None,
+        rolling: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Hjorth parameters of a series, by default the returns: its Activity,
-        Mobility and Complexity, and the number of times it crosses zero.
+        Mobility and Complexity, and the number of times it crosses zero, over the full history
+        or a rolling window.
 
         The Activity is the variance. The Mobility, the standard deviation of the changes
         relative to that of the series, is a mean frequency: it is about Sqrt(2) = 1.41 for
@@ -1547,8 +1389,8 @@ class StatisticsEconometrics:
                 "Return" for the returns (the changes of the series), "Adj Close" for the prices
                 (the series as given with `Econometrics(data=...)`) or "Close" for the traded
                 prices. Defaults to "Return".
-            window (int | None, optional): The number of periods of a rolling window. Defaults to
-                None, which calculates the parameters over the full history of every series.
+            rolling (int | None, optional): The number of periods of a rolling window. Defaults to
+                None, which calculates the parameters over the full history of every asset.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1561,10 +1403,10 @@ class StatisticsEconometrics:
         Returns:
             pd.DataFrame:
             The Activity, Mobility, Complexity and Zero Crossings per asset (a row per asset), or
-            with `window` per date ((parameter, asset) columns).
+            with `rolling` per date ((parameter, asset) columns).
 
         Notes:
-        - Each asset is measured over the dates it has a value. With a window, the first value
+        - Each asset is measured over the dates it has a value. With `rolling`, the first value
           needs a full window of data from the start date.
         - Unlike this, antropy uses the population variance (ddof=0), which changes the Mobility and
           Complexity by less than 0.1% for 1,000 observations, and counts a value of 0 as
@@ -1601,7 +1443,7 @@ class StatisticsEconometrics:
         )
 
         hjorth_parameters = calculate_per_window(
-            data, entropy_model.get_hjorth_parameters, window
+            data, entropy_model.get_hjorth_parameters, rolling
         )
 
         return apply_rounding(

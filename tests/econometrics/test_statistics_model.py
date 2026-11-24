@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.econometrics.statistics import statistics_model
+from financetoolkit.econometrics.statistics import entropy_model, statistics_model
 from tests.technical.sample_prices import sample_prices
 
 
@@ -78,49 +78,55 @@ def test_slope_matches_pandas_ta_classic():
     )
 
 
-def test_rolling_correlation_matches_talib():
+def test_correlation_matches_talib():
     """TA-Lib's CORREL(30) of the high and the low."""
     prices = random_prices()
-    result = statistics_model.get_rolling_correlation(prices["High"], prices["Low"], 30)
+    result = statistics_model.get_correlation(prices["High"], prices["Low"], 30)
 
     assert last_three(result) == pytest.approx([0.94909, 0.950296, 0.947656], abs=1e-6)
 
 
-def test_rolling_correlation_of_a_flat_series_is_missing():
-    result = statistics_model.get_rolling_correlation(
+def test_correlation_of_a_flat_series_is_missing():
+    result = statistics_model.get_correlation(
         pd.Series([5.0] * 10), pd.Series(np.arange(10.0)), 5
     )
 
     assert result.isna().all()
+    assert np.isnan(
+        statistics_model.get_correlation(
+            pd.Series([5.0] * 10), pd.Series(np.arange(10.0))
+        )
+    )
 
 
-def test_rolling_median_matches_talib():
-    result = statistics_model.get_rolling_median(random_prices()["Close"], 30)
+def test_median_matches_talib():
+    """The linear 0.5 percentile is TA-Lib's MEDIAN(30)."""
+    result = statistics_model.get_percentile(random_prices()["Close"], 30)
 
     assert last_three(result) == pytest.approx(
         [85.560623, 85.560623, 85.734428], abs=1e-6
     )
 
 
-def test_rolling_percentile_matches_talib_and_pandas_ta_classic():
+def test_percentile_matches_talib_and_pandas_ta_classic():
     """TA-Lib's PERCENTILE(30, 75) and pandas-ta-classic's quantile(30, 0.3)."""
     closes = random_prices()["Close"]
 
     assert last_three(
-        statistics_model.get_rolling_percentile(closes, 30, 0.75)
+        statistics_model.get_percentile(closes, 30, 0.75, "nearest_rank")
     ) == pytest.approx([86.242352] * 3, abs=1e-6)
     assert last_three(
-        statistics_model.get_rolling_percentile(closes, 30, 0.3, "linear")
+        statistics_model.get_percentile(closes, 30, 0.3)
     ) == pytest.approx([85.190015] * 3, abs=1e-6)
 
 
-def test_rolling_percentile_rejects_an_unknown_method_and_a_percentage():
+def test_percentile_rejects_an_unknown_method_and_a_percentage():
     closes = random_prices()["Close"]
 
     with pytest.raises(ValueError, match="method must be one of"):
-        statistics_model.get_rolling_percentile(closes, 30, 0.5, "midpoint")
+        statistics_model.get_percentile(closes, 30, 0.5, "midpoint")
     with pytest.raises(ValueError, match="between 0 and 1"):
-        statistics_model.get_rolling_percentile(closes, 30, 50)
+        statistics_model.get_percentile(closes, 30, 50)
 
 
 def test_percent_rank_matches_talib():
@@ -136,42 +142,67 @@ def test_percent_rank_matches_talib():
     ).iloc[-1] == pytest.approx(0.5)
 
 
-def test_rolling_z_score_matches_pandas_ta_classic():
-    result = statistics_model.get_rolling_z_score(random_prices()["Close"], 30)
+def test_z_score_matches_pandas_ta_classic():
+    result = statistics_model.get_z_score(random_prices()["Close"], 30)
 
     assert last_three(result) == pytest.approx(
         [-0.845895, -1.116233, 0.130722], abs=1e-6
     )
-    assert np.isnan(
-        statistics_model.get_rolling_z_score(pd.Series([2.0] * 10), 5).iloc[-1]
-    )
+    assert np.isnan(statistics_model.get_z_score(pd.Series([2.0] * 10), 5).iloc[-1])
 
 
-def test_rolling_mean_absolute_deviation_matches_talib():
-    result = statistics_model.get_rolling_mean_absolute_deviation(
-        random_prices()["Close"], 14
-    )
+def test_mean_absolute_deviation_matches_talib():
+    result = statistics_model.get_mean_absolute_deviation(random_prices()["Close"], 14)
 
     assert last_three(result) == pytest.approx([0.844041, 0.87172, 0.910563], abs=1e-6)
 
 
-def test_rolling_standard_error_matches_pandas_ta_classic():
-    result = statistics_model.get_rolling_standard_error(random_prices()["Close"], 14)
+def test_standard_error_matches_pandas_ta_classic():
+    result = statistics_model.get_standard_error(random_prices()["Close"], 14)
 
     assert last_three(result) == pytest.approx([0.296464, 0.299753, 0.305034], abs=1e-6)
 
 
-def test_rolling_entropy_matches_pandas_ta_classic():
-    result = statistics_model.get_rolling_entropy(random_prices()["Close"], 10, 2)
+def test_whole_sample_statistics_equal_numpy():
+    """Without a window, every statistic covers all observations and returns one number."""
+    prices = random_prices()
+    closes = prices["Close"]
+    values = closes.to_numpy()
 
-    assert last_three(result) == pytest.approx([3.321847, 3.321866, 3.321854], abs=1e-6)
-    # Equal prices give the maximum, log2 of the window.
-    assert statistics_model.get_rolling_entropy(pd.Series([4.0] * 8), 8).iloc[
-        -1
-    ] == pytest.approx(3)
-    assert np.isnan(
-        statistics_model.get_rolling_entropy(pd.Series([1.0, -1.0, 2.0]), 3).iloc[-1]
+    assert statistics_model.get_correlation(
+        prices["High"], prices["Low"]
+    ) == pytest.approx(np.corrcoef(prices["High"], prices["Low"])[0, 1], abs=1e-12)
+    assert statistics_model.get_percentile(closes) == pytest.approx(
+        np.median(values), abs=1e-12
     )
+    assert statistics_model.get_percentile(
+        closes, percentile=0.75, method="nearest_rank"
+    ) == pytest.approx(np.quantile(values, 0.75, method="inverted_cdf"), abs=1e-12)
+    assert statistics_model.get_percent_rank(closes) == pytest.approx(
+        (values[:-1] < values[-1]).mean(), abs=1e-12
+    )
+    assert statistics_model.get_z_score(closes) == pytest.approx(
+        (values[-1] - values.mean()) / values.std(ddof=1), abs=1e-12
+    )
+    assert statistics_model.get_mean_absolute_deviation(closes) == pytest.approx(
+        np.abs(values - values.mean()).mean(), abs=1e-12
+    )
+    assert statistics_model.get_standard_error(closes) == pytest.approx(
+        values.std(ddof=1) / np.sqrt(len(values)), abs=1e-12
+    )
+
+
+def test_whole_sample_statistics_of_an_empty_series_are_missing():
+    empty = pd.Series([], dtype=float)
+
+    for statistic in (
+        statistics_model.get_percentile,
+        statistics_model.get_percent_rank,
+        statistics_model.get_z_score,
+        statistics_model.get_mean_absolute_deviation,
+        statistics_model.get_standard_error,
+    ):
+        assert np.isnan(statistic(empty))
 
 
 def test_a_missing_price_leaves_its_windows_empty():
@@ -180,10 +211,13 @@ def test_a_missing_price_leaves_its_windows_empty():
 
     for result in (
         statistics_model.get_linear_regression(closes, 5)["Linear Regression"],
-        statistics_model.get_rolling_percentile(closes, 5, 0.5),
+        statistics_model.get_percentile(closes, 5, 0.5),
         statistics_model.get_percent_rank(closes, 5),
-        statistics_model.get_rolling_mean_absolute_deviation(closes, 5),
-        statistics_model.get_rolling_entropy(closes, 5),
+        statistics_model.get_mean_absolute_deviation(closes, 5),
+        pd.Series(
+            np.r_[np.full(4, np.nan), entropy_model.get_share_entropy(closes, 5)],
+            index=closes.index,
+        ),
     ):
         assert result.iloc[40:45].isna().all()
         assert result.iloc[46:].notna().all()

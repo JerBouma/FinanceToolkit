@@ -5,15 +5,23 @@ __docformat__ = "google"
 from typing import Literal
 
 import numpy as np
-from scipy.optimize import least_squares
+from scipy.optimize import OptimizeResult, least_squares
 
 from financetoolkit.options.greeks.greeks_model import get_vega
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.options.pricing.black_scholes_model import get_black_scholes
-from financetoolkit.options.volatility.fourier_model import get_fourier_price
+from financetoolkit.options.volatility.fourier_model import (
+    COS_MAXIMUM_TERMS,
+    COS_TOLERANCE,
+    FFT_MOMENT_ORDER,
+    get_fourier_price,
+)
 from financetoolkit.options.volatility.levy_model import (
     get_merton_characteristic_function,
 )
+from financetoolkit.utilities import logger_model
+
+logger = logger_model.get_logger()
 
 MINIMUM_QUOTES_FOR_HESTON_FIT = 5
 
@@ -38,9 +46,12 @@ HESTON_LOSS_SCALE = 0.01
 # reversion with a calm variance and a fast one with a volatile variance.
 HESTON_STARTS = ((1.0, 0.4), (4.0, 1.2))
 
-# The number of COS terms the calibration prices with: the COS method prices a whole expiry
-# for the cost of one characteristic function evaluation per term.
+# The number of COS terms the calibration starts with (the COS method prices a whole expiry
+# for the cost of one characteristic function evaluation per term), and the largest
+# difference in implied volatility between those prices and the Lewis prices at the fitted
+# parameters before the fit is repeated with more terms.
 HESTON_CALIBRATION_TERMS = 256
+HESTON_PRICER_TOLERANCE = 1e-5
 
 # The Newton steps that invert the fitted prices to implied volatilities for the RMSE,
 # starting from the market's implied volatility.
@@ -84,6 +95,28 @@ def get_heston_characteristic_function(
 
     Returns:
         np.ndarray: E[e^(iuX)] for every u.
+
+    As an example, φ(—i) = E[S_T / F] = 1 (the forward is the expected price) and φ(1):
+
+    ```python
+    import numpy as np
+
+    from financetoolkit.options.volatility import heston_model
+
+    np.round(
+        heston_model.get_heston_characteristic_function(
+            np.array([-1j, 1.0]), time_to_expiration=0.5, v0=0.04, kappa=2.0,
+            theta=0.05, sigma=0.6, rho=-0.7,
+        ),
+        6,
+    ).tolist()
+    ```
+
+    Which returns:
+
+    ```
+    [(1+0j), (0.988337-0.009853j)]
+    ```
     """
     u = np.asarray(u, dtype=complex)
     xi = kappa - rho * sigma * 1j * u
@@ -100,6 +133,86 @@ def get_heston_characteristic_function(
     d_term = (xi - d) / sigma**2 * (1 - decay) / (1 - g * decay)
 
     return np.exp(c + d_term * v0)
+
+
+def get_heston_moment_explosion_time(
+    order: float,
+    kappa: float,
+    sigma: float,
+    rho: float,
+) -> float:
+    """
+    Calculate the time at which the moment E[S_T^p] of the stock price explodes in the Heston
+    (1993) model, following Andersen and Piterbarg (2007): the moment is finite for every
+    expiration before this time and infinite from it on. Moments of an order between 0 and 1
+    never explode, and neither does a moment of a higher order when the variance reverts fast
+    enough against the correlation.
+
+    The moment is E[S_T^p] = F^p * e^(A(T) + B(T) * v0), where B solves the Riccati equation
+    dB / dt = σ²B² / 2 + (ρσp — κ)B + p(p — 1) / 2 from B(0) = 0, and the moment explodes when B
+    does. The time follows from integrating that equation from 0 to infinity.
+
+    The formulas are as follows:
+
+    - b = ρσp — κ, D = b² — σ²p(p — 1)
+    - T* = ∞ if p(p — 1) ≤ 0, or if D ≥ 0 and b < 0
+    - T* = 1 / √D * ln((b + √D) / (b — √D)) if D > 0 and b ≥ 0
+    - T* = 2 / √(—D) * (π / 2 — arctan(b / √(—D))) if D < 0
+
+    Where p is the order of the moment, κ is the speed of mean reversion of the variance, σ the
+    volatility of the variance and ρ the correlation between the stock and its variance. The
+    jumps of the Bates model have finite moments of every order, so the same time holds there.
+
+    Args:
+        order (float): The order p of the moment E[S_T^p].
+        kappa (float): The speed of mean reversion κ, above 0.
+        sigma (float): The volatility of the variance σ, above 0.
+        rho (float): The correlation ρ between the stock and its variance, between -1 and 1.
+
+    Returns:
+        float: The explosion time T* in years, np.inf if the moment never explodes.
+
+    Notes:
+        The Carr-Madan transform (method="fft" of get_heston_price and get_bates_price) needs
+        the moment of order α + 1 of the damping α to be finite, and is accurate only with a
+        margin above it (see fourier_model.FFT_MOMENT_ORDER). References: Andersen, L. B. G.
+        and Piterbarg, V. V. (2007). "Moment Explosions in Stochastic Volatility Models."
+        Finance and Stochastics, 11(1), 29-50. Checked against a numerical integration of the
+        Riccati equation, which blows up at the same time to 1e-8.
+
+    As an example:
+
+    ```python
+    from financetoolkit.options.volatility import heston_model
+
+    round(
+        heston_model.get_heston_moment_explosion_time(
+            order=2.5, kappa=1.0, sigma=1.0, rho=0.99
+        ),
+        4,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    1.1236
+    ```
+    """
+    curvature = order * (order - 1)
+    if curvature <= 0:
+        return np.inf
+    slope = rho * sigma * order - kappa
+    discriminant = slope**2 - sigma**2 * curvature
+    if discriminant >= 0:
+        if slope < 0:
+            return np.inf
+        if discriminant == 0:
+            return 2 / slope
+        root = np.sqrt(discriminant)
+        return float(np.log((slope + root) / (slope - root)) / root)
+    root = np.sqrt(-discriminant)
+    return float(2 / root * (np.pi / 2 - np.arctan(slope / root)))
 
 
 def get_heston_price(
@@ -142,6 +255,13 @@ def get_heston_price(
     variance stays above zero when the Feller condition 2κθ ≥ σ² holds; the price is defined
     either way.
 
+    The Carr-Madan transform (method="fft") needs the moment E[S_T^(α + 1)] of its damping α
+    to be finite, and in the Heston model that moment explodes at a finite time when ρσ(α + 1)
+    exceeds κ, or σ is large (see get_heston_moment_explosion_time). Close to the explosion the
+    transform aliases the damped price into errors of 0.1 or more. When the moment of order
+    4 (α + 1 with a margin of 1.5, see fourier_model.FFT_MOMENT_ORDER) is infinite at the
+    expiration, the price is taken with the Lewis method instead and a warning says so.
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float | np.ndarray): The strike price, or an array of strike prices.
@@ -171,8 +291,11 @@ def get_heston_price(
         Studies, 6(2), 327-343; Albrecher, H., Mayer, P., Schoutens, W. and Tistaert, J.
         (2007). "The Little Heston Trap." Wilmott Magazine, January, 83-92; Lewis, A. L.
         (2000). Option Valuation under Stochastic Volatility. Finance Press. Referenced
-        against QuantLib's AnalyticHestonEngine (https://www.quantlib.org): the Lewis
-        method agrees within 1e-13, the COS method within 1e-8 and the FFT within 1e-6.
+        against QuantLib's AnalyticHestonEngine (https://www.quantlib.org) on nine parameter
+        sets from a day to ten years, with ρ from -0.999 to 0.99 and σ up to 2: the Lewis
+        method agrees within 1e-10, the COS method within 1e-8 for typical parameters and 6e-7
+        for a volatile variance with a slow mean reversion (σ = 1.5, κ = 0.5, ρ = -0.9 over
+        five years), and the FFT within 1e-6 where it applies.
         FinancePy's Heston.value_weber (https://github.com/domokane/FinancePy) agrees with
         the Lewis method within 1e-10.
 
@@ -211,6 +334,18 @@ def get_heston_price(
         raise ValueError("v0, kappa, theta and sigma must be positive.")
     if not -1 <= rho <= 1:
         raise ValueError(f"rho must be between -1 and 1, received {rho!r}.")
+
+    if method == "fft" and (
+        get_heston_moment_explosion_time(FFT_MOMENT_ORDER, kappa, sigma, rho)
+        <= time_to_expiration
+    ):
+        logger.warning(
+            "The moment E[S_T^%s] of this Heston model is infinite at the expiration, which "
+            "the Carr-Madan transform needs finite, so the option is priced with the Lewis "
+            "method instead.",
+            FFT_MOMENT_ORDER,
+        )
+        method = "lewis"
 
     return get_fourier_price(
         lambda u: get_heston_characteristic_function(
@@ -265,6 +400,11 @@ def get_bates_price(
     the time to expiration in years, v0, κ, θ, σ and ρ are the Heston parameters (see
     get_heston_price), λ is the jump intensity (jumps per year) and μ and δ are the mean and
     standard deviation of the log jump size. With λ = 0 it is the Heston price.
+
+    The lognormal jumps have finite moments of every order, so the moment condition of the
+    Carr-Madan transform (method="fft") is that of the Heston part: when its moment of order 4
+    is infinite at the expiration (see get_heston_price), the price is taken with the Lewis
+    method instead and a warning says so.
 
     Args:
         stock_price (float): The current stock price.
@@ -344,6 +484,18 @@ def get_bates_price(
     if jump_intensity < 0 or jump_volatility < 0:
         raise ValueError("jump_intensity and jump_volatility must be 0 or above.")
 
+    if method == "fft" and (
+        get_heston_moment_explosion_time(FFT_MOMENT_ORDER, kappa, sigma, rho)
+        <= time_to_expiration
+    ):
+        logger.warning(
+            "The moment E[S_T^%s] of the Heston part of this Bates model is infinite at the expiration, which "
+            "the Carr-Madan transform needs finite, so the option is priced with the Lewis "
+            "method instead.",
+            FFT_MOMENT_ORDER,
+        )
+        method = "lewis"
+
     return get_fourier_price(
         lambda u: get_heston_characteristic_function(
             u, time_to_expiration, v0, kappa, theta, sigma, rho
@@ -381,8 +533,12 @@ def get_heston_parameters(
     volatility point keeps a few stale or wide quotes from dominating. The search is a
     bounded trust-region least squares (scipy.optimize.least_squares) from two fixed
     starting points around the at-the-money variance, keeping the best, and prices each
-    expiration with the COS method (256 terms, within about 1e-8 of the exact price for
-    typical parameters). Quotes whose vega is below 5% of the
+    expiration with the COS method of 256 terms. That is within 1e-8 of the exact price for
+    the typical parameters of equity smiles, but a volatile variance with a slow mean reversion
+    fattens the tails and 256 terms are then off by 1e-2 or more (Fang and Oosterlee 2008,
+    section 5). So the fitted prices are compared with a COS series converged to 1e-10 per
+    unit of the strike, and while they differ by more than 1e-5 in implied volatility the fit
+    is repeated from its own result with four times the terms. Quotes whose vega is below 5% of the
     at-the-money vega of their expiration (far from the money, where the price hardly moves
     with the volatility) are left out.
 
@@ -410,8 +566,8 @@ def get_heston_parameters(
 
     Returns:
         dict[str, float]: v0, kappa, theta, sigma and rho, the Feller ratio 2κθ / σ²,
-        the root mean squared error in implied volatility (from inverting the fitted
-        prices) and the number of quotes fitted.
+        the root mean squared error in implied volatility (from inverting the converged
+        prices of the fit) and the number of quotes fitted.
 
     Raises:
         ValueError: If the inputs differ in length or fewer than five quotes have a vega of
@@ -420,7 +576,11 @@ def get_heston_parameters(
     Notes:
         With a single expiration κ and θ are hardly identified separately (only the variance
         averaged over the expiration matters), so a surface of several expirations gives
-        more meaningful parameters. References: Heston, S. L. (1993). "A Closed-Form
+        more meaningful parameters. Even then κ and σ trade off: a faster mean reversion with
+        a more volatile variance gives much the same smile, so on a market surface the
+        objective is flat along that direction and two similar smiles can give a quite
+        different κ, while θ, the Feller ratio and the at-the-money term structure are far
+        better determined. References: Heston, S. L. (1993). "A Closed-Form
         Solution for Options with Stochastic Volatility with Applications to Bond and
         Currency Options." The Review of Financial Studies, 6(2), 327-343; Fang, F. and
         Oosterlee, C. W. (2008). "A Novel Pricing Method for European Options Based on
@@ -496,7 +656,10 @@ def get_heston_parameters(
     expirations = np.unique(times)
     groups = [times == expiration for expiration in expirations]
 
-    def model_prices(parameters: np.ndarray) -> np.ndarray:
+    def model_prices(parameters: np.ndarray, terms: int | None) -> np.ndarray:
+        # COS with a fixed number of terms during the search, which keeps the residuals a
+        # smooth function of the parameters for the finite-difference Jacobian, and COS with
+        # as many terms as it needs to converge (terms=None) for the check of the result.
         prices = np.empty_like(strikes)
         for expiration, group in zip(expirations, groups, strict=True):
             prices[group] = get_fourier_price(
@@ -509,12 +672,25 @@ def get_heston_parameters(
                 expiration,
                 dividend_yield,
                 method="cos",
-                cos_terms=HESTON_CALIBRATION_TERMS,
+                cos_terms=terms or HESTON_CALIBRATION_TERMS,
+                cos_tolerance=COS_TOLERANCE if terms is None else None,
             )
         return prices
 
-    def residuals(parameters: np.ndarray) -> np.ndarray:
-        return (model_prices(parameters) - market_prices) / vegas
+    def fit(start: np.ndarray, terms: int) -> OptimizeResult:
+        return least_squares(
+            lambda parameters: (model_prices(parameters, terms) - market_prices)
+            / vegas,
+            start,
+            bounds=(lower, upper),
+            method="trf",
+            loss="soft_l1",
+            f_scale=HESTON_LOSS_SCALE,
+            x_scale=np.array([0.01, 1.0, 0.01, 0.1, 0.1]),
+            ftol=1e-12,
+            xtol=1e-12,
+            gtol=1e-12,
+        )
 
     # The at-the-money variance of the nearest and the farthest expiration start v0 and θ,
     # with a slow and a fast mean reversion and a low and a high volatility of variance.
@@ -527,30 +703,41 @@ def get_heston_parameters(
     start_theta = float(volatilities[farthest][np.argmin(log_moneyness[farthest])] ** 2)
     lower, upper = HESTON_BOUNDS
 
-    best = None
-    for kappa, sigma in HESTON_STARTS:
-        result = least_squares(
-            residuals,
-            np.clip(
-                [start_v0, kappa, start_theta, sigma, -0.6], lower * 1.01, upper * 0.99
-            ),
-            bounds=(lower, upper),
-            method="trf",
-            loss="soft_l1",
-            f_scale=HESTON_LOSS_SCALE,
-            x_scale=np.array([0.01, 1.0, 0.01, 0.1, 0.1]),
-            ftol=1e-12,
-            xtol=1e-12,
-            gtol=1e-12,
-        )
-        if best is None or result.cost < best.cost:
-            best = result
+    terms = HESTON_CALIBRATION_TERMS
+    best = min(
+        (
+            fit(
+                np.clip(
+                    [start_v0, kappa, start_theta, sigma, -0.6],
+                    lower * 1.01,
+                    upper * 0.99,
+                ),
+                terms,
+            )
+            for kappa, sigma in HESTON_STARTS
+        ),
+        key=lambda result: result.cost,
+    )
+
+    # The COS series converges slowly where a volatile variance or a slow mean reversion
+    # fattens the tails (Fang and Oosterlee 2008, section 5), so the fit is checked against
+    # the Lewis prices and repeated from its own result with four times the terms until the
+    # two agree within HESTON_PRICER_TOLERANCE in implied volatility. The Lewis prices of the
+    # accepted fit give the RMSE, which so measures the fit alone.
+    fitted_prices = model_prices(best.x, None)
+    while (
+        np.max(np.abs(model_prices(best.x, terms) - fitted_prices) / vegas)
+        > HESTON_PRICER_TOLERANCE
+        and terms < COS_MAXIMUM_TERMS
+    ):
+        terms *= 4
+        best = fit(best.x, terms)
+        fitted_prices = model_prices(best.x, None)
 
     v0, kappa, theta, sigma, rho = (float(value) for value in best.x)
 
     # The implied volatility of the fitted prices by Newton's method from the market's, which
     # lies close by: every quote kept has a vega of at least 5% of the at-the-money vega.
-    fitted_prices = model_prices(best.x)
     fitted_volatility = volatilities.copy()
     for _ in range(IMPLIED_VOLATILITY_ITERATIONS):
         fitted_volatility = np.clip(

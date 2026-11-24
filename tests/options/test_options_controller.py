@@ -2050,6 +2050,70 @@ def test_get_heston_parameters(recorder, option_market):
     assert (parameters["RMSE"] < 0.05).all()
 
 
+def test_get_heston_parameters_names_the_parameters_at_a_bound(
+    monkeypatch, option_market
+):
+    from financetoolkit.options.volatility import heston_model  # noqa: PLC0415
+
+    module, _ = option_market
+    fit = heston_model.get_heston_parameters
+
+    def fit_at_the_upper_kappa(*args, **kwargs):
+        return {**fit(*args, **kwargs), "kappa": heston_model.HESTON_BOUNDS[1][1]}
+
+    monkeypatch.setattr(heston_model, "get_heston_parameters", fit_at_the_upper_kappa)
+    parameters = module.get_heston_parameters()
+
+    # The bound is data in the answer, so it reaches the MCP answer too, and the numbers keep
+    # a numeric type next to it.
+    assert (parameters["At Bound"] == "kappa").all()
+    assert (parameters["kappa"] == 20).all()
+    assert pd.api.types.is_float_dtype(parameters["RMSE"])
+
+
+def test_get_heston_parameters_skips_a_ticker_without_quotes_on_its_dates(
+    monkeypatch, option_market
+):
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, _ = option_market
+    expiries = sorted(module._all_expiration_dates())
+    chains = options_model.get_option_chains
+
+    # AAPL lists only the 45-day expiry and MSFT only the 24-day one; the chain of the 45-day
+    # expiry has no AAPL quotes. AAPL then has quotes only on the date MSFT selected, which
+    # raised an IndexError for the whole call.
+    monkeypatch.setattr(
+        module,
+        "_expiration_dates",
+        lambda: {"AAPL": [expiries[2]], "MSFT": [expiries[1]]},
+    )
+
+    def chains_without_aapl(tickers, expiration_date, put_option=False):
+        result = chains(tickers, expiration_date, put_option)
+        if expiration_date == expiries[2]:
+            result = result.drop(index="AAPL", level="Ticker")
+        return result
+
+    monkeypatch.setattr(options_model, "get_option_chains", chains_without_aapl)
+    parameters = module.get_heston_parameters()
+
+    assert list(parameters.index) == ["MSFT"]
+
+
+def test_get_heston_nandi_parameters_keep_the_decimals_of_the_log_likelihood(
+    options_module,
+):
+    parameters = options_module.get_heston_nandi_model(show_parameters=True)
+    exact = options_module.get_heston_nandi_model(show_parameters=True, rounding=10)
+
+    # Rounded to 4 significant digits a log-likelihood in the thousands lost its decimals,
+    # the part fits are compared by.
+    np.testing.assert_allclose(
+        parameters["Log-Likelihood"], exact["Log-Likelihood"].round(4)
+    )
+
+
 def test_get_heston_nandi_model(recorder, options_module):
     # The GARCH fit stops where the likelihood stops improving, which moves its last digits
     # with the platform's floating point, so the prices are recorded to two decimals.

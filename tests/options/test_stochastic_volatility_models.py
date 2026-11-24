@@ -547,3 +547,173 @@ def test_the_heston_nandi_fit_recovers_simulated_parameters():
     assert log_likelihood < parameters["log_likelihood"]
     with pytest.raises(ValueError):
         garch_option_model.get_heston_nandi_parameters(np.array(returns[:50]))
+
+
+def test_heston_moment_explosion_time_matches_the_riccati_equation():
+    from scipy.integrate import solve_ivp  # noqa: PLC0415
+
+    # B' = σ²B²/2 + (ρσp - κ)B + p(p - 1)/2 from B(0) = 0 blows up at the explosion time.
+    for order, kappa, sigma, rho in ((2.5, 1.0, 1.0, 0.99), (4.0, 1.0, 1.0, 0.3)):
+
+        def blow_up(_time, value):
+            return value[0] - 1e8
+
+        blow_up.terminal = True
+        solution = solve_ivp(
+            lambda _time, value, order=order, kappa=kappa, sigma=sigma, rho=rho: [
+                0.5 * sigma**2 * value[0] ** 2
+                + (rho * sigma * order - kappa) * value[0]
+                + 0.5 * order * (order - 1)
+            ],
+            [0, 50],
+            [0.0],
+            events=blow_up,
+            rtol=1e-11,
+            atol=1e-12,
+        )
+        assert heston_model.get_heston_moment_explosion_time(
+            order, kappa, sigma, rho
+        ) == pytest.approx(solution.t_events[0][0], rel=1e-6)
+
+    # A fast mean reversion against a negative correlation keeps every moment finite, and
+    # moments of an order up to 1 never explode.
+    assert np.isinf(heston_model.get_heston_moment_explosion_time(2.5, 2.0, 0.5, -0.7))
+    assert np.isinf(heston_model.get_heston_moment_explosion_time(0.5, 0.1, 5.0, 0.9))
+
+
+def test_heston_and_bates_fft_fall_back_to_lewis_when_the_moment_explodes(caplog):
+    # ρ = 0.99 and σ = 1: the Carr-Madan transform was 0.57 off at K = 40 and priced puts
+    # below zero, as E[S_T^2.5] nearly explodes at T = 1.
+    parameters = {"v0": 0.04, "kappa": 1.0, "theta": 0.04, "sigma": 1.0, "rho": 0.99}
+    strikes = np.array([40.0, 100.0, 250.0])
+    lewis = heston_model.get_heston_price(100.0, strikes, 0.03, 1.0, **parameters)
+    fft = heston_model.get_heston_price(
+        100.0, strikes, 0.03, 1.0, **parameters, method="fft"
+    )
+    np.testing.assert_allclose(fft, lewis, rtol=0, atol=1e-12)
+    assert "priced with the Lewis method instead" in caplog.text
+
+    bates = {"jump_intensity": 0.5, "jump_mean": -0.1, "jump_volatility": 0.15}
+    np.testing.assert_allclose(
+        heston_model.get_bates_price(
+            100.0, strikes, 0.03, 1.0, **parameters, **bates, method="fft"
+        ),
+        heston_model.get_bates_price(100.0, strikes, 0.03, 1.0, **parameters, **bates),
+        rtol=0,
+        atol=1e-12,
+    )
+
+    # Where the moment is finite with room to spare the transform is kept, within 1e-6.
+    assert heston_model.get_heston_price(
+        STOCK_PRICE, STRIKES, RISK_FREE_RATE, TIME_TO_EXPIRATION, **HESTON, method="fft"
+    ) == pytest.approx(
+        heston_model.get_heston_price(
+            STOCK_PRICE, STRIKES, RISK_FREE_RATE, TIME_TO_EXPIRATION, **HESTON
+        ),
+        abs=1e-6,
+    )
+
+
+def test_variance_gamma_fft_falls_back_to_cos_when_the_moment_explodes(caplog):
+    # 1 - θν·4 - σ²ν·16/2 < 0: the transform was 0.1 off.
+    arguments = (100.0, np.array([60.0, 100.0, 150.0]), 0.03, 0.4, 1.0, 0.1, 1.0)
+    np.testing.assert_allclose(
+        levy_model.get_variance_gamma_price(*arguments, method="fft"),
+        levy_model.get_variance_gamma_price(*arguments, method="cos"),
+        rtol=0,
+        atol=1e-12,
+    )
+    assert "priced with the COS method instead" in caplog.text
+
+
+def test_cos_terms_grow_until_the_series_converges():
+    # A volatile variance with a slow mean reversion over five years: 1,024 terms were 2e-2
+    # off. The Lewis integral agrees with QuantLib's AnalyticHestonEngine within 1e-12.
+    for time in (1.0, 5.0):
+
+        def characteristic_function(u, time=time):
+            return heston_model.get_heston_characteristic_function(
+                u, time, 0.04, 0.5, 0.04, 1.5, -0.9
+            )
+
+        strikes = np.array([40.0, 80.0, 100.0, 120.0, 250.0])
+        lewis = fourier_model.get_fourier_price(
+            characteristic_function, 100.0, strikes, 0.03, time
+        )
+        cos = fourier_model.get_fourier_price(
+            characteristic_function, 100.0, strikes, 0.03, time, method="cos"
+        )
+        np.testing.assert_allclose(cos, lewis, rtol=0, atol=1e-6)
+        fixed = fourier_model.get_fourier_price(
+            characteristic_function,
+            100.0,
+            strikes,
+            0.03,
+            time,
+            method="cos",
+            cos_terms=1024,
+            cos_tolerance=None,
+        )
+        assert np.abs(fixed - lewis).max() > 1e-4
+
+
+def test_fourier_prices_stay_above_the_no_arbitrage_bound():
+    # A deep out-of-the-money option a day from expiration: the integration noise gave
+    # -1e-13 (Lewis, COS) and -2e-7 (FFT).
+    def characteristic_function(u):
+        return heston_model.get_heston_characteristic_function(
+            u, 1 / 365, 0.04, 2.0, 0.04, 0.5, -0.7
+        )
+
+    strikes = np.array([40.0, 60.0, 80.0, 120.0, 150.0, 250.0])
+    for method in fourier_model.FOURIER_METHODS:
+        for put_option in (False, True):
+            prices = fourier_model.get_fourier_price(
+                characteristic_function,
+                100.0,
+                strikes,
+                0.03,
+                1 / 365,
+                put_option=put_option,
+                method=method,
+            )
+            sign = -1 if put_option else 1
+            bound = np.maximum(sign * (100.0 - strikes * np.exp(-0.03 / 365)), 0.0)
+            assert (prices >= bound).all()
+
+
+def test_heston_calibration_recovers_a_fat_tailed_surface():
+    # κ = 0.3 and σ = 1.2: with 256 COS terms the prices were 2e-2 off at a year and the fit
+    # returned κ = 0.249 and θ = 0.0562 with an RMSE of 0.001 on this exact surface.
+    from scipy.optimize import brentq  # noqa: PLC0415
+
+    truth = (0.04, 0.3, 0.05, 1.2, -0.8)
+    strikes, times, volatilities = [], [], []
+    for time in (1 / 12, 0.25, 0.5, 1.0, 1.5):
+        expiry_strikes = 100 * np.exp(np.linspace(-0.35, 0.25, 9) * np.sqrt(time / 0.5))
+        prices = heston_model.get_heston_price(
+            100.0, expiry_strikes, 0.03, time, *truth, dividend_yield=0.01
+        )
+        for strike, price in zip(expiry_strikes, prices, strict=True):
+            strikes.append(strike)
+            times.append(time)
+            volatilities.append(
+                brentq(
+                    lambda volatility, strike=strike, price=price, time=time: (
+                        get_black_scholes(100.0, strike, 0.03, volatility, time, 0.01)
+                        - price
+                    ),
+                    1e-4,
+                    5.0,
+                )
+            )
+
+    fit = heston_model.get_heston_parameters(
+        100.0, np.array(strikes), np.array(times), np.array(volatilities), 0.03, 0.01
+    )
+
+    for name, value in zip(
+        ("v0", "kappa", "theta", "sigma", "rho"), truth, strict=True
+    ):
+        assert fit[name] == pytest.approx(value, rel=1e-3)
+    assert fit["rmse"] < 1e-5

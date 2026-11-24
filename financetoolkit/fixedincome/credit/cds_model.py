@@ -115,6 +115,10 @@ def get_credit_default_swap(
         ValueError: If the maturity is not positive or the recovery rate is not between 0
             and 1.
     """
+    if not maturity > 0:
+        raise ValueError(
+            f"The maturity of a CDS must be positive, received {maturity!r}."
+        )
     if not 0 <= recovery_rate < 1:
         raise ValueError("The recovery rate must lie between 0 and 1.")
 
@@ -198,7 +202,8 @@ def get_cds_implied_hazard_rates(
         pd.Series: The hazard rate (continuous, per year) up to each maturity.
 
     Raises:
-        ValueError: If the maturities do not increase or a spread is negative or missing.
+        ValueError: If the maturities do not increase, a spread is negative or missing, or a
+            spread is so far below the ones before it that it implies a negative hazard rate.
     """
     maturities = np.asarray(maturities, dtype=float)
     spreads = np.asarray(spreads, dtype=float)
@@ -226,10 +231,24 @@ def get_cds_implied_hazard_rates(
                 - spread
             )
 
-        hazard_rates[position] = (
-            0.0
-            if spread == 0
-            else brentq(spread_error, 1e-12, MAXIMUM_HAZARD_RATE, xtol=1e-14)
+        if spread == 0:
+            hazard_rates[position] = 0.0
+            continue
+        # The par spread rises with the hazard rate, so a spread below that of a hazard rate
+        # of zero after the earlier ones needs a negative hazard rate (survival rising with
+        # time), which a steeply inverted curve can ask for.
+        if spread_error(1e-12) > 0:
+            raise ValueError(
+                f"The spread of maturity {maturities[position]:g} is too low for the spreads "
+                "before it: it implies a negative hazard rate up to that maturity."
+            )
+        if spread_error(MAXIMUM_HAZARD_RATE) < 0:
+            raise ValueError(
+                f"The spread of maturity {maturities[position]:g} implies a hazard rate above "
+                f"{MAXIMUM_HAZARD_RATE:g} a year."
+            )
+        hazard_rates[position] = brentq(
+            spread_error, 1e-12, MAXIMUM_HAZARD_RATE, xtol=1e-14
         )
 
     return pd.Series(hazard_rates, index=maturities, name="Hazard Rate")

@@ -366,3 +366,21 @@ def test_futures_basis_invalid(fixedincome):
     assert fixedincome.get_treasury_futures_basis(contract_month="2026-11").empty
     # The September contract has delivered by 19 November.
     assert fixedincome.get_treasury_futures_basis(contract_month="2026-09").empty
+
+
+def test_floating_rate_note_index_is_not_locked_out_on_a_price_date(
+    fixedincome, monkeypatch
+):
+    # A Tuesday price date, the day after the 16 November auction. The lockout applies only to
+    # the issue date and interest payment dates (31 CFR 356, Appendix B, IV), so that auction
+    # sets the index rate rather than the one of 9 November.
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_treasury_prices",
+        lambda price_date: (treasury_prices(price_date)[0], date(2026, 11, 17)),
+    )
+    notes = fixedincome.get_treasury_floating_rate_notes(rounding=10)
+
+    assert notes.loc["91282CRS2", "Index Rate"] == pytest.approx(
+        frn_model.get_index_rate(0.04155, 91)
+    )

@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+import math
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
@@ -24,6 +26,48 @@ STEPS_PER_PERIOD = 20
 # the square of the steps, and 2,400 steps (30 years of semi-annual or 10 years of monthly
 # coupons) price in a few seconds.
 MAX_TREE_STEPS = 2_400
+# Below this product x = aτ of the speed of mean reversion and the time, the Vasicek and
+# Hull-White terms are taken from their Taylor series in x. The closed forms divide by a, a²
+# or a³ terms that cancel to leading order: ln A of Vasicek and the variance of Hull-White
+# lose a relative precision of about 1e-16 / x² (6e-8 at x = 1e-4, all of it near x = 1e-8),
+# and are NaN at a = 0. At x = 0.1 the closed forms are within 1e-13, and the series of
+# SPEED_SERIES_TERMS terms is exact to double precision for |x| up to 0.1 (the next term is
+# below 1e-22), so the two agree across the switch.
+SPEED_SERIES_SWITCH = 0.1
+SPEED_SERIES_TERMS = 14
+# The coefficients of x^m of the series (Taylor series of the closed forms in x = aτ):
+# (1 - e^(-x)) / x, the Vasicek -(B - τ) / (2a²τ³) - B² / (4aτ³) and the Hull-White
+# [τ - 2(1 - e^(-x)) / a + (1 - e^(-2x)) / (2a)] / (a²τ³).
+DECAY_SERIES = np.array(
+    [(-1) ** m / math.factorial(m + 1) for m in range(SPEED_SERIES_TERMS)]
+)
+VASICEK_VARIANCE_SERIES = np.array(
+    [
+        (-1) ** m * (2 ** (m + 1) - 1) / math.factorial(m + 3)
+        for m in range(SPEED_SERIES_TERMS)
+    ]
+)
+HULL_WHITE_VARIANCE_SERIES = np.array(
+    [
+        (-1) ** m * (2 ** (m + 2) - 2) / math.factorial(m + 3)
+        for m in range(SPEED_SERIES_TERMS)
+    ]
+)
+
+
+def _decay_integral(speed: float, times: np.ndarray) -> np.ndarray:
+    """
+    The integral (1 - e^(-aτ)) / a of e^(-as) from 0 to τ, which is τ at a = 0, from its
+    series below |aτ| = SPEED_SERIES_SWITCH. It is the B(τ) of Vasicek and Hull-White.
+    """
+    times = np.asarray(times, dtype=float)
+    x = speed * times
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(
+            np.abs(x) < SPEED_SERIES_SWITCH,
+            times * np.polynomial.polynomial.polyval(x, DECAY_SERIES),
+            -np.expm1(-x) / speed,
+        )
 
 
 def calibrate_short_rate_model(
@@ -127,10 +171,17 @@ def _bond_coefficients(
     a, b, sigma = speed, mean, volatility
 
     if model == "vasicek":
-        big_b = (1 - np.exp(-a * t)) / a
-        log_a = (big_b - t) * (
-            a**2 * b - sigma**2 / 2
-        ) / a**2 - sigma**2 * big_b**2 / (4 * a)
+        big_b = _decay_integral(a, t)
+        # ln A = b(B - τ) + σ²[-(B - τ) / (2a²) - B² / (4a)], whose σ² terms cancel to
+        # σ²τ³/6 as a goes to 0 (the Merton, or Ho-Lee, model), so below the switch they come
+        # from their series, σ²τ³(1/6 - aτ/8 + 7(aτ)²/120 - ...).
+        x = a * t
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_a = b * (big_b - t) + sigma**2 * np.where(
+                np.abs(x) < SPEED_SERIES_SWITCH,
+                t**3 * np.polynomial.polynomial.polyval(x, VASICEK_VARIANCE_SERIES),
+                -(big_b - t) / (2 * a**2) - big_b**2 / (4 * a),
+            )
     elif model == "cir":
         # B and ln A divided by e^(γT) above and below, as e^(γT) overflows once γT passes
         # 709.78 (a fitted speed of 35 at 30 years). With e = e^(-γT), x = 2σ²/(γ + a)² and
@@ -410,11 +461,16 @@ def hull_white_mean(
 
 
 def _check_option_model(
-    model: str, mean: float | None, rate: float | None, zero_curve: pd.Series | None
+    model: str,
+    mean: float | None,
+    rate: float | None,
+    zero_curve: pd.Series | None,
+    volatility: float,
 ) -> None:
     """
     Check that the inputs of a short-rate option formula fit the model: Vasicek and CIR take
-    their own curve from the mean and today's rate, Hull-White and CIR++ fit a zero curve.
+    their own curve from the mean and today's rate, Hull-White and CIR++ fit a zero curve,
+    and the CIR formulas divide by the volatility.
     """
     if model not in OPTION_MODELS:
         raise ValueError(
@@ -429,6 +485,10 @@ def _check_option_model(
         )
     if model != "hull_white" and (mean is None or rate is None):
         raise ValueError(f"The {model} model needs the mean and the rate.")
+    if model in ("cir", "cir++") and volatility <= 0:
+        raise ValueError(
+            f"The {model} model needs a volatility above zero, received {volatility!r}."
+        )
 
 
 def _discount(
@@ -478,22 +538,23 @@ def _bond_price_at(
         a = speed
 
         def variance(t):
-            return (
-                volatility**2
-                / a**2
-                * (
-                    t
-                    + 2 / a * np.exp(-a * t)
-                    - np.exp(-2 * a * t) / (2 * a)
-                    - 3 / (2 * a)
+            # σ²/a² [t - 2(1 - e^(-at)) / a + (1 - e^(-2at)) / (2a)], which cancels to
+            # σ²t³/3 as a goes to 0 (the Ho-Lee model), so its series below the switch.
+            t = np.asarray(t, dtype=float)
+            x = a * t
+            with np.errstate(divide="ignore", invalid="ignore"):
+                return volatility**2 * np.where(
+                    np.abs(x) < SPEED_SERIES_SWITCH,
+                    t**3
+                    * np.polynomial.polynomial.polyval(x, HULL_WHITE_VARIANCE_SERIES),
+                    (t - 2 * _decay_integral(a, t) + _decay_integral(2 * a, t)) / a**2,
                 )
-            )
 
         ratio = discount_factors(zero_curve, maturities) / discount_factors(
             zero_curve, np.array([expiry])
         )
         exponent = 0.5 * (variance(tau) - variance(maturities) + variance(expiry))
-        return ratio * np.exp(exponent - (1 - np.exp(-a * tau)) / a * state)
+        return ratio * np.exp(exponent - _decay_integral(a, tau) * state)
 
     log_a, big_b = _bond_coefficients(
         "vasicek" if model == "vasicek" else "cir", speed, mean, volatility, tau
@@ -535,7 +596,10 @@ def _cir_bond_call(
     # ρ² r e^(hT), rewritten with e^(-hT) above and below.
     scaled_rate = 4 * h**2 * decay / (sigma**4 * np.expm1(-h * expiry) ** 2) * rate
     critical = (log_a - np.log(strike)) / big_b
-    degrees = 4 * a * b / sigma**2
+    # The non-central chi-squared distribution is undefined at 0 degrees of freedom, the CIR
+    # rate without drift (a speed or mean of 0, absorbed at zero), and continuous in them
+    # there: 1e-12 degrees give its limit within 1e-11.
+    degrees = max(4 * a * b / sigma**2, 1e-12)
 
     return p_maturity * ncx2.cdf(
         2 * critical * (rho + psi + big_b),
@@ -645,7 +709,7 @@ def get_zero_coupon_bond_option(
     0.030226802572760114
     ```
     """
-    _check_option_model(model, mean, rate, zero_curve)
+    _check_option_model(model, mean, rate, zero_curve, volatility)
     if option_type not in ("call", "put"):
         raise ValueError(
             f"The option type must be 'call' or 'put', not {option_type!r}."
@@ -662,12 +726,12 @@ def get_zero_coupon_bond_option(
     p_maturity = _discount(model, speed, mean, volatility, rate, zero_curve, maturity)
 
     if model in ("vasicek", "hull_white"):
-        a = speed
+        # σ (1 - e^(-a(S - T))) / a · √((1 - e^(-2aT)) / (2a)), which is σ (S - T) √T at
+        # a = 0 (the Ho-Lee model).
         sigma_p = (
             volatility
-            * (1 - np.exp(-a * (maturity - expiry)))
-            / a
-            * np.sqrt((1 - np.exp(-2 * a * expiry)) / (2 * a))
+            * _decay_integral(speed, maturity - expiry)
+            * np.sqrt(_decay_integral(2 * speed, expiry))
         )
         h = np.log(p_maturity / (strike * p_expiry)) / sigma_p + sigma_p / 2
         call = p_maturity * norm.cdf(h) - strike * p_expiry * norm.cdf(h - sigma_p)
@@ -886,7 +950,7 @@ def get_swaption(
     9586.798853610037
     ```
     """
-    _check_option_model(model, mean, rate, zero_curve)
+    _check_option_model(model, mean, rate, zero_curve, volatility)
     if swaption_type not in ("payer", "receiver"):
         raise ValueError(
             f"The swaption type must be 'payer' or 'receiver', not {swaption_type!r}."

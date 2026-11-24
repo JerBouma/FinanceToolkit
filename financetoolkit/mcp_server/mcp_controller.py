@@ -28,7 +28,9 @@ from starlette.middleware.cors import CORSMiddleware
 from financetoolkit.cache import policy_model
 from financetoolkit.mcp_server.analytics import analytics_model
 from financetoolkit.mcp_server.auth.auth_model import (
+    ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
     MCPAuthMiddleware,
+    allows_anonymous_access,
     get_secret_key,
     register_auth_routes,
     resolve_api_key,
@@ -246,6 +248,19 @@ def _build_mcp_app(transport: str = "stdio") -> FastMCP:
         # by whoever intercepted it, and on a hosted server it reaches every user through
         # the shared cache. An explicit setting of the operator still wins.
         os.environ.setdefault(requests_model.UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, "0")
+        if allows_anonymous_access():
+            logger.warning(
+                "%s is set: callers without credentials use this server's "
+                "FinancialModelingPrep key. Only do this on a server that untrusted callers "
+                "can't reach.",
+                ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
+            )
+        elif os.environ.get("FINANCIAL_MODELING_PREP_API_KEY"):
+            logger.info(
+                "Callers sign in or pass their own key; set %s=1 to let callers without "
+                "credentials use this server's FinancialModelingPrep key.",
+                ANONYMOUS_ACCESS_ENVIRONMENT_VARIABLE,
+            )
 
     logger.info(
         "Caching is %s for this server.",
@@ -458,6 +473,10 @@ def main() -> None:
     FT_MCP_CORS_ORIGINS lists the web origins that may call the server from a browser,
     comma-separated; it defaults to every origin when the server listens on a public
     interface and to none on 127.0.0.1.
+    On the sse and streamable-http transports every caller signs in (OAuth) or passes
+    their own key, also when the server has FINANCIAL_MODELING_PREP_API_KEY. To let callers
+    without credentials use the server's key, on a server only trusted callers can reach,
+    set FT_MCP_ALLOW_ANONYMOUS=1.
     """
     parser = argparse.ArgumentParser(
         prog="financetoolkit-mcp",
@@ -470,7 +489,9 @@ def main() -> None:
             "the global Finance Toolkit .env file or a .env file in the working directory, in "
             "that order (only these two keys are read from a file). Caching is "
             "controlled with FINANCE_TOOLKIT_CACHE_ENABLED; a server on the sse or "
-            "streamable-http transport shares only the public sources between its users."
+            "streamable-http transport shares only the public sources between its users, "
+            "and its callers sign in or pass their own key unless FT_MCP_ALLOW_ANONYMOUS=1 "
+            "lets them use the server's key."
         ),
     )
     parser.add_argument(

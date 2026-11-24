@@ -322,3 +322,21 @@ def test_size_limits_of_one_indicator():
     assert size_limit_problem({"window": 50}, {}, limits, "get_a") is None
     assert size_limit_problem({"window": 500}, {}, limits, "get_b") is None
     assert size_limit_problem({"window": 500}, {}, limits) is None
+
+
+def test_a_switch_is_refused_by_its_value():
+    limits = {
+        "refused_values": [
+            {
+                "methods": ["get_a"],
+                "parameter": "american_option",
+                "values": ["true"],
+                "reason": "x",
+            }
+        ]
+    }
+
+    assert "`american_option='true'`" in refused_value_problem(
+        "get_a", {"american_option": True}, limits
+    )
+    assert refused_value_problem("get_a", {"american_option": False}, limits) is None

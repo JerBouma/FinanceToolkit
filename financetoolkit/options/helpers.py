@@ -2,12 +2,14 @@
 
 __docformat__ = "google"
 
-from collections.abc import Callable
+import warnings
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.special import ndtr, owens_t
+from scipy.special import ndtr, ndtri, owens_t
+from scipy.stats import qmc
 
 from financetoolkit.utilities import logger_model
 
@@ -399,6 +401,288 @@ def evaluate_on_grid(
         strike: {time: float(values[row, column]) for column, time in enumerate(times)}
         for row, strike in enumerate(strikes)
     }
+
+
+# The random numbers of a Monte Carlo price: pseudo-random draws of numpy's default generator
+# (PCG64) or scrambled Sobol points, and the variance reductions applied to them.
+MONTE_CARLO_SEQUENCES = ("pseudo_random", "sobol")
+VARIANCE_REDUCTIONS = (None, "antithetic", "control_variate")
+# Sobol prices are averaged over this many independently scrambled sequences, whose spread
+# gives the standard error (randomized quasi-Monte Carlo, Owen 1997): the points of a single
+# sequence are not independent, so their own spread overstates the error.
+SOBOL_REPLICATIONS = 16
+# The most dimensions (time steps times assets) of scipy's Sobol direction numbers (Joe and
+# Kuo, 2008).
+MAX_SOBOL_DIMENSIONS = 21_201
+
+
+def _brownian_bridge_order(time_steps: int) -> list[tuple[int, int, int]]:
+    """
+    Orders the points of a Brownian path on time_steps equal steps as a Brownian bridge
+    fills them: the end first, then the midpoint of every interval, level by level.
+
+    Args:
+        time_steps (int): The number of steps of the path.
+
+    Returns:
+        list[tuple[int, int, int]]: Per point the step it sits at and the steps of the two
+        points it lies between, already set (the start, 0, for the end point).
+    """
+    order = [(time_steps, 0, 0)]
+    intervals = [(0, time_steps)]
+
+    while intervals:
+        left, right = intervals.pop(0)
+        if right - left > 1:
+            middle = (left + right) // 2
+            order.append((middle, left, right))
+            intervals += [(left, middle), (middle, right)]
+
+    return order
+
+
+def _brownian_bridge(
+    normals: np.ndarray, time_steps: int, dimensions: int
+) -> np.ndarray:
+    """
+    Builds Brownian paths with unit steps from standard normal numbers through a Brownian
+    bridge and returns their increments, which are independent standard normal numbers in
+    distribution. The first numbers of every row set the end of the path and the later ones
+    ever finer detail, so the most important coordinates of a Sobol point drive the parts
+    of the path that matter most for the price (Moskowitz and Caflisch, 1996):
+
+    - W(m) = ((r - m) * W(l) + (m - l) * W(r)) / (r - l) + √((m - l) * (r - m) / (r - l)) * Z
+
+    Args:
+        normals (np.ndarray): The standard normal numbers, rows by time steps times
+            dimensions, in the order of _brownian_bridge_order with the dimensions within.
+        time_steps (int): The number of steps of every path.
+        dimensions (int): The number of Brownian motions per path.
+
+    Returns:
+        np.ndarray: The increments, rows by time steps by dimensions.
+    """
+    rows = normals.shape[0]
+    paths = np.zeros((rows, time_steps + 1, dimensions))
+
+    for position, (point, left, right) in enumerate(_brownian_bridge_order(time_steps)):
+        draws = normals[:, position * dimensions : (position + 1) * dimensions]
+        if left == right:
+            paths[:, point] = np.sqrt(point) * draws
+        else:
+            paths[:, point] = (
+                (right - point) * paths[:, left] + (point - left) * paths[:, right]
+            ) / (right - left) + np.sqrt(
+                (point - left) * (right - point) / (right - left)
+            ) * draws
+
+    return np.diff(paths, axis=1)
+
+
+def _validate_monte_carlo(
+    simulations: int, time_steps: int, dimensions: int, sequence: str, antithetic: bool
+) -> None:
+    """
+    Raises a ValueError for random numbers that can not be drawn as asked.
+
+    Args:
+        simulations (int): The number of paths.
+        time_steps (int): The number of steps per path.
+        dimensions (int): The number of Brownian motions per path.
+        sequence (str): "pseudo_random" or "sobol".
+        antithetic (bool): Whether the paths come in antithetic pairs.
+    """
+    if sequence not in MONTE_CARLO_SEQUENCES:
+        raise ValueError(
+            f"sequence must be one of {', '.join(MONTE_CARLO_SEQUENCES)}, received "
+            f"{sequence!r}."
+        )
+    if not isinstance(simulations, int) or isinstance(simulations, bool):
+        raise ValueError(f"simulations must be an integer, received {simulations!r}.")
+    if not isinstance(time_steps, int) or time_steps <= 0:
+        raise ValueError(
+            f"time_steps must be a positive integer, received {time_steps!r}."
+        )
+    if antithetic and simulations % 2:
+        raise ValueError(
+            f"Antithetic paths come in pairs, so simulations must be even, received "
+            f"{simulations!r}."
+        )
+    minimum = 2 * SOBOL_REPLICATIONS if sequence == "sobol" else 2 if antithetic else 1
+    if simulations < minimum:
+        raise ValueError(
+            f"simulations must be at least {minimum} with sequence={sequence!r}, received "
+            f"{simulations!r}."
+        )
+    if sequence == "sobol" and time_steps * dimensions > MAX_SOBOL_DIMENSIONS:
+        raise ValueError(
+            f"Sobol points have at most {MAX_SOBOL_DIMENSIONS:,} dimensions, received "
+            f"{time_steps:,} time steps of {dimensions} assets."
+        )
+
+
+def _replication_sizes(simulations: int, antithetic: bool) -> np.ndarray:
+    """
+    Splits the paths over the Sobol replications as evenly as possible, in whole pairs for
+    antithetic paths.
+
+    Args:
+        simulations (int): The number of paths.
+        antithetic (bool): Whether the paths come in antithetic pairs.
+
+    Returns:
+        np.ndarray: The number of paths of every replication.
+    """
+    pair = 2 if antithetic else 1
+    units = simulations // pair
+    sizes = np.full(SOBOL_REPLICATIONS, units // SOBOL_REPLICATIONS)
+    sizes[: units % SOBOL_REPLICATIONS] += 1
+    return sizes * pair
+
+
+def draw_standard_normals(
+    simulations: int,
+    time_steps: int,
+    dimensions: int = 1,
+    sequence: str = "pseudo_random",
+    antithetic: bool = False,
+    seed: int | None = None,
+    chunk_size: int = 10_000,
+) -> Iterator[np.ndarray]:
+    """
+    Draws the independent standard normal increments of Monte Carlo paths in chunks of
+    paths, so a simulation holds one chunk at a time.
+
+    - pseudo_random: numpy's default generator (PCG64) seeded with seed fills the numbers
+      row by row, so the chunks give the same numbers as one draw of all paths.
+    - sobol: scrambled Sobol points (Sobol 1967, direction numbers of Joe and Kuo 2008,
+      scipy.stats.qmc.Sobol) turned into normal numbers with the inverse normal distribution
+      and into paths with a Brownian bridge. The paths are split over SOBOL_REPLICATIONS
+      independently scrambled sequences (seeded from seed), so the spread of their means
+      gives the standard error.
+    - antithetic: every path is followed by its mirror image, the same numbers with the
+      opposite sign (Boyle, 1977).
+
+    Args:
+        simulations (int): The number of paths.
+        time_steps (int): The number of steps per path.
+        dimensions (int, optional): The number of Brownian motions per path. Defaults to 1.
+        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
+        antithetic (bool, optional): Whether to draw antithetic pairs. Defaults to False.
+        seed (int | None, optional): The seed of the numbers. Defaults to None.
+        chunk_size (int, optional): The most paths per chunk; an even number. Defaults to
+            10,000.
+
+    Yields:
+        np.ndarray: The increments of a chunk of paths, paths by time steps by dimensions.
+
+    Raises:
+        ValueError: If the sequence is unknown, simulations is odd for antithetic paths or
+            too small, or a Sobol point would need too many dimensions.
+    """
+    _validate_monte_carlo(simulations, time_steps, dimensions, sequence, antithetic)
+    shape = (time_steps, dimensions)
+
+    def mirrored(normals: np.ndarray) -> np.ndarray:
+        if not antithetic:
+            return normals
+        pairs = np.empty((2 * normals.shape[0], *normals.shape[1:]))
+        pairs[0::2] = normals
+        pairs[1::2] = -normals
+        return pairs
+
+    pair = 2 if antithetic else 1
+
+    if sequence == "pseudo_random":
+        random_number_generator = np.random.default_rng(seed)
+        for first in range(0, simulations, chunk_size):
+            rows = min(chunk_size, simulations - first) // pair
+            yield mirrored(random_number_generator.standard_normal((rows, *shape)))
+        return
+
+    seeds = np.random.SeedSequence(seed).spawn(SOBOL_REPLICATIONS)
+
+    for size, replication_seed in zip(
+        _replication_sizes(simulations, antithetic), seeds, strict=True
+    ):
+        engine = qmc.Sobol(
+            d=time_steps * dimensions,
+            scramble=True,
+            seed=np.random.default_rng(replication_seed),
+        )
+        for first in range(0, int(size), chunk_size):
+            rows = min(chunk_size, int(size) - first) // pair
+            # Scipy warns when the number of points is not a power of two, the sizes at
+            # which a Sobol sequence is best balanced; any number of points remains valid.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                uniforms = engine.random(rows)
+            normals = ndtri(np.clip(uniforms, 1e-16, 1 - 1e-16))
+            yield mirrored(_brownian_bridge(normals, time_steps, dimensions))
+
+
+def simulation_groups(simulations: int, sequence: str, antithetic: bool) -> np.ndarray:
+    """
+    Labels the independent groups of the paths of draw_standard_normals, whose means give
+    the standard error of a Monte Carlo price: every path on its own, every antithetic pair,
+    or every Sobol replication.
+
+    Args:
+        simulations (int): The number of paths.
+        sequence (str): "pseudo_random" or "sobol".
+        antithetic (bool): Whether the paths come in antithetic pairs.
+
+    Returns:
+        np.ndarray: The group of every path.
+    """
+    if sequence == "sobol":
+        return np.repeat(
+            np.arange(SOBOL_REPLICATIONS), _replication_sizes(simulations, antithetic)
+        )
+    return np.arange(simulations) // (2 if antithetic else 1)
+
+
+def monte_carlo_estimate(values: np.ndarray, groups: np.ndarray) -> tuple[float, float]:
+    """
+    Returns the Monte Carlo estimate, the average of the values of the paths, and its
+    standard error from the spread of the means of the independent groups of paths
+    (ddof=1).
+
+    Args:
+        values (np.ndarray): The discounted payoff of every path.
+        groups (np.ndarray): The group of every path (simulation_groups).
+
+    Returns:
+        tuple[float, float]: The estimate and its standard error.
+    """
+    counts = np.bincount(groups)
+    means = np.bincount(groups, weights=values) / counts
+    return float(values.mean()), float(means.std(ddof=1) / np.sqrt(means.size))
+
+
+def control_variate(
+    values: np.ndarray, control: np.ndarray, expected_control: float
+) -> np.ndarray:
+    """
+    Subtracts the simulation error of a control whose expected value is known from the
+    values of the paths (Glasserman, 2003, section 4.1):
+
+    - Y_i - β * (X_i - E[X]), β = Cov(Y, X) / Var(X)
+
+    Args:
+        values (np.ndarray): The discounted payoff of every path, Y.
+        control (np.ndarray): The control of every path, X.
+        expected_control (float): The expected value of the control, E[X].
+
+    Returns:
+        np.ndarray: The controlled values; the values themselves when the control does not
+        vary.
+    """
+    variance = control.var(ddof=1)
+    if variance <= 0:
+        return values
+    beta = np.cov(values, control, ddof=1)[0, 1] / variance
+    return values - beta * (control - expected_control)
 
 
 def bivariate_normal_cdf(first, second, correlation):

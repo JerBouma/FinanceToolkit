@@ -352,3 +352,39 @@ def test_new_backtests_dataframe(recorder):
             ]
         ).round(4)
     )
+
+
+def test_get_duration_test_has_a_monte_carlo_p_value():
+    returns, var_estimates = _breach_sample()
+    result = backtesting_model.get_duration_test(
+        returns, var_estimates, replications=199, random_state=1
+    )
+
+    # The p-value counts the random orderings of the same breaches with a statistic at least
+    # as large, so it is a multiple of 1 / (R + 1) and the same for the same seed.
+    assert result["P-Value"] * 200 == pytest.approx(round(result["P-Value"] * 200))
+    pd.testing.assert_series_equal(
+        result,
+        backtesting_model.get_duration_test(
+            returns, var_estimates, replications=199, random_state=1
+        ),
+    )
+    ordered = backtesting_model._duration_statistics(
+        (returns < var_estimates).to_numpy()[None, :]
+    )
+    assert ordered[0][0] == pytest.approx(result["Duration Statistic"])
+
+
+def test_get_duration_test_keeps_its_size_under_the_null():
+    rng = np.random.default_rng(12)
+    var_estimates = pd.Series(np.full(500, spstats.norm.ppf(0.05)))
+    p_values = [
+        backtesting_model.get_duration_test(
+            pd.Series(rng.standard_normal(500)), var_estimates, replications=99
+        )["P-Value"]
+        for _ in range(120)
+    ]
+
+    # The χ² distribution rejects about 9% of the time at 5%; the orderings give the exact
+    # null distribution given the number of breaches (5% up to 2 pp of simulation error).
+    assert np.mean(np.array(p_values) <= SIGNIFICANCE_LEVEL) < 0.1

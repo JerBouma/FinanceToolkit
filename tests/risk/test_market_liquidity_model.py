@@ -845,3 +845,21 @@ def test_get_vpin(recorder):
     with pytest.raises(TypeError):
         market_liquidity_model.get_vpin(1, 2)  # type: ignore
     recorder.capture(result.round(6))
+
+
+def test_get_vpin_bucket_volume_has_no_look_ahead():
+    bars = daily_bars(days=200)
+    later = bars["Volume"].copy()
+    later.iloc[100:] *= 5
+
+    # The default bucket is the mean volume of the first `window` days, so volume after
+    # them changes neither the bucket nor the VPIN of the days before.
+    base = market_liquidity_model.get_vpin(bars["Close"], bars["Volume"], 20, None, 20)
+    changed = market_liquidity_model.get_vpin(bars["Close"], later, 20, None, 20)
+    pd.testing.assert_series_equal(base.iloc[:100], changed.iloc[:100])
+    pd.testing.assert_series_equal(
+        base,
+        market_liquidity_model.get_vpin(
+            bars["Close"], bars["Volume"], 20, bars["Volume"].iloc[:20].mean(), 20
+        ),
+    )

@@ -1742,7 +1742,8 @@ class DrawdownRisk:
         libraries other than ffn report the drawdown as a positive number. PerformanceAnalytics'
         geometric=FALSE divides the decline of 1 + the summed returns by its peak, where compounded=False here
         (and in Riskfolio-Lib and skfolio) takes the absolute decline.
-        - The Sterling Ratio of `toolkit.performance` averages only the periods below a high, a third variant.
+        - The Sterling Ratio of `toolkit.performance` averages the depths of the 3 deepest episodes only (Bacon's
+        Average Largest Drawdown); with at least as many as there are episodes it is method="episode".
 
         As an example:
 

@@ -410,10 +410,16 @@ def get_ljung_box_test(
 
         name = "Weighted Ljung-Box Statistic" if weighted else "Ljung-Box Statistic"
 
-        if n <= lags + 1:
+        array = values.to_numpy(dtype=float)
+
+        # A series without variation has no autocorrelation: what is left after the mean is
+        # rounding noise, whose autocorrelations are close to 1.
+        if n <= lags + 1 or np.ptp(array) <= n * ROUNDING_PER_OBSERVATION * np.abs(
+            array
+        ).max(initial=0.0):
             return pd.Series({name: np.nan, "P-Value": np.nan})
 
-        autocorrelations = get_autocorrelations(values.to_numpy(dtype=float), lags)
+        autocorrelations = get_autocorrelations(array, lags)
 
         if weighted:
             lag_numbers = np.arange(1, lags + 1)
@@ -652,7 +658,8 @@ def get_cusum_test(
     Every statistic of a date only uses the returns up to that date, so with
     `time_series=True` the statistic, its critical value and the verdict per date have no
     look-ahead; they start at the 10th return. The 5% holds for every date on its own (on
-    random walks the last date rejects about 5.5% of the time), so over many dates some
+    simulated random walks of 100 and 500 returns the last date rejects about 4% to 5% of
+    the time), so over many dates some
     cross the critical value by chance. The other two methods scale with the whole sample and
     only give the test.
 
@@ -1259,8 +1266,8 @@ def get_nyblom_test(
 def get_gmm_moment_test(
     standardized_residuals: pd.Series | pd.DataFrame,
     lags: int = 1,
-    skewness: float = 0.0,
-    kurtosis: float = 3.0,
+    distribution: str = "normal",
+    parameters: tuple[float, ...] = (),
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the GMM orthogonality test of Hansen (1982) on the standardized residuals of a
@@ -1268,18 +1275,20 @@ def get_gmm_moment_test(
     innovation distribution, and are their squares, cubes and fourth powers uncorrelated over
     time, as a correctly specified model implies?
 
-    The formula is as follows, with z_t the standardized residuals, s and κ the skewness and
-    kurtosis (not excess) of the innovation distribution and j = 1, ..., p the lags:
+    The formula is as follows, with z_t the standardized residuals, m_k = E[z^k] the raw
+    moments of the innovation distribution, s = m_3 and κ = m_4 its skewness and kurtosis (not
+    excess) and j = 1, ..., p the lags:
 
     - Mean: E[z_t] = 0; Variance: E[z_t^2 - 1] = 0; Skewness: E[z_t^3 - s] = 0; Kurtosis: E[z_t^4 - κ] = 0
     - Q2: E[(z_t^2 - 1)(z_(t-j)^2 - 1)] = 0; Q3: E[(z_t^3 - s)(z_(t-j)^3 - s)] = 0;
       Q4: E[(z_t^4 - κ)(z_(t-j)^4 - κ)] = 0
     - g_t the moment conditions of observation t, over the T observations t = p + 1, ..., n, and ḡ
       their average
-    - S their covariance under the null of independent innovations: the sample covariance (ddof=1)
-      of the four moments, Cov(a_t b_(t-j), c_t d_(t-k)) = E[a c] E[b d] for j = k and 0 otherwise for the
-      lagged products, and 0 between the moments and the lagged products, with E[a c] the average of
-      the products of the centred moments
+    - S their covariance under the null of independent innovations: Cov(z^a - m_a, z^b - m_b) =
+      m_(a+b) - m_a m_b between the four moments, from the innovation distribution;
+      Cov(a_t b_(t-j), c_t d_(t-k)) = E[a c] E[b d] for j = k and 0 otherwise between the lagged
+      products, with E[a c] the average of the products of the centred moments; and 0 between the
+      moments and the lagged products
     - t-Statistic of a moment = ḡ_i / √(S_ii / T), two-sided p-values from the normal distribution
     - Q2, Q3 and Q4 Statistic = T ḡ' S^-1 ḡ over their p conditions, chi-squared with p degrees of freedom
     - Joint Statistic = T ḡ' S^-1 ḡ over all 4 + 3 p conditions, chi-squared with 4 + 3 p degrees of
@@ -1288,12 +1297,17 @@ def get_gmm_moment_test(
     The parameters of the model are estimated, which the test leaves out of the covariance
     of the moments, as rugarch's GMMTest does; read the p-values as a guide. The moments are
     correlated with each other (z_t with z_t^3, z_t^2 with z_t^4, and Q2 with Q4), so the joint test
-    can reject while none of the individual tests does. The covariance of the lagged products is
-    the one the null implies rather than their sample covariance, which rests on 16th moments of
-    z_t: on 2,500 simulated normal innovations the joint test at 5% then rejects about 7% of the
-    time instead of 20%. The Kurtosis condition needs a finite 8th moment of z_t (a Student-t
-    with a Shape above 8) and converges slowly even then: on simulated Student-t innovations with
-    a Shape of 10, the Kurtosis test at 5% rejects about 11% of the time and the joint test 16%.
+    can reject while none of the individual tests does. The covariance of the four moments is
+    the one the distribution implies and that of the lagged products the one the null implies,
+    rather than their sample covariance, which rests on 8th and 16th sample moments of z_t: on
+    simulated independent normal innovations the joint test at 5% (lags=1) then rejects about
+    6.6% of the time at 1,000 observations and 5.3% at 2,500, against 10.5% and 8.2% with the
+    sample covariance of the moments. On simulated Student-t innovations with a Shape of 10 (and
+    the same distribution assumed) the joint test rejects about 5% of the time and the Kurtosis
+    test about 3% at 1,000 and 2,500 observations. A moment the distribution does not have (m_6
+    or m_8 of a Student-t with a Shape of 6 or 8 or less) takes its sample counterpart, which
+    rests on moments that do not exist: the tests of the conditions it enters are then
+    unreliable.
 
     For more information about the method, see the following paper:
 
@@ -1303,17 +1317,19 @@ def get_gmm_moment_test(
     Args:
         standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals.
         lags (int, optional): The number of lags p of the Q2, Q3 and Q4 conditions. Defaults to 1.
-        skewness (float, optional): The skewness s of the innovation distribution, NaN when
-            it has none (a Student-t with a Shape of 3 or less), which leaves the Skewness and
-            Q3 conditions out. Defaults to 0.
-        kurtosis (float, optional): The kurtosis κ (not excess) of the innovation
-            distribution, NaN when it has none (a Student-t with a Shape of 4 or less), which
-            leaves the Kurtosis and Q4 conditions out. Defaults to 3.
+        distribution (str, optional): The standardized innovation distribution, see
+            `garch_model.get_standardized_raw_moments` ("normal", "t", "skewt",
+            "skewt_fernandez_steel", "ged" or "johnson_su"). A Student-t with a Shape of 3 or
+            less has no skewness, which leaves the Skewness and Q3 conditions out, and one of 4
+            or less no kurtosis, which leaves the Kurtosis and Q4 conditions out. Defaults to
+            "normal".
+        parameters (tuple[float, ...], optional): The Shape (and Skew) of the distribution.
+            Defaults to ().
 
     Returns:
         pd.Series | pd.DataFrame: The t-statistic and p-value of the Mean, Variance, Skewness
         and Kurtosis conditions, the Q2, Q3, Q4 and Joint statistics with their p-values,
-        the lags and the observations.
+        the lags and the observations; NaN for a series without variation.
 
     Notes:
         Referenced against `GMMTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
@@ -1327,19 +1343,22 @@ def get_gmm_moment_test(
         return pd.DataFrame(
             {
                 column: get_gmm_moment_test(
-                    standardized_residuals[column], lags, skewness, kurtosis
+                    standardized_residuals[column], lags, distribution, parameters
                 )
                 for column in standardized_residuals.columns
             }
         )
 
     z = standardized_residuals.dropna().to_numpy(dtype=float)
+    raw_moments = garch_model.get_standardized_raw_moments(distribution, parameters, 8)
+    skewness, kurtosis = raw_moments[3], raw_moments[4]
     centred = {
         "Mean": z,
         "Variance": z**2 - 1,
         "Skewness": z**3 - skewness,
         "Kurtosis": z**4 - kurtosis,
     }
+    powers = {"Mean": 1, "Variance": 2, "Skewness": 3, "Kurtosis": 4}
     conditions = {name: values[lags:] for name, values in centred.items()}
     groups = {"Q2": "Variance", "Q3": "Skewness", "Q4": "Kurtosis"}
     for group, name in groups.items():
@@ -1362,21 +1381,35 @@ def get_gmm_moment_test(
     observations = len(z) - lags
     result: dict[str, float] = {}
     names = list(conditions)
-    if observations <= len(names):
+    # A series without variation (up to rounding) has no standardized residuals to test.
+    constant = len(z) == 0 or np.ptp(z) <= len(z) * ROUNDING_PER_OBSERVATION * np.abs(
+        z
+    ).max(initial=0.0)
+    if observations <= len(names) or constant:
         covariance = np.full((len(names), len(names)), np.nan)
     else:
-        # The covariance of the conditions under the null of independent innovations: the sample
-        # covariance of the four moments, and for the lagged products (centred moments a and b at
-        # lags j and k) Cov = δ_jk E[a b]², uncorrelated with the moments. The sample covariance of
-        # the products themselves rests on 16th moments of z_t and on cross-products that are only
-        # zero in expectation, which more than doubles the size of the joint test at 5% for normal
-        # innovations; this one keeps it close to 5%.
+        # The covariance of the conditions under the null of independent innovations. Between
+        # the four moments it is the one the distribution implies, m_(a+b) - m_a m_b: their
+        # sample covariance rests on 8th sample moments of z_t and gives the joint test at 5%
+        # a size of about 10% at 1,000 normal observations. A moment the distribution does not
+        # have takes the sample covariance instead. For the lagged products (centred moments
+        # a and b at lags j and k) Cov = δ_jk E[a b]², uncorrelated with the moments: the
+        # sample covariance of the products themselves rests on 16th moments of z_t and on
+        # cross-products that are only zero in expectation.
         base = [name for name in centred if name in conditions]
         moments = np.column_stack([centred[name][lags:] for name in base])
         products = np.atleast_2d(moments.T @ moments / observations)
+        order = np.array([powers[name] for name in base])
+        implied = raw_moments[order[:, None] + order[None, :]] - np.outer(
+            raw_moments[order], raw_moments[order]
+        )
         covariance = np.zeros((len(names), len(names)))
         size = len(base)
-        covariance[:size, :size] = np.atleast_2d(np.cov(moments, rowvar=False))
+        covariance[:size, :size] = np.where(
+            np.isfinite(implied),
+            implied,
+            np.atleast_2d(np.cov(moments, rowvar=False)),
+        )
         for row, first in enumerate(names[size:], size):
             for column, second in enumerate(names[size:], size):
                 group_a, lag_a = first.split(" ")
@@ -1391,7 +1424,7 @@ def get_gmm_moment_test(
     index = {name: position for position, name in enumerate(names)}
 
     def wald(selected: list[str]) -> tuple[float, float]:
-        if not selected or observations <= len(names):
+        if not selected or observations <= len(names) or constant:
             return np.nan, np.nan
         positions = [index[name] for name in selected]
         average = np.column_stack([conditions[name] for name in selected]).mean(axis=0)
@@ -1406,10 +1439,10 @@ def get_gmm_moment_test(
         return statistic, float(stats.chi2.sf(statistic, len(selected)))
 
     for name in centred:
-        if name in conditions and observations > 1:
-            values = conditions[name]
+        if name in conditions and observations > len(names) and not constant:
             statistic = float(
-                values.mean() / (values.std(ddof=1) / np.sqrt(observations))
+                conditions[name].mean()
+                / np.sqrt(covariance[index[name], index[name]] / observations)
             )
             result[f"{name} t-Statistic"] = statistic
             result[f"{name} P-Value"] = float(2 * stats.norm.sf(abs(statistic)))

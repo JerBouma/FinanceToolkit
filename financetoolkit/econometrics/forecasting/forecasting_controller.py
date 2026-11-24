@@ -1310,12 +1310,14 @@ class ForecastingEconometrics:
         - g_j(x_1, x_2) = Σ_t K_h(x_1, PIT_t) K_h(x_2, PIT_(t-j)) / (n - j), with K_h the boundary-modified quartic
           kernel and h = S n^(-1/6), S the standard deviation of the PITs
         - M(j) = ∫∫ (g_j(x_1, x_2) - 1)^2 dx_1 dx_2 over the unit square
-        - Q(j) = h ((n - j) M(j) - A_h) / √V_0, standard normal under the null, for j = 1, ..., `lags`
-        - W = Σ_j Q(j) / √`lags`, the portmanteau statistic, standard normal under the null
+        - Q(j) = h ((n - j) M(j) - A_h) / √V_0 for j = 1, ..., `lags`
+        - W = Σ_j Q(j) / √`lags`, the portmanteau statistic
 
         Where A_h and V_0 are the centring and scaling constants of Hong and Li (2005), see
-        `forecast_evaluation_model.get_hong_li_test`. Only large values reject: the p-values are those of the
-        upper tail of the standard normal distribution. model="gaussian" and model="ewma" give the density
+        `forecast_evaluation_model.get_hong_li_test`. Only large values reject. The statistics are standard normal
+        under the null only as the sample grows, and slowly, so the p-values come from their distribution
+        simulated under the null (independent uniform PITs) for the same number of PITs and lags, see
+        `forecast_evaluation_model.get_hong_li_p_value`. model="gaussian" and model="ewma" give the density
         forecasts of `get_berkowitz_test`.
 
         For more information about the method, see the following papers:
@@ -1358,9 +1360,14 @@ class ForecastingEconometrics:
 
         Notes:
         - Every forecast only uses the returns before it, and each asset uses its own return history.
-        - The asymptotic normal distribution is reached slowly: on simulated independent uniform PITs the
-        statistics have a mean of about 0 and a standard deviation of about 1.2 at 500 to 2,000 observations,
-        so read the p-values as a guide.
+        - The asymptotic normal distribution is reached slowly: on simulated independent uniform PITs every Q(j)
+        has a mean of about 0 and a standard deviation of about 1.2 at 500 to 2,000 observations, and as the
+        Q(j) share the estimate of the marginal density of the PITs (a correlation of about 0.45), W has one of
+        about 1.8 with 4 lags. Compared with the standard normal distribution W would reject a correct model at
+        5% about 16% to 20% of the time; with the simulated null distribution about 4.4% (1,000 PITs). The
+        simulation treats the PITs as those of a known model: estimating the model parameters does not change
+        the asymptotic distribution (Hong and Li, 2005), and the GARCH parameters here come from the returns
+        before each forecast.
         - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
 
         As an example:
@@ -1383,15 +1390,15 @@ class ForecastingEconometrics:
         |                |       QQQ |       TLT |       GLD |
         |:---------------|----------:|----------:|----------:|
         | Q(1) Statistic |    7.1786 |    4.2855 |    4.451  |
-        | Q(1) P-Value   |    0      |    0      |    0      |
+        | Q(1) P-Value   |    0      |    0.0016 |    0.0012 |
         | Q(2) Statistic |    4.7805 |    2.5799 |    3.4082 |
-        | Q(2) P-Value   |    0      |    0.0049 |    0.0003 |
+        | Q(2) P-Value   |    0.0006 |    0.0273 |    0.0075 |
         | Q(3) Statistic |    3.666  |    2.833  |    2.463  |
-        | Q(3) P-Value   |    0.0001 |    0.0023 |    0.0069 |
+        | Q(3) P-Value   |    0.0049 |    0.0187 |    0.0323 |
         | Q(4) Statistic |    4.8672 |    2.2805 |    5.7016 |
-        | Q(4) P-Value   |    0      |    0.0113 |    0      |
+        | Q(4) P-Value   |    0.0006 |    0.0418 |    0.0001 |
         | W Statistic    |   10.2461 |    5.9894 |    8.0119 |
-        | W P-Value      |    0      |    0      |    0      |
+        | W P-Value      |    0.0001 |    0.005  |    0.0007 |
         | Bandwidth      |    0.0855 |    0.0855 |    0.0847 |
         | Observations   | 1255      | 1255      | 1255      |
         """
@@ -1659,6 +1666,10 @@ class ForecastingEconometrics:
         Notes:
         - Every forecast only uses the returns before it, and each asset uses its own return history.
         - A GARCH fit takes one to five seconds per asset and every refit a fraction of a second.
+        - In samples of a few hundred periods statistic="range" eliminates a model too often (about 14% of the
+        time at alpha=0.1 with four equally good models over 250 periods, against 8% for "max"), a property of
+        the range statistic with the stationary bootstrap that arch's MCS shares; prefer "max" for short
+        samples.
 
         As an example:
 

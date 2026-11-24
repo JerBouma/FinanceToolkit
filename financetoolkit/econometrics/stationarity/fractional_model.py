@@ -107,7 +107,8 @@ def get_fractional_difference(
 
     Returns:
         pd.Series: The fractionally differentiated series on the dates of the series, NaN for
-        the first values without a full window.
+        the first values without a full window, and NaN throughout for the fixed-width window
+        when the window is longer than the series.
 
     Raises:
         ValueError: If the method is unknown or d is negative.
@@ -120,9 +121,12 @@ def get_fractional_difference(
     result = np.full(len(x), np.nan)
 
     if method == "fixed_width":
+        # One weight more than the series holds tells a window that fits from one that is cut
+        # short at the length of the series: a cut window never reached the threshold, so the
+        # series is too short for it and the result is all NaN.
         weights = get_fractional_weights(
             d,
-            size=len(x),
+            size=len(x) + 1,
             threshold=FIXED_WIDTH_THRESHOLD if threshold is None else threshold,
         )
         width = len(weights)

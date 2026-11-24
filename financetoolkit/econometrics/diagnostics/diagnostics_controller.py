@@ -997,6 +997,10 @@ class DiagnosticsEconometrics:
           second or more per asset of daily returns.
         - The scores are central finite differences of the log-likelihood, as for the robust
           standard errors of `toolkit.risk.get_garch_parameters(diagnostics=True)`.
+        - The test is conservative on a fitted GARCH: on 500 simulated GARCH(1, 1) samples of 1,000
+          observations with normal innovations, refitted each time, the joint test at 5% rejects about 2% of
+          the time and those of Omega, Alpha and Beta 2% to 2.6%, so a rejection is a strong signal and a
+          parameter change of moderate size can go unnoticed.
         - method="realized" needs a realized measure the test does not take; use the other models.
 
         As an example:
@@ -1090,9 +1094,10 @@ class DiagnosticsEconometrics:
         - Q2: E[(zₜ² - 1)(zₜ₋ⱼ² - 1)] = 0, Q3: E[(zₜ³ - s)(zₜ₋ⱼ³ - s)] = 0 and Q4: E[(zₜ⁴ - κ)(zₜ₋ⱼ⁴ - κ)] = 0
           for j = 1, ..., `lags`
         - gₜ the conditions of return t over the T returns after the first `lags` and ḡ their average
-        - S their covariance under the null of independent innovations: the sample covariance (ddof=1) of the
-          Mean, Variance, Skewness and Kurtosis conditions, (E[aₜ·cₜ])² between the products of the centred
-          powers a and c at the same lag, and 0 between different lags and between the moments and the products
+        - S their covariance under the null of independent innovations: mₐ₊ᵦ - mₐ·mᵦ between the Mean, Variance,
+          Skewness and Kurtosis conditions (powers a and b), with mₖ = E[zᵏ] of the fitted innovation distribution,
+          (E[aₜ·cₜ])² between the products of the centred powers a and c at the same lag, and 0 between different
+          lags and between the moments and the products
         - t-Statistic = ḡᵢ / √(Sᵢᵢ / T), with two-sided p-values from the normal distribution
         - Q2, Q3 and Q4 Statistic = T·ḡ'·S⁻¹·ḡ over their `lags` conditions, chi-squared with `lags`
           degrees of freedom; Joint Statistic over all 4 + 3·`lags` conditions, chi-squared with 4 + 3·`lags`
@@ -1140,11 +1145,16 @@ class DiagnosticsEconometrics:
         - The conditions are correlated (zₜ with zₜ³, zₜ² with zₜ⁴, Q2 with Q4), so the joint test can reject
           while none of the individual tests does: a negative skewness without the fatter tails that usually
           come with it is such a combination.
-        - The covariance of Q2, Q3 and Q4 is the one the null implies, where rugarch takes the sample covariance
-          of all conditions. That sample covariance rests on 16th moments of the residuals: on 2,500 simulated
-          normal innovations its joint test at 5% rejects about 20% of the time, against about 8% here.
+        - The covariance of the conditions is the one the null implies, where rugarch takes the sample covariance
+          of all conditions. That sample covariance rests on 8th and 16th moments of the residuals: on simulated
+          normal innovations its joint test at 5% rejects about 20% of the time at 2,500 observations, against
+          about 5% here (7% at 1,000).
         - The Kurtosis condition needs a finite 8th moment of the innovations (a Student-t with a Shape above
-          8); with a fitted Shape below 8 its test and the joint test reject too often.
+          8); with a fitted Shape of 8 or less its variance is the sample one, and its test and the joint test
+          reject too often.
+        - On the residuals of a fitted GARCH(1, 1) with normal innovations, the Variance condition is close to
+          zero by construction (the score of Omega is a weighted sum of zₜ² - 1), so its test, and the Kurtosis
+          test that moves with it, hardly ever reject.
         - A Student-t with a Shape of 4 or less has no kurtosis (3 or less: no skewness); its Kurtosis
           and Q4 (Skewness and Q3) conditions are then NaN and left out of the joint statistic.
 
@@ -1167,13 +1177,13 @@ class DiagnosticsEconometrics:
 
         |                      |     ^GSPC |       GLD |
         |:---------------------|----------:|----------:|
-        | Mean t-Statistic     |    2.8649 |    3.2207 |
-        | Mean P-Value         |    0.0042 |    0.0013 |
-        | Variance t-Statistic |    0.0566 |   -0.2472 |
-        | Variance P-Value     |    0.9548 |    0.8048 |
+        | Mean t-Statistic     |    2.8645 |    3.1991 |
+        | Mean P-Value         |    0.0042 |    0.0014 |
+        | Variance t-Statistic |    0.0518 |   -0.2087 |
+        | Variance P-Value     |    0.9587 |    0.8347 |
         | Skewness t-Statistic |   -3.1211 |   -0.0336 |
         | Skewness P-Value     |    0.0018 |    0.9732 |
-        | Kurtosis t-Statistic |   -0.9238 |   -2.5345 |
+        | Kurtosis t-Statistic |   -0.9237 |   -2.5345 |
         | Kurtosis P-Value     |    0.3556 |    0.0113 |
         | Q2 Statistic         |    0.8937 |    0.3027 |
         | Q2 P-Value           |    0.3445 |    0.5822 |
@@ -1181,8 +1191,8 @@ class DiagnosticsEconometrics:
         | Q3 P-Value           |    0.8138 |    0.8522 |
         | Q4 Statistic         |    0.0295 |    0.0019 |
         | Q4 P-Value           |    0.8635 |    0.9654 |
-        | Joint Statistic      |  223.192  |   44.4135 |
-        | Joint P-Value        |    0      |    0      |
+        | Joint Statistic      |  -26.0374 |  386.094  |
+        | Joint P-Value        |    1      |    0      |
         | Lags                 |    1      |    1      |
         | Observations         | 2512      | 2512      |
         """
@@ -1194,14 +1204,12 @@ class DiagnosticsEconometrics:
             returns, method, distribution, mean
         )
 
-        result = {}
-        for ticker in standardized_residuals.columns:
-            skewness, kurtosis = garch_model.get_standardized_moments(
-                distribution, parameters[ticker]
+        result = {
+            ticker: diagnostics_model.get_gmm_moment_test(
+                standardized_residuals[ticker], lags, distribution, parameters[ticker]
             )
-            result[ticker] = diagnostics_model.get_gmm_moment_test(
-                standardized_residuals[ticker], lags, skewness, kurtosis
-            )
+            for ticker in standardized_residuals.columns
+        }
 
         return apply_rounding(
             pd.DataFrame(result), rounding if rounding is not None else self._rounding

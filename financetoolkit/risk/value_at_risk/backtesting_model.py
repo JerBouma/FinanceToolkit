@@ -5,7 +5,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from scipy import optimize, special, stats
+from scipy import special, stats
 
 MINIMUM_OBSERVATIONS_FOR_TRANSITIONS = 2
 MINIMUM_OBSERVATIONS_FOR_ES_BACKTEST = 5
@@ -18,6 +18,11 @@ MINIMUM_BREACHES_FOR_RESIDUAL_TEST = 2
 
 # The search interval of the Weibull shape, as in rugarch's VaRDurTest.
 WEIBULL_SHAPE_BOUNDS = (0.001, 10.0)
+
+# The random orderings of the breaches behind the Monte Carlo p-value of the duration test:
+# 999 make (R + 1) * 5% a whole number, so the test at 5% has exactly its size (Dufour, 2006).
+DURATION_REPLICATIONS = 999
+GOLDEN_SECTION_STEPS = 40
 
 
 def _align(returns: pd.Series, var_estimates: pd.Series) -> pd.DataFrame:
@@ -380,9 +385,97 @@ def get_conditional_coverage_test(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+def _duration_statistics(breaches: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The likelihood ratio of the duration test and the fitted Weibull Shape for every row of
+    breaches (True) and non-breaches, NaN for a row with fewer than two durations or none
+    uncensored. The Shape is found by a golden-section search on all rows at once.
+    """
+    rows = []
+    for breach in breaches:
+        breach_times = np.flatnonzero(breach) + 1
+        durations = np.diff(breach_times).astype(float)
+        censored = np.zeros(len(durations))
+        if len(breach_times) and not breach[0]:
+            durations = np.concatenate(([breach_times[0]], durations))
+            censored = np.concatenate(([1.0], censored))
+        if len(breach_times) and not breach[-1]:
+            durations = np.concatenate((durations, [len(breach) - breach_times[-1]]))
+            censored = np.concatenate((censored, [1.0]))
+        rows.append((durations, censored))
+
+    count = max(1, *(len(durations) for durations, _ in rows))
+    # Padded durations of 1 with a weight of 0 leave the sums unchanged.
+    d = np.ones((len(rows), count))
+    c = np.zeros((len(rows), count))
+    weight = np.zeros((len(rows), count))
+    for row, (durations, censored) in enumerate(rows):
+        d[row, : len(durations)] = durations
+        c[row, : len(censored)] = censored
+        weight[row, : len(durations)] = 1.0
+
+    uncensored = np.sum(weight * (1 - c), axis=1)
+    valid = (np.sum(weight, axis=1) >= MINIMUM_DURATIONS) & (uncensored > 0)
+    uncensored = np.where(valid, uncensored, 1.0)
+    log_d = np.log(d)
+
+    def log_likelihood(shape: np.ndarray) -> np.ndarray:
+        # The scale that maximizes the likelihood for this shape (see `get_duration_test`)
+        # gives ln (a * D)^b = b ln D + ln(uncensored / Σ D^b).
+        shape = shape[:, None]
+        log_powered = shape * log_d
+        log_hazard = (
+            log_powered
+            + (
+                np.log(uncensored)
+                - np.log(
+                    np.maximum(np.sum(weight * np.exp(log_powered), axis=1), 1e-300)
+                )
+            )[:, None]
+        )
+        # Uncensored durations add ln f(D) = ln b - ln D + ln (a * D)^b - (a * D)^b and censored
+        # ones their log survival, -(a * D)^b.
+        return np.sum(
+            weight
+            * ((1 - c) * (np.log(shape) - log_d + log_hazard) - np.exp(log_hazard)),
+            axis=1,
+        )
+
+    # Golden-section search for the largest likelihood: the interval shrinks by a factor of
+    # 0.618 per step, to below 1e-7 of the Shape after 40 steps, where the likelihood ratio is
+    # flat to about 1e-14.
+    ratio = (np.sqrt(5) - 1) / 2
+    lower = np.full(len(rows), WEIBULL_SHAPE_BOUNDS[0])
+    upper = np.full(len(rows), WEIBULL_SHAPE_BOUNDS[1])
+    left = upper - ratio * (upper - lower)
+    right = lower + ratio * (upper - lower)
+    left_value, right_value = log_likelihood(left), log_likelihood(right)
+    for _ in range(GOLDEN_SECTION_STEPS):
+        move_up = left_value < right_value
+        lower = np.where(move_up, left, lower)
+        upper = np.where(move_up, upper, right)
+        new_left = np.where(move_up, right, upper - ratio * (upper - lower))
+        new_right = np.where(move_up, lower + ratio * (upper - lower), left)
+        new_value = log_likelihood(np.where(move_up, new_right, new_left))
+        left_value, right_value = (
+            np.where(move_up, right_value, new_value),
+            np.where(move_up, new_value, left_value),
+        )
+        left, right = new_left, new_right
+
+    shape = (lower + upper) / 2
+    statistic = np.maximum(
+        2 * (log_likelihood(shape) - log_likelihood(np.ones(len(rows)))), 0.0
+    )
+
+    return np.where(valid, statistic, np.nan), np.where(valid, shape, np.nan)
+
+
 def get_duration_test(
     returns: pd.Series | pd.DataFrame,
     var_estimates: pd.Series | pd.DataFrame,
+    replications: int = DURATION_REPLICATIONS,
+    random_state: int = 42,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate Christoffersen and Pelletier's duration-based test of independence for a Value
@@ -398,7 +491,9 @@ def get_duration_test(
     - f(D) = a^b * b * D^(b - 1) * exp(-(a * D)^b) and S(D) = exp(-(a * D)^b)
     - ln L(a, b) = C_1 * ln S(D_1) + (1 - C_1) * ln f(D_1) + Σ_(i=2)^(N-1) ln f(D_i) + C_N * ln S(D_N)
       + (1 - C_N) * ln f(D_N)
-    - LR = 2 * (ln L(a_hat, b_hat) - ln L(a_tilde, 1)), compared with a χ² distribution with 1 degree of freedom
+    - LR = 2 * (ln L(a_hat, b_hat) - ln L(a_tilde, 1))
+    - P-Value = (1 + #{LR_r >= LR}) / (R + 1), with LR_r the statistic of the r-th of R = `replications`
+      random orderings of the same breaches
 
     Where D_i = t_i - t_(i-1) are the periods between consecutive breaches at t_1 < ... < t_N.
     A sample that does not start with a breach adds the periods up to the first breach as a
@@ -408,18 +503,32 @@ def get_duration_test(
     a = (number of uncensored durations / Σ D_i^b)^(1 / b), so b is found by maximizing over
     a single parameter.
 
-    For more information about the method, see the following paper:
+    The p-value is a Monte Carlo p-value (Dufour, 2006), as Christoffersen and Pelletier
+    (2004) use, because the χ² distribution with 1 degree of freedom of the LR is reached
+    slowly: with a correct 5% VaR over 1,000 periods it rejects at 5% about 9% of the time.
+    Under the null the breaches are independent with a constant probability, so given their
+    number every ordering of them is equally likely: the random orderings give the exact
+    distribution of the LR under the null, whatever the breach probability.
+
+    For more information about the method, see the following papers:
 
     - Christoffersen, P.F. and Pelletier, D. (2004). "Backtesting Value-at-Risk: A
     Duration-Based Approach." Journal of Financial Econometrics, 2(1), 84-108.
+    - Dufour, J.-M. (2006). "Monte Carlo Tests with Nuisance Parameters: A General Approach
+    to Finite-Sample Inference and Nonstandard Asymptotics." Journal of Econometrics,
+    133(2), 443-477.
 
     Referenced against `VaRDurTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which defines the durations and their censoring in the same way.
+    which defines the durations and their censoring in the same way and compares the LR with
+    the χ² distribution instead.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of realized returns.
         var_estimates (pd.Series | pd.DataFrame): A Series or Dataframe of Value at Risk
             estimates, aligned to the same index as `returns`.
+        replications (int, optional): The number of random orderings of the breaches.
+            Defaults to 999.
+        random_state (int, optional): The seed of the random orderings. Defaults to 42.
 
     Returns:
         pd.Series | pd.DataFrame: The duration statistic, its p-value and the fitted Weibull
@@ -428,7 +537,9 @@ def get_duration_test(
     if isinstance(returns, pd.DataFrame):
         return pd.DataFrame(
             {
-                column: get_duration_test(returns[column], var_estimates[column])
+                column: get_duration_test(
+                    returns[column], var_estimates[column], replications, random_state
+                )
                 for column in returns.columns
             }
         )
@@ -437,59 +548,27 @@ def get_duration_test(
             raise TypeError("A Series of returns needs a Series of VaR estimates.")
         aligned = _align(returns, var_estimates)
         breach = (aligned["returns"] < aligned["var"]).to_numpy()
-        breach_times = np.flatnonzero(breach) + 1
-
-        durations = list(np.diff(breach_times).astype(float))
-        censored = [0.0] * len(durations)
-
-        if len(breach_times) and not breach[0]:
-            durations.insert(0, float(breach_times[0]))
-            censored.insert(0, 1.0)
-        if len(breach_times) and not breach[-1]:
-            durations.append(float(len(breach) - breach_times[-1]))
-            censored.append(1.0)
-
-        d = np.array(durations)
-        c = np.array(censored)
-
-        if len(d) < MINIMUM_DURATIONS or c[0] + c[-1] >= len(d):
-            return pd.Series(
-                {
-                    "Duration Statistic": np.nan,
-                    "P-Value": np.nan,
-                    "Weibull Shape": np.nan,
-                }
-            )
-
-        uncensored = len(d) - c[0] - c[-1]
-        log_d = np.log(d)
-
-        def log_likelihood(shape: float) -> float:
-            # The scale that maximizes the likelihood for this shape (see the docstring).
-            log_scale = (np.log(uncensored) - np.log(np.sum(d**shape))) / shape
-            cumulative_hazard = np.exp(shape * (log_scale + log_d))
-            log_density = (
-                shape * log_scale
-                + np.log(shape)
-                + (shape - 1) * log_d
-                - cumulative_hazard
-            )
-            # Censored durations enter with their log survival, -(a * D)^b.
-            return float(np.sum(np.where(c == 1, -cumulative_hazard, log_density)))
-
-        fit = optimize.minimize_scalar(
-            lambda shape: -log_likelihood(shape),
-            bounds=WEIBULL_SHAPE_BOUNDS,
-            method="bounded",
-            options={"xatol": 1e-10},
+        generator = np.random.default_rng(random_state)
+        orderings = np.array(
+            [generator.permutation(breach) for _ in range(replications)]
         )
-        shape = float(fit.x)
-        lr_statistic = max(2 * (log_likelihood(shape) - log_likelihood(1.0)), 0.0)
+        statistics, shapes = _duration_statistics(
+            np.vstack([breach[None, :], orderings.reshape(replications, len(breach))])
+        )
+        lr_statistic, shape = float(statistics[0]), float(shapes[0])
+
+        # An ordering with fewer than two durations (all breaches in a row at an end) has no
+        # statistic and counts as one that is not as large.
+        p_value = (
+            (1 + np.sum(statistics[1:] >= lr_statistic)) / (replications + 1)
+            if np.isfinite(lr_statistic)
+            else np.nan
+        )
 
         return pd.Series(
             {
                 "Duration Statistic": lr_statistic,
-                "P-Value": stats.chi2.sf(lr_statistic, 1),
+                "P-Value": p_value,
                 "Weibull Shape": shape,
             }
         )

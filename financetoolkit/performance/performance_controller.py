@@ -4074,6 +4074,7 @@ class Performance:
         period: str | None = None,
         within_period: bool = True,
         adjustment: float = 0.1,
+        largest_drawdowns: int = 3,
         method: Literal["standard", "annualized"] = "standard",
         rounding: int | None = None,
         growth: bool = False,
@@ -4086,32 +4087,42 @@ class Performance:
 
         The Sterling Ratio is a risk-adjusted return metric that divides the return of an investment
         portfolio or asset over each period (a calendar-year return for period='yearly', a quarterly
-        return for period='quarterly') by its Average Drawdown plus a fixed adjustment
-        (conventionally 10%), providing insight into the return achieved relative to the typical
-        depth of its drawdowns rather than only the single worst one (as with the Calmar Ratio).
+        return for period='quarterly') by the average depth of its deepest drawdowns plus a fixed
+        adjustment (conventionally 10%), so that it reflects the typical size of its large drawdowns
+        rather than only the single worst one (as the Calmar Ratio does).
 
-        The formula is as follows:
+        The formula is as follows (Bacon, 2008):
 
-        - Sterling Ratio = Return / (|Average Drawdown| + Adjustment)
+        - Sterling Ratio = Return / (|D_Lar| + Adjustment)
+        - D_Lar = Σ Trough_j / d over the d = `largest_drawdowns` deepest drawdowns
 
-        Where the Average Drawdown is the mean drawdown from the running peak over all observations
-        on which the asset is below that peak (by default every such day within the period), not the
-        average of the largest drawdowns. This is the average drawdown form of Bacon (2008).
+        Where each drawdown runs from a peak to the trough before wealth is back at that peak (as in
+        `toolkit.risk.get_drawdown_table`), measured on the daily returns within the period by default
+        (a drawdown that has not recovered by the end of the period included), and d is 3 unless set
+        otherwise, or the number of drawdowns when there are fewer. A period without a drawdown has a
+        D_Lar of 0.
 
-        With method="annualized" it is the definition of PerformanceAnalytics (SterlingRatio, after
-        Kestner, 1996) instead, one value per ticker over the whole date range:
+        With method="annualized" the ratio is taken once over the whole date range instead, one value per
+        ticker:
 
-        - Sterling Ratio = Annualized Return / (|Maximum Drawdown| + Adjustment)
+        - Sterling Ratio = Annualized Return / (|D_Lar| + Adjustment)
         - Annualized Return = PRODUCT(1 + Daily Return) ^ (Observations per Year / N) − 1
 
         Where both are measured over the daily returns of the whole date range, N is their number and
-        the observations per year are 252 (365 for a ticker that trades on weekends).
+        the observations per year are 252 (365 for a ticker that trades on weekends). With
+        largest_drawdowns=1, D_Lar is the Maximum Drawdown, which gives the SterlingRatio of
+        PerformanceAnalytics.
+
+        The original form of Deane Sterling Jones, popularised by Kestner (1996), divides the compound annual
+        return of the last three years by the average of the maximum drawdown of each of those three years
+        plus 10%: an average of annual maxima, one per year, where D_Lar averages the deepest drawdowns
+        wherever they fall (two of them can lie in the same year).
 
         For more information, see the following sources:
 
-        - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
         - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
-        2nd edition, John Wiley & Sons, p. 89.
+        2nd edition, John Wiley & Sons.
+        - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
         - PerformanceAnalytics: SterlingRatio (https://github.com/braverock/PerformanceAnalytics).
 
         Also known as: Sterling-Calmar ratio.
@@ -4119,16 +4130,18 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            within_period (bool, optional): Whether to calculate the Average Drawdown within the
-            specified period or for the entire period. Thus whether to look at the Average Drawdown
-            within a specific year (if period = 'yearly') or look at the entirety of all years.
-            Defaults to True.
-            adjustment (float, optional): The fixed adjustment added to the Average Drawdown,
+            within_period (bool, optional): Whether to measure the drawdowns on the daily returns within
+            each period, or on the period returns of the whole history, one D_Lar for every period. Thus
+            whether to look at the drawdowns within a specific year (if period = 'yearly') or at the
+            entirety of all years. Defaults to True.
+            adjustment (float, optional): The fixed adjustment added to the Average Largest Drawdown,
             conventionally 0.1 (10%). Defaults to 0.1.
-            method (str, optional): "standard" for the ratio per period with the Average Drawdown,
-            or "annualized" for the annualized return over the whole date range divided by the
-            Maximum Drawdown over it plus the adjustment, one value per ticker (`period` and
-            `within_period` are then not used). Defaults to "standard".
+            largest_drawdowns (int, optional): The number d of deepest drawdowns averaged into D_Lar;
+            1 gives the Maximum Drawdown. Defaults to 3.
+            method (str, optional): "standard" for the ratio per period, or "annualized" for the
+            annualized return over the whole date range divided by the Average Largest Drawdown over it
+            plus the adjustment, one value per ticker (`period` and `within_period` are then not used).
+            Defaults to "standard".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -4148,8 +4161,8 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Sterling Ratio for each asset in
         the Toolkit instance.
-        - method="annualized" agrees with PerformanceAnalytics' SterlingRatio on the daily returns (252
-        observations a year, excess = `adjustment`).
+        - method="annualized" with largest_drawdowns=1 agrees with PerformanceAnalytics' SterlingRatio on the
+        daily returns (252 observations a year, excess = `adjustment`).
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
 
@@ -4172,11 +4185,11 @@ class Performance:
 
         | Date   |     NEE |     DUK |     SO |
         |:-------|--------:|--------:|-------:|
-        | 2021   |  1.2842 |  1.4182 | 1.2009 |
-        | 2022   | -0.3726 |  0.1186 | 0.4819 |
-        | 2023   | -0.8979 | -0.0838 | 0.1342 |
-        | 2024   |  1.307  |  1.1541 | 1.5685 |
-        | 2025   |  0.9868 |  0.9407 | 0.6777 |
+        | 2021   |  1.1204 |  1.0689 | 0.9206 |
+        | 2022   | -0.236  |  0.0903 | 0.3255 |
+        | 2023   | -1.0256 | -0.0856 | 0.1095 |
+        | 2024   |  0.8937 |  0.8331 | 1.1689 |
+        | 2025   |  0.7371 |  0.7028 | 0.4876 |
         """
         if method not in ("standard", "annualized"):
             raise ValueError("Method must be standard or annualized.")
@@ -4186,7 +4199,11 @@ class Performance:
 
             return finalize_dataset(
                 dataset=performance_model.get_sterling_ratio(
-                    annualized_return, get_max_drawdown(daily_returns), adjustment
+                    annualized_return,
+                    performance_model.get_average_largest_drawdown(
+                        daily_returns, largest_drawdowns
+                    ),
+                    adjustment,
                 ),
                 start_date=self._start_date,
                 end_date=self._end_date,
@@ -4200,12 +4217,14 @@ class Performance:
 
         returns = self._get_column(period, "Return", within_period=within_period)
 
-        average_drawdown = performance_model.get_average_drawdown(returns)
+        average_largest_drawdown = performance_model.get_average_largest_drawdown(
+            returns, largest_drawdowns
+        )
 
         period_returns = self._get_column(period, "Return", within_period=False)
 
         sterling_ratio = performance_model.get_sterling_ratio(
-            period_returns, average_drawdown, adjustment
+            period_returns, average_largest_drawdown, adjustment
         )
 
         return finalize_dataset(

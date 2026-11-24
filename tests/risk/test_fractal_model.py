@@ -183,3 +183,15 @@ def test_hurst_exponents_of_independent_returns_are_near_a_half():
 def test_lyapunov_spectrum_rejects_a_mismatched_embedding():
     with pytest.raises(ValueError, match="multiple"):
         fractal_model.get_lyapunov_spectrum(returns(), embedding=10, matrix_dimension=3)
+
+
+def test_memory_measures_are_nan_without_variation():
+    # Rounding noise around a constant return is no signal of memory.
+    constant = np.full(500, 0.001)
+
+    assert np.isnan(fractal_model.get_rescaled_range_hurst_exponent(constant))
+    assert np.isnan(fractal_model.get_detrended_fluctuation(constant))
+    assert np.isnan(fractal_model.get_rescaled_range_hurst_exponent(np.array([])))
+    # A series without values has no Lyapunov exponent rather than an FFT error.
+    assert fractal_model.get_mean_period(np.array([np.nan, np.nan])) == 1
+    assert np.isnan(fractal_model.get_largest_lyapunov_exponent(np.full(300, np.nan)))

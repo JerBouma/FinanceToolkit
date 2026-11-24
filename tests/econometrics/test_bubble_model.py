@@ -150,3 +150,27 @@ def test_chow_test_dates_the_break(bubble_prices):
 
     assert result["Explosive (5%)"]
     assert bubble_prices.index[90] <= result["Break Date"] <= bubble_prices.index[139]
+
+
+def test_bubble_tests_give_no_p_value_without_a_statistic():
+    # A constant level series has no ADF statistic in any window; its p-value is not 0
+    # ("significant") but NaN, and the series is not explosive.
+    constant = pd.Series(np.full(120, 4.0))
+    result = bubble_model.get_bubble_test(constant, replications=50)
+
+    assert np.isnan(result["GSADF Statistic"]) and np.isnan(result["P-Value"])
+    assert not result["Explosive (5%)"]
+
+    chow = bubble_model.get_chow_dickey_fuller_test(constant, replications=50)
+    assert np.isnan(chow["SDFC Statistic"]) and np.isnan(chow["P-Value"])
+    assert not chow["Explosive (5%)"]
+
+    with pytest.raises(ValueError, match="too short"):
+        bubble_model.get_chow_dickey_fuller_test(pd.Series([1.0, 2.0]))
+
+
+def test_bubble_tests_default_to_2000_replications():
+    series = pd.Series(np.cumsum(np.random.default_rng(3).standard_normal(60)))
+
+    # Phillips, Shi and Yu (2015) simulate 2,000 random walks for the critical values.
+    assert bubble_model.get_bubble_test(series, "sadf")["Replications"] == 2000

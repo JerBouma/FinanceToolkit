@@ -9,6 +9,7 @@ import pytest
 from scipy import stats
 
 from financetoolkit.performance import performance_model
+from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import (
     compound_risk_free_rate,
     get_observations_per_year,
@@ -1449,41 +1450,67 @@ def test_get_calmar_ratio_divides_the_return_by_the_absolute_maximum_drawdown():
     pd.testing.assert_series_equal(result, pd.Series([2.0, 0.2]))
 
 
-def test_get_average_drawdown_averages_the_periods_under_water():
-    # Wealth 1.1, 0.55, 0.66, 1.32 against a running peak of 1.1, 1.1, 1.1, 1.32: two
-    # days under water, 50% and 40% below the peak.
-    returns = pd.Series([0.1, -0.5, 0.2, 1.0])
+def test_get_average_largest_drawdown_averages_the_deepest_episodes():
+    # Wealth 1.1, 0.55, 0.66, 1.32, 1.188, 1.2474, 1.4969, 1.0478: three drawdowns from their
+    # peaks, of 50% (1.1 to 0.55), 10% (1.32 to 1.188) and 30% (1.4969 to 1.0478, not recovered).
+    returns = pd.Series([0.1, -0.5, 0.2, 1.0, -0.1, 0.05, 0.2, -0.3])
 
-    assert performance_model.get_average_drawdown(returns) == pytest.approx(-0.45)
+    assert performance_model.get_average_largest_drawdown(returns, 1) == pytest.approx(
+        -0.5
+    )
+    assert performance_model.get_average_largest_drawdown(returns, 2) == pytest.approx(
+        -0.4
+    )
+    # With fewer drawdowns than d, all of them: Bacon's average drawdown.
+    for largest in (3, 10):
+        assert performance_model.get_average_largest_drawdown(
+            returns, largest
+        ) == pytest.approx((-0.5 - 0.1 - 0.3) / 3)
+
+    # The same depths as the drawdown table of the risk module.
+    table = risk_model.get_drawdown_table(returns.to_frame("A"), top=3)
+    assert performance_model.get_average_largest_drawdown(returns) == pytest.approx(
+        table["Drawdown"].mean()
+    )
 
     # On a level (a rate or a spread) the drawdown is the distance to the running peak.
-    levels = pd.Series([1.0, 3.0, 2.0, 1.0, 4.0])
-    assert performance_model.get_average_drawdown(
+    levels = pd.Series([1.0, 3.0, 2.0, 1.0, 4.0, 3.5])
+    assert performance_model.get_average_largest_drawdown(
         levels, method="level"
-    ) == pytest.approx(-1.5)
+    ) == pytest.approx((-2.0 - 0.5) / 2)
+
+    # Without a drawdown it is 0, without returns NaN.
+    assert performance_model.get_average_largest_drawdown(pd.Series([0.1, 0.2])) == 0
+    assert np.isnan(performance_model.get_average_largest_drawdown(pd.Series([np.nan])))
 
     with pytest.raises(ValueError, match="method"):
-        performance_model.get_average_drawdown(returns, method="price")
+        performance_model.get_average_largest_drawdown(returns, method="price")
+    with pytest.raises(ValueError, match="largest_drawdowns"):
+        performance_model.get_average_largest_drawdown(returns, 0)
 
 
-def test_get_average_drawdown_per_sub_period():
+def test_get_average_largest_drawdown_per_sub_period():
     index = pd.MultiIndex.from_tuples(
-        [("2020", 1), ("2020", 2), ("2021", 1), ("2021", 2)]
+        [("2020", 1), ("2020", 2), ("2020", 3), ("2021", 1), ("2021", 2)]
     )
-    returns = pd.DataFrame({"A": [0.1, -0.5, -0.2, 0.1]}, index=index)
+    returns = pd.DataFrame(
+        {"A": [-0.1, 0.2, -0.05, -0.2, 0.1], "B": [0.1, 0.1, 0.1, 0.1, np.nan]},
+        index=index,
+    )
 
-    result = performance_model.get_average_drawdown(returns)
+    result = performance_model.get_average_largest_drawdown(returns)
 
-    # Each sub-period starts with a fresh peak: 2020 falls 50% from 1.1, 2021 falls 20%
-    # and recovers to 12% below the starting value of 1.
-    assert result.loc["2020", "A"] == pytest.approx(-0.5)
-    assert result.loc["2021", "A"] == pytest.approx((-0.2 + 0.8 * 1.1 - 1) / 2)
+    # Each sub-period starts with a fresh peak: 2020 has a drawdown of 10% from the starting
+    # value of 1 and one of 5% from 1.08, 2021 one of 20%, which 10% does not end.
+    assert result.loc["2020", "A"] == pytest.approx((-0.1 - 0.05) / 2)
+    assert result.loc["2021", "A"] == pytest.approx(-0.2)
+    assert (result["B"] == 0).all()
 
 
-def test_get_sterling_ratio_adds_the_adjustment_to_the_average_drawdown():
+def test_get_sterling_ratio_adds_the_adjustment_to_the_average_largest_drawdown():
     result = performance_model.get_sterling_ratio(
         returns=pd.Series([0.2, 0.3]),
-        average_drawdown=pd.Series([-0.1, -0.2]),
+        average_largest_drawdown=pd.Series([-0.1, -0.2]),
     )
     pd.testing.assert_series_equal(result, pd.Series([1.0, 1.0]))
 
@@ -2868,3 +2895,14 @@ def test_sharpe_difference_test_per_period():
 
     with pytest.raises(ValueError, match="memmel or ledoit_wolf"):
         performance_model.get_sharpe_ratio_difference_test(returns, benchmark, "jk")
+
+
+def test_sharpe_ratio_difference_is_nan_without_variation():
+    # A constant return has no Sharpe ratio: its standard deviation is rounding noise, which
+    # gave the Memmel difference a value in the 1e15.
+    other = pd.Series(np.random.default_rng(4).normal(0.0005, 0.01, 500))
+    constant = pd.Series(np.full(500, 0.0003))
+
+    for method in ("memmel", "ledoit_wolf"):
+        result = performance_model.get_sharpe_ratio_difference(constant, other, method)
+        assert result.isna().all()

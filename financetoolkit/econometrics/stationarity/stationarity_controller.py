@@ -827,7 +827,7 @@ class StationarityEconometrics:
         Notes:
         - Each asset is differentiated over the dates it has a value. With a threshold of 1e-5 the
           fixed-width window spans about 3,400 observations for d = 0.2, 1,460 for d = 0.4 and 230
-          for d = 0.8, so a small d needs a long history: on a shorter one the result is empty. A
+          for d = 0.8, so a small d needs a long history: on a shorter one the result is NaN throughout. A
           larger threshold shortens the window (1e-4: about 500, 280 and 64; 0.01: about 10).
 
         As an example:
@@ -1036,7 +1036,7 @@ class StationarityEconometrics:
         method: Literal["gsadf", "sadf"] = "gsadf",
         lag_order: int = 0,
         minimum_window: int | None = None,
-        replications: int = 500,
+        replications: int = 2000,
         seed: int = 0,
         log_prices: bool = True,
         include_benchmark: bool = False,
@@ -1096,7 +1096,9 @@ class StationarityEconometrics:
             minimum_window (int | None, optional): The smallest window in observations. Defaults to
                 None, floor((0.01 + 1.8 / √T)·T).
             replications (int, optional): The number of simulated random walks for the critical
-                values. PSY (2015) use 2,000 to 5,000. Defaults to 500.
+                values. Defaults to 2,000, as in PSY (2015): the critical values serve every series of
+                the same length, so with 500 random walks the size of the test at 5% ranges from about
+                3.5% to 7% depending on the seed.
             seed (int, optional): The seed of the simulation. Defaults to 0.
             log_prices (bool, optional): Whether to take the natural logarithm of the series first.
                 Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
@@ -1118,9 +1120,9 @@ class StationarityEconometrics:
         Notes:
         - The test fits about (T - w)² / 2 regressions per series and as many per simulated path,
           each from window sums of prefix sums: about 0.14 seconds per path for ten years of daily
-          data and 0.04 for five, so 500 replications take about 70 and 20 seconds, and with
-          lag_order=2 about 60% longer. Ten years of weekly data take about 4 seconds; monthly
-          data, as in PSY (2015), less than one. The critical values depend
+          data and 0.04 for five, so 2,000 replications take about 5 minutes and 80 seconds, and
+          with lag_order=2 about 60% longer. Ten years of weekly data take about 16 seconds;
+          monthly data, as in PSY (2015), a few. The critical values depend
           only on T, w, the lag order, the replications and the seed, so assets with the same
           number of observations share one simulation, which is kept for the session.
         - Each asset is tested over the dates it has a value.
@@ -1142,18 +1144,18 @@ class StationarityEconometrics:
 
         Which returns:
 
-        |                    |     NVDA |       KO |
-        |:-------------------|---------:|---------:|
-        | GSADF Statistic    |   1.5092 |   1.056  |
-        | P-Value            |   0.324  |   0.65   |
-        | Critical Value 10% |   2.0286 |   2.0286 |
-        | Critical Value 5%  |   2.1834 |   2.1834 |
-        | Critical Value 1%  |   2.7386 |   2.7386 |
-        | Observations       | 522      | 522      |
-        | Minimum Window     |  46      |  46      |
-        | Lags               |   0      |   0      |
-        | Replications       | 500      | 500      |
-        | Explosive (5%)     |   0      |   0      |
+        |                    |      NVDA |        KO |
+        |:-------------------|----------:|----------:|
+        | GSADF Statistic    |    1.5086 |    1.056  |
+        | P-Value            |    0.3165 |    0.6405 |
+        | Critical Value 10% |    1.9834 |    1.9834 |
+        | Critical Value 5%  |    2.2071 |    2.2071 |
+        | Critical Value 1%  |    2.8067 |    2.8067 |
+        | Observations       |  522      |  522      |
+        | Minimum Window     |   46      |   46      |
+        | Lags               |    0      |    0      |
+        | Replications       | 2000      | 2000      |
+        | Explosive (5%)     |    0      |    0      |
         """
         period = period if period else "daily"
         levels = self._get_levels(period, column, log_prices, include_benchmark)
@@ -1187,7 +1189,7 @@ class StationarityEconometrics:
         minimum_window: int | None = None,
         confidence: float = 0.95,
         minimum_duration: int | None = None,
-        replications: int = 500,
+        replications: int = 2000,
         seed: int = 0,
         log_prices: bool = True,
         time_series: bool = False,
@@ -1246,7 +1248,7 @@ class StationarityEconometrics:
             minimum_duration (int | None, optional): The fewest observations an episode lasts.
                 Defaults to None, round(log(T)).
             replications (int, optional): The number of simulated random walks for the critical
-                values. Defaults to 500.
+                values. Defaults to 2,000, as in PSY (2015).
             seed (int, optional): The seed of the simulation. Defaults to 0.
             log_prices (bool, optional): Whether to take the natural logarithm of the series first.
                 Pass False for a series that can be zero or negative, such as a rate. Defaults to True.
@@ -1296,10 +1298,10 @@ class StationarityEconometrics:
 
         |             | Start                 | End                   |   Duration | Peak Date             |   Peak Statistic |
         |:------------|:----------------------|:----------------------|-----------:|:----------------------|-----------------:|
-        | ('NVDA', 1) | 2021-10-25/2021-10-31 | 2021-12-27/2022-01-02 |         10 | 2021-11-15/2021-11-21 |           1.4086 |
-        | ('NVDA', 2) | 2023-05-22/2023-05-28 | 2023-07-24/2023-07-30 |         10 | 2023-06-12/2023-06-18 |           1.091  |
-        | ('NVDA', 3) | 2024-01-29/2024-02-04 | 2024-04-08/2024-04-14 |         11 | 2024-03-18/2024-03-24 |           1.2949 |
-        | ('NVDA', 4) | 2024-04-22/2024-04-28 | 2025-01-20/2025-01-26 |         40 | 2024-06-10/2024-06-16 |           1.5092 |
+        | ('NVDA', 1) | 2020-08-03/2020-08-09 | 2020-09-07/2020-09-13 |          6 | 2020-08-24/2020-08-30 |           1.0849 |
+        | ('NVDA', 2) | 2021-10-25/2021-10-31 | 2021-12-27/2022-01-02 |         10 | 2021-11-15/2021-11-21 |           1.409  |
+        | ('NVDA', 3) | 2023-05-22/2023-05-28 | 2023-07-31/2023-08-06 |         11 | 2023-06-12/2023-06-18 |           1.0915 |
+        | ('NVDA', 4) | 2024-01-29/2024-02-04 | 2025-01-20/2025-01-26 |         52 | 2024-06-10/2024-06-16 |           1.5086 |
         """
         period = period if period else "daily"
         levels = self._get_levels(period, column, log_prices, include_benchmark)

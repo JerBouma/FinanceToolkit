@@ -904,16 +904,18 @@ def test_nyblom_test_detects_a_change_in_the_parameters():
 
 def test_gmm_moment_test_matches_t_tests_of_the_moments():
     rng = np.random.default_rng(2)
-    z = pd.Series(rng.standard_t(8, 1500) * np.sqrt(6 / 8))
+    z = pd.Series(rng.standard_t(10, 1500) * np.sqrt(8 / 10))
 
-    result = diagnostics_model.get_gmm_moment_test(z, lags=1, kurtosis=4.5)
+    result = diagnostics_model.get_gmm_moment_test(z, 1, "t", (10.0,))
 
+    # The moments of the standardized Student-t with 10 degrees of freedom: E[z^4] = 3 + 6 / 6
+    # and E[z^8] = 105 (v - 2)^4 / ((v - 4)(v - 6)(v - 8)) = 1,120.
     values = z.to_numpy()[1:]
     assert result["Mean t-Statistic"] == pytest.approx(
-        stats.ttest_1samp(values, 0).statistic, rel=1e-12
+        values.mean() * np.sqrt(1499), rel=1e-12
     )
     assert result["Kurtosis t-Statistic"] == pytest.approx(
-        stats.ttest_1samp(values**4 - 4.5, 0).statistic, rel=1e-12
+        np.mean(values**4 - 4) / np.sqrt((1120 - 16) / 1499), rel=1e-6
     )
     # One lagged condition: its variance under the null is E[(z^2 - 1)^2]^2.
     squared = z.to_numpy() ** 2 - 1
@@ -926,14 +928,45 @@ def test_gmm_moment_test_matches_t_tests_of_the_moments():
     assert result["Joint P-Value"] == pytest.approx(
         stats.chi2.sf(result["Joint Statistic"], 7), rel=1e-12
     )
-    # Without a kurtosis the Kurtosis and Q4 conditions are left out.
-    without = diagnostics_model.get_gmm_moment_test(z, kurtosis=np.nan)
+    # A Student-t with a Shape of 3.5 has no kurtosis: the Kurtosis and Q4 conditions are
+    # left out, and the moments it has no 4th and 6th moment for take their sample variance.
+    without = diagnostics_model.get_gmm_moment_test(z, 1, "t", (3.5,))
     assert np.isnan(without["Kurtosis t-Statistic"]) and np.isnan(
         without["Q4 Statistic"]
+    )
+    assert without["Skewness t-Statistic"] == pytest.approx(
+        stats.ttest_1samp(values**3, 0).statistic, rel=1e-12
     )
     assert without["Joint P-Value"] == pytest.approx(
         stats.chi2.sf(without["Joint Statistic"], 5), rel=1e-12
     )
+
+
+def test_gmm_moment_test_takes_the_moment_covariance_from_the_distribution():
+    rng = np.random.default_rng(8)
+    z = rng.standard_normal(800)
+    result = diagnostics_model.get_gmm_moment_test(pd.Series(z), lags=1)
+
+    # Normal moments: Var z = 1, Cov(z, z^3) = 3, Var(z^2 - 1) = 2, Cov(z^2 - 1, z^4 - 3) = 12,
+    # Var z^3 = 15 and Var(z^4 - 3) = 96; the lagged products keep E[a c]^2 of the sample.
+    centred = np.column_stack([z, z**2 - 1, z**3, z**4 - 3])
+    conditions = np.column_stack([centred[1:], centred[1:, 1:] * centred[:-1, 1:]])
+    products = centred[1:, 1:].T @ centred[1:, 1:] / 799
+    covariance = np.zeros((7, 7))
+    covariance[:4, :4] = [[1, 0, 3, 0], [0, 2, 0, 12], [3, 0, 15, 0], [0, 12, 0, 96]]
+    covariance[4:, 4:] = products**2
+    average = conditions.mean(axis=0)
+
+    assert result["Joint Statistic"] == pytest.approx(
+        799 * average @ np.linalg.solve(covariance, average), rel=1e-10
+    )
+    assert result["Kurtosis t-Statistic"] == pytest.approx(
+        average[3] / np.sqrt(96 / 799), rel=1e-12
+    )
+
+    # A series without variation has nothing to test.
+    constant = diagnostics_model.get_gmm_moment_test(pd.Series(np.full(300, 0.3)))
+    assert constant.drop(["Lags", "Observations"]).isna().all()
 
 
 def test_gmm_moment_test_keeps_its_size_under_the_null():
@@ -946,8 +979,18 @@ def test_gmm_moment_test_keeps_its_size_under_the_null():
     )
 
     # The sample covariance of all seven conditions rejects about 20% of the time at 5%;
-    # the covariance under the null about 8% (7.7% over 2,000 replications).
-    assert (results["Joint P-Value"] < 0.05).mean() < 0.12
+    # the covariance under the null about 5% (5.3% over 2,000 replications).
+    assert (results["Joint P-Value"] < 0.05).mean() < 0.09
     assert results["Joint Statistic"].mean() == pytest.approx(7, abs=0.8)
     for group in ("Q2", "Q3", "Q4"):
         assert (results[f"{group} P-Value"] < 0.05).mean() < 0.09
+
+
+def test_ljung_box_test_is_nan_without_variation():
+    # Around a constant non-zero value the deviations from the mean are rounding noise with
+    # autocorrelations close to 1, which would reject at any level.
+    constant = pd.Series(np.full(250, 0.0123))
+
+    for weighted in (False, True):
+        result = diagnostics_model.get_ljung_box_test(constant, 10, weighted=weighted)
+        assert result.isna().all()

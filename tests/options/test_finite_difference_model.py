@@ -224,3 +224,36 @@ def test_inputs_are_validated():
         finite_difference_model.get_finite_difference_barrier_option(
             100, 100, 90, 0.05, 0.2, 1.0, barrier_direction="sideways"
         )
+
+
+def test_option_values_stay_precise_a_day_from_expiration_over_long_ranges():
+    # One grid for every expiration from a day to a year was 2.6e-2 off a day from
+    # expiration at a volatility of 100%; solved in groups of expirations whose longest is
+    # at most four times their shortest, every value from a day to a quarter is within 1e-3.
+    strikes = np.arange(75.0, 126.0, 5.0)
+    times = np.arange(1, 92) / 365
+    for volatility in (0.3, 1.0):
+        values = finite_difference_model.get_finite_difference_option_values(
+            100.0,
+            strikes,
+            times,
+            0.04,
+            volatility,
+            0.01,
+            put_option=True,
+            time_steps=400,
+        )
+        exact = np.array(
+            [
+                [
+                    float(
+                        get_black_scholes(
+                            100.0, strike, 0.04, volatility, time, 0.01, True
+                        )
+                    )
+                    for time in times
+                ]
+                for strike in strikes
+            ]
+        )
+        assert np.abs(values - exact).max() < 1e-3

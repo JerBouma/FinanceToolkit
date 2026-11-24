@@ -5,7 +5,7 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from scipy.special import betaincinv, ndtr
+from scipy.special import betaincinv, betaln, log_ndtr, ndtr
 
 # The binomial tree variants of calculate_tree_movements.
 BINOMIAL_TREE_METHODS = (
@@ -80,32 +80,44 @@ def calculate_risk_neutral_probability(
     return risk_neutral_probability
 
 
-def _peizer_pratt_inversion(z: float, timesteps: int) -> float:
+def _peizer_pratt_inversion(z: float, timesteps: int) -> tuple[float, float]:
     """
     Helper function with the Peizer-Pratt (method 2) inversion of Leisen and Reimer (1996):
     the probability p for which a binomial distribution of n (odd) steps exceeds (n — 1) / 2
-    up moves with probability about N(z).
+    up moves with probability about N(z), and its complement 1 — p.
 
     - h(z) = 1/2 + sign(z) * 1/2 * √(1 — e^(—(z / (n + 1/3 + 0.1 / (n + 1)))² * (n + 1/6)))
+
+    The smaller of h and 1 — h is 1/2 * e^(—w) / (1 + √(1 — e^(—w))), with w the exponent above,
+    so that it keeps its digits where h itself rounds to 0 or 1 (a large |z|).
     """
-    return 0.5 + np.sign(z) * 0.5 * np.sqrt(
-        1
-        - np.exp(
-            -((z / (timesteps + 1 / 3 + 0.1 / (timesteps + 1))) ** 2)
-            * (timesteps + 1 / 6)
-        )
+    exponent = (z / (timesteps + 1 / 3 + 0.1 / (timesteps + 1))) ** 2 * (
+        timesteps + 1 / 6
     )
+    tail = 0.5 * np.exp(-exponent) / (1 + np.sqrt(-np.expm1(-exponent)))
+    return (1 - tail, tail) if z > 0 else (tail, 1 - tail)
 
 
-def _exact_binomial_inversion(z: float, timesteps: int) -> float:
+def _exact_binomial_inversion(z: float, timesteps: int) -> tuple[float, float]:
     """
     Helper function with the exact inversion of the binomial distribution: the probability
     p for which a binomial distribution of n (odd) steps has at least (n + 1) / 2 up moves
-    with probability N(z) exactly. That probability is the regularized incomplete beta
-    function I_p((n + 1) / 2, (n + 1) / 2), so p is its inverse.
+    with probability N(z) exactly, and its complement 1 — p. That probability is the
+    regularized incomplete beta function I_p((n + 1) / 2, (n + 1) / 2), so p is its inverse.
+
+    I_p(a, a) = 1 — I_(1 — p)(a, a), so the smaller of p and 1 — p is the inverse at N(—|z|),
+    which keeps its digits where N(z) itself rounds to 1 (a large z) and p with it.
+
+    Below a tail of about 1e-100 with few steps scipy's inverse can give NaN; p is then so small
+    that I_p(a, a) = p^a / (a * B(a, a)) * (1 + O(p)) gives it to machine precision.
     """
     half = (timesteps + 1) / 2
-    return float(betaincinv(half, half, ndtr(z)))
+    tail = float(betaincinv(half, half, ndtr(-abs(z))))
+    if not np.isfinite(tail):
+        tail = float(
+            np.exp((log_ndtr(-abs(z)) + np.log(half) + betaln(half, half)) / half)
+        )
+    return (1 - tail, tail) if z > 0 else (tail, 1 - tail)
 
 
 # A degenerate tree (equal movements) divides 0 by 0; it is refused below with its reason.
@@ -132,12 +144,15 @@ def calculate_tree_movements(
     - Trigeorgis (1991), the log-transformed tree: Δx = √(σ²Δt + ν²Δt²), u = e^(Δx), d = 1 / u,
       p = 1/2 + νΔt / (2Δx)
     - Leisen-Reimer (1996), centred on the strike: p = h(d2), p' = h(d1), u = e^(bΔt) * p' / p,
-      d = (e^(bΔt) — p * u) / (1 — p), with h the Peizer-Pratt inversion
+      d = (e^(bΔt) — p * u) / (1 — p) = e^(bΔt) * (1 — p') / (1 — p), with h the Peizer-Pratt inversion
     - Exact inversion: the Leisen-Reimer tree with h the exact inversion of the binomial distribution,
       which Joshi (2010) expands to fourth order
 
     Where d1 = (ln(S / K) + (b + σ² / 2) * T) / (σ√T) and d2 = d1 — σ√T. The Leisen-Reimer
-    and exact inversion trees need an odd number of steps.
+    and exact inversion trees need an odd number of steps and a positive strike. Where the
+    option is so far in or out of the money that 1 — p' or p is 0 in floating point, the
+    outcome is certain: p is 1 with u = e^(bΔt), or 0 with d = e^(bΔt), so the tree prices
+    the option at its value on the forward.
 
     Args:
         method (str): The tree: "cox_ross_rubinstein", "jarrow_rudd", "tian", "trigeorgis",
@@ -157,7 +172,8 @@ def calculate_tree_movements(
 
     Raises:
         ValueError: if the method is not one of the trees, the Leisen-Reimer or exact inversion tree
-            gets an even number of steps, or the probability is not between 0 and 1.
+            gets an even number of steps or a strike that is not positive, or the probability is
+            not between 0 and 1.
     """
     if method not in BINOMIAL_TREE_METHODS:
         raise ValueError(
@@ -203,6 +219,11 @@ def calculate_tree_movements(
                 f"The {method} tree is centred on the strike and needs an odd number of time "
                 f"steps, received {timesteps}; use {timesteps + 1}."
             )
+        if strike_price <= 0:
+            raise ValueError(
+                f"The {method} tree is centred on the strike, which must be positive, "
+                f"received {strike_price!r}."
+            )
         d1 = (
             np.log(stock_price / strike_price) + (carry + 0.5 * volatility**2) * years
         ) / (volatility * np.sqrt(years))
@@ -212,11 +233,31 @@ def calculate_tree_movements(
             if method == "leisen_reimer"
             else _exact_binomial_inversion
         )
-        probability = inversion(d2, timesteps)
-        up_movement = growth * inversion(d1, timesteps) / probability
-        down_movement = (growth - probability * up_movement) / (1 - probability)
+        probability, complement = inversion(d2, timesteps)
+        probability_d1, complement_d1 = inversion(d1, timesteps)
 
-    if not 0 < probability < 1 or not down_movement > 0:
+        # u = e^(bΔt) * p' / p and d = e^(bΔt) * (1 — p') / (1 — p), each from the probability or its
+        # complement as computed, so the move on the unlikely side keeps its digits. So far in or out of the
+        # money (|d1| or |d2| in the tens) that the smaller one underflows to 0, the price ends at the forward
+        # with certainty, so the tree only takes the likely move, at the cost of carry, and the option is worth
+        # its value on that one path (the discounted forward less the strike, or 0). The other move only needs
+        # to be a valid node.  # noqa: E501
+        spread = np.exp(2 * volatility * np.sqrt(time_delta))
+        if complement_d1 == 0:
+            probability, up_movement = 1.0, growth
+            down_movement = growth / spread
+        elif probability == 0:
+            probability, down_movement = 0.0, growth
+            up_movement = growth * spread
+        else:
+            up_movement = growth * probability_d1 / probability
+            down_movement = growth * complement_d1 / complement
+
+    # The strike-centred trees take a probability of 0 or 1 for an outcome that is certain (above).
+    centred = method in ("leisen_reimer", "exact_inversion")
+    if not (0 <= probability <= 1 if centred else 0 < probability < 1) or not (
+        down_movement > 0
+    ):
         raise ValueError(
             f"The {method} tree has a probability of {probability:.4f} and a down movement of "
             f"{down_movement:.4f}, which does not give a valid tree for a volatility of "

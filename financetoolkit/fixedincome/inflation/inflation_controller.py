@@ -175,8 +175,10 @@ class InflationFixedIncome(MarketsFixedIncome):
             date (str | None, optional): The day (YYYY-MM-DD), or the last day before it with a
                 real yield curve. Defaults to None, the end date.
             maturities (list[float] | str | None, optional): The swap maturities in years, or
-                labels such as "5Y", as a list or a comma-separated string. Defaults to None,
-                the maturities of the real yield curve.
+                labels such as "5Y", as a list or a comma-separated string, all positive. A
+                maturity beyond the longest of the nominal and real curves holds their zero
+                rates flat from there, which is logged. Defaults to None, the maturities of
+                the real yield curve.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -223,6 +225,18 @@ class InflationFixedIncome(MarketsFixedIncome):
         """
         nominal_zero, real_zero, real_par = self._inflation_curves(country, date)
         years = parse_maturities(maturities, list(real_par.index))
+        if not len(years) or min(years) <= 0:
+            raise ValueError(
+                f"The maturities must be positive numbers of years, received {maturities!r}."
+            )
+        longest = float(min(nominal_zero.index.max(), real_zero.index.max()))
+        if beyond := [year for year in years if year > longest]:
+            logger.info(
+                "The maturities %s lie beyond the longest maturity of the curves (%g years), "
+                "whose zero rates are held flat beyond it.",
+                ", ".join(f"{year:g}" for year in beyond),
+                longest,
+            )
         whole_years = int(np.ceil(max(years)))
 
         zero_inflation = inflation_swap_model.get_zero_coupon_inflation_swap_rate(

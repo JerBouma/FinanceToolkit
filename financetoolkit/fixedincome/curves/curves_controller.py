@@ -776,14 +776,15 @@ class CurvesFixedIncome:
         difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
         use `yieldcurve_model.get_yield_curve_spread`.
 
-        With `middle_maturity` it calculates butterflies instead, the curvature of the curve:
-        how far the yield of a middle maturity (the body) lies above the line through a short
-        and a long maturity (the wings), with the wings weighted equally as butterflies are
-        quoted (2s5s10s):
+        With `middle_maturity` it calculates butterflies instead, a measure of the curvature of
+        the curve: twice how far the yield of a middle maturity (the body) lies above the average
+        yield of a short and a long maturity (the wings), with the wings weighted equally as
+        butterflies are quoted (2s5s10s). That average is the straight line through the wings
+        only when the body lies midway between them, which 5 years does not in 2s5s10s:
 
         - Butterfly = 2 * Middle Yield - Short Yield - Long Yield
 
-        A positive butterfly means the body yields more than the wings.
+        A positive butterfly means the body yields more than the wings on average.
 
         Also known as: term spread, yield curve slope, 10Y-2Y spread, fly, 2s5s10s.
 

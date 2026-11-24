@@ -1534,6 +1534,38 @@ def test_the_strike_centred_trees_use_an_odd_number_of_steps(options_module):
     assert len(tree.columns) == 6
 
 
+def test_a_short_exact_inversion_tree_keeps_every_strike(options_module, caplog):
+    # At 0.004 years the strikes far from the price have N(d2) of 1 in floating point, which
+    # gave a probability of 1 and an error that emptied the result of every ticker.
+    for method in ("exact_inversion", "leisen_reimer"):
+        tree = options_module.get_binomial_model(
+            method=method,
+            time_to_expiration=0.004,
+            timesteps=11,
+            strike_price_range=0.5,
+        )
+        assert not tree.empty
+        # Every strike has its value at the start date.
+        start = tree.iloc[:, 0].groupby(level=[0, 1]).count()
+        assert (start == 1).all()
+        assert start.index.get_level_values(0).unique().tolist() == ["AAPL", "MSFT"]
+
+    # The movements of these trees differ per strike, so they are shown per strike.
+    with caplog.at_level("INFO"):
+        options_module.get_binomial_model(
+            method="exact_inversion", timesteps=5, show_input_info=True
+        )
+    assert "at a strike of" in caplog.text
+
+
+def test_the_cev_model_near_an_elasticity_of_one(options_module):
+    # The non-central chi-squared series no longer converges there: NaN prices at β = 0.9999.
+    cev = options_module.get_cev_model(beta=0.9999, expiration_time_range=10)
+    black_scholes = options_module.get_black_scholes_model(expiration_time_range=10)
+    assert not cev.isna().any().any()
+    assert (cev - black_scholes).abs().max().max() < 1e-3
+
+
 def test_get_cev_model(recorder, options_module):
     recorder.capture(options_module.get_cev_model())
     recorder.capture(
@@ -2016,6 +2048,70 @@ def test_get_heston_parameters(recorder, option_market):
     assert (parameters["rho"] < 0).all()
     assert (parameters["Expirations"] == 2).all()
     assert (parameters["RMSE"] < 0.05).all()
+
+
+def test_get_heston_parameters_names_the_parameters_at_a_bound(
+    monkeypatch, option_market
+):
+    from financetoolkit.options.volatility import heston_model  # noqa: PLC0415
+
+    module, _ = option_market
+    fit = heston_model.get_heston_parameters
+
+    def fit_at_the_upper_kappa(*args, **kwargs):
+        return {**fit(*args, **kwargs), "kappa": heston_model.HESTON_BOUNDS[1][1]}
+
+    monkeypatch.setattr(heston_model, "get_heston_parameters", fit_at_the_upper_kappa)
+    parameters = module.get_heston_parameters()
+
+    # The bound is data in the answer, so it reaches the MCP answer too, and the numbers keep
+    # a numeric type next to it.
+    assert (parameters["At Bound"] == "kappa").all()
+    assert (parameters["kappa"] == 20).all()
+    assert pd.api.types.is_float_dtype(parameters["RMSE"])
+
+
+def test_get_heston_parameters_skips_a_ticker_without_quotes_on_its_dates(
+    monkeypatch, option_market
+):
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, _ = option_market
+    expiries = sorted(module._all_expiration_dates())
+    chains = options_model.get_option_chains
+
+    # AAPL lists only the 45-day expiry and MSFT only the 24-day one; the chain of the 45-day
+    # expiry has no AAPL quotes. AAPL then has quotes only on the date MSFT selected, which
+    # raised an IndexError for the whole call.
+    monkeypatch.setattr(
+        module,
+        "_expiration_dates",
+        lambda: {"AAPL": [expiries[2]], "MSFT": [expiries[1]]},
+    )
+
+    def chains_without_aapl(tickers, expiration_date, put_option=False):
+        result = chains(tickers, expiration_date, put_option)
+        if expiration_date == expiries[2]:
+            result = result.drop(index="AAPL", level="Ticker")
+        return result
+
+    monkeypatch.setattr(options_model, "get_option_chains", chains_without_aapl)
+    parameters = module.get_heston_parameters()
+
+    assert list(parameters.index) == ["MSFT"]
+
+
+def test_get_heston_nandi_parameters_keep_the_decimals_of_the_log_likelihood(
+    options_module,
+):
+    parameters = options_module.get_heston_nandi_model(show_parameters=True)
+    exact = options_module.get_heston_nandi_model(show_parameters=True, rounding=10)
+
+    # Rounded to 4 significant digits a log-likelihood in the thousands lost its decimals,
+    # the part fits are compared by.
+    np.testing.assert_allclose(
+        parameters["Log-Likelihood"], exact["Log-Likelihood"].round(4)
+    )
 
 
 def test_get_heston_nandi_model(recorder, options_module):

@@ -20,6 +20,24 @@ LEWIS_TOLERANCE = 1e-13
 # eq. 49, with the fourth cumulant to cover fat tails).
 COS_RANGE_WIDTH = 10
 
+# The number of COS terms per standard deviation of the log return in the truncation range,
+# which sets the first number of terms tried: 256 for a normal log return (a range of 20
+# standard deviations), more where a fat tail widens the range.
+COS_TERMS_PER_DEVIATION = 8
+
+# The largest difference, per unit of the strike, between the COS prices from N and 2N terms
+# at which the series counts as converged, and the most terms it may double to.
+COS_TOLERANCE = 1e-10
+COS_MAXIMUM_TERMS = 2**16
+
+# The order p of the moment E[S_T^p] that must be finite for the Carr-Madan transform with its
+# default damping α = 1.5. Carr and Madan (1999) need p = α + 1; as the moment that explodes
+# approaches α + 1, the damped call price decays ever more slowly in the log strike and the
+# transform aliases it, so the margin of 1.5 keeps that error near 1e-6 (measured on Heston
+# parameter sets against the Lewis integral: an error of 1e-3 at a margin of 0.8 and 4e-7 at
+# 1.2).
+FFT_MOMENT_ORDER = 4.0
+
 # The step of the central differences that give the cumulants for the COS range, on the
 # cumulant generating function of the log return. Only the range depends on them, and the
 # price converges for any range that holds the density, so a step this coarse is precise
@@ -36,7 +54,8 @@ def get_fourier_price(
     dividend_yield: float = 0.0,
     put_option: bool = False,
     method: Literal["lewis", "cos", "fft"] = "lewis",
-    cos_terms: int = 1024,
+    cos_terms: int = 256,
+    cos_tolerance: float | None = COS_TOLERANCE,
     fft_points: int = 4096,
     fft_spacing: float = 0.25,
     fft_damping: float = 1.5,
@@ -70,16 +89,26 @@ def get_fourier_price(
     e^y and 1 on [a', 0], α is the damping factor and φ_lnS(v) = e^(iv * ln F) * φ(v).
 
     The Lewis integral is integrated adaptively to a tolerance of 1e-13 per unit of the strike,
-    which makes it the most precise and the default. The COS method needs only cos_terms
-    evaluations of φ for every strike at once and converges exponentially in them for smooth
-    densities. Fat tails widen the truncation range and need more terms: 1024 terms price
-    typical equity parameters within about 1e-8 (set by the truncation range), while a Heston
-    model with a very volatile variance (σ = 1.5, ρ = —0.9) over five years is still 1e-3 off
-    and needs about 4096. The Carr-Madan transform
-    prices fft_points log-strikes spaced 2π / (fft_points * fft_spacing) apart around the
-    forward in one transform, with Simpson weights, and interpolates them to the strikes with
-    a cubic spline; it is the fastest for a whole chain and the least precise (about 1e-6 per
-    unit of the strike with the defaults).
+    which makes it the most precise and the default. The COS method needs one evaluation of φ
+    per term for every strike at once and converges exponentially in the number of terms for
+    smooth densities, but fat tails widen the truncation range and need more terms: a Heston
+    model with a volatile variance and a slow mean reversion (σ = 1.5, κ = 0.5, ρ = —0.9) over
+    five years is 2e-2 off with 1024 terms and 6e-6 with 4096. The number of terms therefore
+    starts from the width of the range, 8 per standard deviation of X and at least cos_terms,
+    and doubles until the sums of N and 2N terms agree within cos_tolerance per unit of the
+    strike (up to 65,536 terms). The truncation range then sets the precision: within about
+    1e-9 of the exact price for typical equity parameters and 6e-7 for the volatile case. The
+    Carr-Madan transform prices fft_points log-strikes spaced 2π / (fft_points * fft_spacing)
+    apart around the forward in one transform, with Simpson weights, and interpolates them to
+    the strikes with a cubic spline; it is the fastest for a whole chain and the least precise
+    (about 1e-6 per unit of the strike with the defaults). It needs E[S_T^(α + 1)] to be
+    finite and is accurate only with a margin above it (see FFT_MOMENT_ORDER), which the
+    Heston, Bates and Variance Gamma pricers check before using it.
+
+    Every price is kept at or above its no-arbitrage lower bound, max(S * e^(—qT) — K * e^(—rT), 0)
+    for a call and max(K * e^(—rT) — S * e^(—qT), 0) for a put, which takes out the integration
+    noise of prices close to it (such as —1e-13 for a deep out-of-the-money option a day from
+    expiration).
 
     Args:
         characteristic_function (Callable): The characteristic function φ(u) of
@@ -92,8 +121,11 @@ def get_fourier_price(
         dividend_yield (float, optional): The continuous dividend yield. Defaults to 0.
         put_option (bool, optional): Whether to price puts instead of calls. Defaults to False.
         method (str, optional): "lewis", "cos" or "fft". Defaults to "lewis".
-        cos_terms (int, optional): The number of cosine terms of the COS method. Defaults to
-            1024.
+        cos_terms (int, optional): The smallest number of cosine terms of the COS method.
+            Defaults to 256.
+        cos_tolerance (float | None, optional): The largest difference per unit of the strike
+            between the COS prices of N and 2N terms at which the series counts as converged,
+            or None to sum exactly cos_terms terms. Defaults to 1e-10.
         fft_points (int, optional): The number of points of the Carr-Madan transform, a power of
             2. Defaults to 4096.
         fft_spacing (float, optional): The spacing η of the integration grid of the Carr-Madan
@@ -204,28 +236,65 @@ def get_fourier_price(
         # so the frequencies u_k, and with them φ(u_k), are shared by the whole chain.
         lower = log_moneyness[:, None] + first - half_width
         width = 2 * half_width
-        frequencies = np.arange(cos_terms) * np.pi / width
-        weights = characteristic_function(frequencies.astype(complex)) * np.exp(
-            -1j * frequencies * (first - half_width)
-        )
-        weights[0] *= 0.5
-
         # The put pays K(1 - e^y) for y below zero, so its coefficients run over [a', min(0, b')].
         upper_end = np.minimum(0.0, lower + width)
-        angle = frequencies * (upper_end - lower)
-        exponential = np.exp(upper_end)
-        chi = (
-            np.cos(angle) * exponential
-            - np.exp(lower)
-            + frequencies * np.sin(angle) * exponential
-        ) / (1 + frequencies**2)
-        psi = np.empty_like(chi)
-        psi[:, 0] = (upper_end - lower)[:, 0]
-        psi[:, 1:] = np.sin(angle[:, 1:]) / frequencies[1:]
-        coefficients = 2 / width * strikes[:, None] * (psi - chi)
         # A strike far below the range has a worthless put: its interval [a', 0] is empty.
-        coefficients[(lower >= 0)[:, 0]] = 0.0
-        puts = discount * np.real(weights[None, :] * coefficients).sum(axis=1)
+        empty = (lower >= 0)[:, 0]
+
+        # The series resolves the density with a number of terms that grows with the width of
+        # the range in standard deviations of X, which the fourth cumulant of a fat tail widens
+        # (Fang and Oosterlee 2008, section 5). The sum of the first N terms is compared with
+        # that of 2N, both from one evaluation of φ at 2N frequencies, and N doubles until they
+        # agree: the error of a converging series is about the difference.
+        terms = (
+            cos_terms
+            if cos_tolerance is None
+            else max(
+                cos_terms,
+                int(
+                    2
+                    ** np.ceil(
+                        np.log2(
+                            COS_TERMS_PER_DEVIATION
+                            * width
+                            / np.sqrt(max(abs(second), 1e-300))
+                        )
+                    )
+                ),
+            )
+        )
+        while True:
+            frequencies = (
+                np.arange(terms if cos_tolerance is None else 2 * terms) * np.pi / width
+            )
+            weights = characteristic_function(frequencies.astype(complex)) * np.exp(
+                -1j * frequencies * (first - half_width)
+            )
+            weights[0] *= 0.5
+            angle = frequencies * (upper_end - lower)
+            exponential = np.exp(upper_end)
+            chi = (
+                np.cos(angle) * exponential
+                - np.exp(lower)
+                + frequencies * np.sin(angle) * exponential
+            ) / (1 + frequencies**2)
+            psi = np.empty_like(chi)
+            psi[:, 0] = (upper_end - lower)[:, 0]
+            psi[:, 1:] = np.sin(angle[:, 1:]) / frequencies[1:]
+            coefficients = 2 / width * strikes[:, None] * (psi - chi)
+            coefficients[empty] = 0.0
+            terms_sum = np.real(weights[None, :] * coefficients)
+            puts = discount * terms_sum.sum(axis=1)
+            if (
+                cos_tolerance is None
+                or 2 * terms >= COS_MAXIMUM_TERMS
+                or np.max(
+                    np.abs(puts - discount * terms_sum[:, :terms].sum(axis=1)) / strikes
+                )
+                <= cos_tolerance
+            ):
+                break
+            terms *= 2
         prices = puts if put_option else puts + discounted_stock - discounted_strikes
 
     else:
@@ -263,5 +332,20 @@ def get_fourier_price(
         )
         calls = CubicSpline(log_strikes, grid_calls)(np.log(strikes))
         prices = calls - discounted_stock + discounted_strikes if put_option else calls
+
+    # A price below the no-arbitrage bound max(S * e^(-qT) - K * e^(-rT), 0) (calls) or
+    # max(K * e^(-rT) - S * e^(-qT), 0) (puts) is the integration error of a price close to the
+    # bound, such as -1e-13 for a deep out-of-the-money option a day from expiration.
+    prices = np.maximum(
+        prices,
+        np.maximum(
+            (
+                (discounted_strikes - discounted_stock)
+                if put_option
+                else (discounted_stock - discounted_strikes)
+            ),
+            0.0,
+        ),
+    )
 
     return float(prices[0]) if np.ndim(strike_price) == 0 else prices

@@ -445,7 +445,9 @@ class PricingOptions:
             dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
             uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its close,
             as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
-            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            show_input_info (bool, optional): Whether to show the input information, with the up and down movement
+            and the risk neutral probability per ticker, or per ticker and strike for the Leisen-Reimer and exact
+            inversion trees, which are centred on the strike. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
@@ -543,40 +545,36 @@ class PricingOptions:
                     else self._dividend_yield_on(ticker, start_date)
                 )
 
-                if show_input_info:
-                    (
-                        binomial_trees[ticker][strike_price],
-                        binomial_trees_statistics["Up Movement"][ticker],
-                        binomial_trees_statistics["Down Movement"][ticker],
-                        binomial_trees_statistics["Risk Neutral Probability"][ticker],
-                    ) = binomial_trees_model.get_option_payoffs(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        years=time_to_expiration,
-                        timesteps=timesteps,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
-                        american_option=american_option,
-                        show_input_info=show_input_info,
-                        method=method,
-                    )
-
-                binomial_trees[ticker][strike_price] = (
-                    binomial_trees_model.get_option_payoffs(
-                        stock_price=stock_price.loc[ticker],
-                        strike_price=strike_price,
-                        years=time_to_expiration,
-                        timesteps=timesteps,
-                        risk_free_rate=risk_free_rate,
-                        volatility=volatility.loc[ticker],
-                        dividend_yield=dividend_yield_value[ticker],
-                        put_option=put_option,
-                        american_option=american_option,
-                        method=method,
-                    )
+                tree = binomial_trees_model.get_option_payoffs(
+                    stock_price=stock_price.loc[ticker],
+                    strike_price=strike_price,
+                    years=time_to_expiration,
+                    timesteps=timesteps,
+                    risk_free_rate=risk_free_rate,
+                    volatility=volatility.loc[ticker],
+                    dividend_yield=dividend_yield_value[ticker],
+                    put_option=put_option,
+                    american_option=american_option,
+                    show_input_info=show_input_info,
+                    method=method,
                 )
+
+                if show_input_info:
+                    # The Leisen-Reimer and exact inversion trees are centred on the strike, so their movements
+                    # and probability differ per strike and are shown for each.
+                    label = (
+                        f"{ticker} at a strike of {strike_price:g}"
+                        if method in ("leisen_reimer", "exact_inversion")
+                        else ticker
+                    )
+                    (
+                        tree,
+                        binomial_trees_statistics["Up Movement"][label],
+                        binomial_trees_statistics["Down Movement"][label],
+                        binomial_trees_statistics["Risk Neutral Probability"][label],
+                    ) = tree
+
+                binomial_trees[ticker][strike_price] = tree
 
         binomial_trees_df = helpers.create_binomial_tree_dataframe(
             binomial_tree_dictionary=binomial_trees,
@@ -1638,8 +1636,11 @@ class PricingOptions:
         - Finite differences (method="finite_difference"): the Black-Scholes equation solved backwards from
           expiration with Crank-Nicolson (Rannacher start-up) on a grid of 1,000 steps in ln(S / K) and at least 400
           time steps (4 per expiration day beyond 100 days), with the exercise constraint solved at every step by
-          Brennan and Schwartz (1977). As V(S, K, τ) = K * v(S / K, τ), one solve per ticker gives every strike and
-          expiration, within about 1e-3 of the exact value (see ``finite_difference_model.get_finite_difference_option``).
+          Brennan and Schwartz (1977). As V(S, K, τ) = K * v(S / K, τ), one solve gives every strike, and the
+          expirations are solved in groups whose longest is at most four times their shortest, each on a grid sized
+          for it, so that an expiration a day away is as precise as one months away: within about 1e-3 of the exact
+          value for a stock price of 100 (7.3e-4 at most from a day to a quarter at volatilities up to 100%; the error
+          scales with the price), see ``finite_difference_model.get_finite_difference_option_values``.
 
         The formulas are as follows, with φ = 1 for a call and -1 for a put:
 
@@ -1802,8 +1803,9 @@ class PricingOptions:
             )
 
             if method == "finite_difference":
-                # One solve gives every strike and expiration (the value is homogeneous in
-                # the stock and strike price), with four time steps per expiration day.
+                # One solve per group of expirations gives every strike (the value is
+                # homogeneous in the stock and strike price), with four time steps per
+                # expiration day.
                 values = finite_difference_model.get_finite_difference_option_values(
                     stock_price=float(stock_price.loc[ticker]),
                     strike_prices=np.asarray(strike_prices, dtype=float),
@@ -2026,22 +2028,21 @@ class PricingOptions:
                 else self._dividend_yield_on(ticker, start_date)
             )
 
-            cev_option[ticker] = {
-                strike_price: {
-                    time_to_expiration: cev_model.get_cev(
-                        stock_price=float(stock_price.loc[ticker]),
-                        strike_price=float(strike_price),
-                        risk_free_rate=float(risk_free_rate),
-                        volatility=float(volatility.loc[ticker]),
-                        time_to_expiration=time_to_expiration,
-                        beta=float(beta),
-                        dividend_yield=float(dividend_yield_value[ticker]),
-                        put_option=put_option,
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+            # Every strike price and time to expiration in one call on arrays.
+            cev_option[ticker] = helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration: cev_model.get_cev(
+                    stock_price=float(stock_price.loc[ticker]),
+                    strike_price=strike_price,
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    time_to_expiration=time_to_expiration,
+                    beta=float(beta),
+                    dividend_yield=float(dividend_yield_value[ticker]),
+                    put_option=put_option,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
 
         cev_option_df = helpers.create_greek_dataframe(
             greek_dictionary=cev_option,
@@ -2203,23 +2204,20 @@ class PricingOptions:
             time / 365 for time in range(0, expiration_time_range)
         ]
 
+        # Every strike price and time to expiration in one call on arrays.
         black_76: dict[str, dict[float, dict[float, float]]] = {
-            ticker: {
-                strike_price: {
-                    time_to_expiration: float(
-                        black_scholes_model.get_black_76(
-                            forward_price=float(futures_price.loc[ticker]),
-                            strike_price=float(strike_price),
-                            risk_free_rate=float(risk_free_rate),
-                            volatility=float(volatility.loc[ticker]),
-                            time_to_expiration=time_to_expiration,
-                            put_option=put_option,
-                        )
-                    )
-                    for time_to_expiration in time_to_expiration_list
-                }
-                for strike_price in strike_prices
-            }
+            ticker: helpers.evaluate_on_grid(
+                lambda strike_price, time_to_expiration, ticker=ticker: black_scholes_model.get_black_76(
+                    forward_price=float(futures_price.loc[ticker]),
+                    strike_price=strike_price,
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    time_to_expiration=time_to_expiration,
+                    put_option=put_option,
+                ),
+                strike_prices,
+                time_to_expiration_list,
+            )
             for ticker, strike_prices in strike_prices_per_ticker.items()
         }
 
@@ -2410,6 +2408,7 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-30 |
         |---------------:|-------------:|-------------:|-------------:|
+        |            770 |      92.8712 |      93.4178 |      95.1631 |
         |            780 |      82.8804 |      83.4928 |      85.5947 |
         |            790 |      72.8944 |      73.6473 |      76.2372 |
         |            800 |      62.9375 |      63.9363 |      67.1776 |
@@ -2427,6 +2426,7 @@ class PricingOptions:
         |            920 |       0.1698 |       1.1303 |       4.5777 |
         |            930 |       0.0582 |       0.6374 |       3.2774 |
         |            940 |       0.018  |       0.3432 |       2.3097 |
+        |            950 |       0.0049 |       0.1773 |       1.6158 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]

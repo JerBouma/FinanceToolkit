@@ -263,3 +263,10 @@ def test_the_black_76_implied_volatility_reprices_the_option():
     assert np.isnan(
         black_scholes_model.get_black_76_implied_volatility(70.0, 70.0, 75.0, 0.04, 0.5)
     )
+
+
+def test_black_76_at_a_zero_strike_is_the_discounted_forward():
+    call = black_scholes_model.get_black_76(100.0, 0.0, 0.04, 0.2, 0.5)
+    put = black_scholes_model.get_black_76(100.0, 0.0, 0.04, 0.2, 0.5, put_option=True)
+    assert call == pytest.approx(100 * np.exp(-0.02), rel=1e-14)
+    assert put == 0

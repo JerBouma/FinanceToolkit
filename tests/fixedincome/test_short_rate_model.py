@@ -592,3 +592,123 @@ def test_a_put_raises_the_spread_and_the_convexity():
     assert puttable["Option Value"] < 0
     assert puttable["Effective Duration"] < straight["Effective Duration"]
     assert puttable["Effective Convexity"] > straight["Effective Convexity"]
+
+
+@pytest.mark.parametrize("model", ["black_karasinski", "black_derman_toy"])
+def test_lognormal_option_adjusted_spread_on_a_low_curve(model):
+    # Shifted down by 100 basis points a flat 0.8% curve has negative forward rates, which the
+    # lognormal models cannot fit: the duration then shifts by half the lowest forward rate.
+    result = short_rate_model.get_option_adjusted_spread(
+        101,
+        0.04,
+        10,
+        np.array([0.5, 30]),
+        np.array([0.008, 0.008]),
+        0.2,
+        call_price=100,
+        years_to_first_call=2,
+        model=model,
+        speed=0.05 if model == "black_karasinski" else 0.0,
+    )
+    assert all(np.isfinite(value) for value in result.values())
+    assert 0 < result["Effective Duration"] < 10
+
+
+def test_vasicek_bond_coefficients_hold_their_precision_as_the_speed_goes_to_zero():
+    from decimal import Decimal, getcontext  # noqa: PLC0415
+
+    # The closed form ln A = (B - τ)(a²b - σ²/2) / a² - σ²B² / (4a), evaluated with 60
+    # digits, against the series below aτ = 0.1 and the closed form above it. In double
+    # precision the closed form gave ln A(5) = 2.615 at a = 1e-7 instead of 0.002083.
+    getcontext().prec = 60
+    mean, volatility = 0.04, 0.01
+
+    def reference(speed: float, time: float) -> tuple[float, float]:
+        if speed == 0:
+            return volatility**2 * time**3 / 6, time
+        a, t = Decimal(repr(speed)), Decimal(repr(time))
+        b, sigma = Decimal(repr(mean)), Decimal(repr(volatility))
+        big_b = (1 - (-a * t).exp()) / a
+        log_a = (big_b - t) * (a * a * b - sigma * sigma / 2) / (
+            a * a
+        ) - sigma**2 * big_b**2 / (4 * a)
+        return float(log_a), float(big_b)
+
+    for speed in (
+        0.0,
+        1e-9,
+        1e-7,
+        1e-5,
+        1e-4,
+        1e-3,
+        0.0199,
+        0.02,
+        0.0201,
+        0.1,
+        0.5,
+        2.0,
+    ):
+        for time in (0.25, 1.0, 5.0, 30.0):
+            log_a, big_b = short_rate_model._bond_coefficients(
+                "vasicek", speed, mean, volatility, np.array([time])
+            )
+            expected_log_a, expected_big_b = reference(speed, time)
+            # The series switch lies at aτ = 0.1 (a = 0.02 at five years).
+            assert log_a[0] == pytest.approx(expected_log_a, rel=1e-11, abs=1e-18)
+            assert big_b[0] == pytest.approx(expected_big_b, rel=1e-14)
+
+
+def test_short_rate_options_take_their_limit_at_a_speed_of_zero():
+    zero_curve = pd.Series([0.03, 0.032, 0.035, 0.037], index=[1, 2, 5, 10])
+    for model, inputs, volatility in (
+        ("vasicek", {"mean": 0.04, "rate": 0.03}, 0.01),
+        ("hull_white", {"zero_curve": zero_curve}, 0.01),
+        ("cir", {"mean": 0.04, "rate": 0.03}, 0.05),
+        ("cir++", {"mean": 0.04, "rate": 0.03, "zero_curve": zero_curve}, 0.05),
+    ):
+        # NaN at a speed of 0 and, for Vasicek, 2.38 (above the bond price) at 1e-7.
+        prices = [
+            short_rate_model.get_zero_coupon_bond_option(
+                1, 5, 0.85, speed, volatility, model=model, **inputs
+            )
+            for speed in (0.0, 1e-8, 1e-6)
+        ]
+        assert np.all(np.isfinite(prices))
+        np.testing.assert_allclose(prices, prices[0], rtol=1e-5)
+        swaptions = [
+            short_rate_model.get_swaption(
+                1, 5, 0.04, speed, volatility, model=model, **inputs
+            )
+            for speed in (0.0, 1e-8, 0.0199, 0.02, 0.0201)
+        ]
+        assert np.all(np.isfinite(swaptions))
+        assert swaptions[0] == pytest.approx(swaptions[1], rel=1e-6)
+        # Continuous across the switch of the series at aτ = 0.1.
+        assert swaptions[3] == pytest.approx(
+            0.5 * (swaptions[2] + swaptions[4]), rel=1e-6
+        )
+
+    # Vasicek at a = 0 is the Merton (Ho-Lee) model: σ_P = σ(S - T)√T.
+    p_expiry = np.exp(0.01**2 / 6 - 0.03)
+    p_maturity = np.exp(0.01**2 * 125 / 6 - 0.15)
+    sigma_p = 0.01 * 4
+    h = np.log(p_maturity / (0.85 * p_expiry)) / sigma_p + sigma_p / 2
+    from scipy.stats import norm  # noqa: PLC0415
+
+    assert short_rate_model.get_zero_coupon_bond_option(
+        1, 5, 0.85, 0.0, 0.01, mean=0.04, rate=0.03
+    ) == pytest.approx(
+        p_maturity * norm.cdf(h) - 0.85 * p_expiry * norm.cdf(h - sigma_p), rel=1e-12
+    )
+
+
+def test_cir_options_need_a_volatility():
+    zero_curve = pd.Series([0.03, 0.037], index=[1, 10])
+    for model, inputs in (
+        ("cir", {"mean": 0.04, "rate": 0.03}),
+        ("cir++", {"mean": 0.04, "rate": 0.03, "zero_curve": zero_curve}),
+    ):
+        with pytest.raises(ValueError, match="needs a volatility above zero"):
+            short_rate_model.get_zero_coupon_bond_option(
+                1, 5, 0.85, 0.1, 0.0, model=model, **inputs
+            )

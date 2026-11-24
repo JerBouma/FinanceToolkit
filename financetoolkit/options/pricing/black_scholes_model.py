@@ -351,7 +351,8 @@ def get_garman_kohlhagen(
     currency earns the foreign risk-free rate (analogous to a continuous dividend yield
     on a stock), the domestic risk-free rate used for discounting is complemented by a
     foreign risk-free rate that plays the same role as the dividend yield does for equity
-    options.
+    options. The value is therefore ``get_black_scholes`` with the foreign risk-free rate
+    as the dividend yield, and at expiration the exercise value.
 
     The formulas are as follows:
 
@@ -398,27 +399,17 @@ def get_garman_kohlhagen(
         time_to_expiration=time_to_expiration,
     )
 
-    # Black-Scholes with the foreign rate as the dividend yield, which d1 discounts.
-    d1 = get_d1(
+    # Holding the foreign currency earns the foreign rate, as a stock earns its dividend
+    # yield, so the value is the Black-Scholes value with the foreign rate as that yield.
+    return get_black_scholes(
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
         volatility=volatility,
         time_to_expiration=time_to_expiration,
         dividend_yield=foreign_risk_free_rate,
+        put_option=put_option,
     )
-    d2 = get_d2(d1=d1, volatility=volatility, time_to_expiration=time_to_expiration)
-
-    if put_option:
-        return strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(
-            -d2
-        ) - stock_price * np.exp(-foreign_risk_free_rate * time_to_expiration) * ndtr(
-            -d1
-        )
-
-    return stock_price * np.exp(-foreign_risk_free_rate * time_to_expiration) * ndtr(
-        d1
-    ) - strike_price * np.exp(-risk_free_rate * time_to_expiration) * ndtr(d2)
 
 
 def get_black_76(

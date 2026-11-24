@@ -419,21 +419,6 @@ def test_get_binary_option(recorder, options_module):
     )
 
 
-def test_get_bjerksund_stensland(recorder, options_module):
-    recorder.capture(options_module.get_bjerksund_stensland())
-    recorder.capture(options_module.get_bjerksund_stensland(put_option=True))
-    recorder.capture(
-        options_module.get_bjerksund_stensland(
-            strike_price_range=0.10,
-            strike_step_size=2,
-            expiration_time_range=5,
-            risk_free_rate=0.01,
-            dividend_yield=0.02,
-            rounding=2,
-        )
-    )
-
-
 def test_get_monte_carlo_option_price(recorder, options_module):
     recorder.capture(
         options_module.get_monte_carlo_option_price(
@@ -1501,6 +1486,37 @@ def test_get_american_option(recorder, options_module):
     )
 
 
+def test_get_american_option_bjerksund_stensland(recorder, options_module):
+    recorder.capture(options_module.get_american_option(method="bjerksund_stensland"))
+    recorder.capture(
+        options_module.get_american_option(
+            method="bjerksund_stensland", put_option=True
+        )
+    )
+    recorder.capture(
+        options_module.get_american_option(
+            method="bjerksund_stensland",
+            strike_price_range=0.10,
+            strike_step_size=2,
+            expiration_time_range=5,
+            risk_free_rate=0.01,
+            dividend_yield=0.02,
+            rounding=2,
+        )
+    )
+
+
+def test_get_american_option_bjerksund_stensland_1993(recorder, options_module):
+    recorder.capture(
+        options_module.get_american_option(method="bjerksund_stensland_1993")
+    )
+    recorder.capture(
+        options_module.get_american_option(
+            method="bjerksund_stensland_1993", put_option=True
+        )
+    )
+
+
 def test_get_american_option_qd_fixed_point(recorder, options_module):
     recorder.capture(
         options_module.get_american_option(
@@ -1587,13 +1603,6 @@ def test_get_black_76_model(recorder, options_module):
         options_module.get_black_76_model(
             put_option=True, risk_free_rate=0.03, expiration_time_range=10
         )
-    )
-
-
-def test_get_bjerksund_stensland_1993(recorder, options_module):
-    recorder.capture(options_module.get_bjerksund_stensland(method="1993"))
-    recorder.capture(
-        options_module.get_bjerksund_stensland(method="1993", put_option=True)
     )
 
 

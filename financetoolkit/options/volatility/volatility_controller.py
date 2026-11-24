@@ -15,6 +15,8 @@ from financetoolkit.options.helpers import (
 from financetoolkit.options.market import market_metrics_model
 from financetoolkit.options.pricing import american_model, black_scholes_model
 from financetoolkit.options.volatility import (
+    garch_option_model,
+    heston_model,
     local_volatility_model,
     risk_neutral_density_model,
     sabr_model,
@@ -43,13 +45,19 @@ MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
 
 SMILE_METHODS = ("svi", "ssvi", "sabr")
 
+# The Heston fit by default takes the listed expiration nearest to each of these times to
+# expiration, in months, leaving out those under MINIMUM_DAYS_FOR_HESTON_FIT calendar days.
+HESTON_EXPIRATION_MONTHS = (1, 2, 3, 6, 9, 12, 18)
+MINIMUM_DAYS_FOR_HESTON_FIT = 14
+HESTON_PARAMETERS = ("v0", "kappa", "theta", "sigma", "rho")
+
 
 @filter_shown_columns
 @track_sources
 class VolatilityOptions:
     """
-    Implied volatility, the SVI, SSVI and SABR volatility surfaces, the local volatility
-    and the risk-neutral density.
+    Implied volatility, the SVI, SSVI and SABR volatility surfaces, the local volatility,
+    the risk-neutral density, the Heston calibration and the Heston-Nandi GARCH prices.
     """
 
     def _warn_if_spot_is_stale(self) -> None:
@@ -381,7 +389,7 @@ class VolatilityOptions:
             time_to_expiration,
         )
 
-    def _calibrate_smiles(
+    def _collect_smile_quotes(
         self,
         expiration_dates: list[str] | None,
         number_of_expirations: int,
@@ -389,13 +397,10 @@ class VolatilityOptions:
         risk_free_rate: float | None,
         dividend_yield: float | None,
         outlier_threshold: float,
-        method: str,
-        sabr_beta: float = 1.0,
     ) -> dict[str, list[dict]]:
         """
-        Fit the smile of every ticker and expiry with SVI, SSVI or SABR, check the SVI and SSVI
-        surfaces for calendar-spread and butterfly arbitrage (logged, not corrected) and return
-        the slices, so the volatility surface and the local volatility share one calibration.
+        Collect the market implied volatility of every ticker and expiry, without the quotes
+        far from the median volatility, for the smile models and the Heston calibration.
 
         Args:
             expiration_dates (list[str] | None): The expiration dates, None for the first
@@ -407,24 +412,16 @@ class VolatilityOptions:
             dividend_yield (float | None): The continuous dividend yield, None for the yield
                 of each ticker on the last historical date.
             outlier_threshold (float): The number of median absolute deviations beyond which
-                a quote is dropped before fitting.
-            method (str): "svi", "ssvi" or "sabr".
-            sabr_beta (float, optional): The SABR elasticity β. Defaults to 1.0.
+                a quote is dropped.
 
         Returns:
-            dict[str, list[dict]]: Per ticker, the fitted slices in expiration order, each
-            with the expiration date, time to expiration, stock and forward price, the market
-            implied volatility it was fitted to (by strike), the fitted parameters, the
-            fitted volatility at those strikes and, for SVI and SSVI, the raw SVI parameters.
+            dict[str, list[dict]]: Per ticker, the expiries in expiration order, each with the
+            expiration date, time to expiration, stock and forward price, risk free rate,
+            dividend yield and the market implied volatility by strike.
 
         Raises:
-            ValueError: If the method is unknown or an expiration date is not listed.
+            ValueError: If an expiration date is not listed.
         """
-        if method not in SMILE_METHODS:
-            raise ValueError(
-                f"The method {method!r} is not available. Choose from {', '.join(SMILE_METHODS)}."
-            )
-
         # The dates of every ticker; the nearest ones by default are those every ticker
         # lists, if they share any, so each expiry of the surface covers every ticker.
         all_expiration_dates = self._all_expiration_dates()
@@ -503,9 +500,68 @@ class VolatilityOptions:
                                 * time_to_expiration
                             )
                         ),
+                        "risk_free_rate": float(risk_free_rate_value),
+                        "dividend_yield": float(
+                            dividend_yield_value_per_ticker[ticker]
+                        ),
                         "implied_volatility": ticker_iv,
                     }
                 )
+
+        return quotes
+
+    def _calibrate_smiles(
+        self,
+        expiration_dates: list[str] | None,
+        number_of_expirations: int,
+        put_option: bool,
+        risk_free_rate: float | None,
+        dividend_yield: float | None,
+        outlier_threshold: float,
+        method: str,
+        sabr_beta: float = 1.0,
+    ) -> dict[str, list[dict]]:
+        """
+        Fit the smile of every ticker and expiry with SVI, SSVI or SABR, check the SVI and SSVI
+        surfaces for calendar-spread and butterfly arbitrage (logged, not corrected) and return
+        the slices, so the volatility surface and the local volatility share one calibration.
+
+        Args:
+            expiration_dates (list[str] | None): The expiration dates, None for the first
+                number_of_expirations dates (those every ticker lists, if they share any).
+            number_of_expirations (int): The number of dates when expiration_dates is None.
+            put_option (bool): Whether to use the puts instead of the calls.
+            risk_free_rate (float | None): The continuously compounded risk free rate, None
+                for the rate on the last historical date.
+            dividend_yield (float | None): The continuous dividend yield, None for the yield
+                of each ticker on the last historical date.
+            outlier_threshold (float): The number of median absolute deviations beyond which
+                a quote is dropped before fitting.
+            method (str): "svi", "ssvi" or "sabr".
+            sabr_beta (float, optional): The SABR elasticity β. Defaults to 1.0.
+
+        Returns:
+            dict[str, list[dict]]: Per ticker, the fitted slices in expiration order, each
+            with the expiration date, time to expiration, stock and forward price, the market
+            implied volatility it was fitted to (by strike), the fitted parameters, the
+            fitted volatility at those strikes and, for SVI and SSVI, the raw SVI parameters.
+
+        Raises:
+            ValueError: If the method is unknown or an expiration date is not listed.
+        """
+        if method not in SMILE_METHODS:
+            raise ValueError(
+                f"The method {method!r} is not available. Choose from {', '.join(SMILE_METHODS)}."
+            )
+
+        quotes = self._collect_smile_quotes(
+            expiration_dates,
+            number_of_expirations,
+            put_option,
+            risk_free_rate,
+            dividend_yield,
+            outlier_threshold,
+        )
 
         smiles: dict[str, list[dict]] = {}
 
@@ -1386,3 +1442,580 @@ class VolatilityOptions:
         return apply_rounding(
             density_df, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_heston_parameters(
+        self,
+        expiration_dates: list[str] | None = None,
+        expiration_months: list[float] | None = None,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        outlier_threshold: float = 5.0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calibrate the Heston (1993) stochastic volatility model to each ticker's option chain:
+        one set of parameters per ticker that reproduces the market's implied volatility across
+        the term structure, from about a month to a year and a half, at once.
+
+        In the Heston model the variance of the stock follows a mean-reverting square-root
+        process correlated with the stock, dS = (r - q)S dt + √v S dW_1 and
+        dv = κ(θ - v) dt + σ√v dW_2 with dW_1 dW_2 = ρ dt. Its five parameters read directly:
+        √v0 is today's volatility, √θ the volatility the market expects in the long run, κ how
+        fast it gets there (a half-life of ln(2) / κ years), σ the volatility of the variance
+        (the curvature of the smile) and ρ the correlation of the stock with its variance (the
+        skew: negative for equities, whose volatility rises as they fall).
+
+        By default the fit uses the listed expiration nearest to each of 1, 2, 3, 6, 9, 12 and
+        18 months (expiration_months), leaving out those less than 14 calendar days away, so
+        that κ and θ, which describe how the variance moves across the term structure, are
+        pinned down by expirations far apart. Each expiration contributes its out-of-the-money
+        quotes: the puts below the forward price and the calls above it. Those are the liquid
+        side of the chain; an in-the-money option is mostly its exercise value, so its implied
+        volatility is dominated by the bid-ask spread. The implied volatility of each side (see
+        `get_implied_volatility`) is cleaned of outliers with the same median-absolute-deviation
+        filter as `get_volatility_surface`.
+
+        The parameters minimize the vega-weighted price errors, to first order the errors in
+        implied volatility, with a soft-l1 loss so that a few stale quotes cannot dominate.
+        Quotes whose vega is below 5% of the at-the-money vega of their expiration are left
+        out. The fit is a bounded least squares from two fixed starting points (see
+        `heston_model.get_heston_parameters`), with every expiration priced by the COS method of
+        Fang and Oosterlee (2008), so the same quotes always give the same parameters.
+
+        The formulas are as follows:
+
+        - φ(u) = exp(C + D * v0), the characteristic function of ln(S_T / F) in the form of Albrecher et al. (2007)
+        - Call = S * e^(-qT) - √(F * K) * e^(-rT) / π * ∫_0^∞ Re[e^(iu * ln(F / K)) * φ(u - i/2)] / (u² + 1/4) du
+        - minimize Σ_i soft-l1([Call_Heston(K_i, T_i) - Call_BS(K_i, T_i, σ_i)] / Vega_BS(K_i, T_i, σ_i))
+        - Feller Ratio = 2κθ / σ²
+
+        Where S is the price of the underlying quoted with the nearest chain, K the strike, F the
+        forward price, r the continuously compounded risk-free rate, q the continuous dividend
+        yield, T the time to expiration in years (to 16:00 New York time on the expiration
+        date) and σ_i the market implied volatility of quote i (a put and a call of the same
+        strike have the same implied volatility error, as both models satisfy put-call parity).
+        A Feller ratio of 1 or more keeps the variance above zero. It is reported rather than
+        imposed: fits to equity smiles commonly break it, because the steep skew asks for a high
+        σ.
+
+        The RMSE is the root mean squared difference between the implied volatility of the
+        fitted Heston prices and the market's, over the quotes fitted.
+
+        See: Heston, S. L. (1993), "A Closed-Form Solution for Options with Stochastic Volatility
+        with Applications to Bond and Currency Options", The Review of Financial Studies, 6(2),
+        327-343; Albrecher, H., Mayer, P., Schoutens, W. and Tistaert, J. (2007), "The Little
+        Heston Trap", Wilmott Magazine; Fang, F. and Oosterlee, C. W. (2008), "A Novel Pricing
+        Method for European Options Based on Fourier-Cosine Series Expansions", SIAM Journal on
+        Scientific Computing, 31(2), 826-848. Referenced against QuantLib's AnalyticHestonEngine,
+        COSHestonEngine and HestonModelHelper calibration (https://www.quantlib.org).
+
+        Also known as: Heston calibration, stochastic volatility calibration, Heston model fit.
+
+        Notes:
+            Heston is calibrated across the term structure because its parameters describe it:
+            with one expiration, or several within a few weeks, κ and θ are hardly identified
+            separately and κ and σ run to their bounds. The expirations under 14 days are left
+            out by default: their smiles are dominated by jump risk (earnings and other events)
+            and by the bid-ask spread, which a diffusion like Heston cannot produce without an
+            implausibly fast mean reversion and volatile variance. A warning is logged when a
+            parameter ends at its bound (κ up to 20, a half-life of under two weeks, and σ up
+            to 5), a sign that the quotes ask for more than the model has, such as jumps or a
+            humped term structure. Listed options on single stocks are American; the fit treats
+            their implied volatility as European, as `get_volatility_surface` does. The Heston
+            prices themselves are available as `heston_model.get_heston_price`.
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiration dates to fit over, used
+                as given (also those under 14 days). Defaults to None, which picks them with
+                expiration_months.
+            expiration_months (list[float] | None, optional): The times to expiration, in months,
+                whose nearest listed expiration (at least 14 days away, among each ticker's own
+                dates) is fitted; an expiration nearest to several of them is fitted once. Defaults to None, which uses 1, 2, 3, 6, 9, 12 and 18 months.
+            risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
+                uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+                risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+                quote to continuous compounding. A rate passed here is used as given, as a continuously compounded
+                rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None, which
+                uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to its
+                close, as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            outlier_threshold (float, optional): The number of median absolute deviations from the
+                median implied volatility of an expiration beyond which a quote is dropped before
+                fitting. Defaults to 5.0.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker, v0, kappa, theta, sigma and rho, the Feller Ratio, the RMSE
+            in implied volatility, the number of quotes and the number of expirations fitted.
+
+        Raises:
+            ValueError: If no ticker lists an expiration 14 days or more away.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["AAPL", "MSFT"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_heston_parameters()
+        ```
+
+        Which returns:
+
+        | Ticker   |     v0 |   kappa |   theta |   sigma |     rho |   Feller Ratio |   RMSE |   Quotes |   Expirations |
+        |:---------|-------:|--------:|--------:|--------:|--------:|---------------:|-------:|---------:|--------------:|
+        | AAPL     | 0.0585 |  6.2781 |  0.0975 |  1.5161 | -0.5579 |         0.5327 | 0.0169 |      361 |             7 |
+        | MSFT     | 0.1153 | 20      |  0.1376 |  3.2351 | -0.5031 |         0.526  | 0.0296 |      376 |             7 |
+        """
+        # The expirations of each ticker: those given, or its own listed expiration nearest to
+        # each of the expiration_months, as tickers list different dates.
+        if expiration_dates is not None:
+            dates_per_ticker = {
+                ticker: set(expiration_dates) for ticker in self._tickers
+            }
+        else:
+            now = self._current_time()
+            dates_per_ticker = {}
+            for ticker, listed_dates in self._expiration_dates().items():
+                candidates = [
+                    date
+                    for date in listed_dates
+                    if get_days_to_expiration(date, now) >= MINIMUM_DAYS_FOR_HESTON_FIT
+                ]
+                if not candidates:
+                    logger.warning(
+                        "%s lists no expiration date %d days or more away.",
+                        ticker,
+                        MINIMUM_DAYS_FOR_HESTON_FIT,
+                    )
+                    continue
+                dates_per_ticker[ticker] = {
+                    min(
+                        candidates,
+                        key=lambda date, months=months: abs(
+                            get_time_to_expiration(date, now) - months / 12
+                        ),
+                    )
+                    for months in (
+                        expiration_months
+                        if expiration_months is not None
+                        else HESTON_EXPIRATION_MONTHS
+                    )
+                }
+            if not dates_per_ticker:
+                raise ValueError(
+                    f"No expiration date lies {MINIMUM_DAYS_FOR_HESTON_FIT} days or more away."
+                )
+            expiration_dates = sorted(set().union(*dates_per_ticker.values()))
+
+        # The out-of-the-money side of every expiration: the puts below the forward and the
+        # calls above it.
+        quotes_per_side = {
+            put_option: self._collect_smile_quotes(
+                expiration_dates,
+                len(expiration_dates),
+                put_option,
+                risk_free_rate,
+                dividend_yield,
+                outlier_threshold,
+            )
+            for put_option in (False, True)
+        }
+
+        parameters: dict[str, dict[str, float]] = {}
+        lower_bounds, upper_bounds = heston_model.HESTON_BOUNDS
+
+        for ticker in sorted(set(quotes_per_side[False]) | set(quotes_per_side[True])):
+            puts = {
+                quote["expiration_date"]: quote
+                for quote in quotes_per_side[True].get(ticker, [])
+            }
+            calls = {
+                quote["expiration_date"]: quote
+                for quote in quotes_per_side[False].get(ticker, [])
+            }
+            ticker_quotes = []
+            for expiration_date in sorted(
+                (set(puts) | set(calls)) & dates_per_ticker.get(ticker, set())
+            ):
+                quote = dict(calls.get(expiration_date) or puts[expiration_date])
+                forward_price = quote["forward_price"]
+                sides = []
+                if expiration_date in puts:
+                    put_volatility = puts[expiration_date]["implied_volatility"]
+                    sides.append(put_volatility[put_volatility.index < forward_price])
+                if expiration_date in calls:
+                    call_volatility = calls[expiration_date]["implied_volatility"]
+                    sides.append(
+                        call_volatility[call_volatility.index >= forward_price]
+                    )
+                quote["implied_volatility"] = pd.concat(sides).sort_index()
+                ticker_quotes.append(quote)
+
+            # One spot price, rate and yield for the whole fit: those of the nearest chain, as
+            # the chains of a ticker are fetched within moments of each other.
+            nearest = ticker_quotes[0]
+            try:
+                fit = heston_model.get_heston_parameters(
+                    stock_price=nearest["stock_price"],
+                    strike_price=np.concatenate(
+                        [
+                            quote["implied_volatility"].index.to_numpy(dtype=float)
+                            for quote in ticker_quotes
+                        ]
+                    ),
+                    time_to_expiration=np.concatenate(
+                        [
+                            np.full(
+                                len(quote["implied_volatility"]),
+                                quote["time_to_expiration"],
+                            )
+                            for quote in ticker_quotes
+                        ]
+                    ),
+                    implied_volatility=np.concatenate(
+                        [
+                            quote["implied_volatility"].to_numpy()
+                            for quote in ticker_quotes
+                        ]
+                    ),
+                    risk_free_rate=nearest["risk_free_rate"],
+                    dividend_yield=nearest["dividend_yield"],
+                )
+            except ValueError as error:
+                logger.warning("The Heston fit of %s failed: %s", ticker, error)
+                continue
+
+            fitted = np.array([fit[name] for name in HESTON_PARAMETERS])
+            at_bound = [
+                name
+                for name, value, lower, upper in zip(
+                    HESTON_PARAMETERS, fitted, lower_bounds, upper_bounds, strict=True
+                )
+                if np.isclose(value, lower, rtol=1e-4, atol=0)
+                or np.isclose(value, upper, rtol=1e-4, atol=0)
+            ]
+            if at_bound:
+                logger.warning(
+                    "The Heston fit of %s ends at the bound of %s: the quotes ask for more "
+                    "than the model has (such as jumps or a humped term structure), so "
+                    "these parameters are less meaningful.",
+                    ticker,
+                    ", ".join(at_bound),
+                )
+
+            parameters[ticker] = {
+                **dict(zip(HESTON_PARAMETERS, fitted, strict=True)),
+                "Feller Ratio": fit["feller_ratio"],
+                "RMSE": fit["rmse"],
+                "Quotes": fit["quotes"],
+                "Expirations": len(ticker_quotes),
+            }
+
+        if not parameters:
+            return pd.DataFrame()
+
+        parameters_df = pd.DataFrame(parameters).T
+        parameters_df.index.name = "Ticker"
+
+        return apply_rounding(
+            parameters_df, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_heston_nandi_model(
+        self,
+        start_date: str | None = None,
+        put_option: bool = False,
+        strike_price_range: float = 0.25,
+        strike_step_size: float = 5,
+        expiration_time_range: int = 30,
+        risk_free_rate: float | None = None,
+        dividend_yield: float | None = None,
+        show_parameters: bool = False,
+        show_input_info: bool = False,
+        rounding: int | None = None,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate European option prices in the GARCH model of Heston and Nandi (2000), with the
+        GARCH parameters fitted on each ticker's own daily returns.
+
+        Where the Black-Scholes model takes one volatility for the whole life of the option, the
+        Heston-Nandi model lets the daily variance follow a GARCH(1, 1) process with a leverage
+        effect: it starts from the variance the GARCH filter forecasts for tomorrow, reverts to
+        its long-run level at the speed the returns show, and rises more after a fall than after
+        a rise. The prices therefore follow the current volatility regime of the stock and carry
+        a skew, without any option prices as input. It is the GARCH option pricing model with a
+        closed form.
+
+        The parameters are fitted by maximum likelihood on the daily log returns (from the
+        Adj Close) over the risk-free rate of the historical data up to the pricing date (see
+        `garch_option_model.get_heston_nandi_parameters`), so a past pricing date only uses what
+        was known then. Under the risk-neutral measure the price of risk λ becomes -½ and the
+        asymmetry γ becomes γ + λ + ½, and the price follows from the moment generating
+        function of the log price by Fourier inversion.
+
+        The formulas are as follows:
+
+        - R_t - r_t / 252 = λ * h_t + √h_t * z_t
+        - h_(t+1) = ω + β * h_t + α * (z_t - γ * √h_t)²
+        - E[S_T^φ] = S^φ * exp(A + B * h), with A and B from a backward recursion over the trading days
+        - Call = S * e^(-qT) - √(F * K) * e^(-rT) / π * ∫_0^∞ Re[e^(iu * ln(F / K)) * φ_X(u - i/2)] / (u² + 1/4) du
+
+        Where R_t is the daily log return, r_t the risk-free rate of that day, h_t the
+        conditional variance, z_t the standard normal shock, ω, α, β, γ and λ the fitted
+        parameters, S the traded close on the pricing date, K the strike, h the variance
+        forecast for the next trading day, r the continuously compounded risk-free rate, q the
+        continuous dividend yield (ln(1 + dividend yield)), T the number of trading days to
+        expiration over 252 and φ_X the characteristic function of ln(S_T / F) with F the
+        forward price. The trading days to an expiration are the weekdays after the pricing date
+        up to and including it, so an expiration on a weekend has the value of the Friday before
+        it and one on the next weekday is one GARCH step away. The prices are computed with the
+        COS method of Fang and Oosterlee (2008), which agrees with the Fourier integral within
+        1e-10 here and prices all strikes of an expiration at once.
+
+        See: Heston, S. L. and Nandi, S. (2000), "A Closed-Form GARCH Option Valuation Model",
+        The Review of Financial Studies, 13(3), 585-625. Referenced against a Monte Carlo
+        simulation of the risk-neutral process and the Black-Scholes price at α = β = 0.
+
+        Also known as: Heston-Nandi model, GARCH option pricing, HN-GARCH.
+
+        Args:
+            start_date (str | None, optional): The date whose price, rates and fitted variance the
+            values start from; the GARCH parameters are fitted on the returns up to it. A date
+            without prices (a weekend or a holiday) uses the last trading day before it. Defaults
+            to None, which uses the last date of the historical data.
+            put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
+            it will calculate the call option price.
+            strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which
+            equals 25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that
+            the strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
+            expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
+            expirations 1 up to expiration_time_range - 1 calendar days after the start date. Defaults to 30,
+            which gives expirations of 1 to 29 days.
+            risk_free_rate (float, optional): The risk free rate to use for the pricing. Defaults to None, which
+            uses the Toolkit's risk-free rate on the pricing date: the 10-year Treasury yield unless the Toolkit's
+            risk_free_rate parameter selects '13w', '5y' or '30y', converted from its semi-annual bond-equivalent
+            quote to continuous compounding. A rate passed here is used as given, as a continuously compounded
+            rate. The excess returns of the fit always use the Toolkit's daily rate.
+            dividend_yield (float, optional): The dividend yield to use for the calculation. Defaults to None,
+            which uses the dividend yield on the pricing date (the dividends of the 365 days up to it relative to
+            its close, as the continuously compounded ln(1 + q)). A given value is used as a continuous yield.
+            show_parameters (bool, optional): Whether to return the fitted GARCH parameters per ticker instead of
+            the prices: omega, alpha, beta, gamma and lambda (daily), the persistence β + αγ², the annualized
+            long-run and next-day volatility (√(252 * variance)) and the log-likelihood. Defaults to False.
+            show_input_info (bool, optional): Whether to show the input information. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None,
+                which uses the rounding of the Toolkit (4 unless set otherwise).
+            standardize (bool, optional): Whether to standardize (Z-Score) the result across the
+                time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Heston-Nandi option values with the tickers and strike prices as the index and the
+            expiration dates as the columns, or with show_parameters the fitted parameters per ticker.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        heston_nandi_put = toolkit.options.get_heston_nandi_model(
+            put_option=True, strike_price_range=0.15, strike_step_size=10, expiration_time_range=91
+        )
+
+        heston_nandi_put.loc["AAPL", ["2026-01-30", "2026-03-01", "2026-03-31"]]
+        ```
+
+        Which returns:
+
+        |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
+        |---------------:|-------------:|-------------:|-------------:|
+        |            230 |       0.3274 |       1.3431 |       2.6225 |
+        |            240 |       0.7639 |       2.3673 |       4.1071 |
+        |            250 |       1.6757 |       3.9996 |       6.2161 |
+        |            260 |       3.4456 |       6.4772 |       9.1009 |
+        |            270 |       6.6017 |      10.0487 |      12.8995 |
+        |            280 |      11.6764 |      14.919  |      17.713  |
+        |            290 |      18.8491 |      21.1761 |      23.582  |
+        |            300 |      27.6352 |      28.729  |      30.4704 |
+        |            310 |      37.2314 |      37.3118 |      38.2654 |
+        |            320 |      47.1045 |      46.5778 |      46.7968 |
+        """
+        start_date = self._pricing_date(start_date)
+        stock_price = self._prices.loc[start_date]
+
+        # The excess returns of the fit take the risk-free rate of each day, known on that day.
+        daily_rate = self._risk_free_rate.reindex(self._daily_historical.index).ffill()
+        returns = np.log1p(self._daily_historical["Return"].loc[:start_date])
+
+        pricing_rate = (
+            risk_free_rate
+            if risk_free_rate is not None
+            else self._risk_free_rate.loc[start_date]
+        )
+
+        fits: dict[str, dict[str, float]] = {}
+        for ticker in self._tickers:
+            ticker_returns = returns[ticker].dropna()
+            try:
+                fits[ticker] = garch_option_model.get_heston_nandi_parameters(
+                    ticker_returns.to_numpy(),
+                    risk_free_rate=daily_rate.loc[ticker_returns.index].to_numpy(),
+                )
+            except ValueError as error:
+                logger.warning("The Heston-Nandi fit of %s failed: %s", ticker, error)
+
+        if not fits:
+            return pd.DataFrame()
+
+        if show_parameters:
+            parameters_df = pd.DataFrame(
+                {
+                    ticker: {
+                        "omega": fit["omega"],
+                        "alpha": fit["alpha"],
+                        "beta": fit["beta"],
+                        "gamma": fit["gamma"],
+                        "lambda": fit["lambda"],
+                        "Persistence": fit["persistence"],
+                        "Long-Run Volatility": np.sqrt(
+                            garch_option_model.TRADING_DAYS_PER_YEAR
+                            * fit["unconditional_variance"]
+                        ),
+                        "Next-Day Volatility": np.sqrt(
+                            garch_option_model.TRADING_DAYS_PER_YEAR
+                            * fit["next_variance"]
+                        ),
+                        "Log-Likelihood": fit["log_likelihood"],
+                    }
+                    for ticker, fit in fits.items()
+                }
+            ).T
+            parameters_df.index.name = "Ticker"
+
+            # The parameters are of very different sizes (ω about 1e-7, γ about 100), so they
+            # are rounded to significant digits rather than decimals.
+            return parameters_df.apply(
+                lambda column: column.map(
+                    lambda value: float(
+                        f"{value:.{(rounding if rounding is not None else self._rounding)}g}"
+                    )
+                )
+            )
+
+        strike_prices_per_ticker = helpers.define_strike_prices(
+            tickers=list(fits),
+            stock_price=stock_price,
+            strike_step_size=strike_step_size,
+            strike_price_range=strike_price_range,
+        )
+
+        # The weekdays after the pricing date up to and including each expiration.
+        first_day = start_date.to_timestamp()
+        trading_days = [
+            int(
+                np.busday_count(
+                    (first_day + pd.Timedelta(days=1)).date(),
+                    (first_day + pd.Timedelta(days=days + 1)).date(),
+                )
+            )
+            for days in range(expiration_time_range)
+        ]
+
+        heston_nandi_option: dict[str, dict[float, dict[float, float]]] = {}
+        dividend_yield_value: dict[str, float] = {}
+
+        for ticker, strike_prices in strike_prices_per_ticker.items():
+            dividend_yield_value[ticker] = (
+                dividend_yield
+                if dividend_yield is not None
+                else self._dividend_yield_on(ticker, start_date)
+            )
+            fit = fits[ticker]
+            strikes = np.asarray(strike_prices, dtype=float)
+
+            values = {
+                days: np.atleast_1d(
+                    garch_option_model.get_heston_nandi_price(
+                        stock_price=float(stock_price.loc[ticker]),
+                        strike_price=strikes,
+                        risk_free_rate=float(pricing_rate),
+                        periods_to_expiration=periods,
+                        next_variance=fit["next_variance"],
+                        omega=fit["omega"],
+                        alpha=fit["alpha"],
+                        beta=fit["beta"],
+                        gamma=fit["gamma"],
+                        risk_premium=fit["lambda"],
+                        dividend_yield=float(dividend_yield_value[ticker]),
+                        put_option=put_option,
+                        method="cos",
+                    )
+                )
+                for days, periods in enumerate(trading_days)
+            }
+
+            heston_nandi_option[ticker] = {
+                strike_price: {
+                    days / 365: float(values[days][position]) for days in values
+                }
+                for position, strike_price in enumerate(strike_prices)
+            }
+
+        heston_nandi_df = helpers.create_greek_dataframe(
+            greek_dictionary=heston_nandi_option,
+            start_date=start_date,
+        )
+
+        heston_nandi_df = heston_nandi_df.pipe(
+            apply_rounding, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            heston_nandi_df = calculate_standardization(
+                dataset=heston_nandi_df,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=pd.Series(
+                    {
+                        ticker: np.sqrt(
+                            garch_option_model.TRADING_DAYS_PER_YEAR
+                            * fit["next_variance"]
+                        )
+                        for ticker, fit in fits.items()
+                    }
+                ),
+                risk_free_rate=pricing_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return heston_nandi_df

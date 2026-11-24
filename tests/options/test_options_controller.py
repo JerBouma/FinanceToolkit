@@ -1999,6 +1999,35 @@ def test_get_delta_hedging_simulation(recorder, options_module):
     )
 
 
+def test_get_heston_parameters(recorder, option_market):
+    module, _ = option_market
+    # The simulated expirations lie 10, 24 and 45 days away: the default leaves out the one
+    # under 14 days and fits the other two, the nearest to every month of the grid.
+    parameters = module.get_heston_parameters()
+    # The fit stops where the least squares stops improving, which moves its last digits
+    # with the platform's floating point, so it is recorded to two decimals. Two short
+    # expirations hardly pin down κ and θ apart (κ ends near zero, where θ barely changes the
+    # prices, and θ moved by 0.01 between Python versions), so only their combination is
+    # recorded: the Feller ratio 2κθ/σ², to one decimal.
+    recorder.capture(
+        parameters.drop(columns=["kappa", "theta"]).round(2).round({"Feller Ratio": 1})
+    )
+    # The simulated chains have a downward skew: a negative correlation.
+    assert (parameters["rho"] < 0).all()
+    assert (parameters["Expirations"] == 2).all()
+    assert (parameters["RMSE"] < 0.05).all()
+
+
+def test_get_heston_nandi_model(recorder, options_module):
+    # The GARCH fit stops where the likelihood stops improving, which moves its last digits
+    # with the platform's floating point, so the prices are recorded to two decimals.
+    recorder.capture(options_module.get_heston_nandi_model(rounding=2))
+    recorder.capture(options_module.get_heston_nandi_model(put_option=True, rounding=2))
+    parameters = options_module.get_heston_nandi_model(show_parameters=True)
+    assert (parameters["Persistence"] < 1).all()
+    assert (parameters["Next-Day Volatility"] > 0).all()
+
+
 def test_get_american_option_finite_difference(recorder, options_module):
     recorder.capture(
         options_module.get_american_option(

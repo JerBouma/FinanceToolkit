@@ -1997,3 +1997,69 @@ def test_get_delta_hedging_simulation(recorder, options_module):
             paths=2000,
         )
     )
+
+
+def test_get_american_option_finite_difference(recorder, options_module):
+    recorder.capture(
+        options_module.get_american_option(
+            method="finite_difference", put_option=True, strike_price_range=0.10
+        )
+    )
+    recorder.capture(
+        options_module.get_american_option(
+            method="finite_difference", dividend_yield=0.06, expiration_time_range=10
+        )
+    )
+
+
+def test_get_american_option_finite_difference_matches_the_fixed_point(options_module):
+    finite_difference = options_module.get_american_option(
+        method="finite_difference",
+        put_option=True,
+        strike_price_range=0.10,
+        expiration_time_range=8,
+        rounding=8,
+    )
+    fixed_point = options_module.get_american_option(
+        method="qd_fixed_point",
+        put_option=True,
+        strike_price_range=0.10,
+        expiration_time_range=8,
+        rounding=8,
+    )
+
+    assert (finite_difference - fixed_point).abs().max().max() < 1e-3
+
+
+def test_get_monte_carlo_option_price_american_and_variance_reduction(
+    recorder, options_module
+):
+    recorder.capture(
+        options_module.get_monte_carlo_option_price(
+            put_option=True,
+            strike_price_range=0.10,
+            expiration_time_range=5,
+            simulations=1_000,
+            time_steps=10,
+            seed=42,
+            american_option=True,
+        )
+    )
+    recorder.capture(
+        options_module.get_monte_carlo_option_price(
+            simulations=1_024,
+            time_steps=10,
+            seed=42,
+            variance_reduction="control_variate",
+            sequence="sobol",
+        )
+    )
+    recorder.capture(
+        options_module.get_monte_carlo_option_price(
+            expiration_time_range=5,
+            simulations=1_000,
+            time_steps=10,
+            seed=42,
+            variance_reduction="antithetic",
+        )
+    )

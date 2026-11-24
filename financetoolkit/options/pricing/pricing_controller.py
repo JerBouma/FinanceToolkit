@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import helpers, options_model
+from financetoolkit.options.numerical import finite_difference_model, monte_carlo_model
 from financetoolkit.options.pricing import (
     american_model,
     binomial_trees_model,
@@ -1596,7 +1597,11 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         method: Literal[
-            "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point"
+            "qd_plus",
+            "barone_adesi_whaley",
+            "ju_zhong",
+            "qd_fixed_point",
+            "finite_difference",
         ] = "qd_plus",
         strike_price_range: float = 0.25,
         strike_step_size: float = 5,
@@ -1630,6 +1635,11 @@ class PricingOptions:
           equation of Kim (1990), iterated as a fixed point from the QD+ boundary until it changes less than 1e-12.
           It converges to the exact American value, within about 1e-6 (1e-8 for most options), at about 30 to 150
           ms per price, so it is the slowest and best suited to a few strikes and expirations.
+        - Finite differences (method="finite_difference"): the Black-Scholes equation solved backwards from
+          expiration with Crank-Nicolson (Rannacher start-up) on a grid of 1,000 steps in ln(S / K) and at least 400
+          time steps (4 per expiration day beyond 100 days), with the exercise constraint solved at every step by
+          Brennan and Schwartz (1977). As V(S, K, τ) = K * v(S / K, τ), one solve per ticker gives every strike and
+          expiration, within about 1e-3 of the exact value (see ``finite_difference_model.get_finite_difference_option``).
 
         The formulas are as follows, with φ = 1 for a call and -1 for a put:
 
@@ -1643,6 +1653,8 @@ class PricingOptions:
           and D the integrals of the FP-A equation of Andersen, Lake and Offengenden (2016), and the put priced with
           the integral of QD+
         - QD+ Call (S, K, r, q) = QD+ Put (K, S, q, r), the put-call symmetry of McDonald and Schroder (1998)
+        - Finite differences: V_τ = σ²/2 * V_xx + (r - q - σ²/2) * V_x - r * V on x = ln(S / K), stepped with
+          (I - Δτ/2 * L) * V(τ + Δτ) = (I + Δτ/2 * L) * V(τ) subject to V ≥ φ * (S - K)
 
         Where each formula holds on the side of S* (or of the boundary B(T)) where holding the option is optimal,
         and the option is worth its exercise value φ * (S - K) beyond it. S is the stock price (the traded close on
@@ -1663,10 +1675,11 @@ class PricingOptions:
         Approximations for the Critical Stock Prices of American Options: A Performance Comparison", Review of
         Derivatives Research, 13(1), 75-99; Andersen, L., Lake, M., & Offengenden, D. (2016), "High-Performance
         American Option Pricing", Journal of Computational Finance, 20(1), 39-87; Kim, I. J. (1990), "The Analytic
-        Valuation of American Options", The Review of Financial Studies, 3(4), 547-572. Referenced against QuantLib's
-        BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine and
-        QdFpAmericanEngine (https://www.quantlib.org) and FinancePy's black_scholes_analytic.baw_value
-        (https://github.com/domokane/FinancePy).
+        Valuation of American Options", The Review of Financial Studies, 3(4), 547-572; Brennan, M. J., & Schwartz,
+        E. S. (1977), "The Valuation of American Put Options", The Journal of Finance, 32(2), 449-462. Referenced
+        against QuantLib's BaroneAdesiWhaleyApproximationEngine, JuQuadraticApproximationEngine, QdPlusAmericanEngine,
+        QdFpAmericanEngine and FdBlackScholesVanillaEngine (https://www.quantlib.org) and FinancePy's
+        black_scholes_analytic.baw_value and finite_difference.black_scholes_fd (https://github.com/domokane/FinancePy).
 
         Also known as: BAW, quadratic approximation, American option price, early exercise premium, QD+, QdFp.
 
@@ -1677,8 +1690,8 @@ class PricingOptions:
             last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
-            method (str, optional): The method: "qd_plus", "barone_adesi_whaley", "ju_zhong" or "qd_fixed_point".
-            Defaults to "qd_plus".
+            method (str, optional): The method: "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point" or
+            "finite_difference". Defaults to "qd_plus".
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1750,9 +1763,11 @@ class PricingOptions:
             "barone_adesi_whaley",
             "ju_zhong",
             "qd_fixed_point",
+            "finite_difference",
         ):
             raise ValueError(
-                f'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong" or "qd_fixed_point", received {method!r}.'
+                'method must be "qd_plus", "barone_adesi_whaley", "ju_zhong", "qd_fixed_point" or '
+                f'"finite_difference", received {method!r}.'
             )
 
         start_date = self._pricing_date(start_date)
@@ -1785,6 +1800,28 @@ class PricingOptions:
                 if dividend_yield is not None
                 else self._dividend_yield_on(ticker, start_date)
             )
+
+            if method == "finite_difference":
+                # One solve gives every strike and expiration (the value is homogeneous in
+                # the stock and strike price), with four time steps per expiration day.
+                values = finite_difference_model.get_finite_difference_option_values(
+                    stock_price=float(stock_price.loc[ticker]),
+                    strike_prices=np.asarray(strike_prices, dtype=float),
+                    times_to_expiration=np.asarray(time_to_expiration_list),
+                    risk_free_rate=float(risk_free_rate),
+                    volatility=float(volatility.loc[ticker]),
+                    dividend_yield=float(dividend_yield_value[ticker]),
+                    put_option=put_option,
+                    american_option=True,
+                    time_steps=max(400, 4 * expiration_time_range),
+                )
+                american_option[ticker] = {
+                    strike_price: dict(
+                        zip(time_to_expiration_list, map(float, row), strict=True)
+                    )
+                    for strike_price, row in zip(strike_prices, values, strict=True)
+                }
+                continue
 
             american_option[ticker] = {
                 strike_price: {
@@ -2231,10 +2268,14 @@ class PricingOptions:
         rounding: int | None = None,
         standardize: bool = False,
         show_columns: str | list[str] | None = None,
+        american_option: bool = False,
+        variance_reduction: Literal["antithetic", "control_variate"] | None = None,
+        sequence: Literal["pseudo_random", "sobol"] = "pseudo_random",
     ):
         """
         Calculate European option prices through Monte Carlo simulation of Geometric
-        Brownian Motion (GBM) stock price paths.
+        Brownian Motion (GBM) stock price paths, or American option prices by least-squares
+        Monte Carlo (Longstaff and Schwartz, 2001) with american_option=True.
 
         The Monte Carlo method prices an option by simulating a large number of possible
         future paths for the underlying stock price under the risk-neutral measure,
@@ -2256,6 +2297,29 @@ class PricingOptions:
         T is the time to expiration in years (days / 365) and Z is a standard normal random
         variable.
 
+        With american_option=True the option can be exercised at each of the time steps: stepping
+        back from expiration, the discounted cash flows of the paths in the money are regressed
+        on a constant and the weighted Laguerre polynomials e^(-x/2) * L_n(x), n = 0, 1, 2, of
+        x = S(t) / K, and a path is exercised where its exercise value beats the fitted
+        continuation value (see ``monte_carlo_model.get_longstaff_schwartz_option``):
+
+        - C(t) = β_0 + Σ β_n * e^(-x/2) * L_n(x), fitted on the in-the-money paths at t
+        - Cash Flow(t) = φ * (S(t) - K) if φ * (S(t) - K) > C(t), else e^(-r * Δt) * Cash Flow(t + Δt)
+        - American Price = MAX(φ * (S - K), MEAN(e^(-r * Δt) * Cash Flow(Δt)))
+
+        Two variance reductions and quasi-random numbers narrow the standard error at the same
+        number of paths (Glasserman, 2003, chapters 4 and 5):
+
+        - variance_reduction="antithetic": every path Z is paired with -Z (simulations must be
+          even) and the standard error comes from the averages of the pairs.
+        - variance_reduction="control_variate": Price = MEAN(Y - β * (X - E[X])), β = Cov(Y, X) /
+          Var(X), with X the discounted stock price at expiration (E[X] = S * e^(-q * T)) for a
+          European option and the discounted European payoff (E[X] its Black-Scholes price) for
+          an American option.
+        - sequence="sobol": scrambled Sobol points with a Brownian bridge in 16 independently
+          scrambled replications, whose spread gives the standard error; the error shrinks
+          close to 1 / simulations rather than 1 / √simulations.
+
         All strike prices of an expiry are priced on the same simulated paths (common
         random numbers), which keeps the prices consistent across strikes and means the
         paths are simulated once per expiry rather than once per strike.
@@ -2265,6 +2329,14 @@ class PricingOptions:
         estimate — as a rule of thumb, the true price lies within plus or minus 2 times
         the standard error roughly 95% of the time. Pass a ``seed`` (as the example does)
         to make the results reproducible; without one every call draws new paths.
+
+        See: Boyle, P. P. (1977), "Options: A Monte Carlo Approach", Journal of Financial
+        Economics, 4(3), 323-338; Longstaff, F. A., & Schwartz, E. S. (2001), "Valuing American
+        Options by Simulation: A Simple Least-Squares Approach", The Review of Financial Studies,
+        14(1), 113-147; Glasserman, P. (2003), "Monte Carlo Methods in Financial Engineering",
+        Springer. Referenced against QuantLib's MCEuropeanEngine and MCAmericanEngine
+        (https://www.quantlib.org) and FinancePy's equity_lsmc
+        (https://github.com/domokane/FinancePy); their own random numbers give other draws.
 
         Also known as: Monte Carlo option pricing, simulation-based option pricing.
 
@@ -2304,6 +2376,11 @@ class PricingOptions:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+            american_option (bool, optional): Whether to price American options by least-squares Monte
+            Carlo, exercisable at each time step. Defaults to False.
+            variance_reduction (str | None, optional): None, "antithetic" or "control_variate". Defaults to None.
+            sequence (str, optional): "pseudo_random" or "sobol" (at least 32 simulations). Defaults to
+            "pseudo_random".
 
         Returns:
             pd.DataFrame: Monte Carlo option values containing the tickers and strike prices as the index and the
@@ -2393,10 +2470,14 @@ class PricingOptions:
             # Every strike is priced on the same simulated paths of an expiry, which with
             # a seed gives the same prices as simulating per strike, once per expiry.
             for time_to_expiration in time_to_expiration_list:
-                prices, standard_errors = options_model.get_monte_carlo_option_prices(
+                prices, standard_errors = (
+                    monte_carlo_model.get_longstaff_schwartz_option_prices
+                    if american_option
+                    else options_model.get_monte_carlo_option_prices
+                )(
                     stock_price=float(stock_price.loc[ticker]),
                     strike_prices=np.asarray(strike_prices, dtype=float),
-                    risk_free_rate=risk_free_rate,
+                    risk_free_rate=float(risk_free_rate),
                     volatility=float(volatility.loc[ticker]),
                     time_to_expiration=time_to_expiration,
                     dividend_yield=float(dividend_yield_value[ticker]),
@@ -2404,6 +2485,8 @@ class PricingOptions:
                     simulations=simulations,
                     time_steps=time_steps,
                     seed=seed,
+                    variance_reduction=variance_reduction,
+                    sequence=sequence,
                 )
                 for strike_price, price, standard_error in zip(
                     strike_prices, prices, standard_errors, strict=True

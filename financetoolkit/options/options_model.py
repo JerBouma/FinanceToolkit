@@ -6,7 +6,14 @@ import yfinance as yf
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.options.helpers import validate_numeric_inputs
+from financetoolkit.options.helpers import (
+    VARIANCE_REDUCTIONS,
+    control_variate,
+    draw_standard_normals,
+    monte_carlo_estimate,
+    simulation_groups,
+    validate_numeric_inputs,
+)
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
 
@@ -335,6 +342,8 @@ def get_monte_carlo_option_price(
     simulations: int = 10_000,
     time_steps: int = 100,
     seed: int | None = None,
+    variance_reduction: str | None = None,
+    sequence: str = "pseudo_random",
 ) -> tuple[float, float]:
     """
     Calculate the price of a European option through Monte Carlo simulation of
@@ -368,6 +377,20 @@ def get_monte_carlo_option_price(
     proportionally to 1 / √simulations — quadrupling the number of simulations halves
     the standard error.
 
+    Two variance reductions and quasi-random numbers narrow that error at the same number of
+    paths (Glasserman, 2003, chapters 4 and 5):
+
+    - Antithetic (variance_reduction="antithetic"): every path Z is paired with its mirror
+      image -Z, and the standard error comes from the averages of the pairs.
+    - Control variate (variance_reduction="control_variate"): the discounted stock price at
+      expiration X = e^(—r * T) * S(T), whose expected value S * e^(—q * T) is known, takes
+      out the simulation error it shares with the payoff Y: Price = MEAN(Y — β * (X —
+      S * e^(—q * T))), β = Cov(Y, X) / Var(X).
+    - Sobol (sequence="sobol"): scrambled Sobol points with a Brownian bridge, whose first
+      coordinate sets the stock price at expiration, in 16 independently scrambled
+      replications; the standard error is that of the 16 replication means. The error
+      shrinks close to 1 / simulations rather than 1 / √simulations.
+
     Args:
         stock_price (float): The current stock price.
         strike_price (float): The option's strike price.
@@ -384,6 +407,10 @@ def get_monte_carlo_option_price(
         seed (int | None): The seed used to initialize the random number generator via
             `np.random.default_rng`, ensuring reproducible results. Defaults to None,
             which means the results will not be reproducible.
+        variance_reduction (str | None): None, "antithetic" (needs an even number of
+            simulations) or "control_variate". Defaults to None.
+        sequence (str): "pseudo_random" or "sobol" (at least 32 simulations). Defaults to
+            "pseudo_random".
 
     Returns:
         tuple[float, float]: a tuple of (option_price, standard_error) where option_price
@@ -392,12 +419,20 @@ def get_monte_carlo_option_price(
 
     Raises:
         TypeError: if any of the numeric inputs is not a float or int.
-        ValueError: if simulations or time_steps is not a positive integer, or if
-            simulations times time_steps exceeds MAX_SIMULATED_VALUES (50 million).
+        ValueError: if simulations or time_steps is not a positive integer, if
+            simulations times time_steps exceeds MAX_SIMULATED_VALUES (50 million), or if
+            variance_reduction or sequence is not one of the choices.
 
     Notes:
-        Reference: Boyle, P. P. (1977). "Options: A Monte Carlo Approach." Journal of
-        Financial Economics, 4(3), 323-338.
+        References: Boyle, P. P. (1977). "Options: A Monte Carlo Approach." Journal of
+        Financial Economics, 4(3), 323-338. Glasserman, P. (2003). "Monte Carlo Methods in
+        Financial Engineering." Springer. Sobol, I. M. (1967). "On the Distribution of
+        Points in a Cube and the Approximate Evaluation of Integrals." USSR Computational
+        Mathematics and Mathematical Physics, 7(4), 86-112. Owen, A. B. (1997). "Scrambled
+        Net Variance for Integrals of Smooth Functions." Annals of Statistics, 25(4),
+        1541-1562. Referenced against QuantLib's MCEuropeanEngine with the pseudo-random and
+        low-discrepancy traits (https://www.quantlib.org); its own random numbers give other
+        draws.
     """
     validate_numeric_inputs(
         stock_price=stock_price,
@@ -429,6 +464,8 @@ def get_monte_carlo_option_price(
         simulations=simulations,
         time_steps=time_steps,
         seed=seed,
+        variance_reduction=variance_reduction,
+        sequence=sequence,
     )
 
     return float(prices[0]), float(standard_errors[0])
@@ -443,6 +480,8 @@ def _simulate_terminal_stock_prices(
     simulations: int,
     time_steps: int,
     seed: int | None,
+    antithetic: bool = False,
+    sequence: str = "pseudo_random",
 ) -> np.ndarray:
     """
     Simulates the stock price at expiration of Geometric Brownian Motion paths under the
@@ -450,7 +489,7 @@ def _simulate_terminal_stock_prices(
 
     Every path is built from time_steps shocks, so a seed gives the same terminal prices
     whatever the number of paths simulated at once; only the end of each path is kept,
-    since a European payoff needs nothing else.
+    since a European payoff needs nothing else. The shocks come from draw_standard_normals.
 
     Args:
         stock_price (float): The current stock price.
@@ -461,6 +500,9 @@ def _simulate_terminal_stock_prices(
         simulations (int): The number of paths.
         time_steps (int): The number of steps per path.
         seed (int | None): The seed of the random number generator.
+        antithetic (bool, optional): Whether the paths come in antithetic pairs. Defaults
+            to False.
+        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
 
     Returns:
         np.ndarray: The stock price at expiration of every path.
@@ -471,21 +513,26 @@ def _simulate_terminal_stock_prices(
             f"simulations times time steps under {MAX_SIMULATED_VALUES:,}."
         )
 
-    random_number_generator = np.random.default_rng(seed)
-
     time_delta = time_to_expiration / time_steps
     drift = (risk_free_rate - dividend_yield - 0.5 * volatility**2) * time_delta
     diffusion = volatility * np.sqrt(time_delta)
     terminal_log_returns = np.empty(simulations)
+    first = 0
 
-    # The generator fills the shocks row by row, so drawing the paths in chunks of rows gives
-    # the same shocks as one draw of all paths while holding only a chunk in memory.
-    for first in range(0, simulations, SIMULATION_CHUNK_SIZE):
-        rows = min(SIMULATION_CHUNK_SIZE, simulations - first)
-        random_shocks = random_number_generator.standard_normal((rows, time_steps))
+    # The shocks come in chunks of paths, which holds only a chunk in memory.
+    for random_shocks in draw_standard_normals(
+        simulations,
+        time_steps,
+        sequence=sequence,
+        antithetic=antithetic,
+        seed=seed,
+        chunk_size=SIMULATION_CHUNK_SIZE,
+    ):
+        rows = random_shocks.shape[0]
         terminal_log_returns[first : first + rows] = (
-            drift + diffusion * random_shocks
+            drift + diffusion * random_shocks[:, :, 0]
         ).sum(axis=1)
+        first += rows
 
     return stock_price * np.exp(terminal_log_returns)
 
@@ -501,6 +548,8 @@ def get_monte_carlo_option_prices(
     simulations: int = 10_000,
     time_steps: int = 100,
     seed: int | None = None,
+    variance_reduction: str | None = None,
+    sequence: str = "pseudo_random",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculates the Monte Carlo price of European options with several strike prices from
@@ -522,10 +571,19 @@ def get_monte_carlo_option_prices(
         time_steps (int, optional): The number of steps per path. Defaults to 100.
         seed (int | None, optional): The seed of the random number generator. Defaults to
             None.
+        variance_reduction (str | None, optional): None, "antithetic" or
+            "control_variate". Defaults to None.
+        sequence (str, optional): "pseudo_random" or "sobol". Defaults to "pseudo_random".
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The price and its standard error per strike price.
     """
+    if variance_reduction not in VARIANCE_REDUCTIONS:
+        raise ValueError(
+            "variance_reduction must be None, 'antithetic' or 'control_variate', "
+            f"received {variance_reduction!r}."
+        )
+
     terminal_stock_prices = _simulate_terminal_stock_prices(
         stock_price,
         risk_free_rate,
@@ -535,10 +593,15 @@ def get_monte_carlo_option_prices(
         simulations,
         time_steps,
         seed,
+        antithetic=variance_reduction == "antithetic",
+        sequence=sequence,
     )
     discount_factor = np.exp(-risk_free_rate * time_to_expiration)
     option_prices = np.empty(len(strike_prices))
     standard_errors = np.empty(len(strike_prices))
+    groups = simulation_groups(
+        simulations, sequence, variance_reduction == "antithetic"
+    )
 
     # One strike at a time keeps the memory to one payoff per path.
     for position, strike_price in enumerate(strike_prices):
@@ -548,9 +611,14 @@ def get_monte_carlo_option_prices(
             payoffs = np.maximum(terminal_stock_prices - strike_price, 0)
 
         discounted_payoffs = discount_factor * payoffs
-        option_prices[position] = discounted_payoffs.mean()
-        standard_errors[position] = discounted_payoffs.std(ddof=1) / np.sqrt(
-            simulations
+        if variance_reduction == "control_variate":
+            discounted_payoffs = control_variate(
+                discounted_payoffs,
+                discount_factor * terminal_stock_prices,
+                stock_price * np.exp(-dividend_yield * time_to_expiration),
+            )
+        option_prices[position], standard_errors[position] = monte_carlo_estimate(
+            discounted_payoffs, groups
         )
 
     return option_prices, standard_errors

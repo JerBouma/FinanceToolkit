@@ -219,9 +219,11 @@ def is_factor_listed(
     entries: tuple[str | tuple[str, dict], ...], name: str, arguments: dict
 ) -> bool:
     """
-    Returns whether an indicator, called with the given arguments, is one of the entries of
-    FACTOR_PRICE_LINES or FACTOR_PRICE_DIFFERENCES: a method name covers every variant, and
-    a method with parameters only the calls whose arguments have those values.
+    Returns whether an indicator, called with the given arguments, is one of the entries of FACTOR_PRICE_LINES or
+    FACTOR_PRICE_DIFFERENCES.
+
+    A method name covers every variant, and a method with parameters only the calls whose arguments have those
+    values.
 
     Args:
         entries (tuple[str | tuple[str, dict], ...]): The method names and variants.
@@ -305,10 +307,11 @@ def apply_on_own_closes(
     prices_close: pd.DataFrame, function: Callable[[pd.Series], pd.Series]
 ) -> pd.DataFrame:
     """
-    Applies a function to each ticker's closes over the dates the ticker has a close, and
-    places the result back on every date, NaN on the dates without a close. A change, moving
-    average or rolling high of a ticker thereby spans its own trading days, not the dates
-    only another ticker traded, such as the weekends of a cryptocurrency next to a stock.
+    Applies a function to each ticker's closes over the dates the ticker has a close, and places the result back on
+    every date, NaN on the dates without a close.
+
+    A change, moving average or rolling high of a ticker thereby spans its own trading days, not the dates only
+    another ticker traded, such as the weekends of a cryptocurrency next to a stock.
 
     Args:
         prices_close (pd.DataFrame): The closes, a column per ticker, NaN on the dates a
@@ -331,12 +334,13 @@ def apply_on_own_closes(
 
 def get_observations_per_year(prices: pd.Series) -> int:
     """
-    The number of daily observations in a year of a ticker, to annualize a daily measure or
-    to express a year in periods: 252 for a ticker that trades on weekdays only, and 365 for
-    one with prices on a Saturday or Sunday, such as a cryptocurrency that trades every
-    calendar day. Counting the prices of each year instead would give a stock between 250
-    and 253 depending on its holidays, so a ticker on an exchange's trading days keeps the
-    252 convention.
+    The number of daily observations in a year of a ticker, to annualize a daily measure or to express a year in
+    periods.
+
+    It is 252 for a ticker that trades on weekdays only, and 365 for one with prices on a Saturday or Sunday, such
+    as a cryptocurrency that trades every calendar day. Counting the prices of each year instead would give a stock
+    between 250 and 253 depending on its holidays, so a ticker on an exchange's trading days keeps the 252
+    convention.
 
     Args:
         prices (pd.Series): The daily (or intraday) prices with a PeriodIndex or
@@ -358,9 +362,11 @@ def apply_variable_smoothing(
     prices: pd.Series, smoothing_factors: pd.Series, window: int
 ) -> pd.Series:
     """
-    Smooths prices with a smoothing factor that changes every period, as the adaptive
-    averages do (the Variable Index Dynamic Average and the Fractal Adaptive Moving
-    Average): Average(t) = Average(t-1) + Factor(t) * (Price(t) - Average(t-1)).
+    Smooths prices with a smoothing factor that changes every period, as the adaptive averages do.
+
+    These are the Variable Index Dynamic Average and the Fractal Adaptive Moving Average:
+
+    - Average(t) = Average(t-1) + Factor(t) * (Price(t) - Average(t-1))
 
     The recursion is seeded with the simple average of `window` prices, placed on the
     period before the first factor that follows a full window, with the periods before it

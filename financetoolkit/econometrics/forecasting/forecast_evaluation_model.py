@@ -80,14 +80,8 @@ def get_diebold_mariano_test(
     small_sample_correction: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Diebold-Mariano (1995) test for comparing the forecast accuracy of
-    two competing forecasts (e.g. two different VaR, Volatility or GARCH models)
-    against the same realized values.
-
-    Neither `statsmodels` nor `linearmodels` ships a Diebold-Mariano implementation --
-    along with `unitroot_model.get_phillips_perron_test` and
-    `diagnostics_model.get_variance_ratio_test`, this is one of the few tests in this
-    module that remains hand-built.
+    Calculate the Diebold-Mariano (1995) test: whether one of two competing forecasts (e.g.
+    two different VaR, Volatility or GARCH models) is more accurate than the other.
 
     The test compares the loss differential between the two forecasts' errors:
 
@@ -99,7 +93,7 @@ def get_diebold_mariano_test(
     systematically more accurate, `d_t` should be negative on average (and vice
     versa). The test statistic standardizes the mean loss differential by its long-run
     variance, which accounts for the serial correlation that `d_t` has for
-    multi-step-ahead (`horizon > 1`) forecasts, up to lag `horizon - 1`:
+    multi-step-ahead forecasts (a horizon above 1), up to lag `horizon - 1`:
 
     - LRV(d_t) = gamma_0 + 2 * SUM_{k=1}^{horizon - 1} gamma_k
     - DM = mean(d_t) / SQRT(LRV(d_t) / n)
@@ -111,8 +105,8 @@ def get_diebold_mariano_test(
     1 - k / horizon of the same lags are used instead, as they are never negative.
 
     Which is asymptotically standard normal under the null of equal forecast
-    accuracy, allowing for a two-sided p-value. When `small_sample_correction=True`
-    (the default), the Harvey, Leybourne & Newbold (1997) finite-sample correction is
+    accuracy, allowing for a two-sided p-value. With the small-sample correction (the
+    default), the Harvey, Leybourne & Newbold (1997) finite-sample correction is
     applied -- rescaling the statistic and comparing it to a Student-T(n - 1)
     distribution instead of the normal -- since the plain asymptotic DM test is known
     to over-reject (find spurious significance) in small samples.
@@ -137,8 +131,8 @@ def get_diebold_mariano_test(
         forecast, aligned to the same index as `actual`.
         forecast_b (pd.Series | pd.DataFrame): A Series or Dataframe of the second
         (competing) forecast, aligned to the same index as `actual`.
-        loss (str, optional): The loss function to compare forecast errors with, one
-        of "squared" or "absolute". Defaults to "squared".
+        loss (str, optional): The loss function to compare forecast errors with. Options
+        are: "squared" (squared error), "absolute" (absolute error). Defaults to "squared".
         horizon (int, optional): The forecast horizon (in periods), which sets the number
         of autocovariances in the long-run variance (`horizon - 1`) since an
         `h`-step-ahead forecast error is autocorrelated up to lag `h - 1`. Defaults to 1
@@ -254,14 +248,16 @@ def get_volatility_forecast(
     refit_every: int = 21,
 ) -> pd.Series | pd.DataFrame:
     """
-    One-period-ahead Variance forecast built from the returns up to the prior period
-    only, so it can be compared to the realized squared return out-of-sample -- the
-    forecast half of the Diebold-Mariano test in `get_diebold_mariano_test`.
+    Calculate a one-period-ahead Variance forecast from the returns up to the prior period
+    only, so it can be compared to the realized squared return out-of-sample.
 
-    - "ewma": σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², the RiskMetrics recursion of
+    The forecast is the forecast half of the Diebold-Mariano test in
+    `get_diebold_mariano_test`. The methods are:
+
+    - EWMA: σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁², the RiskMetrics recursion of
       `risk_model.get_ewma_volatility`, which already uses returns up to t - 1
-    - "rolling": the sample variance (ddof=1) of the `window_size` returns up to t - 1
-    - a GARCH-family method ("garch", "gjr", ...): the one-step variance of the model with a
+    - Rolling: the sample variance (ddof=1) of the `window_size` returns up to t - 1
+    - A GARCH-family model: the one-step variance of the model with a
       constant mean and normal innovations (quasi-maximum likelihood), refitted every
       `refit_every` returns on the `garch_window_size` returns before it (see
       `garch_model.get_garch_family_rolling_forecast`)
@@ -269,9 +265,12 @@ def get_volatility_forecast(
     Args:
         returns (pd.Series | pd.DataFrame): The asset's return series, or one column per asset.
         Each column is forecast on its own non-missing observations.
-        method (str): The forecasting method, "ewma", "rolling" or a GARCH-family method.
-        window_size (int): The rolling window size used by the "rolling" method.
-        lambda_ (float): The decay factor used by the "ewma" method.
+        method (str): The forecasting method. Options are: "ewma" (RiskMetrics EWMA),
+        "rolling" (rolling sample variance), or a GARCH-family model: "garch", "gjr",
+        "egarch", "igarch", "aparch", "tgarch", "ngarch", "avgarch", "nagarch",
+        "component", "figarch".
+        window_size (int): The rolling window size used by the rolling method.
+        lambda_ (float): The decay factor used by the EWMA method.
         garch_window_size (int, optional): The number of returns of every GARCH fit.
             Defaults to 504.
         refit_every (int, optional): The number of returns between two GARCH fits.
@@ -324,7 +323,8 @@ def get_rmse(
     actual: pd.Series | pd.DataFrame, forecast: pd.Series | pd.DataFrame
 ) -> float | pd.Series:
     """
-    Calculate the Root Mean Squared Error (RMSE) between realized and forecast values.
+    Calculate the Root Mean Squared Error (RMSE): how far forecasts are from the realized
+    values, with large misses weighing more.
 
     Also known as: RMSD (Root Mean Squared Deviation).
 
@@ -338,6 +338,9 @@ def get_rmse(
     error linearly) -- prefer RMSE when large misses are especially costly, and MAE
     when a single big outlier forecast shouldn't dominate the comparison.
 
+    Referenced against:
+    - statsmodels, rmse: https://www.statsmodels.org/stable/generated/statsmodels.tools.eval_measures.rmse.html
+
     Args:
         actual (pd.Series | pd.DataFrame): The realized values.
         forecast (pd.Series | pd.DataFrame): The forecast values, aligned to the same
@@ -349,9 +352,6 @@ def get_rmse(
 
     Raises:
         TypeError: If `actual` is not a `pd.Series` or `pd.DataFrame`.
-
-    Notes:
-        Referenced against statsmodels' `rmse`.
 
     As an example:
 
@@ -391,7 +391,8 @@ def get_mae(
     actual: pd.Series | pd.DataFrame, forecast: pd.Series | pd.DataFrame
 ) -> float | pd.Series:
     """
-    Calculate the Mean Absolute Error (MAE) between realized and forecast values.
+    Calculate the Mean Absolute Error (MAE): how far a typical forecast is from the realized
+    value.
 
     Also known as: MAD (Mean Absolute Deviation).
 
@@ -404,6 +405,9 @@ def get_mae(
     answers "how far off is a typical forecast", whereas RMSE answers a
     large-error-weighted version of the same question.
 
+    Referenced against:
+    - statsmodels, meanabs: https://www.statsmodels.org/stable/generated/statsmodels.tools.eval_measures.meanabs.html
+
     Args:
         actual (pd.Series | pd.DataFrame): The realized values.
         forecast (pd.Series | pd.DataFrame): The forecast values, aligned to the same
@@ -415,9 +419,6 @@ def get_mae(
 
     Raises:
         TypeError: If `actual` is not a `pd.Series` or `pd.DataFrame`.
-
-    Notes:
-        Referenced against statsmodels' `meanabs`.
 
     As an example:
 
@@ -460,8 +461,11 @@ def get_out_of_sample_validation(
     **forecast_kwargs,
 ) -> pd.Series:
     """
-    Split `series` into a training and holdout portion, forecast the holdout with
-    `forecast_function` fit only on the training portion, and score the result with
+    Calculate the out-of-sample forecast error of a model: its RMSE and MAE on a holdout it
+    was not fitted on.
+
+    The series is split into a training and holdout portion, the holdout is forecast with
+    `forecast_function` fit only on the training portion, and the result is scored with
     `get_rmse`/`get_mae`.
 
     Also known as: hold-out validation, train/test split validation.
@@ -588,9 +592,10 @@ def get_probability_integral_transform(
     garch_distribution: str = "normal",
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the probability integral transform (PIT) of every return under a one-period-ahead
-    density forecast built from the returns before it, the input of density forecast tests such
-    as `get_berkowitz_test`.
+    Calculate the probability integral transform (PIT) of every return: where it falls in the
+    one-period-ahead density forecast built from the returns before it.
+
+    The PITs are the input of density forecast tests such as `get_berkowitz_test`.
 
     The PIT is the forecast distribution function evaluated at the realized return. If the
     density forecasts are correct, the PITs are independent and uniformly distributed on (0, 1)
@@ -600,12 +605,12 @@ def get_probability_integral_transform(
 
     The density forecasts are:
 
-    - "gaussian": a normal distribution with the mean and standard deviation (ddof=1) of the
+    - Gaussian: a normal distribution with the mean and standard deviation (ddof=1) of the
       `window_size` returns before t
-    - "ewma": a normal distribution with mean zero and the RiskMetrics variance
+    - EWMA: a normal distribution with mean zero and the RiskMetrics variance
       σₜ² = λ·σₜ₋₁² + (1 - λ)·rₜ₋₁² (see `risk_model.get_ewma_volatility`)
-    - "garch": the GARCH-family model `garch_method` with a constant mean and innovations
-      `garch_distribution`, refitted every `refit_every` returns on the `window_size` returns
+    - GARCH: the chosen GARCH-family model with a constant mean and the chosen innovation
+      distribution, refitted every `refit_every` returns on the `window_size` returns
       before t, so F_t(r) = F((r - Mu) / Volatility_t) with F the distribution function of the
       standardized innovations (see `garch_model.get_garch_family_rolling_forecast` and
       `garch_model.get_standardized_cdf`)
@@ -618,14 +623,22 @@ def get_probability_integral_transform(
     Args:
         returns (pd.Series | pd.DataFrame): The returns, one column per asset. Each column is
             forecast on its own non-missing observations.
-        model (str, optional): "gaussian", "ewma" or "garch". Defaults to "garch".
+        model (str, optional): The density forecast. Options are: "gaussian" (rolling normal),
+            "ewma" (RiskMetrics EWMA), "garch" (GARCH-family model). Defaults to "garch".
         window_size (int, optional): The number of returns of every window or GARCH fit.
             Defaults to 504.
-        lambda_ (float, optional): The decay factor of "ewma". Defaults to 0.94.
+        lambda_ (float, optional): The decay factor of the EWMA forecast. Defaults to 0.94.
         refit_every (int, optional): The number of returns between two GARCH fits. Defaults
             to 21.
-        garch_method (str, optional): The GARCH variance model. Defaults to "garch".
-        garch_distribution (str, optional): The GARCH innovation distribution. Defaults to
+        garch_method (str, optional): The GARCH variance model. Options are: "garch"
+            (GARCH(1, 1)), "gjr" (GJR-GARCH(1, 1, 1)), "egarch" (EGARCH(1, 1)), "igarch"
+            (IGARCH(1, 1)), "aparch" (APARCH(1, 1)), "tgarch" (TGARCH), "ngarch" (NGARCH),
+            "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component" (component GARCH),
+            "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+        garch_distribution (str, optional): The GARCH innovation distribution. Options are:
+            "normal" (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen),
+            "skewt_fernandez_steel" (skewed Student-t of Fernández and Steel), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to
             "normal".
 
     Returns:
@@ -708,7 +721,8 @@ def get_berkowitz_test(
     pit: pd.Series | pd.DataFrame, alpha: float | None = None
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Berkowitz's likelihood ratio test of density forecasts.
+    Calculate Berkowitz's likelihood ratio test of density forecasts: whether the forecast
+    distributions match the returns in mean, variance and independence.
 
     If the density forecasts are correct, the probability integral transforms (PIT, see
     `get_probability_integral_transform`) are independent and uniform, so their normal
@@ -722,7 +736,7 @@ def get_berkowitz_test(
     - Statistic = -2 (ln L(0, 1, 0) - ln L(μ_hat, σ_hat, ρ_hat)), compared with a χ² distribution with 3 degrees of
       freedom
 
-    With `alpha`, the tail test of the paper only looks at the forecasts of the tail: every
+    With a tail probability, the tail test of the paper only looks at the forecasts of the tail: every
     z_t above the cut-off q = Φ^-1(alpha) is censored at q, so a model is judged on the size
     and frequency of its tail events only, as a Value at Risk at `alpha` is:
 
@@ -737,10 +751,11 @@ def get_berkowitz_test(
     - Berkowitz, J. (2001). "Testing Density Forecasts, With Applications to Risk Management."
     Journal of Business & Economic Statistics, 19(4), 465-474.
 
-    Referenced against `BerkowitzTest` of R's rugarch (https://cran.r-project.org/package=rugarch),
-    which fits the AR(1) by least squares on the demeaned z (the likelihood conditional on the
-    first observation, with the residual standard deviation of the regression) where the test
-    here maximizes the exact likelihood of the paper; its tail test is the same.
+    Referenced against:
+    - statsmodels, ARIMA: https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
+
+    Shares similar logic:
+    - rugarch (R), BerkowitzTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L327
 
     Args:
         pit (pd.Series | pd.DataFrame): The probability integral transforms, one column per
@@ -752,6 +767,12 @@ def get_berkowitz_test(
         pd.Series | pd.DataFrame: The Berkowitz statistic, its p-value, the fitted Mean,
         Standard Deviation and Autocorrelation (NaN for the tail test) of z and the number of
         observations (and of tail observations).
+
+    Notes:
+    - Unlike rugarch's BerkowitzTest, which fits the AR(1) by least squares on the demeaned z
+      (the likelihood conditional on the first observation, with the residual standard
+      deviation of the regression), the test here maximizes the exact likelihood of the
+      paper; the tail test is the same.
     """
     if isinstance(pit, pd.DataFrame):
         return pd.DataFrame(
@@ -923,8 +944,11 @@ def _boundary_kernel(x: np.ndarray, y: np.ndarray, bandwidth: float) -> np.ndarr
 
 def get_hong_li_p_value(statistic: float, observations: int, lags: int = 1) -> float:
     """
-    Calculate the p-value of a Hong-Li statistic Q(j) (lags=1) or of the portmanteau W over
-    `lags` lags from its distribution under the null, simulated on independent uniform PITs.
+    Calculate the p-value of a Hong-Li statistic: how likely a value at least this large is
+    when the density forecasts are correct.
+
+    The statistic is a Q(j) (one lag) or the portmanteau W over several lags, and its
+    distribution under the null is simulated on independent uniform PITs.
 
     Under the null the PITs are independent and uniform, whatever the model, so the
     distribution of the statistics only depends on the number of observations n and of lags
@@ -988,7 +1012,8 @@ def get_hong_li_test(
     pit: pd.Series | pd.DataFrame, lags: int = 4
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the nonparametric density forecast test of Hong and Li (2005).
+    Calculate the nonparametric density forecast test of Hong and Li (2005): whether the
+    forecast densities have the right shape and capture the dependence of the returns.
 
     If the density forecasts are correct, the probability integral transforms (PIT, see
     `get_probability_integral_transform`) are independent and uniform on (0, 1), so the joint
@@ -1025,6 +1050,9 @@ def get_hong_li_test(
     - Diebold, F.X., Gunther, T.A. and Tay, A.S. (1998). "Evaluating Density Forecasts with
     Applications to Financial Risk Management." International Economic Review, 39(4), 863-883.
 
+    Shares similar logic:
+    - rugarch (R), HLTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L607
+
     Args:
         pit (pd.Series | pd.DataFrame): The probability integral transforms, one column per
             asset.
@@ -1036,15 +1064,16 @@ def get_hong_li_test(
         with fewer than 20 observations or PITs without variation.
 
     Notes:
-        Referenced against `HLTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
-        as its documentation defines it. (n - j) M(j) has an expected value of about A_h
-        under the null, so A_h enters multiplied by h, the scale of the statistic; without
-        it the statistic centres far below zero (around -60 on 1,000 independent uniform
-        draws). Simulated independent uniforms give every Q(j) a mean of about 0 and a
-        standard deviation of about 1.2 at 500 to 2,000 observations, and W one of about 1.8
-        (p = 4), which the simulated null distribution of the p-values takes into account.
-        rugarch's HLTest compares the statistics with the standard normal distribution. The
-        integral is a Gauss-Legendre rule on panels of a fifth of the bandwidth.
+        The statistic follows rugarch's HLTest as its documentation defines it. (n - j) M(j)
+        has an expected value of about A_h under the null, so A_h enters multiplied by h,
+        the scale of the statistic; without it the statistic centres far below zero (around
+        -60 on 1,000 independent uniform draws). Simulated independent uniforms give every
+        Q(j) a mean of about 0 and a standard deviation of about 1.2 at 500 to 2,000
+        observations, and W one of about 1.8 (p = 4), which the simulated null distribution
+        of the p-values takes into account. Unlike rugarch's HLTest, which compares the
+        statistics with the standard normal distribution, the p-values here come from the
+        simulated null distribution. The integral is a Gauss-Legendre rule on panels of a
+        fifth of the bandwidth.
     """
     if lags < 1:
         raise ValueError(f"The test needs at least 1 lag, not {lags}.")
@@ -1134,12 +1163,14 @@ def get_return_forecast(
     window_size: int = 252,
 ) -> pd.Series | pd.DataFrame:
     """
-    One-period-ahead return forecast built from the returns up to the prior period only, the
-    forecast half of the directional accuracy tests in `get_directional_accuracy_test`.
+    Calculate a one-period-ahead return forecast from the returns up to the prior period only.
 
-    - "momentum": the mean of the `window_size` returns up to t - 1, whose sign is the time
+    The forecast is the forecast half of the directional accuracy tests in
+    `get_directional_accuracy_test`. The methods are:
+
+    - Momentum: the mean of the `window_size` returns up to t - 1, whose sign is the time
       series momentum signal of Moskowitz, Ooi and Pedersen (2012)
-    - "autoregressive": a + b·rₜ₋₁, with a and b the least-squares AR(1) of the returns on
+    - Autoregressive: a + b·rₜ₋₁, with a and b the least-squares AR(1) of the returns on
       their previous return over the `window_size` pairs up to t - 1
 
     For more information, see the following paper:
@@ -1150,7 +1181,8 @@ def get_return_forecast(
     Args:
         returns (pd.Series | pd.DataFrame): The returns, one column per asset. Each column is
             forecast on its own non-missing observations.
-        method (str, optional): "momentum" or "autoregressive". Defaults to "momentum".
+        method (str, optional): The forecasting method. Options are: "momentum" (time series
+            momentum), "autoregressive" (AR(1)). Defaults to "momentum".
         window_size (int, optional): The number of returns (or pairs of returns) of every
             window. Defaults to 252.
 
@@ -1230,12 +1262,14 @@ def get_directional_accuracy_test(
     - Anatolyev, S. and Gerko, A. (2005). "A Trading Approach to Testing for Predictability."
     Journal of Business & Economic Statistics, 23(4), 455-461.
 
-    Referenced against `DACTest` of R's rugarch (https://cran.r-project.org/package=rugarch).
+    Referenced against:
+    - rugarch (R), DACTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L384
 
     Args:
         actual (pd.Series | pd.DataFrame): The realized values, such as returns.
         forecast (pd.Series | pd.DataFrame): The forecasts, aligned to the same index.
-        method (str, optional): "pesaran_timmermann" or "anatolyev_gerko". Defaults to
+        method (str, optional): The test. Options are: "pesaran_timmermann"
+            (Pesaran-Timmermann), "anatolyev_gerko" (Anatolyev-Gerko). Defaults to
             "pesaran_timmermann".
 
     Returns:
@@ -1335,10 +1369,10 @@ def get_model_confidence_set(
 
     - d_ij = mean(L_i) - mean(L_j) and d_i = mean(L_i) - (1 / m) Σ_j mean(L_j)
     - t_ij = d_ij / √Var(d_ij) and t_i = d_i / √Var(d_i)
-    - statistic="max": T = max_i t_i; statistic="range": T = max_(i, j) |t_ij|
+    - Max statistic: T = max_i t_i; range statistic: T = max_(i, j) |t_ij|
     - P-Value = (1 / B) Σ_b 1{T*_b >= T}, with T*_b the statistic of the b-th bootstrap resample, centered at
       the full sample: t*_i = (d*_i - d_i) / √Var(d_i) and t*_ij = (d*_ij - d_ij) / √Var(d_ij)
-    - when the p-value is below alpha, the model with the largest t_i ("max") or max_j t_ij ("range") is
+    - when the p-value is below alpha, the model with the largest t_i (max) or max_j t_ij (range) is
       eliminated and the test is repeated on the remaining models
 
     The variances are the mean squared deviation of the bootstrap averages from the full
@@ -1356,22 +1390,27 @@ def get_model_confidence_set(
     - Politis, D.N. and Romano, J.P. (1994). "The Stationary Bootstrap." Journal of the
     American Statistical Association, 89(428), 1303-1313.
 
-    Referenced against `MCS` of the arch package (https://arch.readthedocs.io), whose methods "max"
-    and "R" are the statistics "max" and "range" here, and `mcsTest` of R's rugarch
-    (https://cran.r-project.org/package=rugarch). Like arch, the variance of each t_ij of
-    "range" is that of the bootstrap averages with 1 added to its zero diagonal.
+    Like arch, the variance of each t_ij of the range statistic is that of the bootstrap
+    averages with 1 added to its zero diagonal.
 
-    In samples of a few hundred periods the "range" statistic eliminates a model too often:
+    In samples of a few hundred periods the range statistic eliminates a model too often:
     with four models of equal expected loss over 250 periods (500 resamples) it eliminated at
     least one about 14% of the time at alpha = 0.1 and 8% at alpha = 0.05, and arch's MCS about
-    12% and 6%, where "max" stays close to alpha (8% and 5%). Prefer "max" for short samples.
+    12% and 6%, where the max statistic stays close to alpha (8% and 5%). Prefer the max
+    statistic for short samples.
+
+    Referenced against:
+    - arch, MCS: https://bashtage.github.io/arch/multiple-comparison/generated/arch.bootstrap.MCS.html
+        Test: tests/econometrics/test_forecast_evaluation_model.py::test_get_model_confidence_set_matches_the_arch_package
+    - rugarch (R), mcsTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L919
 
     Args:
         losses (pd.DataFrame): The loss of every model (a column) at every period (a row), such
             as squared forecast errors. Periods with a missing loss are left out.
         alpha (float, optional): The size of the test: the set contains the best model with a
             probability of at least 1 - alpha. Defaults to 0.1.
-        statistic (str, optional): "max" or "range". Defaults to "max".
+        statistic (str, optional): The elimination statistic. Options are: "max" (the largest
+            t_i, arch's "max"), "range" (the largest |t_ij|, arch's "R"). Defaults to "max".
         n_bootstrap (int, optional): The number of bootstrap resamples B. Defaults to 1000.
         block_size (int | None, optional): The average block length of the stationary
             bootstrap. Defaults to None, which uses the cube root of the number of periods,

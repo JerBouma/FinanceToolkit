@@ -14,7 +14,8 @@ from financetoolkit.utilities.error_model import InvalidArgumentError, check_opt
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Simple Moving Average (SMA) of a given price series.
+    Calculate the Simple Moving Average (SMA): the average price over a window, which smooths the prices to show
+    their trend.
 
     The Simple Moving Average is the unweighted arithmetic mean of price over a trailing
     window, used both as a standalone trend-following signal (e.g. price crossing above or
@@ -31,7 +32,8 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of
     Stock Returns." Journal of Finance, 47(5), 1731-1764.
 
-    Referenced against TA-Lib's SMA (https://ta-lib.org/functions/sma.html).
+    Referenced against:
+    - TA-Lib, SMA: https://ta-lib.org/functions/sma.html
 
     Args:
         prices (pd.Series): Series of prices.
@@ -47,7 +49,8 @@ def get_exponential_moving_average(
     prices: pd.Series | pd.DataFrame, window: int
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Exponential Moving Average (EMA) of a given price series.
+    Calculate the Exponential Moving Average (EMA): an average that weights recent prices more, so it follows the
+    trend of the prices with less lag.
 
     The Exponential Moving Average weights recent observations more heavily than older
     ones, with the weight decaying exponentially the further back in time an observation
@@ -67,7 +70,8 @@ def get_exponential_moving_average(
     standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
     Financial Markets." New York Institute of Finance.
 
-    Referenced against TA-Lib's EMA (https://ta-lib.org/functions/ema.html).
+    Referenced against:
+    - TA-Lib, EMA: https://ta-lib.org/functions/ema.html
 
     Notes:
         - The recursion is seeded with the Simple Moving Average of the first `window`
@@ -107,7 +111,8 @@ def get_exponential_moving_average(
 
 def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Double Exponential Moving Average (DEMA) of a given price series.
+    Calculate the Double Exponential Moving Average (DEMA): two exponential moving averages combined to remove most
+    of their lag.
 
     DEMA combines a single and a double-smoothed EMA to reduce the lag inherent in moving
     averages while retaining most of their smoothing benefit. Because the second EMA lags
@@ -125,7 +130,8 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Faster Moving Averages." Technical
     Analysis of Stocks & Commodities, 12(1).
 
-    Referenced against TA-Lib's DEMA (https://ta-lib.org/functions/dema.html).
+    Referenced against:
+    - TA-Lib, DEMA: https://ta-lib.org/functions/dema.html
 
     Args:
         prices (pd.Series): Series of prices.
@@ -147,7 +153,8 @@ def get_trix(
     prices_close: pd.Series, window: int, signal_window: int | None = None
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Trix Indicator for a given price series.
+    Calculate the TRIX: the rate of change of a triple exponential moving average, which shows momentum without the
+    noise of the shortest moves.
 
     Trix applies an Exponential Moving Average three times in succession (triple smoothing)
     to filter out short-term price fluctuations and insignificant cycles, then plots the
@@ -170,9 +177,13 @@ def get_trix(
     Reference: Hutson, J.K. (1983). "Good TRIX." Technical Analysis of Stocks & Commodities,
     1(5), 105-108.
 
-    Referenced against TA-Lib's TRIX (https://ta-lib.org/functions/trix.html).
-    pandas-ta-classic: trixh, the signal line and histogram
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - TA-Lib, TRIX: https://ta-lib.org/functions/trix.html
+        Test: tests/technical/test_overlap_model.py::test_trix_signal_line_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, trix: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trix.py#L18
+    - pandas-ta-classic, trixh: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trixh.py#L12
 
     Notes:
         - The signal line is an EMA seeded with the simple average of its first
@@ -209,7 +220,8 @@ def get_trix(
 
 def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Triangular Moving Average (TRIMA) of a given price series.
+    Calculate the Triangular Moving Average (TRIMA): an average of an average, which weights the middle of the
+    window most and gives a smoother trend.
 
     The Triangular Moving Average is a doubly-smoothed Simple Moving Average: taking an SMA
     of an SMA produces a triangular weighting scheme where the middle observations of the
@@ -229,7 +241,9 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
 
-    Referenced against TA-Lib's TRIMA (https://ta-lib.org/functions/trima.html).
+    Referenced against:
+    - TA-Lib, TRIMA: https://ta-lib.org/functions/trima.html
+    - pandas-ta-classic, swma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/swma.py#L18
 
     Args:
         prices (pd.Series): Series of prices.
@@ -254,7 +268,8 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
 def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Weighted Moving Average (WMA) of a given price series.
+    Calculate the Weighted Moving Average (WMA): an average that weights the prices linearly, the latest most, so it
+    follows the trend with less lag.
 
     The Weighted Moving Average assigns a linearly increasing weight to more recent
     prices within the window, making it more responsive to recent price changes than
@@ -270,7 +285,8 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
 
-    Referenced against TA-Lib's WMA (https://ta-lib.org/functions/wma.html).
+    Referenced against:
+    - TA-Lib, WMA: https://ta-lib.org/functions/wma.html
 
     Args:
         prices (pd.Series): Series of prices.
@@ -292,7 +308,8 @@ def apply_to_rolling_windows(
     data: pd.Series | pd.DataFrame, window: int, calculation
 ) -> pd.Series | pd.DataFrame:
     """
-    Apply a calculation to every rolling window of a Series or of each DataFrame column.
+    Apply a calculation to every rolling window of a Series or of each DataFrame column: the building block of the
+    moving averages with their own weights.
 
     Args:
         data (pd.Series | pd.DataFrame): The values, with time as index.
@@ -322,7 +339,8 @@ def get_kaufman_adaptive_moving_average(
     long_window: int = 30,
 ) -> pd.Series:
     """
-    Calculate the Kaufman Adaptive Moving Average (KAMA) of a given price series.
+    Calculate the Kaufman Adaptive Moving Average (KAMA): an average that moves fast in a trend and slowly in noise,
+    by its Efficiency Ratio.
 
     The Kaufman Adaptive Moving Average adjusts its own responsiveness to price changes
     based on how "efficiently" price is moving. It compares the net directional move over
@@ -346,7 +364,8 @@ def get_kaufman_adaptive_moving_average(
 
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
 
-    Referenced against TA-Lib's KAMA (https://ta-lib.org/functions/kama.html).
+    Referenced against:
+    - TA-Lib, KAMA: https://ta-lib.org/functions/kama.html
 
     Notes:
         - The recursion is seeded with the closing price of the period before the first
@@ -429,7 +448,8 @@ def get_kaufman_adaptive_moving_average(
 
 def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Hull Moving Average (HMA) of a given price series.
+    Calculate the Hull Moving Average (HMA): weighted moving averages combined so the trend line is both smooth and
+    quick to respond.
 
     The Hull Moving Average reduces the lag typically associated with moving averages
     while improving smoothing, by combining a WMA of half the window length, a WMA of
@@ -444,7 +464,8 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: Hull, A. (2005). "Hull Moving Average."
 
-    Referenced against TA-Lib's HMA (https://ta-lib.org/functions/hma.html).
+    Referenced against:
+    - TA-Lib, HMA: https://ta-lib.org/functions/hma.html
 
     Args:
         prices (pd.Series): Series of prices.
@@ -463,7 +484,8 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
 def get_triple_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Triple Exponential Moving Average (TEMA) of a given price series.
+    Calculate the Triple Exponential Moving Average (TEMA): three exponential moving averages combined to remove
+    most of their lag.
 
     TEMA takes the lag out of an Exponential Moving Average further than DEMA does: it
     combines a single, a double and a triple smoothed EMA so that the lag of the single
@@ -481,7 +503,9 @@ def get_triple_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Less Lag." Technical Analysis of
     Stocks & Commodities, 12(2).
 
-    Referenced against TA-Lib's TEMA (https://ta-lib.org/functions/tema.html).
+    Referenced against:
+    - TA-Lib, TEMA: https://ta-lib.org/functions/tema.html
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Notes:
         - Each EMA is seeded with the simple average of its first `window` values, so TEMA
@@ -505,7 +529,8 @@ def get_t3_moving_average(
     prices: pd.Series, window: int = 5, volume_factor: float = 0.7
 ) -> pd.Series:
     """
-    Calculate the Tillson T3 Moving Average of a given price series.
+    Calculate the Tillson T3 Moving Average: six exponential moving averages combined into a smooth trend line with
+    little lag.
 
     The T3 applies Tillson's Generalized DEMA, GD(x) = (1 + a) * EMA(x) - a * EMA(EMA(x)),
     three times in a row. The volume factor a sets how much of the lag correction of DEMA is
@@ -523,7 +548,10 @@ def get_t3_moving_average(
     Reference: Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals."
     Technical Analysis of Stocks & Commodities, 16(1).
 
-    Referenced against TA-Lib's T3 (https://ta-lib.org/functions/t3.html).
+    Referenced against:
+    - TA-Lib, T3: https://ta-lib.org/functions/t3.html
+        Test: tests/technical/test_overlap_model.py::test_t3_moving_average_matches_talib
+    - pandas-ta-classic, t3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/t3.py#L14
 
     Notes:
         - Each of the six EMAs is seeded with the simple average of its first `window`
@@ -554,7 +582,8 @@ def get_zero_lag_exponential_moving_average(
     prices: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Zero Lag Exponential Moving Average (ZLEMA) of a given price series.
+    Calculate the Zero Lag Exponential Moving Average (ZLEMA): an exponential moving average of the prices corrected
+    for their lag, so it follows the trend more closely.
 
     An EMA lags the price by about (window - 1) / 2 periods. ZLEMA adds the change over
     that lag to the price before averaging, so the average is taken of a price that is
@@ -571,7 +600,9 @@ def get_zero_lag_exponential_moving_average(
     Reference: Ehlers, J.F. & Way, R. (2010). "Zero Lag (Well, Almost)." Technical Analysis
     of Stocks & Commodities, November 2010.
 
-    Referenced against TA-Lib's ZLEMA (https://ta-lib.org/functions/zlema.html).
+    Referenced against:
+    - TA-Lib, ZLEMA: https://ta-lib.org/functions/zlema.html
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Notes:
         - The EMA is seeded with the simple average of the first `window` de-lagged prices,
@@ -593,7 +624,8 @@ def get_arnaud_legoux_moving_average(
     prices: pd.Series, window: int = 9, sigma: float = 6.0, offset: float = 0.85
 ) -> pd.Series:
     """
-    Calculate the Arnaud Legoux Moving Average (ALMA) of a given price series.
+    Calculate the Arnaud Legoux Moving Average (ALMA): an average with Gaussian weights centred near the latest
+    prices, which is both smooth and responsive.
 
     ALMA weights the prices in the window with a Gaussian curve whose peak sits at `offset`
     of the way from the oldest to the latest price. An offset close to 1 puts the weight on
@@ -611,7 +643,10 @@ def get_arnaud_legoux_moving_average(
     Reference: Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving
     Average." arnaudlegoux.com.
 
-    Referenced against TA-Lib's ALMA (https://ta-lib.org/functions/alma.html).
+    Referenced against:
+    - TA-Lib, ALMA: https://ta-lib.org/functions/alma.html
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+    - pandas-ta-classic, alma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/alma.py#L12
 
     Notes:
         - The peak of the curve m is rounded down to a whole period, as in TA-Lib.
@@ -642,7 +677,8 @@ def get_volume_weighted_moving_average(
     prices: pd.Series, volumes: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Volume Weighted Moving Average (VWMA) of a given price series.
+    Calculate the Volume Weighted Moving Average (VWMA): the average price over a window weighted by volume, so the
+    prices of busy periods count more.
 
     The VWMA weights every closing price in the window by the volume traded in its period,
     so prices at which much was traded count more than those of quiet periods. It differs
@@ -657,7 +693,13 @@ def get_volume_weighted_moving_average(
 
     Reference: Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
 
-    Referenced against TA-Lib's VWMA (https://ta-lib.org/functions/vwma.html).
+    Referenced against:
+    - TA-Lib, VWMA: https://ta-lib.org/functions/vwma.html
+        Test: tests/technical/test_overlap_model.py::test_volume_weighted_moving_average_matches_talib
+    - pandas-ta-classic, vwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwma.py#L13
+
+    Shares similar logic:
+    - Tulip Indicators, vwma: https://tulipindicators.org/vwma
 
     Args:
         prices (pd.Series): Series of closing prices.
@@ -678,7 +720,8 @@ def get_mcginley_dynamic(
     prices: pd.Series, window: int = 14, constant: float = 1.0
 ) -> pd.Series:
     """
-    Calculate the McGinley Dynamic of a given price series.
+    Calculate the McGinley Dynamic: an average that speeds up when the price moves away from it and slows down when
+    it does not, so it follows the price with fewer whipsaws.
 
     The McGinley Dynamic is a moving average that adjusts its own speed to the market: the
     step towards the price is divided by (Price / MD)^4, so the average moves slowly when
@@ -695,7 +738,9 @@ def get_mcginley_dynamic(
     Reference: McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis
     (Market Technicians Association).
 
-    Referenced against TA-Lib's MCGD (https://ta-lib.org/functions/mcgd.html).
+    Referenced against:
+    - TA-Lib, MCGD: https://ta-lib.org/functions/mcgd.html
+    - pandas-ta-classic, mcgd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mcgd.py#L28
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` prices, as
@@ -748,7 +793,8 @@ def get_variable_index_dynamic_average(
     prices: pd.Series, window: int = 12, cmo_window: int = 9
 ) -> pd.Series:
     """
-    Calculate the Variable Index Dynamic Average (VIDYA) of a given price series.
+    Calculate the Variable Index Dynamic Average (VIDYA): an exponential moving average whose speed follows the
+    momentum of the prices.
 
     VIDYA is an exponential moving average whose smoothing factor is scaled by the
     strength of the trend, measured by the absolute Chande Momentum Oscillator: in a strong
@@ -771,7 +817,9 @@ def get_variable_index_dynamic_average(
       Analysis of Stocks & Commodities, 10(3).
     - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
-    Referenced against TA-Lib's VIDYA (https://ta-lib.org/functions/vidya.html).
+    Referenced against:
+    - TA-Lib, VIDYA: https://ta-lib.org/functions/vidya.html
+    - pandas-ta-classic, vidya: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vidya.py#L27
 
     Notes:
         - The volatility index is the absolute Chande Momentum Oscillator over unsmoothed
@@ -811,7 +859,8 @@ def get_fractal_adaptive_moving_average(
     prices_high: pd.Series, prices_low: pd.Series, window: int = 16
 ) -> pd.Series:
     """
-    Calculate the Fractal Adaptive Moving Average (FRAMA) of a given price series.
+    Calculate the Fractal Adaptive Moving Average (FRAMA): an average whose speed follows the fractal dimension of
+    the prices, fast in a trend and slow in a range.
 
     FRAMA is an exponential moving average of the median price whose smoothing factor
     follows the fractal dimension of the prices over the window. The dimension compares the
@@ -835,7 +884,10 @@ def get_fractal_adaptive_moving_average(
     Reference: Ehlers, J.F. (2005). "Fractal Adaptive Moving Averages." Technical Analysis of
     Stocks & Commodities, 23(10), 81-82.
 
-    Referenced against TA-Lib's FRAMA (https://ta-lib.org/functions/frama.html).
+    Referenced against:
+    - TA-Lib, FRAMA: https://ta-lib.org/functions/frama.html
+        Test: tests/technical/test_overlap_model.py::test_fractal_adaptive_moving_average_matches_talib_after_the_seed
+    - finta, FRAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L463
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` median
@@ -892,7 +944,8 @@ def get_fractal_adaptive_moving_average(
 
 def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Sine Weighted Moving Average (SINWMA) of a given price series.
+    Calculate the Sine Weighted Moving Average (SINWMA): an average with weights on a sine curve, which weights the
+    middle of the window most.
 
     The weights follow the first half of a sine wave over the window, so the middle of the
     window counts most and both ends least, a rounder version of the triangular weights of
@@ -907,7 +960,9 @@ def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Serie
 
     Reference: Everget (2018). "Sine Weighted Moving Average." TradingView script.
 
-    pandas-ta-classic: sinwma (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, sinwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/sinwma.py#L12
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -925,7 +980,8 @@ def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Serie
 
 def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Fibonacci Weighted Moving Average (FWMA) of a given price series.
+    Calculate the Fibonacci Weighted Moving Average (FWMA): an average with Fibonacci numbers as weights, which
+    weights the latest prices most.
 
     The weights are the Fibonacci numbers 1, 1, 2, 3, 5, ... from the oldest to the latest
     price, so the weight grows by about the golden ratio (1.618) per period and the latest
@@ -941,8 +997,9 @@ def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.
 
     Reference: defined in pandas-ta by Kevin Johnson, without a published primary source.
 
-    Referenced against pandas-ta-classic's fwma
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, fwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/fwma.py#L17
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -962,7 +1019,8 @@ def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.
 
 def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Pascal's Weighted Moving Average (PWMA) of a given price series.
+    Calculate Pascal's Weighted Moving Average (PWMA): an average with the numbers of a row of Pascal's triangle as
+    weights, which weights the middle of the window most.
 
     The weights are row window - 1 of Pascal's triangle (the binomial coefficients), a
     bell-shaped set of weights around the middle of the window that approaches a Gaussian
@@ -977,8 +1035,9 @@ def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Ser
 
     Reference: defined in pandas-ta by Kevin Johnson, without a published primary source.
 
-    Referenced against pandas-ta-classic's pwma
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, pwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/pwma.py#L17
+        Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
 
     Args:
         prices (pd.Series): Series of prices.
@@ -1002,8 +1061,8 @@ def get_price_transform(
     method: str = "typical",
 ) -> pd.Series:
     """
-    Calculate a Price Transform of a given price series: the average, median, typical or
-    weighted close price of each period.
+    Calculate a Price Transform of a given price series: the average, median, typical or weighted close price of
+    each period.
 
     A price transform condenses the open, high, low and close of a period into one price.
     Indicators that should reflect the whole bar rather than only the close are built on
@@ -1012,26 +1071,42 @@ def get_price_transform(
 
     The formula is as follows, per method:
 
-    - "average": Average Price = (Open + High + Low + Close) / 4
-    - "median": Median Price = (High + Low) / 2
-    - "typical": Typical Price = (High + Low + Close) / 3
-    - "weighted_close": Weighted Close Price = (High + Low + 2 * Close) / 4
+    - Average price: Average Price = (Open + High + Low + Close) / 4
+    - Median price: Median Price = (High + Low) / 2
+    - Typical price: Typical Price = (High + Low + Close) / 3
+    - Weighted close price: Weighted Close Price = (High + Low + 2 * Close) / 4
 
     Also known as: AVGPRICE, OHLC4, MEDPRICE, HL2, TYPPRICE, HLC3, WCLPRICE, HLCC4.
 
     Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
     Trends." Commodities, October 1980, the typical price of the CCI.
 
-    Referenced against TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE
-    (https://ta-lib.org/functions/).
+    Referenced against:
+    - TA-Lib, AVGPRICE: https://ta-lib.org/functions/avgprice.html
+        Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
+    - TA-Lib, MEDPRICE: https://ta-lib.org/functions/medprice.html
+    - TA-Lib, TYPPRICE: https://ta-lib.org/functions/typprice.html
+    - TA-Lib, WCLPRICE: https://ta-lib.org/functions/wclprice.html
+
+    Shares similar logic:
+    - pandas-ta-classic, ohlc4: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ohlc4.py#L12
+    - pandas-ta-classic, hl2: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hl2.py#L12
+    - pandas-ta-classic, hlc3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hlc3.py#L12
+    - pandas-ta-classic, wcp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/wcp.py#L12
+    - finta, TP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1405
+    - Tulip Indicators, avgprice: https://tulipindicators.org/avgprice
+    - Tulip Indicators, medprice: https://tulipindicators.org/medprice
+    - Tulip Indicators, typprice: https://tulipindicators.org/typprice
+    - Tulip Indicators, wcprice: https://tulipindicators.org/wcprice
 
     Args:
         prices_open (pd.Series): Series of open prices.
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
         prices_close (pd.Series): Series of closing prices.
-        method (str): "average", "median", "typical" or "weighted_close". Defaults to
-            "typical".
+        method (str): The price. Options are: "average" (the average of the open, high, low and close),
+            "median" (the average of the high and low), "typical" (the average of the high, low and close),
+            "weighted_close" (the weighted close, (high + low + 2 × close) / 4). Defaults to "typical".
 
     Returns:
         pd.Series: The price of each period.
@@ -1057,8 +1132,7 @@ def get_midpoint(
     prices_high: pd.Series, prices_low: pd.Series, window: int = 14
 ) -> pd.Series:
     """
-    Calculate the Midpoint of a given price series: the middle of the highest high and
-    the lowest low over a window.
+    Calculate the Midpoint of a given price series: the middle of the highest high and the lowest low over a window.
 
     The midpoint is the centre of the range the price covered over the window, the middle
     line of a Donchian Channel that includes the current period. Passing the closing prices
@@ -1074,8 +1148,14 @@ def get_midpoint(
     Reference: Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial
     Analysts Journal, 16(6), 133-142, the channel of the highest high and lowest low.
 
-    Referenced against TA-Lib's MIDPOINT and MIDPRICE
-    (https://ta-lib.org/functions/midpoint.html, https://ta-lib.org/functions/midprice.html).
+    Referenced against:
+    - TA-Lib, MIDPOINT: https://ta-lib.org/functions/midpoint.html
+        Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
+    - TA-Lib, MIDPRICE: https://ta-lib.org/functions/midprice.html
+
+    Shares similar logic:
+    - pandas-ta-classic, midpoint: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/midpoint.py#L12
+    - pandas-ta-classic, midprice: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/midprice.py#L12
 
     Args:
         prices_high (pd.Series): Series of high prices (or closing prices).
@@ -1098,7 +1178,8 @@ def get_holt_winters_moving_average(
     acceleration_smoothing: float = 0.1,
 ) -> pd.Series:
     """
-    Calculate the Holt-Winters Moving Average (HWMA) of a given price series.
+    Calculate the Holt-Winters Moving Average (HWMA): a smoothing of the level, the trend and the acceleration of
+    the prices, which follows a trend with little lag.
 
     The HWMA applies Holt's exponential smoothing with a trend, extended with an
     acceleration term, to the price: it smooths the level of the price, its velocity (the
@@ -1126,8 +1207,9 @@ def get_holt_winters_moving_average(
       Management Science, 6(3), 324-342.
     - MQL5 Code Base: HWMA (https://www.mql5.com/en/code/20856).
 
-    Referenced against pandas-ta-classic's hwma
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, hwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hwma.py#L31
+        Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
     Notes:
         - The recursion starts on the first price, as in the MQL5 indicator and
@@ -1183,7 +1265,8 @@ def get_holt_winters_channel(
     multiplier: float = 1.0,
 ) -> pd.DataFrame:
     """
-    Calculate the Holt-Winters Channel of a given price series.
+    Calculate the Holt-Winters Channel: bands a multiple of the smoothed standard deviation around the Holt-Winters
+    Moving Average, which widen when the price strays from its trend.
 
     The channel draws bands around the Holt-Winters Moving Average at a multiple of an
     exponentially smoothed standard deviation of the price from the average, so it widens
@@ -1207,8 +1290,9 @@ def get_holt_winters_channel(
       Management Science, 6(3), 324-342.
     - MQL5 Code Base: HWC (https://www.mql5.com/en/code/20857).
 
-    Referenced against pandas-ta-classic's hwc
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, hwc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/hwc.py#L75
+        Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
     Notes:
         - The band of period t uses the variance up to period t-1, which holds the
@@ -1253,7 +1337,8 @@ def get_elastic_volume_weighted_moving_average(
     prices: pd.Series, volumes: pd.Series, window: int = 20
 ) -> pd.Series:
     """
-    Calculate the Elastic Volume Weighted Moving Average (eVWMA) of a given price series.
+    Calculate the Elastic Volume Weighted Moving Average (eVWMA): an average that moves towards each price by the
+    share of the volume traded, the average price of the shares held.
 
     The eVWMA approximates the average price paid per share over the latest `window`
     periods. Each period the shares traded replace the same number of shares at the
@@ -1273,7 +1358,8 @@ def get_elastic_volume_weighted_moving_average(
     Commodities, 19(6), 52-56 (https://www.christian-fries.de/evwma/), which takes the number of shares outstanding
     (the float) as the volume sum; the sum of the volume over a window stands in for it.
 
-    Referenced against finta's EVWMA (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, EVWMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L381
 
     Notes:
         - The recursion is seeded with the simple average of the first `window` prices, as
@@ -1302,7 +1388,8 @@ def get_volume_adjusted_moving_average(
     prices: pd.Series, volumes: pd.Series, window: int = 8
 ) -> pd.Series:
     """
-    Calculate the Volume Adjusted Moving Average (VAMA) of a given price series.
+    Calculate the Volume Adjusted Moving Average (VAMA): an average that weights each price by its volume relative
+    to the average volume.
 
     The VAMA weights every price in the window by its traded value relative to the average
     volume of the window ending on that period, so a period that trades more than usual
@@ -1319,7 +1406,9 @@ def get_volume_adjusted_moving_average(
     Through Equivolume Charting." Dow Jones-Irwin, on adjusting prices for the volume
     traded; the VAMA itself is defined in finta (Peerchemist), without a published source.
 
-    Referenced against finta's VAMA (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, VAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L226
+        Test: tests/technical/test_overlap_model.py::test_volume_adjusted_moving_average_matches_finta
 
     Notes:
         - The weights are finta's, which multiplies the volume ratio by the price as well,
@@ -1350,7 +1439,8 @@ def get_gann_hilo_activator(
     low_window: int = 21,
 ) -> pd.DataFrame:
     """
-    Calculate the Gann HiLo Activator of a given price series.
+    Calculate the Gann HiLo Activator: a trailing stop drawn from a moving average of the lows in an uptrend and of
+    the highs in a downtrend, which flips when the close crosses the other average.
 
     The HiLo Activator is a trailing stop drawn from a moving average of the highs and one
     of the lows. A close above the previous average of the highs turns the trend up, after
@@ -1371,7 +1461,8 @@ def get_gann_hilo_activator(
     Stocks & Commodities, 16(2), with the HiLo Activator on three-period averages of the
     highs and lows.
 
-    pandas-ta-classic: hilo (https://github.com/xgboosted/pandas-ta-classic).
+    Shares similar logic:
+    - pandas-ta-classic, hilo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hilo.py#L40
 
     Notes:
         - The line follows the average of the side of the trend every period, as in
@@ -1424,7 +1515,8 @@ def get_zigzag(
     minimum_trend_length: int = 1,
 ) -> pd.DataFrame:
     """
-    Calculate the Zig Zag of a given price series, as it is known on every period.
+    Calculate the Zig Zag: the swing highs and lows of the prices, ignoring moves smaller than a threshold, which
+    shows the trend's turning points.
 
     The Zig Zag filters out moves smaller than `sensitivity`: it follows the highest high of
     a rising leg until the low falls `sensitivity` below it, which confirms that high as a
@@ -1445,7 +1537,9 @@ def get_zigzag(
 
     Reference: Merrill, A.A. (1977). "Filtered Waves: Basic Theory." Analysis Press.
 
-    Referenced against TA-Lib's ZIGZAG (https://ta-lib.org/functions/zigzag.html).
+    Referenced against:
+    - TA-Lib, ZIGZAG: https://ta-lib.org/functions/zigzag.html
+        Test: tests/technical/test_overlap_model.py::test_zigzag_matches_talib
 
     Notes:
         - Every period shows what is known at its close: the extreme of the current leg,
@@ -1523,7 +1617,8 @@ def get_volume_weighted_average_price(
     anchor: str | None = None,
 ) -> pd.Series:
     """
-    Calculate the Volume Weighted Average Price (VWAP) of a given price series.
+    Calculate the Volume Weighted Average Price (VWAP): the average price weighted by volume since an anchor date,
+    the price at which most volume traded.
 
     VWAP weighs the typical price of each period by its traded volume over a rolling
     window, giving a more volume-informed view of the average price than a plain
@@ -1548,9 +1643,16 @@ def get_volume_weighted_average_price(
     - Shannon, B. (2023). "Maximum Trading Gains With Anchored VWAP." Alphatrends
       Publishing.
 
-    Referenced against TA-Lib's VWAP (https://ta-lib.org/functions/vwap.html), which
-    accumulates from the first period (anchor "all"). pandas-ta-classic: vwap with an anchor
-    per calendar period (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - TA-Lib, VWAP: https://ta-lib.org/functions/vwap.html
+
+    Shares similar logic:
+    - pandas-ta-classic, vwap: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwap.py#L18
+    - finta, VWAP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L411
+
+    Notes:
+        - TA-Lib's VWAP accumulates from the first period, the anchor of all periods; pandas-ta-classic's vwap
+          starts again at every calendar period.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1559,11 +1661,11 @@ def get_volume_weighted_average_price(
         volumes (pd.Series): Series of trading volumes.
         window (int): Number of periods to consider for the VWAP calculation, when there
             is no anchor.
-        anchor (str | None): Where the sums start: "all" for the first period, "daily",
-            "weekly", "monthly", "quarterly" or "yearly" for the start of every such
-            period (a session VWAP on intraday data with "daily"), or a date such as
-            "2024-08-05" for the VWAP from that date on, missing before it. Defaults to
-            None, which takes the rolling `window`.
+        anchor (str | None): Where the sums start. Options are: "all" (the first period), "daily" (the start of
+            every day, a session VWAP on intraday data), "weekly" (the start of every week), "monthly" (the
+            start of every month), "quarterly" (the start of every quarter), "yearly" (the start of every year),
+            or a date such as "2024-08-05" for the VWAP from that date on, missing before it. Defaults to None,
+            which takes the rolling `window`.
 
     Returns:
         pd.Series: VWAP values.
@@ -1631,7 +1733,8 @@ def get_parabolic_sar(
     offset_on_reverse: float = 0.0,
 ) -> pd.Series:
     """
-    Calculate the Parabolic Stop and Reverse (SAR) of a given price series.
+    Calculate the Parabolic Stop and Reverse (SAR): a trailing stop that speeds up as the trend extends and flips
+    side when the price crosses it.
 
     The Parabolic SAR is a trend-following indicator that trails price action, flipping
     from below to above price (and vice versa) whenever the trend reverses. The
@@ -1657,8 +1760,15 @@ def get_parabolic_sar(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
-    Referenced against TA-Lib's SAR and SAREXT
-    (https://ta-lib.org/functions/sar.html, https://ta-lib.org/functions/sarext.html).
+    Referenced against:
+    - TA-Lib, SAR: https://ta-lib.org/functions/sar.html
+        Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_ta_lib_from_a_short_start
+        Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_talib_sarext
+    - TA-Lib, SAREXT: https://ta-lib.org/functions/sarext.html
+
+    Shares similar logic:
+    - pandas-ta-classic, psar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/psar.py#L73
+    - pandas-ta-classic, sarext: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/sarext.py#L156
 
     Notes:
         - The start is TA-Lib's convention: the first bar only sets the direction
@@ -1794,7 +1904,8 @@ def get_pivot_points(
     central_pivot_range: bool = False,
 ) -> pd.DataFrame:
     """
-    Calculate the Pivot Points of a given price series.
+    Calculate the Pivot Points: the levels of support and resistance derived from the previous period's high, low
+    and close.
 
     Pivot Points are calculated from the previous period's high, low and close prices
     and are used to identify potential support and resistance levels for the current
@@ -1804,16 +1915,16 @@ def get_pivot_points(
     The formula is as follows, with H, L, C and O the previous period's high, low, close
     and open:
 
-    - "classic": P = (H + L + C) / 3, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
+    - Classic: P = (H + L + C) / 3, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
       Resistance 2 = P + (H - L), Support 2 = P - (H - L), Resistance 3 = H + 2 * (P - L),
       Support 3 = L - 2 * (H - P)
-    - "fibonacci": P = (H + L + C) / 3, Resistance n = P + Ratio * (H - L) and Support n =
+    - Fibonacci: P = (H + L + C) / 3, Resistance n = P + Ratio * (H - L) and Support n =
       P - Ratio * (H - L), with the ratios 0.382, 0.618 and 1.0
-    - "camarilla": P = (H + L + C) / 3, Resistance n = C + (H - L) * 1.1 / Divisor and
+    - Camarilla: P = (H + L + C) / 3, Resistance n = C + (H - L) * 1.1 / Divisor and
       Support n = C - (H - L) * 1.1 / Divisor, with the divisors 12, 6, 4 and 2
-    - "woodie": P = (H + L + 2 * C) / 4, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
+    - Woodie: P = (H + L + 2 * C) / 4, Resistance 1 = 2 * P - L, Support 1 = 2 * P - H,
       Resistance 2 = P + (H - L), Support 2 = P - (H - L)
-    - "demark": X = H + 2 * L + C when C < O, 2 * H + L + C when C > O and H + L + 2 * C
+    - DeMark: X = H + 2 * L + C when C < O, 2 * H + L + C when C > O and H + L + 2 * C
       otherwise; P = X / 4, Resistance 1 = X / 2 - L, Support 1 = X / 2 - H
     - Central Pivot Range: Bottom Central Pivot = (H + L) / 2, Top Central Pivot =
       2 * P - Bottom Central Pivot
@@ -1830,10 +1941,14 @@ def get_pivot_points(
     - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
     - Ochoa, F. (2010). "Secrets of a Pivot Boss: Revealing Proven Methods for Profiting in
       the Market." 311 Publishing, the central pivot range.
-    - Referenced against pandas-ta-classic's cpr of the classic, Fibonacci,
-      Camarilla and Woodie variants and the central pivot range
-      (https://github.com/xgboosted/pandas-ta-classic).
-    - finta: PIVOT and PIVOT_FIB (https://github.com/peerchemist/finta).
+
+    Referenced against:
+    - pandas-ta-classic, cpr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cpr.py#L76
+        Test: tests/technical/test_overlap_model.py::test_pivot_point_variants_match_pandas_ta
+
+    Shares similar logic:
+    - finta, PIVOT: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1123
+    - finta, PIVOT_FIB: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1162
 
     Notes:
         - Every level is derived exclusively from the *previous* period's prices, so the
@@ -1850,8 +1965,9 @@ def get_pivot_points(
         prices_close (pd.Series): Series of closing prices.
         prices_open (pd.Series | None): Series of open prices, needed for "demark".
             Defaults to None.
-        method (str): "classic", "fibonacci", "camarilla", "woodie" or "demark". Defaults
-            to "classic".
+        method (str): The pivots. Options are: "classic" (classic floor pivots), "fibonacci" (Fibonacci pivots),
+            "camarilla" (Camarilla pivots), "woodie" (Woodie's pivots), "demark" (DeMark's pivots). Defaults to
+            "classic".
         central_pivot_range (bool): Whether to add the Top and Bottom Central Pivot.
             Defaults to False.
 
@@ -1980,7 +2096,8 @@ def get_support_resistance_levels(
     prices: pd.Series, window: int = 5, sensitivity: float = 0.05
 ) -> pd.DataFrame:
     """
-    Calculate support and resistance levels from historical price data.
+    Calculate the support and resistance levels: the prices at which the prices repeatedly stopped falling (support)
+    or rising (resistance).
 
     Support levels are the valleys where price has repeatedly stopped falling, and
     resistance levels are the peaks where it has repeatedly stopped rising. Both are
@@ -2054,7 +2171,8 @@ def get_fibonacci_retracement_levels(
     trend: str = "uptrend",
 ) -> pd.DataFrame:
     """
-    Calculate the Fibonacci Retracement Levels for a given high and low price series.
+    Calculate the Fibonacci Retracement Levels: the prices at the Fibonacci ratios of the range between the high and
+    the low, where a pullback may find support or resistance.
 
     Fibonacci Retracement Levels are horizontal price levels, derived from ratios found in the
     Fibonacci sequence, that traders watch as potential support (during a pullback within an
@@ -2089,10 +2207,10 @@ def get_fibonacci_retracement_levels(
             desired lookback window).
         levels (list[float] | None): The Fibonacci ratios to calculate levels for. Defaults to
             the standard [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0].
-        trend (str): Whether to compute retracement levels for an "uptrend" (levels measured
-            down from the high — the conventional direction, used when a prior move was up and
-            price is now pulling back) or a "downtrend" (levels measured up from the low, used
-            when a prior move was down and price is now bouncing). Defaults to "uptrend".
+        trend (str): The direction of the prior move. Options are: "uptrend" (levels measured down from the high
+            — the conventional direction, used when a prior move was up and price is now pulling back),
+            "downtrend" (levels measured up from the low, used when a prior move was down and price is now
+            bouncing). Defaults to "uptrend".
 
     Returns:
         pd.DataFrame: Fibonacci Retracement Levels, one column per ratio in `levels`, labelled
@@ -2132,7 +2250,8 @@ def get_guppy_multiple_moving_averages(
     long_windows: list[int] | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate Daryl Guppy's Multiple Moving Averages (GMMA) of a given price series.
+    Calculate Daryl Guppy's Multiple Moving Averages (GMMA): a group of short and a group of long exponential moving
+    averages, whose spread and order show the strength of the traders' and the investors' trend.
 
     The Guppy Multiple Moving Averages are two groups of Exponential Moving Averages: a short
     group of 3 to 15 periods that follows the traders, and a long group of 30 to 60 periods
@@ -2154,7 +2273,8 @@ def get_guppy_multiple_moving_averages(
 
     Reference: Guppy, D. (2004). "Trend Trading: A Seven-Step Approach to Success." Wiley.
 
-    Referenced against TTR's GMMA (https://cran.r-project.org/package=TTR).
+    Referenced against:
+    - TTR (R), GMMA: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/GMMA.R#L55
 
     Notes:
         - The averages are `get_exponential_moving_average`, seeded with the simple average

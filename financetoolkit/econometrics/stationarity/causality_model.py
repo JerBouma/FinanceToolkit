@@ -18,8 +18,8 @@ def get_granger_causality(
     series_a: pd.Series, series_b: pd.Series, max_lag: int = 5
 ) -> pd.Series:
     """
-    Calculate the Granger causality test for whether `series_b` helps predict
-    `series_a`.
+    Calculate the Granger causality test: whether the past values of one series help predict
+    another beyond that series' own past.
 
     "Granger causality" is a statement about predictive power, not true causation: `series_b`
     is said to Granger-cause `series_a` if past values of `series_b`, combined with past
@@ -48,6 +48,10 @@ def get_granger_causality(
 
     Also known as: Granger causality test, predictive causality.
 
+    Referenced against:
+    - statsmodels, grangercausalitytests: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.grangercausalitytests.html
+        Test: tests/econometrics/test_reference_validation.py::test_granger_causality
+
     Args:
         series_a (pd.Series): The series being predicted (the dependent series).
         series_b (pd.Series): The series being tested for predictive power over `series_a`.
@@ -61,7 +65,7 @@ def get_granger_causality(
         perfectly, which leaves no residual variance to test against.
 
     Notes:
-        Referenced against statsmodels' `grangercausalitytests` (its "ssr_ftest").
+        - The F-test is the ssr_ftest of statsmodels' grangercausalitytests.
     """
     aligned = pd.concat([series_a, series_b], axis=1, join="inner").dropna()
     data = aligned.to_numpy(dtype=float)

@@ -89,8 +89,10 @@ def _validate_design(x: np.ndarray, y: np.ndarray) -> None:
 
 def default_hac_maxlags(observations: int) -> int:
     """
-    The Newey & West (1994) rule of thumb for the HAC truncation lag with Bartlett weights:
-    floor(4 * (n / 100)^(2/9)), e.g. 4 lags for 100 observations and 5 for 250.
+    Calculate the HAC truncation lag with the Newey & West (1994) rule of thumb for Bartlett
+    weights.
+
+    The rule is floor(4 * (n / 100)^(2/9)), e.g. 4 lags for 100 observations and 5 for 250.
 
     Args:
         observations (int): The number of observations in the regression.
@@ -139,9 +141,11 @@ def _validate_cov_type(
 
 def regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Standard Error, t-Statistic,
-    P-Value) from a `get_ols`/`get_wls`/`get_gls` result dict, indexed by
-    `result["feature_names"]`.
+    Build the coefficient table of a least squares fit: the Coefficient, Standard Error,
+    t-Statistic and P-Value of every regressor.
+
+    The table takes a `get_ols`, `get_wls` or `get_gls` result dict and is indexed by its
+    feature names.
 
     Args:
         result (dict): A fitted regression result dict, as returned by `get_ols`,
@@ -255,8 +259,10 @@ def get_ols(
     lags: int | None = None,
 ) -> dict:
     """
-    Fit an Ordinary Least Squares (OLS) linear regression of `y` on `x`, with
-    `least_squares_model.fit_least_squares`.
+    Fit an Ordinary Least Squares (OLS) regression: how a series moves with one or more
+    regressors, by minimizing the squared residuals.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: linear regression, least squares regression.
 
@@ -269,10 +275,14 @@ def get_ols(
     homoskedastic and uncorrelated errors), this is the Best Linear Unbiased
     Estimator (BLUE, the Gauss-Markov theorem). The coefficients themselves stay
     unbiased even when errors are heteroskedastic -- what breaks is the classical
-    ("nonrobust") standard errors, which is why `cov_type` exists: use
+    (non-robust) standard errors, which is why a robust covariance can be chosen: use
     `specification_tests_model.get_breusch_pagan_test`/`get_white_test` to check for
-    heteroskedasticity first, then refit with `cov_type="HC1"` (or "HC3" for small/
+    heteroskedasticity first, then refit with an HC1 covariance (or HC3 for small or
     moderate samples) if it's present, rather than switching estimator entirely.
+
+    Referenced against:
+    - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+        Test: tests/econometrics/test_reference_validation.py::test_ols_inference_and_robust_covariances
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -387,8 +397,10 @@ def get_wls(
     lags: int | None = None,
 ) -> dict:
     """
-    Fit a Weighted Least Squares (WLS) regression of `y` on `x`, with
-    `least_squares_model.fit_least_squares`.
+    Fit a Weighted Least Squares (WLS) regression: OLS that gives noisier observations less
+    weight.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: weighted regression.
 
@@ -398,6 +410,10 @@ def get_wls(
     less weight to noisier observations:
 
     - beta_hat = (X'WX)^-1 X'Wy,  W = diag(weights)
+
+    Referenced against:
+    - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
+        Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -464,8 +480,10 @@ def get_feasible_weights(
     add_constant: bool = True,
 ) -> np.ndarray:
     """
-    Estimate the Weighted Least Squares weights of a regression of `y` on `x` from its own
-    residuals, with the feasible GLS procedure for heteroskedasticity of Wooldridge (2016):
+    Estimate the Weighted Least Squares weights of a regression from its own residuals: the
+    inverse of every observation's estimated error variance.
+
+    The weights follow the feasible GLS procedure for heteroskedasticity of Wooldridge (2016):
 
     - ûₜ = the OLS residuals of `y` on `x`
     - ĝₜ = the fitted values of the OLS regression of log(ûₜ²) on `x` and a constant
@@ -510,8 +528,11 @@ def get_ar1_covariance(
     add_constant: bool = True,
 ) -> np.ndarray:
     """
-    Estimate the error covariance structure of a regression of `y` on `x` with first-order
-    autocorrelated (AR(1)) errors, eₜ = ρ·eₜ₋₁ + uₜ, from its own residuals:
+    Estimate the error covariance structure of a regression with first-order autocorrelated
+    (AR(1)) errors, eₜ = ρ·eₜ₋₁ + uₜ: how strongly the errors of every pair of observations
+    are correlated.
+
+    The structure follows from the regression's own residuals:
 
     - ρ̂ = Σ ûₜ·ûₜ₋₁ / Σ ûₜ₋₁², the slope of the OLS residuals on their own lag
     - Ωᵢⱼ = ρ̂^|i - j|, the correlation of the errors of observations i and j
@@ -563,8 +584,10 @@ def get_gls(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit a Generalized Least Squares (GLS) regression of `y` on `x`, given a known
-    error covariance structure `omega`, with `least_squares_model.fit_least_squares`.
+    Fit a Generalized Least Squares (GLS) regression: least squares that accounts for errors
+    that are heteroskedastic or correlated with each other, given their covariance structure.
+
+    The fit uses `least_squares_model.fit_least_squares`.
 
     Also known as: GLS.
 
@@ -578,6 +601,10 @@ def get_gls(
     `get_ar1_covariance` or a known covariance model) -- this implements the GLS
     estimation step itself, not the (separate, model-specific) problem of estimating
     `Omega` in the first place (Feasible GLS).
+
+    Referenced against:
+    - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
+        Test: tests/econometrics/test_reference_validation.py::test_weighted_and_generalized_least_squares
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -626,9 +653,11 @@ def get_gls(
 
 def binary_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the standard coefficient table (Coefficient, Standard Error, z-Statistic,
-    P-Value) from a `get_logistic_regression`/`get_probit_regression` result dict,
-    indexed by `result["feature_names"]`.
+    Build the coefficient table of a binary choice fit: the Coefficient, Standard Error,
+    z-Statistic and P-Value of every regressor.
+
+    The table takes a `get_logistic_regression` or `get_probit_regression` result dict and
+    is indexed by its feature names.
 
     Args:
         result (dict): A fitted binary regression result dict, as returned by
@@ -726,8 +755,10 @@ def get_logistic_regression(
     tolerance: float = 1e-8,
 ) -> dict:
     """
-    Fit a Logistic Regression (Logit model) of a binary outcome `y` on `x`, via
-    `statsmodels.api.Logit`.
+    Fit a Logistic Regression (Logit model): how the probability of a binary outcome, such as
+    a positive return, depends on a set of regressors.
+
+    The model is fitted with statsmodels' Logit.
 
     Also known as: logit model, logit regression.
 
@@ -780,8 +811,10 @@ def get_probit_regression(
     tolerance: float = 1e-8,
 ) -> dict:
     """
-    Fit a Probit Regression of a binary outcome `y` on `x`, via
-    `statsmodels.api.Probit`.
+    Fit a Probit Regression: how the probability of a binary outcome, such as a positive
+    return, depends on a set of regressors, through the normal distribution.
+
+    The model is fitted with statsmodels' Probit.
 
     Also known as: probit model.
 
@@ -832,9 +865,11 @@ def get_probit_regression(
 
 def quantile_regression_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds the coefficient table (Coefficient, Standard Error) from a
-    `get_quantile_regression` result dict, indexed by `result["feature_names"]`. The
-    standard errors are `statsmodels`' analytic (kernel density-based) ones unless
+    Build the coefficient table of a quantile regression: the Coefficient and Standard Error
+    of every regressor.
+
+    The table takes a `get_quantile_regression` result dict and is indexed by its feature
+    names. The standard errors are `statsmodels`' analytic (kernel density-based) ones unless
     the fit requested bootstrap replicates, in which case they are the bootstrap
     ones -- either way they are always present.
 
@@ -860,8 +895,10 @@ def get_quantile_regression(
     seed: int | None = None,
 ) -> dict:
     """
-    Fit a (multi-predictor) linear Quantile Regression of `y` on `x` at quantile
-    `tau`, via `statsmodels.api.QuantReg`.
+    Fit a linear Quantile Regression: how a quantile of a series, such as its median or its
+    lower tail, depends on one or more regressors.
+
+    The model is fitted with statsmodels' QuantReg.
 
     Also known as: QR.
 

@@ -21,9 +21,11 @@ def get_markov_regime_switching(
     series: pd.Series, regimes: int = 2, switching_variance: bool = True
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """
-    Fit a Markov regime switching model (Hamilton, 1989) in which the mean (and the
-    variance) of a series depend on a regime that is not observed and switches with fixed
-    probabilities. With returns, two regimes typically separate calm markets (a higher
+    Fit a Markov regime switching model (Hamilton, 1989): the hidden regimes, such as calm and
+    turbulent markets, that set the mean (and the variance) of a series.
+
+    The regime is not observed and switches with fixed probabilities, and the model is
+    fitted with statsmodels' MarkovRegression. With returns, two regimes typically separate calm markets (a higher
     mean and a low volatility) from turbulent ones (a lower mean and a high volatility).
     The regimes are ordered from the lowest to the highest volatility (or mean, without a
     switching variance).
@@ -143,8 +145,10 @@ def get_structural_breaks(
     breaks: int | None = None,
 ) -> pd.DataFrame:
     """
-    Find the dates at which the mean of a series shifts (Bai and Perron, 1998, 2003): for
-    every number of breaks the break dates that minimize the sum of squared residuals of a
+    Find the structural breaks of a series (Bai and Perron, 1998, 2003): the dates at which
+    its mean shifts.
+
+    For every number of breaks the break dates that minimize the sum of squared residuals of a
     mean per segment are found exactly by dynamic programming, and the number of breaks is
     chosen by the Bayesian information criterion (unless given). Every segment covers at
     least a share of the observations (the trimming h = [εT], the integer part as in Bai
@@ -261,24 +265,26 @@ def get_change_points(
 ) -> pd.DataFrame:
     """
     Find the change points of a series with the Pruned Exact Linear Time (PELT) method of
-    Killick, Fearnhead and Eckley (2012): the segmentation that minimizes the cost of every
-    segment, minus twice its Gaussian log-likelihood, plus a penalty per change point, found
-    exactly. Unlike the Bai-Perron breaks the number of change points has no upper bound,
-    and with cost="variance" or "mean_variance" a change in the volatility counts as well.
+    Killick, Fearnhead and Eckley (2012): the dates at which its mean or volatility changes.
+
+    PELT finds the segmentation that minimizes the cost of every segment, minus twice its
+    Gaussian log-likelihood, plus a penalty per change point, exactly. Unlike the Bai-Perron
+    breaks the number of change points has no upper bound, and with the variance or the mean
+    and variance cost a change in the volatility counts as well.
 
     The formula is as follows, with yₜ the series, n observations and a segment s of nₛ
     observations:
 
-    - cost="mean": C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
+    - Mean cost: C(s) = Σ(t in s) (yₜ - ȳₛ)² / σ̂², with σ̂ = MAD(Δy) / (0.6745·√2) the robust
       standard deviation of the series from its changes, which a shift in the mean hardly moves
-    - cost="variance": C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
-    - cost="mean_variance": C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳₛ)² / nₛ)
+    - Variance cost: C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳ)² / nₛ), with ȳ the mean of the whole series
+    - Mean and variance cost: C(s) = nₛ·ln(Σ(t in s) (yₜ - ȳₛ)² / nₛ)
     - F(t) = min over τ of F(τ) + C(y_(τ+1..t)) + β, with F(0) = -β, every segment at least
       `minimum_segment` = m observations long (5 by default); once F(τ) + C(y_(τ+1..t)) > F(t), τ is
       dropped from the candidates from t + m on, which never drops the optimum (K = 0 for these costs;
       the segment after t needs m observations, so with m = 1 this is the pruning of PELT itself)
-    - β = (p + 1)·ln(n), the BIC with p the parameters per segment (1 for "mean" and "variance", 2
-      for "mean_variance") plus the change point itself, unless `penalty` is given
+    - β = (p + 1)·ln(n), the BIC with p the parameters per segment (1 for the mean and the variance
+      cost, 2 for the mean and variance cost) plus the change point itself, unless `penalty` is given
 
     Constant terms of the log-likelihood are left out, as they add the same n·(1 + ln 2π) to
     every segmentation.
@@ -291,10 +297,18 @@ def get_change_points(
     - Jackson, B. et al. (2005). "An Algorithm for Optimal Partitioning of Data on an
     Interval." IEEE Signal Processing Letters, 12(2), 105-108.
 
+    Referenced against:
+    - ruptures, Pelt: https://github.com/deepcharles/ruptures/blob/v1.1.10/src/ruptures/detection/pelt.py#L11
+    - changepoint (R), penalty_decision: https://github.com/cran/changepoint/blob/2.3/R/penalty_decision.R#L1
+
+    Shares similar logic:
+    - RiskLabAI, pelt_change_points: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/structural_breaks/pelt_change_points.py#L34
+
     Args:
         series (pd.Series): The series.
-        cost (str, optional): "mean", "variance" or "mean_variance". Defaults to
-            "mean_variance".
+        cost (str, optional): The segment cost. Options are: "mean" (a change in the mean),
+            "variance" (a change in the variance), "mean_variance" (a change in either).
+            Defaults to "mean_variance".
         penalty (float | None, optional): The penalty β per change point. Defaults to None,
             the BIC (p + 1)·ln(n).
         minimum_segment (int, optional): The fewest observations of a segment. A segment of
@@ -307,11 +321,10 @@ def get_change_points(
         (ddof=1), with the Penalty.
 
     Notes:
-        Referenced against ruptures' Pelt (https://github.com/deepcharles/ruptures) with the
-        "l2" cost on the series divided by σ̂ and the "normal" cost, which find the same
-        change points with jump=1, and against the penalty convention of Killick's changepoint
-        package (https://cran.r-project.org/package=changepoint). ruptures adds 1e-6 to every
-        segment's variance; here a variance is floored at 1e-6 times that of the whole series,
+        ruptures' Pelt with the L2 cost on the series divided by σ̂ and the normal cost finds
+        the same change points when it checks every observation, and the penalty follows the
+        convention of Killick's changepoint package. Unlike ruptures, which adds 1e-6 to every
+        segment's variance, a variance here is floored at 1e-6 times that of the whole series,
         which keeps the cost independent of the units.
     """
     check_option("cost", cost, CHANGE_POINT_COST_PARAMETERS)

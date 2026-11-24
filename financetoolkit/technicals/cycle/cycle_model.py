@@ -156,7 +156,8 @@ def _get_hilbert_transform(prices: pd.Series, start: int) -> pd.DataFrame:
 
 def get_hilbert_dominant_cycle_period(prices: pd.Series) -> pd.Series:
     """
-    Calculate the Hilbert Transform Dominant Cycle Period (HT_DCPERIOD) of a price series.
+    Calculate the Hilbert Transform Dominant Cycle Period (HT_DCPERIOD): the length, in periods, of the main cycle
+    in the prices.
 
     The dominant cycle period is the length in bars of the cycle that dominates the price,
     measured with Ehlers' homodyne discriminator: the phase of the analytic signal (the
@@ -179,8 +180,12 @@ def get_hilbert_dominant_cycle_period(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_DCPERIOD
-    (https://ta-lib.org/functions/ht_dcperiod.html).
+    Referenced against:
+    - TA-Lib, HT_DCPERIOD: https://ta-lib.org/functions/ht_dcperiod.html
+        Test: tests/technical/test_cycle_model.py::test_dominant_cycle_period_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ht_dcperiod: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcperiod.py#L14
 
     Notes:
         - Equals TA-Lib's HT_DCPERIOD: the recursion starts from zero on bar 12 of the
@@ -202,7 +207,8 @@ def get_hilbert_dominant_cycle_period(prices: pd.Series) -> pd.Series:
 
 def get_hilbert_dominant_cycle_phase(prices: pd.Series) -> pd.Series:
     """
-    Calculate the Hilbert Transform Dominant Cycle Phase (HT_DCPHASE) of a price series.
+    Calculate the Hilbert Transform Dominant Cycle Phase (HT_DCPHASE): where the prices are within their main cycle,
+    in degrees.
 
     The dominant cycle phase is the position of the price within its dominant cycle, in
     degrees: the angle of the discrete Fourier transform of the smoothed price over one
@@ -220,8 +226,12 @@ def get_hilbert_dominant_cycle_phase(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_DCPHASE
-    (https://ta-lib.org/functions/ht_dcphase.html).
+    Referenced against:
+    - TA-Lib, HT_DCPHASE: https://ta-lib.org/functions/ht_dcphase.html
+        Test: tests/technical/test_cycle_model.py::test_dominant_cycle_phase_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ht_dcphase: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcphase.py#L14
 
     Notes:
         - Equals TA-Lib's HT_DCPHASE, in degrees as in TA-Lib and Ehlers: the recursion
@@ -244,7 +254,8 @@ def get_hilbert_dominant_cycle_phase(prices: pd.Series) -> pd.Series:
 
 def get_hilbert_phasor_components(prices: pd.Series) -> pd.DataFrame:
     """
-    Calculate the Hilbert Transform Phasor Components (HT_PHASOR) of a price series.
+    Calculate the Hilbert Transform Phasor Components (HT_PHASOR): the in-phase and quadrature parts of the prices'
+    cycle, from which its phase and period follow.
 
     The phasor components are the in-phase component (the detrended, smoothed price lagged
     3 bars) and the quadrature component (its Hilbert transform, the same cycle shifted by
@@ -262,8 +273,12 @@ def get_hilbert_phasor_components(prices: pd.Series) -> pd.DataFrame:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_PHASOR
-    (https://ta-lib.org/functions/ht_phasor.html).
+    Referenced against:
+    - TA-Lib, HT_PHASOR: https://ta-lib.org/functions/ht_phasor.html
+        Test: tests/technical/test_cycle_model.py::test_phasor_components_match_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ht_phasor: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_phasor.py#L14
 
     Notes:
         - Equals TA-Lib's HT_PHASOR: the recursion starts from zero on bar 12 of the
@@ -285,7 +300,8 @@ def get_hilbert_phasor_components(prices: pd.Series) -> pd.DataFrame:
 
 def get_hilbert_sine_wave(prices: pd.Series) -> pd.DataFrame:
     """
-    Calculate the Hilbert Transform SineWave (HT_SINE) of a price series.
+    Calculate the Hilbert Transform SineWave (HT_SINE): the sine of the phase of the prices' main cycle and its
+    lead, whose crossings mark the turning points of the cycle.
 
     The sine wave is the sine of the dominant cycle phase, and the lead sine the sine of the
     phase advanced by 45 degrees. In a cycling market the two lines cross a little before the
@@ -300,8 +316,12 @@ def get_hilbert_sine_wave(prices: pd.Series) -> pd.DataFrame:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_SINE
-    (https://ta-lib.org/functions/ht_sine.html).
+    Referenced against:
+    - TA-Lib, HT_SINE: https://ta-lib.org/functions/ht_sine.html
+        Test: tests/technical/test_cycle_model.py::test_sine_wave_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ht_sine: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_sine.py#L14
 
     Notes:
         - Equals TA-Lib's HT_SINE: the recursion starts from zero on bar 37 of the series
@@ -328,7 +348,8 @@ def get_hilbert_sine_wave(prices: pd.Series) -> pd.DataFrame:
 
 def get_hilbert_instantaneous_trendline(prices: pd.Series) -> pd.Series:
     """
-    Calculate the Hilbert Transform Instantaneous Trendline (HT_TRENDLINE) of a price series.
+    Calculate the Hilbert Transform Instantaneous Trendline (HT_TRENDLINE): the average of the prices over their
+    main cycle, a trendline without the cycle's swings.
 
     The instantaneous trendline is the price averaged over its dominant cycle period: the
     average over exactly one cycle removes the cycle and leaves the trend. The averages are
@@ -343,8 +364,10 @@ def get_hilbert_instantaneous_trendline(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_TRENDLINE
-    (https://ta-lib.org/functions/ht_trendline.html).
+    Referenced against:
+    - TA-Lib, HT_TRENDLINE: https://ta-lib.org/functions/ht_trendline.html
+        Test: tests/technical/test_cycle_model.py::test_instantaneous_trendline_matches_talib
+    - pandas-ta-classic, ht_trendline: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ht_trendline.py#L14
 
     Notes:
         - Equals TA-Lib's HT_TRENDLINE: the recursion starts from zero on bar 37 of the
@@ -366,7 +389,8 @@ def get_hilbert_instantaneous_trendline(prices: pd.Series) -> pd.Series:
 
 def get_hilbert_trend_mode(prices: pd.Series) -> pd.Series:
     """
-    Calculate the Hilbert Transform Trend vs Cycle Mode (HT_TRENDMODE) of a price series.
+    Calculate the Hilbert Transform Trend vs Cycle Mode (HT_TRENDMODE): whether the prices are trending (1) or
+    moving in a cycle (0).
 
     The trend mode is 1 when the price trends and 0 when it moves in a cycle. A crossing of
     the sine and lead sine marks a cycle, which lasts at least half a dominant cycle period;
@@ -385,8 +409,12 @@ def get_hilbert_trend_mode(prices: pd.Series) -> pd.Series:
     Reference: Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing
     Applications." John Wiley & Sons.
 
-    Referenced against TA-Lib's HT_TRENDMODE
-    (https://ta-lib.org/functions/ht_trendmode.html).
+    Referenced against:
+    - TA-Lib, HT_TRENDMODE: https://ta-lib.org/functions/ht_trendmode.html
+        Test: tests/technical/test_cycle_model.py::test_trend_mode_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, ht_trendmode: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_trendmode.py#L14
 
     Notes:
         - Equals TA-Lib's HT_TRENDMODE after its lookback: the recursion starts from zero on
@@ -443,8 +471,8 @@ def get_mesa_adaptive_moving_average(
     prices: pd.Series, fast_limit: float = 0.5, slow_limit: float = 0.05
 ) -> pd.DataFrame:
     """
-    Calculate the MESA Adaptive Moving Average (MAMA) and the Following Adaptive Moving
-    Average (FAMA) of a price series.
+    Calculate the MESA Adaptive Moving Average (MAMA) and the Following Adaptive Moving Average (FAMA): averages
+    that adapt to the speed of the prices' cycle, so they follow fast moves and stay flat in a range.
 
     MAMA is an exponential moving average whose smoothing factor follows the rate at which
     the phase of the price cycle changes, measured with the Hilbert transform: a phase that
@@ -464,7 +492,12 @@ def get_mesa_adaptive_moving_average(
     Reference: Ehlers, J.F. (2001). "MESA Adaptive Moving Averages." Technical Analysis of
     Stocks & Commodities, September 2001.
 
-    Referenced against TA-Lib's MAMA (https://ta-lib.org/functions/mama.html).
+    Referenced against:
+    - TA-Lib, MAMA: https://ta-lib.org/functions/mama.html
+        Test: tests/technical/test_cycle_model.py::test_mesa_adaptive_moving_average_matches_talib
+
+    Shares similar logic:
+    - pandas-ta-classic, mama: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mama.py#L248
 
     Notes:
         - Equals TA-Lib's MAMA: the recursion, MAMA and FAMA start from zero on bar 12 of
@@ -508,7 +541,8 @@ def get_swiss_army_knife_filter(
     delta: float = 0.1,
 ) -> pd.Series:
     """
-    Calculate Ehlers' Swiss Army Knife filter of a price series.
+    Calculate Ehlers' Swiss Army Knife filter: a family of filters that remove the trend (high-pass), the noise
+    (low-pass) or both (band-pass) from the prices.
 
     The Swiss Army Knife indicator is one second-order recursive filter whose coefficients
     select the response: a one-pole or two-pole high-pass filter that removes the trend and
@@ -534,8 +568,13 @@ def get_swiss_army_knife_filter(
     Reference: Ehlers, J.F. (2006). "Swiss Army Knife Indicator." Technical Analysis of
     Stocks & Commodities, 24(1), 28-31, 50-53.
 
-    Referenced against TA-Lib's SWAK_HP, SWAK_2PHP, SWAK_BP, SWAK_BUTTER and SWAK_GAUSS
-    (https://ta-lib.org/functions/).
+    Referenced against:
+    - TA-Lib, SWAK_HP: https://ta-lib.org/functions/swak_hp.html
+        Test: tests/technical/test_cycle_model.py::test_swiss_army_knife_filters_match_talib
+    - TA-Lib, SWAK_2PHP: https://ta-lib.org/functions/swak_2php.html
+    - TA-Lib, SWAK_BP: https://ta-lib.org/functions/swak_bp.html
+    - TA-Lib, SWAK_BUTTER: https://ta-lib.org/functions/swak_butter.html
+    - TA-Lib, SWAK_GAUSS: https://ta-lib.org/functions/swak_gauss.html
 
     Notes:
         - The filter starts in the steady state of a constant price equal to the first
@@ -548,9 +587,10 @@ def get_swiss_army_knife_filter(
         prices (pd.Series): Series of prices.
         window (int): The cutoff period of the high-pass and low-pass filters and the
             centre period of the band-pass filter, at least 5. Defaults to 20.
-        method (str): The filter. Options are: "high_pass", "two_pole_high_pass",
-            "band_pass", "butterworth" or "gaussian". Defaults to "band_pass", the default of
-            Ehlers' listing.
+        method (str): The filter. Options are: "high_pass" (one-pole high-pass filter),
+            "two_pole_high_pass" (two-pole high-pass filter), "band_pass" (band-pass filter),
+            "butterworth" (two-pole Butterworth low-pass filter), "gaussian" (Gaussian low-pass filter).
+            Defaults to "band_pass", the default of Ehlers' listing.
         delta (float): The half bandwidth of the band-pass filter as a fraction of its
             centre frequency, between 0 and 0.5. Defaults to 0.1.
 
@@ -615,7 +655,8 @@ def get_super_smoother_filter(
     prices: pd.Series, window: int = 10, poles: int = 2
 ) -> pd.Series:
     """
-    Calculate Ehlers' SuperSmoother filter of a price series.
+    Calculate Ehlers' SuperSmoother filter: a smoothing of the prices that removes the noise of the shortest cycles
+    with less lag than a moving average.
 
     The SuperSmoother is a low-pass filter built from an analog Butterworth filter: it removes
     the cycles shorter than the window (the aliasing noise) with less lag than a moving
@@ -637,7 +678,9 @@ def get_super_smoother_filter(
     Indicators." Technical Analysis of Stocks & Commodities, 32(1), 16-25; Ehlers, J.F.
     (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley & Sons.
 
-    Referenced against pandas-ta-classic's ssf (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, ssf: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ssf.py#L28
+        Test: tests/technical/test_cycle_model.py::test_super_smoother_filter_matches_pandas_ta
 
     Notes:
         - The filter equals the price on its first two (three) prices and runs from there,
@@ -649,7 +692,8 @@ def get_super_smoother_filter(
     Args:
         prices (pd.Series): Series of prices.
         window (int): The critical period: cycles shorter than it are removed. Defaults to 10.
-        poles (int): The number of poles, 2 or 3. Defaults to 2.
+        poles (int): The number of poles. Options are: 2 (the two-pole SuperSmoother), 3 (the three-pole
+            SuperSmoother). Defaults to 2.
 
     Returns:
         pd.Series: The smoothed prices in price units.
@@ -692,7 +736,8 @@ def get_even_better_sinewave(
     prices: pd.Series, window: int = 40, smooth_window: int = 10
 ) -> pd.Series:
     """
-    Calculate Ehlers' Even Better Sinewave of a price series.
+    Calculate Ehlers' Even Better Sinewave: an oscillator between -1 and 1 that shows whether the prices move in a
+    cycle or a trend and where they are in the cycle.
 
     The Even Better Sinewave removes the trend with a one-pole high-pass filter, smooths the
     remaining cycles with a SuperSmoother and divides their average over three bars by the
@@ -713,7 +758,9 @@ def get_even_better_sinewave(
     Reference: Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading
     Concepts." John Wiley & Sons.
 
-    Referenced against pandas-ta-classic's ebsw (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, ebsw: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ebsw.py#L63
+        Test: tests/technical/test_cycle_model.py::test_even_better_sinewave_matches_pandas_ta
 
     Notes:
         - The high-pass filter and the SuperSmoother start from zero on the first price, as in
@@ -765,7 +812,8 @@ def get_even_better_sinewave(
 
 def get_detrended_synthetic_price(prices: pd.Series, window: int = 20) -> pd.Series:
     """
-    Calculate Ehlers' Detrended Synthetic Price of a price series.
+    Calculate Ehlers' Detrended Synthetic Price: the difference between a fast and a slow average tuned to the
+    prices' cycle, which shows the cycle without the trend.
 
     The Detrended Synthetic Price is the difference between an exponential moving average
     over a quarter of the dominant cycle and one over half of it. The difference removes the
@@ -777,7 +825,9 @@ def get_detrended_synthetic_price(prices: pd.Series, window: int = 20) -> pd.Ser
 
     Reference: Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
 
-    Referenced against pandas-ta-classic's dsp (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, dsp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/dsp.py#L12
+        Test: tests/technical/test_cycle_model.py::test_detrended_synthetic_price_matches_pandas_ta_averages
 
     Notes:
         - The averages span a quarter and half of the window rounded down, and are seeded
@@ -803,7 +853,8 @@ def get_detrended_synthetic_price(prices: pd.Series, window: int = 20) -> pd.Ser
 
 def get_mesa_sine_wave(prices: pd.Series, window: int = 5) -> pd.DataFrame:
     """
-    Calculate the MESA Sine Wave of a price series.
+    Calculate the MESA Sine Wave: the sine of the phase of the prices' cycle over a fixed window and its lead, whose
+    crossings mark the turning points of the cycle.
 
     The MESA Sine Wave is the sine of the phase of the price within a cycle of a fixed
     window, measured with a discrete Fourier transform over that window, and the lead sine
@@ -824,8 +875,10 @@ def get_mesa_sine_wave(prices: pd.Series, window: int = 5) -> pd.DataFrame:
     Applications." John Wiley & Sons; Ehlers, J.F. (1992). "MESA and Trading Market Cycles."
     John Wiley & Sons.
 
-    Referenced against Tulip Indicators' msw (https://tulipindicators.org/msw) and
-    pandas-ta-classic's msw (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - Tulip Indicators, msw: https://tulipindicators.org/msw
+    - pandas-ta-classic, msw: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/msw.py#L14
+        Test: tests/technical/test_cycle_model.py::test_mesa_sine_wave_matches_pandas_ta
 
     Notes:
         - The first value is on the last price of the first full window; Tulip Indicators and
@@ -873,7 +926,8 @@ def get_center_of_gravity_oscillator(
     prices: pd.Series, window: int = 10
 ) -> pd.DataFrame:
     """
-    Calculate Ehlers' Center of Gravity (CG) Oscillator of a price series.
+    Calculate Ehlers' Center of Gravity (CG) Oscillator: the weighted position of the prices within a window, which
+    marks the turning points of the cycle with little lag.
 
     The Center of Gravity is the balance point of the prices in the window, with the latest
     price at position 1. When prices rise the weight shifts to the latest prices and the
@@ -888,8 +942,10 @@ def get_center_of_gravity_oscillator(
     Reference: Ehlers, J.F. (2002). "The Center Of Gravity Oscillator." Technical Analysis of
     Stocks & Commodities, 20(5), 20-24.
 
-    Referenced against TA-Lib's CG (https://ta-lib.org/functions/cg.html) and
-    pandas-ta-classic's cg (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - TA-Lib, CG: https://ta-lib.org/functions/cg.html
+        Test: tests/technical/test_cycle_model.py::test_center_of_gravity_oscillator_matches_talib
+    - pandas-ta-classic, cg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cg.py#L12
 
     Notes:
         - The oscillator is not centred on zero: for flat prices it is -(Window + 1) / 2.
@@ -927,7 +983,8 @@ def get_laguerre_relative_strength_index(
     prices: pd.Series, gamma: float = 0.5
 ) -> pd.Series:
     """
-    Calculate Ehlers' Laguerre Relative Strength Index (Laguerre RSI) of a price series.
+    Calculate Ehlers' Laguerre Relative Strength Index (Laguerre RSI): a Relative Strength Index of
+    Laguerre-filtered prices, which shows overbought and oversold levels with little lag.
 
     The Laguerre RSI is an RSI over four samples of a Laguerre filter instead of four prices.
     The first element of the filter is an exponential moving average and each next one an
@@ -949,7 +1006,9 @@ def get_laguerre_relative_strength_index(
     Reference: Ehlers, J.F. (2004). "Cybernetic Analysis for Stocks and Futures." John Wiley
     & Sons, chapter 14, "Time Warp - Without Space Travel."
 
-    Referenced against pandas-ta-classic's lrsi (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, lrsi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/lrsi.py#L29
+        Test: tests/technical/test_cycle_model.py::test_laguerre_relative_strength_index_matches_pandas_ta
 
     Notes:
         - A decimal between 0 and 1, as in Ehlers' listing; pandas-ta-classic multiplies it

@@ -66,10 +66,10 @@ def get_arch_lm_test(
     model_df: int = 0,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects, or the weighted
-    portmanteau ARCH test of Fisher and Gallagher (2012).
+    Calculate Engle's ARCH-LM test: whether the volatility of the returns clusters, with large
+    squared returns following large ones, or the weighted portmanteau ARCH test of it.
 
-    The test regresses squared, mean-demeaned returns on a constant and `lags` of
+    The Lagrange Multiplier (LM) test of Engle (1982) regresses squared, mean-demeaned returns on a constant and `lags` of
     themselves and tests whether the resulting R-squared is significantly different from
     zero. Under the null hypothesis of no ARCH effects, the LM statistic is asymptotically
     chi-squared distributed with `lags` degrees of freedom:
@@ -83,9 +83,9 @@ def get_arch_lm_test(
     A significant result (low p-value) indicates that the return series exhibits
     volatility clustering, and a GARCH-family model is an appropriate choice for it.
 
-    With `weighted=True` the statistic is the weighted portmanteau test of Fisher and
-    Gallagher (2012) on the autocorrelations of the squared series (the Li-Mak test with
-    weights that fall linearly with the lag), which keeps its size better for many lags:
+    The weighted ARCH test is the weighted portmanteau test of Fisher and Gallagher (2012)
+    on the autocorrelations of the squared series (the Li-Mak test with weights that fall
+    linearly with the lag), which keeps its size better for many lags:
 
     - x_t = e_t^2, rho_k the autocorrelation of x at lag k
     - Q_W = n * SUM_{k=m+1}^{q}((q - k + m + 1) / q * rho_k^2), with m = `model_df`
@@ -100,6 +100,12 @@ def get_arch_lm_test(
     - Fisher, T.J. and Gallagher, C.M. (2012). "New Weighted Portmanteau Statistics for
     Time Series Goodness of Fit Testing." Journal of the American Statistical Association,
     107(498), 777-787.
+
+    Referenced against:
+    - statsmodels, het_arch: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_arch.html
+        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
+    - rugarch (R), Weighted.LM.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1172
+        Test: tests/econometrics/test_diagnostics_model.py::test_get_arch_lm_test_weighted_gamma_of_rugarch
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns, or of the
@@ -116,10 +122,7 @@ def get_arch_lm_test(
         p-value.
 
     Notes:
-        Referenced against statsmodels' `het_arch` and, for the weighted test, the weighted
-        ARCH-LM test of R's rugarch (`Weighted.LM.test`,
-        https://cran.r-project.org/package=rugarch), which reproduces the published values
-        of the rugarch vignette.
+        - The weighted test reproduces the published values of the rugarch vignette.
     """
     if weighted and not 0 <= model_df < lags:
         raise ValueError(
@@ -217,7 +220,8 @@ def _get_weighted_arch_test(squared: np.ndarray, lags: int, model_df: int) -> pd
 
 def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Jarque-Bera test for normality.
+    Calculate the Jarque-Bera test: whether the returns are normally distributed, judged by
+    their skewness and kurtosis.
 
     The test combines sample skewness and excess kurtosis into a single statistic
     that is asymptotically chi-squared distributed with 2 degrees of freedom under
@@ -240,14 +244,16 @@ def get_jarque_bera_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.Da
     - Jarque, C.M. and Bera, A.K. (1987). "A Test for Normality of Observations and
     Regression Residuals." International Statistical Review, 55(2), 163-172.
 
+    Referenced against:
+    - statsmodels, jarque_bera: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.jarque_bera.html
+        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
 
     Returns:
         pd.Series | pd.DataFrame: The Jarque-Bera statistic and its p-value.
 
-    Notes:
-        Referenced against statsmodels' `jarque_bera`.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -301,8 +307,8 @@ def get_ljung_box_test(
     weighted: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Ljung-Box test for autocorrelation, or the weighted Ljung-Box test of
-    Fisher and Gallagher (2012).
+    Calculate the Ljung-Box test: whether a series is autocorrelated up to a number of lags,
+    or the weighted Ljung-Box test of Fisher and Gallagher (2012).
 
     The test aggregates the squared Autocorrelation Function up to lag `h` into a
     single statistic that is asymptotically chi-squared distributed with `h - model_df`
@@ -316,7 +322,7 @@ def get_ljung_box_test(
     Where `rho_k` is the Autocorrelation at lag `k` (every autocovariance divided by `n`)
     and `n` is the number of observations.
 
-    With `weighted=True` every squared autocorrelation is weighted by (h - k + 1) / h, so the
+    The weighted Ljung-Box test weights every squared autocorrelation by (h - k + 1) / h, so the
     first lags count most and a large `h` does not dilute them, and the p-value follows from
     the Gamma distribution with the mean and variance of the weighted statistic (Fisher and
     Gallagher, 2012):
@@ -341,6 +347,11 @@ def get_ljung_box_test(
 
     Also known as: Ljung-Box Q test, portmanteau test, weighted Ljung-Box test.
 
+    Referenced against:
+    - statsmodels, acorr_ljungbox: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.acorr_ljungbox.html
+        Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
+    - rugarch (R), Weighted.Box.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1056
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         lags (int): The number of lags to test for autocorrelation up to. Defaults to 10.
@@ -364,10 +375,7 @@ def get_ljung_box_test(
         (`model_df >= lags`).
 
     Notes:
-        Referenced against statsmodels' `acorr_ljungbox` and, for the weighted test, the
-        weighted Ljung-Box test of R's rugarch (`Weighted.Box.test`,
-        https://cran.r-project.org/package=rugarch), which reproduces the published values
-        of the rugarch vignette.
+        - The weighted test reproduces the published values of the rugarch vignette.
     """
     if model_df < 0:
         raise ValueError(f"model_df must be non-negative, received {model_df}.")
@@ -468,7 +476,8 @@ def get_variance_ratio_test(
     returns: pd.Series | pd.DataFrame, q: int = 2
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Lo-MacKinlay Variance Ratio test for the random walk hypothesis.
+    Calculate the Lo-MacKinlay Variance Ratio test: whether returns follow a random walk, or
+    trend (momentum) or mean-revert over several periods.
 
     The test compares the Variance of `q`-period (overlapping) compounded returns to `q` times
     the Variance of single-period returns. Under the random walk hypothesis (i.e. returns have no
@@ -501,16 +510,16 @@ def get_variance_ratio_test(
     significant p-value indicates negative autocorrelation (mean-reversion). For financial
     returns, whose variance is rarely constant, the robust p-value is the safer reading.
 
-    Neither `statsmodels` nor `linearmodels` ships a Variance Ratio test -- this is one of two
-    tests in this module (along with `unitroot_model.get_phillips_perron_test`) that remain
-    hand-built.
-
     For more information about the method, see the following paper:
 
     - Lo, A.W., & MacKinlay, A.C. (1988). "Stock Market Prices Do Not Follow Random Walks:
     Evidence from a Simple Specification Test." Review of Financial Studies, 1(1), 41-66.
 
     Also known as: Lo-MacKinlay test, VR test.
+
+    Referenced against:
+    - arch, VarianceRatio: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.VarianceRatio.html
+        Test: tests/econometrics/test_reference_validation.py::test_variance_ratio_matches_arch
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -611,12 +620,15 @@ def get_cusum_test(
     time_series: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate a CUSUM test for the stability of the returns over time: the CUSUM of the OLS
-    residuals (Ploberger and Krämer, 1992), the CUSUM of the recursive residuals (Brown, Durbin
-    and Evans, 1975) or the CUSUM of the log price level (Chu, Stinchcombe and White, 1996, as
-    López de Prado, 2018, section 17.3.2 defines it).
+    Calculate a CUSUM test: whether the mean of the returns stayed stable over time or broke
+    at some point.
 
-    method="ols" fits a constant-mean model (`returns_t = mu + e_t`) by OLS and cumulates
+    Three CUSUM tests are available: the CUSUM of the OLS residuals (Ploberger and Krämer,
+    1992), the CUSUM of the recursive residuals (Brown, Durbin and Evans, 1975) and the CUSUM
+    of the log price level (Chu, Stinchcombe and White, 1996, as López de Prado, 2018, section
+    17.3.2 defines it).
+
+    The CUSUM of the OLS residuals fits a constant-mean model (`returns_t = mu + e_t`) by OLS and cumulates
     the (scaled) OLS residuals into a path that, under the null hypothesis of a stable
     mean, behaves asymptotically like a Brownian Bridge. A shift in the mean partway
     through the series (a structural break) drags the path away from zero; the test
@@ -632,7 +644,7 @@ def get_cusum_test(
     The variance uses the `n - 1` degrees of freedom of the one estimated mean, and the
     critical values are the 1.63, 1.36 and 1.22 Ploberger and Kramer (1992) tabulate.
 
-    method="recursive" cumulates the one-step-ahead forecast errors of the mean of the
+    The CUSUM of the recursive residuals cumulates the one-step-ahead forecast errors of the mean of the
     returns before each date (the recursive residuals), which are independent with a
     constant variance under the null hypothesis, so their path is a Brownian motion and
     stability is rejected when it crosses one of two lines that widen with time:
@@ -645,7 +657,7 @@ def get_cusum_test(
     - P-Value = 2 * (1 - Phi(3a) + exp(-4a^2) * Phi(a)), the probability that a Brownian motion
       crosses the boundary, with the critical values 1.143, 0.948 and 0.850
 
-    method="chu_stinchcombe_white" works on the log price y_t = SUM ln(1 + r_t) (the log of
+    The Chu-Stinchcombe-White CUSUM works on the log price y_t = SUM ln(1 + r_t) (the log of
     the price up to a constant) and asks whether it has risen by more since an earlier date
     than a random walk with the volatility up to that date allows. It is one-sided, a test
     for a rise, as López de Prado (2018) defines it:
@@ -656,13 +668,12 @@ def get_cusum_test(
     - c_t = sqrt(4.6 + ln(t - n*)), the 5% critical value of Homm and Breitung (2012)
     - Stability is rejected at t when S_t > c_t; the test is at the last date
 
-    Every statistic of a date only uses the returns up to that date, so with
-    `time_series=True` the statistic, its critical value and the verdict per date have no
-    look-ahead; they start at the 10th return. The 5% holds for every date on its own (on
-    simulated random walks of 100 and 500 returns the last date rejects about 4% to 5% of
-    the time), so over many dates some
-    cross the critical value by chance. The other two methods scale with the whole sample and
-    only give the test.
+    Every statistic of a date only uses the returns up to that date, so the statistic, its
+    critical value and the verdict per date have no look-ahead; they start at the 10th
+    return. The 5% holds for every date on its own (on simulated random walks of 100 and 500
+    returns the last date rejects about 4% to 5% of the time), so over many dates some cross
+    the critical value by chance. The other two methods scale with the whole sample and only
+    give the test.
 
     For more information about the method, see the following papers:
 
@@ -681,28 +692,36 @@ def get_cusum_test(
     Also known as: CUSUM test, CUSUM of OLS residuals test, recursive CUSUM test,
     Brown-Durbin-Evans test, Chu-Stinchcombe-White test.
 
+    Referenced against:
+    - statsmodels, breaks_cusumolsresid (CUSUM of the OLS residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.breaks_cusumolsresid.html
+        Test: tests/econometrics/test_reference_validation.py::test_cusum_stability_test
+
+    Shares similar logic:
+    - statsmodels, recursive_olsresiduals (CUSUM of the recursive residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.recursive_olsresiduals.html
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        method (str, optional): "ols", "recursive" or "chu_stinchcombe_white". Defaults to
-            "ols".
+        method (str, optional): The CUSUM test. Options are: "ols" (CUSUM of the OLS
+            residuals), "recursive" (CUSUM of the recursive residuals), "chu_stinchcombe_white"
+            (Chu-Stinchcombe-White CUSUM of the log price). Defaults to "ols".
         time_series (bool, optional): Whether to return the statistic, its critical value
-            and the verdict per date (method="chu_stinchcombe_white" only). Defaults to False.
+            and the verdict per date (Chu-Stinchcombe-White CUSUM only). Defaults to False.
 
     Returns:
         pd.Series | pd.DataFrame: The CUSUM statistic, its p-value, the number of
         observations used, the 1%/5%/10% critical values, and whether stability is rejected
-        at the 5% level; for method="chu_stinchcombe_white" the statistic, the 5% critical
-        value, the observations and the verdict at the last date, or with time_series=True
-        per date.
+        at the 5% level; for the Chu-Stinchcombe-White CUSUM the statistic, the 5% critical
+        value, the observations and the verdict at the last date, or per date.
 
     Notes:
-        method="ols" is referenced against statsmodels' `breaks_cusumolsresid` with `ddof=1`
-        and method="recursive" against statsmodels' `recursive_olsresiduals`, which scales
-        the path with the standard deviation of the recursive residuals around their mean
-        rather than with the residual variance of Brown, Durbin and Evans (1975).
-        method="chu_stinchcombe_white" follows López de Prado (2018, "Advances in Financial
-        Machine Learning", Wiley, section 17.3.2): it divides by sigma_t, with sigma_t^2 the
-        mean of the t - 1 squared changes, and compares with sqrt(4.6 + ln(t - n)) at 5%.
+        - The CUSUM of the OLS residuals equals statsmodels' breaks_cusumolsresid with one
+          degree of freedom for the mean.
+        - Unlike statsmodels' recursive_olsresiduals, which scales the path with the standard
+          deviation of the recursive residuals around their mean, the recursive CUSUM scales it
+          with the residual variance of Brown, Durbin and Evans (1975).
+        - The Chu-Stinchcombe-White CUSUM follows López de Prado (2018, "Advances in Financial
+          Machine Learning", Wiley, section 17.3.2): it divides by sigma_t, with sigma_t^2 the
+          mean of the t - 1 squared changes, and compares with sqrt(4.6 + ln(t - n)) at 5%.
     """
     check_option("method", method, CUSUM_METHODS)
     if time_series and method != "chu_stinchcombe_white":
@@ -923,6 +942,9 @@ def get_sign_bias_test(
 
     Also known as: sign bias test, Engle-Ng test, size bias test, leverage effect test.
 
+    Referenced against:
+    - rugarch (R), signbias: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L195
+
     Args:
         residuals (pd.Series | pd.DataFrame): The residuals e_t of the mean model.
         standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals
@@ -934,11 +956,10 @@ def get_sign_bias_test(
         observations of the regression.
 
     Notes:
-        Referenced against `signbias` of R's rugarch
-        (https://cran.r-project.org/package=rugarch), which reproduces the t-statistics of
-        the rugarch vignette. rugarch reports the absolute t-statistics and a Wald statistic
-        with the OLS covariance as the joint test; this reports the signed t-statistics and
-        the n * R^2 Lagrange multiplier statistic of Engle and Ng (1993).
+        - The t-statistics reproduce those of the rugarch vignette. Unlike rugarch, which
+          reports the absolute t-statistics and a Wald statistic with the OLS covariance as the
+          joint test, this reports the signed t-statistics and the n * R^2 Lagrange multiplier
+          statistic of Engle and Ng (1993).
     """
     if isinstance(residuals, pd.DataFrame):
         return pd.DataFrame(
@@ -995,7 +1016,9 @@ def get_pearson_goodness_of_fit_test(
     """
     Calculate the adjusted Pearson goodness of fit test of Palm (1996) and Vlaar and Palm
     (1993): whether the standardized residuals of a volatility model follow the innovation
-    distribution the model assumes. Each residual is turned into the probability of a value
+    distribution the model assumes.
+
+    Each residual is turned into the probability of a value
     at most as large under that distribution, which is uniform on (0, 1) when the
     distribution fits; the probabilities are counted in equally wide bins and compared with
     the equal count every bin should have.
@@ -1024,11 +1047,16 @@ def get_pearson_goodness_of_fit_test(
     Also known as: adjusted Pearson goodness of fit test, chi-squared goodness of fit test,
     probability integral transform test, GARCH distribution test.
 
+    Referenced against:
+    - rugarch (R), gof: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L223
+
     Args:
         standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals.
         bins (int, optional): The number of bins g. Defaults to 20.
-        distribution (str, optional): The standardized distribution, see
-            `garch_model.get_standardized_log_density`. Defaults to "normal".
+        distribution (str, optional): The standardized innovation distribution. Options are:
+            "normal" (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen),
+            "skewt_fernandez_steel" (skewed Student-t of Fernández and Steel), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
         parameters (tuple[float, ...], optional): The Shape (and Skew) of the distribution.
             Defaults to (), for the normal distribution.
 
@@ -1037,9 +1065,8 @@ def get_pearson_goodness_of_fit_test(
         observations.
 
     Notes:
-        Referenced against `gof` of R's rugarch (https://cran.r-project.org/package=rugarch).
-        rugarch leaves the empty bins above the last occupied one out of the sum (its
-        `tabulate` stops at the highest bin with a value); every empty bin counts here.
+        - Unlike rugarch, which leaves the empty bins above the last occupied one out of the
+          sum (its tabulate stops at the highest bin with a value), every empty bin counts here.
     """
     if bins < 2:  # noqa: PLR2004
         raise ValueError(f"The test needs at least 2 bins, not {bins}.")
@@ -1120,9 +1147,9 @@ GMM_KURTOSIS_MOMENTS = ("Kurtosis", "Q4")
 
 def get_nyblom_p_value(statistic: float, parameters: int = 1) -> float:
     """
-    Calculate the asymptotic p-value of the Nyblom (1989) parameter stability statistic of
-    `parameters` parameters: the probability that Σ_(j=1..k) ∫ B_j(r)^2 dr over k independent
-    Brownian bridges exceeds the statistic.
+    Calculate the asymptotic p-value of the Nyblom (1989) parameter stability statistic: the
+    probability that Σ_(j=1..k) ∫ B_j(r)^2 dr over k independent Brownian bridges, one per
+    parameter, exceeds the statistic.
 
     The formula is as follows (Imhof, 1961), with λ_n = 1 / (n^2 π^2), each with multiplicity k:
 
@@ -1172,9 +1199,10 @@ def get_nyblom_test(
     scores: np.ndarray | pd.DataFrame, names: list[str] | None = None
 ) -> pd.Series:
     """
-    Calculate the parameter stability test of Nyblom (1989) and Hansen (1992) from the
-    scores of a model fitted by maximum likelihood: do the parameters stay the same over the
-    sample? At the maximum the scores of every parameter sum to zero over the whole sample;
+    Calculate the parameter stability test of Nyblom (1989) and Hansen (1992): whether the
+    parameters of a model fitted by maximum likelihood stay the same over the sample.
+
+    At the maximum the scores of every parameter sum to zero over the whole sample;
     when a parameter changes during the sample, their running sum wanders far from zero in
     between.
 
@@ -1201,6 +1229,9 @@ def get_nyblom_test(
     - Hansen, B.E. (1992). "Testing for Parameter Instability in Linear Models." Journal of
     Policy Modeling, 14(4), 517-533.
 
+    Shares similar logic:
+    - rugarch (R), nyblom: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L110
+
     Args:
         scores (np.ndarray | pd.DataFrame): The scores, one row per observation and one
             column per parameter.
@@ -1213,9 +1244,8 @@ def get_nyblom_test(
         Observations.
 
     Notes:
-        Referenced against `nyblom` of R's rugarch (https://cran.r-project.org/package=rugarch),
-        which reports Hansen's tabulated critical values; the p-values and critical values
-        here are those of the limiting distribution itself.
+        - Unlike rugarch, which reports Hansen's tabulated critical values, the p-values and
+          critical values here are those of the limiting distribution itself.
     """
     if isinstance(scores, pd.DataFrame):
         names = list(scores.columns) if names is None else names
@@ -1268,8 +1298,8 @@ def get_gmm_moment_test(
     parameters: tuple[float, ...] = (),
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the GMM orthogonality test of Hansen (1982) on the standardized residuals of a
-    volatility model: do they have the mean, variance, skewness and kurtosis of the
+    Calculate the GMM orthogonality test of Hansen (1982): whether the standardized residuals
+    of a volatility model have the mean, variance, skewness and kurtosis of the
     innovation distribution, and are their squares, cubes and fourth powers uncorrelated over
     time, as a correctly specified model implies?
 
@@ -1298,7 +1328,7 @@ def get_gmm_moment_test(
     can reject while none of the individual tests does. The covariance of the four moments is
     the one the distribution implies and that of the lagged products the one the null implies,
     rather than their sample covariance, which rests on 8th and 16th sample moments of z_t: on
-    simulated independent normal innovations the joint test at 5% (lags=1) then rejects about
+    simulated independent normal innovations the joint test at 5% (one lag) then rejects about
     6.6% of the time at 1,000 observations and 5.3% at 2,500, against 10.5% and 8.2% with the
     sample covariance of the moments. On simulated Student-t innovations with a Shape of 10 (and
     the same distribution assumed) the joint test rejects about 5% of the time and the Kurtosis
@@ -1312,12 +1342,16 @@ def get_gmm_moment_test(
     - Hansen, L.P. (1982). "Large Sample Properties of Generalized Method of Moments
     Estimators." Econometrica, 50(4), 1029-1054.
 
+    Shares similar logic:
+    - rugarch (R), GMMTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L534
+
     Args:
         standardized_residuals (pd.Series | pd.DataFrame): The standardized residuals.
         lags (int, optional): The number of lags p of the Q2, Q3 and Q4 conditions. Defaults to 1.
-        distribution (str, optional): The standardized innovation distribution, see
-            `garch_model.get_standardized_raw_moments` ("normal", "t", "skewt",
-            "skewt_fernandez_steel", "ged" or "johnson_su"). A Student-t with a Shape of 3 or
+        distribution (str, optional): The standardized innovation distribution. Options are:
+            "normal" (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen),
+            "skewt_fernandez_steel" (skewed Student-t of Fernández and Steel), "ged"
+            (generalized error distribution), "johnson_su" (Johnson SU). A Student-t with a Shape of 3 or
             less has no skewness, which leaves the Skewness and Q3 conditions out, and one of 4
             or less no kurtosis, which leaves the Kurtosis and Q4 conditions out. Defaults to
             "normal".
@@ -1330,9 +1364,9 @@ def get_gmm_moment_test(
         the lags and the observations; NaN for a series without variation.
 
     Notes:
-        Referenced against `GMMTest` of R's rugarch (https://cran.r-project.org/package=rugarch)
-        as its documentation defines it: the moment conditions M1 to M4, Q2 to Q4 and the
-        joint J test.
+        - The moment conditions M1 to M4, Q2 to Q4 and the joint J test are those rugarch's
+          documentation of GMMTest defines; rugarch takes the covariance of the moments from the
+          sample, which this takes from the innovation distribution.
     """
     if lags < 1:
         raise ValueError(f"The test needs at least 1 lag, not {lags}.")
@@ -1494,7 +1528,7 @@ def get_level_significance(
     - Observations Above Level = Count(x(s) > level), over s <= T
     - Observations At Or Below Level = Count(x(s) <= level), over s <= T
 
-    With difference=True the changes are differences instead, in the unit of the series
+    As differences, the changes are in the unit of the series
     (percentage points for a rate): Change Since Start = x(T) - x(0), Change From Highest =
     x(T) - max(x), Change From Lowest = x(T) - min(x) and Largest Drawdown = min over t of
     (x(t) - max(x(s), s <= t)); the Multiple Since Start and Annualised Change are NaN.
@@ -1513,8 +1547,7 @@ def get_level_significance(
     unless both values are positive. The Largest Drawdown is the largest fall from an earlier
     peak, with the dates of that peak and of the trough, and the Recovery Date the first date
     the series was back at the peak, NaN while it has not recovered (or when it never fell).
-    With a level, such as an
-    earlier peak, the First Above Level is the first date the series exceeded it ("the first
+    With a level, such as an earlier peak, the First Above Level is the first date the series exceeded it ("the first
     month above the 1980 high") and the Above Level Since the date it has been above it since
     without a break, NaN when it never was or the latest value is not above it. The Last
     Above Level and Last At Or Below Level are the last earlier dates on either side of it

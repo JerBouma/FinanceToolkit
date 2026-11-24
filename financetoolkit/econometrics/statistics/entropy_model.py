@@ -25,8 +25,10 @@ def count_template_matches(
     values: np.ndarray, length: int, radius: float, number: int | None = None
 ) -> np.ndarray:
     """
-    Count, for each of the first `number` templates of `length` consecutive values, the
-    templates among them within a Chebyshev (maximum) distance of `radius`, itself included.
+    Count the template matches of a series: for each template of consecutive values, the
+    templates within a Chebyshev (maximum) distance of the radius, itself included.
+
+    The count runs over the first `number` templates of `length` consecutive values.
 
     Two templates are within r when every pair of their values is, so the comparison of the
     single values, abs(x_i - x_j) <= r, is made once and the templates follow from it along
@@ -90,14 +92,17 @@ def get_sample_entropy(
     using approximate entropy and sample entropy." American Journal of Physiology - Heart and
     Circulatory Physiology, 278(6), H2039-H2049.
 
-    Referenced against nolds' sampen (https://github.com/CSchoel/nolds) and antropy's
-    sample_entropy (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - nolds, sampen: https://github.com/CSchoel/nolds/blob/0.6.3/nolds/measures.py#L699
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
+    - antropy, sample_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L740
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Notes:
         - The tolerance uses the sample standard deviation (ddof=1) and the matches include a
-          distance of exactly r, as in Richman and Moorman. nolds' default tolerance is
-          corrected for the order and counts distances strictly below r unless closed=True;
-          antropy uses the population standard deviation (ddof=0).
+          distance of exactly r, as in Richman and Moorman. Unlike this, nolds' default
+          tolerance is corrected for the order and counts distances strictly below r unless
+          asked to include them, and antropy uses the population standard deviation (ddof=0).
         - Without a match of length m + 1 (or m) the entropy is undefined and NaN, where nolds
           and antropy give infinity.
 
@@ -153,7 +158,9 @@ def get_approximate_entropy(
     Reference: Pincus, S.M. (1991). "Approximate entropy as a measure of system complexity."
     Proceedings of the National Academy of Sciences, 88(6), 2297-2301.
 
-    Referenced against antropy's app_entropy (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, app_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L638
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Notes:
         - The tolerance uses the sample standard deviation (ddof=1); antropy uses the population
@@ -187,10 +194,12 @@ def get_rolling_pair_counts(
     values: np.ndarray, window: int, length: int, number: int, radii: np.ndarray
 ) -> np.ndarray:
     """
-    Count, for every trailing window of `window` values, the pairs i < j of its first
-    `number` templates of `length` consecutive values within a Chebyshev distance of that
-    window's radius: the totals of `count_template_matches` without the matches of a
-    template with itself, halved.
+    Count the matching template pairs of every trailing window of a series: the pairs of
+    templates within a Chebyshev distance of that window's radius.
+
+    The pairs i < j run over the first `number` templates of `length` consecutive values:
+    the totals of `count_template_matches` without the matches of a template with itself,
+    halved.
 
     A pair of templates (i, j) belongs to the windows that start from j - number + 1 to i,
     and matches in those whose radius is at least its distance. Every pair is therefore an
@@ -262,9 +271,11 @@ def get_rolling_template_matches(
     per_template: bool = False,
 ) -> np.ndarray:
     """
-    Count the template matches of `count_template_matches` in every trailing window of
-    `window` values at once: for each window, the first `number` templates of `length`
-    consecutive values within a Chebyshev distance of that window's radius.
+    Count the template matches of every trailing window of a series at once, as
+    `count_template_matches` does for one window.
+
+    For each window, the counts cover the first `number` templates of `length` consecutive
+    values within a Chebyshev distance of that window's radius.
 
     The distance of two templates i and j depends on the values only, not on the window,
     so the distances of all pairs are taken once for a block of windows and every window
@@ -327,10 +338,12 @@ def get_rolling_sample_entropy(
     data: pd.Series | np.ndarray, window: int, order: int = 2, tolerance: float = 0.2
 ) -> np.ndarray:
     """
-    Calculate the Sample Entropy (see `get_sample_entropy`) of every trailing window of
-    `window` observations, with the template matches of all windows counted at once (see
-    `get_rolling_template_matches`). Gives the same values as `get_sample_entropy` on each
-    window.
+    Calculate the rolling Sample Entropy of a series: how irregular every trailing window is
+    (see `get_sample_entropy`).
+
+    The template matches of all windows counted at once (see
+    `get_rolling_template_matches`). It gives the same values as `get_sample_entropy` on
+    each window.
 
     Args:
         data (pd.Series | np.ndarray): The series, e.g. returns, without missing values.
@@ -377,10 +390,12 @@ def get_rolling_approximate_entropy(
     data: pd.Series | np.ndarray, window: int, order: int = 2, tolerance: float = 0.2
 ) -> np.ndarray:
     """
-    Calculate the Approximate Entropy (see `get_approximate_entropy`) of every trailing
-    window of `window` observations, with the template matches of all windows counted at
-    once (see `get_rolling_template_matches`). Gives the same values as
-    `get_approximate_entropy` on each window.
+    Calculate the rolling Approximate Entropy of a series: how irregular every trailing
+    window is (see `get_approximate_entropy`).
+
+    The template matches of all windows are counted at once (see
+    `get_rolling_template_matches`). It gives the same values as `get_approximate_entropy`
+    on each window.
 
     Args:
         data (pd.Series | np.ndarray): The series, e.g. returns, without missing values.
@@ -426,8 +441,10 @@ def get_ordinal_patterns(
     data: pd.Series | np.ndarray, order: int = 3, delay: int = 1
 ) -> np.ndarray:
     """
-    The ordinal pattern of every stretch of `order` observations, `delay` apart: the order
-    in which the values of the stretch rank, as one number per stretch. Equal values rank
+    Calculate the ordinal pattern of every stretch of observations: the order in which the
+    values of the stretch rank, as one number per stretch.
+
+    The stretches hold `order` observations, `delay` apart. Equal values rank
     in the order they occur (Bandt and Pompe, 2002).
 
     Args:
@@ -472,7 +489,9 @@ def get_permutation_entropy(
     Reference: Bandt, C. & Pompe, B. (2002). "Permutation entropy: a natural complexity
     measure for time series." Physical Review Letters, 88(17), 174102.
 
-    Referenced against antropy's perm_entropy (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, perm_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L143
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -524,12 +543,14 @@ def get_spectral_entropy(
     irregularity by use of the entropy of the power spectrum." Electroencephalography and
     Clinical Neurophysiology, 79(3), 204-210.
 
-    Referenced against antropy's spectral_entropy (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, spectral_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L315
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
-        estimator (str, optional): The power spectrum, "periodogram" or "welch". Defaults to
-            "periodogram".
+        estimator (str, optional): The power spectrum. Options are: "periodogram" (the
+            periodogram), "welch" (Welch's average of periodograms). Defaults to "periodogram".
         normalize (bool, optional): Whether to divide by log2 of the number of frequencies,
             so the entropy lies between 0 and 1. Defaults to True.
 
@@ -587,7 +608,9 @@ def get_svd_entropy(
     measures for electroencephalogram based brain-computer interfacing." Medical & Biological
     Engineering & Computing, 37(1), 93-98.
 
-    Referenced against antropy's svd_entropy (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, svd_entropy: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L437
+        Test: tests/econometrics/test_entropy_model.py::test_entropies_equal_nolds_and_antropy
 
     Args:
         data (pd.Series | np.ndarray): The series.
@@ -622,22 +645,24 @@ def encode_series(
 ) -> np.ndarray:
     """
     Encode a series of returns into a message of discrete symbols (López de Prado, 2018,
-    section 18.6), the input of the Shannon, Lempel-Ziv and Kontoyiannis entropies and the
-    Lempel-Ziv complexity.
+    section 18.6): the direction or size of every return as a symbol.
 
-    The encodings are:
+    The message is the input of the Shannon, Lempel-Ziv and Kontoyiannis entropies and the
+    Lempel-Ziv complexity. The encodings are:
 
-    - "binary": 1 for a positive and 0 for a negative return; returns of exactly zero are left
+    - Binary: 1 for a positive and 0 for a negative return; returns of exactly zero are left
       out, as they carry no direction.
-    - "quantile": the quantile of the series the return falls in, 0 to bins - 1, so every
+    - Quantile: the quantile of the series the return falls in, 0 to bins - 1, so every
       symbol is about equally frequent.
-    - "sigma": the bucket of one standard deviation (ddof=1) the return falls in, counted from
+    - Sigma: the bucket of one standard deviation (ddof=1) the return falls in, counted from
       the lowest return, so the symbols keep the size of the moves.
 
     Args:
         data (pd.Series | np.ndarray): The returns.
-        encoding (str, optional): "binary", "quantile" or "sigma". Defaults to "binary".
-        bins (int, optional): The number of quantiles of the "quantile" encoding. Defaults
+        encoding (str, optional): The encoding. Options are: "binary" (the direction),
+            "quantile" (the quantile of the return), "sigma" (the standard deviation bucket of
+            the return). Defaults to "binary".
+        bins (int, optional): The number of quantiles of the quantile encoding. Defaults
             to 10.
 
     Returns:
@@ -684,9 +709,12 @@ def get_shannon_entropy(symbols: np.ndarray, word_length: int = 1) -> float:
     chapter 18.3 (Snippet 18.1). Shannon, C.E. (1948). "A Mathematical Theory of
     Communication." Bell System Technical Journal, 27(3), 379-423.
 
+    Shares similar logic:
+    - RiskLabAI, plug_in_entropy_estimator: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/plug_in.py#L10
+
     Notes:
-        - Every overlapping word is counted, the last one included; the loop of López de
-          Prado's Snippet 18.1 stops one word short.
+        - Every overlapping word is counted, the last one included, unlike the loop of López
+          de Prado's Snippet 18.1, which stops one word short.
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -721,6 +749,9 @@ def get_lempel_ziv_entropy(symbols: np.ndarray) -> float:
     chapter 18.4 (Snippet 18.2). Ziv, J. & Lempel, A. (1978). "Compression of individual
     sequences via variable-rate coding." IEEE Transactions on Information Theory, 24(5),
     530-536.
+
+    Shares similar logic:
+    - RiskLabAI, lempel_ziv_entropy: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/lempel_ziv.py#L6
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -768,6 +799,9 @@ def get_kontoyiannis_entropy(symbols: np.ndarray) -> float:
     applications to English text." IEEE Transactions on Information Theory, 44(3), 1319-1327.
     López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 18.4
     (Snippets 18.3 and 18.4).
+
+    Shares similar logic:
+    - RiskLabAI, kontoyiannis_entropy: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/features/entropy_features/kontoyiannis.py#L57
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -819,7 +853,9 @@ def get_lempel_ziv_complexity(
     "Easily calculable measure for the complexity of spatiotemporal patterns." Physical Review
     A, 36(2), 842-848.
 
-    Referenced against antropy's lziv_complexity (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, lziv_complexity: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L915
+        Test: tests/econometrics/test_entropy_model.py::test_lempel_ziv_complexity_equals_antropy
 
     Args:
         symbols (np.ndarray): The message, see `encode_series`.
@@ -881,13 +917,14 @@ def get_hjorth_parameters(data: pd.Series | np.ndarray) -> pd.Series:
     Reference: Hjorth, B. (1970). "EEG analysis based on time domain properties."
     Electroencephalography and Clinical Neurophysiology, 29(3), 306-310.
 
-    Referenced against antropy's hjorth_params and num_zerocross
-    (https://github.com/raphaelvallat/antropy).
+    Referenced against:
+    - antropy, hjorth_params: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L1126
+    - antropy, num_zerocross: https://github.com/raphaelvallat/antropy/blob/v0.2.3/src/antropy/entropy.py#L1033
 
     Notes:
-        - antropy uses the population variance (ddof=0), so its Mobility and Complexity differ
-          from these by the ratio of the numbers of observations of x, dx and d2x (less than
-          0.1% for 1,000 observations).
+        - Unlike this, antropy uses the population variance (ddof=0), so its Mobility and
+        Complexity differ from these by the ratio of the numbers of observations of x, dx
+        and d2x (less than 0.1% for 1,000 observations).
         - antropy counts a value of 0 as positive, so a return of 0 between two negative ones
           adds two crossings there and none here.
 

@@ -48,11 +48,12 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Recognise 62 classic candlestick patterns in every ticker's candles, with the definitions
-        of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
-        period as one candle: the real body between the open and the close and the shadows up to
-        the high and down to the low. Certain shapes and sequences are read as a sign that a move
-        is ending or continuing.
+        Recognise 62 classic candlestick patterns in every ticker's candles: the shapes of one to five candles that
+        traders read as a reversal or a continuation of the trend.
+
+        Candlestick charting reads the open, high, low and close of a period as one candle: the real body between
+        the open and the close and the shadows up to the high and down to the low. Certain shapes and sequences are
+        read as a sign that a move is ending or continuing.
 
         Each pattern is 1 on the candle that completes it as a bullish pattern, -1 as a bearish
         pattern and 0 otherwise (TA-Lib's +100 and -100 divided by 100). The weaker engulfing,
@@ -184,8 +185,76 @@ class PatternTechnicals:
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
         - Chesler, D. (2004). "Trading False Moves with the Hikkake Pattern." Active Trader, April 2004.
-        - Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/).
-        - pandas-ta-classic: cdl_inside, for the inside bar (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, CDL2CROWS: https://ta-lib.org/functions/cdl2crows.html
+            Test: tests/technical/test_pattern_model.py::test_single_candle_patterns_match_ta_lib_on_the_test_data
+            Test: tests/technical/test_pattern_model.py::test_two_and_three_candle_patterns_match_ta_lib_on_the_test_data
+            Test: tests/technical/test_pattern_model.py::test_three_candle_patterns_match_ta_lib_on_the_test_data
+            Test: tests/technical/test_pattern_model.py::test_four_and_five_candle_patterns_match_ta_lib_on_the_test_data
+        - TA-Lib, CDL3BLACKCROWS: https://ta-lib.org/functions/cdl3blackcrows.html
+        - TA-Lib, CDL3INSIDE: https://ta-lib.org/functions/cdl3inside.html
+        - TA-Lib, CDL3LINESTRIKE: https://ta-lib.org/functions/cdl3linestrike.html
+        - TA-Lib, CDL3OUTSIDE: https://ta-lib.org/functions/cdl3outside.html
+        - TA-Lib, CDL3STARSINSOUTH: https://ta-lib.org/functions/cdl3starsinsouth.html
+        - TA-Lib, CDL3WHITESOLDIERS: https://ta-lib.org/functions/cdl3whitesoldiers.html
+        - TA-Lib, CDLABANDONEDBABY: https://ta-lib.org/functions/cdlabandonedbaby.html
+        - TA-Lib, CDLADVANCEBLOCK: https://ta-lib.org/functions/cdladvanceblock.html
+        - TA-Lib, CDLBELTHOLD: https://ta-lib.org/functions/cdlbelthold.html
+        - TA-Lib, CDLBREAKAWAY: https://ta-lib.org/functions/cdlbreakaway.html
+        - TA-Lib, CDLCLOSINGMARUBOZU: https://ta-lib.org/functions/cdlclosingmarubozu.html
+        - TA-Lib, CDLCONCEALBABYSWALL: https://ta-lib.org/functions/cdlconcealbabyswall.html
+        - TA-Lib, CDLCOUNTERATTACK: https://ta-lib.org/functions/cdlcounterattack.html
+        - TA-Lib, CDLDARKCLOUDCOVER: https://ta-lib.org/functions/cdldarkcloudcover.html
+        - TA-Lib, CDLDOJI: https://ta-lib.org/functions/cdldoji.html
+        - TA-Lib, CDLDOJISTAR: https://ta-lib.org/functions/cdldojistar.html
+        - TA-Lib, CDLDRAGONFLYDOJI: https://ta-lib.org/functions/cdldragonflydoji.html
+        - TA-Lib, CDLENGULFING: https://ta-lib.org/functions/cdlengulfing.html
+        - TA-Lib, CDLEVENINGDOJISTAR: https://ta-lib.org/functions/cdleveningdojistar.html
+        - TA-Lib, CDLEVENINGSTAR: https://ta-lib.org/functions/cdleveningstar.html
+        - TA-Lib, CDLGAPSIDESIDEWHITE: https://ta-lib.org/functions/cdlgapsidesidewhite.html
+        - TA-Lib, CDLGRAVESTONEDOJI: https://ta-lib.org/functions/cdlgravestonedoji.html
+        - TA-Lib, CDLHAMMER: https://ta-lib.org/functions/cdlhammer.html
+        - TA-Lib, CDLHANGINGMAN: https://ta-lib.org/functions/cdlhangingman.html
+        - TA-Lib, CDLHARAMI: https://ta-lib.org/functions/cdlharami.html
+        - TA-Lib, CDLHARAMICROSS: https://ta-lib.org/functions/cdlharamicross.html
+        - TA-Lib, CDLHIGHWAVE: https://ta-lib.org/functions/cdlhighwave.html
+        - TA-Lib, CDLHIKKAKE: https://ta-lib.org/functions/cdlhikkake.html
+        - TA-Lib, CDLHIKKAKEMOD: https://ta-lib.org/functions/cdlhikkakemod.html
+        - TA-Lib, CDLHOMINGPIGEON: https://ta-lib.org/functions/cdlhomingpigeon.html
+        - TA-Lib, CDLIDENTICAL3CROWS: https://ta-lib.org/functions/cdlidentical3crows.html
+        - TA-Lib, CDLINNECK: https://ta-lib.org/functions/cdlinneck.html
+        - TA-Lib, CDLINVERTEDHAMMER: https://ta-lib.org/functions/cdlinvertedhammer.html
+        - TA-Lib, CDLKICKING: https://ta-lib.org/functions/cdlkicking.html
+        - TA-Lib, CDLKICKINGBYLENGTH: https://ta-lib.org/functions/cdlkickingbylength.html
+        - TA-Lib, CDLLADDERBOTTOM: https://ta-lib.org/functions/cdlladderbottom.html
+        - TA-Lib, CDLLONGLEGGEDDOJI: https://ta-lib.org/functions/cdllongleggeddoji.html
+        - TA-Lib, CDLLONGLINE: https://ta-lib.org/functions/cdllongline.html
+        - TA-Lib, CDLMARUBOZU: https://ta-lib.org/functions/cdlmarubozu.html
+        - TA-Lib, CDLMATCHINGLOW: https://ta-lib.org/functions/cdlmatchinglow.html
+        - TA-Lib, CDLMATHOLD: https://ta-lib.org/functions/cdlmathold.html
+        - TA-Lib, CDLMORNINGDOJISTAR: https://ta-lib.org/functions/cdlmorningdojistar.html
+        - TA-Lib, CDLMORNINGSTAR: https://ta-lib.org/functions/cdlmorningstar.html
+        - TA-Lib, CDLONNECK: https://ta-lib.org/functions/cdlonneck.html
+        - TA-Lib, CDLPIERCING: https://ta-lib.org/functions/cdlpiercing.html
+        - TA-Lib, CDLRICKSHAWMAN: https://ta-lib.org/functions/cdlrickshawman.html
+        - TA-Lib, CDLRISEFALL3METHODS: https://ta-lib.org/functions/cdlrisefall3methods.html
+        - TA-Lib, CDLSEPARATINGLINES: https://ta-lib.org/functions/cdlseparatinglines.html
+        - TA-Lib, CDLSHOOTINGSTAR: https://ta-lib.org/functions/cdlshootingstar.html
+        - TA-Lib, CDLSHORTLINE: https://ta-lib.org/functions/cdlshortline.html
+        - TA-Lib, CDLSPINNINGTOP: https://ta-lib.org/functions/cdlspinningtop.html
+        - TA-Lib, CDLSTALLEDPATTERN: https://ta-lib.org/functions/cdlstalledpattern.html
+        - TA-Lib, CDLSTICKSANDWICH: https://ta-lib.org/functions/cdlsticksandwich.html
+        - TA-Lib, CDLTAKURI: https://ta-lib.org/functions/cdltakuri.html
+        - TA-Lib, CDLTASUKIGAP: https://ta-lib.org/functions/cdltasukigap.html
+        - TA-Lib, CDLTHRUSTING: https://ta-lib.org/functions/cdlthrusting.html
+        - TA-Lib, CDLTRISTAR: https://ta-lib.org/functions/cdltristar.html
+        - TA-Lib, CDLUNIQUE3RIVER: https://ta-lib.org/functions/cdlunique3river.html
+        - TA-Lib, CDLUPSIDEGAP2CROWS: https://ta-lib.org/functions/cdlupsidegap2crows.html
+        - TA-Lib, CDLXSIDEGAP3METHODS: https://ta-lib.org/functions/cdlxsidegap3methods.html
+
+        Shares similar logic:
+        - pandas-ta-classic, cdl_inside: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/candles/cdl_inside.py#L11
 
         Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks, belt
         hold, dragonfly doji, gravestone doji, long-legged doji, rickshaw man, takuri, high wave,
@@ -200,8 +269,10 @@ class PatternTechnicals:
         hold, rising three methods, falling three methods, hikkake, modified hikkake.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way, so an ex-dividend day doesn't read as a gap. "Close"
@@ -342,11 +413,13 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Heikin-Ashi ("average bar") candles of every ticker. Each candle averages
-        the prices of its period, and its open is the midpoint of the previous Heikin-Ashi
-        candle's body, so the candles smooth out the noise of single periods: a trend shows as a
-        run of candles of one colour, often without a shadow on the side of the open, and a
-        small body with long shadows on both sides hints at a turn.
+        Calculate the Heikin-Ashi ("average bar") candles of every ticker: candles built from two-period averages,
+        which smooth the noise so the trend stands out.
+
+        Each candle averages the prices of its period, and its open is the midpoint of the previous Heikin-Ashi
+        candle's body, so the candles smooth out the noise of single periods: a trend shows as a run of candles of
+        one colour, often without a shadow on the side of the open, and a small body with long shadows on both sides
+        hints at a turn.
 
         The formula is as follows:
 
@@ -363,14 +436,21 @@ class PatternTechnicals:
 
         - Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of Stocks &
           Commodities, 22(2).
-        - Referenced against TA-Lib's HA (https://ta-lib.org/functions/).
-        - pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HA: https://ta-lib.org/functions/ha.html
+            Test: tests/technical/test_pattern_model.py::test_heikin_ashi_matches_ta_lib
+
+        Shares similar logic:
+        - pandas-ta-classic, ha: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/candles/ha.py#L25
 
         Also known as: Heikin-Ashi, Heikin Ashi, Heiken Ashi, HA candles, average bar.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way. "Close" uses the candles as traded (split-adjusted).
@@ -472,10 +552,11 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Mark Bill Williams' fractals in every ticker's prices: an up fractal is a high above the
-        highs of the two bars before and the two bars after it, a down fractal a low below their
-        lows. They mark the swing highs and lows of a market; Williams buys a break above the last
-        up fractal and sells a break below the last down fractal.
+        Mark Bill Williams' fractals in every ticker's prices: an up fractal is a high above the highs of the two
+        bars before and the two bars after it, a down fractal a low below their lows.
+
+        They mark the swing highs and lows of a market; Williams buys a break above the last up fractal and sells a
+        break below the last down fractal.
 
         A fractal needs the bars after it, so it is only known `right_bars` periods later. It is
         therefore marked on the bar that confirms it, two periods after the high or low with the
@@ -494,14 +575,21 @@ class PatternTechnicals:
 
         - Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your
           Profits." Wiley.
-        - Referenced against TA-Lib's FRACTAL (https://ta-lib.org/functions/).
-        - finta: WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, FRACTAL: https://ta-lib.org/functions/fractal.html
+            Test: tests/technical/test_pattern_model.py::test_williams_fractal_matches_ta_lib_on_the_test_data
+
+        Shares similar logic:
+        - finta, WILLIAMS_FRACTAL: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2205
 
         Also known as: Williams Fractal, fractals, swing high, swing low, FRACTAL.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way. "Close" uses the prices as traded (split-adjusted).
@@ -594,11 +682,11 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Count Tom DeMark's TD Sequential for every ticker: the TD Setup of nine closes in a row
-        beyond the close four bars earlier, and the TD Countdown to 13 that follows it. DeMark
-        designed it to find where a trend exhausts itself: a completed buy setup (nine lower
-        closes) and above all a completed buy countdown (13) point to a low, a completed sell
-        setup and countdown to a high.
+        Count Tom DeMark's TD Sequential for every ticker: the TD Setup of nine closes in a row beyond the close
+        four bars earlier, and the TD Countdown to 13 that follows it.
+
+        DeMark designed it to find where a trend exhausts itself: a completed buy setup (nine lower closes) and
+        above all a completed buy countdown (13) point to a low, a completed sell setup and countdown to a high.
 
         The rules are DeMark's:
 
@@ -622,8 +710,10 @@ class PatternTechnicals:
 
         - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
         - Perl, J. (2008). "DeMark Indicators." Bloomberg Press.
-        - Referenced against pandas-ta-classic's td_seq (https://github.com/xgboosted/pandas-ta-classic),
-          which counts the setup only.
+
+        Referenced against:
+        - pandas-ta-classic, td_seq: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/td_seq.py#L31
+            Test: tests/technical/test_pattern_model.py::test_td_sequential_matches_pandas_ta_classic_on_the_test_data
 
         TD Sequential, TD Setup, TD Countdown and TDST are Tom DeMark's names for his indicator
         and its parts.
@@ -632,8 +722,10 @@ class PatternTechnicals:
         TD9, TD13, DeMark 9 13, td_seq.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way. "Close" uses the prices as traded (split-adjusted).
@@ -656,6 +748,7 @@ class PatternTechnicals:
           bars of a setup that starts on a flip, its counts 1 to 9 are the same as here.
         - The counts carry over from the ticker's own first bar, so the first setups after the
           Toolkit's start date depend on where the history starts; the first four bars are empty.
+        - pandas-ta-classic's td_seq counts the TD Setup only.
 
         As an example:
 
@@ -723,11 +816,11 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Mark the liquidity sweeps in every ticker's candles: a candle that trades through the
-        lowest low (or highest high) of the previous 15 bars, where stop orders tend to rest,
-        and closes back inside with a long wick. Traders read it as a stop hunt that has run
-        its course, so a sweep below the lows (bullish) hints at a move up and a sweep above the
-        highs (bearish) at a move down.
+        Mark the liquidity sweeps in every ticker's candles: a candle that trades through the lowest low (or highest
+        high) of the previous 15 bars, where stop orders tend to rest, and closes back inside with a long wick.
+
+        Traders read it as a stop hunt that has run its course, so a sweep below the lows (bullish) hints at a move
+        up and a sweep above the highs (bearish) at a move down.
 
         The formula is as follows:
 
@@ -746,16 +839,18 @@ class PatternTechnicals:
         with a swing over the previous 15 bars and a wick longer than 1.5 times the body is
         pandas-ta-classic's.
 
-        For more information, see the following sources:
-
-        - Referenced against pandas-ta-classic's smc_sweep (https://github.com/xgboosted/pandas-ta-classic).
-
         Also known as: liquidity sweep, liquidity grab, stop hunt, stop run, smart money concepts,
         SMC, ICT, swing failure, smc_sweep.
 
+        Referenced against:
+        - pandas-ta-classic, smc_sweep: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smc_sweep.py#L12
+            Test: tests/technical/test_pattern_model.py::test_liquidity_sweep_matches_pandas_ta_classic_on_the_test_data
+
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way. "Close" uses the candles as traded (split-adjusted).
@@ -868,10 +963,12 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Turn the moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows
-        into the events traders act on: the period a line is crossed. The indicators themselves
-        are available as `get_moving_average`, `get_moving_average_convergence_divergence`,
-        `get_relative_strength_index` and `get_bollinger_bands`, and give the same values.
+        Turn moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows into the events traders
+        act on: the period a line is crossed.
+
+        The indicators themselves are available as `get_moving_average`,
+        `get_moving_average_convergence_divergence`, `get_relative_strength_index` and `get_bollinger_bands`, and
+        give the same values.
 
         Every signal is 1 on the period a line is crossed upwards, -1 on the period it is crossed
         downwards and 0 otherwise:
@@ -905,8 +1002,10 @@ class PatternTechnicals:
         crossover, RSI signal, 52-week high, new high.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The window of the short moving average. Defaults to 50.
@@ -1035,12 +1134,12 @@ class PatternTechnicals:
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Summarise the history of a technical indicator per ticker in a single row instead of
-        the series itself: where the latest value ranks in its own history, the lowest and
-        highest value with their dates, how many periods the indicator spent below or above a
-        threshold, when it last crossed into that zone and how the price did afterwards. This
-        answers questions such as "how oversold is the RSI compared with the last five years,
-        and what happened after the previous times it fell below 30?" without the thousands of
+        Summarise the history of a technical indicator per ticker in a single row instead of the series itself.
+
+        The row holds where the latest value ranks in its own history, the lowest and highest value with their
+        dates, how many periods the indicator spent below or above a threshold, when it last crossed into that zone
+        and how the price did afterwards. This answers questions such as "how oversold is the RSI compared with the
+        last five years, and what happened after the previous times it fell below 30?" without the thousands of
         daily values behind it.
 
         Each value is ranked against its own history up to that date, so the percentile of a
@@ -1111,7 +1210,7 @@ class PatternTechnicals:
             - Crossings close together overlap in their forward returns, so a handful of
               crossings says little about the signal in general.
             - The returns are measured over the periods of the indicator: trading days by
-              default, weeks with period="weekly".
+              default, weeks for weekly periods.
 
         As an example:
 

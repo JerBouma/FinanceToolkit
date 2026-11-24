@@ -30,7 +30,8 @@ def has_constant(x: np.ndarray) -> bool:
     - Implicit: otherwise, rank([1, X]) = rank(X), so a combination of the columns
       (such as a full set of dummies) is a column of ones
 
-    Referenced against how statsmodels' regression models detect a constant (`k_constant`).
+    Referenced against:
+    - statsmodels, OLS (its k_constant): https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
 
     Args:
         x (np.ndarray): The design matrix, shape `(n, k)`.
@@ -55,16 +56,21 @@ def get_wald_statistic(
     restriction_values: np.ndarray | None = None,
 ) -> tuple[float, int]:
     """
-    Calculate the Wald statistic of the linear restrictions R·β = r on estimated
-    coefficients, with Wald (1943):
+    Calculate the Wald statistic of linear restrictions R·β = r: how far the estimated
+    coefficients are from satisfying them, given their covariance (Wald, 1943).
+
+    The formula is as follows:
 
     - W = (Rβ̂ - r)' (R·Cov(β̂)·R')⁺ (Rβ̂ - r)
     - q = rank(R·Cov(β̂)·R'), the number of independent restrictions
 
     W is chi-squared(q) distributed asymptotically and W / q is the F(q, n - k) version.
     The Moore-Penrose inverse ⁺ and the rank keep the statistic defined when two
-    restrictions are linearly dependent; q then counts them once (statsmodels'
-    `wald_test` convention).
+    restrictions are linearly dependent; q then counts them once (the convention of
+    statsmodels' wald_test).
+
+    Referenced against:
+    - statsmodels, RegressionResults.wald_test: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.RegressionResults.wald_test.html
 
     Args:
         coefficients (np.ndarray): The estimated coefficients β̂, shape `(k,)`.
@@ -80,7 +86,6 @@ def get_wald_statistic(
         Reference: Wald, A. (1943). "Tests of Statistical Hypotheses Concerning Several
         Parameters When the Number of Observations is Large." Transactions of the
         American Mathematical Society, 54(3), 426-482.
-        Referenced against statsmodels' `RegressionResults.wald_test`.
     """
     restriction_matrix = np.atleast_2d(restriction_matrix)
     if restriction_values is None:
@@ -201,9 +206,11 @@ def fit_least_squares(
     lags: int | None = None,
 ) -> dict:
     """
-    Fit a least squares regression of `y` on the design matrix `x`: Ordinary Least Squares,
-    Weighted Least Squares with `weights` or Generalized Least Squares with the error
-    covariance structure `omega`. Each one is OLS on whitened data, ỹ = Py and X̃ = PX, with
+    Fit a least squares regression: how a series moves with a set of regressors, by Ordinary,
+    Weighted or Generalized Least Squares.
+
+    Weighted Least Squares takes a weight per observation and Generalized Least Squares an
+    error covariance structure Ω. Each one is OLS on whitened data, ỹ = Py and X̃ = PX, with
     P = I (OLS), P = diag(√w) (WLS) or P = L⁻¹ with LL' = Ω the Cholesky factor (GLS,
     Aitken, 1935).
 
@@ -220,20 +227,28 @@ def fit_least_squares(
 
     The covariance of β̂, with B = (X̃'X̃)⁻¹ and gₜ = x̃ₜẽₜ:
 
-    - "nonrobust": σ̂²·B
-    - "HC0": B (Σ ẽₜ² x̃ₜx̃ₜ') B, White (1980)
-    - "HC1": HC0 · n / (n - k), "HC2": ẽₜ² / (1 - hₜ), "HC3": ẽₜ² / (1 - hₜ)², with the leverage
+    - Non-robust: σ̂²·B
+    - HC0: B (Σ ẽₜ² x̃ₜx̃ₜ') B, White (1980)
+    - HC1: HC0 · n / (n - k), HC2: ẽₜ² / (1 - hₜ), HC3: ẽₜ² / (1 - hₜ)², with the leverage
       hₜ = x̃ₜ'Bx̃ₜ, MacKinnon and White (1985)
-    - "HAC": B (Σₜ gₜgₜ' + Σⱼ₌₁ᴸ (1 - j / (L + 1)) Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ')) B with L = `lags`,
+    - HAC: B (Σₜ gₜgₜ' + Σⱼ₌₁ᴸ (1 - j / (L + 1)) Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ')) B with L = `lags`,
       Newey and West (1987), without a small-sample correction
-    - "cluster": G / (G - 1) · (n - 1) / (n - k) · B (Σ_g (Σ_{t∈g} gₜ)(Σ_{t∈g} gₜ)') B, with G
+    - Cluster-robust: G / (G - 1) · (n - 1) / (n - k) · B (Σ_g (Σ_{t∈g} gₜ)(Σ_{t∈g} gₜ)') B, with G
       the number of clusters
 
     The t-statistics are β̂ⱼ / SE(β̂ⱼ). Their p-values come from the Student-t distribution
-    with n - k degrees of freedom for "nonrobust" and from the standard normal distribution
-    for the robust estimators, which are asymptotic results. These are statsmodels'
-    defaults; the sandwich estimators use the whitened data, so a robust WLS covariance is
-    robust on the weighted scale.
+    with n - k degrees of freedom for the non-robust covariance and from the standard normal
+    distribution for the robust estimators, which are asymptotic results. These are
+    statsmodels' defaults; the sandwich estimators use the whitened data, so a robust WLS
+    covariance is robust on the weighted scale.
+
+    Referenced against:
+    - statsmodels, OLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.html
+        Test: tests/econometrics/test_least_squares_model.py::test_ols_covariances_match_the_reference
+    - statsmodels, WLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html
+        Test: tests/econometrics/test_least_squares_model.py::test_wls_and_gls_match_the_reference
+    - statsmodels, GLS: https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.GLS.html
+        Test: tests/econometrics/test_least_squares_model.py::test_wls_and_gls_match_the_reference
 
     Args:
         y (np.ndarray): The dependent variable, shape `(n,)`.
@@ -270,7 +285,6 @@ def fit_least_squares(
         Heteroskedasticity and Autocorrelation Consistent Covariance Matrix."
         Econometrica, 55(3), 703-708. Liang, K.-Y. and Zeger, S.L. (1986). "Longitudinal
         Data Analysis Using Generalized Linear Models." Biometrika, 73(1), 13-22.
-        Referenced against statsmodels' `OLS`, `WLS` and `GLS` with `fit(cov_type=...)`.
     """
     check_option("cov_type", cov_type, COVARIANCE_TYPES)
 
@@ -383,8 +397,10 @@ def fit_least_squares(
 
 def get_lagged_values(values: np.ndarray, lags: int) -> np.ndarray:
     """
-    The lags 1 to `lags` of a series side by side, on the observations that have all of
-    them: row t - `lags` holds (x(t-1), ..., x(t-lags)) for t = lags, ..., n - 1.
+    Calculate the lagged values of a series side by side, on the observations that have all
+    of them.
+
+    Row t - `lags` holds (x(t-1), ..., x(t-lags)) for t = lags, ..., n - 1.
 
     Args:
         values (np.ndarray): The series, shape `(n,)`.
@@ -400,13 +416,16 @@ def get_lagged_values(values: np.ndarray, lags: int) -> np.ndarray:
 
 def get_autocorrelations(values: np.ndarray, lags: int) -> np.ndarray:
     """
-    The sample autocorrelations at lags 1 to `lags`, from the demeaned series with every
-    autocovariance divided by n (the biased estimator, which keeps the autocorrelation
-    matrix positive semi-definite):
+    Calculate the sample autocorrelations of a series: how strongly it moves with its own
+    past values, from lag 1 up to a number of lags.
+
+    Every autocovariance of the demeaned series is divided by n (the biased estimator, which
+    keeps the autocorrelation matrix positive semi-definite):
 
     - ρₖ = Σₜ₌ₖ₊₁ⁿ (xₜ - x̄)(xₜ₋ₖ - x̄) / Σₜ₌₁ⁿ (xₜ - x̄)²
 
-    Referenced against statsmodels' `acf` with its default `adjusted=False`.
+    Referenced against:
+    - statsmodels, acf: https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.acf.html
 
     Args:
         values (np.ndarray): The series, shape `(n,)`.
@@ -425,14 +444,20 @@ def get_autocorrelations(values: np.ndarray, lags: int) -> np.ndarray:
 
 def get_kolmogorov_survival(statistic: float) -> float:
     """
-    The probability that the supremum of the absolute value of a Brownian bridge exceeds
-    `statistic`, the survival function of the Kolmogorov distribution, which is the
-    asymptotic distribution of the OLS-CUSUM statistic of Ploberger and Krämer (1992):
+    Calculate the survival function of the Kolmogorov distribution: the probability that the
+    supremum of the absolute value of a Brownian bridge exceeds a statistic.
+
+    It is the asymptotic distribution of the OLS-CUSUM statistic of Ploberger and Krämer
+    (1992):
 
     - P(sup|B(t)| > x) = 2 Σₖ₌₁^∞ (-1)ᵏ⁻¹ exp(-2k²x²), for x ≥ 1
     - P(sup|B(t)| > x) = 1 - √(2π) / x · Σₖ₌₁^∞ exp(-(2k - 1)²π² / (8x²)), for x < 1
 
     Both series are exact; each converges within a few terms on its side of 1.
+
+    Referenced against:
+    - scipy, kstwobign: https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kstwobign.html
+        Test: tests/econometrics/test_least_squares_model.py::test_kolmogorov_survival_matches_the_reference
 
     Args:
         statistic (float): The value x.
@@ -445,8 +470,7 @@ def get_kolmogorov_survival(statistic: float) -> float:
         distribuzione." Giornale dell'Istituto Italiano degli Attuari, 4, 83-91. Ploberger,
         W. and Krämer, W. (1992). "The CUSUM Test with OLS Residuals." Econometrica, 60(2),
         271-285.
-        Referenced against scipy's `kstwobign.sf`, which statsmodels'
-        `breaks_cusumolsresid` uses.
+        statsmodels' breaks_cusumolsresid uses the survival function of scipy's kstwobign.
     """
     if statistic <= 0:
         return 1.0

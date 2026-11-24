@@ -48,11 +48,14 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects various breadth indicators based on the provided data.
+        Collect the breadth and volume indicators of every ticker in one table: how much volume and how many tickers
+        take part in the moves of the prices.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -74,8 +77,8 @@ class BreadthTechnicals:
 
         Notes:
         - The method calculates various breadth indicators for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -288,7 +291,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the McClellan Oscillator for a given price series.
+        Calculate the McClellan Oscillator: the momentum of the market's breadth, as the difference between a fast
+        and a slow average of the advancing minus declining tickers.
 
         The McClellan Oscillator is the difference between a short-term and a long-term
         exponential moving average of the daily advance/decline signal. Traditionally it is
@@ -310,8 +314,10 @@ class BreadthTechnicals:
         Also known as: McClellan oscillator, market breadth.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             short_ema_window (int, optional): The window size for the short-term EMA.
@@ -338,8 +344,8 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the McClellan Oscillator for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -411,7 +417,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the daily advance/decline signal for a given price series.
+        Calculate the advance/decline signal: whether each ticker closed higher (1) or lower (-1) than the period
+        before, the building block of the market breadth measures.
 
         Traditionally advancers versus decliners is a market-wide count of rising against
         falling stocks; applied to a single ticker it becomes a directional signal: +1 on a
@@ -426,8 +433,10 @@ class BreadthTechnicals:
         Also known as: advance decline ratio, market breadth.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -450,8 +459,8 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the advance/decline signal for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -520,7 +529,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the On-Balance Volume (OBV) for a given price series.
+        Calculate the On-Balance Volume (OBV): a running total of volume that adds the volume of up periods and
+        subtracts that of down periods, to show whether volume flows into or out of a security.
 
         The On-Balance Volume (OBV) is a technical indicator that uses volume flow to predict changes in stock price.
         It accumulates the volume on up days and subtracts the volume on down days. The resulting OBV line provides
@@ -539,13 +549,17 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall.
-        - Referenced against TA-Lib's OBV (https://ta-lib.org/functions/obv.html).
+
+        Referenced against:
+        - TA-Lib, OBV: https://ta-lib.org/functions/obv.html
 
         Also known as: OBV, volume momentum.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -570,7 +584,7 @@ class BreadthTechnicals:
           for each asset in the Toolkit instance.
         - TA-Lib's OBV starts its running total at the first period's volume instead of 0, so it is
           the On-Balance Volume here plus that volume; every change is equal.
-        - If `growth` is set to True, the method calculates the growth of the OBV using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the OBV over the given lag.
 
         As an example:
 
@@ -642,7 +656,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Price Volume Trend (PVT) for a given price series.
+        Calculate the Price Volume Trend (PVT): a running total of volume weighted by the percentage change of the
+        close, which shows how strongly buying or selling pressure backs a trend.
 
         The Price Volume Trend is a running total of volume weighted by the period's percentage
         change in price. On-Balance Volume adds or subtracts the whole volume depending on the
@@ -663,15 +678,19 @@ class BreadthTechnicals:
 
         - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall, the On-Balance
           Volume the PVT refines.
-        - Referenced against TA-Lib's PVT (https://ta-lib.org/functions/pvt.html).
+
+        Referenced against:
+        - TA-Lib, PVT: https://ta-lib.org/functions/pvt.html
 
         Also known as: PVT, Price and Volume Trend, Volume Price Trend.
 
         See `breadth_model.get_price_volume_trend` for the references.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", so that the change in price is the return including dividends.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -694,7 +713,7 @@ class BreadthTechnicals:
         Notes:
         - The running total starts at 0 on each ticker's first date with a close and a volume on or
           after the start date of the Toolkit, as in TA-Lib's PVT, which it equals.
-        - If `growth` is set to True, the method calculates the growth of the PVT using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the PVT over the given lag.
 
         As an example:
 
@@ -766,7 +785,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Accumulation/Distribution Line for a given price series.
+        Calculate the Accumulation/Distribution Line: a running total of volume weighted by where each close lies
+        within its high-low range, to show whether a security is being accumulated or distributed.
 
         The Accumulation/Distribution Line is a technical indicator that evaluates the flow of money
         into or out of an asset. It takes into account both price and volume information to identify
@@ -782,13 +802,17 @@ class BreadthTechnicals:
 
         - Chaikin, M., who published no formal paper on it; the standard textbook treatment is Murphy, J.J.
           (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
-        - Referenced against TA-Lib's AD (https://ta-lib.org/functions/ad.html).
+
+        Referenced against:
+        - TA-Lib, AD: https://ta-lib.org/functions/ad.html
 
         Also known as: ADL, Chaikin ADL, volume-price trend.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -813,8 +837,8 @@ class BreadthTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           Accumulation/Distribution Line for each asset in the Toolkit instance.
         - The Accumulation/Distribution Line agrees with TA-Lib's AD.
-        - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Accumulation/Distribution Line
+          over the given lag.
 
         As an example:
 
@@ -889,7 +913,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chaikin Oscillator for a given price series.
+        Calculate the Chaikin Oscillator: the momentum of the Accumulation/Distribution Line, as the difference
+        between its fast and slow exponential moving averages.
 
         The Chaikin Oscillator is a momentum-based indicator that combines price and volume
         to help identify potential trends and reversals in the market. It is calculated as the
@@ -903,13 +928,17 @@ class BreadthTechnicals:
 
         - Chaikin, M., who published no formal paper on it; the standard textbook treatment is Murphy, J.J.
           (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
-        - Referenced against TA-Lib's ADOSC (https://ta-lib.org/functions/adosc.html).
+
+        Referenced against:
+        - TA-Lib, ADOSC: https://ta-lib.org/functions/adosc.html
 
         Also known as: Chaikin oscillator, volume accumulation.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -941,8 +970,8 @@ class BreadthTechnicals:
           while TA-Lib's ADOSC starts them from the first Accumulation/Distribution value, so the
           first values differ from TA-Lib's until the two converge (within 0.01% after about 65
           periods with the default windows).
-        - If `growth` is set to True, the method calculates the growth of the Chaikin Oscillator
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Chaikin Oscillator
+          over the given lag.
 
         As an example:
 
@@ -1017,8 +1046,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Chaikin Money Flow (CMF) for a given price series, or Colin Twiggs' Money
-        Flow (TMF).
+        Calculate the Chaikin Money Flow (CMF) or Colin Twiggs' Money Flow (TMF): the share of volume over a window
+        that came with closes near the highs rather than the lows, a measure of buying versus selling pressure.
 
         The Chaikin Money Flow sums the same Money Flow Volume used by the Accumulation/
         Distribution Line over a rolling window and normalizes it by the window's total
@@ -1027,7 +1056,7 @@ class BreadthTechnicals:
         (accumulation) is dominating over the window, while sustained readings below zero
         indicate selling pressure (distribution).
 
-        Twiggs Money Flow (method="twiggs") refines the Chaikin Money Flow. It places the close
+        Twiggs Money Flow refines the Chaikin Money Flow. It places the close
         within the true range (which includes a gap from the previous close) instead of the
         high-low range, so a gap does not show up as a close at the top or bottom of a narrow
         range, and it smooths the money flow volume and the volume with Wilder's moving average
@@ -1036,25 +1065,29 @@ class BreadthTechnicals:
 
         The formula is as follows, per method:
 
-        - "standard": Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low),
+        - Chaikin Money Flow: Money Flow Multiplier = ((Close — Low) — (High — Close)) / (High — Low),
           Money Flow Volume = Money Flow Multiplier * Volume and
           CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
-        - "twiggs": True High = max(High, Close(t-1)), True Low = min(Low, Close(t-1)),
+        - Twiggs Money Flow: True High = max(High, Close(t-1)), True Low = min(Low, Close(t-1)),
           Money Flow Volume = Volume * ((Close — True Low) — (True High — Close)) /
           (True High — True Low) and TMF = Wilder MA(Money Flow Volume, window) /
           Wilder MA(Volume, window)
 
         For more information, see the following sources:
 
-        - Referenced against TA-Lib's CMF (https://ta-lib.org/functions/cmf.html).
+        Referenced against:
+        - TA-Lib, CMF: https://ta-lib.org/functions/cmf.html
+
         - Twiggs, C. (2003). "Twiggs Money Flow." Incredible Charts
           (https://www.incrediblecharts.com/indicators/twiggs_money_flow.php).
 
         Also known as: CMF, Chaikin Money Flow, TMF, Twiggs Money Flow.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1070,8 +1103,8 @@ class BreadthTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "standard" for the Chaikin Money Flow or "twiggs" for Twiggs
-                Money Flow. Defaults to "standard".
+            method (str, optional): The variant. Options are: "standard" (the Chaikin Money Flow),
+                "twiggs" (Twiggs Money Flow). Defaults to "standard".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1088,12 +1121,12 @@ class BreadthTechnicals:
           textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial
           Markets." New York Institute of Finance.
         - The Chaikin Money Flow agrees with TA-Lib's CMF.
-        - "twiggs": TA-Lib, pandas-ta-classic, ta and Tulip Indicators do not have it, and finta's
+        - Twiggs Money Flow: TA-Lib, pandas-ta-classic, ta and Tulip Indicators do not have it, and finta's
           TMF is an unfinished stub, so it follows Twiggs' definition. Wilder's moving average starts
           from the simple average of its first `window` values, and the first period, without a
           previous close, uses its own high-low range.
-        - If `growth` is set to True, the method calculates the growth of the Chaikin Money
-          Flow using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Chaikin Money
+          Flow over the given lag.
 
         As an example:
 
@@ -1175,7 +1208,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Ease of Movement (EMV) for a given price series.
+        Calculate the Ease of Movement (EMV): how far the price moves per unit of volume, so a large value shows a
+        price rising or falling on little volume.
 
         The Ease of Movement indicator relates how far price moved (the change in the
         midpoint of the high-low range from one period to the next) to the volume required
@@ -1195,8 +1229,10 @@ class BreadthTechnicals:
         Also known as: EMV, Ease of Movement.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods used to smooth the raw Ease of
@@ -1226,11 +1262,13 @@ class BreadthTechnicals:
           the Ease of Movement for each asset in the Toolkit instance.
         - Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the
           Volume Analysis of Stock and Bond Markets." Dow Jones-Irwin.
-        - Referenced against TA-Lib's EMV (https://ta-lib.org/functions/emv.html).
         - The Ease of Movement agrees with TA-Lib's EMV with its `volumedivisor` set to `volume_divisor`
           (TA-Lib's default is 10,000).
-        - If `growth` is set to True, the method calculates the growth of the Ease of
-          Movement using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Ease of
+          Movement over the given lag.
+
+        Referenced against:
+        - TA-Lib, EMV: https://ta-lib.org/functions/emv.html
 
         As an example:
 
@@ -1304,8 +1342,10 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Negative Volume Index (NVI) or the Positive Volume Index (PVI) for a given
-        price series.
+        Calculate the Negative or the Positive Volume Index (NVI or PVI), which separates the trades of informed
+        investors from those of the crowd.
+
+        It is a running total of the price changes on the periods volume falls (NVI) or rises (PVI).
 
         The Negative Volume Index is a cumulative index that only updates on days where
         volume decreases from the prior period, compounding that day's percentage price
@@ -1313,7 +1353,7 @@ class BreadthTechnicals:
         index is carried forward unchanged. The premise, per Fosback, is that "smart money"
         tends to be active on low-volume (quiet) days, so tracking price behaviour
         specifically on those days isolates informed trading from the noise of high-volume,
-        crowd-driven days. The Positive Volume Index (method="positive") mirrors it: it only updates
+        crowd-driven days. The Positive Volume Index mirrors it: it only updates
         on days where volume increases from the prior period, and is carried forward unchanged on
         days where volume decreases (or stays flat). Per Fosback, it isolates price behaviour on
         high-volume (crowd-driven) days, which is traditionally read as tracking less-informed,
@@ -1321,23 +1361,27 @@ class BreadthTechnicals:
 
         The formula is as follows, per method:
 
-        - "negative": Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
+        - Negative Volume Index: Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
           Volume(t) < Volume(t-1), and Index(t) = Index(t-1) otherwise
-        - "positive": Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
+        - Positive Volume Index: Index(t) = Index(t-1) * (1 + (Close(t) / Close(t-1) — 1)) if
           Volume(t) > Volume(t-1), and Index(t) = Index(t-1) otherwise
 
         For more information, see the following sources:
 
         - Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to Profits on Wall
           Street." The Institute for Econometric Research.
-        - Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html) and PVI
-          (https://ta-lib.org/functions/pvi.html).
+
+        Referenced against:
+        - TA-Lib, NVI: https://ta-lib.org/functions/nvi.html
+        - TA-Lib, PVI: https://ta-lib.org/functions/pvi.html
 
         Also known as: NVI, Negative Volume Index, PVI, Positive Volume Index, volume index.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             start_value (float, optional): The index value to start the series at.
@@ -1351,8 +1395,8 @@ class BreadthTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "negative" for the Negative Volume Index or "positive" for the
-                Positive Volume Index. Defaults to "negative".
+            method (str, optional): The index. Options are: "negative" (the Negative Volume Index),
+                "positive" (the Positive Volume Index). Defaults to "negative".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1366,8 +1410,8 @@ class BreadthTechnicals:
           the volume index for each asset in the Toolkit instance.
         - With the default `start_value` of 1,000, the Negative Volume Index agrees with TA-Lib's NVI
           and the Positive Volume Index with TA-Lib's PVI.
-        - If `growth` is set to True, the method calculates the growth of the volume index using
-          the specified `lag`.
+        - When growth is requested, the method calculates the growth of the volume index over
+          the given lag.
 
         As an example:
 
@@ -1446,7 +1490,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the TRIN (Arms Index) for a given price series.
+        Calculate the TRIN (Arms Index): the ratio of advancing to declining tickers divided by the ratio of their
+        volumes, which shows whether volume favours the rising or the falling tickers.
 
         TRIN compares the ratio of advancing to declining issues against the ratio of
         volume in advancing issues to volume in declining issues. It is a market-wide
@@ -1478,8 +1523,10 @@ class BreadthTechnicals:
         Also known as: Arms Index, TRIN.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1502,8 +1549,8 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the TRIN across all tickers in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1591,7 +1638,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the New Highs - New Lows for a given price series.
+        Calculate the New Highs - New Lows: the number of tickers at a new high over a window minus the number at a
+        new low, which shows how broad a rise or a fall is.
 
         New Highs - New Lows measures the number of tickers reaching a new high over
         the specified window minus the number of tickers reaching a new low over the
@@ -1621,8 +1669,10 @@ class BreadthTechnicals:
         Also known as: new highs minus new lows, record high percent.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for the new high / new low lookback.
@@ -1647,8 +1697,8 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the New Highs - New Lows across all tickers in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1741,7 +1791,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Klinger Volume Oscillator (KVO) for a given price series.
+        Calculate the Klinger Volume Oscillator (KVO): the difference between a fast and a slow average of the
+        volume force, which compares the volume of up and down trends to show long-term money flow.
 
         The Klinger Volume Oscillator turns each period's volume into a signed "volume force": positive
         when the sum of the high, low and close rose from the period before (an up trend), negative when
@@ -1766,14 +1817,19 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Klinger, S.J. (1997). "Identifying Trends With Volume Analysis." Technical Analysis of Stocks & Commodities, 15(12).
-        - Referenced against TA-Lib's KVO (https://ta-lib.org/functions/kvo.html).
-        - Tulip Indicators: kvo (https://tulipindicators.org/kvo).
+
+        Referenced against:
+        - TA-Lib, KVO: https://ta-lib.org/functions/kvo.html
+            Test: tests/technical/test_breadth_model.py::test_klinger_volume_oscillator_matches_talib
+        - Tulip Indicators, kvo: https://tulipindicators.org/kvo
 
         Also known as: KVO, Klinger Oscillator, Klinger Volume Force.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1808,8 +1864,8 @@ class BreadthTechnicals:
           AAPL and MSFT the two agree to 1% of the typical KVO after about 210 periods and to 0.0001% after
           about 470. pandas-ta-classic's `kvo` uses a simplified force (the volume signed by the change in
           the typical price) and differs.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -1884,7 +1940,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Bill Williams' Market Facilitation Index (BW MFI) for a given price series.
+        Calculate Bill Williams' Market Facilitation Index (BW MFI): the range of a period per unit of volume, which
+        shows how efficiently volume moves the price.
 
         The Market Facilitation Index measures how far price moved per unit of volume: the period's range
         divided by its volume. Williams read it together with the change in volume: a rising index on
@@ -1903,15 +1960,20 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize Your Profits." John Wiley & Sons.
-        - Referenced against TA-Lib's MARKETFI (https://ta-lib.org/functions/marketfi.html).
-        - pandas-ta-classic: marketfi (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: marketfi (https://tulipindicators.org/marketfi).
+
+        Referenced against:
+        - TA-Lib, MARKETFI: https://ta-lib.org/functions/marketfi.html
+            Test: tests/technical/test_breadth_model.py::test_market_facilitation_index_matches_talib
+        - pandas-ta-classic, marketfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/marketfi.py#L16
+        - Tulip Indicators, marketfi: https://tulipindicators.org/marketfi
 
         Also known as: BW MFI, Market Facilitation Index, MARKETFI.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -1938,11 +2000,11 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the Market
           Facilitation Index for each asset in the Toolkit instance.
-        - With `volume_divisor=1` it agrees with TA-Lib's MARKETFI, pandas-ta-classic's `marketfi` and Tulip
+        - With a volume divisor of 1 it agrees with TA-Lib's MARKETFI, pandas-ta-classic's `marketfi` and Tulip
           Indicators' `marketfi`, whose index for a stock trading millions of shares is a fraction of a
           millionth. A period without volume has no index (NaN) rather than an infinite one.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2014,7 +2076,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Larry Williams' Accumulation/Distribution (WAD) for a given price series.
+        Calculate Larry Williams' Accumulation/Distribution (WAD): a running total of how far each close moved from
+        the opposite end of its true range, which shows accumulation and distribution from prices alone.
 
         Williams' Accumulation/Distribution is a running total of how far each close moved away from the
         opposite end of the period's true range: on an up close the distance from the true low
@@ -2034,15 +2097,20 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading Commodities." Windsor Books.
-        - Referenced against TA-Lib's WAD (https://ta-lib.org/functions/wad.html).
-        - pandas-ta-classic: wad (https://github.com/xgboosted/pandas-ta-classic).
-        - Tulip Indicators: wad (https://tulipindicators.org/wad).
+
+        Referenced against:
+        - TA-Lib, WAD: https://ta-lib.org/functions/wad.html
+            Test: tests/technical/test_breadth_model.py::test_williams_accumulation_distribution_matches_talib
+        - pandas-ta-classic, wad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/wad.py#L13
+        - Tulip Indicators, wad: https://tulipindicators.org/wad
 
         Also known as: WAD, Williams A/D, Williams Accumulation Distribution.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2069,8 +2137,8 @@ class BreadthTechnicals:
           start date.
         - It agrees with TA-Lib's WAD (which also starts at 0), Tulip Indicators' `wad` (which starts on the
           second period) and pandas-ta-classic's `wad` (NaN on the first period).
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2144,7 +2212,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Relative Volume (RVOL) for a given volume series.
+        Calculate the Relative Volume (RVOL): the volume of a period divided by its average over a window, which
+        shows how unusually busy the period is.
 
         Relative Volume compares a period's volume with the average volume of the periods before it. A
         value of 2 means twice the usual volume: a breakout or a gap on high relative volume carries more
@@ -2160,13 +2229,18 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Bulkowski, T.N. (2005). "Encyclopedia of Chart Patterns." 2nd ed. John Wiley & Sons.
-        - Referenced against TA-Lib's RVOL (https://ta-lib.org/functions/rvol.html).
+
+        Referenced against:
+        - TA-Lib, RVOL: https://ta-lib.org/functions/rvol.html
+            Test: tests/technical/test_breadth_model.py::test_relative_volume_matches_talib
 
         Also known as: RVOL, Relative Volume, volume ratio.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The number of earlier periods to average the volume over. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -2190,8 +2264,8 @@ class BreadthTechnicals:
           each asset in the Toolkit instance.
         - It agrees with TA-Lib's RVOL. A ticker without volume, such as an index or a currency pair, has no
           Relative Volume (NaN).
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2262,7 +2336,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Markos Katsanos' Volume Flow Indicator (VFI) for a given price series.
+        Calculate Markos Katsanos' Volume Flow Indicator (VFI): the volume of the periods with a meaningful move of
+        the typical price, signed by the direction of the move, which shows whether money flows in or out.
 
         The Volume Flow Indicator refines On-Balance Volume in three ways: it uses the typical price instead
         of the close, it ignores moves too small to matter (below a cutoff that scales with the recent
@@ -2290,14 +2365,21 @@ class BreadthTechnicals:
 
         - Katsanos, M. (2004). "Using Money Flow to Stay with the Trend." Technical Analysis of Stocks & Commodities, 22(6).
         - Katsanos, M. (2004). "Volume Flow Indicator Performance." Technical Analysis of Stocks & Commodities, 22(7).
-        - Referenced against pandas-ta-classic's vfi (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: VFI (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - pandas-ta-classic, vfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vfi.py#L17
+            Test: tests/technical/test_breadth_model.py::test_volume_flow_indicator_matches_pandas_ta
+
+        Shares similar logic:
+        - finta, VFI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2026
 
         Also known as: VFI, Volume Flow Indicator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2335,8 +2417,8 @@ class BreadthTechnicals:
           Bollinger Bands do. The VFI agrees with pandas-ta-classic's `vfi` exactly. finta uses the sample
           deviation (ddof=1), a 1.7% larger cutoff, and differs wherever a move falls between the two
           cutoffs.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2413,7 +2495,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Markos Katsanos' Finite Volume Elements (FVE) for a given price series.
+        Calculate Markos Katsanos' Finite Volume Elements (FVE): the share of volume over a window classified as
+        buying rather than selling, leaving out moves too small to matter, a measure of money flow.
 
         Finite Volume Elements is a money flow indicator that classifies each period's whole volume as
         buying, selling or neutral. It looks at both the intraday move (the close against the middle of the
@@ -2435,13 +2518,18 @@ class BreadthTechnicals:
 
         - Katsanos, M. (2003). "Detecting Breakouts." Technical Analysis of Stocks & Commodities, 21(4).
         - Katsanos, M. (2003). "Detecting Breakouts In Intraday Charts." Technical Analysis of Stocks & Commodities, 21(9).
-        - Referenced against finta's FVE (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - finta, FVE: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1998
+            Test: tests/technical/test_breadth_model.py::test_finite_volume_elements_matches_finta
 
         Also known as: FVE, Finite Volume Elements.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2472,8 +2560,8 @@ class BreadthTechnicals:
         - It agrees with finta's FVE divided by 100 (Katsanos and finta express it in percent, with the cutoff
           in percent as well), from the second value on: finta counts the first period, which has no
           change in the typical price, as neutral volume and starts one period earlier.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2547,7 +2635,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Volume Zone Oscillator (VZO) for a given price series.
+        Calculate the Volume Zone Oscillator (VZO): the volume of up closes minus that of down closes as a share of
+        the total volume, smoothed, which shows whether buying or selling volume dominates.
 
         The Volume Zone Oscillator divides the volume into the volume of up closes and that of down closes
         and expresses their difference, smoothed with an exponential moving average, as a share of the
@@ -2565,13 +2654,18 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Khalil, W. and Steckler, D. (2011). "In The Volume Zone." Technical Analysis of Stocks & Commodities, 29(5).
-        - Referenced against finta's VZO (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - finta, VZO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1521
+            Test: tests/technical/test_breadth_model.py::test_volume_zone_oscillator_matches_finta
 
         Also known as: VZO, Volume Zone Oscillator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods for both EMAs. Defaults to 14.
@@ -2599,8 +2693,8 @@ class BreadthTechnicals:
           40 and 60. Both EMAs start from the simple average of their first values on the second period
           (the first has no change), so the VZO starts on period `window` + 1. finta averages from the
           first value and agrees after about 90 periods.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2673,7 +2767,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Price-Volume (dollar volume) for a given price series.
+        Calculate the Price-Volume (dollar volume): the close times the volume, the amount of money that traded in
+        each period.
 
         The Price-Volume is the value traded in a period: the close times the volume. Unlike the number of
         shares, it can be compared across stocks with very different prices and is the usual measure of
@@ -2688,13 +2783,18 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Amihud, Y. (2002). "Illiquidity and Stock Returns: Cross-Section and Time-Series Effects." Journal of Financial Markets, 5(1), 31-56.
-        - Referenced against pandas-ta-classic's pvol (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, pvol: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvol.py#L17
+            Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
         Also known as: PVOL, dollar volume, traded value.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Close".
             signed (bool, optional): Whether to sign the value with the direction of the close. Defaults to
@@ -2721,9 +2821,9 @@ class BreadthTechnicals:
           Price-Volume for each asset in the Toolkit instance.
         - The traded close is the default, as the value traded is a market value; the dividend-adjusted
           close would understate the value of older periods.
-        - It agrees with pandas-ta-classic's `pvol`, also with `signed=True`.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - It agrees with pandas-ta-classic's `pvol`, also in its signed form.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2795,7 +2895,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Price Volume Rank (PVR) for a given price series.
+        Calculate the Price Volume Rank (PVR): a code from 1 (a rising price on rising volume) to 4 (a falling price
+        on falling volume), which shows whether volume confirms a move.
 
         The Price Volume Rank classifies each period by the direction of the close and of the volume, from
         the most bullish to the most bearish combination: a rising price on rising volume (1), a rising
@@ -2814,13 +2915,18 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Fulks Maxwell Laboratories (fmlabs), "Price Volume Rank," Technical Indicators Reference.
-        - Referenced against pandas-ta-classic's pvr (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, pvr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvr.py#L12
+            Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
         Also known as: PVR, Price Volume Rank.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -2844,8 +2950,8 @@ class BreadthTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the Price
           Volume Rank for each asset in the Toolkit instance.
         - It agrees with pandas-ta-classic's `pvr`.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -2918,7 +3024,10 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Buying and Selling Pressure (BASP) for a given price series.
+        Calculate the Buying and Selling Pressure (BASP), which shows whether buyers or sellers control the market.
+
+        It compares the distance of the close above the low (buying) and of the high above the close (selling) with
+        their averages, weighted by volume.
 
         The Buying Pressure is the distance of the close above the low, the Selling Pressure the distance
         of the high above the close. Each is divided by its own exponential moving average, so it shows
@@ -2936,16 +3045,21 @@ class BreadthTechnicals:
 
         For more information, see the following sources:
 
-        - Referenced against finta's BASP and BASPN (https://github.com/peerchemist/finta), by
-          Peerchemist, which defines the indicator without citing a primary source.
+        Referenced against:
+        - finta, BASP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1671
+            Test: tests/technical/test_breadth_model.py::test_buying_selling_pressure_matches_finta
+        - finta, BASPN: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1691
+
         - Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks & Commodities, 3(4),
           for a similar buying pressure measured from the lower of the low and the previous close.
 
         Also known as: BASP, BASPN, normalized buying and selling pressure.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
@@ -2976,8 +3090,9 @@ class BreadthTechnicals:
         - finta's BASPN is the default and its BASP a `smooth_window` of 1; finta cites no primary source.
           Every EMA starts from the simple average of its first values, while finta's average from the
           first value, so the two agree after about 300 periods.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
+        - finta defines the Buying and Selling Pressure without citing a primary source.
 
         As an example:
 
@@ -3054,7 +3169,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Archer On-Balance Volume (AOBV) for a given price series.
+        Calculate the Archer On-Balance Volume (AOBV): a fast and a slow average of the On-Balance Volume and
+        whether the volume trend is up or down.
 
         The Archer On-Balance Volume adds a fast and a slow exponential moving average of On-Balance Volume
         and two flags for their trend, so OBV can be read like a moving average crossover system. A "long
@@ -3074,13 +3190,18 @@ class BreadthTechnicals:
         For more information, see the following sources:
 
         - Granville, J.E. (1963). "Granville's New Key to Stock Market Profits." Prentice-Hall.
-        - Referenced against pandas-ta-classic's aobv (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, aobv: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/aobv.py#L17
+            Test: tests/technical/test_breadth_model.py::test_archer_on_balance_volume_matches_pandas_ta
 
         Also known as: AOBV, Archer OBV.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_window (int, optional): The number of periods for the fast EMA of OBV. Defaults to 4.
@@ -3114,8 +3235,8 @@ class BreadthTechnicals:
           pandas-ta-classic's `aobv`, except that its On-Balance Volume (as TA-Lib's) starts at the first
           period's volume instead of 0: the OBV, its minimum, maximum and averages are that volume higher
           there, and the flags are equal.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -3193,7 +3314,8 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Volume Profile (Volume by Price) between the start and end date.
+        Calculate the Volume Profile (Volume by Price) between the start and end date: how much volume traded at
+        each price level, which shows the prices the market accepted most.
 
         The Volume Profile is not a series over time but a histogram: it divides the range of the closes
         between the start and end date into price bins of equal width and adds up the volume traded at a
@@ -3215,13 +3337,17 @@ class BreadthTechnicals:
 
         - Steidlmayer, J.P. and Koy, K. (1986). "Markets and Market Logic." Porcupine Press.
         - StockCharts ChartSchool, "Volume by Price" (https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/volume-by-price).
-        - Referenced against pandas-ta-classic's vp (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, vp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vp.py#L13
 
         Also known as: VP, Volume by Price, Volume at Price, Market Profile.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             bins (int, optional): The number of price bins of equal width. Defaults to 10.
@@ -3240,10 +3366,10 @@ class BreadthTechnicals:
         - The profile covers the periods between the start and end date of the Toolkit and looks at every
           close in them, so it describes that window as a whole and is not meant for a backtest. Each
           ticker has its own bins, over the range of its own closes.
-        - The bins are those of pandas-ta-classic's `vp` with `sort_close=True`, whose up and down volume
+        - The bins are those of pandas-ta-classic's `vp` sorted by close, whose up and down volume
           it equals, with the exact range of the closes as edges and every bin kept, also those without
           volume (pandas-ta-classic widens the range by 0.1% and drops empty bins; its default
-          `sort_close=False` splits the period into stretches of time instead). Its total is the up plus
+          splits the period into stretches of time instead). Its total is the up plus
           the down volume; here the Total Volume also includes the volume of unchanged closes and of the
           first period, which has no change.
         - A close on an inner edge belongs to the lower bin. A ticker whose close does not change has all
@@ -3317,15 +3443,14 @@ class BreadthTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the breadth of the market the Toolkit's tickers make up: how many of them take
-        part in a move. An index can rise on the strength of a few large companies while most
-        of its members fall; breadth shows that divergence, which often comes before the index
-        itself turns. Breadth is most meaningful across many tickers, such as the constituents
-        of an index, which `Discovery.get_index_constituents` lists (e.g. the 500 tickers of the
-        S&P 500). Today's members leave out the companies that were removed from the index
-        since (often after falling behind), so breadth of past dates computed from them is
-        biased towards the survivors, the further back the more; its `date=` gives the members
-        on the first date of the window instead.
+        Calculate the breadth of the market the Toolkit's tickers make up: how many of them take part in a move.
+
+        An index can rise on the strength of a few large companies while most of its members fall; breadth shows
+        that divergence, which often comes before the index itself turns. Breadth is most meaningful across many
+        tickers, such as the constituents of an index, which `Discovery.get_index_constituents` lists (e.g. the 500
+        tickers of the S&P 500). Today's members leave out the companies that were removed from the index since
+        (often after falling behind), so breadth of past dates computed from them is biased towards the survivors,
+        the further back the more; its `date=` gives the members on the first date of the window instead.
 
         Per date it returns:
 
@@ -3362,8 +3487,10 @@ class BreadthTechnicals:
         above 200-day moving average, new highs new lows.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             short_window (int, optional): The short moving average window. Defaults to 50.

@@ -54,11 +54,14 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects the cycle indicators based on the provided data.
+        Collect the cycle indicators of every ticker in one table: the length, phase and turning points of the
+        cycles in the prices.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -84,8 +87,8 @@ class CycleTechnicals:
         - The method calculates the cycle indicators for each asset in the Toolkit instance.
         - The Hilbert transform indicators adapt to the dominant cycle of the price and the filters and
           oscillators use their own default windows, so `window` is left unused.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -236,7 +239,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform Dominant Cycle Period (HT_DCPERIOD) for a given price series.
+        Calculate the Hilbert Transform Dominant Cycle Period (HT_DCPERIOD): the length, in periods, of the main
+        cycle in the prices.
 
         The dominant cycle period is the length, in periods, of the cycle that dominates the price,
         measured with Ehlers' homodyne discriminator. The smoothed and detrended price is split by the
@@ -262,12 +266,19 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's HT_DCPERIOD (https://ta-lib.org/functions/ht_dcperiod.html).
-        - pandas-ta-classic: ht_dcperiod (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HT_DCPERIOD: https://ta-lib.org/functions/ht_dcperiod.html
+            Test: tests/technical/test_cycle_model.py::test_dominant_cycle_period_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, ht_dcperiod: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcperiod.py#L14
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -295,8 +306,8 @@ class CycleTechnicals:
           and the first 32 periods (TA-Lib's lookback) are NaN.
         - The Hilbert transform and the homodyne discriminator are shared with the other Hilbert Transform
           indicators and MAMA.
-        - If `growth` is set to True, the method calculates the growth of the dominant cycle period using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the dominant cycle period over the
+          given lag.
 
         As an example:
 
@@ -367,7 +378,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform Dominant Cycle Phase (HT_DCPHASE) for a given price series.
+        Calculate the Hilbert Transform Dominant Cycle Phase (HT_DCPHASE): where the prices are within their main
+        cycle, in degrees.
 
         The dominant cycle phase is the position of the price within its dominant cycle, in degrees.
         It is the angle of the discrete Fourier transform of the smoothed price over exactly one dominant
@@ -395,12 +407,19 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's HT_DCPHASE (https://ta-lib.org/functions/ht_dcphase.html).
-        - pandas-ta-classic: ht_dcphase (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HT_DCPHASE: https://ta-lib.org/functions/ht_dcphase.html
+            Test: tests/technical/test_cycle_model.py::test_dominant_cycle_phase_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, ht_dcphase: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_dcphase.py#L14
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -429,8 +448,8 @@ class CycleTechnicals:
           and the first 63 periods (TA-Lib's lookback) are NaN.
         - The phase is an angle that wraps from 315 to -45 degrees, so its growth and its standardized
           values jump at every new cycle.
-        - If `growth` is set to True, the method calculates the growth of the dominant cycle phase using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the dominant cycle phase over the
+          given lag.
 
         As an example:
 
@@ -501,7 +520,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform Phasor Components (HT_PHASOR) for a given price series.
+        Calculate the Hilbert Transform Phasor Components (HT_PHASOR): the in-phase and quadrature parts of the
+        prices' cycle, from which its phase and period follow.
 
         The phasor components are the in-phase component, the smoothed and detrended price lagged three
         periods, and the quadrature component, its Hilbert transform: the same cycle shifted by 90
@@ -520,12 +540,19 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's HT_PHASOR (https://ta-lib.org/functions/ht_phasor.html).
-        - pandas-ta-classic: ht_phasor (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HT_PHASOR: https://ta-lib.org/functions/ht_phasor.html
+            Test: tests/technical/test_cycle_model.py::test_phasor_components_match_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, ht_phasor: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_phasor.py#L14
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -551,8 +578,8 @@ class CycleTechnicals:
         - Equals TA-Lib's HT_PHASOR and pandas-ta-classic's ht_phasor.
         - The recursion starts from zero on the 12th period of each ticker's own history, as in TA-Lib,
           and the first 32 periods (TA-Lib's lookback) are NaN.
-        - If `growth` is set to True, the method calculates the growth of the phasor components using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the phasor components over the
+          given lag.
 
         As an example:
 
@@ -626,14 +653,14 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform SineWave (HT_SINE) for a given price series, or the MESA
-        Sine Wave over a fixed window.
+        Calculate the Hilbert Transform SineWave (HT_SINE), or the MESA Sine Wave over a fixed window: the sine of
+        the phase of the prices' main cycle and its lead, whose crossings mark the turning points of the cycle.
 
         The sine wave is the sine of the dominant cycle phase and the lead sine the sine of the phase
         advanced by 45 degrees. While the price cycles, the two lines cross shortly before the turning
         points of the cycle: the sine crossing above the lead sine marks a low, crossing below a high.
         While the price trends, the phase barely moves and the two lines run apart without crossing.
-        The MESA Sine Wave (method="mesa") is Ehlers' sinewave indicator over a fixed window: the
+        The MESA Sine Wave is Ehlers' sinewave indicator over a fixed window: the
         phase of the price within a cycle of that window, measured with a discrete Fourier transform,
         where the Hilbert Transform SineWave measures the window as the dominant cycle.
 
@@ -670,17 +697,25 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's HT_SINE (https://ta-lib.org/functions/ht_sine.html).
-        - pandas-ta-classic: ht_sine (https://github.com/xgboosted/pandas-ta-classic).
         - Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
-        - Referenced against Tulip Indicators' msw (https://tulipindicators.org/msw) and pandas-ta-classic's msw
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HT_SINE: https://ta-lib.org/functions/ht_sine.html
+            Test: tests/technical/test_cycle_model.py::test_sine_wave_matches_talib
+        - Tulip Indicators, msw (MESA Sine Wave): https://tulipindicators.org/msw
+        - pandas-ta-classic, msw (MESA Sine Wave): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/msw.py#L14
+            Test: tests/technical/test_cycle_model.py::test_mesa_sine_wave_matches_pandas_ta
+
+        Shares similar logic:
+        - pandas-ta-classic, ht_sine: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_sine.py#L14
 
         Also known as: HT_SINE, Hilbert Transform SineWave, sine wave, lead sine, MSW, MESA Sine Wave, MESA sinewave.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low of the median price are
                 adjusted for dividends in the same way.
@@ -693,8 +728,8 @@ class CycleTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): "standard" for the Hilbert Transform SineWave or "mesa" for the
-                MESA Sine Wave over a fixed window. Defaults to "standard".
+            method (str, optional): The sine wave. Options are: "standard" (the Hilbert Transform SineWave),
+                "mesa" (the MESA Sine Wave over a fixed window). Defaults to "standard".
             median_price (bool, optional): Whether to filter the median price (High + Low) / 2, as
                 Ehlers does, or the close of `close_column`, as Tulip Indicators and
                 pandas-ta-classic do. Only used when method="mesa". Defaults to True.
@@ -714,13 +749,13 @@ class CycleTechnicals:
         - Equals TA-Lib's HT_SINE and pandas-ta-classic's ht_sine.
         - The recursion starts from zero on the 37th period of each ticker's own history, as in TA-Lib,
           and the first 63 periods (TA-Lib's lookback) are NaN.
-        - "mesa": equals pandas-ta-classic's msw on the close (`median_price=False`), and Tulip
+        - MESA Sine Wave: equals pandas-ta-classic's msw on the close (not the median price), and Tulip
           Indicators' msw to 1e-4, as Tulip takes 3.1415926 for π. Both start one period later, on the
           period after the first full window. Without an imaginary part the phase is 90 degrees times
           the sign of the real part, as in Ehlers' sinewave indicator, where Tulip Indicators and
           pandas-ta-classic take 180 degrees.
-        - If `growth` is set to True, the method calculates the growth of the sine wave using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the sine wave over the
+          given lag.
 
         As an example:
 
@@ -804,7 +839,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Hilbert Transform Trend vs Cycle Mode (HT_TRENDMODE) for a given price series.
+        Calculate the Hilbert Transform Trend vs Cycle Mode (HT_TRENDMODE): whether the prices are trending (1) or
+        moving in a cycle (0).
 
         The trend mode tells whether the price trends (1) or moves in a cycle (0). Ehlers' rules: a
         crossing of the sine and the lead sine starts a cycle, which lasts at least half a dominant
@@ -825,12 +861,19 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's HT_TRENDMODE (https://ta-lib.org/functions/ht_trendmode.html).
-        - pandas-ta-classic: ht_trendmode (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, HT_TRENDMODE: https://ta-lib.org/functions/ht_trendmode.html
+            Test: tests/technical/test_cycle_model.py::test_trend_mode_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, ht_trendmode: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ht_trendmode.py#L14
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -856,8 +899,8 @@ class CycleTechnicals:
         - Equals TA-Lib's HT_TRENDMODE and pandas-ta-classic's ht_trendmode after the lookback.
         - The recursion starts from zero on the 37th period of each ticker's own history, as in TA-Lib,
           and the first 63 periods (TA-Lib's lookback) are NaN, where TA-Lib returns 0.
-        - If `growth` is set to True, the method calculates the growth of the trend mode using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the trend mode over the
+          given lag.
 
         As an example:
 
@@ -930,8 +973,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the MESA Adaptive Moving Average (MAMA) and the Following Adaptive Moving Average (FAMA)
-        for a given price series.
+        Calculate the MESA Adaptive Moving Average (MAMA) and the Following Adaptive Moving Average (FAMA): averages
+        that adapt to the speed of the prices' cycle, so they follow fast moves and stay flat in a range.
 
         MAMA is an exponential moving average whose smoothing factor follows the rate at which the phase
         of the price cycle changes, measured with the Hilbert transform. When the phase jumps, as at the
@@ -956,14 +999,21 @@ class CycleTechnicals:
           September 2001.
         - Ehlers, J.F. (2001). "Rocket Science for Traders: Digital Signal Processing Applications."
           John Wiley & Sons.
-        - Referenced against TA-Lib's MAMA (https://ta-lib.org/functions/mama.html).
-        - pandas-ta-classic: mama (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, MAMA: https://ta-lib.org/functions/mama.html
+            Test: tests/technical/test_cycle_model.py::test_mesa_adaptive_moving_average_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, mama: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mama.py#L248
 
         Also known as: MAMA, FAMA, MESA adaptive moving average.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             fast_limit (float, optional): The largest smoothing factor, used when the phase jumps.
@@ -999,8 +1049,8 @@ class CycleTechnicals:
           80 periods. The Toolkit calculates the technical indicators from a year before `start_date`, so with
           daily data this warm-up falls before the dates shown.
         - With the default `close_column` of "Adj Close" the prices are adjusted for dividends.
-        - If `growth` is set to True, the method calculates the growth of the MESA adaptive moving average using
-          the specified `lag`.
+        - When growth is requested, the method calculates the growth of the MESA adaptive moving average over
+          the given lag.
 
         As an example:
 
@@ -1077,7 +1127,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Ehlers' Swiss Army Knife filter for a given price series.
+        Calculate Ehlers' Swiss Army Knife filter: a family of filters that remove the trend (high-pass), the noise
+        (low-pass) or both (band-pass) from the prices.
 
         The Swiss Army Knife indicator of Ehlers (2006) is one second-order recursive filter whose coefficients
         select its response. The high-pass filters remove the trend and keep the cycles shorter than the window,
@@ -1102,12 +1153,20 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2006). "Swiss Army Knife Indicator." Technical Analysis of Stocks & Commodities, 24(1),
           28-31, 50-53.
-        - Referenced against TA-Lib's SWAK_HP, SWAK_2PHP, SWAK_BP, SWAK_BUTTER and SWAK_GAUSS
-          (https://ta-lib.org/functions/).
+
+        Referenced against:
+        - TA-Lib, SWAK_HP: https://ta-lib.org/functions/swak_hp.html
+            Test: tests/technical/test_cycle_model.py::test_swiss_army_knife_filters_match_talib
+        - TA-Lib, SWAK_2PHP: https://ta-lib.org/functions/swak_2php.html
+        - TA-Lib, SWAK_BP: https://ta-lib.org/functions/swak_bp.html
+        - TA-Lib, SWAK_BUTTER: https://ta-lib.org/functions/swak_butter.html
+        - TA-Lib, SWAK_GAUSS: https://ta-lib.org/functions/swak_gauss.html
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -1115,8 +1174,10 @@ class CycleTechnicals:
                 or the close of `close_column`, as TA-Lib's SWAK functions do. Defaults to True.
             window (int, optional): The cutoff period of the high-pass and low-pass filters and the centre period of
                 the band-pass filter, at least 5. Defaults to 20.
-            method (str, optional): The filter. Options are: "high_pass", "two_pole_high_pass", "band_pass",
-                "butterworth" or "gaussian". Defaults to "band_pass", the default of Ehlers' listing.
+            method (str, optional): The filter. Options are: "high_pass" (one-pole high-pass filter),
+                "two_pole_high_pass" (two-pole high-pass filter), "band_pass" (band-pass filter),
+                "butterworth" (two-pole Butterworth low-pass filter), "gaussian" (Gaussian low-pass filter).
+                Defaults to "band_pass", the default of Ehlers' listing.
             delta (float, optional): The half bandwidth of the band-pass filter as a fraction of its centre
                 frequency, above 0 and at most 0.5. Defaults to 0.1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -1140,13 +1201,13 @@ class CycleTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Swiss Army Knife filter for each asset in the Toolkit instance.
-        - Equals TA-Lib's SWAK functions on the close (`median_price=False`), from the first period on.
+        - Equals TA-Lib's SWAK functions on the close (not the median price), from the first period on.
         - The filter starts in the steady state of a constant price equal to the first price of each ticker's own
           history: the low-pass filters on that price, the high-pass and band-pass filters on zero, as in TA-Lib.
           Ehlers' listing starts every filter from zero, which keeps the low-pass filters far below the price for
           many periods.
-        - If `growth` is set to True, the method calculates the growth of the Swiss Army Knife filter using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the Swiss Army Knife filter over the
+          given lag.
 
         As an example:
 
@@ -1224,7 +1285,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Ehlers' Even Better Sinewave for a given price series.
+        Calculate Ehlers' Even Better Sinewave: an oscillator between -1 and 1 that shows whether the prices move in
+        a cycle or a trend and where they are in the cycle.
 
         The Even Better Sinewave of Ehlers (2013) removes the trend with a one-pole high-pass filter, smooths the
         remaining cycles with a SuperSmoother and divides their average over three periods by the square root of
@@ -1246,11 +1308,16 @@ class CycleTechnicals:
         For more information, see the following sources:
 
         - Ehlers, J.F. (2013). "Cycle Analytics for Traders: Advanced Technical Trading Concepts." John Wiley & Sons.
-        - Referenced against pandas-ta-classic's ebsw (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, ebsw: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/ebsw.py#L63
+            Test: tests/technical/test_cycle_model.py::test_even_better_sinewave_matches_pandas_ta
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The cutoff period of the high-pass filter, the longest cycle kept. Defaults to 40.
@@ -1279,8 +1346,8 @@ class CycleTechnicals:
           the first `window` periods are NaN while they settle. pandas-ta-classic starts them on the 12th period;
           the two converge as the start fades and are equal on prices that do not move before it.
         - A period without power (three filter values of zero) is NaN, where pandas-ta-classic gives 0.
-        - If `growth` is set to True, the method calculates the growth of the Even Better Sinewave using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the Even Better Sinewave over the
+          given lag.
 
         As an example:
 
@@ -1354,7 +1421,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Ehlers' Detrended Synthetic Price for a given price series.
+        Calculate Ehlers' Detrended Synthetic Price: the difference between a fast and a slow average tuned to the
+        prices' cycle, which shows the cycle without the trend.
 
         The Detrended Synthetic Price of Ehlers (1992) is the difference between an exponential moving average over
         a quarter of the dominant cycle and one over half of it. The difference removes the trend and leaves a
@@ -1368,11 +1436,16 @@ class CycleTechnicals:
         For more information, see the following sources:
 
         - Ehlers, J.F. (1992). "MESA and Trading Market Cycles." John Wiley & Sons.
-        - Referenced against pandas-ta-classic's dsp (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, dsp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/cycles/dsp.py#L12
+            Test: tests/technical/test_cycle_model.py::test_detrended_synthetic_price_matches_pandas_ta_averages
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The period of the dominant cycle, at least 4. Defaults to 20.
@@ -1400,8 +1473,8 @@ class CycleTechnicals:
           average as every exponential moving average of the Toolkit; they agree with pandas-ta-classic's ema.
         - pandas-ta-classic's dsp subtracts one exponential moving average from the price, Price - EMA(Price, 14),
           a simpler detrender that also keeps the shorter cycles.
-        - If `growth` is set to True, the method calculates the growth of the Detrended Synthetic Price using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the Detrended Synthetic Price over the
+          given lag.
 
         As an example:
 
@@ -1475,7 +1548,8 @@ class CycleTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Ehlers' Center of Gravity (CG) Oscillator for a given price series.
+        Calculate Ehlers' Center of Gravity (CG) Oscillator: the weighted position of the prices within a window,
+        which marks the turning points of the cycle with little lag.
 
         The Center of Gravity Oscillator of Ehlers (2002) is the balance point of the prices in the window, with the
         latest price at position 1, turned negative. When prices rise, the weight shifts to the latest prices and
@@ -1492,12 +1566,17 @@ class CycleTechnicals:
 
         - Ehlers, J.F. (2002). "The Center Of Gravity Oscillator." Technical Analysis of Stocks & Commodities,
           20(5), 20-24.
-        - Referenced against TA-Lib's CG (https://ta-lib.org/functions/cg.html) and pandas-ta-classic's cg
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, CG: https://ta-lib.org/functions/cg.html
+            Test: tests/technical/test_cycle_model.py::test_center_of_gravity_oscillator_matches_talib
+        - pandas-ta-classic, cg: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/cg.py#L12
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted
                 for dividends in the same way.
@@ -1524,11 +1603,11 @@ class CycleTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Center of Gravity Oscillator for each asset in the Toolkit instance.
-        - Equals TA-Lib's CG and pandas-ta-classic's cg on the close (`median_price=False`).
+        - Equals TA-Lib's CG and pandas-ta-classic's cg on the close (not the median price).
         - The oscillator is not centred on zero: for flat prices it is -(Window + 1) / 2.
         - A window whose prices sum to zero is NaN, where Ehlers' listing keeps the value before.
-        - If `growth` is set to True, the method calculates the growth of the Center of Gravity Oscillator using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the Center of Gravity Oscillator over the
+          given lag.
 
         As an example:
 

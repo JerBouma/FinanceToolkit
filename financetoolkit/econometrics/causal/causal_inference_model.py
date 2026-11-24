@@ -31,9 +31,11 @@ def get_iv_2sls(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit an Instrumental Variables regression via Two-Stage Least Squares (2SLS) of `y`
-    on `x_endogenous` (+ `x_exogenous`), using `instruments` to isolate the variation in
-    `x_endogenous` that is uncorrelated with the error term, via `linearmodels.iv.IV2SLS`.
+    Fit an Instrumental Variables regression by Two-Stage Least Squares (2SLS): the effect of
+    an endogenous regressor on a series, with instruments that isolate the variation in the
+    regressor that is uncorrelated with the error term.
+
+    The model is fitted with linearmodels' IV2SLS.
 
     Also known as: IV, 2SLS, IV-2SLS.
 
@@ -60,10 +62,9 @@ def get_iv_2sls(
     OLS diagnostics on the Stage 2 regression gives *wrong* standard errors -- it both
     computes residuals from `y - fitted(x_hat)` instead of the correct 2SLS residuals
     `y - fitted(x_actual)`, and altogether ignores the extra estimation uncertainty
-    introduced by Stage 1. `linearmodels.iv.IV2SLS` handles this correction internally
-    (fit here with `cov_type="unadjusted"` -- the classical, homoskedastic 2SLS covariance
-    estimator -- and `debiased=True` for the small-sample `n - k` degrees-of-freedom
-    correction), rather than the two-stage-by-hand approach this function used before.
+    introduced by Stage 1. linearmodels' IV2SLS handles this correction internally, here
+    with the classical, homoskedastic 2SLS covariance estimator and the small-sample `n - k`
+    degrees-of-freedom correction.
 
     Args:
         y (pd.Series | np.ndarray): The dependent variable, shape `(n,)`.
@@ -218,8 +219,8 @@ def get_difference_in_differences(
     add_constant: bool = True,
 ) -> dict:
     """
-    Fit a Difference-in-Differences (DiD) regression of `y` on a treatment-group dummy
-    (`treated`), a post-period dummy (`post`), and their interaction.
+    Fit a Difference-in-Differences (DiD) regression: the effect of a treatment, as the change
+    in the outcome of the treated group beyond the change in the control group.
 
     Also known as: DiD, DD, difference-in-differences estimator.
 
@@ -350,9 +351,10 @@ def get_difference_in_differences(
 
 def regression_discontinuity_summary_table(result: dict) -> pd.DataFrame:
     """
-    Builds a one-column table of the discontinuity estimate, its standard error/
-    t-statistic/p-value, and the cutoff/bandwidth/sample sizes used, from a
-    `get_regression_discontinuity` result dict.
+    Build the summary of a Regression Discontinuity fit: the discontinuity estimate, its
+    standard error, t-statistic and p-value, and the cutoff, bandwidth and sample sizes used.
+
+    The one-column table takes a `get_regression_discontinuity` result dict.
 
     Args:
         result (dict): A fitted RDD result dict, as returned by
@@ -395,9 +397,11 @@ def get_regression_discontinuity(
     kernel: str = "uniform",
 ) -> dict:
     """
-    Estimate a Sharp Regression Discontinuity Design (RDD): the jump in `y` exactly at
-    `cutoff`, where treatment assignment switches on/off deterministically based on
-    whether `running_variable` is above or below `cutoff`.
+    Estimate a Sharp Regression Discontinuity Design (RDD): the jump in a series exactly at
+    the cutoff of a running variable, where treatment switches on or off.
+
+    Treatment assignment switches deterministically on whether the running variable is above
+    or below the cutoff.
 
     Also known as: RDD, sharp RD.
 
@@ -432,7 +436,7 @@ def get_regression_discontinuity(
         production use, consider tuning `bandwidth` via cross-validation or supplying a
         bandwidth from a dedicated bandwidth-selection procedure.
         kernel (str, optional): How to weight observations by distance to the cutoff
-        within the bandwidth, one of "uniform" (equal weight, local linear OLS) or
+        within the bandwidth. Options are: "uniform" (equal weight, local linear OLS),
         "triangular" (linearly decaying weight, local linear WLS, standard in the RDD
         literature since it prioritizes cutoff-adjacent observations). Defaults to
         "uniform".
@@ -563,9 +567,10 @@ def get_regression_discontinuity(
 
 def propensity_score_matching_summary(result: dict) -> pd.Series:
     """
-    Builds the ATT estimate, its standard error/t-statistic/p-value, and the number
-    of matched pairs / treated / control units, from a `get_propensity_score_matching`
-    result dict.
+    Build the summary of a Propensity Score Matching fit: the ATT estimate, its standard
+    error, t-statistic and p-value, and the number of matched pairs, treated and control units.
+
+    The summary takes a `get_propensity_score_matching` result dict.
 
     Args:
         result (dict): A fitted PSM result dict, as returned by
@@ -595,8 +600,11 @@ def get_propensity_score_matching(
     add_constant: bool = True,
 ) -> dict:
     """
-    Estimate the Average Treatment effect on the Treated (ATT) via Propensity Score
-    Matching (PSM): 1-to-1 nearest-neighbor matching on the estimated probability of
+    Estimate the Average Treatment effect on the Treated (ATT) by Propensity Score Matching
+    (PSM): the outcome difference between treated units and the untreated units most similar
+    to them in their probability of treatment.
+
+    The matching is 1-to-1 nearest-neighbor matching on the estimated probability of
     treatment, without replacement.
 
     Also known as: PSM, nearest-neighbor propensity matching.
@@ -630,8 +638,8 @@ def get_propensity_score_matching(
     near 0 and 1 (two units can have very different covariates but near-identical,
     saturated probabilities), which the logit transform undoes -- see Austin, P.C.
     (2011), cited below.
-    - A caliper defaults to `0.2 * (sample standard deviation of the logit propensity
-    score)` when `caliper=None` -- Austin's (2011) widely cited rule-of-thumb width.
+    - The caliper defaults to `0.2 * (sample standard deviation of the logit propensity
+    score)`, Austin's (2011) widely cited rule-of-thumb width.
     Without SOME caliper, treated units in a region with no comparable control (poor
     "common support"/overlap between the treated and control covariate distributions)
     get matched to a distant control anyway, which reintroduces exactly the selection
@@ -842,9 +850,11 @@ def _root_mean_squared_prediction_error(gap: np.ndarray) -> float:
 
 def synthetic_control_summary(result: dict) -> pd.Series:
     """
-    Builds the average post-treatment effect, pre/post RMSPE and their ratio, the
-    placebo-based p-value, and the donor pool/period counts, from a
-    `get_synthetic_control` result dict.
+    Build the summary of a Synthetic Control fit: the average post-treatment effect, the
+    pre- and post-treatment RMSPE and their ratio, the placebo-based p-value, and the donor
+    pool and period counts.
+
+    The summary takes a `get_synthetic_control` result dict.
 
     Args:
         result (dict): A fitted Synthetic Control result dict, as returned by
@@ -873,9 +883,9 @@ def get_synthetic_control(
     treatment_period: str,
 ) -> dict:
     """
-    Construct a Synthetic Control for `treated` from a weighted combination of
-    `donors` (Abadie, Diamond & Hainmueller, 2010), and estimate the treatment effect
-    as the post-treatment gap between the treated unit and its synthetic counterfactual.
+    Construct a Synthetic Control (Abadie, Diamond & Hainmueller, 2010): a weighted
+    combination of donor units that tracks the treated unit before an event, with the effect
+    of the event as the gap between the two after it.
 
     Also known as: SCM, synthetic control method.
 

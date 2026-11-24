@@ -42,15 +42,15 @@ class DiagnosticsEconometrics:
         weighted: bool = False,
     ) -> pd.DataFrame:
         """
-        Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects, or the weighted
-        portmanteau ARCH test of Fisher and Gallagher (2012).
+        Calculate Engle's ARCH-LM test: whether the volatility of every asset's returns clusters,
+        with large squared returns following large ones, or the weighted portmanteau ARCH test of it.
 
-        The test regresses squared, mean-demeaned returns on `lags` of themselves and
-        tests whether the resulting R-squared is significantly different from zero.
-        A significant result (low p-value) indicates that the return series exhibits
-        volatility clustering, and a GARCH-family model is an appropriate choice for
-        it. A high p-value suggests fitting GARCH would not be meaningful, since there
-        is no detectable time-varying volatility to model.
+        The Lagrange Multiplier (LM) test of Engle (1982) regresses squared, mean-demeaned
+        returns on `lags` of themselves and tests whether the resulting R-squared is
+        significantly different from zero. A significant result (low p-value) indicates that the
+        return series exhibits volatility clustering, and a GARCH-family model is an appropriate
+        choice for it. A high p-value suggests fitting GARCH would not be meaningful, since
+        there is no detectable time-varying volatility to model.
 
         The formula is as follows:
 
@@ -58,7 +58,7 @@ class DiagnosticsEconometrics:
         - Auxiliary regression: εₜ² = a₀ + Σ(i=1..q) aᵢ·εₜ₋ᵢ² + uₜ, with q = `lags` (5 by default)
         - ARCH-LM = (T - q)·R², chi-squared with q degrees of freedom, where T - q is the number of
           observations in the auxiliary regression
-        - weighted=True: Q_W = T·Σ(k=1..q) ((q - k + 1) / q)·ρₖ², with ρₖ the autocorrelation of εₜ² at lag k,
+        - Weighted test: Q_W = T·Σ(k=1..q) ((q - k + 1) / q)·ρₖ², with ρₖ the autocorrelation of εₜ² at lag k,
           and the p-value from the Gamma distribution with shape 3(q + 1)²q / (4(2q² + 3q + 1)) and
           scale 2(2q² + 3q + 1) / (3q(q + 1)), which has the mean and variance of Q_W
 
@@ -76,6 +76,12 @@ class DiagnosticsEconometrics:
         Association, 107(498), 777-787.
 
         Also known as: ARCH-LM test, Engle's ARCH test, weighted ARCH-LM test, McLeod-Li test.
+
+        Referenced against:
+        - statsmodels, het_arch: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_arch.html
+            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
+        - rugarch (R), Weighted.LM.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1172
+            Test: tests/econometrics/test_diagnostics_model.py::test_get_arch_lm_test_weighted_gamma_of_rugarch
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -161,7 +167,8 @@ class DiagnosticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Jarque-Bera test for normality.
+        Calculate the Jarque-Bera test: whether every asset's returns are normally distributed,
+        judged by their skewness and kurtosis.
 
         The test combines sample skewness and excess kurtosis into a single statistic
         that is chi-squared distributed with 2 degrees of freedom under the null
@@ -182,6 +189,10 @@ class DiagnosticsEconometrics:
         and Regression Residuals." International Statistical Review, 55(2), 163-172.
 
         Also known as: JB test, normality test.
+
+        Referenced against:
+        - statsmodels, jarque_bera: https://www.statsmodels.org/stable/generated/statsmodels.stats.stattools.jarque_bera.html
+            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -264,8 +275,8 @@ class DiagnosticsEconometrics:
         weighted: bool = False,
     ) -> pd.DataFrame:
         """
-        Calculate the Ljung-Box test for autocorrelation, or the weighted Ljung-Box test of
-        Fisher and Gallagher (2012).
+        Calculate the Ljung-Box test: whether every asset's returns are autocorrelated up to a
+        number of lags, or the weighted Ljung-Box test of Fisher and Gallagher (2012).
 
         The test aggregates the squared Autocorrelation Function up to lag `h` into a single
         statistic that is chi-squared distributed with `h` degrees of freedom under the null
@@ -281,7 +292,7 @@ class DiagnosticsEconometrics:
           default)
         - ρₖ = Σ(t=k+1..n) (rₜ - mean(r))·(rₜ₋ₖ - mean(r)) / Σ(t=1..n) (rₜ - mean(r))², the sample
           autocorrelation of the returns of `period` at lag k
-        - weighted=True: Q_W = n·(n + 2)·Σ(k=1..h) ((h - k + 1) / h)·ρₖ² / (n - k), with the p-value from
+        - Weighted test: Q_W = n·(n + 2)·Σ(k=1..h) ((h - k + 1) / h)·ρₖ² / (n - k), with the p-value from
           the Gamma distribution with shape 3(h + 1)²h / (4(2h² + 3h + 1)) and scale
           2(2h² + 3h + 1) / (3h(h + 1)), which has the mean and variance of Q_W
 
@@ -298,6 +309,11 @@ class DiagnosticsEconometrics:
         Association, 107(498), 777-787.
 
         Also known as: Ljung-Box Q test, portmanteau test, weighted Ljung-Box test.
+
+        Referenced against:
+        - statsmodels, acorr_ljungbox: https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.acorr_ljungbox.html
+            Test: tests/econometrics/test_reference_validation.py::test_residual_diagnostics
+        - rugarch (R), Weighted.Box.test: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L1056
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -385,7 +401,8 @@ class DiagnosticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the Lo-MacKinlay Variance Ratio test for the random walk hypothesis.
+        Calculate the Lo-MacKinlay Variance Ratio test: whether every asset's returns follow a
+        random walk, or trend (momentum) or mean-revert over several periods.
 
         The test compares the Variance of `q`-period (overlapping) returns, the sum of `q`
         consecutive returns, to `q` times the Variance of single-period returns. Under the
@@ -417,6 +434,10 @@ class DiagnosticsEconometrics:
         1(1), 41-66.
 
         Also known as: Lo-MacKinlay test, VR test.
+
+        Referenced against:
+        - arch, VarianceRatio: https://bashtage.github.io/arch/unitroot/generated/arch.unitroot.VarianceRatio.html
+            Test: tests/econometrics/test_reference_validation.py::test_variance_ratio_matches_arch
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -504,41 +525,43 @@ class DiagnosticsEconometrics:
         time_series: bool = False,
     ) -> pd.DataFrame:
         """
-        Calculate a CUSUM test for the stability of the returns over time: the CUSUM of the
-        OLS residuals of Ploberger and Krämer (1992), the CUSUM of the recursive residuals of
-        Brown, Durbin and Evans (1975) or the CUSUM of the log price of Chu, Stinchcombe and
-        White (1996).
+        Calculate a CUSUM test: whether the mean of every asset's returns stayed stable over time
+        or broke at some point.
 
-        method="ols" fits a constant-mean model to the returns and cumulates the (scaled)
+        Three CUSUM tests are available: the CUSUM of the OLS residuals of Ploberger and Krämer
+        (1992), the CUSUM of the recursive residuals of Brown, Durbin and Evans (1975) and the
+        CUSUM of the log price of Chu, Stinchcombe and White (1996).
+
+        The CUSUM of the OLS residuals fits a constant-mean model to the returns and cumulates the (scaled)
         OLS residuals into a path that behaves like a Brownian Bridge under the null
         hypothesis of a stable mean. A stable mean keeps the path close to zero, while
         a mean shift partway through the series (a structural break, e.g. a regime
         change) drags the path away from zero; the test statistic is the maximum
         absolute value of that path.
 
-        method="recursive" cumulates the one-step-ahead forecast errors of the mean return,
+        The CUSUM of the recursive residuals cumulates the one-step-ahead forecast errors of the mean return,
         each from the returns before it (the recursive residuals). Under a stable mean they
         are independent, so their path is a Brownian motion; a break makes the errors after
         it share a sign and the path drifts out of two lines that widen with time. It reacts
         to a break later in the sample better than the OLS version, which compares every
         return with the mean of the whole sample.
 
-        method="chu_stinchcombe_white" asks whether the log price has risen by more since an
+        The Chu-Stinchcombe-White CUSUM asks whether the log price has risen by more since an
         earlier date than a random walk with the volatility up to now allows, the structural
         break test López de Prado (2018) uses on prices. It is one-sided: it detects a rise,
-        such as a breakout or a bubble. With `time_series=True` it gives the statistic, its
-        critical value and the verdict per date, each from the returns up to that date only.
+        such as a breakout or a bubble. It can also give the statistic, its critical value and
+        the verdict per date, each from the returns up to that date only.
 
         The formula is as follows, with rₜ the returns of `period` and n the number of returns:
 
-        - method="ols": êₜ = rₜ - mean(r), CUSUM = max over k of |Σ(t=1..k) êₜ| / (σ̂·√n), with
+        - CUSUM of the OLS residuals: êₜ = rₜ - mean(r), CUSUM = max over k of |Σ(t=1..k) êₜ| / (σ̂·√n), with
           σ̂² = Σêₜ² / (n - 1), and P-Value = P(sup|B(s)| > CUSUM) for a Brownian Bridge B (the
           Kolmogorov distribution)
-        - method="recursive": wₜ = (rₜ - mean(r₁..rₜ₋₁)) / √(1 + 1 / (t - 1)) for t = 2..n, Wⱼ = Σ(t=2..j) wₜ / σ̂
-          with σ̂² = Σwₜ² / (n - 1), CUSUM = max over j of |Wⱼ| / (√(n - 1) + 2(j - 1) / √(n - 1)) and
-          P-Value = 2·(1 - Φ(3·CUSUM) + exp(-4·CUSUM²)·Φ(CUSUM)), the probability that a Brownian motion
-          crosses the lines ±CUSUM·(√(n - 1) + 2(j - 1) / √(n - 1))
-        - method="chu_stinchcombe_white": yₜ = Σ ln(1 + rₜ), the log price, Sₙ,ₜ = (yₜ - yₙ) / (σ̂ₜ·√(t - n))
+        - CUSUM of the recursive residuals: wₜ = (rₜ - mean(r₁..rₜ₋₁)) / √(1 + 1 / (t - 1)) for t = 2..n, Wⱼ =
+          Σ(t=2..j) wₜ / σ̂ with σ̂² = Σwₜ² / (n - 1), CUSUM = max over j of |Wⱼ| / (√(n - 1) + 2(j - 1) / √(n - 1))
+          and P-Value = 2·(1 - Φ(3·CUSUM) + exp(-4·CUSUM²)·Φ(CUSUM)), the probability that a Brownian motion crosses
+          the lines ±CUSUM·(√(n - 1) + 2(j - 1) / √(n - 1))
+        - Chu-Stinchcombe-White CUSUM: yₜ = Σ ln(1 + rₜ), the log price, Sₙ,ₜ = (yₜ - yₙ) / (σ̂ₜ·√(t - n))
           with σ̂ₜ² the mean of the squared changes of y up to t, CUSUM = max over n < t of Sₙ,ₜ at the
           last date t and its critical value √(4.6 + ln(t - n)) at that n (5%)
         - Stability is rejected at 5% when the p-value is below 0.05 (or the CUSUM above its
@@ -558,11 +581,17 @@ class DiagnosticsEconometrics:
         10(1), 198-231.
         - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley,
         section 17.3 (17.3.2 for the Chu-Stinchcombe-White test).
-        - Referenced against statsmodels' breaks_cusumolsresid and recursive_olsresiduals.
 
         Also known as: CUSUM test, CUSUM of OLS residuals test, Ploberger-Kramer test,
         recursive CUSUM test, Brown-Durbin-Evans test, Chu-Stinchcombe-White test, CSW CUSUM,
         structural break test.
+
+        Referenced against:
+        - statsmodels, breaks_cusumolsresid (CUSUM of the OLS residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.breaks_cusumolsresid.html
+            Test: tests/econometrics/test_reference_validation.py::test_cusum_stability_test
+
+        Shares similar logic:
+        - statsmodels, recursive_olsresiduals (CUSUM of the recursive residuals): https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.recursive_olsresiduals.html
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
@@ -578,8 +607,10 @@ class DiagnosticsEconometrics:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
-            method (Literal["ols", "recursive", "chu_stinchcombe_white"], optional): The CUSUM of the OLS
-                residuals, of the recursive residuals or of the log price. Defaults to "ols".
+            method (Literal["ols", "recursive", "chu_stinchcombe_white"], optional): The CUSUM test.
+                Options are: "ols" (CUSUM of the OLS residuals), "recursive" (CUSUM of the recursive
+                residuals), "chu_stinchcombe_white" (Chu-Stinchcombe-White CUSUM of the log price).
+                Defaults to "ols".
             time_series (bool, optional): Whether to return the statistic, its critical value and
                 whether stability is rejected per date (method="chu_stinchcombe_white" only, as the
                 other two scale their path with the whole sample). Defaults to False.
@@ -587,16 +618,16 @@ class DiagnosticsEconometrics:
         Returns:
             pd.DataFrame: The CUSUM statistic, its p-value, the number of observations used, the
             1%/5%/10% critical values, and whether stability is rejected at the 5% level, per
-            asset; for method="chu_stinchcombe_white" the statistic, its 5% critical value, the
-            observations and the verdict at the last date, or with time_series=True per date. An
+            asset; for the Chu-Stinchcombe-White CUSUM the statistic, its 5% critical value, the
+            observations and the verdict at the last date, or per date. An
             asset with fewer than 10 observations has NaN values.
 
         Notes:
         - The method retrieves historical return data based on the specified `period` and runs the
         CUSUM test for each asset in the Toolkit instance.
-        - statsmodels' recursive_olsresiduals scales the recursive path with the standard
-        deviation of the recursive residuals around their mean; Brown, Durbin and Evans (1975)
-        use the residual variance of the full-sample fit, as here. The Chu-Stinchcombe-White
+        - Unlike statsmodels' recursive_olsresiduals, which scales the recursive path with the
+        standard deviation of the recursive residuals around their mean, the path here uses the
+        residual variance of the full-sample fit, as Brown, Durbin and Evans (1975) do. The Chu-Stinchcombe-White
         statistic divides by the volatility σ̂ₜ and σ̂ₜ² averages the t - 1 squared changes, as in
         López de Prado (2018, section 17.3.2).
         - The critical value of the Chu-Stinchcombe-White test is the 5% value Homm and Breitung
@@ -670,17 +701,16 @@ class DiagnosticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the sign bias test of Engle and Ng (1993) on the standardized residuals of
-        a GARCH-family model fitted to the returns: does a fall raise the volatility by more
-        than the model expects (sign bias), and do large falls or large rises (negative and
-        positive size bias)?
+        Calculate the sign bias test of Engle and Ng (1993): whether a fall raises the volatility
+        of every asset by more than its GARCH-family model expects (sign bias), and whether large
+        falls or large rises do (negative and positive size bias).
 
         A symmetric GARCH(1, 1) lets a fall and a rise of the same size raise the volatility
         equally. In equity returns falls tend to raise it by more (the leverage effect), so
         after a fall the squared standardized residuals stay larger than the model expects.
         The test regresses them on the sign and the size of the shock before them; a
         significant sign or negative size bias says the model misses that asymmetry and an
-        asymmetric model, such as method="gjr" or method="aparch", fits better.
+        asymmetric model, such as GJR-GARCH or APARCH, fits better.
 
         The formula is as follows:
 
@@ -698,21 +728,28 @@ class DiagnosticsEconometrics:
 
         - Engle, R.F. and Ng, V.K. (1993). "Measuring and Testing the Impact of News on
         Volatility." The Journal of Finance, 48(5), 1749-1778.
-        - Referenced against signbias of R's rugarch (https://cran.r-project.org/package=rugarch),
-        whose t-statistics in the rugarch vignette it reproduces.
 
         Also known as: sign bias test, Engle-Ng test, size bias test, leverage effect test,
         asymmetric volatility test, GARCH residual diagnostics.
 
+        Referenced against:
+        - rugarch (R), signbias: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L195
+
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            method (str, optional): The GARCH-family model fitted to the returns, see
-                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
-            distribution (str, optional): The innovation distribution of the model ("normal", "t",
-                "skewt", "skewt_fernandez_steel", "ged" or "johnson_su"). Defaults to "normal".
-            mean (str, optional): The mean model ("zero", "constant", "arma" or "in_mean").
-                Defaults to "zero".
+            method (str, optional): The GARCH-family model fitted to the returns, as in
+                `toolkit.risk.get_garch`. Options are: "garch" (GARCH(1, 1)), "gjr" (GJR-GARCH(1, 1, 1)),
+                "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)), "tgarch"
+                (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+                (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+            distribution (str, optional): The innovation distribution of the model. Options are:
+                "normal" (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen),
+                "skewt_fernandez_steel" (skewed Student-t of Fernández and Steel), "ged" (generalized
+                error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+            mean (str, optional): The mean model. Options are: "zero" (the returns themselves are
+                the shocks), "constant" (constant mean), "arma" (ARMA(1, 1)), "in_mean"
+                (GARCH-in-mean). Defaults to "zero".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -729,8 +766,9 @@ class DiagnosticsEconometrics:
         Notes:
         - Every asset is fitted on its own returns, as in `toolkit.risk.get_garch`; the
           fit takes a second or more per asset of daily returns.
-        - rugarch reports the absolute t-statistics and a Wald statistic as the joint test; the
-          signed t-statistics show the direction (a negative size bias is negative when
+        - The t-statistics reproduce those of the rugarch vignette.
+        - Unlike rugarch, which reports the absolute t-statistics and a Wald statistic as the joint
+          test, the signed t-statistics show the direction (a negative size bias is negative when
           larger falls raise the volatility by more) and the joint statistic is the n·R² of
           Engle and Ng (1993).
 
@@ -792,15 +830,15 @@ class DiagnosticsEconometrics:
     ) -> pd.DataFrame:
         """
         Calculate the adjusted Pearson goodness of fit test of Palm (1996) and Vlaar and Palm
-        (1993) on the standardized residuals of a GARCH-family model fitted to the returns:
-        do they follow the innovation distribution the model assumes?
+        (1993): whether the standardized residuals of every asset's GARCH-family model follow the
+        innovation distribution the model assumes.
 
         Each standardized residual is turned into the probability of a value at most as
         large under the fitted distribution, which is uniform between 0 and 1 when the
         distribution fits. The probabilities are counted in equally wide bins and the counts
         compared with the equal number every bin should hold. Daily returns have fatter tails
         than a GARCH model with normal innovations allows, so the test usually rejects the
-        normal distribution; a Student-t (distribution="t") or skewed Student-t fits better
+        normal distribution; a Student-t or skewed Student-t fits better
         when its p-value is larger.
 
         The formula is as follows:
@@ -819,24 +857,31 @@ class DiagnosticsEconometrics:
         - Vlaar, P.J.G. and Palm, F.C. (1993). "The Message in Weekly Exchange Rates in the
         European Monetary System: Mean Reversion, Conditional Heteroscedasticity, and
         Jumps." Journal of Business & Economic Statistics, 11(3), 351-360.
-        - Referenced against gof of R's rugarch (https://cran.r-project.org/package=rugarch),
-        which reports it for 20, 30, 40 and 50 bins.
 
         Also known as: adjusted Pearson goodness of fit test, chi-squared goodness of fit test,
         probability integral transform test, GARCH distribution test, GARCH residual
         diagnostics.
 
+        Referenced against:
+        - rugarch (R), gof: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L223
+
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             bins (int, optional): The number of equally wide bins of the probabilities. Defaults to 20.
-            method (str, optional): The GARCH-family model fitted to the returns, see
-                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
-            distribution (str, optional): The innovation distribution of the model and of the test
-                ("normal", "t", "skewt", "skewt_fernandez_steel", "ged" or "johnson_su"). Defaults
+            method (str, optional): The GARCH-family model fitted to the returns, as in
+                `toolkit.risk.get_garch`. Options are: "garch" (GARCH(1, 1)), "gjr" (GJR-GARCH(1, 1, 1)),
+                "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)), "tgarch"
+                (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+                (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+            distribution (str, optional): The innovation distribution of the model and of the test.
+                Options are: "normal" (normal), "t" (Student-t), "skewt" (skewed
+                Student-t of Hansen), "skewt_fernandez_steel" (skewed Student-t of Fernández and
+                Steel), "ged" (generalized error distribution), "johnson_su" (Johnson SU). Defaults
                 to "normal".
-            mean (str, optional): The mean model ("zero", "constant", "arma" or "in_mean").
-                Defaults to "zero".
+            mean (str, optional): The mean model. Options are: "zero" (the returns themselves are
+                the shocks), "constant" (constant mean), "arma" (ARMA(1, 1)), "in_mean"
+                (GARCH-in-mean). Defaults to "zero".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -854,8 +899,9 @@ class DiagnosticsEconometrics:
           fit takes a second or more per asset of daily returns.
         - The parameters of the distribution are estimated with the model, which makes the
           chi-squared p-value somewhat too large (Palm, 1996); read it as a guide.
-        - rugarch leaves the empty bins above the highest occupied bin out of the sum; every
-          empty bin counts here.
+        - rugarch reports the test for 20, 30, 40 and 50 bins.
+        - Unlike rugarch, which leaves the empty bins above the highest occupied bin out of the
+          sum, every empty bin counts here.
 
         As an example:
 
@@ -918,9 +964,9 @@ class DiagnosticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the parameter stability test of Nyblom (1989) and Hansen (1992) on a
-        GARCH-family model fitted to the returns: did its parameters stay the same over the
-        sample, or did the volatility process change (a calmer or more turbulent regime, a
+        Calculate the parameter stability test of Nyblom (1989) and Hansen (1992): whether the
+        parameters of every asset's GARCH-family model stayed the same over the sample, or the
+        volatility process changed (a calmer or more turbulent regime, a
         change in how quickly shocks fade)?
 
         At the maximum of the likelihood the scores of every parameter (the derivatives of
@@ -951,23 +997,28 @@ class DiagnosticsEconometrics:
         the American Statistical Association, 84(405), 223-230.
         - Hansen, B.E. (1992). "Testing for Parameter Instability in Linear Models." Journal
         of Policy Modeling, 14(4), 517-533.
-        - Referenced against nyblom of R's rugarch (https://cran.r-project.org/package=rugarch),
-        which compares the statistics with Hansen's tabulated critical values (0.470 for one
-        parameter at 5%); the critical values here are those of the limiting distribution itself
-        (0.461 for one parameter, the 5% point of the Cramér-von Mises distribution).
 
         Also known as: Nyblom test, Hansen stability test, parameter constancy test, parameter
         instability test, GARCH stability test, structural change in GARCH.
 
+        Shares similar logic:
+        - rugarch (R), nyblom: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L110
+
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            method (str, optional): The GARCH-family model fitted to the returns, see
-                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
-            distribution (str, optional): The innovation distribution of the model ("normal", "t",
-                "skewt", "skewt_fernandez_steel", "ged" or "johnson_su"). Defaults to "normal".
-            mean (str, optional): The mean model ("zero", "constant", "arma", "in_mean" or
-                "arfima"). Defaults to "zero".
+            method (str, optional): The GARCH-family model fitted to the returns, as in
+                `toolkit.risk.get_garch`. Options are: "garch" (GARCH(1, 1)), "gjr" (GJR-GARCH(1, 1, 1)),
+                "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)), "tgarch"
+                (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+                (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
+            distribution (str, optional): The innovation distribution of the model. Options are:
+                "normal" (normal), "t" (Student-t), "skewt" (skewed Student-t of Hansen),
+                "skewt_fernandez_steel" (skewed Student-t of Fernández and Steel), "ged" (generalized
+                error distribution), "johnson_su" (Johnson SU). Defaults to "normal".
+            mean (str, optional): The mean model. Options are: "zero" (the returns themselves are
+                the shocks), "constant" (constant mean), "arma" (ARMA(1, 1)), "in_mean"
+                (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -985,12 +1036,17 @@ class DiagnosticsEconometrics:
         - Every asset is fitted on its own returns, as in `toolkit.risk.get_garch`; the fit takes a
           second or more per asset of daily returns.
         - The scores are central finite differences of the log-likelihood, as for the robust
-          standard errors of `toolkit.risk.get_garch_parameters(diagnostics=True)`.
+          standard errors of the diagnostics of `toolkit.risk.get_garch_parameters`.
+        - Unlike rugarch, which compares the statistics with Hansen's tabulated critical values
+          (0.470 for one parameter at 5%), the critical values here are those of the limiting
+          distribution itself (0.461 for one parameter, the 5% point of the Cramér-von Mises
+          distribution).
         - The test is conservative on a fitted GARCH: on 500 simulated GARCH(1, 1) samples of 1,000
           observations with normal innovations, refitted each time, the joint test at 5% rejects about 2% of
           the time and those of Omega, Alpha and Beta 2% to 2.6%, so a rejection is a strong signal and a
           parameter change of moderate size can go unnoticed.
-        - method="realized" needs a realized measure the test does not take; use the other models.
+        - The realized GARCH needs a realized measure the test does not take, so it is not among
+          the models.
 
         As an example:
 
@@ -1063,10 +1119,10 @@ class DiagnosticsEconometrics:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the GMM orthogonality test of Hansen (1982) on the standardized residuals of a
-        GARCH-family model fitted to the returns: do they have the mean, variance, skewness and
-        kurtosis of the innovation distribution the model assumes, and are their squares,
-        cubes and fourth powers free of autocorrelation?
+        Calculate the GMM orthogonality test of Hansen (1982): whether the standardized residuals
+        of every asset's GARCH-family model have the mean, variance, skewness and kurtosis of the
+        innovation distribution the model assumes, with squares, cubes and fourth powers free of
+        autocorrelation.
 
         A correctly specified model leaves standardized residuals that are independent draws
         from its innovation distribution, so a set of moments has a known value. Each moment is
@@ -1096,24 +1152,30 @@ class DiagnosticsEconometrics:
 
         - Hansen, L.P. (1982). "Large Sample Properties of Generalized Method of Moments
         Estimators." Econometrica, 50(4), 1029-1054.
-        - Referenced against GMMTest of R's rugarch (https://cran.r-project.org/package=rugarch)
-        as its documentation defines the conditions M1 to M4, Q2 to Q4 and the joint J test, with the
-        covariance of the lagged conditions under the null (see the Notes).
 
         Also known as: GMM orthogonality test, moment test, Hansen J test of standardized
         residuals, GARCH residual diagnostics, conditional moment test.
+
+        Shares similar logic:
+        - rugarch (R), GMMTest: https://github.com/cran/rugarch/blob/1.5-6/R/rugarch-tests.R#L534
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
             lags (int, optional): The number of lags of the Q2, Q3 and Q4 conditions. Defaults to 1.
-            method (str, optional): The GARCH-family model fitted to the returns, see
-                `toolkit.risk.get_garch` (e.g. "garch", "gjr", "aparch"). Defaults to "garch".
+            method (str, optional): The GARCH-family model fitted to the returns, as in
+                `toolkit.risk.get_garch`. Options are: "garch" (GARCH(1, 1)), "gjr" (GJR-GARCH(1, 1, 1)),
+                "egarch" (EGARCH(1, 1)), "igarch" (IGARCH(1, 1)), "aparch" (APARCH(1, 1)), "tgarch"
+                (TGARCH), "ngarch" (NGARCH), "avgarch" (AVGARCH), "nagarch" (NAGARCH), "component"
+                (component GARCH), "figarch" (FIGARCH(1, d, 1)). Defaults to "garch".
             distribution (str, optional): The innovation distribution of the model and of its
-                skewness and kurtosis ("normal", "t", "skewt", "skewt_fernandez_steel", "ged" or
-                "johnson_su"). Defaults to "normal".
-            mean (str, optional): The mean model ("zero", "constant", "arma", "in_mean" or
-                "arfima"). Defaults to "zero".
+                skewness and kurtosis. Options are: "normal" (normal), "t" (Student-t), "skewt" (skewed
+                Student-t of Hansen), "skewt_fernandez_steel" (skewed Student-t of Fernández and
+                Steel), "ged" (generalized error distribution), "johnson_su" (Johnson SU). Defaults
+                to "normal".
+            mean (str, optional): The mean model. Options are: "zero" (the returns themselves are
+                the shocks), "constant" (constant mean), "arma" (ARMA(1, 1)), "in_mean"
+                (GARCH-in-mean), "arfima" (ARFIMA(1, d, 1)). Defaults to "zero".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1129,6 +1191,8 @@ class DiagnosticsEconometrics:
 
         Notes:
         - Every asset is fitted on its own returns, as in `toolkit.risk.get_garch`.
+        - The conditions M1 to M4, Q2 to Q4 and the joint J test are those rugarch's
+          documentation of GMMTest defines.
         - The parameters are estimated, which the covariance of the conditions leaves out (as in
           rugarch), so read the p-values as a guide.
         - The conditions are correlated (zₜ with zₜ³, zₜ² with zₜ⁴, Q2 with Q4), so the joint test can reject

@@ -42,12 +42,13 @@ class SeasonalityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the seasonality of every ticker's returns: the average return per calendar
-        month (from monthly returns) or per day of the week (from daily returns), with the
-        median, the hit rate (the share of positive returns), the t-statistic of the average
-        and the number of observations. Well-known examples are the January effect and the
-        "sell in May" pattern. A pattern needs many years and a t-statistic well above 2 before
-        it says much, and even then it can fade once it is widely traded on.
+        Calculate the seasonality of every ticker's returns: the average return per calendar month or per day of the
+        week.
+
+        Monthly returns give the months and daily returns the days of the week, each with the median, the hit rate
+        (the share of positive returns), the t-statistic of the average and the number of observations. Well-known
+        examples are the January effect and the "sell in May" pattern. A pattern needs many years and a t-statistic
+        well above 2 before it says much, and even then it can fade once it is widely traded on.
 
         A monthly return runs from one month's last close to the next, so a final month that is
         not complete yet (an end date before that month's last business day, as with the
@@ -64,8 +65,8 @@ class SeasonalityTechnicals:
         effect, calendar anomalies.
 
         Args:
-            frequency (str, optional): "month" (per calendar month) or "weekday" (per day of
-                the week). Defaults to "month".
+            frequency (str, optional): Options are: "month" (per calendar month), "weekday" (per day of the
+                week). Defaults to "month".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -147,9 +148,11 @@ class SeasonalityTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate the relative strength of every ticker against the Benchmark and against the
-        other tickers. Relative strength investing buys what has been outperforming, the
-        momentum effect that has held across markets and decades.
+        Calculate the relative strength of every ticker against the Benchmark and against the other tickers: which
+        tickers outperform and by how much.
+
+        Relative strength investing buys what has been outperforming, the momentum effect that has held across
+        markets and decades.
 
         - Relative Strength: the price divided by the Benchmark's, set to 1 on the first date.
           It rises while the ticker outperforms the Benchmark.
@@ -164,7 +167,7 @@ class SeasonalityTechnicals:
           score share the highest rank among them, so the rating reads as the share of the
           other tickers outperformed or matched and tied leaders both rate 99. It needs many
           tickers to be meaningful, such as the constituents of an index (see
-          `Discovery.get_index_constituents`, whose `date=` gives the members on a past date;
+          `Discovery.get_index_constituents`, whose date argument gives the members on a past date;
           today's members leave out the companies removed from the index since).
 
         For more information, see the following papers and books:
@@ -179,8 +182,9 @@ class SeasonalityTechnicals:
         rating, relative performance.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are: "daily" (daily
+                prices), "weekly" (weekly prices), "monthly" (monthly prices), "quarterly" (quarterly prices),
+                "yearly" (yearly prices). Defaults to "daily".
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             window (int | None, optional): The moving average window of the Mansfield relative

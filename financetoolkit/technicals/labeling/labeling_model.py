@@ -50,15 +50,15 @@ MATRIX_FLAG_TEMPLATES = {
 
 def get_daily_volatility(prices: pd.Series, span: int = 100) -> pd.Series:
     """
-    Calculate the volatility target of the labels: the exponentially weighted standard deviation
-    of the period returns, as López de Prado sets the profit-taking and stop-loss barriers.
+    Calculate the volatility target of the labels: the exponentially weighted standard deviation of the period
+    returns, as López de Prado sets the profit-taking and stop-loss barriers.
 
     The formula is as follows:
 
     - r_t = p_t / p_t-1 - 1
     - sigma_t = EWM standard deviation of r up to and including t, with alpha = 2 / (span + 1)
 
-    The weights are pandas' adjusted ones with the bias correction (`adjust=True`, `bias=False`),
+    The weights are pandas' adjusted ones with the bias correction,
     so the value at t only uses returns up to t.
 
     For more information, see the following book:
@@ -81,8 +81,8 @@ def get_daily_volatility(prices: pd.Series, span: int = 100) -> pd.Series:
 
 def get_cusum_events(prices: pd.Series, threshold: float | pd.Series) -> pd.Series:
     """
-    Calculate the events of the symmetric CUSUM filter: the dates the cumulative log return since
-    the last event of its direction exceeds the threshold.
+    Calculate the events of the symmetric CUSUM filter: the dates the cumulative log return since the last event of
+    its direction exceeds the threshold.
 
     The formula is as follows:
 
@@ -95,6 +95,9 @@ def get_cusum_events(prices: pd.Series, threshold: float | pd.Series) -> pd.Seri
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 2.5.2.1.
     - Lam, K. and Yam, H.C. (1997). "CUSUM Techniques for Technical Trading in Financial Markets."
       Financial Engineering and the Japanese Markets, 4(3), 257-274.
+
+    Referenced against:
+    - RiskLabAI, symmetric_cusum_filter: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L78
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -135,8 +138,8 @@ def get_z_score_events(
     prices: pd.Series, window: int = 20, threshold: float = 3.0
 ) -> pd.Series:
     """
-    Calculate the events of the z-score filter: the dates the price is at least `threshold`
-    standard deviations away from its rolling mean.
+    Calculate the events of the z-score filter: the dates the price is at least `threshold` standard deviations away
+    from its rolling mean.
 
     The formula is as follows:
 
@@ -188,10 +191,10 @@ def get_triple_barrier_labels(
     minimum_target: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Calculate the triple-barrier labels: for every event the first of three barriers the price
-    reaches, a profit-taking barrier above, a stop-loss barrier below and a vertical barrier
-    `horizon` periods later. Labels look forward by construction: the label of date t is known
-    only once a barrier is reached.
+    Calculate the triple-barrier labels: for every event the first of three barriers the price reaches, a
+    profit-taking barrier above, a stop-loss barrier below and a vertical barrier `horizon` periods later.
+
+    Labels look forward by construction: the label of date t is known only once a barrier is reached.
 
     The formula is as follows:
 
@@ -211,6 +214,10 @@ def get_triple_barrier_labels(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, chapter 3
       (Snippets 3.2 to 3.7).
+
+    Referenced against:
+    - RiskLabAI, triple_barrier: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L193
+    - RiskLabAI, meta_labeling: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/labeling.py#L402
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -301,8 +308,10 @@ def get_triple_barrier_labels(
 
 def get_forward_returns(prices: pd.Series, horizon: int = 1) -> pd.Series:
     """
-    Calculate the return from each date to `horizon` periods later, p_t+horizon / p_t - 1. It
-    looks forward by construction.
+    Calculate the forward returns: the return from each date to a number of periods later, the outcome a label
+    describes.
+
+    It looks forward by construction.
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -321,8 +330,8 @@ def get_fixed_horizon_labels(
     benchmark_returns: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the fixed-horizon labels: the sign of the forward return, or of its excess over the
-    cross-sectional mean or median or over a benchmark, with 0 within the threshold.
+    Calculate the fixed-horizon labels: the sign of the forward return, or of its excess over the cross-sectional
+    mean or median or over a benchmark, with 0 within the threshold.
 
     The formula is as follows:
 
@@ -339,9 +348,9 @@ def get_fixed_horizon_labels(
         forward_returns (pd.DataFrame): The forward returns, a column per ticker.
         threshold (float | pd.DataFrame, optional): The threshold, fixed or per date and ticker.
             Defaults to 0.0.
-        relative_to (str | None, optional): None for the return itself, "mean" or "median" for its
-            excess over the tickers' mean or median and "benchmark" for its excess over the
-            benchmark returns. Defaults to None.
+        relative_to (str | None, optional): What the return is measured against. Options are: "mean" (the excess
+            over the tickers' mean return), "median" (the excess over the tickers' median return),
+            "benchmark" (the excess over the benchmark returns). Defaults to None, the return itself.
         benchmark_returns (pd.Series | None, optional): The forward returns of the benchmark, for
             relative_to="benchmark". Defaults to None.
 
@@ -381,9 +390,10 @@ def get_trend_scanning_labels(
     prices: pd.Series, minimum_window: int = 5, maximum_window: int = 20
 ) -> pd.DataFrame:
     """
-    Calculate the trend-scanning labels: for every date the forward window, between the minimum
-    and the maximum length, whose linear trend has the most significant slope, with the sign of
-    that slope as the label. Labels look forward by construction.
+    Calculate the trend-scanning labels: for every date the forward window, between the minimum and the maximum
+    length, whose linear trend has the most significant slope, with the sign of that slope as the label.
+
+    Labels look forward by construction.
 
     The formula is as follows:
 
@@ -396,6 +406,9 @@ def get_trend_scanning_labels(
 
     - López de Prado, M. (2020). "Machine Learning for Asset Managers." Cambridge University
       Press, section 5.4.
+
+    Referenced against:
+    - RiskLabAI, find_trend_using_trend_scanning: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/labeling/financial_labels.py#L51
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -458,9 +471,8 @@ def get_trend_scanning_labels(
 
 def get_tail_set_labels(scores: pd.DataFrame, quantile: float = 0.1) -> pd.DataFrame:
     """
-    Calculate the tail-set labels: per date, 1 for the tickers in the top `quantile` of the
-    scores (such as volatility-adjusted forward returns), -1 for those in the bottom `quantile`
-    and 0 for the rest.
+    Calculate the tail-set labels: per date, 1 for the tickers in the top `quantile` of the scores (such as
+    volatility-adjusted forward returns), -1 for those in the bottom `quantile` and 0 for the rest.
 
     The formula is as follows:
 
@@ -506,8 +518,8 @@ def get_matrix_flag_labels(
     threshold: float | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the matrix flag scores: how closely the prices of the window ending at each date
-    fit a flag pattern, by laying a 10 x 10 template over the deciles of the window's prices.
+    Calculate the matrix flag scores: how closely the prices of the window ending at each date fit a flag pattern,
+    by laying a 10 x 10 template over the deciles of the window's prices.
 
     The formula is as follows:
 
@@ -531,8 +543,11 @@ def get_matrix_flag_labels(
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
         window (int, optional): The number of prices of the window, at least 10. Defaults to 40.
-        template (str | np.ndarray, optional): "leigh_bull", "leigh_bear", "cervello_royo_bull",
-            "cervello_royo_bear" or a 10 x 10 array of weights. Defaults to "leigh_bull".
+        template (str | np.ndarray, optional): The template of weights. Options are: "leigh_bull" (the bull flag
+            of Leigh, Modani, Purvis and Roberts, 2002), "leigh_bear" (the Leigh bull flag upside down),
+            "cervello_royo_bull" (the bull flag of Cervelló-Royo, Guijarro and Michniuk, 2015),
+            "cervello_royo_bear" (the Cervelló-Royo bull flag upside down), or a 10 x 10 array of weights.
+            Defaults to "leigh_bull".
         threshold (float | None, optional): The score from which the label is 1. Defaults to None,
             which returns the score only.
 
@@ -574,8 +589,8 @@ def get_matrix_flag_labels(
 
 def get_label_concurrency(holding_periods: pd.Series) -> pd.Series:
     """
-    Calculate the concurrency of labels: per date, the number of labels whose span, from the
-    label's date to its barrier, includes the date.
+    Calculate the concurrency of labels: per date, the number of labels whose span, from the label's date to its
+    barrier, includes the date.
 
     The formula is as follows:
 
@@ -607,8 +622,10 @@ def get_label_concurrency(holding_periods: pd.Series) -> pd.Series:
 
 def get_average_uniqueness(holding_periods: pd.Series) -> pd.Series:
     """
-    Calculate the average uniqueness of every label: the mean over its span of one over the
-    number of concurrent labels. A label that overlaps no other has a uniqueness of 1.
+    Calculate the average uniqueness of every label: the mean over its span of one over the number of concurrent
+    labels.
+
+    A label that overlaps no other has a uniqueness of 1.
 
     The formula is as follows:
 
@@ -618,6 +635,9 @@ def get_average_uniqueness(holding_periods: pd.Series) -> pd.Series:
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 4.4
       (Snippet 4.2).
+
+    Referenced against:
+    - RiskLabAI, calculate_average_uniqueness: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L71
 
     Args:
         holding_periods (pd.Series): The holding period of the label at each date in periods, NaN
@@ -646,9 +666,8 @@ def get_return_attribution_weights(
     prices: pd.Series, holding_periods: pd.Series
 ) -> pd.Series:
     """
-    Calculate the sample weights by return attribution: the absolute sum of the log returns over
-    a label's span, each divided by the number of labels sharing it, scaled so the weights add up
-    to the number of labels.
+    Calculate the sample weights by return attribution: the absolute sum of the log returns over a label's span,
+    each divided by the number of labels sharing it, scaled so the weights add up to the number of labels.
 
     The formula is as follows:
 
@@ -660,6 +679,9 @@ def get_return_attribution_weights(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 4.6
       (Snippet 4.10).
+
+    Referenced against:
+    - RiskLabAI, sample_weight_absolute_return_meta_labeling: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L200
 
     Args:
         prices (pd.Series): The prices of one ticker over its own trading days.
@@ -696,9 +718,10 @@ def get_time_decay_weights(
     average_uniqueness: pd.Series, decay: float = 1.0
 ) -> pd.Series:
     """
-    Calculate the sample weights by time decay: weights that fall linearly with the cumulative
-    uniqueness from 1 for the newest label to `decay` for the oldest, so that older labels count
-    less without counting overlapping labels twice.
+    Calculate the sample weights by time decay, so that older labels count less without counting overlapping labels
+    twice.
+
+    The weights fall linearly with the cumulative uniqueness from 1 for the newest label to `decay` for the oldest.
 
     The formula is as follows:
 
@@ -713,6 +736,9 @@ def get_time_decay_weights(
 
     - López de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley, section 4.7
       (Snippet 4.11).
+
+    Referenced against:
+    - RiskLabAI, calculate_time_decay: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/weights/sample_weights.py#L279
 
     Args:
         average_uniqueness (pd.Series): The average uniqueness of the label at each date, NaN

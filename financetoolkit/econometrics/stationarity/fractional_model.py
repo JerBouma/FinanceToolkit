@@ -28,14 +28,20 @@ def get_fractional_weights(
     d: float, size: int | None = None, threshold: float | None = None
 ) -> np.ndarray:
     """
-    Calculate the weights of the fractional difference operator (1 - L)^d, the binomial
-    series of Hosking (1981) and López de Prado (2018, ch. 5):
+    Calculate the weights of the fractional difference operator (1 - L)^d: how much every
+    past value counts in a fractional difference.
+
+    The weights are the binomial series of Hosking (1981) and López de Prado (2018, ch. 5):
 
     - ω₀ = 1
     - ωₖ = -ωₖ₋₁·(d - k + 1) / k = Π(i=1..k) (i - 1 - d) / i
 
     For a whole number d the weights end after d + 1 terms (d = 1 gives 1, -1, the first
     difference); for any other d they decay in absolute value without ending.
+
+    Referenced against:
+    - RiskLabAI, calculate_weights_std: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L23
+    - RiskLabAI, calculate_weights_ffd: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L51
 
     Args:
         d (float): The order of differentiation, at least 0.
@@ -99,10 +105,15 @@ def get_fractional_difference(
       weight is at least the threshold (1e-5 by default) in absolute value: every value has
       the same weights, so the series has no drift from a growing window
 
+    Referenced against:
+    - RiskLabAI, fractional_difference_std: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L85
+    - RiskLabAI, fractional_difference_fixed: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L142
+
     Args:
         series (pd.Series): The values, such as log prices. Missing values are left out.
         d (float, optional): The order of differentiation, at least 0. Defaults to 0.4.
-        method (str, optional): "fixed_width" (FFD) or "expanding". Defaults to "fixed_width".
+        method (str, optional): The window. Options are: "fixed_width" (fixed-width window,
+            FFD), "expanding" (expanding window). Defaults to "fixed_width".
         threshold (float | None, optional): The weight threshold. Defaults to None, which is
             1e-5 for the fixed-width window and 0.01 for the expanding window.
 
@@ -169,6 +180,9 @@ def get_minimum_fractional_difference(
       on X̃ (constant, lags by AIC up to `max_lag`, 1 by default as in Snippet 5.4) and the correlation of X̃ with X
     - d* = the smallest d with an ADF p-value below 1 - confidence, refined in steps of
       step / 10 between the last d that fails and the first that passes
+
+    Referenced against:
+    - RiskLabAI, find_optimal_ffd_simple: https://github.com/RiskLabAI/RiskLabAI.py/blob/v3.2.0/src/RiskLabAI/data/differentiation/differentiation.py#L273
 
     Args:
         series (pd.Series): The values, such as log prices.

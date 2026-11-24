@@ -21,11 +21,12 @@ def get_seasonality(
     end_date: str | pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """
-    Calculate the seasonality of returns: their average per calendar month (from monthly
-    returns) or per day of the week (from daily returns), with the median, the share of
-    positive returns (hit rate), the t-statistic of the average and the number of
-    observations. A pattern only holds up with a t-statistic well above 2 over many years,
-    and even then it can disappear once it is widely known.
+    Calculate the seasonality of returns: their average per calendar month (from monthly returns) or per day of the
+    week (from daily returns).
+
+    Each comes with the median, the share of positive returns (hit rate), the t-statistic of the average and the
+    number of observations. A pattern only holds up with a t-statistic well above 2 over many years, and even then
+    it can disappear once it is widely known.
 
     For more information, see the following paper:
 
@@ -35,7 +36,8 @@ def get_seasonality(
     Args:
         returns (pd.Series): Monthly returns for frequency="month", daily returns for
             frequency="weekday", indexed by date.
-        frequency (str, optional): "month" or "weekday". Defaults to "month".
+        frequency (str, optional): Options are: "month" (per calendar month), "weekday" (per day of the week).
+            Defaults to "month".
         end_date (str | pd.Timestamp | None, optional): The date the returns run up to. A
             monthly return is measured from one month's last close to the next, so with an
             end date before the last business day of its month the final return covers only
@@ -98,11 +100,10 @@ def get_relative_strength(
     prices: pd.Series | pd.DataFrame, benchmark_prices: pd.Series, window: int = 252
 ) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
     """
-    Calculate the relative strength of prices against a benchmark: the price relative (the
-    price divided by the benchmark's, set to 1 on the first date), which rises when the
-    asset outperforms, and the Mansfield relative strength, the price relative against its
-    own moving average minus 1, which is positive while the asset is gaining on the
-    benchmark. Weinstein reads it from weekly charts against a 52-week average, a year.
+    Calculate the relative strength of every ticker against the Benchmark and against the other tickers: which
+    tickers outperform and by how much.
+
+    Weinstein reads it from weekly charts against a 52-week average, a year.
 
     For more information, see the following book:
 
@@ -130,8 +131,8 @@ def get_relative_strength_score(
     prices: pd.Series | pd.DataFrame, observations_per_year: float = 252
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the relative strength score of every asset: its performance over the last
-    year, the latest quarter weighing most, which `get_relative_strength_rating` ranks.
+    Calculate the relative strength score of every asset: its performance over the last year, the latest quarter
+    weighing most, which `get_relative_strength_rating` ranks.
 
     The formula is as follows:
 
@@ -162,11 +163,12 @@ def get_relative_strength_score(
 
 def get_relative_strength_rating(scores: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate the relative strength rating of every asset: its performance over the last
-    year, the latest quarter weighing most (the 3, 6, 9 and 12-month returns weighted
-    0.4, 0.2, 0.2 and 0.2, see `get_relative_strength_score`), ranked against the other
-    assets from 1 (weakest) to 99 (strongest). The rating is only meaningful across many
-    assets, such as the constituents of an index.
+    Calculate the relative strength rating of every asset: its performance over the last year, ranked against the
+    other assets from 1 (weakest) to 99 (strongest).
+
+    The latest quarter weighs most: the 3, 6, 9 and 12-month returns are weighted 0.4, 0.2, 0.2 and 0.2 (see
+    `get_relative_strength_score`). The rating is only meaningful across many assets, such as the constituents of an
+    index.
 
     The rating follows the one Investor's Business Daily publishes, whose exact formula is
     proprietary; the 0.4, 0.2, 0.2 and 0.2 weighting is its common public approximation.

@@ -23,7 +23,8 @@ def get_mcclellan_oscillator(
     prices_close: pd.Series, short_ema_window: int, long_ema_window: int
 ) -> pd.Series:
     """
-    Calculate the McClellan Oscillator for a given price series.
+    Calculate the McClellan Oscillator: the momentum of the market's breadth, as the difference between a fast and a
+    slow average of the advancing minus declining tickers.
 
     The McClellan Oscillator is traditionally a market-wide breadth indicator, calculated
     from the daily count of advancing minus declining issues across an entire exchange or
@@ -77,7 +78,8 @@ def get_advancers_decliners(
     prices_close: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate a daily advance/decline signal for a given price series.
+    Calculate the advance/decline signal: whether each ticker closed higher (1) or lower (-1) than the period
+    before, the building block of the market breadth measures.
 
     Traditionally, "advancers minus decliners" is a market-wide breadth statistic: the count
     of stocks that rose minus the count of stocks that fell across an entire exchange or
@@ -124,7 +126,8 @@ def get_on_balance_volume(
     prices_close: pd.Series | pd.DataFrame, volumes: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame:
     """
-    Calculate the On-Balance Volume (OBV) of a given price series.
+    Calculate the On-Balance Volume (OBV): a running total of volume that adds the volume of up periods and
+    subtracts that of down periods, to show whether volume flows into or out of a security.
 
     On-Balance Volume is a running total of volume that adds the period's volume when price
     closes higher than the prior period, subtracts it when price closes lower, and leaves the
@@ -143,8 +146,11 @@ def get_on_balance_volume(
     Reference: Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
-    Referenced against TA-Lib's OBV (https://ta-lib.org/functions/obv.html), whose
-    running total starts at the first volume instead of 0.
+    Referenced against:
+    - TA-Lib, OBV: https://ta-lib.org/functions/obv.html
+
+    Notes:
+        - Unlike TA-Lib's OBV, whose running total starts at the first volume, the running total starts at 0.
 
     Args:
         prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker when
@@ -174,7 +180,8 @@ def get_on_balance_volume(
 
 def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
     """
-    Calculate the Price Volume Trend (PVT) of a given price series.
+    Calculate the Price Volume Trend (PVT): a running total of volume weighted by the percentage change of the
+    close, which shows how strongly buying or selling pressure backs a trend.
 
     The Price Volume Trend is a running total of volume weighted by the period's percentage
     change in price. Where On-Balance Volume adds or subtracts the whole volume depending on
@@ -195,7 +202,8 @@ def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Se
     "Granville's New Key to Stock Market Profits." Prentice-Hall) by weighting volume with
     the percentage change in price.
 
-    Referenced against TA-Lib's PVT (https://ta-lib.org/functions/pvt.html).
+    Referenced against:
+    - TA-Lib, PVT: https://ta-lib.org/functions/pvt.html
 
     Notes:
         - The running total starts at 0 on the first observation with both a close and a
@@ -260,7 +268,8 @@ def get_accumulation_distribution_line(
     volumes: pd.Series,
 ) -> pd.Series:
     """
-    Calculate the Accumulation/Distribution Line for a given price series.
+    Calculate the Accumulation/Distribution Line: a running total of volume weighted by where each close lies within
+    its high-low range, to show whether a security is being accumulated or distributed.
 
     The Accumulation/Distribution Line is a running (cumulative) total of Money Flow Volume:
     each period's volume, weighted by where the close settled within that period's high-low
@@ -279,7 +288,8 @@ def get_accumulation_distribution_line(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    Referenced against TA-Lib's AD (https://ta-lib.org/functions/ad.html).
+    Referenced against:
+    - TA-Lib, AD: https://ta-lib.org/functions/ad.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -300,7 +310,8 @@ def get_accumulation_distribution_line(
 
 def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
     """
-    Calculate the TRIN (Arms Index) for a universe of tickers.
+    Calculate the TRIN (Arms Index): the ratio of advancing to declining tickers divided by the ratio of their
+    volumes, which shows whether volume favours the rising or the falling tickers.
 
     TRIN compares the ratio of advancing to declining issues against the ratio of
     volume in advancing issues to volume in declining issues. It is a cross-sectional
@@ -343,7 +354,8 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
 
 def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series:
     """
-    Calculate the New Highs - New Lows for a universe of tickers.
+    Calculate the New Highs - New Lows: the number of tickers at a new high over a window minus the number at a new
+    low, which shows how broad a rise or a fall is.
 
     New Highs - New Lows measures the number of tickers reaching a new high over the
     specified window minus the number of tickers reaching a new low over the same
@@ -388,7 +400,8 @@ def get_chaikin_oscillator(
     long_window: int,
 ) -> pd.Series:
     """
-    Calculate the Chaikin Oscillator for a given price series.
+    Calculate the Chaikin Oscillator: the momentum of the Accumulation/Distribution Line, as the difference between
+    its fast and slow exponential moving averages.
 
     The Chaikin Oscillator applies MACD-style momentum analysis to the Accumulation/
     Distribution Line itself, taking the difference between a short-term and a long-term
@@ -407,7 +420,8 @@ def get_chaikin_oscillator(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    Referenced against TA-Lib's ADOSC (https://ta-lib.org/functions/adosc.html).
+    Referenced against:
+    - TA-Lib, ADOSC: https://ta-lib.org/functions/adosc.html
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
@@ -444,7 +458,8 @@ def get_chaikin_money_flow(
     window: int,
 ) -> pd.Series:
     """
-    Calculate the Chaikin Money Flow (CMF) for a given price series.
+    Calculate the Chaikin Money Flow (CMF): the share of volume over a window that came with closes near the highs
+    rather than the lows, a measure of buying versus selling pressure.
 
     The Chaikin Money Flow sums the same Money Flow Volume used by the Accumulation/
     Distribution Line over a rolling window and normalizes it by the window's total volume,
@@ -464,7 +479,8 @@ def get_chaikin_money_flow(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
-    Referenced against TA-Lib's CMF (https://ta-lib.org/functions/cmf.html).
+    Referenced against:
+    - TA-Lib, CMF: https://ta-lib.org/functions/cmf.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -508,7 +524,8 @@ def get_ease_of_movement(
     volume_divisor: float = 100_000_000,
 ) -> pd.Series:
     """
-    Calculate the Ease of Movement (EMV) for a given price series.
+    Calculate the Ease of Movement (EMV): how far the price moves per unit of volume, so a large value shows a price
+    rising or falling on little volume.
 
     The Ease of Movement indicator relates how far price moved (the change in the midpoint
     of the high-low range from one period to the next) to the volume required to move it
@@ -531,7 +548,8 @@ def get_ease_of_movement(
     Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
     Analysis of Stock and Bond Markets." Dow Jones-Irwin.
 
-    Referenced against TA-Lib's EMV (https://ta-lib.org/functions/emv.html).
+    Referenced against:
+    - TA-Lib, EMV: https://ta-lib.org/functions/emv.html
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -607,7 +625,8 @@ def get_negative_volume_index(
     prices_close: pd.Series, volumes: pd.Series, start_value: float = 1000.0
 ) -> pd.Series:
     """
-    Calculate the Negative Volume Index (NVI) for a given price series.
+    Calculate the Negative Volume Index (NVI): a running total of the price changes on the periods volume falls,
+    which follows what informed investors do on quiet days.
 
     The Negative Volume Index is a cumulative index that only updates on days where volume
     decreases from the prior period, compounding that day's percentage price change onto the
@@ -626,7 +645,8 @@ def get_negative_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
-    Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html).
+    Referenced against:
+    - TA-Lib, NVI: https://ta-lib.org/functions/nvi.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -649,7 +669,8 @@ def get_positive_volume_index(
     prices_close: pd.Series, volumes: pd.Series, start_value: float = 1000.0
 ) -> pd.Series:
     """
-    Calculate the Positive Volume Index (PVI) for a given price series.
+    Calculate the Positive Volume Index (PVI): a running total of the price changes on the periods volume rises,
+    which follows the crowd on busy days.
 
     The Positive Volume Index mirrors the Negative Volume Index: it is a cumulative index
     that only updates on days where volume increases from the prior period, compounding that
@@ -668,7 +689,8 @@ def get_positive_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
-    Referenced against TA-Lib's PVI (https://ta-lib.org/functions/pvi.html).
+    Referenced against:
+    - TA-Lib, PVI: https://ta-lib.org/functions/pvi.html
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -718,10 +740,10 @@ def get_market_breadth(
     high_low_window: int = 252,
 ) -> pd.DataFrame:
     """
-    Calculate the breadth of a market from the prices of its constituents: how many of them
-    take part in a move. An index can rise on the strength of a few large companies while
-    most of its members fall; breadth shows that divergence, which often comes before the
-    index itself turns.
+    Calculate the breadth of a market from the prices of its constituents: how many of them take part in a move.
+
+    An index can rise on the strength of a few large companies while most of its members fall; breadth shows that
+    divergence, which often comes before the index itself turns.
 
     - Advancers, Decliners and Unchanged: the number of constituents whose close rose, fell or
       stayed the same.
@@ -851,7 +873,8 @@ def get_klinger_volume_oscillator(
     signal_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Klinger Volume Oscillator (KVO) for a given price series.
+    Calculate the Klinger Volume Oscillator (KVO): the difference between a fast and a slow average of the volume
+    force, which compares the volume of up and down trends to show long-term money flow.
 
     The Klinger Volume Oscillator turns volume into a signed "volume force" that depends on
     the direction of the trend (the sum of the high, low and close against that of the
@@ -878,7 +901,10 @@ def get_klinger_volume_oscillator(
     Reference: Klinger, S.J. (1997). "Identifying Trends With Volume Analysis." Technical
     Analysis of Stocks & Commodities, 15(12).
 
-    Referenced against TA-Lib's KVO (https://ta-lib.org/functions/kvo.html).
+    Referenced against:
+    - TA-Lib, KVO: https://ta-lib.org/functions/kvo.html
+        Test: tests/technical/test_breadth_model.py::test_klinger_volume_oscillator_matches_talib
+    - Tulip Indicators, kvo: https://tulipindicators.org/kvo
 
     Notes:
         - The Volume Force agrees with TA-Lib's and Tulip Indicators' (`kvo`), with |2 * dm / cm - 1|.
@@ -951,7 +977,8 @@ def get_market_facilitation_index(
     volume_divisor: float = 1.0,
 ) -> pd.Series:
     """
-    Calculate Bill Williams' Market Facilitation Index (MFI) for a given price series.
+    Calculate Bill Williams' Market Facilitation Index (MFI): the range of a period per unit of volume, which shows
+    how efficiently volume moves the price.
 
     The Market Facilitation Index measures how far price moved per unit of volume: the
     period's range divided by its volume. Williams read it together with the change in
@@ -969,8 +996,11 @@ def get_market_facilitation_index(
     Reference: Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to
     Maximize Your Profits." John Wiley & Sons.
 
-    Referenced against TA-Lib's MARKETFI
-    (https://ta-lib.org/functions/marketfi.html).
+    Referenced against:
+    - TA-Lib, MARKETFI: https://ta-lib.org/functions/marketfi.html
+        Test: tests/technical/test_breadth_model.py::test_market_facilitation_index_matches_talib
+    - pandas-ta-classic, marketfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/marketfi.py#L16
+    - Tulip Indicators, marketfi: https://tulipindicators.org/marketfi
 
     Notes:
         - With `volume_divisor` = 1 it agrees with TA-Lib's MARKETFI, pandas-ta-classic's
@@ -997,7 +1027,8 @@ def get_williams_accumulation_distribution(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
 ) -> pd.Series:
     """
-    Calculate Larry Williams' Accumulation/Distribution (WAD) for a given price series.
+    Calculate Larry Williams' Accumulation/Distribution (WAD): a running total of how far each close moved from the
+    opposite end of its true range, which shows accumulation and distribution from prices alone.
 
     Williams' Accumulation/Distribution is a running total of how far each close moved away
     from the opposite end of the period's true range: on an up close, the distance from the
@@ -1017,7 +1048,11 @@ def get_williams_accumulation_distribution(
     Reference: Williams, L.R. (1973). "How I Made One Million Dollars Last Year Trading
     Commodities." Windsor Books.
 
-    Referenced against TA-Lib's WAD (https://ta-lib.org/functions/wad.html).
+    Referenced against:
+    - TA-Lib, WAD: https://ta-lib.org/functions/wad.html
+        Test: tests/technical/test_breadth_model.py::test_williams_accumulation_distribution_matches_talib
+    - pandas-ta-classic, wad: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/wad.py#L13
+    - Tulip Indicators, wad: https://tulipindicators.org/wad
 
     Notes:
         - It agrees with TA-Lib's WAD and Tulip Indicators' `wad` (which starts on the second
@@ -1056,7 +1091,8 @@ def get_williams_accumulation_distribution(
 
 def get_relative_volume(volumes: pd.Series, window: int) -> pd.Series:
     """
-    Calculate the Relative Volume (RVOL) for a given volume series.
+    Calculate the Relative Volume (RVOL): the volume of a period divided by its average over a window, which shows
+    how unusually busy the period is.
 
     Relative Volume compares a period's volume with the average volume of the periods before
     it. A value of 2 means twice the usual volume: a breakout or a gap on high relative
@@ -1076,7 +1112,9 @@ def get_relative_volume(volumes: pd.Series, window: int) -> pd.Series:
     T.N. (2005). "Encyclopedia of Chart Patterns." 2nd ed. John Wiley & Sons, for the role
     of above-average volume in breakouts.
 
-    Referenced against TA-Lib's RVOL (https://ta-lib.org/functions/rvol.html).
+    Referenced against:
+    - TA-Lib, RVOL: https://ta-lib.org/functions/rvol.html
+        Test: tests/technical/test_breadth_model.py::test_relative_volume_matches_talib
 
     Notes:
         - It agrees with TA-Lib's RVOL. An average volume of zero (a series without volume, such
@@ -1105,7 +1143,8 @@ def get_volume_flow_indicator(
     smooth_window: int,
 ) -> pd.Series:
     """
-    Calculate Markos Katsanos' Volume Flow Indicator (VFI) for a given price series.
+    Calculate Markos Katsanos' Volume Flow Indicator (VFI): the volume of the periods with a meaningful move of the
+    typical price, signed by the direction of the move, which shows whether money flows in or out.
 
     The Volume Flow Indicator refines On-Balance Volume in three ways: it uses the typical
     price instead of the close, it ignores moves too small to matter (below a cutoff that
@@ -1135,9 +1174,12 @@ def get_volume_flow_indicator(
     Analysis of Stocks & Commodities, 22(6), and Katsanos, M. (2004). "Volume Flow Indicator
     Performance." Technical Analysis of Stocks & Commodities, 22(7).
 
-    Referenced against pandas-ta-classic's vfi
-    (https://github.com/xgboosted/pandas-ta-classic); finta: VFI
-    (https://github.com/peerchemist/finta).
+    Referenced against:
+    - pandas-ta-classic, vfi: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vfi.py#L17
+        Test: tests/technical/test_breadth_model.py::test_volume_flow_indicator_matches_pandas_ta
+
+    Shares similar logic:
+    - finta, VFI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2026
 
     Notes:
         - The volatility is the population standard deviation (ddof=0) of the logarithmic
@@ -1208,7 +1250,8 @@ def get_finite_volume_elements(
     cutoff: float,
 ) -> pd.Series:
     """
-    Calculate Markos Katsanos' Finite Volume Elements (FVE) for a given price series.
+    Calculate Markos Katsanos' Finite Volume Elements (FVE): the share of volume over a window classified as buying
+    rather than selling, leaving out moves too small to matter, a measure of money flow.
 
     Finite Volume Elements is a money flow indicator that classifies each period's whole
     volume as buying, selling or neutral. It looks at both the intraday move (the close
@@ -1234,7 +1277,9 @@ def get_finite_volume_elements(
     Analysis of Stocks & Commodities, 21(9), and Katsanos, M. (2003). "Detecting Breakouts."
     Technical Analysis of Stocks & Commodities, 21(4).
 
-    Referenced against finta's FVE (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, FVE: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1998
+        Test: tests/technical/test_breadth_model.py::test_finite_volume_elements_matches_finta
 
     Notes:
         - The FVE is a decimal between -1 and 1 (0.25 is 25% net buying volume); Katsanos and
@@ -1278,7 +1323,8 @@ def get_twiggs_money_flow(
     window: int,
 ) -> pd.Series:
     """
-    Calculate Colin Twiggs' Money Flow (TMF) for a given price series.
+    Calculate Colin Twiggs' Money Flow (TMF): the share of volume that came with closes near the top of the true
+    range rather than its bottom, smoothed, a measure of buying versus selling pressure.
 
     Twiggs Money Flow is a refinement of the Chaikin Money Flow. It places the close within
     the true range (which includes a gap from the previous close) instead of the high-low
@@ -1341,7 +1387,8 @@ def get_volume_zone_oscillator(
     prices_close: pd.Series, volumes: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Volume Zone Oscillator (VZO) for a given price series.
+    Calculate the Volume Zone Oscillator (VZO): the volume of up closes minus that of down closes as a share of the
+    total volume, smoothed, which shows whether buying or selling volume dominates.
 
     The Volume Zone Oscillator divides the volume into the volume of up closes and that of
     down closes and expresses their difference, smoothed with an EMA, as a share of the
@@ -1359,7 +1406,9 @@ def get_volume_zone_oscillator(
     Reference: Khalil, W. and Steckler, D. (2011). "In The Volume Zone." Technical Analysis
     of Stocks & Commodities, 29(5).
 
-    Referenced against finta's VZO (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, VZO: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1521
+        Test: tests/technical/test_breadth_model.py::test_volume_zone_oscillator_matches_finta
 
     Notes:
         - The VZO is a decimal between -1 and 1; Khalil and Steckler and finta multiply it by
@@ -1367,7 +1416,7 @@ def get_volume_zone_oscillator(
         - Both EMAs are seeded with the Simple Moving Average of their first values and run
           over the same periods, from the second one (the first has no change), so the VZO
           stays within its bounds and starts on period `window` + 1. finta seeds with
-          `adjust=True` from the first period, which only changes the warm-up.
+          pandas' adjusted weights from the first period, which only changes the warm-up.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1393,7 +1442,8 @@ def get_cumulative_force_index(
     prices_close: pd.Series, volumes: pd.Series, window: int
 ) -> pd.Series:
     """
-    Calculate the Cumulative Force Index (CFI) for a given price series.
+    Calculate the Cumulative Force Index (CFI): a running total of the price change times the volume, which shows
+    the force behind a trend.
 
     The Cumulative Force Index is the running total of Elder's Force Index: each period's
     change in price times its volume, smoothed with an EMA, added up over time. Where
@@ -1414,13 +1464,16 @@ def get_cumulative_force_index(
     Management." John Wiley & Sons, for the Force Index. The cumulative form and the Weighted
     On-Balance Volume are defined in finta (Peerchemist).
 
-    Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, CFI: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1585
+        Test: tests/technical/test_breadth_model.py::test_cumulative_force_index_matches_finta
+    - finta, WOBV: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1506
 
     Notes:
         - With a window of 1 it agrees with finta's WOBV. With a larger window it agrees with finta's
           CFI apart from the seed: the EMA is seeded with the Simple Moving Average of its
           first `window` values (see `overlap_model.get_exponential_moving_average`), while
-          finta averages from the first value (`adjust=True`). The EMAs converge, but the
+          finta averages from the first value (pandas' adjusted weights). The EMAs converge, but the
           running total keeps the difference of the warm-up as a constant offset.
         - The running total starts at the first smoothed force, so its level depends on the
           first date of the data; only its direction and its divergences from price carry
@@ -1448,7 +1501,8 @@ def get_price_volume(
     prices_close: pd.Series, volumes: pd.Series, signed: bool = False
 ) -> pd.Series:
     """
-    Calculate the Price-Volume (dollar volume) for a given price series.
+    Calculate the Price-Volume (dollar volume): the close times the volume, the amount of money that traded in each
+    period.
 
     The Price-Volume is the value traded in a period: the close times the volume. Unlike the
     number of shares, it can be compared across stocks with very different prices and is the
@@ -1466,11 +1520,12 @@ def get_price_volume(
     Returns: Cross-Section and Time-Series Effects." Journal of Financial Markets, 5(1),
     31-56, which scales returns by the dollar volume.
 
-    Referenced against pandas-ta-classic's pvol
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, pvol: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvol.py#L17
+        Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
     Notes:
-        - It agrees with pandas-ta-classic's `pvol`, also with `signed=True`, where the first
+        - It agrees with pandas-ta-classic's `pvol`, also in its signed form, where the first
           period has no change and therefore no signed value.
 
     Args:
@@ -1492,7 +1547,8 @@ def get_price_volume(
 
 def get_price_volume_rank(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
     """
-    Calculate the Price Volume Rank (PVR) for a given price series.
+    Calculate the Price Volume Rank (PVR): a code from 1 (a rising price on rising volume) to 4 (a falling price on
+    falling volume), which shows whether volume confirms a move.
 
     The Price Volume Rank classifies each period by the direction of the close and of the
     volume, from the most bullish to the most bearish combination: a rising price on rising
@@ -1512,8 +1568,9 @@ def get_price_volume_rank(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     Reference: Fulks Maxwell Laboratories (fmlabs), "Price Volume Rank," Technical Indicators
     Reference.
 
-    Referenced against pandas-ta-classic's pvr
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, pvr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/pvr.py#L12
+        Test: tests/technical/test_breadth_model.py::test_price_volume_and_rank_match_pandas_ta
 
     Notes:
         - It agrees with pandas-ta-classic's `pvr`. The first period has no change and no rank.
@@ -1541,7 +1598,8 @@ def get_volume_profile(
     prices_close: pd.Series, volumes: pd.Series, bins: int
 ) -> pd.DataFrame:
     """
-    Calculate the Volume Profile (Volume by Price) of a given price series.
+    Calculate the Volume Profile (Volume by Price): how much volume traded at each price level, which shows the
+    prices the market accepted most.
 
     The Volume Profile is not a series over time but a histogram: it divides the range of
     the closes into price bins of equal width and adds up the volume traded at a close in
@@ -1563,15 +1621,15 @@ def get_volume_profile(
     Press, for the Market Profile; StockCharts ChartSchool, "Volume by Price," for the
     volume form.
 
-    Referenced against pandas-ta-classic's vp
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, vp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/vp.py#L13
 
     Notes:
         - The profile describes the whole series, so it looks at every close in it; it is
           meant for the period between a start and an end date, not for a backtest.
-        - The bins are those of pandas-ta-classic's `vp` with `sort_close=True` (by price),
+        - The bins are those of pandas-ta-classic's `vp` sorted by close (by price),
           with the exact range of the closes as edges and every bin kept, also those without
-          volume. Its default `sort_close=False` splits the series into periods of time
+          volume. Its default, unsorted, splits the series into periods of time
           instead. Its total is the up plus the down volume; here the Total Volume also
           includes the volume of periods with an unchanged close, and of the first period,
           which has no change.
@@ -1632,7 +1690,10 @@ def get_buying_selling_pressure(
     smooth_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Buying and Selling Pressure (BASP) for a given price series.
+    Calculate the Buying and Selling Pressure (BASP), which shows whether buyers or sellers control the market.
+
+    It compares the distance of the close above the low (buying) and of the high above the close (selling) with
+    their averages, weighted by volume.
 
     The Buying Pressure is the distance of the close above the low, the Selling Pressure the
     distance of the high above the close. Each is divided by its own EMA, so it shows whether
@@ -1657,14 +1718,16 @@ def get_buying_selling_pressure(
     (Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks &
     Commodities, 3(4)), which measures it from the lower of the low and the previous close.
 
-    Referenced against finta's BASP and BASPN
-    (https://github.com/peerchemist/finta).
+    Referenced against:
+    - finta, BASP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1671
+        Test: tests/technical/test_breadth_model.py::test_buying_selling_pressure_matches_finta
+    - finta, BASPN: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1691
 
     Notes:
         - A `smooth_window` of 1 gives finta's BASP and the default of 20 its BASPN.
           Every EMA is seeded with the Simple Moving Average of its first values (see
           `overlap_model.get_exponential_moving_average`), while finta averages from the
-          first value (`adjust=True`), so the two differ during the warm-up and converge
+          first value (pandas' adjusted weights), so the two differ during the warm-up and converge
           after it.
         - Both lines are ratios around 1 (the usual pressure on the usual volume).
 
@@ -1708,7 +1771,8 @@ def get_archer_on_balance_volume(
     run_window: int,
 ) -> pd.DataFrame:
     """
-    Calculate the Archer On-Balance Volume (AOBV) for a given price series.
+    Calculate the Archer On-Balance Volume (AOBV): a fast and a slow average of the On-Balance Volume and whether
+    the volume trend is up or down.
 
     The Archer On-Balance Volume adds a fast and a slow EMA of On-Balance Volume and two
     flags for the trend of those averages, so OBV can be read like a moving average
@@ -1733,8 +1797,9 @@ def get_archer_on_balance_volume(
     paper), built on Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
-    Referenced against pandas-ta-classic's aobv
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, aobv: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volume/aobv.py#L17
+        Test: tests/technical/test_breadth_model.py::test_archer_on_balance_volume_matches_pandas_ta
 
     Notes:
         - It agrees with pandas-ta-classic's `aobv` (whose EMAs are also seeded with a Simple

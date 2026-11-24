@@ -68,11 +68,14 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates and collects various overlap-based indicators based on the provided data.
+        Collect the overlap indicators of every ticker in one table: the moving averages, bands and levels drawn on
+        the same scale as the prices.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The window size for calculating indicators.
                 Defaults to 14.
             close_column (str, optional): The name of the column containing the close prices.
@@ -96,8 +99,8 @@ class OverlapTechnicals:
 
         Notes:
         - The method calculates several overlap-based indicators for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -485,14 +488,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate a Moving Average (MA) of a given price series: the simple, exponential,
-        double exponential, triple exponential, zero lag exponential, Wilder, triangular,
-        weighted, Hull, sine weighted, Fibonacci weighted or Pascal's weighted moving average,
-        an adaptive average (Kaufman's, Tillson's T3, the Arnaud Legoux, McGinley Dynamic,
-        variable index dynamic, fractal adaptive and Holt-Winters moving averages), a volume
-        weighted average (the volume weighted, elastic volume weighted and volume adjusted
-        moving averages) or one of Ehlers' filters (the SuperSmoother filter and the Hilbert
-        transform instantaneous trendline).
+        Calculate the Simple Moving Average (SMA): the average price over a window, which smooths the prices to show
+        their trend.
 
         A Moving Average smooths out price data by averaging the price over a specified
         number of periods. The variants differ in how they weight the prices within the
@@ -513,59 +510,60 @@ class OverlapTechnicals:
 
         The formula is as follows, per method:
 
-        - "simple": SMA = (Sum of Prices) / (Number of Prices)
-        - "exponential": the first EMA is SMA(Close, Window), on the Window-th period, and
+        - Simple Moving Average: SMA = (Sum of Prices) / (Number of Prices)
+        - Exponential Moving Average: the first EMA is SMA(Close, Window), on the Window-th period, and
           EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
-        - "double_exponential": DEMA = 2 * EMA(Close, Window) — EMA(EMA(Close, Window), Window)
-        - "triple_exponential": TEMA = 3 * EMA1 - 3 * EMA2 + EMA3, with EMA1 = EMA(Close, Window),
+        - Double Exponential Moving Average: DEMA = 2 * EMA(Close, Window) — EMA(EMA(Close, Window), Window)
+        - Triple Exponential Moving Average: TEMA = 3 * EMA1 - 3 * EMA2 + EMA3, with EMA1 = EMA(Close, Window),
           EMA2 = EMA(EMA1, Window) and EMA3 = EMA(EMA2, Window)
-        - "zero_lag": ZLEMA = EMA(2 * Close - Close(t - Lag), Window), with Lag = (Window - 1) / 2
+        - Zero Lag Exponential Moving Average: ZLEMA = EMA(2 * Close - Close(t - Lag), Window), with Lag = (Window -
+          1) / 2
           rounded down
-        - "wilder": the first value is SMA(Close, Window), on the Window-th period, and
+        - Wilder's Smoothed Moving Average: the first value is SMA(Close, Window), on the Window-th period, and
           RMA = Previous RMA + (Close - Previous RMA) / Window
-        - "triangular": TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2), with
+        - Triangular Moving Average: TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2), with
           both sub-windows (Window + 1) / 2 for an odd window and Window / 2 and Window / 2 + 1
           for an even window (TA-Lib's TRIMA convention)
-        - "weighted": WMA = (Sum of (Price * Weight)) / (Sum of Weights), with weights 1 to
+        - Weighted Moving Average: WMA = (Sum of (Price * Weight)) / (Sum of Weights), with weights 1 to
           Window from the oldest to the latest price
-        - "hull": HMA = WMA(2 * WMA(Close, Window / 2) — WMA(Close, Window), sqrt(Window))
-        - "sine": SINWMA = (Sum of (Price * Weight)) / (Sum of Weights), with weights
+        - Hull Moving Average: HMA = WMA(2 * WMA(Close, Window / 2) — WMA(Close, Window), sqrt(Window))
+        - Sine Weighted Moving Average: SINWMA = (Sum of (Price * Weight)) / (Sum of Weights), with weights
           sin(i * pi / (Window + 1)) for i = 1 to Window
-        - "fibonacci": FWMA = (Sum of (Price * Weight)) / (Sum of Weights), with the Fibonacci
+        - Fibonacci Weighted Moving Average: FWMA = (Sum of (Price * Weight)) / (Sum of Weights), with the Fibonacci
           numbers 1, 1, 2, 3, 5, ... from the oldest to the latest price
-        - "pascal": PWMA = (Sum of (Price * Weight)) / (Sum of Weights), with the binomial
+        - Pascal's Weighted Moving Average: PWMA = (Sum of (Price * Weight)) / (Sum of Weights), with the binomial
           coefficients of row Window - 1 of Pascal's triangle
-        - "kaufman_adaptive": Change = |Close(t) — Close(t - Window)|, Volatility =
+        - Kaufman Adaptive Moving Average: Change = |Close(t) — Close(t - Window)|, Volatility =
           Sum(|Close(i) — Close(i - 1)|, Window), Efficiency Ratio (ER) = Change / Volatility,
           Fastest SC = 2 / (Fast Window + 1), Slowest SC = 2 / (Slow Window + 1), Smoothing
           Constant (SC) = [ER * (Fastest SC — Slowest SC) + Slowest SC]^2 and
           KAMA(t) = KAMA(t-1) + SC * (Close(t) — KAMA(t-1))
-        - "t3": E1 = EMA(Close, Window), E2 = EMA(E1, Window), ..., E6 = EMA(E5, Window),
+        - T3 Moving Average: E1 = EMA(Close, Window), E2 = EMA(E1, Window), ..., E6 = EMA(E5, Window),
           c1 = -a^3, c2 = 3a^2 + 3a^3, c3 = -6a^2 - 3a - 3a^3, c4 = 1 + 3a + a^3 + 3a^2 with a
           the Volume Factor, and T3 = c1 * E6 + c2 * E5 + c3 * E4 + c4 * E3
-        - "arnaud_legoux": m = floor(Offset * (Window - 1)), s = Window / Sigma,
+        - Arnaud Legoux Moving Average: m = floor(Offset * (Window - 1)), s = Window / Sigma,
           Weight(i) = exp(-(i - m)^2 / (2 * s^2)) for i = 0 (the oldest price) to Window - 1, and
           ALMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
-        - "volume_weighted": VWMA = Sum(Close * Volume, Window) / Sum(Volume, Window)
-        - "mcginley": the first MD is SMA(Close, Window), on the Window-th period, and
+        - Volume Weighted Moving Average: VWMA = Sum(Close * Volume, Window) / Sum(Volume, Window)
+        - McGinley Dynamic: the first MD is SMA(Close, Window), on the Window-th period, and
           MD(t) = MD(t-1) + (Close(t) - MD(t-1)) / (Constant * Window * (Close(t) / MD(t-1))^4)
-        - "variable_index_dynamic": Gains = Sum(max(Close(t) - Close(t-1), 0), CMO Window),
+        - Variable Index Dynamic Average: Gains = Sum(max(Close(t) - Close(t-1), 0), CMO Window),
           Losses = Sum(max(Close(t-1) - Close(t), 0), CMO Window), |CMO| = |Gains - Losses| /
           (Gains + Losses) and 0 when prices did not move, Alpha = 2 / (Window + 1), and
           VIDYA(t) = Alpha * |CMO(t)| * Close(t) + (1 - Alpha * |CMO(t)|) * VIDYA(t-1)
-        - "fractal_adaptive": Price = (High + Low) / 2, N1 = (Highest High - Lowest Low) /
+        - Fractal Adaptive Moving Average: Price = (High + Low) / 2, N1 = (Highest High - Lowest Low) /
           (Window / 2) over the latest Window / 2 periods, N2 the same over the Window / 2
           periods before, N3 = (Highest High - Lowest Low) / Window over the whole window,
           D = (log(N1 + N2) - log(N3)) / log(2), Alpha = exp(-4.6 * (D - 1)) limited to between
           0.01 and 1, and FRAMA(t) = Alpha(t) * Price(t) + (1 - Alpha(t)) * FRAMA(t-1)
-        - "holt_winters": F(t) = (1 - Level Smoothing) * (F(t-1) + V(t-1) + 0.5 * A(t-1)) +
+        - Holt-Winters Moving Average: F(t) = (1 - Level Smoothing) * (F(t-1) + V(t-1) + 0.5 * A(t-1)) +
           Level Smoothing * Close(t), V(t) = (1 - Velocity Smoothing) * (V(t-1) + A(t-1)) +
           Velocity Smoothing * (F(t) - F(t-1)), A(t) = (1 - Acceleration Smoothing) * A(t-1) +
           Acceleration Smoothing * (V(t) - V(t-1)) and HWMA(t) = F(t) + V(t) + 0.5 * A(t), with F
           starting at the first close and V and A at 0
-        - "elastic_volume_weighted": Volume Sum = Sum(Volume, Window) and
+        - Elastic Volume Weighted Moving Average: Volume Sum = Sum(Volume, Window) and
           eVWMA(t) = ((Volume Sum - Volume(t)) * eVWMA(t-1) + Volume(t) * Close(t)) / Volume Sum
-        - "volume_adjusted": Weight(t) = Close(t) * Volume(t) / SMA(Volume, Window)(t) and
+        - Volume Adjusted Moving Average: Weight(t) = Close(t) * Volume(t) / SMA(Volume, Window)(t) and
           VAMA = Sum(Weight * Close, Window) / Sum(Weight, Window)
         - "super_smoother" with two poles: a = exp(-√2 * π / Window), b = 2 * a * cos(√2 * 180 /
           Window), c2 = b, c3 = -a², c1 = 1 - c2 - c3 and Filter = c1 * (Price + Price(t-1)) / 2 +
@@ -573,7 +571,7 @@ class OverlapTechnicals:
           b = 2 * a * cos(√3 * 180 / Window), c = a², c2 = b + c, c3 = -(c + b * c), c4 = c²,
           c1 = 1 - c2 - c3 - c4 and Filter = c1 * Price + c2 * Filter(t-1) + c3 * Filter(t-2) +
           c4 * Filter(t-3)
-        - "hilbert_trendline": Smooth = (4 * Price + 3 * Price(t-1) + 2 * Price(t-2) +
+        - Hilbert Transform Instantaneous Trendline: Smooth = (4 * Price + 3 * Price(t-1) + 2 * Price(t-2) +
           Price(t-3)) / 10, H(x) = (0.0962 * x + 0.5769 * x(t-2) - 0.5769 * x(t-4) - 0.0962 *
           x(t-6)) * (0.075 * Period(t-1) + 0.54), Detrender = H(Smooth), Q1 = H(Detrender),
           I1 = Detrender(t-3), I2 = 0.2 * (I1 - H(Q1)) + 0.8 * I2(t-1), Q2 = 0.2 * (Q1 + H(I1)) +
@@ -637,16 +635,56 @@ class OverlapTechnicals:
           Concepts." John Wiley & Sons.
         - Ehlers, J.F. (2014). "Predictive And Successful Indicators." Technical Analysis of
           Stocks & Commodities, 32(1), 16-25.
-        - TA-Lib: SMA, EMA, DEMA, TEMA, ZLEMA, RMA, TRIMA, WMA, HMA, KAMA, T3, ALMA, VWMA, MCGD,
-          VIDYA, FRAMA and HT_TRENDLINE, the reference implementations
-          (https://ta-lib.org/functions/).
-        - Referenced against pandas-ta-classic's swma, sinwma, fwma, pwma, t3, alma, vwma, mcgd,
-          vidya, hwma, ssf and ht_trendline (https://github.com/xgboosted/pandas-ta-classic). The
-          Fibonacci and Pascal's weighted averages are defined in pandas-ta by Kevin Johnson.
-        - Referenced against finta's FRAMA, EVWMA and VAMA (https://github.com/peerchemist/finta).
-          The volume adjusted moving average is defined in finta by Peerchemist; it has no
-          published source.
-        - Tulip Indicators: vwma (https://tulipindicators.org/vwma).
+
+        Referenced against:
+        - TA-Lib, SMA: https://ta-lib.org/functions/sma.html
+        - TA-Lib, EMA: https://ta-lib.org/functions/ema.html
+        - TA-Lib, DEMA: https://ta-lib.org/functions/dema.html
+        - TA-Lib, TEMA: https://ta-lib.org/functions/tema.html
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - TA-Lib, ZLEMA: https://ta-lib.org/functions/zlema.html
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - TA-Lib, TRIMA: https://ta-lib.org/functions/trima.html
+        - pandas-ta-classic, swma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/swma.py#L18
+        - TA-Lib, WMA: https://ta-lib.org/functions/wma.html
+        - TA-Lib, HMA: https://ta-lib.org/functions/hma.html
+        - TA-Lib, KAMA: https://ta-lib.org/functions/kama.html
+        - TA-Lib, T3: https://ta-lib.org/functions/t3.html
+            Test: tests/technical/test_overlap_model.py::test_t3_moving_average_matches_talib
+        - pandas-ta-classic, t3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/t3.py#L14
+        - TA-Lib, ALMA: https://ta-lib.org/functions/alma.html
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - pandas-ta-classic, alma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/alma.py#L12
+        - TA-Lib, VWMA: https://ta-lib.org/functions/vwma.html
+            Test: tests/technical/test_overlap_model.py::test_volume_weighted_moving_average_matches_talib
+        - pandas-ta-classic, vwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwma.py#L13
+        - TA-Lib, MCGD: https://ta-lib.org/functions/mcgd.html
+        - pandas-ta-classic, mcgd: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/mcgd.py#L28
+        - TA-Lib, VIDYA: https://ta-lib.org/functions/vidya.html
+        - pandas-ta-classic, vidya: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vidya.py#L27
+        - TA-Lib, FRAMA: https://ta-lib.org/functions/frama.html
+            Test: tests/technical/test_overlap_model.py::test_fractal_adaptive_moving_average_matches_talib_after_the_seed
+        - finta, FRAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L463
+        - pandas-ta-classic, sinwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/sinwma.py#L12
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - pandas-ta-classic, fwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/fwma.py#L17
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - pandas-ta-classic, pwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/pwma.py#L17
+            Test: tests/technical/test_overlap_model.py::test_moving_averages_match_reference_libraries
+        - pandas-ta-classic, hwma: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hwma.py#L31
+            Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
+        - finta, EVWMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L381
+        - finta, VAMA: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L226
+            Test: tests/technical/test_overlap_model.py::test_volume_adjusted_moving_average_matches_finta
+        - pandas-ta-classic, ssf (SuperSmoother): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ssf.py#L28
+            Test: tests/technical/test_cycle_model.py::test_super_smoother_filter_matches_pandas_ta
+        - TA-Lib, HT_TRENDLINE (Hilbert Transform Instantaneous Trendline): https://ta-lib.org/functions/ht_trendline.html
+            Test: tests/technical/test_cycle_model.py::test_instantaneous_trendline_matches_talib
+        - pandas-ta-classic, ht_trendline (Hilbert Transform Instantaneous Trendline): https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ht_trendline.py#L14
+
+        Shares similar logic:
+        - TA-Lib, RMA: https://ta-lib.org/functions/rma.html
+        - Tulip Indicators, vwma: https://tulipindicators.org/vwma
 
         Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double
         exponential moving average, TEMA, triple exponential moving average, ZLEMA, ZLMA, zero lag
@@ -664,8 +702,10 @@ class OverlapTechnicals:
         trendline, instantaneous trendline.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int | None, optional): Number of periods to consider for the moving average:
@@ -686,12 +726,20 @@ class OverlapTechnicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            method (str, optional): The moving average: "simple", "exponential",
-                "double_exponential", "triple_exponential", "zero_lag", "wilder", "triangular",
-                "weighted", "hull", "sine", "fibonacci", "pascal", "kaufman_adaptive", "t3",
-                "arnaud_legoux", "volume_weighted", "mcginley", "variable_index_dynamic",
-                "fractal_adaptive", "holt_winters", "elastic_volume_weighted", "volume_adjusted",
-                "super_smoother" or "hilbert_trendline". Defaults to "simple".
+            method (str, optional): The moving average. Options are: "simple" (Simple Moving Average),
+                "exponential" (Exponential Moving Average), "double_exponential" (Double Exponential Moving
+                Average), "triple_exponential" (Triple Exponential Moving Average), "zero_lag" (Zero Lag
+                Exponential Moving Average), "wilder" (Wilder's Moving Average), "triangular" (Triangular Moving
+                Average), "weighted" (Weighted Moving Average), "hull" (Hull Moving Average), "sine" (Sine
+                Weighted Moving Average), "fibonacci" (Fibonacci Weighted Moving Average), "pascal" (Pascal
+                Weighted Moving Average), "kaufman_adaptive" (Kaufman Adaptive Moving Average), "t3" (Tillson T3
+                Moving Average), "arnaud_legoux" (Arnaud Legoux Moving Average), "volume_weighted" (Volume
+                Weighted Moving Average), "mcginley" (McGinley Dynamic), "variable_index_dynamic" (Variable
+                Index Dynamic Average), "fractal_adaptive" (Fractal Adaptive Moving Average),
+                "holt_winters" (Holt-Winters Moving Average), "elastic_volume_weighted" (Elastic Volume Weighted
+                Moving Average), "volume_adjusted" (Volume Adjusted Moving Average), "super_smoother" (Ehlers'
+                SuperSmoother filter), "hilbert_trendline" (Hilbert Transform Instantaneous Trendline). Defaults
+                to "simple".
             short_window (int, optional): The number of periods that corresponds to the fastest EMA
                 constant, used when the Efficiency Ratio is at its maximum (1.0). Only used when
                 method="kaufman_adaptive". Defaults to 2.
@@ -718,8 +766,9 @@ class OverlapTechnicals:
                 between 0 and 1. Only used when method="holt_winters". Defaults to 0.1.
             acceleration_smoothing (float, optional): The smoothing factor of the acceleration of
                 the HWMA, between 0 and 1. Only used when method="holt_winters". Defaults to 0.1.
-            poles (int, optional): The number of poles of the SuperSmoother filter, 2 or 3. Only
-                used when method="super_smoother". Defaults to 2.
+            poles (int, optional): The number of poles of the SuperSmoother filter. Options are: 2 (the two-pole
+                SuperSmoother), 3 (the three-pole SuperSmoother). Only used when method="super_smoother".
+                Defaults to 2.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -739,25 +788,25 @@ class OverlapTechnicals:
         - finta's TEMA, SMMA and SSMA start their exponential averages on the first price (with
           pandas' ewm) instead of seeding them with a simple average over the window, so they
           differ during the warm-up and converge afterwards.
-        - "kaufman_adaptive": with the default `short_window` of 2 and `long_window` of 30, which
+        - Kaufman Adaptive Moving Average: with the default `short_window` of 2 and `long_window` of 30, which
           TA-Lib fixes, the KAMA agrees with TA-Lib's KAMA.
-        - "t3": each of the six EMAs is seeded with the simple average of its first `window`
+        - T3 Moving Average: each of the six EMAs is seeded with the simple average of its first `window`
           values, so the T3 starts at period 6 * (window - 1). It agrees with TA-Lib's T3 and
           pandas-ta-classic's t3.
-        - "arnaud_legoux": the peak m is rounded down to a whole period, and the ALMA agrees with
+        - Arnaud Legoux Moving Average: the peak m is rounded down to a whole period, and the ALMA agrees with
           TA-Lib's ALMA. pandas-ta-classic's alma measures the offset from the latest price and
-          keeps m unrounded: its alma(offset=0.85) equals this ALMA with an offset of 0.15 and an
+          keeps m unrounded: its alma with an offset of 0.85 equals this ALMA with an offset of 0.15 and an
           unrounded peak, so it puts the weight on the older prices.
-        - "volume_weighted": the VWMA differs from the rolling VWAP
+        - Volume Weighted Moving Average: the VWMA differs from the rolling VWAP
           (`get_volume_weighted_average_price`) only in the price it averages: the close instead
           of the typical price (High + Low + Close) / 3. It agrees with TA-Lib's VWMA and
           pandas-ta-classic's vwma. A window without any volume has no average (NaN).
-        - "mcginley": the recursion is seeded with the simple average of the first `window`
+        - McGinley Dynamic: the recursion is seeded with the simple average of the first `window`
           prices, as the Toolkit seeds its exponential moving averages. TA-Lib's MCGD and
           pandas-ta-classic's mcgd start the recursion from the first price instead. The
           difference fades by about a factor 1 - 1 / window per period: with the default window
           of 14 the two agree to 0.01% within about 70 periods.
-        - "variable_index_dynamic": the volatility index is the absolute Chande Momentum
+        - Variable Index Dynamic Average: the volatility index is the absolute Chande Momentum
           Oscillator over unsmoothed sums (Chande & Kroll, 1994), as in TA-Lib and
           pandas-ta-classic. Chande's 1992 article and Tulip Indicators' vidya use the ratio of a
           short to a long standard deviation instead. The recursion is seeded with the simple
@@ -767,7 +816,7 @@ class OverlapTechnicals:
           price, with the oscillator over the changes available so far, and shows it from period
           `cmo_window` on. The difference fades by a factor 1 - Alpha * |CMO| per period: with the
           defaults the two agree to 0.01% within about 100 periods.
-        - "fractal_adaptive": FRAMA averages the median price of the high and low, which with the
+        - Fractal Adaptive Moving Average: FRAMA averages the median price of the high and low, which with the
           default `close_column` of "Adj Close" are adjusted for dividends in the same way as the
           close. The recursion is seeded with the simple average of the first `window` median
           prices, on the window-th period, as the Toolkit seeds its exponential moving averages.
@@ -777,21 +826,21 @@ class OverlapTechnicals:
           45 periods. A half without a range still gives a dimension, as in TA-Lib: a flat latest
           half next to a moving earlier one is a dimension of 1, so FRAMA moves to the price.
           Without any range in the window, or in both halves, the last dimension is kept.
-        - "holt_winters": the HWMA agrees with pandas-ta-classic's hwma. The recursion starts on
+        - Holt-Winters Moving Average: the HWMA agrees with pandas-ta-classic's hwma. The recursion starts on
           each ticker's first close, as in the MQL5 indicator, so there is no warm-up: the weight
           of the start fades by a factor 1 - Level Smoothing per period, and the first values of
           the price history lean on that close. The channel around it is
           `get_holt_winters_channel`.
-        - "elastic_volume_weighted": Fries divides by the number of shares outstanding (the
+        - Elastic Volume Weighted Moving Average: Fries divides by the number of shares outstanding (the
           float); the volume over the window stands in for it, as in finta. The recursion is
           seeded with the simple average of the first `window` closes, as the Toolkit seeds its
           exponential moving averages. finta starts it from 0, so its eVWMA climbs from 0 to the
           price; after that start has faded, about 300 periods with the default window, the two
           are equal. A window without any volume keeps the last average.
-        - "volume_adjusted": the VAMA agrees with finta's VAMA; its weight multiplies the volume
+        - Volume Adjusted Moving Average: the VAMA agrees with finta's VAMA; its weight multiplies the volume
           ratio by the close as well, so it is the traded value relative to the average volume.
           A window without any volume has no average (NaN).
-        - "super_smoother": the two-pole filter (Ehlers, 2013) also averages the last two prices,
+        - SuperSmoother: the two-pole filter (Ehlers, 2013) also averages the last two prices,
           which removes the two-period cycle completely; the three-pole filter (Ehlers, 2004) is
           smoother at the cost of more lag. The filter equals the price on the first two (three)
           periods of each ticker's own history and runs from there, as pandas-ta-classic starts
@@ -800,12 +849,14 @@ class OverlapTechnicals:
           average of the last two prices, which differs by up to 2% on daily prices; applied to
           that average the two are equal. √2, √3 and π are exact, where Ehlers' listings write
           1.414 and 3.14159.
-        - "hilbert_trendline": equals TA-Lib's HT_TRENDLINE and pandas-ta-classic's ht_trendline.
+        - Hilbert Transform Instantaneous Trendline: equals TA-Lib's HT_TRENDLINE and pandas-ta-classic's ht_trendline.
           The recursion starts from zero on the 37th period of each ticker's own history, as in
           TA-Lib, and the first 63 periods (TA-Lib's lookback) are NaN. Ehlers compares the
           trendline with the smoothed price (or MAMA) to tell a trend from a cycle.
-        - If `growth` is set to True, the method calculates the growth of the MA
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the MA
+          over the given lag.
+        - The Volume Adjusted Moving Average follows finta's definition, which has no published source, and the
+          Fibonacci and Pascal's weighted averages follow pandas-ta-classic's.
 
         As an example:
 
@@ -952,7 +1003,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Trix (Triple Exponential Moving Average) for a given price series.
+        Calculate the TRIX (Triple Exponential Moving Average oscillator): the rate of change of a triple
+        exponential moving average, which shows momentum without the noise of the shortest moves.
 
         Trix is a momentum oscillator that calculates the percentage rate of change of a triple
         exponentially smoothed moving average. It helps identify overbought and oversold conditions
@@ -973,13 +1025,20 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Hutson, J.K. (1983). "Good TRIX." Technical Analysis of Stocks & Commodities, 1(5), 105-108.
-        - Referenced against TA-Lib's TRIX (https://ta-lib.org/functions/trix.html).
-        - pandas-ta-classic: trix and trixh, with the signal line and histogram
-          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, TRIX: https://ta-lib.org/functions/trix.html
+            Test: tests/technical/test_overlap_model.py::test_trix_signal_line_matches_talib
+
+        Shares similar logic:
+        - pandas-ta-classic, trix: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trix.py#L18
+        - pandas-ta-classic, trixh: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/trixh.py#L12
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods of each of the three exponential moving
@@ -1013,8 +1072,8 @@ class OverlapTechnicals:
         - The signal line is an EMA seeded with the simple average of its first values, as every
           EMA of the Toolkit, and agrees with TA-Lib's EMA of the TRIX. pandas-ta-classic's trixh takes
           a simple moving average of the TRIX as its signal line instead.
-        - If `growth` is set to True, the method calculates the growth of the Trix
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Trix
+          over the given lag.
         - Daily TRIX values are small (a few hundredths of a percent), so four decimals keep
           about one significant digit. Pass a higher `rounding` (or None) for more precision.
 
@@ -1100,32 +1159,49 @@ class OverlapTechnicals:
 
         The formula is as follows, per method:
 
-        - "average": Average Price = (Open + High + Low + Close) / 4
-        - "median": Median Price = (High + Low) / 2
-        - "typical": Typical Price = (High + Low + Close) / 3
-        - "weighted_close": Weighted Close Price = (High + Low + 2 * Close) / 4
+        - Average price: Average Price = (Open + High + Low + Close) / 4
+        - Median price: Median Price = (High + Low) / 2
+        - Typical price: Typical Price = (High + Low + Close) / 3
+        - Weighted close price: Weighted Close Price = (High + Low + 2 * Close) / 4
 
         For more information, see the following sources:
 
         - Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic Trends."
           Commodities, October 1980, the typical price of the CCI.
-        - Referenced against TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE
-          (https://ta-lib.org/functions/).
-        - pandas-ta-classic: ohlc4, hl2, hlc3 and wcp (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: TP (https://github.com/peerchemist/finta).
-        - Tulip Indicators: avgprice, medprice, typprice and wcprice (https://tulipindicators.org).
+
+        Referenced against:
+        - TA-Lib, AVGPRICE: https://ta-lib.org/functions/avgprice.html
+            Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
+        - TA-Lib, MEDPRICE: https://ta-lib.org/functions/medprice.html
+        - TA-Lib, TYPPRICE: https://ta-lib.org/functions/typprice.html
+        - TA-Lib, WCLPRICE: https://ta-lib.org/functions/wclprice.html
+
+        Shares similar logic:
+        - pandas-ta-classic, ohlc4: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/ohlc4.py#L12
+        - pandas-ta-classic, hl2: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hl2.py#L12
+        - pandas-ta-classic, hlc3: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hlc3.py#L12
+        - pandas-ta-classic, wcp: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/wcp.py#L12
+        - finta, TP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1405
+        - Tulip Indicators, avgprice: https://tulipindicators.org/avgprice
+        - Tulip Indicators, medprice: https://tulipindicators.org/medprice
+        - Tulip Indicators, typprice: https://tulipindicators.org/typprice
+        - Tulip Indicators, wcprice: https://tulipindicators.org/wcprice
 
         Also known as: AVGPRICE, average price, OHLC4, MEDPRICE, median price, HL2, TYPPRICE, typical price,
         HLC3, pivot price, WCLPRICE, weighted close price, HLCC4.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            method (str, optional): The price: "average", "median", "typical" or "weighted_close".
-                Defaults to "typical".
+            method (str, optional): The price. Options are: "average" (the average of the open, high, low and
+                close), "median" (the average of the high and low), "typical" (the average of the high, low and
+                close), "weighted_close" (the weighted close, (high + low + 2 × close) / 4). Defaults to
+                "typical".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the price.
@@ -1147,8 +1223,8 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the price for each asset in the Toolkit instance.
         - The four prices agree with TA-Lib's AVGPRICE, MEDPRICE, TYPPRICE and WCLPRICE.
-        - If `growth` is set to True, the method calculates the growth of the price using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the price over the
+          given lag.
 
         As an example:
 
@@ -1234,27 +1310,35 @@ class OverlapTechnicals:
 
         The formula is as follows, per method:
 
-        - "close": Midpoint = (Highest Close(Window) + Lowest Close(Window)) / 2
-        - "high_low": Midpoint Price = (Highest High(Window) + Lowest Low(Window)) / 2
+        - Midpoint of the closes: Midpoint = (Highest Close(Window) + Lowest Close(Window)) / 2
+        - Midpoint price: Midpoint Price = (Highest High(Window) + Lowest Low(Window)) / 2
 
         For more information, see the following sources:
 
         - Donchian, R.D. (1960). "Commodities: High Finance in Copper." Financial Analysts Journal, 16(6), 133-142.
-        - Referenced against TA-Lib's MIDPOINT and MIDPRICE
-          (https://ta-lib.org/functions/midpoint.html, https://ta-lib.org/functions/midprice.html).
-        - pandas-ta-classic: midpoint and midprice (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, MIDPOINT: https://ta-lib.org/functions/midpoint.html
+            Test: tests/technical/test_overlap_model.py::test_price_transforms_and_midpoints_match_talib
+        - TA-Lib, MIDPRICE: https://ta-lib.org/functions/midprice.html
+
+        Shares similar logic:
+        - pandas-ta-classic, midpoint: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/midpoint.py#L12
+        - pandas-ta-classic, midprice: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/midprice.py#L12
 
         Also known as: MIDPOINT, midpoint over period, MIDPRICE, midpoint price, Donchian middle line.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way.
             window (int, optional): The number of periods, including the current one. Defaults to 14.
-            method (str, optional): "close" for the midpoint of the closes (MIDPOINT) or "high_low"
-                for that of the highs and lows (MIDPRICE). Defaults to "close".
+            method (str, optional): Options are: "close" (the midpoint of the closes, MIDPOINT), "high_low" (the
+                midpoint of the highs and lows, MIDPRICE). Defaults to "close".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the midpoint.
@@ -1278,8 +1362,8 @@ class OverlapTechnicals:
         - The midpoint agrees with TA-Lib's MIDPOINT and the midpoint price its MIDPRICE. The middle
           line of `get_donchian_channels` ends one period earlier, so it differs whenever the
           current period sets a new high or low.
-        - If `growth` is set to True, the method calculates the growth of the midpoint using
-          the specified `lag`.
+        - When growth is requested, the method calculates the growth of the midpoint over
+          the given lag.
 
         As an example:
 
@@ -1357,7 +1441,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Holt-Winters Channel for a given price series.
+        Calculate the Holt-Winters Channel: bands a multiple of the smoothed standard deviation around the
+        Holt-Winters Moving Average, which widen when the price strays from its trend.
 
         The channel draws bands around the Holt-Winters Moving Average at a multiple of an
         exponentially smoothed standard deviation of the close from the average. It widens
@@ -1366,7 +1451,7 @@ class OverlapTechnicals:
 
         The formula is as follows:
 
-        - Middle Band = HWMA (see `get_moving_average` with method="holt_winters")
+        - Middle Band = HWMA (the Holt-Winters Moving Average of `get_moving_average`)
         - Var(t) = (1 - Deviation Smoothing) * Var(t-1) + Deviation Smoothing * (Close(t-1) - HWMA(t-1))^2,
           starting at 0
         - Upper Band = HWMA(t) + Multiplier * sqrt(Var(t-1))
@@ -1379,13 +1464,18 @@ class OverlapTechnicals:
         - Winters, P.R. (1960). "Forecasting Sales by Exponentially Weighted Moving Averages."
           Management Science, 6(3), 324-342.
         - MQL5 Code Base: HWC (https://www.mql5.com/en/code/20857).
-        - Referenced against pandas-ta-classic's hwc (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - pandas-ta-classic, hwc: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/volatility/hwc.py#L75
+            Test: tests/technical/test_overlap_model.py::test_holt_winters_moving_average_and_channel_match_pandas_ta
 
         Also known as: HWC, Holt-Winters channel, Holt-Winter channel.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             level_smoothing (float, optional): The smoothing factor of the level. Defaults to 0.2.
@@ -1418,8 +1508,8 @@ class OverlapTechnicals:
           to the period before, which holds the deviations up to two periods before, as in the
           MQL5 indicator. Since the average starts on the first close, the bands open from the
           fourth close on.
-        - If `growth` is set to True, the method calculates the growth of the bands using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the bands over the
+          given lag.
 
         As an example:
 
@@ -1497,7 +1587,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Gann HiLo Activator for a given price series.
+        Calculate the Gann HiLo Activator: a trailing stop drawn from a moving average of the lows in an uptrend and
+        of the highs in a downtrend, which flips when the close crosses the other average.
 
         The HiLo Activator is a trailing stop drawn from a moving average of the highs and one
         of the lows. A close above the previous average of the highs turns the trend up, after
@@ -1517,13 +1608,17 @@ class OverlapTechnicals:
 
         - Krausz, R. (1998). "The New Gann Swing Chartist." Technical Analysis of Stocks &
           Commodities, 16(2).
-        - pandas-ta-classic: hilo (https://github.com/xgboosted/pandas-ta-classic).
+
+        Shares similar logic:
+        - pandas-ta-classic, hilo: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/hilo.py#L40
 
         Also known as: HiLo, Gann HiLo, Gann HiLo Activator, HiLo Activator.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way.
@@ -1557,8 +1652,8 @@ class OverlapTechnicals:
           beyond an average and differ on the others.
         - The defaults are those of pandas-ta-classic and TradingView (13 and 21 periods);
           Krausz used three-period averages of both.
-        - If `growth` is set to True, the method calculates the growth of the activator using
-          the specified `lag`.
+        - When growth is requested, the method calculates the growth of the activator over
+          the given lag.
 
         As an example:
 
@@ -1633,7 +1728,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Zig Zag for a given price series, as it is known on every period.
+        Calculate the Zig Zag: the swing highs and lows of the prices, ignoring moves smaller than a threshold,
+        which shows the trend's turning points.
 
         The Zig Zag filters out moves smaller than the sensitivity. It follows the highest high
         of a rising leg until the low falls the sensitivity below it, which confirms that high
@@ -1654,13 +1750,18 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Merrill, A.A. (1977). "Filtered Waves: Basic Theory." Analysis Press.
-        - Referenced against TA-Lib's ZIGZAG (https://ta-lib.org/functions/zigzag.html).
+
+        Referenced against:
+        - TA-Lib, ZIGZAG: https://ta-lib.org/functions/zigzag.html
+            Test: tests/technical/test_overlap_model.py::test_zigzag_matches_talib
 
         Also known as: ZIGZAG, Zig Zag, swing filter, filtered waves.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the high and low prices are adjusted for
                 dividends in the same way.
@@ -1699,8 +1800,8 @@ class OverlapTechnicals:
         - The first leg starts falling from the first low, as in TA-Lib, and the first
           `minimum_trend_length` periods are empty. A price equal to the extreme moves the pivot
           to the later period.
-        - If `growth` is set to True, the method calculates the growth of the values using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the values over the
+          given lag.
 
         As an example:
 
@@ -1775,7 +1876,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Volume Weighted Average Price (VWAP) for a given price series.
+        Calculate the Volume Weighted Average Price (VWAP): the average price weighted by volume since an anchor
+        date, the price at which most volume traded.
 
         The Volume Weighted Average Price (VWAP) weighs the typical price of each period
         by its traded volume over a rolling window, giving a more volume-informed view of
@@ -1801,25 +1903,32 @@ class OverlapTechnicals:
         - Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of Transactions
           on the NYSE." Journal of Finance, 43(1), 97-112.
         - Shannon, B. (2023). "Maximum Trading Gains With Anchored VWAP." Alphatrends Publishing.
-        - Referenced against TA-Lib's VWAP (https://ta-lib.org/functions/vwap.html).
-        - pandas-ta-classic: vwap with an anchor (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: VWAP (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - TA-Lib, VWAP: https://ta-lib.org/functions/vwap.html
+
+        Shares similar logic:
+        - pandas-ta-classic, vwap: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/overlap/vwap.py#L18
+        - finta, VWAP: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L411
 
         Also known as: VWAP, anchored VWAP, AVWAP, session VWAP, cumulative VWAP.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the VWAP.
                 The number of periods (time intervals) over which to calculate the VWAP, when there is
                 no anchor. Defaults to 14.
-            anchor (str | None, optional): Where the sums start: "all" for the first period, "daily",
-                "weekly", "monthly", "quarterly" or "yearly" for the start of every such period, or a
-                date such as "2024-08-05" for the VWAP from that date on (empty before it). Defaults
-                to None, which takes the rolling `window`.
+            anchor (str | None, optional): Where the sums start. Options are: "all" (the first period),
+                "daily" (the start of every day), "weekly" (the start of every week), "monthly" (the start of
+                every month), "quarterly" (the start of every quarter), "yearly" (the start of every year), or a
+                date such as "2024-08-05" for the VWAP from that date on (empty before it). Defaults to None,
+                which takes the rolling `window`.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the VWAP.
@@ -1842,13 +1951,13 @@ class OverlapTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates the
           VWAP for each asset in the Toolkit instance.
         - The VWAP is taken over a rolling `window` by default. TA-Lib's VWAP accumulates the
-          typical price times volume from the first period on, which is `anchor="all"` here (equal
-          to TA-Lib's VWAP), and pandas-ta-classic's vwap starts the sums at every calendar period
-          of its anchor, which is `anchor="daily"`, "weekly", "monthly", "quarterly" or "yearly".
-        - The anchor "all" starts on the first period of the price history the Toolkit loaded,
+          typical price times volume from the first period on, which is the anchor of all periods here
+          (equal to TA-Lib's VWAP), and pandas-ta-classic's vwap starts the sums at every calendar period
+          of its anchor, which is the daily, weekly, monthly, quarterly or yearly anchor here.
+        - The anchor of all periods starts on the first period of the price history the Toolkit loaded,
           which can be before `start_date`.
-        - If `growth` is set to True, the method calculates the growth of the VWAP
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the VWAP
+          over the given lag.
 
         As an example:
 
@@ -1929,7 +2038,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Parabolic Stop and Reverse (SAR) for a given price series.
+        Calculate the Parabolic Stop and Reverse (SAR): a trailing stop that speeds up as the trend extends and
+        flips side when the price crosses it.
 
         The Parabolic SAR is a trend-following indicator that trails price action,
         flipping from below to above price (and vice versa) whenever the trend reverses.
@@ -1951,15 +2061,24 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
-        - Referenced against TA-Lib's SAR and SAREXT (https://ta-lib.org/functions/sar.html,
-          https://ta-lib.org/functions/sarext.html).
-        - pandas-ta-classic: psar and sarext (https://github.com/xgboosted/pandas-ta-classic).
+
+        Referenced against:
+        - TA-Lib, SAR: https://ta-lib.org/functions/sar.html
+            Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_ta_lib_from_a_short_start
+            Test: tests/technical/test_overlap_model.py::test_parabolic_sar_matches_talib_sarext
+        - TA-Lib, SAREXT: https://ta-lib.org/functions/sarext.html
+
+        Shares similar logic:
+        - pandas-ta-classic, psar: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/psar.py#L73
+        - pandas-ta-classic, sarext: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/sarext.py#L156
 
         Also known as: Parabolic SAR, stop and reverse, PSAR, SAREXT, extended parabolic SAR.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             af_start (float, optional): Initial acceleration factor. Defaults to 0.02.
@@ -2003,8 +2122,8 @@ class OverlapTechnicals:
           its SAREXT for any acceleration factors, start value and offset on reverse. TA-Lib's
           SAREXT returns the SAR negated during a short trade to mark the direction; here it is
           always the price level.
-        - If `growth` is set to True, the method calculates the growth of the Parabolic SAR
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Parabolic SAR
+          over the given lag.
 
         As an example:
 
@@ -2090,7 +2209,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Pivot Points for a given price series.
+        Calculate the Pivot Points: the levels of support and resistance derived from the previous period's high,
+        low and close.
 
         Pivot Points are calculated from the previous period's high, low and close
         prices and are used to identify potential support and resistance levels for
@@ -2100,16 +2220,16 @@ class OverlapTechnicals:
 
         The formula is as follows, with H, L, C and O the previous period's high, low, close and open:
 
-        - "classic": Pivot Point (P) = (H + L + C) / 3, Resistance 1 = 2 * P — L, Support 1 = 2 * P — H,
+        - Classic: Pivot Point (P) = (H + L + C) / 3, Resistance 1 = 2 * P — L, Support 1 = 2 * P — H,
           Resistance 2 = P + (H — L), Support 2 = P — (H — L), Resistance 3 = H + 2 * (P — L),
           Support 3 = L — 2 * (H — P)
-        - "fibonacci": P = (H + L + C) / 3, Resistance n = P + Ratio * (H — L) and Support n =
+        - Fibonacci: P = (H + L + C) / 3, Resistance n = P + Ratio * (H — L) and Support n =
           P — Ratio * (H — L), with the ratios 0.382, 0.618 and 1.0
-        - "camarilla": P = (H + L + C) / 3, Resistance n = C + (H — L) * 1.1 / Divisor and Support n =
+        - Camarilla: P = (H + L + C) / 3, Resistance n = C + (H — L) * 1.1 / Divisor and Support n =
           C — (H — L) * 1.1 / Divisor, with the divisors 12, 6, 4 and 2
-        - "woodie": P = (H + L + 2 * C) / 4, Resistance 1 = 2 * P — L, Support 1 = 2 * P — H,
+        - Woodie: P = (H + L + 2 * C) / 4, Resistance 1 = 2 * P — L, Support 1 = 2 * P — H,
           Resistance 2 = P + (H — L), Support 2 = P — (H — L)
-        - "demark": X = H + 2 * L + C when C < O, 2 * H + L + C when C > O and H + L + 2 * C otherwise;
+        - DeMark: X = H + 2 * L + C when C < O, 2 * H + L + C when C > O and H + L + 2 * C otherwise;
           P = X / 4, Resistance 1 = X / 2 — L, Support 1 = X / 2 — H
         - Central pivot range: Bottom Central Pivot = (H + L) / 2, Top Central Pivot =
           2 * P — Bottom Central Pivot
@@ -2120,21 +2240,29 @@ class OverlapTechnicals:
         - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
         - Ochoa, F. (2010). "Secrets of a Pivot Boss: Revealing Proven Methods for Profiting in the Market."
           311 Publishing.
-        - Referenced against pandas-ta-classic's cpr of the classic, Fibonacci, Camarilla
-          and Woodie pivots and the central pivot range (https://github.com/xgboosted/pandas-ta-classic).
-        - finta: PIVOT and PIVOT_FIB (https://github.com/peerchemist/finta).
+
+        Referenced against:
+        - pandas-ta-classic, cpr: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/trend/cpr.py#L76
+            Test: tests/technical/test_overlap_model.py::test_pivot_point_variants_match_pandas_ta
+
+        Shares similar logic:
+        - finta, PIVOT: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1123
+        - finta, PIVOT_FIB: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L1162
 
         Also known as: pivot points, floor trader pivots, Fibonacci pivots, Camarilla pivots, Woodie pivots,
         DeMark pivots, central pivot range, CPR.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close", in which case the open, high and low prices are adjusted
                 for dividends in the same way.
-            method (str, optional): The pivots: "classic", "fibonacci", "camarilla", "woodie" or
-                "demark". Defaults to "classic".
+            method (str, optional): The pivots. Options are: "classic" (classic floor pivots),
+                "fibonacci" (Fibonacci pivots), "camarilla" (Camarilla pivots), "woodie" (Woodie's pivots),
+                "demark" (DeMark's pivots). Defaults to "classic".
             central_pivot_range (bool, optional): Whether to add the Top and Bottom Central Pivot.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -2164,8 +2292,8 @@ class OverlapTechnicals:
           pandas-ta-classic's cpr; the classic and Fibonacci pivots also agree with finta's PIVOT and
           PIVOT_FIB, which add a fourth level. The Woodie pivot weights the previous close twice,
           as in pandas-ta-classic; some charting packages take the current open instead.
-        - If `growth` is set to True, the method calculates the growth of the Pivot Points
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the Pivot Points
+          over the given lag.
 
         As an example:
 
@@ -2242,7 +2370,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Retrieves the support and resistance levels for the specified period and assets.
+        Calculate the support and resistance levels: the prices at which the prices repeatedly stopped falling
+        (support) or rising (resistance).
 
         The Support and Resistance Levels are price levels where the price tends to stop and reverse.
 
@@ -2280,8 +2409,10 @@ class OverlapTechnicals:
             sensitivity (float, optional): The sensitivity parameter to determine the significance of the peaks
                 and valleys. A higher sensitivity value will result in fewer support and resistance levels
                 being identified. Defaults to 0.05.
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for calculating support and resistance levels.
@@ -2394,7 +2525,8 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Fibonacci Retracement Levels for a given price series.
+        Calculate the Fibonacci Retracement Levels: the prices at the Fibonacci ratios of the range between the high
+        and the low, where a pullback may find support or resistance.
 
         Fibonacci Retracement Levels are horizontal price levels, derived from ratios found in
         the Fibonacci sequence, that traders watch as potential support (during a pullback
@@ -2411,19 +2543,20 @@ class OverlapTechnicals:
         Also known as: Fibonacci retracement, Fib levels, retracement levels.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): The number of periods over which the rolling swing high
                 (maximum) and swing low (minimum) are determined. Defaults to 14.
             levels (list[float] | None, optional): The Fibonacci ratios to calculate levels for.
                 Defaults to the standard [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0].
-            trend (str, optional): Whether to compute retracement levels for an "uptrend"
-                (levels measured down from the high — the conventional direction, used when a
-                prior move was up and price is now pulling back) or a "downtrend" (levels
-                measured up from the low, used when a prior move was down and price is now
-                bouncing). Defaults to "uptrend".
+            trend (str, optional): The direction of the prior move. Options are: "uptrend" (levels measured down
+                from the high — the conventional direction, used when a prior move was up and price is now
+                pulling back), "downtrend" (levels measured up from the low, used when a prior move was down and
+                price is now bouncing). Defaults to "uptrend".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the retracement levels.
@@ -2461,8 +2594,8 @@ class OverlapTechnicals:
           indicator is a practitioner tool derived from the Fibonacci sequence's ratios rather
           than a published financial model. The standard textbook treatment is Murphy, J.J.
           (1999). "Technical Analysis of the Financial Markets." New York Institute of Finance.
-        - If `growth` is set to True, the method calculates the growth of the retracement levels
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the retracement levels
+          over the given lag.
 
         As an example:
 
@@ -2540,8 +2673,11 @@ class OverlapTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate Daryl Guppy's Multiple Moving Averages (GMMA) for a given price series, with the
-        spreads of the two groups.
+        Calculate Daryl Guppy's Multiple Moving Averages (GMMA), whose spread and order show the strength of the
+        traders' and the investors' trend.
+
+        They are a group of short and a group of long exponential moving averages, returned with the spreads of the
+        two groups.
 
         The Guppy Multiple Moving Averages are two groups of Exponential Moving Averages: a short
         group of 3 to 15 periods that follows the traders, and a long group of 30 to 60 periods
@@ -2565,13 +2701,17 @@ class OverlapTechnicals:
         For more information, see the following sources:
 
         - Guppy, D. (2004). "Trend Trading: A Seven-Step Approach to Success." Wiley.
-        - Referenced against TTR's GMMA (https://cran.r-project.org/package=TTR).
+
+        Referenced against:
+        - TTR (R), GMMA: https://github.com/joshuaulrich/TTR/blob/v0.24.4/R/GMMA.R#L55
 
         Also known as: GMMA, Guppy multiple moving average, Guppy ribbons.
 
         Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             short_windows (list[int] | None, optional): The windows of the short group. Defaults to
@@ -2600,11 +2740,11 @@ class OverlapTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           averages for each asset in the Toolkit instance.
-        - The averages are those of `get_moving_average` with method="exponential", seeded with the
+        - The averages are the exponential moving averages of `get_moving_average`, seeded with the
           simple average of their first `n` prices, and equal TTR's GMMA. The spreads start once
           every average of their groups has started; TTR's GMMA returns the averages only.
-        - If `growth` is set to True, the method calculates the growth of the averages using the
-          specified `lag`.
+        - When growth is requested, the method calculates the growth of the averages over the
+          given lag.
 
         As an example:
 

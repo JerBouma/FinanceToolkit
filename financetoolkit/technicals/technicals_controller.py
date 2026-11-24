@@ -152,10 +152,14 @@ class TechnicalsBase:
         show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculates all Technical Indicators based on the data provided.
+        Collect all the technical indicators of every ticker in one table: the breadth, momentum, overlap,
+        volatility and cycle indicators.
 
         Args:
-            period (str, optional): The period to use for the calculation. Defaults to "daily".
+            period (str, optional): The time period to consider for historical data. Options are:
+                "intraday" (intraday prices), "daily" (daily prices), "weekly" (weekly prices),
+                "monthly" (monthly prices), "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults
+                to "daily".
             window (int, optional): The number of periods to use for the calculation. Defaults to 14.
                 The Bollinger Bands and their %B and BandWidth keep their own window of 20
                 periods (with 2 standard deviations), as defined by Bollinger, and the indicators
@@ -179,8 +183,8 @@ class TechnicalsBase:
 
         Notes:
         - The method calculates various types of technical indicators for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the indicator values
-          using the specified `lag`.
+        - When growth is requested, the method calculates the growth of the indicator values
+          over the given lag.
 
         As an example:
 
@@ -398,13 +402,13 @@ class TechnicalsBase:
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Factor analysis (predictive power) of the technical indicators: whether the tickers
-        that score high on an indicator go on to return more than those that score low. Per
-        period, the information coefficient (IC) is the Spearman rank correlation between the
-        indicator of the tickers at the end of the period and their return over the following
-        horizon: 1 means the indicator ranks the later returns perfectly, -1 in reverse and 0
-        that it says nothing about them. The IC measures skill in Grinold and Kahn's
-        fundamental law of active management, IR ≈ IC × √breadth: a small but consistent IC
+        Factor analysis (predictive power) of the technical indicators: whether the tickers that score high on an
+        indicator go on to return more than those that score low.
+
+        Per period, the information coefficient (IC) is the Spearman rank correlation between the indicator of the
+        tickers at the end of the period and their return over the following horizon: 1 means the indicator ranks
+        the later returns perfectly, -1 in reverse and 0 that it says nothing about them. The IC measures skill in
+        Grinold and Kahn's fundamental law of active management, IR ≈ IC × √breadth: a small but consistent IC
         across many tickers and periods gives a high information ratio.
 
         The summary has a row per indicator and horizon with the mean IC, its standard deviation,
@@ -441,9 +445,22 @@ class TechnicalsBase:
         detrended price oscillator, the force index, the Hilbert phasor components, the
         high-pass and band-pass filters of the Swiss Army Knife and the detrended synthetic
         price. The collections evaluate every variant of an indicator with variants, such as
-        each method of `get_moving_average`, labelled with its parameters, e.g.
-        "get_moving_average(method='t3')". Each ticker keeps its own history: a ticker without
+        each method of `get_moving_average`, labelled with the method name and its parameters.
+        Each ticker keeps its own history: a ticker without
         a value or a return in a period is left out of that period only.
+
+        Referenced against:
+        - alphalens, factor_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L28
+        - alphalens, mean_information_coefficient: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L80
+        - alphalens, mean_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L461
+        - alphalens, factor_weights: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L131
+        - alphalens, factor_returns: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L210
+        - alphalens, factor_alpha_beta: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L265
+        - alphalens, quantile_turnover: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L575
+        - alphalens, factor_rank_autocorrelation: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L620
+
+        Shares similar logic:
+        - alphalens, average_cumulative_return_by_quantile: https://github.com/stefan-jansen/alphalens-reloaded/blob/v0.4.4/src/alphalens/performance.py#L758
 
         Args:
             metrics (str | list[str], optional): An indicator method name, e.g.
@@ -454,8 +471,9 @@ class TechnicalsBase:
                 the oscillators and momentum indicators. The collections leave out the market-wide
                 breadth measures, the volume-scaled indicators, the pivot points and
                 Fibonacci levels and the Hilbert dominant cycle phase and trend mode.
-            period (str, optional): The frequency at which the indicators are evaluated:
-                daily, weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            period (str, optional): The frequency at which the indicators are evaluated. Options are:
+                "daily" (daily prices), "weekly" (weekly prices), "monthly" (monthly prices),
+                "quarterly" (quarterly prices), "yearly" (yearly prices). Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward
                 returns cover. Defaults to None, which uses about a period, a quarter and a
                 year ahead (1, 3 and 12 months for monthly).
@@ -463,21 +481,21 @@ class TechnicalsBase:
                 period. Defaults to 5.
             periods_apart (int, optional): The number of periods between the dates the
                 quantile turnover and the rank autocorrelation compare. Defaults to 1.
-            detail (str | None, optional): Returns one part of the analysis of a single indicator
-                instead of the summary: "information_coefficient" (per period and horizon),
-                "information_coefficient_by_month" or "information_coefficient_by_year" (the mean IC
-                per calendar month or year), "group_information_coefficient" (the IC statistics
-                within each group, needs group), "quantile_returns" (the mean forward return per
-                quantile and horizon), "quantile_returns_by_date" (per period),
-                "quantile_return_statistics" (the mean, its standard error and both per single
-                period), "quantile_statistics" (the range, mean and count of the factor values in
-                each quantile), "quantile_turnover" (per period and quantile),
-                "rank_autocorrelation" (per period), "factor_weights" (the weights of the
-                factor-weighted long-short portfolio per period and ticker), "factor_returns" (its
-                return per period and horizon), "cumulative_returns" (the growth of 1 in it and in
-                each quantile) or "event_returns" (the mean price path of each quantile from the
-                longest horizon before to the longest horizon after the periods it is formed).
-                Defaults to None.
+            detail (str | None, optional): Returns one part of the analysis of a single indicator instead of the
+                summary. Options are: "information_coefficient" (the IC per period and horizon),
+                "information_coefficient_by_month" (the mean IC per calendar month),
+                "information_coefficient_by_year" (the mean IC per calendar year),
+                "group_information_coefficient" (the IC statistics within each group, needs group),
+                "quantile_returns" (the mean forward return per quantile and horizon),
+                "quantile_returns_by_date" (the mean forward return per quantile and horizon, per period),
+                "quantile_return_statistics" (the mean forward return, its standard error and both per single
+                period), "quantile_statistics" (the range, mean and count of the factor values in each
+                quantile), "quantile_turnover" (the turnover per period and quantile),
+                "rank_autocorrelation" (the rank autocorrelation per period), "factor_weights" (the weights of
+                the factor-weighted long-short portfolio per period and ticker), "factor_returns" (its return
+                per period and horizon), "cumulative_returns" (the growth of 1 in it and in each quantile),
+                "event_returns" (the mean price path of each quantile from the longest horizon before to the
+                longest horizon after the periods it is formed). Defaults to None.
             column (str | None, optional): The output to use of an indicator with several,
                 e.g. "Signal Line" of the MACD or "Upper Band" of the Bollinger Bands.
                 Defaults to None, which uses the first output in alphabetical order other
@@ -492,12 +510,11 @@ class TechnicalsBase:
                 factor-weighted portfolio neutral within each group. Without group the IC
                 stays the same, as subtracting one mean from every ticker keeps their ranks.
                 Defaults to False.
-            binning (str, optional): How the tickers are sorted into quantiles per period:
-                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest
-                and highest value), "zero_aware" (half of the quantiles for the negative and half
-                for the zero and positive values, for a signal centred on zero; needs an even number
-                of quantiles) or "group" (equally sized within each group, needs group). Defaults to
-                "quantile".
+            binning (str, optional): How the tickers are sorted into quantiles per period. Options are:
+                "quantile" (equally sized), "equal_width" (bins of equal width between the lowest and highest
+                value), "zero_aware" (half of the quantiles for the negative and half for the zero and positive
+                values, for a signal centred on zero; needs an even number of quantiles), "group" (equally sized
+                within each group, needs group). Defaults to "quantile".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the indicators that take them, e.g. window=14,
@@ -536,12 +553,11 @@ class TechnicalsBase:
               1945-1964." Journal of Finance 23(2); the event returns follow MacKinlay, A.C.
               (1997). "Event Studies in Economics and Finance." Journal of Economic Literature
               35(1).
-            - Referenced against alphalens-reloaded
-              (https://github.com/stefan-jansen/alphalens-reloaded). Its top minus bottom
-              spread is half of the one here (a gross exposure of one rather than two), it
-              drops a period and ticker without every horizon's return where each horizon
-              here uses its own, and its event returns average the single-period returns at
-              each offset where these are the price paths rebased to the period itself.
+            - Unlike alphalens, the top minus bottom spread is twice alphalens' (a gross
+              exposure of two rather than one), each horizon uses its own returns where alphalens
+              drops a period and ticker without every horizon's return, and the event returns are
+              the price paths rebased to the period itself where alphalens averages the
+              single-period returns at each offset.
 
         Also known as: predictive power, information coefficient, factor testing, alpha signal
 

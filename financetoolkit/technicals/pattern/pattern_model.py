@@ -99,7 +99,8 @@ def get_candle_features(
     prices_close: pd.Series,
 ) -> pd.DataFrame:
     """
-    Describe each candle by its parts and by the reference sizes its parts are compared with.
+    Describe each candle by its parts and by the reference sizes its parts are compared with: the building blocks of
+    the candlestick patterns.
 
     A candle is white when it closes at or above its open and black otherwise. Its real body
     runs from the open to the close, the upper shadow from the top of the body to the high and
@@ -174,7 +175,8 @@ def get_candlestick_patterns(
     patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Recognise 62 candlestick patterns of Nison, Bulkowski and Chesler in their measurable form.
+    Recognise 62 candlestick patterns of Nison, Bulkowski and Chesler in their measurable form: the shapes of one to
+    five candles read as a reversal or a continuation of the trend.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
     pattern and 0 otherwise, which agrees with TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
@@ -349,10 +351,75 @@ def get_candlestick_patterns(
     measurable rules and thresholds are those TA-Lib (Mario Fortier) documents for these
     patterns, which turn the descriptions of Nison and others into candle-size comparisons.
 
-    Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/), which give the
-    same values candle for candle;
-    pandas-ta-classic: cdl_inside for the inside bar
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - TA-Lib, CDL2CROWS: https://ta-lib.org/functions/cdl2crows.html
+        Test: tests/technical/test_pattern_model.py::test_single_candle_patterns_match_ta_lib_on_the_test_data
+        Test: tests/technical/test_pattern_model.py::test_two_and_three_candle_patterns_match_ta_lib_on_the_test_data
+        Test: tests/technical/test_pattern_model.py::test_three_candle_patterns_match_ta_lib_on_the_test_data
+        Test: tests/technical/test_pattern_model.py::test_four_and_five_candle_patterns_match_ta_lib_on_the_test_data
+    - TA-Lib, CDL3BLACKCROWS: https://ta-lib.org/functions/cdl3blackcrows.html
+    - TA-Lib, CDL3INSIDE: https://ta-lib.org/functions/cdl3inside.html
+    - TA-Lib, CDL3LINESTRIKE: https://ta-lib.org/functions/cdl3linestrike.html
+    - TA-Lib, CDL3OUTSIDE: https://ta-lib.org/functions/cdl3outside.html
+    - TA-Lib, CDL3STARSINSOUTH: https://ta-lib.org/functions/cdl3starsinsouth.html
+    - TA-Lib, CDL3WHITESOLDIERS: https://ta-lib.org/functions/cdl3whitesoldiers.html
+    - TA-Lib, CDLABANDONEDBABY: https://ta-lib.org/functions/cdlabandonedbaby.html
+    - TA-Lib, CDLADVANCEBLOCK: https://ta-lib.org/functions/cdladvanceblock.html
+    - TA-Lib, CDLBELTHOLD: https://ta-lib.org/functions/cdlbelthold.html
+    - TA-Lib, CDLBREAKAWAY: https://ta-lib.org/functions/cdlbreakaway.html
+    - TA-Lib, CDLCLOSINGMARUBOZU: https://ta-lib.org/functions/cdlclosingmarubozu.html
+    - TA-Lib, CDLCONCEALBABYSWALL: https://ta-lib.org/functions/cdlconcealbabyswall.html
+    - TA-Lib, CDLCOUNTERATTACK: https://ta-lib.org/functions/cdlcounterattack.html
+    - TA-Lib, CDLDARKCLOUDCOVER: https://ta-lib.org/functions/cdldarkcloudcover.html
+    - TA-Lib, CDLDOJI: https://ta-lib.org/functions/cdldoji.html
+    - TA-Lib, CDLDOJISTAR: https://ta-lib.org/functions/cdldojistar.html
+    - TA-Lib, CDLDRAGONFLYDOJI: https://ta-lib.org/functions/cdldragonflydoji.html
+    - TA-Lib, CDLENGULFING: https://ta-lib.org/functions/cdlengulfing.html
+    - TA-Lib, CDLEVENINGDOJISTAR: https://ta-lib.org/functions/cdleveningdojistar.html
+    - TA-Lib, CDLEVENINGSTAR: https://ta-lib.org/functions/cdleveningstar.html
+    - TA-Lib, CDLGAPSIDESIDEWHITE: https://ta-lib.org/functions/cdlgapsidesidewhite.html
+    - TA-Lib, CDLGRAVESTONEDOJI: https://ta-lib.org/functions/cdlgravestonedoji.html
+    - TA-Lib, CDLHAMMER: https://ta-lib.org/functions/cdlhammer.html
+    - TA-Lib, CDLHANGINGMAN: https://ta-lib.org/functions/cdlhangingman.html
+    - TA-Lib, CDLHARAMI: https://ta-lib.org/functions/cdlharami.html
+    - TA-Lib, CDLHARAMICROSS: https://ta-lib.org/functions/cdlharamicross.html
+    - TA-Lib, CDLHIGHWAVE: https://ta-lib.org/functions/cdlhighwave.html
+    - TA-Lib, CDLHIKKAKE: https://ta-lib.org/functions/cdlhikkake.html
+    - TA-Lib, CDLHIKKAKEMOD: https://ta-lib.org/functions/cdlhikkakemod.html
+    - TA-Lib, CDLHOMINGPIGEON: https://ta-lib.org/functions/cdlhomingpigeon.html
+    - TA-Lib, CDLIDENTICAL3CROWS: https://ta-lib.org/functions/cdlidentical3crows.html
+    - TA-Lib, CDLINNECK: https://ta-lib.org/functions/cdlinneck.html
+    - TA-Lib, CDLINVERTEDHAMMER: https://ta-lib.org/functions/cdlinvertedhammer.html
+    - TA-Lib, CDLKICKING: https://ta-lib.org/functions/cdlkicking.html
+    - TA-Lib, CDLKICKINGBYLENGTH: https://ta-lib.org/functions/cdlkickingbylength.html
+    - TA-Lib, CDLLADDERBOTTOM: https://ta-lib.org/functions/cdlladderbottom.html
+    - TA-Lib, CDLLONGLEGGEDDOJI: https://ta-lib.org/functions/cdllongleggeddoji.html
+    - TA-Lib, CDLLONGLINE: https://ta-lib.org/functions/cdllongline.html
+    - TA-Lib, CDLMARUBOZU: https://ta-lib.org/functions/cdlmarubozu.html
+    - TA-Lib, CDLMATCHINGLOW: https://ta-lib.org/functions/cdlmatchinglow.html
+    - TA-Lib, CDLMATHOLD: https://ta-lib.org/functions/cdlmathold.html
+    - TA-Lib, CDLMORNINGDOJISTAR: https://ta-lib.org/functions/cdlmorningdojistar.html
+    - TA-Lib, CDLMORNINGSTAR: https://ta-lib.org/functions/cdlmorningstar.html
+    - TA-Lib, CDLONNECK: https://ta-lib.org/functions/cdlonneck.html
+    - TA-Lib, CDLPIERCING: https://ta-lib.org/functions/cdlpiercing.html
+    - TA-Lib, CDLRICKSHAWMAN: https://ta-lib.org/functions/cdlrickshawman.html
+    - TA-Lib, CDLRISEFALL3METHODS: https://ta-lib.org/functions/cdlrisefall3methods.html
+    - TA-Lib, CDLSEPARATINGLINES: https://ta-lib.org/functions/cdlseparatinglines.html
+    - TA-Lib, CDLSHOOTINGSTAR: https://ta-lib.org/functions/cdlshootingstar.html
+    - TA-Lib, CDLSHORTLINE: https://ta-lib.org/functions/cdlshortline.html
+    - TA-Lib, CDLSPINNINGTOP: https://ta-lib.org/functions/cdlspinningtop.html
+    - TA-Lib, CDLSTALLEDPATTERN: https://ta-lib.org/functions/cdlstalledpattern.html
+    - TA-Lib, CDLSTICKSANDWICH: https://ta-lib.org/functions/cdlsticksandwich.html
+    - TA-Lib, CDLTAKURI: https://ta-lib.org/functions/cdltakuri.html
+    - TA-Lib, CDLTASUKIGAP: https://ta-lib.org/functions/cdltasukigap.html
+    - TA-Lib, CDLTHRUSTING: https://ta-lib.org/functions/cdlthrusting.html
+    - TA-Lib, CDLTRISTAR: https://ta-lib.org/functions/cdltristar.html
+    - TA-Lib, CDLUNIQUE3RIVER: https://ta-lib.org/functions/cdlunique3river.html
+    - TA-Lib, CDLUPSIDEGAP2CROWS: https://ta-lib.org/functions/cdlupsidegap2crows.html
+    - TA-Lib, CDLXSIDEGAP3METHODS: https://ta-lib.org/functions/cdlxsidegap3methods.html
+
+    Shares similar logic:
+    - pandas-ta-classic, cdl_inside: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/candles/cdl_inside.py#L11
 
     Notes:
         - A pattern is empty (NaN) during its warm-up: the previous candles its reference
@@ -1082,7 +1149,8 @@ def get_heikin_ashi(
     prices_close: pd.Series,
 ) -> pd.DataFrame:
     """
-    Calculate the Heikin-Ashi candles, which smooth the candles with two-period averages.
+    Calculate the Heikin-Ashi candles: candles built from two-period averages, which smooth the noise so the trend
+    stands out.
 
     The formula is as follows:
 
@@ -1095,8 +1163,12 @@ def get_heikin_ashi(
     Reference: Valcu, D. (2004). "Using the Heikin-Ashi Technique." Technical Analysis of
     Stocks & Commodities, 22(2).
 
-    Referenced against TA-Lib's HA (https://ta-lib.org/functions/);
-    pandas-ta-classic: ha (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - TA-Lib, HA: https://ta-lib.org/functions/ha.html
+        Test: tests/technical/test_pattern_model.py::test_heikin_ashi_matches_ta_lib
+
+    Shares similar logic:
+    - pandas-ta-classic, ha: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/candles/ha.py#L25
 
     Notes:
         - The HA Open halves the weight of the first candle's seed every period, so it is an
@@ -1139,8 +1211,8 @@ def get_williams_fractal(
     right_bars: int = 2,
 ) -> pd.DataFrame:
     """
-    Mark Bill Williams' fractals: a high above the highs of the bars on either side of it (an
-    up fractal) or a low below their lows (a down fractal).
+    Mark Bill Williams' fractals: a high above the highs of the bars on either side of it (an up fractal) or a low
+    below their lows (a down fractal).
 
     A fractal needs the `right_bars` bars after it, so it is only known `right_bars` periods
     later. It is therefore marked on the bar that confirms it, not on the bar of the high or
@@ -1156,8 +1228,12 @@ def get_williams_fractal(
     Reference: Williams, B.M. (1995). "Trading Chaos: Applying Expert Techniques to Maximize
     Your Profits." Wiley.
 
-    Referenced against TA-Lib's FRACTAL (https://ta-lib.org/functions/); finta:
-    WILLIAMS_FRACTAL (https://github.com/peerchemist/finta).
+    Referenced against:
+    - TA-Lib, FRACTAL: https://ta-lib.org/functions/fractal.html
+        Test: tests/technical/test_pattern_model.py::test_williams_fractal_matches_ta_lib_on_the_test_data
+
+    Shares similar logic:
+    - finta, WILLIAMS_FRACTAL: https://github.com/peerchemist/finta/blob/1.3/finta/finta.py#L2205
 
     Notes:
         - This agrees with TA-Lib's FRACTAL (swinghigh, swinglow) divided by 100, which marks the
@@ -1210,8 +1286,8 @@ def get_td_sequential(
     prices_close: pd.Series,
 ) -> pd.DataFrame:
     """
-    Count Tom DeMark's TD Sequential: the TD Setup of nine closes in a row beyond the close four
-    bars earlier and the TD Countdown to 13 that follows a completed setup.
+    Count Tom DeMark's TD Sequential: the TD Setup of nine closes in a row beyond the close four bars earlier and
+    the TD Countdown to 13 that follows a completed setup.
 
     The rules are DeMark's:
 
@@ -1236,8 +1312,9 @@ def get_td_sequential(
     Reference: DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley; Perl, J.
     (2008). "DeMark Indicators." Bloomberg Press.
 
-    Referenced against pandas-ta-classic's td_seq
-    (https://github.com/xgboosted/pandas-ta-classic), which counts the setup only.
+    Referenced against:
+    - pandas-ta-classic, td_seq: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/td_seq.py#L31
+        Test: tests/technical/test_pattern_model.py::test_td_sequential_matches_pandas_ta_classic_on_the_test_data
 
     Notes:
         - A new setup in the same direction during a countdown does not restart it (DeMark's
@@ -1246,6 +1323,7 @@ def get_td_sequential(
         - pandas-ta-classic's td_seq counts every run of closes beyond the close four bars
           earlier, also without a price flip before it, and continues past 9 up to 13; on the
           bars of a setup that starts on a flip the counts 1 to 9 are the same.
+        - pandas-ta-classic's td_seq counts the TD Setup only.
 
     Args:
         prices_high (pd.Series): The high prices.
@@ -1340,8 +1418,8 @@ def get_liquidity_sweep(
     wick_multiple: float = 1.5,
 ) -> pd.Series:
     """
-    Mark a liquidity sweep: a candle that trades through the lowest low (or highest high) of the
-    previous bars, where stop orders tend to rest, and closes back inside with a long wick.
+    Mark a liquidity sweep: a candle that trades through the lowest low (or highest high) of the previous bars,
+    where stop orders tend to rest, and closes back inside with a long wick.
 
     The formula is as follows:
 
@@ -1356,8 +1434,9 @@ def get_liquidity_sweep(
     swing over the previous 15 bars and a wick of more than 1.5 times the body is
     pandas-ta-classic's.
 
-    Referenced against pandas-ta-classic's smc_sweep
-    (https://github.com/xgboosted/pandas-ta-classic).
+    Referenced against:
+    - pandas-ta-classic, smc_sweep: https://github.com/xgboosted/pandas-ta-classic/blob/0.9.0/pandas_ta_classic/momentum/smc_sweep.py#L12
+        Test: tests/technical/test_pattern_model.py::test_liquidity_sweep_matches_pandas_ta_classic_on_the_test_data
 
     Args:
         prices_open (pd.Series): The open prices.
@@ -1399,7 +1478,8 @@ def get_liquidity_sweep(
 
 def get_crossover(series: pd.Series, reference: pd.Series | float) -> pd.Series:
     """
-    Mark where a series crosses a reference line.
+    Mark where a series crosses a reference line: the periods a line moves from below to above it (1) or from above
+    to below (-1).
 
     The series crosses when it reaches the other side of the line than the side it was on last.
     A period exactly on the line keeps the side it came from, so touching the line and turning
@@ -1446,8 +1526,8 @@ def get_signals(
     high_low_window: int,
 ) -> pd.DataFrame:
     """
-    Turn moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows into
-    the events traders act on.
+    Turn moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows into the events traders act
+    on: the period a line is crossed.
 
     Every signal is 1 on the period a line crosses upwards, -1 on the period it crosses
     downwards and 0 otherwise:
@@ -1530,9 +1610,8 @@ def get_indicator_summary(
     forward_periods: list[int] | None = None,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
-    Summarise the history of an indicator: where its latest value ranks, its extremes, the
-    periods spent beyond a threshold, the crossings into that zone and the return of the price
-    after each crossing.
+    Summarise the history of an indicator: where its latest value ranks, its extremes, the periods spent beyond a
+    threshold, the crossings into that zone and the return of the price after each crossing.
 
     Each value is ranked against its own history up to that date, never against later values:
 
